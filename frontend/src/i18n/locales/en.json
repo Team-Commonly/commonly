@@ -783,6 +783,7 @@
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
+      "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
       "agentNotConnectedOwner": "You haven't connected {{name}} yet, so it won't see this until it runs.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
@@ -1949,6 +1950,24 @@
       "expired": "This approval expired before the decision landed.",
       "needsReview": "This request couldn't be matched to what's shown here. Refresh before deciding.",
       "failed": "Couldn't record the decision. Try again."
+    },
+    "runRequest": {
+      "asked": "{{requester}} asked {{agent}} to do this",
+      "someone": "Someone",
+      "reach": "Here, {{agent}} can",
+      "reach_pod_read": "read this pod",
+      "reach_pod_post": "post in this pod",
+      "reach_memory_read": "read its memory",
+      "reach_memory_write": "write its memory",
+      "reach_github_issues": "open and edit GitHub issues",
+      "narrow": "Narrow",
+      "narrowLabel": "Approve only this. {{agent}} gets your version.",
+      "narrowApprove": "Approve this version",
+      "narrowCancel": "Cancel",
+      "waiting": "Waiting for {{agent}}'s owner to decide.",
+      "approved": "Approved. {{agent}} has the request.",
+      "approvedNarrowed": "Approved as: {{text}}",
+      "declined": "Declined. {{agent}} won't run it."
     }
   },
   "byoHandoff": {
@@ -3494,7 +3513,9 @@
     "specialtyCount_one": "{{count}} specialty",
     "specialtyCount_other": "{{count}} specialties",
     "boundaryCount_one": "{{count}} boundary",
-    "boundaryCount_other": "{{count}} boundaries"
+    "boundaryCount_other": "{{count}} boundaries",
+    "colAskFirst": "ask first",
+    "askBeforeOthers": "Ask me before anyone else's request runs"
   },
   "agentPolicy": {
     "title": "Policy",

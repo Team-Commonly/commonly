@@ -5018,9 +5018,13 @@ body.modern-ui.v2-canvas {
   display: grid;
   grid-template-rows: 1fr;
 }
+/* min-width: 0 keeps the one column at the fold's width; a grid item's automatic
+   minimum would otherwise widen it to the longest nowrap line inside, and an
+   ellipsized row would run past the panel instead of truncating (F372). */
 .v2-fold > .v2-fold__inner {
   display: flow-root;
   min-height: 0;
+  min-width: 0;
 }
 .v2-fold--opening {
   animation: v2-fold-open var(--v2-dur) var(--v2-ease) both;

@@ -592,6 +592,22 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('a held run request names who asked and reads as what they asked (F371)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+
+    await AttentionItemService.recordActionApproval({
+      _id: 'appr-5', podId: 'pod-1', ownerUserId: 'sam', agentName: 'nova', actionType: 'run_request',
+      summary: 'Ben asked Nova to run a request',
+      params: { requesterName: 'Ben', request: '@nova summarize the launch notes' },
+    }, 'Nova');
+
+    expect(mockUpdateOne.mock.calls[0][1].$setOnInsert).toEqual(expect.objectContaining({
+      kind: 'approval', title: 'Ben asked Nova', detail: '@nova summarize the launch notes',
+    }));
+    expect(mockUpdateOne.mock.calls[0][1].$setOnInsert.reviewOnCard).toBeUndefined();
+  });
+
   it('any other proposal stays decidable from the row', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));

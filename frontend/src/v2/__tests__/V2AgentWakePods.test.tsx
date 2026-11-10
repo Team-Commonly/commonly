@@ -43,6 +43,37 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  it('F371: turns on "ask me before anyone else\'s request runs" for one pod, and keeps the rest as stored', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 3, podCount: 3, installations: [
+      { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false },
+      { podId: 'dm-1', podName: 'test-agent', podType: 'agent-room', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false },
+      { podId: 'admin-1', podName: 'Admin room', podType: 'agent-admin', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false },
+    ] } });
+    renderSettings();
+    const toggles = await screen.findAllByLabelText("Ask me before anyone else's request runs");
+    // Direct-message pods take the DM wake path, which the gate never runs on.
+    expect(toggles).toHaveLength(1);
+    expect(toggles[0]).not.toBeChecked();
+    fireEvent.click(toggles[0]);
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith('pod-1', {
+      wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      askBeforeOthers: true,
+    }));
+    expect(screen.getByLabelText("Ask me before anyone else's request runs")).toBeChecked();
+  });
+
+  it("F371: the installer of a row a mention pulled in can't flip ask-first; only the agent's owner can", async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [
+      { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false, canChangeAskFirst: false },
+    ] } });
+    renderSettings();
+    expect(await screen.findByLabelText("Ask me before anyone else's request runs")).toBeDisabled();
+  });
+
   it('shows all three message-wake choices without first opting in (D173)', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,

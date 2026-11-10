@@ -31,6 +31,10 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const {
+  approverFor, asksBeforeOthers, holdRunRequest, joinedByMention, noteRunRequestRefused, UNOWNED,
+} = require('./runRequestService') as typeof import('./runRequestService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMentionService') as {
   noteStoppedMention: (args: {
     podId: string; agentName: string; instanceId: string;
@@ -1673,6 +1677,20 @@ const enqueueWakeOnMessage = async ({
     return key !== senderKey && !excludeKeys?.has(key);
   });
   if (targets.length === 0) return woken;
+  // F371: an agent whose owner approves others' requests is not woken by
+  // anyone else's message at all. Only an addressed request reaches it, as a card.
+  if (targets.some(asksBeforeOthers)) {
+    const gated = await Promise.all(targets.map((inst) => (
+      asksBeforeOthers(inst) ? approverFor(inst, sender, String(userId)).catch(() => (
+        // A failed lookup keeps gating everyone but the person who installed it
+        // (Rule 19 fails toward delivery for them); a mention's row names no owner.
+        sender?.isBot === false && !joinedByMention(inst) && String(inst.installedBy || '') === String(userId)
+          ? null : 'unknown'
+      )) : null
+    )));
+    targets = targets.filter((_inst, index) => !gated[index]);
+    if (targets.length === 0) return woken;
+  }
 
   // Ambient-only thread scoping (W-T 3/4, #1045). A reply inside a thread is
   // AMBIENT: it reaches the thread's effective followers, not the room.
@@ -1947,6 +1965,52 @@ const enqueueMentions = async ({
     console.warn('Agent mention lookup failed:', (error as Error).message);
   }
 
+  // F371: a request addressed to an agent whose owner asked to approve other
+  // people's requests becomes an approval card, not a wake. Every addressed
+  // enqueue below goes through here; ambient wakes skip those agents instead.
+  const deliverAddressed = async (event: {
+    agentName: string; instanceId: string; podId: string; type: string; payload: Record<string, unknown>;
+  }): Promise<'queued' | 'held' | 'refused'> => {
+    const install = installations.find((inst) => installKey(inst) === installKey(event));
+    // Every refusal below tells the asker beside their request; none posted a card.
+    const refuse = async (why: string): Promise<'refused'> => {
+      console.warn(`[run-request] ${event.agentName}: ${why}; the request was not run`);
+      if (install) await noteRunRequestRefused({ install, event });
+      return 'refused';
+    };
+    let approver: string | null = null;
+    if (install) {
+      try {
+        approver = await approverFor(install, sender, String(userId));
+      } catch (error) {
+        // Fails closed when the setting is on: whether it needs the owner is unknown.
+        if (asksBeforeOthers(install)) return refuse(`owner lookup failed (${(error as Error).message})`);
+      }
+    }
+    if (!install || !approver) {
+      await AgentEventService.enqueue(event);
+      return 'queued';
+    }
+    if (approver === UNOWNED) return refuse('it asks first but has no owner');
+    try {
+      const held = await holdRunRequest({
+        install,
+        event,
+        ownerUserId: approver,
+        requesterUserId: String(userId),
+        requesterName: String(sender?.displayName || username || 'Someone'),
+        request: rawContent,
+        threadRootId: event.payload.threadRootId ? String(event.payload.threadRootId) : null,
+      });
+      // 'pending' folds into the open card. false: no card was posted.
+      return held ? 'held' : refuse('it could not be put to its owner');
+    } catch (error) {
+      // Fails closed: the owner asked that this not run without them. A throw
+      // comes before the card posts; holdRunRequest keeps what follows it.
+      return refuse(`hold failed (${(error as Error).message})`);
+    }
+  };
+
   // #834: claim the member's first-message marker, and wake the pod's
   // designated greeter when that first message named nobody. Claimed for
   // routed first messages too — otherwise a member whose opener was
@@ -1956,6 +2020,16 @@ const enqueueMentions = async ({
   let welcomeWoke: string[] = [];
   if (!onlyExplicitMentions && sender?.isBot === false) {
     try {
+      // F371: a greeter that asks first is not woken by a stranger's opener,
+      // which reaches it inline; that would run their words without approval.
+      const greetable = [];
+      for (const inst of installations || []) {
+        // eslint-disable-next-line no-await-in-loop
+        const gated = asksBeforeOthers(inst)
+          ? await approverFor(inst, sender, String(userId)).catch(() => 'unknown')
+          : null;
+        if (!gated) greetable.push(inst);
+      }
       const welcome = await maybeFireWelcomeWake({
         podId,
         userId,
@@ -1965,7 +2039,7 @@ const enqueueMentions = async ({
           ? String(message?._id || message?.id)
           : undefined,
         isRouted,
-        installations,
+        installations: greetable,
       });
       welcomeWoke = ((welcome as { woke?: string[] } | undefined)?.woke || []).map((name) => String(name).toLowerCase());
     } catch (error) {
@@ -2002,7 +2076,7 @@ const enqueueMentions = async ({
         // apart here (carried from #2359).
         if (adjacent && !welcomeWoke.includes(adjacent.target.agentName.toLowerCase())) {
           const { target } = adjacent;
-          await AgentEventService.enqueue({
+          const adjacentOutcome = await deliverAddressed({
             agentName: target.agentName,
             instanceId: target.instanceId || 'default',
             podId,
@@ -2031,7 +2105,7 @@ const enqueueMentions = async ({
               adjacentReply: true,
             },
           });
-          implicitAdjacent.push(target.agentName);
+          if (adjacentOutcome === 'queued') implicitAdjacent.push(target.agentName);
           // The adjacent agent is never a D8 opt-in (resolveAdjacentReplyTarget
           // refuses those), so this exclusion only matters for duplicate
           // installs sharing one identity. It is kept so no future widening of
@@ -2092,6 +2166,12 @@ const enqueueMentions = async ({
     enqueued.push(resultLabel);
     addressedTargets.set(identityKey(target), target);
     if (isExplicitMention) deliveredAgentMentionTargets.set(identityKey(target), target);
+  };
+  // F371: held for its owner (or refused when it couldn't be held). Kept out of
+  // the ambient fan-out like a delivery, but nothing was queued.
+  const recordHeld = (target: MentionTarget, outcome: 'held' | 'refused'): void => {
+    enqueuedIdentityKeys.add(identityKey(target));
+    skipped.push(`${target.agentName}:${outcome === 'held' ? 'held-for-owner' : 'hold-failed'}`);
   };
 
   // A typed return event can own the author of this reply. Resolve that target
@@ -2323,7 +2403,7 @@ const enqueueMentions = async ({
             return;
           }
           const handoff = await handoffFrom(directMatch);
-          await AgentEventService.enqueue({
+          const outcome = await deliverAddressed({
             agentName: directMatch.agentName,
             instanceId: directMatch.instanceId || 'default',
             podId,
@@ -2348,7 +2428,7 @@ const enqueueMentions = async ({
               ...senderStamp,
             },
           });
-          recordEnqueued(directMatch);
+          if (outcome === 'queued') recordEnqueued(directMatch); else recordHeld(directMatch, outcome);
         } catch (error) {
           console.warn('Failed to enqueue agent mention:', (error as Error).message);
         }
@@ -2456,7 +2536,7 @@ const enqueueMentions = async ({
                 return;
               }
               const handoff = await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' });
-              await AgentEventService.enqueue({
+              const outcome = await deliverAddressed({
                 agentName: agentType,
                 instanceId: match.instanceId || 'default',
                 podId,
@@ -2482,7 +2562,8 @@ const enqueueMentions = async ({
                   ...senderStamp,
                 },
               });
-              recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
+              if (outcome === 'queued') recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
+              else recordHeld({ agentName: agentType, instanceId: match.instanceId || 'default' }, outcome);
             } catch (error) {
               console.warn('Failed to enqueue agent mention:', (error as Error).message);
             }
@@ -2530,7 +2611,7 @@ const enqueueMentions = async ({
           // set so a wake-on-message opt-in cannot reintroduce the second turn.
           enqueuedIdentityKeys.add(identityKey(target));
         } else {
-          await AgentEventService.enqueue({
+          const outcome = await deliverAddressed({
             agentName: target.agentName,
             instanceId: target.instanceId || 'default',
             podId,
@@ -2561,8 +2642,10 @@ const enqueueMentions = async ({
               implicitReply: true,
             },
           });
-          recordEnqueued(target, target.agentName, false);
-          implicit.push(target.agentName);
+          if (outcome === 'queued') {
+            recordEnqueued(target, target.agentName, false);
+            implicit.push(target.agentName);
+          } else recordHeld(target, outcome);
         }
       }
     } catch (error) {

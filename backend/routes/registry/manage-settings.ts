@@ -9,6 +9,7 @@ import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
+const { botOwnerOf, joinedByMention, ownerOfInstall } = require('../../services/runRequestService');
 const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -43,6 +44,10 @@ const WAKE_FLAGS = ['wakeOnMessage', 'humanOnly', 'boardWake', 'heartbeatEnabled
 const invalidWakeField = (body: Record<string, unknown>) => {
   const flag = WAKE_FLAGS.find((key) => typeof body[key] !== 'boolean');
   if (flag) return { field: flag, error: `Invalid wake settings: ${flag} must be true or false` };
+  // F371: optional, so a client that predates it leaves the stored value alone.
+  if (body.askBeforeOthers !== undefined && typeof body.askBeforeOthers !== 'boolean') {
+    return { field: 'askBeforeOthers', error: 'Invalid wake settings: askBeforeOthers must be true or false' };
+  }
   const minutes = body.heartbeatMinutes;
   if (minutes === undefined && body.heartbeatEnabled === false) return null;
   if (!Number.isInteger(minutes) || (minutes as number) < 1 || (minutes as number) > 1440) {
@@ -64,7 +69,7 @@ const hostedHeartbeatFor = (installation: any) => (isHostedInstallation(installa
   runsPerDay: hostedRunsNative(installation) ? hostedHeartbeatRunsPerDay() : 0,
 } : null);
 
-const settings = (installation: any, podName: string, podType?: string) => {
+const settings = (installation: any, podName: string, podType?: string, canChangeAskFirst?: boolean) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
   return {
@@ -74,6 +79,9 @@ const settings = (installation: any, podName: string, podType?: string) => {
     status: installation.status,
     wakeOnMessage,
     humanOnly: config.wakeOnMessage?.humanOnly === true,
+    askBeforeOthers: config.askBeforeOthers?.enabled === true,
+    // Only the owner or an admin may flip it (the PATCH below); absent on a write's echo.
+    ...(canChangeAskFirst === undefined ? {} : { canChangeAskFirst }),
     boardWake: typeof config.boardWake?.enabled === 'boolean'
       ? config.boardWake.enabled : wakeOnMessage,
     heartbeatEnabled: config.heartbeat?.enabled === true,
@@ -107,9 +115,20 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       instanceId: normalizeInstanceId(req.query.instanceId),
       status: { $ne: 'uninstalled' },
     }).sort({ createdAt: 1, _id: 1 }).lean();
-    const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
-    const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
+    // A row a mention pulled in lists for the agent's owner too, in a pod they
+    // belong to: its installedBy is whoever mentioned the agent (F371).
+    const agentOwner = installations.some(joinedByMention)
+      ? await botOwnerOf(req.params.name, normalizeInstanceId(req.query.instanceId)).catch(() => null) : null;
+    const ownsAgent = !!agentOwner && agentOwner === String(userId);
+    const candidates = installations.filter((entry: any) => canManage(entry, userId, isAdmin)
+      || (ownsAgent && joinedByMention(entry)));
+    const pods = await Pod.find({ _id: { $in: candidates.map((entry: any) => entry.podId) } })
       .select('name type members').lean();
+    const memberOf = new Set<string>(pods
+      .filter((pod: any) => (pod.members || []).some((member: unknown) => String(member) === String(userId)))
+      .map((pod: any) => String(pod._id)));
+    const manageable = candidates.filter((entry: any) => canManage(entry, userId, isAdmin)
+      || memberOf.has(String(entry.podId)));
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const types = new Map<string, string | undefined>(pods.map((pod: any) => [String(pod._id), pod.type]));
     // Someone else's 1:1 room with this agent (ADR-001 §3.10). Its installer
@@ -122,8 +141,11 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const listed = visible.filter((entry: any) => !othersRooms.has(String(entry.podId)));
     const otherDirectRoomCount = visible.length - listed.length;
-    const fallback = listed.find((entry: any) => entry.status === 'active') || listed[0]
-      || visible.find((entry: any) => entry.status === 'active') || visible[0];
+    // The agent-level controls (quota, seat, machine) read the row's installer,
+    // so a mention row, whose installer is someone else, never supplies them.
+    const ownRows = (rows: any[]) => rows.filter((entry: any) => canManage(entry, userId, isAdmin));
+    const fallback = ownRows(listed).find((entry: any) => entry.status === 'active') || ownRows(listed)[0]
+      || ownRows(visible).find((entry: any) => entry.status === 'active') || ownRows(visible)[0];
     const quotaOwner = fallback?.installedBy || userId;
     // The daemon runs the oldest active declaration, not whichever pod this
     // page happened to load first. Use its projection for both the displayed
@@ -220,8 +242,10 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeEditable: !hosted && Boolean(writable) && (!seat?.sourcePodId || Boolean(source)),
       harnessCatalog: HARNESS_CATALOG,
       otherDirectRoomCount,
-      installations: listed
-      .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)))) });
+      installations: await Promise.all(listed.map(async (entry: any) => settings(
+        entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)),
+        isAdmin || (await ownerOfInstall(entry).catch(() => null)) === String(userId),
+      ))) });
   } catch (error) {
     console.error('Error loading agent settings:', error);
     return res.status(500).json({ error: 'Failed to load agent settings' });
@@ -235,7 +259,7 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const invalid = invalidWakeField(body);
     if (invalid) return res.status(400).json(invalid);
-    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes } = body;
+    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes, askBeforeOthers } = body;
     const installation = await AgentInstallation.findOne({
       agentName: String(req.params.name).toLowerCase(),
       instanceId: normalizeInstanceId(req.query.instanceId),
@@ -244,14 +268,32 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     });
     if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
     const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
-    if (!canManage(installation, userId, isAdmin)) return res.status(403).json({ error: 'Installer or admin required' });
+    // The agent's owner may manage its row too: a mention auto-join records
+    // whoever mentioned it as installedBy (runRequestService.ownerOfInstall).
+    const owner = await ownerOfInstall(installation).catch(() => null);
+    let isOwner = !!owner && owner === String(userId);
+    // As in the listing: the owner manages a row they didn't install only in a pod they belong to.
+    if (isOwner && !canManage(installation, userId, isAdmin)) {
+      const pod = await Pod.findById(installation.podId).select('members').lean() as { members?: unknown[] } | null;
+      isOwner = (pod?.members || []).some((member) => String(member) === String(userId));
+    }
+    if (!canManage(installation, userId, isAdmin) && !isOwner) {
+      return res.status(403).json({ error: 'Installer or admin required' });
+    }
     const config = normalizeConfigMap(installation.config) || {};
+    // Ask-first names the owner as the approver, so only they (or an admin)
+    // change it. Resending the current value is a wake write, and saves.
+    if (askBeforeOthers !== undefined && askBeforeOthers !== (config.askBeforeOthers?.enabled === true)
+      && !isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Only the agent\'s owner can change this', field: 'askBeforeOthers' });
+    }
     installation.config = new Map(Object.entries({
       ...config,
       wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage, humanOnly },
       boardWake: { ...config.boardWake, enabled: boardWake },
       heartbeat: { ...config.heartbeat, enabled: heartbeatEnabled,
         ...(heartbeatMinutes === undefined ? {} : { everyMinutes: heartbeatMinutes }) },
+      ...(askBeforeOthers === undefined ? {} : { askBeforeOthers: { ...config.askBeforeOthers, enabled: askBeforeOthers } }),
     }));
     await installation.save();
     return res.json({ settings: settings(installation, '') });

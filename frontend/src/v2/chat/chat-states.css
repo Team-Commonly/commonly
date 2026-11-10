@@ -1137,8 +1137,82 @@
 
 .v2-approval__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 2px;
+}
+
+/* F371: someone else's request to the owner's agent. The request is quoted as
+   the person wrote it; the reach list is what the agent is allowed to touch. */
+.v2-approval__request {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--v2-text-primary);
+  line-height: 1.45;
+  padding-left: 10px;
+  border-left: 2px solid var(--v2-border);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.v2-approval__reach {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 12.5px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-approval__reach ul {
+  display: contents;
+  list-style: none;
+}
+
+.v2-approval__reach li {
+  padding: 1px 8px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+}
+
+.v2-approval__narrow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v2-approval__narrow-label {
+  font-size: 12.5px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-approval__narrow-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  resize: vertical;
+}
+
+.v2-approval__narrow-text:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 1px;
+}
+
+.v2-root button.v2-approval__btn--narrow {
+  background: var(--v2-bg);
+  color: var(--v2-text-primary);
+}
+
+.v2-root button.v2-approval__btn--narrow:not(:disabled):hover {
+  background: var(--v2-surface-hover);
 }
 
 .v2-root button.v2-approval__btn {
