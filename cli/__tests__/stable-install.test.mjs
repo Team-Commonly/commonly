@@ -11,6 +11,7 @@ import {
   nodeTooOld,
   ensureStableCliInstall,
   orchestrateDaemonSetup,
+  runsFromStableInstall,
 } from '../src/lib/stable-install.js';
 
 const HOME = '/home/tester';
@@ -154,7 +155,36 @@ describe('orchestrateDaemonSetup', () => {
       version: '0.1.300', runCli, unsandboxed: true, nodeVersion: 'v22.0.0', ensureStable, home: HOME,
     }).catch((e) => e);
     expect(error.message).toContain('launchctl refused. This computer is registered');
-    expect(error.message.endsWith(`"${stableCliEntry(HOME)}" daemon install --unsandboxed`)).toBe(true);
+    expect(error.message).toContain(`: "${process.execPath}" "${stableCliEntry(HOME)}" daemon install --unsandboxed  (or run`);
+  });
+
+  it('on Windows the hint starts with &, so PowerShell runs it as pasted', async () => {
+    const runCli = jest.fn((entry, args) => (args[1] === 'install'
+      ? Promise.reject(new Error('schtasks refused')) : Promise.resolve()));
+    const error = await orchestrateDaemonSetup({
+      version: '0.1.300', runCli, platform: 'win32', nodeVersion: 'v22.0.0', ensureStable, home: HOME,
+    }).catch((e) => e);
+    expect(error.message).toContain(`finish with: & "${process.execPath}"`);
+  });
+
+  it('on a computer already registered here, skips login and register and reinstalls the daemon', async () => {
+    const { calls, runCli } = okRun();
+    const alreadyRegistered = jest.fn(async () => true);
+    const lines = [];
+    await orchestrateDaemonSetup({
+      version: '0.1.301', instanceUrl: 'https://x.example/', runCli, alreadyRegistered,
+      nodeVersion: 'v22.0.0', ensureStable, home: HOME, log: (line) => lines.push(line),
+    });
+    expect(alreadyRegistered).toHaveBeenCalledWith('https://x.example');
+    expect(ensureStable).toHaveBeenCalledWith(expect.objectContaining({ version: '0.1.301' }));
+    expect(calls).toEqual([['daemon', 'install']]);
+    expect(lines.join('\n')).toMatch(/already registered here, so setup skips login and register/);
+  });
+
+  it('runsFromStableInstall is true only for the copy under ~/.commonly/cli', () => {
+    expect(runsFromStableInstall(stableCliEntry(HOME), HOME)).toBe(true);
+    expect(runsFromStableInstall('/Users/someone/.npm/_npx/abc/node_modules/@commonlyai/cli/src/index.js', HOME)).toBe(false);
+    expect(runsFromStableInstall(undefined, HOME)).toBe(false);
   });
 
   it('refuses on a too-old Node before touching the install', async () => {

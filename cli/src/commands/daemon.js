@@ -266,6 +266,20 @@ export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
     ? 'This computer is no longer registered. Run: commonly daemon register'
   : `Daemon status failed: ${error.message}`);
 
+// `daemon setup` on a computer that is already registered for this instance
+// skips login and register (it would stop at "already registered"). Only a
+// stored key the server still accepts counts; a revoked or missing one goes
+// through register, which replaces it.
+export const setupFindsRegistration = async ({
+  instance, load = loadDaemonRecord, state = storedDaemonState, clientFor = createClient,
+}) => {
+  const record = load();
+  if (!record || !instance) return false;
+  if (String(record.instanceUrl || '').replace(/\/+$/, '') !== instance) return false;
+  const client = clientFor({ instance: record.instanceUrl, token: record.daemonToken });
+  return (await state(client, record)) === 'active';
+};
+
 // Keep the old record until a new registration is securely persisted. A
 // network failure or a still-live daemon key must never silently mint another.
 export const allowRevokedDaemonReplacement = async ({ existing, client }) => {
@@ -370,6 +384,7 @@ Examples:
           version: installedCliVersion(),
           instanceUrl,
           unsandboxed: Boolean(opts.unsandboxed),
+          alreadyRegistered: (instance) => setupFindsRegistration({ instance }),
           log: (line) => console.log(line),
           // Run the stable CLI once with the user's terminal attached, so login
           // device-auth and any prompts work; reject on a non-zero exit so a

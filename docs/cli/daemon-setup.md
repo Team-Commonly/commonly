@@ -51,12 +51,20 @@ The ephemeral npx path is fine for **foreground** `agent run` (it dies with its
 terminal, so nothing is pinned); it is only the launchd/systemd pin that needs a
 stable path.
 
-`daemon setup` is a first-run tool: the stable install is idempotent (it skips
-when the stable copy is already at the version), but `daemon register` refuses
-on a machine that is already registered and points at `commonly daemon status`.
-So re-running `daemon setup` on a set-up machine stops there with a clear
-message rather than re-registering — reinstall the service with `daemon install`
-alone, or check state with `daemon status`.
+## Running it again: how a setup install updates
+
+Re-running the same line is the supported way to update. On a computer that
+already holds an active registration for that instance, `daemon setup` installs
+the new CLI under `$HOME`, skips login and register, and reinstalls the service
+on the new copy (`setupFindsRegistration` in `daemon.js`). A revoked or missing
+key goes through register, which replaces it. The CLI's update notice and
+`commonly doctor` print this setup line, not `npm install -g`, when they run
+from the setup copy.
+
+Never fix a set-up computer with `npx … daemon install`: that pins the service
+to the npx cache, which npm can evict. If an install step fails, setup prints
+the exact stable-copy command to finish with (with a leading `&` on Windows, so
+PowerShell runs it as pasted).
 
 ## Code
 
@@ -64,5 +72,5 @@ alone, or check state with `daemon status`.
   under `$HOME`), `nodeTooOld`, `orchestrateDaemonSetup` (the login → register →
   install sequence, side effects injected for tests).
 - `cli/src/commands/daemon.js` — the `setup` subcommand wiring.
-- `cli/__tests__/stable-install.test.mjs` — unit tests, no npm or network.
+- `cli/__tests__/stable-install.test.mjs` and `daemon-setup-registration.test.mjs` — unit tests, no npm or network.
 - `frontend/src/v2/utils/daemonSetupCommand.ts` — the one line the page renders.

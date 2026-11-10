@@ -13,6 +13,7 @@
  * runs `security`, so it cannot prompt, unlock or read a secret.
  */
 import { delimiter, join } from 'node:path';
+import { DAEMON_SETUP_LINE, runsFromStableInstall } from './stable-install.js';
 import { parseVersion, versionOlderThan } from './mcp-server-version.js';
 
 export const PASS = 'pass';
@@ -57,9 +58,10 @@ export const findOnPath = ({ command, pathValue, platform, isExecutable }) => {
 
 // (b) Which `commonly` a shell runs, and its version.
 export const checkInstall = ({
-  pathValue, platform, isExecutable, runVersion, runningVersion,
+  pathValue, platform, isExecutable, runVersion, runningVersion, fromSetup = runsFromStableInstall(),
 }) => {
-  const fix = 'npm install -g @commonlyai/cli';
+  // A `daemon setup` copy is updated by running setup again, never a global install.
+  const fix = fromSetup ? DAEMON_SETUP_LINE : 'npm install -g @commonlyai/cli';
   const found = findOnPath({ command: 'commonly', pathValue, platform, isExecutable });
   if (!found.length) return result('install', FAIL, 'no `commonly` on PATH', fix);
   const [binary] = found;

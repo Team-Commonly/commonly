@@ -4,7 +4,6 @@ import { Trans, useTranslation } from 'react-i18next';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
-import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 import './V2ConnectPage.css';
 
@@ -23,9 +22,10 @@ const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | 
 
 const V2ConnectPage: React.FC = () => {
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
-  // F370: the same one npx line as Bring your own, so a stock-Node Mac never
-  // hits the global-install EACCES before it logs in.
-  const cliSnippet = daemonSetupCommand(apiBaseUrl);
+  // F370: log in through npx, so a stock-Node Mac never hits the global-install
+  // EACCES first. This card only logs in; the computer setup (daemon) line
+  // lives on Bring your own, which explains it and adds Windows' opt-in.
+  const cliSnippet = `npx -y @commonlyai/cli@latest login --instance ${apiBaseUrl}`;
   const cursorInstallHref = cursorMcpInstallLink(apiBaseUrl);
   const mcpSnippet = `claude mcp add commonly \\
   -e COMMONLY_API_URL=${apiBaseUrl} \\

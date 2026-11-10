@@ -34,6 +34,14 @@ export const MIN_NODE_MAJOR = 22;
 // One stable copy, one version at a time. `daemon setup` keeps it at the
 // version that invoked it, so what runs resident is what the user installed.
 export const stableCliDir = (home = homedir()) => join(home, '.commonly', 'cli');
+/** The one line that sets up or updates a computer, for advice the CLI prints. */
+export const DAEMON_SETUP_LINE = `npx -y ${CLI_PACKAGE}@latest daemon setup`;
+
+/** True when this process runs the copy `daemon setup` installed under $HOME. */
+export const runsFromStableInstall = (entry = process.argv[1], home = homedir()) => (
+  Boolean(entry) && String(entry).startsWith(stableCliDir(home))
+);
+
 export const stableCliEntry = (home = homedir()) => (
   join(stableCliDir(home), 'node_modules', CLI_PACKAGE, 'src', 'index.js')
 );
@@ -110,6 +118,11 @@ export const orchestrateDaemonSetup = async ({
   instanceUrl,
   runCli,
   unsandboxed = false,
+  // Resolves true when this computer already holds an active registration for
+  // the instance. Setup then skips login and register, so re-running it is the
+  // way to update the CLI and restart the daemon.
+  alreadyRegistered = async () => false,
+  platform = process.platform,
   nodeVersion = process.version,
   ensureStable = ensureStableCliInstall,
   home = homedir(),
@@ -125,18 +138,24 @@ export const orchestrateDaemonSetup = async ({
   const instanceArgs = instance ? ['--instance', instance] : [];
   // Each step must land before the next: a failed login must not register, a
   // failed register must not install. runCli rejects on a non-zero exit.
-  await runCli(entry, ['login', ...instanceArgs]);
-  await runCli(entry, ['daemon', 'register', ...instanceArgs]);
-  // --unsandboxed is forwarded to the install step (native Windows refuses
-  // without it); that step runs its own refusal + opt-in check.
+  if (await alreadyRegistered(instance)) {
+    log('This computer is already registered here, so setup skips login and register, '
+      + 'and reinstalls the daemon on the CLI it just installed.');
+  } else {
+    await runCli(entry, ['login', ...instanceArgs]);
+    await runCli(entry, ['daemon', 'register', ...instanceArgs]);
+  }
+  // --unsandboxed is forwarded to the install step. Without it, native Windows
+  // clears the opt-in and the daemon's seats are refused at run time.
   const installArgs = ['daemon', 'install', ...(unsandboxed ? ['--unsandboxed'] : [])];
   try {
     await runCli(entry, installArgs);
   } catch (error) {
-    // The computer is registered by now, so running setup again would ask for a
-    // login and stop at the active registration. Name the one step left.
+    // The computer is registered by now. Name the one step left, in a form the
+    // user's shell runs as pasted: PowerShell needs `&` before a quoted program.
+    const call = `${platform === 'win32' ? '& ' : ''}"${process.execPath}" "${entry}" ${installArgs.join(' ')}`;
     throw new Error(`${error.message}. This computer is registered; after fixing the error above, `
-      + `finish with: "${process.execPath}" "${entry}" ${installArgs.join(' ')}`);
+      + `finish with: ${call}  (or run the setup line again)`);
   }
   log('This computer is set up: the daemon is running and starts when you log in. '
     + 'Add an agent to it from the web app and it comes online here.');

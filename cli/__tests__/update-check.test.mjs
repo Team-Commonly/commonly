@@ -66,11 +66,17 @@ describe('versionsBehind', () => {
 
 describe('updateNoticeLine', () => {
   test('names the gap, both versions, the update command and the opt-out', () => {
-    const line = updateNoticeLine({ installed: '0.1.165', latest: '0.1.168' });
+    const line = updateNoticeLine({ installed: '0.1.165', latest: '0.1.168', fromSetup: false });
     expect(line).toBe(
       'your CLI is 3 versions behind (installed 0.1.165, latest 0.1.168). '
       + 'Update: npm install -g @commonlyai/cli@latest (silence with COMMONLY_NO_UPDATE_CHECK=1)',
     );
+  });
+
+  test('a daemon setup copy is told to run setup again, never a global install', () => {
+    const line = updateNoticeLine({ installed: '0.1.165', latest: '0.1.168', fromSetup: true });
+    expect(line).toContain('Update: npx -y @commonlyai/cli@latest daemon setup (silence with');
+    expect(line).not.toContain('npm install -g');
   });
 
   test('stays quiet below the threshold', () => {

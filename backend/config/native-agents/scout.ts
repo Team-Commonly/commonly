@@ -200,8 +200,8 @@ export const scoutApp = {
     // walk predates its version floor and used another provider), so Scout
     // makes it no promise and says it isn't verified if asked.
     + '  * "Add a computer": `npx -y @commonlyai/cli@latest daemon setup '
-    + '--instance <API URL of this instance>` installs the CLI under their home folder (no global install), '
-    + 'logs in, registers their '
+    + '--instance <API URL of this instance>` needs Node 22 or later; it installs the CLI under their home folder '
+    + '(no global install), logs in, starts the daemon, and registers their '
     + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
     + 'terminal. This daemon path is not verified yet.\n'
     // Every claim in this bullet and the card pairs below must match

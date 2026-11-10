@@ -63,8 +63,14 @@ describe('(b) install', () => {
 
   test('fails when nothing is on PATH', () => {
     expect(checkInstall({
-      pathValue: '/a:/b', platform: 'darwin', isExecutable: () => false, runVersion: () => '1.0.0',
+      pathValue: '/a:/b', platform: 'darwin', isExecutable: () => false, runVersion: () => '1.0.0', fromSetup: false,
     })).toMatchObject({ status: FAIL, fix: 'npm install -g @commonlyai/cli' });
+  });
+
+  test('a daemon setup copy is pointed at setup, not a global install', () => {
+    expect(checkInstall({
+      pathValue: '/a:/b', platform: 'darwin', isExecutable: () => false, runVersion: () => '1.0.0', fromSetup: true,
+    })).toMatchObject({ status: FAIL, fix: 'npx -y @commonlyai/cli@latest daemon setup' });
   });
 
   test('fails when the binary does not answer --version', () => {
