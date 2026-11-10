@@ -123,6 +123,13 @@ spec:
         - name: SEARCH_PROVIDER
           value: {{ .Values.webSearch.provider | default "exa" | quote }}
         {{- end }}
+        {{- if .Values.backend.env.usageInternalUsernames }}
+        # D286: our own accounts' usage events are flagged isInternal so reads
+        # can leave them out (services/usageEvents.ts). A comma list, set only
+        # in the private values file: usernames never go in this repo.
+        - name: USAGE_INTERNAL_USERNAMES
+          value: {{ .Values.backend.env.usageInternalUsernames | quote }}
+        {{- end }}
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}

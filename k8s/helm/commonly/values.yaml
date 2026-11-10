@@ -208,6 +208,9 @@ backend:
     agentComputerWakerUrl: ""
     nodeEnv: development
     registrationInviteOnly: "1"
+    # D286: comma list of our own usernames, whose usage events are flagged
+    # internal. Set it in the private values file only; empty leaves it unset.
+    usageInternalUsernames: ""
     # Avatar engine: openai | gemini | design | auto (unset = auto). `design`
     # calls no image API and draws an SVG from the chat model's design.
     avatarProvider: ""

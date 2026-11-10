@@ -84,6 +84,13 @@ for lane in default dev staging; do
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$shipped")" = 1
   fi
 
+  # D286: the internal-usernames list reaches web and worker when set, and the
+  # shipped values leave it unset, since usernames live in private values only.
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_USERNAMES") | .value' "$shipped")" = ""
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=false --set backend.env.usageInternalUsernames=alpha-test > "$tmp_dir/$lane-usage.yaml"
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_USERNAMES") | .value' "$tmp_dir/$lane-usage.yaml")" = alpha-test
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_USERNAMES") | .value' "$tmp_dir/$lane-usage.yaml")" = alpha-test
+
   if [[ $lane != default ]]; then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "AGENT_PROVISIONER_K8S") | .value' "$on")" = 1
   fi
