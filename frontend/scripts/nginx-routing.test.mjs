@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const { publicHitScript } = await import('./generate-seo-pages.mjs');
 
 test('unknown public routes are real 404s while documented app routes retain SPA fallback', async () => {
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
@@ -77,4 +79,29 @@ test('the app shell, like index.html, is never browser-cached (F396)', async () 
   assert.ok(block);
   assert.match(block, /Cache-Control "no-cache, no-store, must-revalidate" always/);
   assert.match(block, /expires -1;/);
+});
+
+// F400: every public page counts its view with one inline script. A policy that
+// limits scripts (script-src, or default-src) blocks it unless it names the
+// script's hash, and the counts would stop with no error anywhere. The hash is
+// of the production build, whose API base is api.commonly.me.
+const scriptLimitingPolicies = (config) => [...config.matchAll(/Content-Security-Policy "([^"\n]+)"/g)]
+  .map(([, policy]) => policy)
+  .filter((policy) => /(^|;)\s*(script-src|script-src-elem|default-src)\b/.test(policy));
+const assertPoliciesAllowPublicHit = (config) => {
+  const script = publicHitScript('https://api.commonly.me');
+  const body = script.slice(script.indexOf('>') + 1, script.lastIndexOf('</script>'));
+  const hash = `'sha256-${createHash('sha256').update(body).digest('base64')}'`;
+  for (const policy of scriptLimitingPolicies(config)) {
+    assert.ok(policy.includes(hash), `a script-limiting Content-Security-Policy must allow the public-hit script with ${hash}`);
+  }
+};
+
+test('a policy that limits scripts names the inline public-hit script by hash (F400)', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  assertPoliciesAllowPublicHit(config);
+  // The guard trips on a policy that would block the script, and only on one that limits scripts.
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "default-src 'self'" always;`), /public-hit/);
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self'; script-src 'self'" always;`), /public-hit/);
+  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self' data:" always;`));
 });
