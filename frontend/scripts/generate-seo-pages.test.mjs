@@ -22,12 +22,13 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 104);
+  assert.equal(pages.length, 105);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
     '/compare/openagents/',
     '/compare/github-agent-hq/',
+    '/compare/buzz/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -2210,7 +2211,8 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   assert.doesNotMatch(sitemap, /<loc>https:\/\/commonly\.me\/compare\/<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/openagents\/<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/github-agent-hq\/<\/loc>/);
-  for (const slug of ['openagents', 'github-agent-hq']) {
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/buzz\/<\/loc>/);
+  for (const slug of ['openagents', 'github-agent-hq', 'buzz']) {
     // No app route serves these, so the generated page must ship without the app's entry script.
     const html = await readFile(resolve(outputDir, `compare/${slug}/index.html`), 'utf8');
     assert.doesNotMatch(html, /index-abcd\.js/, slug);
@@ -2228,7 +2230,7 @@ test('every indexable page links the comparison and use-case pages, not only the
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides: JSON.parse(guideText) });
-  const targets = ['/compare/openagents/', '/compare/github-agent-hq/', ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)];
+  const targets = ['/compare/openagents/', '/compare/github-agent-hq/', '/compare/buzz/', ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)];
   const indexable = pages.filter((page) => !page.noindex);
   assert.ok(indexable.length > 10);
   for (const page of indexable) {
