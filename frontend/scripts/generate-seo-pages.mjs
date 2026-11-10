@@ -192,6 +192,13 @@ const guideProvenance = (guide) => {
     throw new Error(`Guide ${guide.title} is missing required provenance.`);
   }
 
+  // The dates go raw into the sitemap's lastmod and the Article JSON-LD, and the
+  // string comparison below only orders full YYYY-MM-DD dates correctly.
+  const badDate = ['datePublished', 'dateModified'].find((field) => !/^\d{4}-\d{2}-\d{2}$/.test(provenance[field]));
+  if (badDate) {
+    throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
+  }
+
   if (provenance.dateModified < provenance.datePublished) {
     throw new Error(`Guide ${guide.title} has a modified date before its published date.`);
   }

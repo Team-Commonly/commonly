@@ -2630,3 +2630,23 @@ test('the sitemap gives each dated page its real lastmod and invents none for th
     await rm(outputDir, { recursive: true, force: true });
   }
 });
+
+test('a guide date that is not YYYY-MM-DD stops the build before it reaches the sitemap (F369)', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const useCases = JSON.parse(useCaseText);
+  const guides = JSON.parse(guideText);
+  const [id] = Object.keys(guides);
+  for (const bad of ['2026-11-9', '2026-11-09&x']) {
+    const broken = { ...guides, [id]: { ...guides[id], provenance: { ...guides[id].provenance, dateModified: bad } } };
+    assert.throws(
+      () => buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides: broken }),
+      /dateModified that is not YYYY-MM-DD/,
+      bad,
+    );
+  }
+});
