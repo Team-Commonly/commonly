@@ -97,7 +97,7 @@ describe('the connect flow states what it does not do', () => {
     // alone changed nothing live. Same for /settings/devices, which the CLI
     // prints after a login. The regex is read from the real config and run.
     const nginx = fs.readFileSync(path.join(__dirname, '../../../nginx.conf'), 'utf8');
-    const location = nginx.match(/location ~ \^\/\((.*)\) \{\n\s*try_files \$uri \$uri\/ \/index\.html;/);
+    const location = nginx.match(/location ~ \^\/\((.*)\) \{\n\s*try_files \$uri \$uri\/ \/app\.html;/);
     expect(location).not.toBeNull();
     const spa = new RegExp(`^/(${location![1]})`);
     const backendAuth = fs.readFileSync(path.join(__dirname, '../../../../backend/routes/auth.ts'), 'utf8');

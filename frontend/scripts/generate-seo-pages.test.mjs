@@ -20,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 103);
+  assert.equal(pages.length, 104);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -33,6 +33,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/use-cases/community/',
     '/use-cases/pod-browser/',
     '/use-cases/app-marketplace/',
+    '/use-cases/',
     '/guides/',
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -2374,4 +2375,62 @@ test('page content with $ patterns is inserted literally', () => {
   const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const page = { path: '/compare/x/', outputPath: 'compare/x/index.html', staticOnly: true, title: 'X', description: 'X', content: "<p>cost $& and $' and $`</p>", schema: [] };
   assert.ok(renderStaticPage(template, page).includes("<p>cost $& and $' and $`</p>"));
+});
+
+// F396: every SPA-only path (/privacy, /terms, /v2/…) was served the
+// prerendered homepage, so its <title> and canonical claimed to be "/", and
+// /use-cases/ was a 403.
+test('privacy, terms and the use-case index get their own pages, and app routes a noindex shell (F396)', async () => {
+  const [legalText, useCaseText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/content/legal.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+  ]);
+  const legal = JSON.parse(legalText);
+  const useCases = JSON.parse(useCaseText);
+  const template = '<head><!-- SEO_METADATA_START --><title>Commonly</title><link rel="canonical" href="https://commonly.me/" /><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-f396-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    await generateSeoPages({ outputDir });
+    const read = (path) => readFile(resolve(outputDir, path), 'utf8');
+    const sitemap = await read('sitemap.xml');
+
+    for (const [slug, title, sections] of [['privacy', 'Privacy', legal.privacy], ['terms', 'Terms', legal.terms]]) {
+      const html = await read(`${slug}/index.html`);
+      assert.match(html, new RegExp(`<title>${title} \\| Commonly AI</title>`), slug);
+      assert.match(html, new RegExp(`<link rel="canonical" href="https://commonly.me/${slug}/" />`), slug);
+      assert.match(html, /<meta name="robots" content="index,follow" \/>/, slug);
+      assert.doesNotMatch(html, /href="https:\/\/commonly\.me\/" \/>/, slug);
+      // The app still takes over this route; crawlers get the same words.
+      assert.match(html, /index-abcd\.js/, slug);
+      for (const section of sections) {
+        assert.ok(html.includes(`<h2>${section.heading.replaceAll('&', '&amp;')}</h2>`), `${slug}: ${section.heading}`);
+      }
+      assert.match(sitemap, new RegExp(`<loc>https://commonly.me/${slug}/</loc>`), slug);
+    }
+    const privacy = await read('privacy/index.html');
+    assert.match(privacy, /<a href="mailto:privacy@commonly\.me">privacy@commonly\.me<\/a>/);
+    const terms = await read('terms/index.html');
+    assert.match(terms, /<a href="mailto:support@commonly\.me">support@commonly\.me<\/a>/);
+
+    const index = await read('use-cases/index.html');
+    assert.match(index, /<link rel="canonical" href="https:\/\/commonly\.me\/use-cases\/" \/>/);
+    assert.doesNotMatch(index, /index-abcd\.js/);
+    for (const id of Object.keys(useCases)) assert.match(index, new RegExp(`href="/use-cases/${id}/"`), id);
+    assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/<\/loc>/);
+
+    // The SPA fallback: the app, with nothing that claims to be a page.
+    const app = await read('app.html');
+    assert.match(app, /<meta name="robots" content="noindex" \/>/);
+    assert.doesNotMatch(app, /rel="canonical"/);
+    assert.doesNotMatch(app, /og:url/);
+    assert.match(app, /index-abcd\.js/);
+    // The gate and navigation runtime stay: this is the same app boot.
+    assert.match(app, /SEO_GATE_START/);
+    assert.match(app, /popstate/);
+    assert.doesNotMatch(app, /SEO_PAGE_CONTENT|id="seo-page"/);
+    assert.doesNotMatch(sitemap, /app\.html/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });

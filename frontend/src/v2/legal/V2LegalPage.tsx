@@ -1,5 +1,8 @@
 import React from 'react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+// The sections live in content/legal.json so the build can prerender these
+// pages for crawlers from the same words (F396).
+import legal from '../../content/legal.json';
 
 /*
  * TASK-530 — public Privacy and Terms pages, linked from Google OAuth consent
@@ -19,117 +22,6 @@ const linkEmails = (text: string): React.ReactNode[] =>
   text.split(EMAIL_PATTERN).map((part, index) => (index % 2 === 1
     ? <a key={index} href={`mailto:${part}`}>{part}</a>
     : part));
-
-const PRIVACY_SECTIONS: LegalSection[] = [
-  {
-    heading: 'Who we are',
-    body: [
-      'Commonly Software LLC, a California limited liability company, runs commonly.me. On this page, "we" and "us" mean Commonly Software LLC.',
-    ],
-  },
-  {
-    heading: 'What we store',
-    body: [
-      'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
-      'You can sign in with a password, Google, GitHub, or a CLI device code. After you sign in, your session token is kept in your browser\'s local storage under the key "token".',
-      'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
-      'Task records: in pods with records turned on, we log who claimed, released and finished a task, what access agents were granted, which tools they called with it, who was asked to approve a call and who decided. Entries hold user ids, connection ids, tool names and times. They do not hold tool arguments, tool results or message text.',
-      'Every member of a pod, agents included, can read its record. In a pod anyone can join, the record shows who approved a call or gave access only to that person and the pod\'s creator. Members can still see who owns an agent, and if the agent uses its owner\'s connection, that shows whose connection it was. The pod\'s chat and decision history still say who approved a call or ruled on a decision. If a pod stops being one anyone can join, its members can read the full record, earlier entries included.',
-      'Agent memory: notes an agent keeps between sessions. Its owners and admins can read it and edit its sections. The agent reads and writes its own memory. There is no way in the app to delete an agent\'s whole memory.',
-      'Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.',
-      'Connector credentials, such as tokens for integrations you connect. These are encrypted at rest with AES-256-GCM.',
-    ],
-  },
-  {
-    heading: 'How long we keep data',
-    body: [
-      'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
-      'Uploaded files have no expiry date.',
-      'Task records have no expiry date.',
-      'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.',
-      'Database backups last up to 35 days, so content that is deleted or redacted can stay in a backup for up to 35 days after it\'s removed.',
-    ],
-  },
-  {
-    heading: 'Who processes your data',
-    body: [
-      'Hosting: Google Cloud (Kubernetes on GKE). Traffic reaches our servers through Cloudflare.',
-      'Email delivery: SMTP2GO.',
-      'Error monitoring: Sentry. Personal data is not sent by default.',
-      'AI models, reached through our own model gateway: hosted agents run on Anthropic\'s Claude Haiku. So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent\'s avatar. Under its commercial terms, Anthropic does not train on what we send it. Under its data retention policy, it deletes what we send within 30 days, unless it is flagged for a usage policy violation or the law requires it to be kept.',
-      'When you talk to a hosted agent, your messages and the agent\'s context are sent to the agent\'s model to generate the reply. If you connect a tool such as your calendar to a hosted agent, what the agent reads from it is sent only to Anthropic. Anything the agent then posts in a pod is ordinary pod content: other members of the pod can read it, agents included, and each agent\'s model processes what that agent reads.',
-      'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',
-      'Agents you run on your own machine use your own model provider. We do not process those model calls.',
-    ],
-  },
-  {
-    heading: 'Google Calendar',
-    body: [
-      'If you connect Google Calendar, Commonly can read your list of calendars, your events, and when you are free or busy. It can\'t create, change or delete events.',
-      'You choose which agents can use the connection: one agent, or several in a pod. Only hosted agents can use it, and they run on Anthropic\'s Claude, which does not train on this data. What a granted agent reads goes to that agent and to Anthropic. If the agent quotes it in a pod message or saves it to its memory, the rules above apply.',
-      'We store the tokens Google gives us, encrypted at rest with AES-256-GCM, and your Google account ID so we can tell if you reconnect with the same account. For each call we log which agent made it, in which pod, the tool, the time, the outcome and a fingerprint of the request. If a call fails, we also keep Google\'s error message. We don\'t store the calendar data Google sends back. The agent\'s own replies and working text, which can repeat what it read, are kept in its run records.',
-      'We do not sell Google Calendar data, use it for advertising, or use it to train AI models. People at Commonly do not read it unless you ask us to, for security, or where the law requires.',
-      'Commonly\'s use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.',
-      'To disconnect, remove the connection on the Tools page and Commonly revokes its access at Google. You can also remove it at myaccount.google.com/permissions.',
-    ],
-  },
-  {
-    heading: 'Analytics',
-    body: [
-      'Campaign links: when you first arrive with a ref code in the link (?ref=), your browser stores that code in local storage and sends one visit record. The record holds the code and the UTC day. It has no person, address or user agent.',
-      'If you sign up through a ref link, the code is saved on your account.',
-      'Your browser fetches our public GitHub star count from GitHub.',
-    ],
-  },
-  {
-    heading: 'Deleting your account',
-    body: [
-      'You can delete your account and your uploads yourself in Settings. This cannot be undone. If you can\'t get in, email support@commonly.me.',
-      'When an account is deleted, its user id and connection ids come off task records. The entries stay, without those ids. If one of the person\'s agents keeps working and a new entry names them, that id comes off soon after. Entries from before we added this keep them, and those are only on Commonly\'s own pods. A copy someone already downloaded also keeps them. Our backups can keep them for up to 35 days, until those backups are removed. Our database providers also keep their own backups, on their own schedules.',
-      'A single upload cannot be deleted in the app. Deleting your account removes all of them.',
-      'Privacy questions: privacy@commonly.me.',
-    ],
-  },
-];
-
-const TERMS_SECTIONS: LegalSection[] = [
-  {
-    heading: 'Who we are',
-    body: [
-      'Commonly Software LLC, a California limited liability company, runs commonly.me. In these terms, "we" and "us" mean Commonly Software LLC.',
-    ],
-  },
-  {
-    heading: 'The service',
-    body: [
-      'Commonly is a hosted workspace at commonly.me where people and software agents work together in pods, chat and tasks. Features can change while the product is in beta.',
-    ],
-  },
-  {
-    heading: 'Your account',
-    body: [
-      'You need to be at least 16 to use Commonly. Keep your sign-in secure. You are responsible for activity on your account, including actions taken by agents you install or connect.',
-    ],
-  },
-  {
-    heading: 'Content and agents',
-    body: [
-      'You keep ownership of what you and your agents post. You give us permission to store, process and display that content only to run the service for you and the people you share it with. Don\'t use Commonly to break the law, to harass anyone, to access accounts or data that aren\'t yours, to send spam, or to interfere with the service. We may remove content or agents that break these rules.',
-    ],
-  },
-  {
-    heading: 'Ending',
-    body: [
-      'You can stop using Commonly at any time and ask us to delete your account. We may suspend or close accounts that break these terms or put the service or other users at risk. The service is provided as is, without warranties. To the extent the law allows, our total liability to you is limited to the amount you paid us in the 12 months before the claim.',
-    ],
-  },
-  {
-    heading: 'Contact',
-    body: [
-      'Questions about these terms: support@commonly.me.',
-    ],
-  },
-];
 
 const LegalDocument: React.FC<{
   title: string;
@@ -157,9 +49,9 @@ const LegalDocument: React.FC<{
 };
 
 export const V2PrivacyPage: React.FC = () => (
-  <LegalDocument title="Privacy" titleKey="pageTitle.privacy" sections={PRIVACY_SECTIONS} />
+  <LegalDocument title="Privacy" titleKey="pageTitle.privacy" sections={legal.privacy as LegalSection[]} />
 );
 
 export const V2TermsPage: React.FC = () => (
-  <LegalDocument title="Terms" titleKey="pageTitle.terms" sections={TERMS_SECTIONS} />
+  <LegalDocument title="Terms" titleKey="pageTitle.terms" sections={legal.terms as LegalSection[]} />
 );
