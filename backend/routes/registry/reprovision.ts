@@ -9,6 +9,7 @@ const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const {
   provisionAgentRuntime,
   removeOpenClawAccount,
+  moltbotRuntimeRetired,
   runtimeReceivesToken,
   startAgentRuntime,
   restartAgentRuntime,
@@ -123,6 +124,11 @@ const reprovisionInstallation = async ({
       ...(removalError ? { runtimeRemovalError: removalError } : {}),
     };
   }
+
+  // The runtime is retired (ADR-021 Part B): nothing would start it, so no token
+  // is issued and no gateway entry written. The removal above still runs, since
+  // it only takes an account out. Skipped, so a bulk run carries on.
+  if (moltbotRuntimeRetired(runtimeType)) return skipped('runtime_retired');
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {
     instanceId: normalizedInstanceId,
