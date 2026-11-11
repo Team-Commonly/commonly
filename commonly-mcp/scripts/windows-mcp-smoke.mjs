@@ -12,7 +12,7 @@
  * it installs the package globally, starts `cmd /c commonly-mcp` against a stub
  * Commonly API, sends initialize and tools/list, and checks the server's
  * start-up call reached the API with the token. It runs three times:
- *   published   - `npm i -g @commonlyai/mcp`, exactly the page's line
+ *   published   - `npm.cmd i -g @commonlyai/mcp`, exactly the page's line
  *   this tree   - this checkout's commonly-mcp, so a PR that breaks Windows fails
  *   Claude Code - the page's own `claude mcp add` line, run in PowerShell, then
  *                 `claude mcp list`, which launches the server the way a

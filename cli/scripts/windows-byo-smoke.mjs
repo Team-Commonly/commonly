@@ -382,9 +382,15 @@ if (tarball) {
 // Reported: Claude Code installed but never signed in. The managed settings
 // are its sign-in here, so they step aside for this leg.
 const MANAGED_DIRS = ['C:\\Program Files\\ClaudeCode', 'C:\\ProgramData\\ClaudeCode'];
-MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), '{}'));
-const noLogin = await walk('no Claude Code login', tarball ? `npm.cmd i -g ${tarball}` : undefined, { timeoutMs: REPORT_LEG_TIMEOUT_MS });
-MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), managed));
+// The two env keys that keep Claude Code from updating itself mid-leg stay.
+const noLoginSettings = JSON.stringify({ env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1' } });
+MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), noLoginSettings));
+let noLogin;
+try {
+  noLogin = await walk('no Claude Code login', tarball ? `npm.cmd i -g ${tarball}` : undefined, { timeoutMs: REPORT_LEG_TIMEOUT_MS });
+} finally {
+  MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), managed));
+}
 stepTable('no Claude Code login', noLogin);
 
 apiServer.close();
