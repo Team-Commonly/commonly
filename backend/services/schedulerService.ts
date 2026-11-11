@@ -488,7 +488,8 @@ class SchedulerService {
           console.log(
             `[stalled-connect] pass candidates=${r.candidates} nudged=${r.nudged.length} `
             + `resolved=${r.resolved.length} tooRecent=${r.skippedTooRecent} `
-            + `notStalled=${r.skippedNotStalled} guests=${r.skippedGuest} sameToken=${r.skippedSameToken}`,
+            + `notStalled=${r.skippedNotStalled} guests=${r.skippedGuest} sameToken=${r.skippedSameToken} `
+            + `noListener=${r.skippedNoListener}`,
           );
         } catch (error) {
           console.error('[stalled-connect] Unhandled error:', error);

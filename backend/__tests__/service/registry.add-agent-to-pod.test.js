@@ -268,6 +268,22 @@ describe('adding an existing agent to another pod', () => {
       expect((await add(owner, target._id)).status).toBe(200);
     });
 
+    // An identity that declared it runs no listener stays that way in every pod
+    // it joins: the new pod's greeting says a mention won't wake it, and the
+    // stalled-connect pass leaves it alone there too.
+    it('carries runtime.listens: false into the new pod, and greets it as having no listener', async () => {
+      await installByo({ runtime: { runtimeType: 'webhook', host: 'byo', listens: false } });
+      const post = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      try {
+        expect((await add(owner, target._id)).status).toBe(200);
+        expect((await row(target._id)).config.runtime.listens).toBe(false);
+        const intro = post.mock.calls.find(([arg]) => String(arg?.podId) === String(target._id));
+        expect(intro?.[0]?.content).toContain('run no listener');
+      } finally {
+        post.mockRestore();
+      }
+    });
+
     it('gives the new row the runtime routing uses when the source has none', async () => {
       await installByo();
       await AgentInstallation.collection.updateOne({ agentName: NAME, podId: home._id }, { $set: { 'config.runtime': { runtimeType: null } } });

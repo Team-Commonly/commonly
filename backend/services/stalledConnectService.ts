@@ -67,6 +67,8 @@ export interface StalledScanResult {
   skippedNotStalled: number;
   skippedGuest: number;
   skippedSameToken: number;
+  /** Installs that declared `config.runtime.listens: false`: nothing is meant to run. */
+  skippedNoListener: number;
 }
 
 export interface TokenEpisodeKey {
@@ -225,7 +227,7 @@ export const scan = async ({
   const { AgentInstallation } = require('../models/AgentRegistry');
 
   const result: StalledScanResult = {
-    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0,
+    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0, skippedNoListener: 0,
   };
 
   await resolveConnected({ now, result });
@@ -277,6 +279,13 @@ export const scan = async ({
     if (!issuedAt) continue;
     if (now.getTime() - issuedAt.getTime() < patienceMinutes * MINUTE_MS) {
       result.skippedTooRecent += 1;
+      continue;
+    }
+    // An identity that declared it runs no listener calls Commonly over its API
+    // when it works. Its install greeting already says a mention won't wake it,
+    // so "nothing is running, start it with `commonly agent run`" would be false.
+    if (install.config?.runtime?.listens === false) {
+      result.skippedNoListener += 1;
       continue;
     }
 

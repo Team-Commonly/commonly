@@ -103,6 +103,18 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     expect(result.skippedGuest).toBe(1);
   });
 
+  it('leaves an identity that declared no listener alone, and still nudges its listening twin', async () => {
+    const quiet = await seat('quiet-agent', [{ tokenHash: 'hq', createdAt: ISSUED }]);
+    await AgentInstallation.updateOne({ _id: quiet._id }, { $set: { 'config.runtime.listens': false } });
+    await seat('loud-agent', [{ tokenHash: 'hl', createdAt: ISSUED }]);
+
+    const result = await scan({ now: NOW });
+    expect(result.skippedNoListener).toBe(1);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost.mock.calls[0][0].content).not.toContain('quiet-agent');
+    expect(await StalledConnectEpisode.countDocuments({ agentName: 'quiet-agent' })).toBe(0);
+  });
+
   it('tells one person about one token once, across their pod and their room', async () => {
     const owner = await User.create({ username: 'ori', email: 'ori@people.test', password: 'not-a-login' });
     const bot = await botRow('ori-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
