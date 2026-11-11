@@ -2445,7 +2445,7 @@ test('every page but home names its place in a BreadcrumbList, ending at itself 
 test('every guide Article carries an image (F397)', async () => {
   const articles = (await realPages()).flatMap((page) => page.schema['@graph'].filter((node) => node['@type'] === 'Article'));
   assert.ok(articles.length >= 90);
-  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=6', article['@id']);
+  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=7', article['@id']);
 });
 
 test('a long title drops the site suffix, then its subtitle; one with neither to drop stops the build (F397)', () => {

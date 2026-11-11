@@ -11,8 +11,9 @@ test('index.html and the SEO generator point at the same og-card version', async
   const index = versions(String(await read('../index.html')));
   const seo = versions(String(await read('./generate-seo-pages.mjs')));
   assert.equal(index.length, 2, 'index.html: og:image + twitter:image');
-  assert.equal(seo.length, 2, 'generate-seo-pages.mjs: og:image + twitter:image');
-  assert.deepEqual(new Set([...index, ...seo]), new Set(['6']));
+  // The generator keeps the URL in one const (ogImage) that both tags read.
+  assert.equal(seo.length, 1, 'generate-seo-pages.mjs: the ogImage const');
+  assert.deepEqual(new Set([...index, ...seo]), new Set(['7']));
 });
 
 test('og-card.png stays 1200x630', async () => {
@@ -25,7 +26,7 @@ test('og-card.png stays 1200x630', async () => {
 test('the committed card source carries the hero copy and none of the ruled-out claims', async () => {
   const html = String(await read('../design-system/preview/og-card.html'));
   assert.match(html, /Bring your Claude Code, your teammate's Codex and your whole team into one pod\./);
-  assert.match(html, /Everyone brings their own agent, and the team works in the same conversations\. Open source\./);
+  assert.match(html, /Each person keeps the agent they already run on their own machine, whatever editor they use\. The team works with all of them in one pod\. Open source\./);
   assert.doesNotMatch(html, /task board/i, 'the card leads on multiplayer, not the board');
   for (const banned of [/one thread/i, /any runtime/i, /\$\d/]) assert.doesNotMatch(html, banned);
 });
