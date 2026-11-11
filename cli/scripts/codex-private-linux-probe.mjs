@@ -214,7 +214,10 @@ const rules = async () => {
 };
 
 // --- keys ------------------------------------------------------------------
-const adapterModule = async () => (await import(join(HERE, '..', 'src', 'lib', 'adapters', 'codex.js'))).default;
+// PROBE_ADAPTER: a published CLI's adapter (byo-linux.yml cli_version), for a
+// live proof of what people install; otherwise this checkout's.
+const ADAPTER_PATH = process.env.PROBE_ADAPTER || join(HERE, '..', 'src', 'lib', 'adapters', 'codex.js');
+const adapterModule = async () => (await import(ADAPTER_PATH)).default;
 
 const fakeChild = () => {
   const child = new EventEmitter();
@@ -342,6 +345,7 @@ const turn = async () => {
 const version = spawnSync(CODEX, ['--version'], { encoding: 'utf8' });
 const bwrap = spawnSync('bwrap', ['--unshare-all', '--ro-bind', '/', '/', 'true'], { encoding: 'utf8' });
 log(`platform ${process.platform}; ${clip(version.stdout || version.error?.message)}; bwrap ${bwrap.status === 0 ? 'starts' : `fails: ${clip(bwrap.stderr || bwrap.error?.message)}`}`);
+log(`adapter: ${process.env.PROBE_ADAPTER ? `published, ${ADAPTER_PATH}` : 'this checkout'}`);
 for (const phase of phases) {
   try {
     if (phase === 'rules') await rules();

@@ -70,6 +70,10 @@ on:
         description: 'the Codex the private-codex walk installs'
         type: string
         default: '0.164.0'
+      cli_version:
+        description: 'private-codex: probe a published @commonlyai/cli (e.g. 0.1.334) instead of this checkout'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -157,13 +161,20 @@ jobs:
       - name: Install bubblewrap, Codex and the CLI's dependencies
         env:
           CODEX_VERSION: ${{ inputs.codex_version }}
+          CLI_VERSION: ${{ inputs.cli_version }}
         run: |
           set -o pipefail
           case "$CODEX_VERSION" in (*[!0-9.]*|'') echo "::error::codex_version must be a version number"; exit 1;; esac
+          case "$CLI_VERSION" in (*[!0-9.]*) echo "::error::cli_version must be a version number"; exit 1;; esac
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
           npm i -g "@openai/codex@$CODEX_VERSION"
           (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+          # A published CLI goes in a prefix of its own; the probe loads its adapter.
+          if [ -n "$CLI_VERSION" ]; then
+            npm i --prefix "$RUNNER_TEMP/published-cli" --ignore-scripts --no-audit --no-fund "@commonlyai/cli@$CLI_VERSION" >/dev/null
+            echo "PROBE_ADAPTER=$RUNNER_TEMP/published-cli/node_modules/@commonlyai/cli/src/lib/adapters/codex.js" >> "$GITHUB_ENV"
+          fi
       - name: Load Ubuntu's bwrap profile
         if: inputs.bwrap_profile
         run: |
