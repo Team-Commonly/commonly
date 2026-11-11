@@ -345,6 +345,16 @@ describe('the GroupMe form save check', () => {
     expect(groupmeSaveRefusal({ integration: draft, botId: 'b1', groupId: 'g1' })).toBeNull();
   });
 
+  test('agent access asks for a token only when none is saved', () => {
+    const ids = { botId: 'b1', groupId: 'g1', agentAccessEnabled: true };
+    const saved = { status: 'connected', config: { botId: 'b1', groupId: 'g1', accessTokenSaved: true } };
+    const unsaved = { status: 'connected', config: { botId: 'b1', groupId: 'g1' } };
+    expect(groupmeSaveRefusal({ integration: saved, ...ids, accessToken: '' })).toBeNull();
+    expect(groupmeSaveRefusal({ integration: unsaved, ...ids, accessToken: '' })).toBe('Access Token is required when agent access is enabled.');
+    expect(groupmeSaveRefusal({ integration: unsaved, ...ids, accessToken: 'tok' })).toBeNull();
+    expect(groupmeSaveRefusal({ integration: unsaved, ...ids, agentAccessEnabled: false })).toBeNull();
+  });
+
   test('the creator, who was sent the ids, still has to keep both filled', () => {
     const own = { status: 'connected', config: { botId: 'b1', groupId: 'g1' } };
     expect(groupmeIdsWithheld(own)).toBe(false);

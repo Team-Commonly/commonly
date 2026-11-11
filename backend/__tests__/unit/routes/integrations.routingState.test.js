@@ -232,6 +232,30 @@ describe('integration routing state', () => {
     expect(stored.config).toMatchObject({ botId: 'b1c2d3e4f5a6', groupId: '12345678', groupName: 'Renamed group' });
   });
 
+  it('keeps a stored GroupMe token when the creator saves with the token field blank', async () => {
+    const own = await Integration.create({
+      podId: pod._id,
+      scope: 'pod',
+      type: 'groupme',
+      status: 'connected',
+      createdBy: creator._id,
+      isActive: true,
+      config: { ...groupmeConfig(), accessTokenRef: 'ref-sentinel', agentAccessEnabled: true },
+    });
+    const listed = (await get(creator._id)).body.find((row) => row.type === 'groupme');
+    expect(listed.config.accessTokenSaved).toBe(true);
+    expect(JSON.stringify(listed)).not.toContain('ref-sentinel');
+
+    const res = await request(app)
+      .patch(`/api/integrations/${own._id}`)
+      .set('x-test-user', String(creator._id))
+      .send({ config: { botId: 'b1c2d3e4f5a6', groupId: '12345678', agentAccessEnabled: true }, status: 'connected' });
+    expect(res.status).toBe(200);
+    expect(res.body.config.accessTokenSaved).toBe(true);
+    const stored = await Integration.findById(own._id).lean();
+    expect(stored.config.accessTokenRef).toBe('ref-sentinel');
+  });
+
   it('strips relayMap, messageBuffer and webhookListenerEnabled from a client write', async () => {
     const res = await request(app)
       .post('/api/integrations')

@@ -207,3 +207,15 @@ describe('feed credential public config', () => {
     }
   });
 });
+
+describe('GroupMe access token', () => {
+  it('says a token is saved without the ref or the token', () => {
+    const out = toPublicIntegrationConfig({ accessTokenRef: 'ref-sentinel', accessToken: 'token-sentinel', groupName: 'Study group' });
+    expect(out).toEqual({ accessTokenSaved: true, groupName: 'Study group' });
+    expect(JSON.stringify(out)).not.toMatch(/ref-sentinel|token-sentinel/);
+  });
+
+  it('leaves the flag off when no token is stored', () => {
+    expect(toPublicIntegrationConfig({ groupName: 'Study group' })).not.toHaveProperty('accessTokenSaved');
+  });
+});

@@ -77,11 +77,25 @@ export const groupmeIdsWithheld = (integration: { status?: string; config?: Reco
     integration?.status === 'connected' && !integration?.config?.botId && !integration?.config?.groupId
 );
 
+// A stored access token stays when the field is left blank (the server keeps
+// its ref), so the form asks for one only when agent access is on and none is
+// saved. The row says so with `accessTokenSaved`, never with the token.
 export const groupmeSaveRefusal = ({
-    integration, botId, groupId,
-}: { integration: { status?: string; config?: Record<string, unknown> } | null | undefined; botId: string; groupId: string }): string | null => {
-    if (groupmeIdsWithheld(integration)) return null;
-    return (!botId.trim() || !groupId.trim()) ? 'Please provide both Bot ID and Group ID.' : null;
+    integration, botId, groupId, agentAccessEnabled = false, accessToken = '',
+}: {
+    integration: { status?: string; config?: Record<string, unknown> } | null | undefined;
+    botId: string;
+    groupId: string;
+    agentAccessEnabled?: boolean;
+    accessToken?: string;
+}): string | null => {
+    if (!groupmeIdsWithheld(integration) && (!botId.trim() || !groupId.trim())) {
+        return 'Please provide both Bot ID and Group ID.';
+    }
+    if (agentAccessEnabled && !accessToken.trim() && !integration?.config?.accessTokenSaved) {
+        return 'Access Token is required when agent access is enabled.';
+    }
+    return null;
 };
 
 // An image message carries either a bare upload reference (legacy) or the
@@ -1345,13 +1359,15 @@ const ChatRoom = () => {
             setGroupmeError('Integration not ready yet.');
             return;
         }
-        const idsRefusal = groupmeSaveRefusal({ integration: groupmeIntegration, botId: groupmeBotId, groupId: groupmeGroupId });
-        if (idsRefusal) {
-            setGroupmeError(idsRefusal);
-            return;
-        }
-        if (groupmeAgentAccessEnabled && !groupmeAccessToken.trim()) {
-            setGroupmeError('Access Token is required when agent access is enabled.');
+        const refusal = groupmeSaveRefusal({
+            integration: groupmeIntegration,
+            botId: groupmeBotId,
+            groupId: groupmeGroupId,
+            agentAccessEnabled: groupmeAgentAccessEnabled,
+            accessToken: groupmeAccessToken,
+        });
+        if (refusal) {
+            setGroupmeError(refusal);
             return;
         }
 
@@ -3823,7 +3839,9 @@ const ChatRoom = () => {
                                             type="password"
                                             value={groupmeAccessToken}
                                             onChange={(event) => setGroupmeAccessToken(event.target.value)}
-                                            helperText="Required only when enabling agent access."
+                                            helperText={groupmeIntegration?.config?.accessTokenSaved
+                                                ? 'Saved. Leave blank to keep it.'
+                                                : 'Required only when enabling agent access.'}
                                         />
                                         <FormControlLabel
                                             control={(
