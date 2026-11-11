@@ -58,7 +58,7 @@
       },
       {
         "label": "License / self-host",
-        "them": "Hosted GitHub service. Copilot cloud agent sessions that run on GitHub Actions can use \"self-hosted runners\"; cloud sandbox sessions can't. [4]",
+        "them": "Hosted GitHub service. GitHub Actions-based sessions support self-hosted runners, and cloud sandboxes don't. [4]",
         "us": "Apache-2.0, with a Docker Compose setup in the repo. [11]"
       },
       {
