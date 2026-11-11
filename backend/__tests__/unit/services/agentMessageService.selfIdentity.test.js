@@ -121,6 +121,22 @@ describe('getRecentMessages — PG path', () => {
     expect(Message.find).not.toHaveBeenCalled();
   });
 
+  // F434: "X isn't connected yet" is stored under X's bot user, but X didn't write it.
+  test('a system line stored under the caller is not the caller\'s own message', async () => {
+    PGMessage.findByPodId.mockResolvedValue([
+      {
+        id: 1, user_id: SELF, username: 'me-bot', is_bot: true, message_type: 'system', content: "me-bot isn't connected yet",
+      },
+      {
+        id: 2, user_id: SELF, username: 'me-bot', is_bot: true, message_type: 'text', content: 'mine',
+      },
+    ]);
+
+    const out = await AgentMessageService.getRecentMessages(POD, 10, SELF);
+
+    expect(out.map((m) => m.self)).toEqual([false, true]);
+  });
+
   // Its absence is how a client detects a server too old to compute `self`.
   test('omits `self` when no caller identity is given', async () => {
     PGMessage.findByPodId.mockResolvedValue([
@@ -240,6 +256,22 @@ describe('getRecentMessages — Mongo fallback path', () => {
     const theirs = out.find((m) => String(m.userId._id) === OTHER);
     expect(mine.self).toBe(true);
     expect(theirs.self).toBe(false);
+  });
+
+  test('a system line stored under the caller is not `self` on the Mongo path either (F434)', async () => {
+    mockMongoChain([
+      {
+        _id: 'm1', content: "me-bot looks offline", messageType: 'system', userId: { _id: SELF, username: 'me-bot', isBot: true },
+      },
+      {
+        _id: 'm2', content: 'mine', messageType: 'text', userId: { _id: SELF, username: 'me-bot', isBot: true },
+      },
+    ]);
+
+    const out = await AgentMessageService.getRecentMessages(POD, 10, SELF);
+
+    expect(out.find((m) => m._id === 'm1').self).toBe(false);
+    expect(out.find((m) => m._id === 'm2').self).toBe(true);
   });
 
   test('applies the same exclusive history cursor on the Mongo fallback', async () => {

@@ -38,3 +38,18 @@ it("keeps a person's message that happens to have no payload", async () => {
   mockListPodMessages.mockResolvedValue([{ id: 'a', content: 'hello', payload: null }]);
   expect(await fetchRecentPodMessages('pod-1', 10)).toHaveLength(1);
 });
+
+// F434: a claim line is kept, but it is stored under the agent it is about, so
+// it reads as the platform's, with no author an agent could address or mistake
+// for itself. A real post by the same agent keeps its author.
+it("keeps a claim line as the platform's, not as the agent it is stored under", async () => {
+  mockListPodMessages.mockResolvedValue([
+    { ...line('task-claimed'), user_id: 'nova-bot', is_bot: true, userId: { _id: 'nova-bot', username: 'nova' } },
+    {
+      id: 'b', content: 'on it', user_id: 'nova-bot', is_bot: true, userId: { _id: 'nova-bot', username: 'nova' },
+    },
+  ]);
+  const [claim, post] = await fetchRecentPodMessages('pod-1', 10);
+  expect(claim).toMatchObject({ author: 'Commonly', authorId: null, authorIsBot: null });
+  expect(post).toMatchObject({ author: 'nova', authorId: 'nova-bot', authorIsBot: true });
+});

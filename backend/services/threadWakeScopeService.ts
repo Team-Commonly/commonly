@@ -54,10 +54,13 @@ interface PgPool {
  * three round trips on a path that runs for every threaded reply.
  */
 export async function effectiveFollowerIds(threadRootId: number): Promise<Set<string>> {
+  // A system line is stored under the agent it is about, so it makes no one a
+  // participant (F434).
   const { rows } = await (pool as PgPool).query(
     `WITH participants AS (
        SELECT DISTINCT user_id FROM messages
-        WHERE thread_root_id = $1 OR id = $1
+        WHERE (thread_root_id = $1 OR id = $1)
+          AND COALESCE(message_type, '') <> 'system'
      ),
      explicit AS (
        SELECT user_id FROM thread_user_state
@@ -81,7 +84,8 @@ export async function effectiveFollowerIds(threadRootId: number): Promise<Set<st
 /** Authorship is an addressed cue; following alone is not. */
 export async function threadAuthorIds(threadRootId: number): Promise<Set<string>> {
   const { rows } = await (pool as PgPool).query(
-    'SELECT DISTINCT user_id FROM messages WHERE thread_root_id = $1 OR id = $1',
+    // A system line is stored under the agent it is about; it makes no one an author (F434).
+    "SELECT DISTINCT user_id FROM messages WHERE (thread_root_id = $1 OR id = $1) AND COALESCE(message_type, '') <> 'system'",
     [threadRootId],
   );
   return new Set(rows.map((row) => String(row.user_id)));

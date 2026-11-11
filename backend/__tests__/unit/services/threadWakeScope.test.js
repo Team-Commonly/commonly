@@ -12,7 +12,7 @@ const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
 const { applyTable } = require('../../utils/schemaTable');
-const { effectiveFollowerIds, narrowToThread } = require('../../../services/threadWakeScopeService');
+const { effectiveFollowerIds, narrowToThread, threadAuthorIds } = require('../../../services/threadWakeScopeService');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 
 const POD = 'pod-1';
@@ -131,6 +131,27 @@ describe('the three terms', () => {
     await rootMsg(b, 'bob');
     await state(b, 'carol', true);
     expect([...await effectiveFollowerIds(a)]).toEqual(['alice']);
+  });
+});
+
+describe('a system line stored under an agent makes no one a participant (F434)', () => {
+  // "agent-x isn't connected yet" is stored with user_id = agent-x's bot user,
+  // but agent-x didn't write it. It must not make agent-x an author (an
+  // addressed cue) or a follower (a wake).
+  const systemLine = (rootId, userId, id) => mockPool.query(
+    `INSERT INTO messages (id, pod_id, user_id, content, thread_root_id, message_type)
+     VALUES ($1,$2,$3,$4,$5,'system')`,
+    [id, POD, userId, "agent-x isn't connected yet", rootId],
+  );
+
+  test('neither an author nor a follower from a system line; a real post still counts', async () => {
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await systemLine(r, 'agent-x', r + 9000);
+    await post(r, 'agent-y', r + 9001);
+
+    expect([...await threadAuthorIds(r)].sort()).toEqual(['agent-y', 'author']);
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['agent-y', 'author']);
   });
 });
 

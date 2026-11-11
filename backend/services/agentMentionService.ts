@@ -1260,6 +1260,9 @@ const resolveImplicitReplyTarget = async (
   message: EnqueueMentionsOptions['message'],
   installations: Array<Record<string, unknown>>,
 ): Promise<MentionTarget | null> => {
+  // A reply to a system line ("X isn't connected yet") addresses no one: the
+  // line is stored under X, but X didn't write it (F434).
+  if ((message.replyTo as { messageType?: unknown } | undefined)?.messageType === 'system') return null;
   let replyAuthorUserId = normalizeUserId(message.replyTo?.userId);
 
   // The controller normally passes the populated PG row, whose replyTo
@@ -1268,9 +1271,10 @@ const resolveImplicitReplyTarget = async (
   if (!replyAuthorUserId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const PGMessage = require('../models/pg/Message') as {
-      findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown } | null>;
+      findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown; message_type?: unknown } | null>;
     };
     const repliedMessage = await PGMessage.findById(replyToMessageId);
+    if (repliedMessage?.message_type === 'system') return null;
     replyAuthorUserId = normalizeUserId(repliedMessage?.user_id || repliedMessage?.userId);
   }
   if (!replyAuthorUserId) return null;
@@ -1890,17 +1894,22 @@ const enqueueWakeOnMessage = async ({
     replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || '',
   ) || null;
   let parentAuthorUserId: string | null = null;
-  if (parentMessageId) {
+  // A system parent ("X looks offline") is stored under the agent it is about,
+  // but X didn't write it: a reply to it is not a reply to X (F434).
+  const replyToIsSystem = (message?.replyTo as { messageType?: unknown } | undefined)?.messageType === 'system';
+  if (parentMessageId && !replyToIsSystem) {
     const isReplyParent = parentMessageId !== String(threadRootId || '');
     parentAuthorUserId = isReplyParent ? normalizeUserId(message?.replyTo?.userId) : null;
     if (!parentAuthorUserId) {
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const PGMessage = require('../models/pg/Message') as {
-          findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown } | null>;
+          findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown; message_type?: unknown } | null>;
         };
         const parentRow = await PGMessage.findById(parentMessageId);
-        parentAuthorUserId = normalizeUserId(parentRow?.user_id || parentRow?.userId);
+        parentAuthorUserId = parentRow?.message_type === 'system'
+          ? null
+          : normalizeUserId(parentRow?.user_id || parentRow?.userId);
       } catch {
         parentAuthorUserId = null; // evidence is best-effort; ambient behaviour is the floor
       }

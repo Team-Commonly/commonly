@@ -2646,8 +2646,11 @@ class AgentMessageService {
     const before = beforeMs === undefined ? undefined : new Date(beforeMs);
 
     const selfId = selfUserId ? String(selfUserId) : null;
-    const withSelf = (authorId: unknown): { self?: boolean } => (
-      selfId ? { self: String(authorId ?? '') === selfId } : {}
+    // A system line is the platform's, even when it is stored under the agent
+    // it is about ("X isn't connected yet", stopped, task-claimed…): it is
+    // never the caller's own message (F434).
+    const withSelf = (authorId: unknown, messageType: unknown): { self?: boolean } => (
+      selfId ? { self: messageType !== 'system' && String(authorId ?? '') === selfId } : {}
     );
 
     if (PGMessage && process.env.PG_HOST) {
@@ -2689,7 +2692,7 @@ class AgentMessageService {
           },
           username,
           ...(senderUnknown ? {} : { isBot }),
-          ...withSelf(msg.user_id),
+          ...withSelf(msg.user_id, msg.message_type),
           createdAt: msg.created_at as Date,
           // Threading structure for agent readers (TASK-052's read half):
           // the SELECT has carried these since #1106; this mapper was the
@@ -2749,7 +2752,7 @@ class AgentMessageService {
         // D245: same as the PG read above.
         ...(msg.summary ? { summary: msg.summary as string } : {}),
         ...(msg.kind ? { kind: msg.kind as string } : {}),
-        ...withSelf(userId?._id),
+        ...withSelf(userId?._id, msg.messageType),
         createdAt: msg.createdAt as Date,
       };
     }) as MessageNormalized[];
