@@ -26,13 +26,20 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 108);
+  assert.equal(pages.length, 115);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
     '/compare/openagents/',
     '/compare/github-agent-hq/',
     '/compare/buzz/',
+    '/compare/multica/',
+    '/compare/paperclip/',
+    '/compare/humanlayer/',
+    '/compare/raft/',
+    '/compare/agent-relay/',
+    '/compare/orca/',
+    '/compare/mosaic/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -185,6 +192,11 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
     if (revised) {
       assert.equal(article.dateModified, revised);
+      continue;
+    }
+    // F433 removed a held claim from one guide without a D295 pass; its date moves with the text.
+    if (guide.path === '/guides/control-what-coding-agents-can-access/') {
+      assert.equal(article.dateModified, '2026-11-11');
       continue;
     }
     assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
@@ -2440,7 +2452,7 @@ test('every page but home names its place in a BreadcrumbList, ending at itself 
 test('every guide Article carries an image (F397)', async () => {
   const articles = (await realPages()).flatMap((page) => page.schema['@graph'].filter((node) => node['@type'] === 'Article'));
   assert.ok(articles.length >= 90);
-  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=6', article['@id']);
+  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=7', article['@id']);
 });
 
 test('a long title drops the site suffix, then its subtitle; one with neither to drop stops the build (F397)', () => {
@@ -2800,7 +2812,7 @@ const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] =
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 20);
+  assert.equal(revised.length, 40);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
@@ -2917,7 +2929,7 @@ const compareFixture = () => ({
 test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
   const dir = resolve(frontendDir, 'src/content/compare');
   const loaded = loadCompareSources(dir);
-  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz']);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic']);
   for (const id of Object.keys(loaded)) {
     const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
     assert.equal(loaded[id].markdown, compareMarkdown(data));
@@ -2927,7 +2939,7 @@ test('every compare data file builds through the one template, in listOrder, wit
   }
   // The template lays out what the hand-written pages had: heading, dated line, table, sources.
   const buzz = loaded.buzz.markdown;
-  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-09\./);
+  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-11\./);
   assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
   assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
   // A malformed file names itself.
@@ -3135,5 +3147,20 @@ test('the /compare hub links every comparison, so its "each page below" holds', 
     .find((item) => item.path === '/compare/');
   for (const source of Object.values(loadCompareSources())) {
     assert.ok(page.content.includes(`<li><a href="${source.path}">`), source.path);
+  }
+});
+
+// F433: "calls through a grant are logged" is held until the scope walk passes on prod. No guide,
+// llms.txt base, page string or /compare data file may say it, in any wording that pairs a grant
+// with logging (the /compare files since #3926 removed it there).
+test('no public text claims grant calls are logged while that claim is held', async () => {
+  const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b/i;
+  const { readdir } = await import('node:fs/promises');
+  const compareFiles = (await readdir(resolve(frontendDir, 'src/content/compare')))
+    .filter((file) => file.endsWith('.json')).map((file) => `src/content/compare/${file}`);
+  assert.ok(compareFiles.length >= 10);
+  for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json', ...compareFiles]) {
+    const text = await readFile(resolve(frontendDir, file), 'utf8');
+    assert.doesNotMatch(text, held, file);
   }
 });

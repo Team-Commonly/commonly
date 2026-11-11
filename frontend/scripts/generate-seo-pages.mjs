@@ -115,7 +115,7 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
-const ogImage = `${siteUrl}/og-card.png?v=6`;
+const ogImage = `${siteUrl}/og-card.png?v=7`;
 
 // Search results cut a title near 60 characters and a description near 160
 // (F397). Fitted once here, so a long guide title can't ship.
@@ -190,7 +190,7 @@ const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.
 
 // The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
 // (landing-faq.json). Change it when either changes (F395).
-export const LANDING_DATE_MODIFIED = '2026-11-07';
+export const LANDING_DATE_MODIFIED = '2026-11-11';
 
 const recordedDate = (where, value) => {
   if (value === undefined) return undefined;
@@ -861,7 +861,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
-    description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
+    description: 'Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
     dateModified: LANDING_DATE_MODIFIED,
   };

@@ -1,0 +1,147 @@
+{
+  "path": "/compare/mosaic/",
+  "listOrder": 10,
+  "datePublished": "2026-11-11",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs Mosaic: what each ships, side by side",
+  "description": "Mosaic syncs a team's coding-agent sessions into a shared, read-only drive on each Mac. Commonly is one pod where each teammate brings their own agent.",
+  "name": "Mosaic",
+  "updated": "Updated 2026-11-11. Facts about Mosaic were read on Mosaic's own pages on 2026-11-11.",
+  "shortAnswer": "Mosaic copies the coding-agent sessions a team runs into one shared, read-only drive on each member's Mac, so a teammate or an agent can pick up where someone else stopped. [1][2][3] Commonly is one pod where each person brings their own agent, and people and agents share the same conversations and one task board, so everyone can see who has what. Mosaic is a macOS command-line tool with a background service. It reads the session files of the coding agents it detects, names \"Claude Code, Codex, Cursor, and 11 more\", and `mosaic handoff` assigns a session to a teammate. [1][2] In Commonly, teammates join one pod, and each agent is a named member with an owner.",
+  "notes": [
+    "*This page compares Mosaic at mosaic.inc (GitHub: emergent-inc). Mosaic's launch post says it \"started as a real-time coding environment where multiple people and their agents work together\" and then built the product around \"centralized agent sessions\". The emergent-inc/mosaic repository still describes that earlier terminal app, and this page covers the session-sync product that mosaic.inc offers today. Some installed parts carry the name Ocean, such as the background service com.ocean.daemon. The current release in Mosaic's Homebrew tap is 0.2.24, published 2026-08-17, and the launch post asks teams to \"Try Mosaic and tell us what breaks!\" [2][3][4][5] Mosaic's memo \"The Coordination Problem\" sets out the view behind the product: \"Continuity is a property of the store, not of any process.\" [6]*"
+  ],
+  "table": {
+    "them": "Mosaic",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"Mosaic puts every AI coding session your team runs — Claude Code, Codex, Cursor, and 11 more — into one shared, read-only drive.\" [1] YC launch post title: \"Shared memory for your team's agents\". [3]",
+        "us": "One pod for your team and the agents each of you runs. [7]"
+      },
+      {
+        "label": "Agents named",
+        "them": "\"Claude Code, Codex, Cursor, and 11 more\" on the homepage; \"Claude Code, Codex, Cursor and more\" in the launch post. [1][3]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "How agents connect",
+        "them": "Setup reviews the coding-agent session sources it detects, and \"Detected sources are enabled by default.\" Mosaic \"does not install or modify coding agents, hooks, MCP servers, or editor extensions. It only adds instruction-only skill files.\" Setup \"Prompts before installing the Mosaic skill into supported coding agents' personal skill directories.\" [2]",
+        "us": "One command in Terminal makes your own Claude Code or Codex answer @mentions in your pods while that window stays open, on a Mac. Claude Code can also join over MCP."
+      },
+      {
+        "label": "What the team shares",
+        "them": "Mosaic \"keeps the record of every agent session — what was tried, what changed, and why\". [3] Each Mac keeps a read-only replica at `~/.mosaic` that shows the active team's People tree. `mosaic scope` sets whether a Mac backs up every detected session or only selected folders. [2]",
+        "us": "People and agents share the pod's conversations and one task board, so everyone can see who has what."
+      },
+      {
+        "label": "How people take part",
+        "them": "Sign in with GitHub, Google, work email or a team invitation link, then create, join or select a team. `mosaic team members` lists the active team's members and their @handles. [2]",
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+      },
+      {
+        "label": "Work and handoff",
+        "them": "`mosaic handoff <@teammate>`: \"Assign a session and notify a teammate\". `mosaic fork`: \"Continue a shared session in its native coding agent\". [2]",
+        "us": "Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "Apps and where it runs",
+        "them": "macOS 14 or newer, on Apple Silicon or Intel. A CLI plus a background LaunchAgent; Mosaic \"runs while that user is logged in\" and \"does not collect product telemetry\". Sessions are uploaded, and `mosaic ls` lists session paths \"directly from remote storage\". [2]",
+        "us": "Web. Your own agent runs on your own machine; the hosted agent runs on Commonly."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "Mosaic",
+    "items": [
+      "Each developer on your team already runs coding agents, and you want every session's record in one shared, read-only drive on each Mac. [1][2]",
+      "You want a teammate to be handed a session with `mosaic handoff`, or to continue one in its native coding agent with `mosaic fork`. [2]",
+      "You want the tool to leave your agents as they are: Mosaic says it \"does not install or modify coding agents, hooks, MCP servers, or editor extensions\". [2]",
+      "You run Cursor alongside Claude Code and Codex. [1]",
+      "You want to choose, per Mac, whether every session or only selected folders are backed up. [2]"
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want your own agents to claim work on a shared board so two of them don't take the same task.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
+  ],
+  "faq": [
+    {
+      "q": "Who makes Mosaic?",
+      "a": "Mosaic. Its launch post describes the team as \"two engineers\". Its releases are published under the emergent-inc GitHub organization. [3][4]"
+    },
+    {
+      "q": "What does Mosaic put on a Mac?",
+      "a": "A CLI, a background LaunchAgent (com.ocean.daemon), app state, a read-only team replica at `~/.mosaic`, and skill files in each supported agent's personal skills directory. Uninstalling removes the services and \"preserves durable native session state and already uploaded team data\". [2]"
+    },
+    {
+      "q": "Which computers does Mosaic run on?",
+      "a": "Its install guide lists macOS 14 or newer, on Apple Silicon or Intel. [2]"
+    },
+    {
+      "q": "Is Mosaic open source?",
+      "a": "The emergent-inc/mosaic repository, which holds Mosaic's earlier terminal app, is GPL-3.0-or-later. The session-sync product installs from signed macOS releases in the emergent-inc Homebrew tap. Commonly is Apache-2.0. [4][5][7]"
+    },
+    {
+      "q": "Which agents work with Commonly?",
+      "a": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+    }
+  ],
+  "sourcesIntro": "Mosaic facts read on Mosaic's own pages on 2026-11-11:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "Mosaic homepage",
+      "url": "https://mosaic.inc/",
+      "note": "page description: \"Claude Code, Codex, Cursor, and 11 more\"; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 2,
+      "label": "Mosaic, \"Install Mosaic\" (setup guide and CLI reference)",
+      "url": "https://mosaic.inc/install",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 3,
+      "label": "Mosaic, YC launch post \"Mosaic — Shared memory for your team's agents\" (2026-08-24)",
+      "url": "https://www.ycombinator.com/launches/T3K-mosaic-shared-memory-for-your-team-s-agents",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 4,
+      "label": "Mosaic's Homebrew tap on GitHub (README and releases)",
+      "url": "https://github.com/emergent-inc/homebrew-tap",
+      "note": "release 0.2.24, 2026-08-17; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 5,
+      "label": "emergent-inc/mosaic README on GitHub (the earlier terminal app)",
+      "url": "https://github.com/emergent-inc/mosaic",
+      "note": "GPL-3.0-or-later; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 6,
+      "label": "Mosaic, \"The Coordination Problem\" (June 2026)",
+      "url": "https://mosaic.inc/blog/memo",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 7,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
+}
