@@ -394,6 +394,7 @@ const renderUseCase = (useCase, siteLinks = '') => `
         <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
         <h1>${escapeHtml(useCase.title)}</h1>
         <p class="seo-lede">${escapeHtml(useCase.summary)}</p>
+        ${(useCase.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
         <p class="seo-actions"><a class="seo-primary" href="/v2/register">Start with this use case</a><a href="/v2/agents">Explore Agent Hub</a></p>
       </section>
       <section>
@@ -403,13 +404,16 @@ const renderUseCase = (useCase, siteLinks = '') => `
         </div>
       </section>
       <section><h2>Example flow</h2><ol>${useCase.exampleFlow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section>
+      ${(useCase.sections || []).map(renderContentSection).join('')}
+      ${useCase.faq?.length ? `<section><h2>Frequently asked questions</h2><div class="seo-grid">${useCase.faq.map((item) => `
+        <article class="seo-card"><h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p></article>`).join('')}</div></section>` : ''}
       ${useCase.relatedGuides?.length ? `<section><h2>Related guides</h2><ul>${useCase.relatedGuides.map((guide) => `<li><a href="${escapeHtml(guide.path)}">${escapeHtml(guide.title)}</a></li>`).join('')}</ul></section>` : ''}
     </main>
     <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
   </div>`;
 
-const renderGuide = (guide, siteLinks = '') => {
-  const sections = guide.sections.map((section) => `
+// One content section, shared by guides and the long-form use cases.
+const renderContentSection = (section) => `
     <section>
       <h2>${escapeHtml(section.title)}</h2>
       ${(section.paragraphs || []).map((paragraph) => {
@@ -424,7 +428,10 @@ const renderGuide = (guide, siteLinks = '') => {
       ${section.tables?.map(renderGuideTable).join('') || ''}
       ${section.codeBlocks?.map((block) => `<pre class="seo-code"><code${block.language ? ` class="language-${escapeHtml(block.language)}"` : ''}>${escapeHtml(block.code)}</code></pre>`).join('') || ''}
       ${section.links?.length ? `<p class="seo-source-links">${section.links.map((link) => `<a href="${escapeHtml(link.path)}"${link.external ? ' rel="noreferrer"' : ''}>${escapeHtml(link.label)}</a>`).join(' · ')}</p>` : ''}
-    </section>`).join('');
+    </section>`;
+
+const renderGuide = (guide, siteLinks = '') => {
+  const sections = guide.sections.map(renderContentSection).join('');
   const faq = guide.faq.map((item) => `
     <article class="seo-card"><h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p></article>`).join('');
   const relatedLinks = guide.relatedLinks.map((link) => `<a href="${escapeHtml(link.path)}">${escapeHtml(link.label)}</a>`).join(' · ');
@@ -533,7 +540,7 @@ const faqPageJsonLd = (faq) => ({
   })),
 });
 
-const metadata = ({ title, description, path, schema, faqSchema, ogType = 'website', datePublished, dateModified, noindex = false }) => {
+const metadata = ({ title, description, path, schema, faqSchema, faqSchemaId = faqJsonLdId, ogType = 'website', datePublished, dateModified, noindex = false }) => {
   const url = pageUrl(path);
   const structuredData = jsonLd(schema);
   const articleDates = ogType === 'article' && datePublished && dateModified
@@ -559,7 +566,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:description" content="${escapeHtml(description)}" />
     <meta name="twitter:image" content="${ogImage}" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
-    <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
+    <script type="application/ld+json" id="${faqSchemaId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
 
 // Compare pages (GEO, D104). The markdown below is GTM's copy, pasted verbatim
@@ -1027,8 +1034,12 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       title: `${useCase.titleTag || useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase, siteLinks),
+      // Static like the guides: the page a reader gets is the one crawlers read.
+      staticOnly: true,
       dateModified: recordedDate(path, useCase.dateModified),
       schema: webPage(useCase.title, useCase.summary, path),
+      // Its own id: the landing's React effect reuses the landing-faq-jsonld tag.
+      ...(useCase.faq?.length ? { faqSchema: faqPageJsonLd(useCase.faq), faqSchemaId: 'use-case-faq-jsonld' } : {}),
     };
   });
 
@@ -1247,12 +1258,19 @@ const guideFullText = (guide) => {
 
 const useCaseFullText = (useCase) => [
   oneLine(useCase.summary),
+  ...(useCase.intro || []).map(oneLine),
   '### Problems',
   (useCase.problems || []).map((item) => `- ${oneLine(item)}`).join('\n'),
   '### Outcomes',
   (useCase.outcomes || []).map((item) => `- ${oneLine(item)}`).join('\n'),
   '### Example flow',
   (useCase.exampleFlow || []).map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'),
+  ...(useCase.sections || []).flatMap((section) => [
+    `### ${oneLine(section.title)}`,
+    ...(section.paragraphs || []).map((paragraph) => oneLine(typeof paragraph === 'object' ? paragraph.strong : paragraph)),
+    (section.bullets || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  ]),
+  ...((useCase.faq || []).length ? ['### Frequently asked questions', ...useCase.faq.map((item) => `**${oneLine(item.question)}** ${oneLine(item.answer)}`)] : []),
 ].filter(Boolean).join('\n\n');
 
 export const renderLlmsFullTxt = ({ guides = {}, useCases = {}, compareSources = {} }) => {
