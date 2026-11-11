@@ -3097,6 +3097,17 @@ test('the /compare hub copy ranks no one, claims no absence, and states no prici
     return JSON.stringify(copy);
   };
   const doc = await readFile(resolve(frontendDir, '../docs/commonly-vs-alternatives.md'), 'utf8');
+  // Positive controls: each pattern matches one of the retired phrasings it stands for, so a
+  // pattern that matched nothing could not pass the absence checks below.
+  const enRetired = ['the strongest option', 'its closest competitor', 'a better shape for teams', 'none of them answers',
+    'any vendor', 'agents as first-class members', 'never charges', 'per human seats', 'pricing charges per seat',
+    'no per-agent tax', 'takes no pull requests', 'the honest version', 'the only one', 'Commonly is the first'];
+  const zhRetired = ['最强', '最接近的产品竞争对手', '形态更合适', '都不能', '任何厂商', '一等公民', '永远不占', '计划中的定价',
+    '人头席位', '不接受 PR', '实话实说', '唯一', '只有我们'];
+  for (const [patterns, retired] of [[en, enRetired], [zh, zhRetired]]) {
+    assert.equal(retired.length, patterns.length);
+    patterns.forEach((pattern, i) => assert.match(retired[i], pattern, `control for ${pattern}`));
+  }
   for (const [label, text, patterns] of [['en', await hubCopy('en'), en], ['zh-CN', await hubCopy('zh-CN'), zh], ['doc', doc, en]]) {
     for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${label}: ${pattern}`);
   }
@@ -3121,7 +3132,13 @@ test('the /compare hub links every comparison, so its "each page below" holds', 
 // llms.txt base, page string or /compare data file may say it, in any wording that pairs a grant
 // with logging (the /compare files since #3926 removed it there).
 test('no public text claims grant calls are logged while that claim is held', async () => {
-  const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b/i;
+  const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b|\b(logged|recorded)\b[^."]{0,60}\bgrant/i;
+  // Positive controls, both word orders, in the shapes a page would use.
+  for (const claim of ['Calls through a grant are logged.', 'Every granted connector call is recorded.',
+    'Calls are logged for each grant.', 'Each call is recorded against the grant that allowed it.']) {
+    assert.match(claim, held, claim);
+  }
+  assert.doesNotMatch('Grants can be revoked at any time.', held);
   const { readdir } = await import('node:fs/promises');
   const compareFiles = (await readdir(resolve(frontendDir, 'src/content/compare')))
     .filter((file) => file.endsWith('.json')).map((file) => `src/content/compare/${file}`);
@@ -3129,5 +3146,19 @@ test('no public text claims grant calls are logged while that claim is held', as
   for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json', ...compareFiles]) {
     const text = await readFile(resolve(frontendDir, file), 'utf8');
     assert.doesNotMatch(text, held, file);
+  }
+});
+
+// A guide that hands out a command pointing at commonly.me's API says so, and tells someone who
+// runs Commonly themselves to use their own instance's API URL (CodeRabbit on #3951).
+test('every guide whose commands point at the hosted API says how a self-hosted reader changes it', async () => {
+  const { guides } = await loadSiteInputs();
+  const hostedNote = /This example uses the hosted API at commonly\.me\. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead\./;
+  const pointsAtHosted = /COMMONLY_API_URL(=|"\s*:\s*")https:\/\/api\.commonly\.me/;
+  const withHostedCommand = Object.entries(guides)
+    .filter(([, guide]) => guide.sections.some((section) => (section.codeBlocks || []).some((block) => pointsAtHosted.test(block.code))));
+  assert.ok(withHostedCommand.length >= 6, `found ${withHostedCommand.length}`);
+  for (const [id, guide] of withHostedCommand) {
+    assert.match(JSON.stringify(guide), hostedNote, id);
   }
 });
