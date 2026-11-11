@@ -8,6 +8,9 @@ import {
   assertCompareSourced, assertNoOpenHolds, buildPageDefinitions, compareMarkdown, fitDescription, fitTitle, generateSeoPages,
   loadCompareSources, publicHitScript, renderMarkdown, renderStaticPage,
 } from './generate-seo-pages.mjs';
+import {
+  INDEXNOW_KEY, changedUrls, indexNowKeyFile, indexNowPayload, parseSitemap, pingIndexNow, runAfterDeploy,
+} from './indexnow.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -2895,4 +2898,99 @@ test('a compare page carries its dates in the WebPage structured data and the si
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+// IndexNow (F428). The key file must be in the build, the ping must name only what changed, and
+// nothing in the deploy step may throw or fail.
+const sitemapXml = (entries) => `<?xml version="1.0" encoding="UTF-8"?>\n<urlset>\n${entries
+  .map(([loc, lastmod]) => `  <url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`).join('\n')}\n</urlset>\n`;
+
+test('the build serves the IndexNow key, alone, at /<key>.txt, and the sitemap it pings from parses whole', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-indexnow-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    const pages = await generateSeoPages({ outputDir });
+    assert.equal(await readFile(join(outputDir, indexNowKeyFile()), 'utf8'), INDEXNOW_KEY);
+    // IndexNow's key rule: 8 to 128 characters of a-z, A-Z, 0-9 and dashes.
+    assert.match(INDEXNOW_KEY, /^[a-zA-Z0-9-]{8,128}$/);
+    const entries = parseSitemap(await readFile(join(outputDir, 'sitemap.xml'), 'utf8'));
+    assert.equal(entries.size, pages.filter((page) => !page.noindex).length);
+    assert.ok(entries.size > 100);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('IndexNow names only new URLs and moved lastmods, or every URL on the first run', () => {
+  const before = sitemapXml([
+    ['https://commonly.me/', ''],
+    ['https://commonly.me/guides/a/', '2026-11-01'],
+    ['https://commonly.me/guides/b/', '2026-11-01'],
+  ]);
+  const after = sitemapXml([
+    ['https://commonly.me/', ''],
+    ['https://commonly.me/guides/a/', '2026-11-01'],
+    ['https://commonly.me/guides/b/', '2026-11-11'],
+    ['https://commonly.me/guides/c/', '2026-11-11'],
+    ['https://elsewhere.example/x/', ''],
+  ]);
+  assert.deepEqual(changedUrls({ beforeXml: before, afterXml: after, keyWasLive: true }), [
+    'https://commonly.me/guides/b/', 'https://commonly.me/guides/c/',
+  ]);
+  const all = ['https://commonly.me/', 'https://commonly.me/guides/a/', 'https://commonly.me/guides/b/', 'https://commonly.me/guides/c/'];
+  assert.deepEqual(changedUrls({ beforeXml: before, afterXml: after, keyWasLive: false }), all);
+  // An unreadable before-sitemap can't say what changed, so it sends everything.
+  assert.deepEqual(changedUrls({ beforeXml: '', afterXml: after, keyWasLive: true }), all);
+  assert.deepEqual(changedUrls({ beforeXml: after, afterXml: after, keyWasLive: true }), []);
+});
+
+test('the IndexNow POST carries host, key, key location and the URLs, and accepts 200 or 202', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return { status: 202 };
+  };
+  const result = await pingIndexNow(['https://commonly.me/guides/b/'], { fetchImpl });
+  assert.deepEqual(result, { ok: true, status: 202, sent: 1, note: 'accepted' });
+  assert.equal(calls[0].url, 'https://api.indexnow.org/indexnow');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), indexNowPayload(['https://commonly.me/guides/b/']));
+  assert.deepEqual(indexNowPayload(['u']), {
+    host: 'commonly.me', key: INDEXNOW_KEY, keyLocation: `https://commonly.me/${INDEXNOW_KEY}.txt`, urlList: ['u'],
+  });
+  assert.equal((await pingIndexNow([], { fetchImpl })).sent, 0);
+  assert.equal(calls.length, 1);
+  assert.equal((await pingIndexNow(['u'], { fetchImpl: async () => ({ status: 403 }) })).ok, false);
+});
+
+test('the deploy step never throws: a dead network, a missing key file and a rejected ping all resolve', async () => {
+  const lines = [];
+  const log = (line) => lines.push(line);
+  const down = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
+  assert.equal((await runAfterDeploy({ argv: [], fetchImpl: down, log })).ok, false);
+  assert.match(lines.at(-1), /skipped: getaddrinfo ENOTFOUND/);
+
+  const notServed = async () => ({ ok: true, status: 200, text: async () => '<!doctype html>' });
+  assert.equal((await runAfterDeploy({ argv: [], fetchImpl: notServed, log })).note, 'key file not served');
+
+  const after = sitemapXml([['https://commonly.me/', ''], ['https://commonly.me/guides/a/', '2026-11-11']]);
+  const posted = [];
+  const live = async (url, init) => {
+    if (init?.method === 'POST') {
+      posted.push(JSON.parse(init.body).urlList);
+      return { status: 200 };
+    }
+    if (url.includes(indexNowKeyFile())) return { ok: true, status: 200, text: async () => `${INDEXNOW_KEY}\n` };
+    return { ok: true, status: 200, text: async () => after };
+  };
+  const first = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: live, log });
+  assert.equal(first.sent, 2);
+  assert.match(lines.at(-1), /accepted: 2 of 2 sitemap URLs \(first run, every URL\), HTTP 200/);
+  assert.deepEqual(posted[0], ['https://commonly.me/', 'https://commonly.me/guides/a/']);
+
+  const rejected = async (url, init) => (init?.method === 'POST' ? { status: 422 } : live(url, init));
+  const refused = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: rejected, log });
+  assert.equal(refused.ok, false);
+  assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
 });

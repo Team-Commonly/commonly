@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INDEXNOW_KEY, indexNowKeyFile } from './indexnow.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const frontendDir = resolve(scriptDir, '..');
@@ -1181,6 +1182,8 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
   const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
   await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources, pages }));
   await writeFile(resolve(outputDir, 'llms-full.txt'), renderLlmsFullTxt({ guides, useCases, compareSources: comparePageSources }));
+  // IndexNow's ownership proof: the key, alone, at /<key>.txt (F428).
+  await writeFile(resolve(outputDir, indexNowKeyFile()), INDEXNOW_KEY);
   return pages;
 };
 
