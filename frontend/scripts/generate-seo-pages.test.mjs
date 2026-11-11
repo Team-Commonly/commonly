@@ -446,7 +446,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const rolesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-roles/');
   assert.equal(rolesGuide.title, 'AI Agent Roles: Define Work, Boundaries, and Handoffs');
   assert.deepEqual(guides['ai-agent-roles'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [4, 8], [2, 4], [2, 7]]);
-  assert.equal(guides['ai-agent-roles'].sections.flatMap((section) => section.links || []).length, 11);
+  assert.equal(guides['ai-agent-roles'].sections.flatMap((section) => section.links || []).length, 12);
   const rolesHtml = renderStaticPage(guideTemplate, rolesGuide);
   assert.match(rolesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-roles\//);
   assert.match(rolesHtml, /An AI agent role is a bounded responsibility that tells an agent what result it owns/);
@@ -488,7 +488,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(acceptanceCriteriaGuide.title, 'AI Agent Acceptance Criteria: Testable, Reviewable Work');
   assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 8], [2, 7], [2, 4], [2, 6], [3, 5], [2, 8]]);
   assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => section.links || []).length, 10);
   const acceptanceCriteriaHtml = renderStaticPage(guideTemplate, acceptanceCriteriaGuide);
   assert.match(acceptanceCriteriaHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-acceptance-criteria\//);
   assert.match(acceptanceCriteriaHtml, /AI agent acceptance criteria are the observable conditions that tell a team whether an agent&#39;s result is ready for its next handoff/);
@@ -509,7 +509,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(decisionPacketGuide.title, 'AI Agent Decision Packet: Evidence, Options, and Ownership');
   assert.deepEqual(guides['ai-agent-decision-packet'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 9], [3, 6], [3, 6], [3, 5], [3, 6], [3, 5], [2, 8]]);
   assert.deepEqual(guides['ai-agent-decision-packet'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-decision-packet'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-decision-packet'].sections.flatMap((section) => section.links || []).length, 10);
   const decisionPacketHtml = renderStaticPage(guideTemplate, decisionPacketGuide);
   assert.match(decisionPacketHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-decision-packet\//);
   assert.match(decisionPacketHtml, /An AI agent decision packet is a compact, evidence-backed artifact that gives a named person or role one answerable choice/);
@@ -530,7 +530,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(auditTrailGuide.title, 'AI Agent Audit Trail: Make Work and Decisions Inspectable');
   assert.deepEqual(guides['ai-agent-audit-trail'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 5], [3, 6]]);
   assert.deepEqual(guides['ai-agent-audit-trail'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-audit-trail'].sections.flatMap((section) => section.links || []).length, 10);
+  assert.equal(guides['ai-agent-audit-trail'].sections.flatMap((section) => section.links || []).length, 11);
   const auditTrailHtml = renderStaticPage(guideTemplate, auditTrailGuide);
   assert.match(auditTrailHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-audit-trail\//);
   assert.match(auditTrailHtml, /An AI agent audit trail is a structured, linked account of a piece of work/);
@@ -593,7 +593,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(scopeCreepGuide.title, 'AI Agent Scope Creep: Keep Work Boundaries Reviewable');
   assert.deepEqual(guides['ai-agent-scope-creep'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[4, 6], [3, 8], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-scope-creep'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-scope-creep'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-scope-creep'].sections.flatMap((section) => section.links || []).length, 10);
   const scopeCreepHtml = renderStaticPage(guideTemplate, scopeCreepGuide);
   assert.match(scopeCreepHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-scope-creep\//);
   assert.match(scopeCreepHtml, /AI agent scope creep is the unreviewed expansion of an agent’s assigned outcome/);
@@ -614,7 +614,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(reviewPacketGuide.title, 'AI Agent Review Packet | Commonly AI');
   assert.deepEqual(guides['ai-agent-review-packet'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 9], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-review-packet'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-review-packet'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-review-packet'].sections.flatMap((section) => section.links || []).length, 10);
   const reviewPacketHtml = renderStaticPage(guideTemplate, reviewPacketGuide);
   assert.match(reviewPacketHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-review-packet\//);
   assert.match(reviewPacketHtml, /An AI agent review packet is a compact, inspectable bundle/);
@@ -635,7 +635,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(blockersGuide.title, 'AI Agent Blockers: Missing Prerequisites, Effect, and Owner');
   assert.deepEqual(guides['ai-agent-blockers'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-blockers'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-blockers'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-blockers'].sections.flatMap((section) => section.links || []).length, 10);
   const blockersHtml = renderStaticPage(guideTemplate, blockersGuide);
   assert.match(blockersHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-blockers\//);
   assert.match(blockersHtml, /An AI agent blocker is a precise record that an eligible, in-scope outcome/);
@@ -656,7 +656,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(statusUpdatesGuide.title, 'AI Agent Status Updates: Report Progress Without Noise');
   assert.deepEqual(guides['ai-agent-status-updates'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-status-updates'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-status-updates'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-status-updates'].sections.flatMap((section) => section.links || []).length, 10);
   const statusUpdatesHtml = renderStaticPage(guideTemplate, statusUpdatesGuide);
   assert.match(statusUpdatesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-status-updates\//);
   assert.match(statusUpdatesHtml, /An AI agent status update is a concise report of a material change/);
@@ -698,7 +698,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(followOnWorkGuide.title, 'AI Agent Follow-On Work | Commonly AI');
   assert.deepEqual(guides['ai-agent-follow-on-work'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-follow-on-work'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-follow-on-work'].sections.flatMap((section) => section.links || []).length, 10);
+  assert.equal(guides['ai-agent-follow-on-work'].sections.flatMap((section) => section.links || []).length, 11);
   const followOnWorkHtml = renderStaticPage(guideTemplate, followOnWorkGuide);
   assert.match(followOnWorkHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-follow-on-work\//);
   assert.match(followOnWorkHtml, /AI agent follow-on work is a separately defined task/);
@@ -719,7 +719,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(verificationPathGuide.title, 'AI Agent Verification Path: Trace Claims to Evidence');
   assert.deepEqual(guides['ai-agent-verification-path'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-verification-path'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-verification-path'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-verification-path'].sections.flatMap((section) => section.links || []).length, 11);
   const verificationPathHtml = renderStaticPage(guideTemplate, verificationPathGuide);
   assert.match(verificationPathHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-verification-path\//);
   assert.match(verificationPathHtml, /An AI agent verification path is the explicit route/);
@@ -1050,7 +1050,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const audienceBoundaries = guides['ai-agent-audience-boundaries'];
   assert.deepEqual(audienceBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(audienceBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(audienceBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(audienceBoundaries.sections.flatMap((section) => section.links || []).length, 10);
   const boundedReview = audienceBoundaries.sections.find((section) => section.title === 'Use a named reviewer for bounded review, not a general audience');
   assert.equal(boundedReview.paragraphs.length, 6);
   assert.equal(boundedReview.tables, undefined);
@@ -1086,7 +1086,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const interimResults = guides['ai-agent-interim-results'];
   assert.deepEqual(interimResults.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(interimResults.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(interimResults.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(interimResults.sections.flatMap((section) => section.links || []).length, 10);
   const preservedInterim = interimResults.sections.find((section) => section.title === 'Preserve an interim result for the next owner without turning it into authority');
   assert.equal(preservedInterim.paragraphs.length, 6);
   assert.equal(preservedInterim.tables, undefined);
@@ -1119,7 +1119,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const taskSplitting = guides['ai-agent-task-splitting'];
   assert.deepEqual(taskSplitting.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(taskSplitting.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 12);
   const sharedDecision = taskSplitting.sections.find((section) => section.title === 'Do not split work that still needs one shared decision');
   assert.equal(sharedDecision.paragraphs.length, 6);
   assert.equal(sharedDecision.tables, undefined);
@@ -1286,7 +1286,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const contextPacket = guides['ai-agent-context-packet'];
   assert.deepEqual(contextPacket.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(contextPacket.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(contextPacket.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(contextPacket.sections.flatMap((section) => section.links || []).length, 10);
   assert.deepEqual(contextPacket.sections.find((section) => section.title === 'The source link is part of the field').links.map((link) => link.path), ['/guides/ai-agent-source-of-record/', '/guides/ai-agent-work-contract/']);
   assert.equal(contextPacket.sections.find((section) => section.title === 'The packet should be short enough to work from').links, undefined);
   assert.match(contextPacket.intro[0], /^An AI agent context packet is the smallest current, source-linked bundle an agent or reviewer needs to complete one bounded task step\./);
@@ -1841,7 +1841,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     [[3, 6], [3, 5], [3, 6], [3, 5], [2, 6], [3, 5], [4, 5], [3, 7]],
   );
   assert.deepEqual(guides['what-is-a-multi-agent-system'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [6, 6]);
-  assert.equal(guides['what-is-a-multi-agent-system'].sections.flatMap((section) => section.links || []).length, 6);
+  assert.equal(guides['what-is-a-multi-agent-system'].sections.flatMap((section) => section.links || []).length, 8);
   const multiAgentSystemHtml = renderStaticPage(guideTemplate, multiAgentSystemGuide);
   assert.match(multiAgentSystemHtml, /href="https:\/\/commonly\.me\/guides\/what-is-a-multi-agent-system\//);
   assert.match(multiAgentSystemHtml, /A multi-agent system is a coordinated set of two or more AI agents/);
@@ -1876,7 +1876,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     ['Core agent terms', 'Collaboration and workspace terms', 'Context and memory terms', 'Capability and safety terms', 'Governance and evaluation terms'],
   );
   assert.equal(glossaryData.sections.filter((section) => section.paragraphs).length, 36);
-  assert.equal(glossaryData.sections.flatMap((section) => section.links || []).length, 19);
+  assert.equal(glossaryData.sections.flatMap((section) => section.links || []).length, 21);
   assert.equal(glossaryData.sections.some((section) => section.tables || section.bullets || section.orderedItems || section.codeBlocks), false);
   const glossaryHtml = renderStaticPage(guideTemplate, glossaryGuide);
   assert.match(glossaryHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-glossary\//);
@@ -1900,7 +1900,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     [[3, 6], [4, 5], [3, 7], [3, 5], [3, 6], [3, 6], [3, 6], [3, 5]],
   );
   assert.deepEqual(guides['ai-agent-governance'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agent-governance'].sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(guides['ai-agent-governance'].sections.flatMap((section) => section.links || []).length, 10);
   const governanceHtml = renderStaticPage(guideTemplate, governanceGuide);
   assert.match(governanceHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-governance\//);
   assert.match(governanceHtml, /AI agent governance is the operating model that decides who may assign work/);
@@ -1922,7 +1922,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(softwareDevelopmentGuide.title, 'AI Agents for Software Development: Reviewable Changes');
   assert.deepEqual(guides['ai-agents-for-software-development'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [3, 6], [2, 8]]);
   assert.deepEqual(guides['ai-agents-for-software-development'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(guides['ai-agents-for-software-development'].sections.flatMap((section) => section.links || []).length, 8);
+  assert.equal(guides['ai-agents-for-software-development'].sections.flatMap((section) => section.links || []).length, 9);
   const softwareDevelopmentHtml = renderStaticPage(guideTemplate, softwareDevelopmentGuide);
   assert.match(softwareDevelopmentHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-software-development\//);
   assert.match(softwareDevelopmentHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -2702,4 +2702,24 @@ test('the public-hit script sends no identifier and keeps the API base inside it
   assert.match(script, /keepalive:true/);
   assert.match(script, /doNotTrack/);
   assert.match(script, /globalPrivacyControl/);
+});
+
+// Search engines find a page through links in other pages' text more than
+// through a footer list, so every guide is linked from inside another guide's
+// sections, and every such link lands on a guide that exists.
+test('every guide is linked from inside another guide, and every in-body guide link resolves', async () => {
+  const guides = JSON.parse(await readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'));
+  const inbound = new Map(Object.keys(guides).map((slug) => [slug, 0]));
+  for (const [slug, guide] of Object.entries(guides)) {
+    for (const section of guide.sections) {
+      for (const link of section.links || []) {
+        const match = /^\/guides\/([a-z0-9-]+)\/$/.exec(link.path);
+        if (!match) continue;
+        assert.ok(inbound.has(match[1]), `${slug} links to a guide that does not exist: ${link.path}`);
+        if (match[1] !== slug) inbound.set(match[1], inbound.get(match[1]) + 1);
+      }
+    }
+  }
+  const unlinked = [...inbound].filter(([, count]) => count === 0).map(([slug]) => slug);
+  assert.deepEqual(unlinked, []);
 });
