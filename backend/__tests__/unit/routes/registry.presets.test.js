@@ -56,22 +56,47 @@ describe('registry presets', () => {
     process.env.GEMINI_API_KEY = originalGemini;
   });
 
-  it('no preset ships a bundled skill that runs a binary no runtime is known to carry', () => {
-    // The bundled skills were written for the retired gateway image, which
-    // installed their binaries. No runtime carries them now (F413), so a
-    // preset that names one hands its agents commands that fail.
+  it('no preset names a skill whose requirements its runtime lacks', () => {
+    // A preset skill lands in the pod's skills and reaches its agents, so a
+    // skill that needs a shell, a binary or an OpenClaw tool its runtime lacks
+    // hands agents commands that fail (F413, F418). The catalog skills come
+    // from ClawHub, so their needs are written down here from each SKILL.md.
+    // A skill missing from this map fails the test until someone classifies it.
     const fs = require('fs');
     const path = require('path');
     const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const CATALOG_NEEDS = {
+      weather: ['shell'], // curl wttr.in / open-meteo
+      trello: ['shell'], // curl + jq against api.trello.com
+      'video-frames': ['shell'], // bundled frame.sh + ffmpeg
+      'openai-whisper-api': ['shell'], // bundled transcribe.sh + curl
+      tavily: ['shell'], // bundled tavily_search.py + pip tavily-python
+      slack: ['openclaw-tool'], // the gateway's built-in slack tool
+      discord: ['openclaw-tool'], // the gateway's built-in discord tool
+    };
+    // The gateway (openclaw) is retired and the native runtime (internal) has
+    // no shell. A runtime earns a capability here only once it really has it.
+    const RUNTIME_HAS = { openclaw: [], internal: [], webhook: [], 'claude-code': [] };
     const bundledDir = path.join(__dirname, '../../../commonly-bundled-skills');
-    const needsBinary = fs.readdirSync(bundledDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter((id) => /"bins":\s*\[\s*"/.test(fs.readFileSync(path.join(bundledDir, id, 'SKILL.md'), 'utf8')));
-    expect(needsBinary).toEqual(expect.arrayContaining(['officecli', 'github', 'tmux']));
-    const offenders = PRESET_DEFINITIONS.flatMap((preset) => (preset.defaultSkills || [])
-      .filter((skill) => needsBinary.includes(skill.id))
-      .map((skill) => `${preset.id}:${skill.id}`));
+    const needsOf = (id) => {
+      const skillFile = path.join(bundledDir, id, 'SKILL.md');
+      if (fs.existsSync(skillFile)) {
+        return /"bins":\s*\[\s*"/.test(fs.readFileSync(skillFile, 'utf8')) ? ['shell'] : [];
+      }
+      return CATALOG_NEEDS[id] || null;
+    };
+    expect(needsOf('officecli')).toEqual(['shell']);
+    const problems = PRESET_DEFINITIONS.flatMap((preset) => {
+      const has = RUNTIME_HAS[preset.installHints?.runtime] || [];
+      return (preset.defaultSkills || []).flatMap((skill) => {
+        const needs = needsOf(skill.id);
+        if (!needs) return [`${preset.id}:${skill.id} (unclassified)`];
+        return needs.filter((need) => !has.includes(need)).map((need) => `${preset.id}:${skill.id} needs ${need}`);
+      });
+    });
+    expect(problems).toEqual([]);
+  });
+
   it('no openclaw preset tells its agent to reach for the gh skill', () => {
     // The gateway that carried gh is retired and the github skill left the
     // presets (F413), so an "Or `gh` ..." line points at a tool that is gone
@@ -128,7 +153,7 @@ describe('registry presets', () => {
     expect(Array.isArray(researchPreset.apiRequirements)).toBe(true);
     expect(Array.isArray(researchPreset.defaultSkills)).toBe(true);
     expect(Array.isArray(researchPreset.recommendedEnv)).toBe(true);
-    expect(typeof researchPreset.defaultSkills[0]?.setupStatus).toBe('string');
+    researchPreset.defaultSkills.forEach((skill) => expect(typeof skill.setupStatus).toBe('string'));
     expect(typeof researchPreset.readiness.ready).toBe('boolean');
 
     const xCuratorPreset = payload.presets.find((preset) => preset.id === 'x-curator');
