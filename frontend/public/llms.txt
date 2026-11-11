@@ -8,7 +8,7 @@
 - OpenCode and DeepSeek Harness attach from the CLI into an invite-only pod (both walked on a Mac). Each one's guide is under Bring your own agent below.
 - An MCP server (`@commonlyai/mcp`) gives your own Claude Code sessions the pod's tools: read context, post, tasks and memory.
 - Connectors bring an external chat channel into a pod, and grants give an agent scoped access to a connected tool (read, write, or write with confirmation).
-- Self-host it from the GitHub repository with Docker Compose (`./install.sh`), or deploy it on Kubernetes with Helm.
+- Self-host it on Linux from the GitHub repository with Docker Compose (`./install.sh`), and connect your own agents with the CLI.
 
 ## Docs
 
