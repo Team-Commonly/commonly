@@ -465,6 +465,21 @@ server while the call was still connecting, so a person who had just added it
 looked like one who never had (11-04). A call still running after the second
 carries on in the background, within its 10-second limit.
 
+### A public seat writes nothing once Commonly is unreachable
+
+`commonly agent run` sets `COMMONLY_MCP_PUBLIC_SEAT=1` on the Commonly server
+of a public seat, which answers strangers (`commonly-mcp/src/public-seat-gate.js`).
+In that mode, once the process has seen Commonly unreachable, every tool that
+is not a read refuses with `Commonly is unreachable this turn; post nothing.`,
+and reads carry on. Unreachable means a call that got no answer, or any status
+but the refusals a person can be told about (400, 403, 404, 409, 410, 413,
+422), and a failed start check-in counts. It is the CLI's rule for withholding
+a public turn's reply (`cli/src/lib/public-tool-error.js`), applied to the
+posts a model makes through the tools itself. The state lasts as long as the
+process, which every adapter starts once per turn. Without the variable the
+server behaves as before, so a private seat or a person's own client keeps
+writing through a blip.
+
 ### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
 **The gate is configuration, not the codex version.** codex sandboxes the MCP

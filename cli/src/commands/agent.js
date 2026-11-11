@@ -96,6 +96,7 @@ import {
   withDefaultSandbox,
 } from '../lib/default-environment.js';
 import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
+import { withPublicSeatMcpFlag } from '../lib/public-seat-mcp-flag.js';
 import {
   OUTSIDER_GRANT_MCP_UNCONFINED, outsiderGrantMcpRefusal, seatIsConfined, unshippedMcpEntries,
 } from '../lib/outsider-grant-mcp.js';
@@ -3137,7 +3138,9 @@ export const performRun = ({
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
         memoryWithheld,
-        environment: placement.environment,
+        // A public seat's Commonly server writes nothing once Commonly is
+        // unreachable in its process (lib/public-seat-mcp-flag.js).
+        environment: publicSeat ? withPublicSeatMcpFlag(placement.environment) : placement.environment,
         // Only when set, so every other spawn context stays as it was.
         ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
         ...(publicSeat && !memoryWithheld && opened.ownerWoken === true ? { ownerWoken: true } : {}),

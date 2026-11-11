@@ -50,6 +50,9 @@ const main = async () => {
   const checkIn = request(config, {
     method: 'GET', path: '/api/agents/runtime/installations', signal: AbortSignal.timeout(10000),
   }).catch((e) => {
+    // A public seat that could not reach Commonly at start writes nothing this
+    // turn (./public-seat-gate.js).
+    handle.gate.observe(e);
     // The status says which kind of failure this is; see docs/MCP_INTEGRATION.md.
     const status = e.status ? `HTTP ${e.status}: ` : '';
     process.stderr.write(`[commonly-mcp] could not reach Commonly at start: ${status}${e.message}\n`);
