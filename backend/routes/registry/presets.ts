@@ -33,7 +33,6 @@ const PRESET_DEFINITIONS = [
       runtime: 'openclaw',
     },
     defaultSkills: [
-      { id: 'github', reason: 'Explore repos for competitive intelligence, trending projects, technical patterns.' },
       { id: 'tavily', reason: 'Deep web research, source validation, competitive analysis.' },
     ],
     soulTemplate: `# SOUL.md
@@ -88,8 +87,6 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
       runtime: 'openclaw',
     },
     defaultSkills: [
-      { id: 'github', reason: 'PR/repo operations and source control context.' },
-      { id: 'tmux', reason: 'Session management for long running coding tasks.' },
       { id: 'video-frames', reason: 'Debug UI/video capture artifacts when needed.' },
       { id: 'openai-whisper-api', reason: 'Transcribe captured audio/video snippets in workflows.' },
     ],
@@ -243,7 +240,6 @@ plain inline diff/review request there is nothing to commit.)
       runtime: 'internal',
     },
     defaultSkills: [
-      { id: 'github', reason: 'Track and summarize engineering/project activity snapshots.' },
       { id: 'weather', reason: 'Example no-key utility fallback in low-config setups.' },
     ],
   },
@@ -272,7 +268,6 @@ plain inline diff/review request there is nothing to commit.)
     },
     defaultSkills: [
       { id: 'tavily', reason: 'Optional enrichment and source validation for discovered topics.' },
-      { id: 'github', reason: 'Track linked repos/topics when social posts reference engineering work.' },
       { id: 'trello', reason: 'Turn curated topics into follow-up tasks.' },
     ],
     soulTemplate: `# SOUL.md
@@ -453,7 +448,6 @@ Sources: 🔗 [url1], 🔗 [url2]
       runtime: 'internal',
     },
     defaultSkills: [
-      { id: 'github', reason: 'Optional source context enrichment for linked posts.' },
       { id: 'weather', reason: 'Example low-friction utility fallback.' },
     ],
     soulTemplate: `# SOUL.md
@@ -1198,13 +1192,7 @@ If tasks changed, blockers found, or a PR was reviewed → ONE status message us
 - Skip sender "theo" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
-    defaultSkills: [
-      { id: 'github', reason: 'PR/repo operations and source control context.' },
-      { id: 'officecli', reason: 'Generate DOCX/XLSX/PPTX deliverables for stakeholders (PRDs, briefs, reports).' },
-      { id: 'pandic-office', reason: 'Markdown → PDF for weekly digests and audit summaries.' },
-      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX as markdown for input.' },
-      { id: 'pdf', reason: 'PDF extract / merge / split when working with stakeholder docs.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'backend-engineer',
@@ -1289,14 +1277,7 @@ Use the arrays from call #3 (DevPodId) and call #4 (MyPodId) — do NOT re-fetch
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 - HEARTBEAT_OK is a return value, NOT a chat message. Never post it.
 `,
-    defaultSkills: [
-      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
-      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
-      { id: 'officecli', reason: 'Generate DOCX/XLSX deliverables (API specs, schemas as docs) when needed.' },
-      { id: 'pandic-office', reason: 'Markdown → PDF for stack-trace analysis or design notes shared in chat.' },
-      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX/XLSX/specs as markdown for input.' },
-      { id: 'pdf', reason: 'PDF extract / read when working with attached vendor docs or specs.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'frontend-engineer',
@@ -1378,14 +1359,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
 - Skip sender "pixel" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
-    defaultSkills: [
-      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
-      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
-      { id: 'officecli', reason: 'Generate UI spec / mockup-doc deliverables (DOCX/PPTX) when needed.' },
-      { id: 'pandic-office', reason: 'Markdown → PDF for design notes / accessibility audits shared in chat.' },
-      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX/specs as markdown for input.' },
-      { id: 'pdf', reason: 'PDF extract / read when working with attached design assets or specs.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'devops-engineer',
@@ -1467,14 +1441,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
 - Skip sender "ops" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
-    defaultSkills: [
-      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
-      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
-      { id: 'officecli', reason: 'Generate runbook / incident-report deliverables (DOCX/PDF) when needed.' },
-      { id: 'pandic-office', reason: 'Markdown → PDF for incident timelines and post-mortem reports shared in chat.' },
-      { id: 'markdown-converter', reason: 'Read user-attached PDFs (vendor docs, runbooks, k8s configs) as markdown for input.' },
-      { id: 'pdf', reason: 'PDF extract / read when working with vendor docs or k8s reference material.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'claude-code-agent',
@@ -1530,9 +1497,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
       { key: 'GEMINI_API_KEY', purpose: 'Strategic synthesis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'github', reason: 'Track project milestones, open issues, and team velocity.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Chief of Staff** — the master coordinator who sits between the principal and the entire machine. You are not a secretary. You are a strategic filter: the person who decides what gets escalated, what gets delegated, and what gets killed before it wastes anyone's time.
@@ -1617,7 +1582,6 @@ Check ActionItems for overdue. Or state-of-play: "Three threads open. [A] needs 
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Competitive analysis, inspect repos, track issues/milestones.' },
       { id: 'tavily', reason: 'Market research and competitive intelligence.' },
     ],
     soulTemplate: `# SOUL.md
@@ -1699,7 +1663,6 @@ You are **Product Strategist** — a seasoned product mind. You lead with the pr
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Track trending repos, competitive intelligence.' },
       { id: 'tavily', reason: 'Market research and social listening.' },
     ],
     soulTemplate: `# SOUL.md
@@ -1782,7 +1745,6 @@ You are **Marketing Strategist** — the marketing lead who orchestrates campaig
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Analyze trending repos for growth patterns.' },
       { id: 'tavily', reason: 'Research growth benchmarks and viral case studies.' },
     ],
     soulTemplate: `# SOUL.md
@@ -1864,7 +1826,6 @@ You are **Growth Hacker** — the experiment-obsessed growth specialist who find
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Find content-worthy projects, track releases.' },
       { id: 'tavily', reason: 'Research topics and validate claims.' },
     ],
     soulTemplate: `# SOUL.md
@@ -1945,7 +1906,6 @@ You are **Content Creator** — a multi-platform content strategist who crafts s
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Find trending repos for content.' },
       { id: 'tavily', reason: 'Research trending topics for threads.' },
     ],
     soulTemplate: `# SOUL.md
@@ -2037,7 +1997,6 @@ Add to Drafts. Under 4 sentences.
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
     defaultSkills: [
-      { id: 'github', reason: 'Check README quality and docs structure that drive AI citations.' },
       { id: 'tavily', reason: 'Research what AI models cite for product category queries.' },
     ],
     soulTemplate: `# SOUL.md
@@ -2121,9 +2080,7 @@ Or \`gh\` to audit competitor docs structure.
       { key: 'GEMINI_API_KEY', purpose: 'Design analysis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'github', reason: 'Review design systems, component libraries, visual patterns.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Brand Designer** — the guardian of brand identity and visual coherence.
@@ -2200,9 +2157,7 @@ You are **Brand Designer** — the guardian of brand identity and visual coheren
       { key: 'GEMINI_API_KEY', purpose: 'Creative analysis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'github', reason: 'Study excellent project presentations, README craft, landing pages.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Creative Director** — the quality gate. Your job is to make sure what the team produces is genuinely good, not just strategically correct.
@@ -2280,9 +2235,7 @@ You are **Creative Director** — the quality gate. Your job is to make sure wha
       { key: 'GITHUB_PAT', purpose: 'Read Team-Commonly/commonly via gh CLI', envAny: ['GITHUB_PAT'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'github', reason: 'Read README, docs, PRs, commits from Team-Commonly/commonly.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Repo Analyst** — the ground-truth source for what Commonly actually is and what has actually shipped.
@@ -2375,9 +2328,7 @@ Save summary into \`## RepoSnapshot\`.
       { key: 'GITHUB_PAT', purpose: 'Query trending GitHub repos via gh CLI', envAny: ['GITHUB_PAT'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'github', reason: 'Query trending repos, star velocity, recent releases in the agent/orchestration ecosystem.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Ecosystem Scout** — the team's eyes on the AI orchestration and agent-harness ecosystem. You find ideas worth absorbing and patterns worth naming.

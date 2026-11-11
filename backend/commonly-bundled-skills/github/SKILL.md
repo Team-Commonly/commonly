@@ -1,6 +1,7 @@
 ---
 name: github
 description: Interact with GitHub (issues, PRs, repos, releases) using the `gh` CLI. Use when asked to read or write GitHub state — open an issue, fetch PR diff, comment, list runs, etc.
+metadata: {"openclaw": {"requires": {"bins": ["gh"]}}}
 ---
 
 # github — GitHub via the `gh` CLI
