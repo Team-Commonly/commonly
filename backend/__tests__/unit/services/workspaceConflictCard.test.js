@@ -121,6 +121,23 @@ describe('one request per merge', () => {
     accepted(req);
   });
 
+  test('fifty paths still end in the question, with the path list clipped instead', () => {
+    const files = Array.from({ length: 50 }, (_, i) => ({
+      path: `/packages/some-long-package-name-${i}/src/index.ts`, kind: 'content', hunks: [{ line: 1, ours: ['a'], theirs: ['b'] }],
+    }));
+    const req = mergeConflictToDecisionRequest(refusal(files));
+    expect(req.question.length).toBeLessThanOrEqual(1000);
+    expect(req.question).toMatch(/both changed the same 50 files: .*…\. Which version should land\?$/);
+    accepted(req);
+  });
+
+  test('a refusal that lists no paths still asks a question that makes sense', () => {
+    const req = mergeConflictToDecisionRequest(refusal([], { extra: { conflictsTruncated: true } }));
+    expect(req.question).toBe('agent-b and main conflict, but the merge listed no paths. Which version should land?');
+    expect(req.title).toBe('Merge conflict: agent-b into main');
+    accepted(req);
+  });
+
   test('a merge that listed only some paths says so', () => {
     const req = mergeConflictToDecisionRequest(refusal([readme], { extra: { conflictsTruncated: true } }));
     expect(req.context).toContain('Conflicting files: 1 listed; the merge listed only some.');

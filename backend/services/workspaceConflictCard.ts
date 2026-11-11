@@ -226,9 +226,13 @@ export const mergeConflictToDecisionRequest = (detail: WorkspaceMergeRefusal): W
     const [gone, kept] = deleter === 'ours' ? [ours, theirs] : [theirs, ours];
     question = `${gone} deleted ${location}, and ${kept} changed it. Which should land?`;
   } else if (files.length > 1) {
-    const paths = files.map((c) => c.path).join(', ');
-    question = `${theirs} and ${ours} both changed the same ${files.length} files: ${paths}. `
-      + 'Which version should land?';
+    // The path list gives way first, so the question itself is never clipped off.
+    const ask = ' Which version should land?';
+    const lead = `${theirs} and ${ours} both changed the same ${files.length} files: `;
+    const paths = clip(files.map((c) => c.path).join(', '), QUESTION_MAX - lead.length - ask.length - 1);
+    question = `${lead}${paths}.${ask}`;
+  } else if (!files.length) {
+    question = `${theirs} and ${ours} conflict, but the merge listed no paths. Which version should land?`;
   } else {
     question = `${theirs} and ${ours} both changed ${location}. Which version should land?`;
   }
@@ -252,7 +256,7 @@ export const mergeConflictToDecisionRequest = (detail: WorkspaceMergeRefusal): W
   };
 
   return {
-    title: `${TITLE_PREFIX}${location}${more}`,
+    title: head ? `${TITLE_PREFIX}${location}${more}` : `Merge conflict: ${location}`,
     question: clip(question, QUESTION_MAX),
     context: contextFor(files, gitLine, sides, merge, Boolean(detail.conflictsTruncated)),
     decisionClass: 'implementation',
