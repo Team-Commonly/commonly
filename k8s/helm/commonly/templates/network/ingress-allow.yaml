@@ -1,0 +1,98 @@
+{{- /*
+Ingress policies: each listening pod admits only its known clients on its own
+port, and default-deny-ingress turns away everything else in the namespace.
+An allow is not a no-op before the deny: a policy that selects a pod closes
+that pod to every client it doesn't list, at once. So each switch fences its
+own pod, and the deny closes only the pods no allow names. A policy that
+admits the edge refuses to render while the edge is empty, since an empty
+`from` admits everyone.
+Clients are named by pod label, never by node: pods move between pools.
+`edge` is where outside traffic enters (prod: the ingress-nginx controller;
+staging: its in-namespace tunnel). One switch per policy under
+networkPolicy.ingress.<name>.enabled (default false); checked by
+scripts/verify-network-policy-chart.js. Clients, rollout order and rollback:
+docs/runbooks/redis-auth-and-network-policy.md.
+*/ -}}
+{{- $cfg := .Values.networkPolicy.ingress -}}
+{{- $ns := include "commonly.namespace" . -}}
+{{- $api := list "backend" "backend-worker" "commonly-bot" "ops-runner" "cloud-codex" -}}
+{{- $data := list "backend" "backend-worker" "ops-runner" -}}
+{{- $policies := list
+  (dict "key" "frontend" "name" "allow-frontend-ingress" "app" "frontend" "ports" (list 80) "edge" true "apps" (list))
+  (dict "key" "backend" "name" "allow-backend-ingress" "app" "backend" "ports" (list 5000) "edge" true "apps" $api)
+  (dict "key" "litellm" "name" "allow-litellm-ingress" "app" "litellm" "ports" (list 4000) "edge" $cfg.litellm.public "apps" $api)
+  (dict "key" "redis" "name" "allow-redis-ingress" "app" "redis" "ports" (list 6379) "edge" false "apps" $data)
+  (dict "key" "mongodb" "name" "allow-mongodb-ingress" "app" "mongodb" "ports" (list 27017) "edge" false "apps" $data "components" (list "backup"))
+  (dict "key" "emailSink" "name" "allow-email-sink-ingress" "app" "email-sink" "ports" (list (int .Values.email.sink.port)) "edge" false "apps" $data "components" (list "stranger-journey"))
+  (dict "key" "agentComputer" "name" "allow-agent-computer-waker-ingress" "app" "agent-computer-waker" "ports" (list (int .Values.agentComputer.waker.port)) "edge" false "apps" $data)
+  (dict "key" "agentComputer" "name" "allow-agent-computer-steel-ingress" "app" "agent-computer-steel" "ports" (list 3000) "edge" false "apps" $data)
+-}}
+{{- range $p := $policies }}
+{{- if (index $cfg $p.key).enabled }}
+{{- if and $p.edge (not $cfg.edge) }}
+{{- fail (printf "networkPolicy.ingress.%s needs networkPolicy.ingress.edge: with no edge peer its from-list is empty, which admits every source" $p.key) }}
+{{- end }}
+{{- if $p.edge }}
+{{- range $peer := $cfg.edge }}
+{{- $pods := $peer.podSelector | default dict }}
+{{- if or $peer.ipBlock (not (or $pods.matchLabels $pods.matchExpressions)) }}
+{{- fail "networkPolicy.ingress.edge: each peer must name the edge pods with a non-empty podSelector (no ipBlock), or it admits whole namespaces or address ranges" }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $p.name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $p.app }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- if $p.edge }}
+        {{- toYaml $cfg.edge | nindent 8 }}
+        {{- end }}
+        {{- if $p.apps }}
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  {{- toYaml $p.apps | nindent 18 }}
+        {{- end }}
+        {{- with $p.components }}
+        - podSelector:
+            matchExpressions:
+              - key: component
+                operator: In
+                values:
+                  {{- toYaml . | nindent 18 }}
+        {{- end }}
+      ports:
+        {{- range $port := $p.ports }}
+        - protocol: TCP
+          port: {{ $port }}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- if $cfg.defaultDeny.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+{{- end }}
