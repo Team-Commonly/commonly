@@ -4620,6 +4620,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,
 .v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,
+.v2-pods__rowwrap:has(.v2-pods__pin:active) .v2-pods__row-time,
 .v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }
 @media (hover: hover) {
   .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }
