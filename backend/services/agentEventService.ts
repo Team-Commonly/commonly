@@ -227,7 +227,11 @@ interface GarbageCollectOptions {
 }
 
 interface GarbageCollectResult {
+  // Always 0 since F381: pending events are marked expired, never deleted.
+  // Kept so a reader of the old shape still adds up.
   deletedPending: number;
+  // F381: pending events past the retention window, marked 'expired' in place.
+  expiredPending: number;
   deletedDelivered: number;
   deletedFailed: number;
   totalDeleted: number;
@@ -1245,9 +1249,17 @@ class AgentEventService {
       // longer means the row is about to be destroyed.
       // Digest rows are unread state. Retiring them without folding into a
       // durable per-seat summary would silently erase the notification.
-      AgentEvent.deleteMany({
-        status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
-      }),
+      //
+      // F381: a pending event past the window is marked 'expired', never
+      // deleted, so an unanswered wake stays on record and countable. A
+      // first_contact is exempt: it is the one event a newly met person is
+      // owed, and it stays pending until an agent claims it.
+      AgentEvent.updateMany({
+        status: 'pending',
+        deliveryMode: { $ne: 'digest' },
+        type: { $ne: 'first_contact' },
+        createdAt: { $lt: deliveredThreshold },
+      }, { $set: { status: 'expired', expiredAt: new Date() } }),
       AgentEvent.deleteMany({
         status: 'acked', createdAt: { $lt: deliveredThreshold },
       }),
@@ -1257,17 +1269,19 @@ class AgentEventService {
       AgentEvent.deleteMany({
         status: 'failed', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: failedThreshold },
       }),
-    ]) as Array<{ deletedCount?: number }>;
+    ]) as Array<{ deletedCount?: number; modifiedCount?: number }>;
 
-    const deletedPending = pendingResult?.deletedCount || 0;
+    const expiredPending = pendingResult?.modifiedCount || 0;
+    const deletedPending = 0;
     const deletedDelivered = (ackedResult?.deletedCount || 0) + (deliveredResult?.deletedCount || 0);
     const deletedFailed = failedResult?.deletedCount || 0;
 
     return {
       deletedPending,
+      expiredPending,
       deletedDelivered,
       deletedFailed,
-      totalDeleted: deletedPending + deletedDelivered + deletedFailed + foldedDigest,
+      totalDeleted: deletedDelivered + deletedFailed + foldedDigest,
       foldedDigest,
       deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
       failedRetentionHours: Math.max(failedRetentionHours, 1),

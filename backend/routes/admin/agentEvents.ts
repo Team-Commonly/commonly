@@ -192,6 +192,9 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
         delivered: statusCounts.delivered || 0,
         deliveredByOutcome,
         failed: statusCounts.failed || 0,
+        // F381: unclaimed pending events past the retention window, kept.
+        // Not in `total`, which counts the live queue.
+        expired: statusCounts.expired || 0,
         stalePendingMinutes,
         stalePendingCount,
       },
