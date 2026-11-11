@@ -27,10 +27,11 @@ export const unconfinedNoticeFrom = (out) => String(out).split(/\r?\n/)
 // refuses the bare name's .ps1 shim, and dependent steps print one per line,
 // because Windows PowerShell 5.1 has no `&&`. Reads the CLI's own output only.
 const SHIM_HINT = /(?:^|[\s`'"(:])(?:commonly|npm|npx)\.cmd\s+[a-z@-]/;
-// The subcommands the CLI prints hints for (cli/src, `${CLI} <subcommand>`), so prose like
+// The subcommands the CLI prints hints for (cli/src, `${CLI} <subcommand>`; a test keeps the
+// list in step with cli/src), so prose like
 // "the commonly agent is idle" is not read as a command.
-const BARE_HINT = new RegExp("(?:^|[\\s`'\"(:])(?:commonly\\s+(?:login|doctor|dev\\s+up|mcp\\s+config"
-  + "|agent\\s+(?:attach|run|detach|config|list|init)|daemon\\s+(?:install|register|status|uninstall|restart|logs|heartbeat|start|stop)"
+const BARE_HINT = new RegExp("(?:^|[\\s`'\"(:])(?:commonly\\s+(?:login|doctor|dev\\s+(?:up|down|logs|status|clawdbot)|mcp\\s+config"
+  + "|agent\\s+(?:attach|run|detach|config|list|init|connect|import-memory|logs|wake)|daemon\\s+(?:install|register|status|uninstall|restart|logs|heartbeat|start|stop|setup|unregister)"
   + "|inbox\\s+(?:list|choose|ack)|task\\s+(?:list|claim|close|update|create)|pod\\s+(?:tail|send|list))\\b"
   + "|npm\\s+(?:i|install|uninstall|update)\\s|npx\\s+(?:-y\\s|@))");
 export const cliHintsFrom = (out) => {

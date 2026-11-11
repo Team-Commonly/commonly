@@ -4,10 +4,16 @@
 // page's install line, so it cannot stand in for that line: a page that names
 // a package npm cannot install must fail the PR, not warn.
 
+import { execFileSync } from 'child_process';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+
 import {
   cliHintsFrom, describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
   pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, unconfinedNoticeFrom,
 } from '../scripts/windows-byo-verdict.mjs';
+
+const CLI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const PAGE = [
   'npm i -g @commonlyai/cli@latest',
@@ -395,6 +401,14 @@ describe('the commands the CLI prints on Windows (F435)', () => {
       expect(problems).toHaveLength(1);
       expect(problems[0]).toMatch(/bare command a Restricted policy refuses/);
     }
+  });
+
+  test('every `${CLI} <subcommand>` hint in cli/src is caught in its bare form', () => {
+    const src = execFileSync('git', ['grep', '-h', '-o', '-E', '\\$\\{CLI\\} [a-z][a-z-]*( [a-z][a-z-]*)?', '--', 'src'], { cwd: CLI_DIR }).toString();
+    const commands = [...new Set(src.split('\n').filter(Boolean).map((line) => line.replace('${CLI} ', '')))];
+    expect(commands.length).toBeGreaterThan(30);
+    const missed = commands.filter((command) => cliHintsFrom(`${WINDOWS_CLI_OUT}\ncommonly ${command}`).problems.length !== 1);
+    expect(missed).toEqual([]);
   });
 
   test('steps joined with && fail, since Windows PowerShell 5.1 has no &&', () => {
