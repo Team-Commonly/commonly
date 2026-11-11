@@ -53,6 +53,15 @@ describe('withPublicSeatMcpFlag', () => {
     expect(environment.mcp[0].env[PUBLIC_SEAT_MCP_ENV]).toBeUndefined();
   });
 
+  test('a recorded local checkout of the Commonly server is flagged too', () => {
+    const entry = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../commonly-mcp/src/index.js');
+    const local = { name: 'commonly', command: ['node', entry], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}' } };
+    const other = { name: 'notes', command: ['node', path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/index.js')] };
+    const flagged = withPublicSeatMcpFlag({ sandbox: { trust: 'public' }, mcp: [local, other] });
+    expect(flagged.mcp[0].env[PUBLIC_SEAT_MCP_ENV]).toBe('1');
+    expect(flagged.mcp[1]).toBe(other);
+  });
+
   test('an environment with no Commonly server comes back as it was', () => {
     for (const environment of [null, { model: 'm' }, { mcp: [BROKER] }]) {
       expect(withPublicSeatMcpFlag(environment)).toBe(environment);

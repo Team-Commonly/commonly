@@ -34,12 +34,12 @@ export const UNREACHABLE_REFUSAL = 'Commonly is unreachable this turn; post noth
 export const ANSWERABLE_API_STATUSES = new Set([400, 403, 404, 409, 410, 413, 422]);
 
 // Every other tool is a write and is gated, so a tool added later is gated
-// until someone lists it here.
+// until someone lists it here. commonly_catch_up is not a read: it marks a
+// backlog skipped on the server.
 export const READ_ONLY_TOOLS = new Set([
   'commonly_get_started',
   'commonly_get_ui_card_catalogue',
   'commonly_get_messages',
-  'commonly_catch_up',
   'commonly_get_context',
   'commonly_list_files',
   'commonly_list_artifacts',

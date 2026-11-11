@@ -14,15 +14,22 @@
  * `isShippedCommonlyMcpEntry`) still see the declaration as written.
  */
 import { isShippedCommonlyMcpCommand } from './declared-mcp-guard.js';
+import { describeMcpCommand } from './mcp-server-version.js';
 
 export const PUBLIC_SEAT_MCP_ENV = 'COMMONLY_MCP_PUBLIC_SEAT';
 
-export const withPublicSeatMcpFlag = (environment) => {
+// The npx form, or a recorded local checkout of the same package (the form
+// goose's public check and `auditDeclaredMcp` also admit).
+const isCommonlyServer = (server, describe) => isShippedCommonlyMcpCommand(server?.command)
+  || Boolean(describe(server?.command)?.isCommonly);
+
+export const withPublicSeatMcpFlag = (environment, { describe = describeMcpCommand } = {}) => {
   const servers = Array.isArray(environment?.mcp) ? environment.mcp : null;
-  if (!servers || !servers.some((server) => isShippedCommonlyMcpCommand(server?.command))) return environment;
+  const flagged = servers ? servers.map((server) => isCommonlyServer(server, describe)) : [];
+  if (!flagged.some(Boolean)) return environment;
   return {
     ...environment,
-    mcp: servers.map((server) => (isShippedCommonlyMcpCommand(server?.command)
+    mcp: servers.map((server, i) => (flagged[i]
       ? { ...server, env: { ...(server.env || {}), [PUBLIC_SEAT_MCP_ENV]: '1' } }
       : server)),
   };

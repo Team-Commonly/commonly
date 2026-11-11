@@ -78,6 +78,8 @@ describe('what counts as Commonly unreachable', () => {
     const names = new Set(buildTools(cfg).map((tool) => tool.name));
     for (const name of READ_ONLY_TOOLS) expect(names.has(name)).toBe(true);
     expect(names.has('commonly_post_message') && !READ_ONLY_TOOLS.has('commonly_post_message')).toBe(true);
+    // It marks a backlog skipped on the server, so it is a write here.
+    expect(READ_ONLY_TOOLS.has('commonly_catch_up')).toBe(false);
   });
 });
 

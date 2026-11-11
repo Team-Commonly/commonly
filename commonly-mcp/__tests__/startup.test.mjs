@@ -23,9 +23,9 @@ const startApi = (status) => new Promise((resolve) => {
   server.listen(0, '127.0.0.1', () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` }));
 });
 
-const run = (url) => {
+const run = (url, extraEnv = {}) => {
   const child = spawn(process.execPath, [ENTRY], {
-    env: { PATH: process.env.PATH, COMMONLY_API_URL: url, COMMONLY_AGENT_TOKEN: 'cm_agent_startup_test' },
+    env: { PATH: process.env.PATH, COMMONLY_API_URL: url, COMMONLY_AGENT_TOKEN: 'cm_agent_startup_test', ...extraEnv },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const out = { stdout: '', stderr: '' };
@@ -154,5 +154,38 @@ describe('startup', () => {
       child.kill('SIGKILL');
       silent.close();
     }
+  });
+
+  // A public seat whose check-in found Commonly unavailable posts nothing that
+  // process (src/public-seat-gate.js), and without the flag it still tries.
+  const postAfterFailedCheckIn = async (extraEnv) => {
+    const api = await startApi(503);
+    const { child, out } = run(api.url, extraEnv);
+    try {
+      expect(await waitFor(() => /could not reach Commonly at start: HTTP 503/.test(out.stderr))).toBe(true);
+      const send = (msg) => child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...msg })}\n`);
+      initialize(child);
+      expect(await waitFor(() => /"id":1/.test(out.stdout))).toBe(true);
+      send({ method: 'notifications/initialized' });
+      send({ id: 2, method: 'tools/call', params: { name: 'commonly_post_message', arguments: { podId: 'P', content: 'hello' } } });
+      expect(await waitFor(() => /"id":2/.test(out.stdout))).toBe(true);
+      const reply = out.stdout.split('\n').filter(Boolean).map((line) => JSON.parse(line)).find((m) => m.id === 2);
+      return { result: reply.result, seen: api.seen.map((r) => `${r.method} ${r.url}`) };
+    } finally {
+      child.kill();
+      api.server.close();
+    }
+  };
+
+  it('a public seat whose check-in failed refuses a post without sending it', async () => {
+    const { result, seen } = await postAfterFailedCheckIn({ COMMONLY_MCP_PUBLIC_SEAT: '1' });
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([{ type: 'text', text: 'Commonly is unreachable this turn; post nothing.' }]);
+    expect(seen).toEqual(['GET /api/agents/runtime/installations']);
+  });
+
+  it('without the flag, the same server still sends the post', async () => {
+    const { seen } = await postAfterFailedCheckIn({});
+    expect(seen).toEqual(['GET /api/agents/runtime/installations', 'POST /api/agents/runtime/pods/P/messages']);
   });
 });
