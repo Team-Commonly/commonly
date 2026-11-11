@@ -49,6 +49,8 @@ From `CLAUDE.md` and the ADRs. If a change puts pressure on one, the author must
 ### Attachments (ADR-002)
 - **Bytes live in the `ObjectStore` driver**, metadata lives on the parent entity.
 - **GET must be authorized.** A leaked URL from a private pod must not be publicly fetchable.
+- **A served file never acts as this origin.** Its type comes from an extension allowlist (never the client's declared type or name), with `nosniff` and a CSP `sandbox` (PDF excepted: Chrome won't open one sandboxed). HTML the server renders from an upload gets `sandbox allow-scripts` at most.
+- **A process run over an upload is bounded:** killed at its deadline, output capped, and concurrency capped on any route a stranger can reach.
 
 ### Mongo indexes
 - **Never `sparse: true` on a unique index that can see a stored `null`.**

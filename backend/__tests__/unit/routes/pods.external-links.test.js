@@ -319,3 +319,52 @@ describe('pods routes - WeChat QR image', () => {
     expect(headerAtSend).toBe('private, no-store');
   });
 });
+
+// A QR code is served as the image type its stored extension names; a file
+// saved before the image list, which kept the client's extension, downloads.
+describe('pods routes - external link QR code type', () => {
+  let app;
+  let sent;
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use((req, res, next) => {
+      res.sendFile = jest.fn(() => {
+        sent = { headers: { ...res.getHeaders() } };
+        res.status(200).end();
+      });
+      next();
+    });
+    app.use('/api/pods', routes);
+    jest.clearAllMocks();
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
+  });
+
+  it('serves an image inline, typed by its extension, sandboxed and nosniff', async () => {
+    ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: 'uploads/qrcodes/qrcode-1.png', podId: 'p1' });
+    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    expect(sent.headers['content-type']).toBe('image/png');
+    expect(sent.headers['content-disposition']).toBe('inline');
+    expect(sent.headers['x-content-type-options']).toBe('nosniff');
+    expect(sent.headers['content-security-policy']).toMatch(/sandbox/);
+  });
+
+  it('downloads an old file whose extension is not an image', async () => {
+    ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: 'uploads/qrcodes/qrcode-1.html', podId: 'p1' });
+    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    expect(sent.headers['content-type']).toBe('application/octet-stream');
+    expect(sent.headers['content-disposition']).toBe('attachment');
+  });
+
+  it('refuses an SVG declared as an image before anything is stored', async () => {
+    const res = await request(app)
+      .post('/api/pods/external-link')
+      .field('podId', 'p1')
+      .field('type', 'wechat')
+      .field('name', 'qr')
+      .attach('qrCode', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), { filename: 'qr.svg', contentType: 'image/svg+xml' });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.text).toMatch(/Only PNG, JPEG, GIF or WebP images are allowed/);
+    expect(ExternalLink).not.toHaveBeenCalled();
+  });
+});

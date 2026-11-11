@@ -48,3 +48,27 @@ describe('adm-zip runtime consumers', () => {
     });
   });
 });
+
+// An entry whose declared size is over the cap is never inflated: the check
+// passes the file instead of reading gigabytes into memory.
+describe('validateOfficeContent inflate cap', () => {
+  const AdmZip = require('adm-zip');
+  const { validateOfficeContent, OFFICE_ENTRY_INFLATE_MAX } = require('../../../services/officeContentValidator');
+
+  // The same empty deck the next test refuses, with its central directory
+  // declaring the entry over the cap: it passes, so it was never read.
+  it('passes a deck with an oversized entry unread', () => {
+    const zip = new AdmZip();
+    zip.addFile('ppt/presentation.xml', Buffer.from('<p:presentation><p:sldIdLst/></p:presentation>'));
+    const buffer = zip.toBuffer();
+    const central = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    buffer.writeUInt32LE(OFFICE_ENTRY_INFLATE_MAX + 1, central + 24);
+    expect(validateOfficeContent(buffer, 'deck.pptx')).toEqual({ ok: true, format: 'unknown' });
+  });
+
+  it('still refuses an empty deck under the cap', () => {
+    const zip = new AdmZip();
+    zip.addFile('ppt/presentation.xml', Buffer.from('<p:presentation><p:sldIdLst/></p:presentation>'));
+    expect(validateOfficeContent(zip.toBuffer(), 'deck.pptx').ok).toBe(false);
+  });
+});
