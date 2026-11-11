@@ -87,6 +87,7 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
+import { codexContextTokens, codexHomeFor } from '../session-recycle.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -1316,13 +1317,20 @@ export default {
       // came in with > null. The wrapper persists whichever non-null value
       // we return so subsequent turns hit `codex exec resume <id>`.
       const newSessionId = threadId || ctx.sessionId || null;
+      // F404: what the turn's last request was sent, from the rollout the child
+      // wrote under its own CODEX_HOME. Null keeps resuming.
+      const contextTokens = newSessionId
+        ? (ctx._codexContextTokens || codexContextTokens)({ codexHome: codexHomeFor(childEnv), sessionId: newSessionId })
+        : null;
       // D247: the reply receipt names the model and effort this spawn passed
       // (`--model`, `model_reasoning_effort`); codex's own stream does not
       // restate them.
       const effort = ctx.environment?.effort;
       const stats = { ...(seatModel ? { model: String(seatModel) } : {}),
         ...(typeof effort === 'string' && effort ? { effort } : {}) };
-      return { text, newSessionId, ...(Object.keys(stats).length ? { stats } : {}) };
+      return {
+        text, newSessionId, contextTokens, ...(Object.keys(stats).length ? { stats } : {}),
+      };
     } finally {
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }

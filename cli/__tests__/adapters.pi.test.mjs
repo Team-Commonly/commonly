@@ -275,11 +275,30 @@ describe('spawn', () => {
     await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl, env: { PATH: '/usr/bin' } }))).rejects.toThrow(/COMMONLY_LITELLM_KEY/);
   });
 
+  // F404: the turn reports what its last request was sent, so the F392 ceiling
+  // and the cold rule reach pi seats. pi counts cached input apart from `input`.
+  test('the last assistant message\'s usage is the turn\'s context size', async () => {
+    const withUsage = (text, usage) => event({
+      type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', usage },
+    });
+    const stdout = withUsage('first', { input: 7807, cacheRead: 384, cacheWrite: 0, output: 25 })
+      + withUsage('final', { input: 1408, cacheRead: 8832, cacheWrite: 10, output: 244 });
+    expect(extractReply(stdout).contextTokens).toBe(10250);
+    const { impl } = makeSpawnImpl({ stdout: stdout + event({ type: 'agent_end' }) });
+    expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).contextTokens).toBe(10250);
+  });
+
+  test('a stream with no usage reports no size, so the seat keeps resuming', () => {
+    expect(extractReply(assistant('hi')).contextTokens).toBeNull();
+  });
+
   test('the reply is the last assistant text; tool-call messages and tool results are not text', async () => {
     const stdout = event({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'toolCall', name: 'bash' }] } })
       + event({ type: 'message_end', message: { role: 'toolResult', content: [{ type: 'text', text: 'hello\n' }] } })
       + assistant('first') + assistant('final answer');
-    expect(extractReply(stdout)).toEqual({ text: 'final answer', sawAssistant: true, finished: false, errors: [] });
+    expect(extractReply(stdout)).toEqual({
+      text: 'final answer', sawAssistant: true, finished: false, errors: [], contextTokens: null,
+    });
     const { impl } = makeSpawnImpl({ stdout });
     expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('final answer');
   });

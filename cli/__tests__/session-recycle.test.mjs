@@ -9,8 +9,12 @@ import {
   claudeConfigDirFor,
   claudeContextTokens,
   claudeTranscriptPath,
+  codexContextTokens,
+  codexRolloutPath,
+  contextTokensFromCodexRollout,
   contextTokensFromTranscript,
   idleMinutesSince,
+  promptTokens,
   recycleReason,
   recycleThresholds,
   shouldStartFreshSession,
@@ -251,5 +255,58 @@ describe('claudeConfigDirFor', () => {
 
   test('otherwise the child HOME, so a public seat looks in its own state', () => {
     expect(claudeConfigDirFor({ HOME: '/state/public-1' })).toBe('/state/public-1/.claude');
+  });
+});
+
+// F404: codex, pi and dsh report a size too, so the ceiling reaches them.
+describe('promptTokens', () => {
+  test('input plus the cache it was counted apart from', () => {
+    expect(promptTokens({ input: 1408, cacheRead: 8832, cacheWrite: 10 })).toBe(10250);
+    expect(promptTokens({ input: 900 })).toBe(900);
+  });
+
+  test('no input is unknown, not zero', () => {
+    expect(promptTokens({ cacheRead: 100 })).toBeNull();
+    expect(promptTokens(undefined)).toBeNull();
+  });
+});
+
+describe('codex rollout', () => {
+  const count = (input) => JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        last_token_usage: { input_tokens: input, cached_input_tokens: input - 300 },
+        total_token_usage: { input_tokens: input * 9 },
+      },
+    },
+  });
+
+  test('the last token_count is one request: last_token_usage, not the turn total', () => {
+    const text = [count(1000), '{"type":"response_item"}', count(33997), '{"type":"event_msg","payload":{"type":"agent_message"}}'].join('\n');
+    expect(contextTokensFromCodexRollout(text)).toBe(33997);
+  });
+
+  test('a cut first line and no token_count read as unknown', () => {
+    expect(contextTokensFromCodexRollout('_count", "payload": {\n{"type":"response_item"}')).toBeNull();
+  });
+
+  test('the rollout is found by session id, newest day first, and read', () => {
+    const home = mkdtempSync(join(tmpdir(), 'codex-rollout-'));
+    try {
+      const id = '019dc1c4-c110-7373-bcf6-cdddd0c5f404';
+      mkdirSync(join(home, 'sessions', '2026', '11', '09'), { recursive: true });
+      mkdirSync(join(home, 'sessions', '2026', '11', '10'), { recursive: true });
+      writeFileSync(join(home, 'sessions', '2026', '11', '10', 'rollout-2026-11-10T01-00-00-other.jsonl'), count(5));
+      const file = join(home, 'sessions', '2026', '11', '09', `rollout-2026-11-09T01-00-00-${id}.jsonl`);
+      writeFileSync(file, `${count(200000)}\n${count(270000)}\n`);
+      expect(codexRolloutPath({ codexHome: home, sessionId: id })).toBe(file);
+      expect(codexContextTokens({ codexHome: home, sessionId: id })).toBe(270000);
+      expect(codexContextTokens({ codexHome: home, sessionId: 'missing' })).toBeNull();
+      expect(codexContextTokens({ codexHome: join(home, 'nope'), sessionId: id })).toBeNull();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
