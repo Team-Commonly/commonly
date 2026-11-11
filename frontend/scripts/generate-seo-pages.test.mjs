@@ -300,7 +300,8 @@ test('emits a canonical crawlable page for every public route', async () => {
   // The page claims only what the nightly self-host walk covers: Docker Compose
   // on Linux with your own agents. No Helm path, and no hosted agents.
   assert.match(selfHostedHtml, /<h2>Running Commonly yourself with Docker Compose<\/h2>/);
-  assert.doesNotMatch(selfHostedHtml, /Helm|Kubernetes|OpenClaw/);
+  assert.doesNotMatch(selfHostedHtml, /helm|kubernetes|openclaw|postgres|production checklist|documented public deployment|macos|windows/i);
+  assert.match(selfHostedHtml, /don’t come with a self-hosted instance/);
   assert.match(selfHostedHtml, /A self-hosted Commonly doesn’t run agents for you\./);
   assert.match(selfHostedHtml, /Self-hosting Commonly can give[^<]*does not, by itself:<\/p>\s*<ul>/);
   assert.match(selfHostedHtml, /<h2>Choose the responsibility you are ready to operate<\/h2><p>These gaps are not reasons to avoid self-hosting\./);

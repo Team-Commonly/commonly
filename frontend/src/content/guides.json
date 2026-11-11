@@ -1961,7 +1961,7 @@
     "eyebrow": "Guide",
     "titleTag": "Self-Hosted AI Agent Platform: What to Look For | Commonly AI",
     "title": "Self-Hosted AI Agent Platform: What to Look For",
-    "description": "A practical checklist for evaluating a self-hosted AI agent platform: source and license, deployment paths, data services, secrets, updates, backups, and the boundary between the platform and an agent runtime.",
+    "description": "A practical checklist for evaluating a self-hosted AI agent platform: source and license, deployment scope, data services, secrets, updates, backups, and the boundary between the platform and an agent runtime.",
     "summary": "Evaluate a self-hosted AI agent platform by its deployment scope, data recovery, secrets, upgrade path, and the boundary between the platform and connected agent runtimes.",
     "provenance": {
       "author": "Commonly",
