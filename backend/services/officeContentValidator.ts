@@ -116,8 +116,8 @@ export const validateOfficeContent = (
 
   // A 10 MiB upload can declare entries far larger, and reading one inflates
   // it into memory. adm-zip never inflates past an entry's declared size, so a
-  // declared size over the cap is refused unread. Too big to inflate is not
-  // empty, so it passes like any file this check cannot judge.
+  // file declaring an entry over the cap is not read at all. Too big to inflate
+  // is not empty, so it passes like any file this check cannot judge.
   if (entries.some((e: any) => Number(e?.header?.size) > OFFICE_ENTRY_INFLATE_MAX)) {
     return { ok: true, format: 'unknown' };
   }

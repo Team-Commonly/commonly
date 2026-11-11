@@ -583,12 +583,17 @@ const officecliPreview = (() => {
   type OfficeCliResult = { stdout: string; stderr: string; code: number };
   const runOfficeCli = (args: string[], cwd: string, timeoutMs: number): Promise<OfficeCliResult> =>
     new Promise((resolve) => {
-      const child = spawn('officecli', args, { cwd });
+      // TMPDIR points officecli's own temp output into cwd, so the render is
+      // read from, and removed with, this request's directory.
+      const child = spawn('officecli', args, { cwd, env: { ...process.env, TMPDIR: cwd } });
       let stdout = '';
       let stderr = '';
+      let timedOut = false;
+      // At the deadline the process is killed, and the result waits for it to
+      // exit, so the directory is not removed while it can still write there.
       const timer = setTimeout(() => {
+        timedOut = true;
         child.kill('SIGKILL');
-        resolve({ stdout: '', stderr: 'render timeout', code: -1 });
       }, timeoutMs);
       child.stdout.on('data', (chunk: Buffer) => {
         if (stdout.length < OFFICECLI_OUTPUT_MAX) stdout += chunk.toString();
@@ -602,7 +607,7 @@ const officecliPreview = (() => {
       });
       child.on('close', (code: number | null) => {
         clearTimeout(timer);
-        resolve({ stdout, stderr, code: code ?? -1 });
+        resolve(timedOut ? { stdout: '', stderr: 'render timeout', code: -1 } : { stdout, stderr, code: code ?? -1 });
       });
     });
 
@@ -629,11 +634,10 @@ const officecliPreview = (() => {
           const html = readFileSync(fsPath.join(tmpDir, found), 'utf8');
           return { html };
         }
-        // Only a file officecli wrote under the temp dir is read back, never a
-        // path the deck's own text could have put on stdout.
-        const htmlPath = fsPath.resolve(pathLine.trim());
-        const tmpRoot = `${fsPath.resolve(osMod.tmpdir())}${fsPath.sep}`;
-        if (!htmlPath.startsWith(tmpRoot)) return { error: 'unexpected output path' };
+        // Only a file officecli wrote under this request's directory is read
+        // back, never a path the deck's own text could have put on stdout.
+        const htmlPath = fsPath.resolve(tmpDir, pathLine.trim());
+        if (!htmlPath.startsWith(`${fsPath.resolve(tmpDir)}${fsPath.sep}`)) return { error: 'unexpected output path' };
         const html = readFileSync(htmlPath, 'utf8');
         return { html };
       } catch (e) {
@@ -655,7 +659,18 @@ const PPTX_RENDER_CONCURRENCY = 2;
 let pptxRendersInFlight = 0;
 // The rendered page runs scripts (three.js from a CDN) in a sandbox with no
 // origin of its own, so the deck's content cannot act as this origin.
-const PPTX_PREVIEW_CSP = 'sandbox allow-scripts';
+// It may load its viewer script from a CDN, but it sends nothing anywhere:
+// no fetches, no form posts, and images only from the page itself.
+const PPTX_PREVIEW_CSP = [
+  'sandbox allow-scripts',
+  "default-src 'none'",
+  "script-src https: 'unsafe-inline'",
+  "style-src https: 'unsafe-inline'",
+  'img-src data: blob:',
+  'font-src https: data:',
+  "connect-src 'none'",
+  "form-action 'none'",
+].join('; ');
 
 router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRuntimeAuth, async (req: AuthReq, res: Res) => {
   try {
@@ -671,39 +686,41 @@ router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRunt
       return res.status(403).json({ msg: 'Not authorized to read this file' });
     }
 
-    // Fetch the binary from object storage (or legacy MongoDB inline bytes).
-    const store = getObjectStore();
-    const obj = await store.get(String(fileName));
-    let buffer: Buffer | null = null;
-    if (obj) {
-      const chunks: Buffer[] = [];
-      const stream = obj.stream as unknown as NodeJS.ReadableStream;
-      await new Promise<void>((resolve, reject) => {
-        stream.on('data', (c: Buffer) => chunks.push(c));
-        stream.on('end', () => resolve());
-        stream.on('error', reject);
-      });
-      buffer = Buffer.concat(chunks);
-    } else {
-      const legacy = await File.findByFileName(fileName);
-      if (legacy?.data?.length > 0) buffer = Buffer.from(legacy.data);
-    }
-    if (!buffer) return res.status(404).json({ msg: 'File not found' });
-
+    // The slot is taken before the deck is read, so the cap bounds memory too.
     if (pptxRendersInFlight >= PPTX_RENDER_CONCURRENCY) {
       return res.status(503).json({ msg: 'Preview busy, try again shortly' });
     }
     pptxRendersInFlight += 1;
     let result: PptxRender;
     try {
+      // Fetch the binary from object storage (or legacy MongoDB inline bytes).
+      const store = getObjectStore();
+      const obj = await store.get(String(fileName));
+      let buffer: Buffer | null = null;
+      if (obj) {
+        const chunks: Buffer[] = [];
+        const stream = obj.stream as unknown as NodeJS.ReadableStream;
+        await new Promise<void>((resolve, reject) => {
+          stream.on('data', (c: Buffer) => chunks.push(c));
+          stream.on('end', () => resolve());
+          stream.on('error', reject);
+        });
+        buffer = Buffer.concat(chunks);
+      } else {
+        const legacy = await File.findByFileName(fileName);
+        if (legacy?.data?.length > 0) buffer = Buffer.from(legacy.data);
+      }
+      if (!buffer) return res.status(404).json({ msg: 'File not found' });
       result = await officecliPreview.renderPptx(buffer, PPTX_RENDER_TIMEOUT_MS);
     } finally {
       pptxRendersInFlight -= 1;
     }
 
     if ('error' in result) {
+      // The detail is officecli's own output, server paths included, so it is
+      // logged rather than returned.
       console.warn('[uploads] PPTX preview render failed:', result.error);
-      return res.status(500).json({ msg: 'Could not render preview', detail: result.error });
+      return res.status(500).json({ msg: 'Could not render preview' });
     }
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('X-Content-Type-Options', 'nosniff');

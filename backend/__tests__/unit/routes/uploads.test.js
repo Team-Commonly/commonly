@@ -274,7 +274,8 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     const { EventEmitter } = require('events');
     const fs = require('fs');
     const path = require('path');
-    mockSpawn.mockImplementation((_cmd, _args, { cwd }) => {
+    mockSpawn.mockImplementation((_cmd, _args, { cwd, env }) => {
+      expect(env.TMPDIR).toBe(cwd);
       const child = new EventEmitter();
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
@@ -294,7 +295,11 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     // The page is built from the deck's content, so it runs with no origin of
     // its own: scripts for the viewer, never this origin's.
-    expect(res.headers['content-security-policy']).toBe('sandbox allow-scripts');
+    const csp = res.headers['content-security-policy'];
+    expect(csp).toMatch(/^sandbox allow-scripts; /);
+    expect(csp).not.toMatch(/allow-same-origin/);
+    expect(csp).toMatch(/connect-src 'none'/);
+    expect(csp).toMatch(/form-action 'none'/);
   });
 
   describe('a render is bounded', () => {
@@ -345,9 +350,11 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       deck();
       const second = request(app).get('/api/uploads/b.pptx/preview-pptx-html').then((r) => r);
       await until(() => children.length === 2);
-      deck();
+      mockStore.get.mockClear();
       const third = await request(app).get('/api/uploads/c.pptx/preview-pptx-html');
       expect(third.status).toBe(503);
+      // Refused before the deck was read into memory.
+      expect(mockStore.get).not.toHaveBeenCalled();
       expect(mockSpawn).toHaveBeenCalledTimes(2);
       children.forEach((child) => child.emit('close', 1));
       await Promise.all([first, second]);
@@ -357,14 +364,19 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       mockSpawn.mockImplementation(() => {
         const child = hungChild();
         setImmediate(() => {
-          child.stdout.emit('data', Buffer.from('/etc/passwd.html\n'));
+          child.stdout.emit('data', Buffer.from(`${require('os').tmpdir()}/other-render.html\n`));
           child.emit('close', 0);
         });
         return child;
       });
       deck();
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
       const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(500);
-      expect(res.body.detail).toBe('unexpected output path');
+      // A render outside this request's own directory is never read, and the
+      // reason is logged, not returned.
+      expect(res.body).toEqual({ msg: 'Could not render preview' });
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 'unexpected output path');
+      warn.mockRestore();
     });
   });
 });
