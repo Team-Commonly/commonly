@@ -2025,7 +2025,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const ownAgent = (agents || []).find((agent) => agent.agentName !== 'scout' && agent.status === 'active');
   const startFirstTask = () => {
     if (ownAgent) {
-      handleStarterPrompt(`@${buildAgentUsername(ownAgent.agentName, ownAgent.instanceId || 'default')} `);
+      // The typeahead's handle rule: a chosen instanceId stays, an opaque
+      // per-user token never goes in a mention (display-name slug, then name).
+      const handle = ownAgent.instanceId && ownAgent.instanceId.toLowerCase() !== 'default'
+        && !isOpaqueInstanceToken(ownAgent.instanceId)
+        ? ownAgent.instanceId
+        : (slugifyAgentHandle(ownAgent.displayName || ownAgent.profile?.displayName) || ownAgent.agentName);
+      handleStarterPrompt(`@${normalizeAgentSegment(handle)} `);
     } else {
       composerInputRef.current?.focus();
     }
@@ -2172,7 +2178,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           <V2GetStarted
             steps={starter}
             podId={pod._id}
-            onConnect={() => navigate('/v2/agents/byo')}
+            onConnect={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
             onFirstTask={startFirstTask}
           />
         )}
