@@ -22,7 +22,7 @@
  */
 import { spawnSync } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'fs/promises';
 import http from 'http';
 import { homedir, tmpdir } from 'os';
@@ -58,6 +58,10 @@ const makeHome = async () => {
     '.codex/auth.json': JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: MARK('AUTH') }),
     '.codex/sessions/old.jsonl': MARK('SESSIONS'),
     '.codex/config.toml': '',
+    // A database Codex keeps in its home; its -wal appears during the turn.
+    '.codex/logs_2.sqlite': MARK('DB'),
+    // A public seat's Codex home, where the adapter keeps them on Linux.
+    '.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl': MARK('PUBHOME'),
     '.ssh/id_probe': MARK('SSH'),
     '.config/gh/hosts.yml': 'github.com:\n  user: probe\n',
   };
@@ -78,6 +82,13 @@ const makeHome = async () => {
   return { root, home, workspace, otherTurn };
 };
 
+// What Codex writes into its home after the turn's keys were built: the -wal
+// of a database the keys name, and one under a name only a glob covers.
+const writeLateFiles = ({ home }) => {
+  writeFileSync(join(home, '.codex', 'logs_2.sqlite-wal'), MARK('WAL'));
+  writeFileSync(join(home, '.codex', 'logs_9.sqlite-wal'), MARK('LATEWAL'));
+};
+
 // Each line: R <name> <exit> <output>. Reads are judged on the marker, writes
 // again from the host afterwards.
 const checkScript = ({ home, otherTurn }) => [
@@ -93,6 +104,10 @@ const checkScript = ({ home, otherTurn }) => [
   `r read_codex_auth cat ${home}/.codex/auth.json`,
   `r read_codex_sessions cat ${home}/.codex/sessions/old.jsonl`,
   `r read_ssh cat ${home}/.ssh/id_probe`,
+  `r read_codex_db cat ${home}/.codex/logs_2.sqlite`,
+  `r read_codex_wal cat ${home}/.codex/logs_2.sqlite-wal`,
+  `r read_codex_late_wal cat ${home}/.codex/logs_9.sqlite-wal`,
+  `r read_public_home cat ${home}/.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl`,
   `r read_other_turn cat ${otherTurn}/token`,
   `r write_other_turn sh -c 'echo pwned > ${otherTurn}/last-message.txt'`,
   "r write_hook sh -c 'echo x > .git/hooks/pre-commit'",
@@ -113,6 +128,9 @@ const judge = (label, results, ctx) => {
   const markers = {
     read_token: 'TOKEN', read_state: 'STATE', read_other_ws: 'OTHERWS', read_codex_auth: 'AUTH',
     read_codex_sessions: 'SESSIONS', read_ssh: 'SSH', read_other_turn: 'TURN',
+    read_codex_db: 'DB', read_codex_wal: 'WAL', read_codex_late_wal: 'LATEWAL',
+    // macOS keeps public homes under ~/.commonly; this path is Linux's.
+    ...(process.platform === 'linux' ? { read_public_home: 'PUBHOME' } : {}),
   };
   const rows = [];
   if (!results.done) rows.push(['ran', false, 'the check script never finished: the sandbox did not start']);
@@ -209,6 +227,8 @@ const seatCtx = (ctx, extra = {}) => ({
   environment: { model: 'gpt-5.5' },
   env: { ...baseEnv(ctx.home), ...extra.env },
   timeoutMs: 120_000,
+  // Where the adapter looks for public seats' Codex homes.
+  _homeDir: ctx.home,
   ...extra.ctx,
 });
 
@@ -231,6 +251,7 @@ const keys = async () => {
   // folder inside it is put back so the profile's write key has a target.
   const shellTemp = /"TMPDIR"="([^"]+)"/.exec(flags.join(' '))?.[1];
   if (shellTemp) await mkdir(shellTemp, { recursive: true, mode: 0o700 });
+  writeLateFiles(ctx);
   const r = sandbox(flags, checkScript(ctx), { cwd: ctx.workspace, env: { ...baseEnv(ctx.home), CODEX_HOME: spawnEnv?.CODEX_HOME || join(ctx.home, '.codex') } });
   log(`   exit ${r.status}; stderr: ${clip(r.stderr, 600)}`);
   judge('keys: the adapter\'s profile through codex sandbox', parse(r.stdout), ctx);
@@ -278,6 +299,8 @@ const turn = async () => {
   let toolNames = [];
   const model = await startModel((index, body) => {
     if (index === 0) {
+      // Codex is running and its keys are set: what it writes now is "later".
+      writeLateFiles(ctx);
       toolNames = (body.tools || []).map((t) => t.name || t.type).filter(Boolean);
       if (toolNames.includes('exec_command')) {
         return [{ type: 'function_call', name: 'exec_command', call_id: 'probe', arguments: JSON.stringify({ cmd: script, yield_time_ms: 30000 }) }];

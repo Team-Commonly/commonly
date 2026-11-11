@@ -388,6 +388,16 @@ const publicCodexHomesRoot = (ctx) => {
   return root;
 };
 
+// An XDG_STATE_HOME under ~/.commonly throws above, and that tree is denied anyway.
+const privatePublicHomesDeny = (ctx) => {
+  if ((ctx._platform || process.platform) !== 'linux') return [];
+  try {
+    return [publicCodexHomesRoot(ctx)];
+  } catch {
+    return [];
+  }
+};
+
 const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
   || process.env.CODEX_HOME
   || join(homedir(), '.codex');
@@ -769,13 +779,21 @@ const realOrSelf = (path) => {
 // for `tmp` under the denied home does not lift it). Measured with `codex
 // sandbox` and a real turn on codex-cli 0.164.0, ubuntu-22.04. So there the
 // home itself stays readable and everything in it is denied except the helper
-// folder: each entry present now, and the secret names Codex writes later even
-// while they are absent (a key for a missing path is accepted there). A file
-// Codex adds later under another name would be readable until the next turn
-// reads the folder again. `~/.codex` is denied whole when it isn't that home.
+// folder: each entry present now, and the names Codex writes later even while
+// they are absent (a key for a missing path is accepted there). Codex's SQLite
+// databases write a `-wal` file during the turn that holds their newest rows,
+// other sessions' included, and SQLite removes it when the last connection
+// closes; so every database name, listed or known, takes its `-wal`, `-shm`
+// and `-journal` too, and globs cover a database or journal under a name
+// nobody listed (a glob is matched when each command's sandbox is built).
+// `~/.codex` is denied whole when it isn't that home.
 const CODEX_HOME_SECRET_NAMES = Object.freeze([
   'auth.json', 'config.toml', 'sessions', 'archived_sessions', 'history.jsonl', 'log',
+  'session_index.jsonl', 'shell_snapshots', 'memories',
+  'logs_2.sqlite', 'state_5.sqlite', 'goals_1.sqlite', 'queue_1.sqlite',
 ]);
+const SQLITE_SIDECARS = Object.freeze(['-wal', '-shm', '-journal']);
+const CODEX_HOME_GLOBS = Object.freeze(['*.sqlite*', '*.db*', '*.jsonl', '*.json']);
 const CODEX_HELPER_PATH = Object.freeze(['tmp', 'arg0-linux']);
 
 const entriesOf = (dir) => {
@@ -798,9 +816,14 @@ export const privateCodexHomeDenies = ({ codexHome = null, platform = process.pl
   let dir = helperHome;
   for (const [depth, keep] of CODEX_HELPER_PATH.entries()) {
     const names = new Set(entriesOf(dir));
-    if (depth === 0) CODEX_HOME_SECRET_NAMES.forEach((name) => names.add(name));
+    if (depth === 0) {
+      CODEX_HOME_SECRET_NAMES.forEach((name) => names.add(name));
+      [...names].filter((name) => /\.(sqlite|db)$/.test(name))
+        .forEach((name) => SQLITE_SIDECARS.forEach((suffix) => names.add(`${name}${suffix}`)));
+    }
     names.delete(keep);
     denies.push(...[...names].sort().map((name) => join(dir, name)));
+    if (depth === 0) denies.push(...CODEX_HOME_GLOBS.map((glob) => join(dir, glob)));
     dir = join(dir, keep);
   }
   return denies;
@@ -876,6 +899,7 @@ const privatePermissionProfileFlags = ({
   shellTempDir = null,
   codexHome = null,
   home = homedir(),
+  otherCodexHomes = [],
 } = {}) => {
   const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
   const posix = platform !== 'win32';
@@ -893,7 +917,7 @@ const privatePermissionProfileFlags = ({
     // no drive and Codex would refuse the whole profile (as with /private/tmp
     // in publicPermissionProfileFlags).
     posix ? '"/"="read"' : '":minimal"="read"',
-    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home })]
+    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home }), ...otherCodexHomes]
       .map((path) => `${toml(path)}="deny"`),
     ...deniedTemp.map((path) => `${toml(path)}="deny"`),
     ...(shellTemp ? [`${toml(shellTemp)}="write"`] : []),
@@ -1045,6 +1069,7 @@ const buildArgs = ({
   shellTempDir = null,
   privateCodexHome = null,
   privateHome = homedir(),
+  privateOtherCodexHomes = [],
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1102,6 +1127,7 @@ const buildArgs = ({
         shellTempDir,
         codexHome: privateCodexHome,
         home: privateHome,
+        otherCodexHomes: privateOtherCodexHomes,
       });
   const common = [
     '--json',
@@ -1509,10 +1535,14 @@ export default {
         tempRoots: privateProfile ? [tmpdir(), childEnv.TMPDIR] : [],
         shellTempDir: privateShellTemp,
         // The home Codex runs with, and the HOME its `~` keys expand against.
+        // Codex reads a relative CODEX_HOME from its own folder, the turn's.
         privateCodexHome: privateProfile
-          ? childEnv.CODEX_HOME || join(childEnv.HOME || homedir(), '.codex')
+          ? pathResolve(ctx.cwd || process.cwd(), childEnv.CODEX_HOME || join(childEnv.HOME || homedir(), '.codex'))
           : null,
         privateHome: childEnv.HOME || homedir(),
+        // Public seats' Codex homes (their sessions and logs): under the denied
+        // ~/.commonly on macOS, outside it on Linux.
+        privateOtherCodexHomes: privateProfile ? privatePublicHomesDeny(ctx) : [],
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

@@ -62,10 +62,17 @@ inside bubblewrap, so a Codex home denied whole stops every turn at start
 (`bwrap: execvp codex-linux-sandbox: Permission denied`), and a read key for
 `tmp` under the denied home doesn't lift it. So on Linux the home itself stays
 readable and everything in it is denied except that helper folder: each entry
-present when the turn starts, plus `auth.json`, `config.toml`, `sessions`,
-`archived_sessions`, `history.jsonl` and `log` even while they are absent. A
-file Codex adds later under another name stays readable until the next turn
-reads the folder again. Everything else is the macOS key set: on Linux a write
+present when the turn starts, plus the names Codex writes (`auth.json`,
+`config.toml`, `sessions`, `history.jsonl`, its SQLite databases and more) even
+while they are absent. A database's `-wal` file holds its newest rows, other
+sessions' included, and exists only while a connection is open, so it usually
+appears during the turn: every database name takes its `-wal`, `-shm` and
+`-journal` too, and globs (`*.sqlite*`, `*.db*`, `*.jsonl`, `*.json`) cover one
+under a name nobody listed. The walk writes both kinds after the keys are
+built and checks the shell can't read them. A folder Codex adds later under a
+new name stays readable until the next turn reads the home again. Public
+seats' Codex homes (`~/.local/state/commonly/codex-homes` on Linux) are denied
+whole. Everything else is the macOS key set: on Linux a write
 key inside a denied folder works, so the workspace under `~/.commonly` and the
 shell's temp folder under `/tmp` stay where they are. A denied folder there
 reads as missing ("No such file or directory"), not "Permission denied".

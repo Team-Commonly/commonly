@@ -2453,6 +2453,21 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(denies.some((path) => path.startsWith(join(codexHome, 'tmp', 'arg0-linux')))).toBe(false);
   });
 
+  test('on Linux, a database takes its -wal, -shm and -journal, listed or known, and globs cover the unnamed', async () => {
+    const codexHome = join(home, '.codex');
+    await writeFile(join(codexHome, 'other_7.sqlite'), '');
+    const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
+    // The -wal holds the newest rows of every session using this home, and
+    // appears only while a connection is open: absent when the keys are built.
+    for (const db of ['other_7.sqlite', 'logs_2.sqlite', 'state_5.sqlite']) {
+      for (const suffix of ['', '-wal', '-shm', '-journal']) expect(denies).toContain(join(codexHome, `${db}${suffix}`));
+    }
+    for (const name of ['session_index.jsonl', 'shell_snapshots', 'memories']) expect(denies).toContain(join(codexHome, name));
+    for (const glob of ['*.sqlite*', '*.db*', '*.jsonl', '*.json']) expect(denies).toContain(join(codexHome, glob));
+    // Only at the home's own level: nothing under tmp is globbed.
+    expect(denies.filter((path) => path.includes('*')).every((path) => path.startsWith(`${codexHome}/*`))).toBe(true);
+  });
+
   test('on Linux, from another CODEX_HOME: that home is treated the same, and ~/.codex is denied whole', async () => {
     const elsewhere = join(root, 'elsewhere-codex');
     await mkdir(join(elsewhere, 'tmp', 'arg0-linux'), { recursive: true });
@@ -2483,6 +2498,7 @@ describe('the Codex home a private seat runs with (F444)', () => {
       env,
       agentName: 'linux-private-agent',
       _platform: 'linux',
+      _homeDir: home,
       _spawnImpl: impl,
     });
     const { args } = calls[0];
@@ -2497,5 +2513,22 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(fsFlag).toContain(`"${join(codexHome, 'sessions')}"="deny"`);
     // The rest of the host secrets are unchanged.
     for (const dir of ['~/.commonly', '~/.claude', '~/.ssh', '~/.aws']) expect(fsFlag).toContain(`"${dir}"="deny"`);
+    // Public seats' Codex homes sit outside ~/.commonly on Linux.
+    expect(fsFlag).toContain(`"${join(home, '.local', 'state', 'commonly', 'codex-homes')}"="deny"`);
+  });
+
+  test('a relative CODEX_HOME is read from the turn\'s folder, as Codex reads it', async () => {
+    const workspace = join(root, 'workspace');
+    await mkdir(join(workspace, 'rel-codex', 'tmp', 'arg0-linux'), { recursive: true });
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, HOME: home, CODEX_HOME: 'rel-codex' };
+    delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    await codex.spawn('hi', {
+      sessionId: null, cwd: workspace, environment: { model: 'test-model' }, env,
+      agentName: 'linux-private-agent', _platform: 'linux', _spawnImpl: impl,
+    });
+    const fsFlag = calls[0].args.find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain(`"${join(workspace, 'rel-codex', 'auth.json')}"="deny"`);
+    expect(fsFlag).not.toContain(`"${join(workspace, 'rel-codex', 'tmp')}"="deny"`);
   });
 });

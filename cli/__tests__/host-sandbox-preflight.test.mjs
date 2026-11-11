@@ -692,6 +692,18 @@ describe('agent run: a private Codex agent on Linux (F387, F444)', () => {
     expect(warned).not.toContain('unsandboxed (opted in)');
   });
 
+  test('the flag on a workspace-trust seat: the warning names the trust, not the pods', async () => {
+    host(0);
+    saveSeat('byo-codex-linux', 'codex', { model: 'gpt-5.1-codex', sandbox: { trust: 'workspace' } });
+    podsRead(jest.fn().mockResolvedValue({ installations: [privatePod] }));
+    pollLoop();
+    await run('byo-codex-linux', ['--unsandboxed'], 'reached the poll loop');
+    expect(hostReport).not.toHaveBeenCalled();
+    const warned = printed(warnSpy);
+    expect(warned).toContain('--unsandboxed was not applied: this agent is set to workspace trust');
+    expect(warned).not.toContain('confirmed private');
+  });
+
   test('the flag when the pods cannot be read: it does not start', async () => {
     host(0);
     podsRead(jest.fn().mockRejectedValue(new Error('offline')));

@@ -5656,8 +5656,10 @@ Docs:
       // F444: on Linux a private Codex seat has a sandbox, so a flag its pods
       // rule out leaves it there; say so rather than let the flag look applied.
       if (optedIn && record.adapter === 'codex' && process.platform === 'linux' && !codexUnconfined) {
-        console.warn(`${stamp()} [${name}] ${UNSANDBOXED_FLAG} was not applied: a pod this agent answers in `
-          + "isn't confirmed private and invite-only, so it runs in Codex's own sandbox.");
+        console.warn(`${stamp()} [${name}] ${UNSANDBOXED_FLAG} was not applied: ${
+          effectiveSandboxTrust(record.environment?.sandbox?.trust) === 'workspace'
+            ? 'this agent is set to workspace trust'
+            : "a pod this agent answers in isn't confirmed private and invite-only"}, so it runs in Codex's own sandbox.`);
       }
       if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
