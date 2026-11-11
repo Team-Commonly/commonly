@@ -125,6 +125,10 @@ jobs:
       # guard block (exit 3) into a green deploy, or dropped the rollback clause, fails CI.
       - name: Deploy-dev canary wiring regression test
         run: node --test scripts/guard-canary-wiring.test.mjs
+      # The agent plugin packages: the Hermes one takes its token through Hermes
+      # (the Hermes catalog's credential rule) and each pins an exact @commonlyai/mcp.
+      - name: Agent plugin packages regression test
+        run: node --test scripts/agent-plugins.test.mjs
 
   # One heavy job, Backend tests (1/3), routes to a Latchkey runner on a push to
   # main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy path (the
