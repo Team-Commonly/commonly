@@ -66,7 +66,8 @@ const readPage = (query: express.Request['query']): ChainPage | null => {
  *
  * An agent reads that view on every pod, private ones included (F366): person
  * ids are deny-by-default for agent callers, as on the grant reads (F271(d)).
- * The agent's own id, and the task lines' people, stay readable.
+ * Its view also holds back the task and tool lines' people and an acting
+ * agent's owner; it keeps its own id, agents' ids and the grant audience.
  *
  * One read returns at most MAX_PAGE_LINES lines after `?after=<seq>`. While
  * more remain, `X-Record-Next-After` names the cursor for the next page; the
@@ -89,9 +90,10 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     let view: Awaited<ReturnType<typeof readRecordView>> | undefined;
     try {
       const ref = { podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) };
-      if (isAgentCaller(req) || (isOpenPod(pod) && !seesAllIds(pod, userId))) {
+      const agent = isAgentCaller(req);
+      if (agent || (isOpenPod(pod) && !seesAllIds(pod, userId))) {
         const wholeTrace = req.query.format === 'otlp' && page.after === undefined && page.limit === undefined;
-        view = await readRecordView(ref, String(userId), undefined, wholeTrace ? { limit: Infinity } : page);
+        view = await readRecordView(ref, String(userId), undefined, wholeTrace ? { limit: Infinity } : page, { agent });
       }
       record = view || await readRecordExport(ref, undefined, page);
       // OTLP has no paging of its own: an export of one page would be a
