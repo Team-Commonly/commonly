@@ -46,7 +46,7 @@ import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './te
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
-  accessSync, constants, existsSync, readFileSync, realpathSync, statSync,
+  accessSync, constants, existsSync, readFileSync, readdirSync, realpathSync, statSync,
 } from 'fs';
 import {
   chmod,
@@ -745,10 +745,12 @@ const publicPermissionProfileFlags = (
 
 // Host secrets a private seat's shell never reads. ~/.commonly holds every
 // seat's tokens and state; the seat's own workspace sits under it and is
-// admitted by the more specific workspace rule. gh keeps working: on macOS its
+// admitted by the more specific workspace rule (on Linux too: measured on
+// codex-cli 0.164.0, a write key inside a denied folder works there). The
+// Codex home is privateCodexHomeDenies'. gh keeps working: on macOS its
 // login is in the keychain, which a credential the seat itself uses has to be.
 const PRIVATE_SECRET_DENIES = Object.freeze([
-  '~/.commonly', '~/.claude', '~/.codex', '~/.ssh', '~/.aws', '~/.gnupg',
+  '~/.commonly', '~/.claude', '~/.ssh', '~/.aws', '~/.gnupg',
   '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud',
 ]);
 
@@ -758,6 +760,50 @@ const realOrSelf = (path) => {
   } catch {
     return path;
   }
+};
+
+// F444: what the private profile denies of the Codex home the seat runs with.
+// On macOS the home is denied whole. On Linux Codex execs its sandbox helper
+// from `<home>/tmp/arg0-linux` inside bwrap, and a denied home stops every turn
+// at start ("bwrap: execvp codex-linux-sandbox: Permission denied"; a read key
+// for `tmp` under the denied home does not lift it). Measured with `codex
+// sandbox` and a real turn on codex-cli 0.164.0, ubuntu-22.04. So there the
+// home itself stays readable and everything in it is denied except the helper
+// folder: each entry present now, and the secret names Codex writes later even
+// while they are absent (a key for a missing path is accepted there). A file
+// Codex adds later under another name would be readable until the next turn
+// reads the folder again. `~/.codex` is denied whole when it isn't that home.
+const CODEX_HOME_SECRET_NAMES = Object.freeze([
+  'auth.json', 'config.toml', 'sessions', 'archived_sessions', 'history.jsonl', 'log',
+]);
+const CODEX_HELPER_PATH = Object.freeze(['tmp', 'arg0-linux']);
+
+const entriesOf = (dir) => {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
+
+export const privateCodexHomeDenies = ({ codexHome = null, platform = process.platform, home = homedir() } = {}) => {
+  const defaultHome = join(home, '.codex');
+  const runHome = codexHome ? realOrSelf(codexHome) : null;
+  const runsFromDefault = !runHome || runHome === realOrSelf(defaultHome);
+  if (platform !== 'linux') return runsFromDefault ? ['~/.codex'] : ['~/.codex', runHome];
+  const helperHome = runHome || realOrSelf(defaultHome);
+  const denies = runsFromDefault ? [] : ['~/.codex'];
+  // Deny every sibling of the helper path at each level, so only the path
+  // itself stays reachable.
+  let dir = helperHome;
+  for (const [depth, keep] of CODEX_HELPER_PATH.entries()) {
+    const names = new Set(entriesOf(dir));
+    if (depth === 0) CODEX_HOME_SECRET_NAMES.forEach((name) => names.add(name));
+    names.delete(keep);
+    denies.push(...[...names].sort().map((name) => join(dir, name)));
+    dir = join(dir, keep);
+  }
+  return denies;
 };
 
 // What a commit writes, and nothing that runs code. Codex keeps a workspace's
@@ -828,6 +874,8 @@ const privatePermissionProfileFlags = ({
   workspace = null,
   tempRoots = [],
   shellTempDir = null,
+  codexHome = null,
+  home = homedir(),
 } = {}) => {
   const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
   const posix = platform !== 'win32';
@@ -845,7 +893,8 @@ const privatePermissionProfileFlags = ({
     // no drive and Codex would refuse the whole profile (as with /private/tmp
     // in publicPermissionProfileFlags).
     posix ? '"/"="read"' : '":minimal"="read"',
-    ...PRIVATE_SECRET_DENIES.map((path) => `${toml(path)}="deny"`),
+    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home })]
+      .map((path) => `${toml(path)}="deny"`),
     ...deniedTemp.map((path) => `${toml(path)}="deny"`),
     ...(shellTemp ? [`${toml(shellTemp)}="write"`] : []),
     '":workspace_roots"={"."="write",".commonly/**"="deny",".codex/**"="deny"}',
@@ -994,6 +1043,8 @@ const buildArgs = ({
   privateWorkspace = null,
   tempRoots = [],
   shellTempDir = null,
+  privateCodexHome = null,
+  privateHome = homedir(),
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1049,6 +1100,8 @@ const buildArgs = ({
         workspace: privateWorkspace,
         tempRoots,
         shellTempDir,
+        codexHome: privateCodexHome,
+        home: privateHome,
       });
   const common = [
     '--json',
@@ -1455,6 +1508,11 @@ export default {
         // lives, and the one the shell would inherit.
         tempRoots: privateProfile ? [tmpdir(), childEnv.TMPDIR] : [],
         shellTempDir: privateShellTemp,
+        // The home Codex runs with, and the HOME its `~` keys expand against.
+        privateCodexHome: privateProfile
+          ? childEnv.CODEX_HOME || join(childEnv.HOME || homedir(), '.codex')
+          : null,
+        privateHome: childEnv.HOME || homedir(),
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
