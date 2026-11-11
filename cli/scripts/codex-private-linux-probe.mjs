@@ -22,7 +22,7 @@
  */
 import { spawnSync } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'fs/promises';
 import http from 'http';
 import { homedir, tmpdir } from 'os';
@@ -64,6 +64,8 @@ const makeHome = async () => {
     '.codex/other_7.sqlite': MARK('DB'),
     // A public seat's Codex home, where the adapter keeps them on Linux.
     '.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl': MARK('PUBHOME'),
+    // F445: another private seat's own Codex home.
+    '.local/state/commonly/codex-private-homes/other-seat/sessions/s.jsonl': MARK('PRIVHOME'),
     '.ssh/id_probe': MARK('SSH'),
     '.config/gh/hosts.yml': 'github.com:\n  user: probe\n',
   };
@@ -91,7 +93,22 @@ const writeLateFiles = ({ home }) => {
   writeFileSync(join(home, '.codex', 'logs_2.sqlite-wal'), MARK('WAL'));
   writeFileSync(join(home, '.codex', 'other_7.sqlite-wal'), MARK('LATEWAL'));
   writeFileSync(join(home, '.codex', 'state_5.sqlite-wal'), MARK('KNOWNWAL'));
+  // F445: another session's database under a name nobody knows, first written
+  // during the turn: only a home of the seat's own keeps it out of reach.
+  writeFileSync(join(home, '.codex', 'brandnew_3.sqlite-wal'), MARK('NEWWAL'));
 };
+
+// F445: the private seat's own Codex home on Linux (the one that isn't the
+// other seat's), or null.
+const ownPrivateHome = ({ home }) => {
+  const dir = join(home, '.local', 'state', 'commonly', 'codex-private-homes');
+  const own = (existsSync(dir) ? readdirSync(dir) : []).filter((name) => name !== 'other-seat');
+  return own.length === 1 ? join(dir, own[0]) : null;
+};
+
+const filesUnder = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true }) : [])
+  .map((name) => join(dir, String(name)))
+  .filter((path) => { try { return lstatSync(path).isFile(); } catch { return false; } });
 
 // Each line: R <name> <exit> <output>. Reads are judged on the marker, writes
 // again from the host afterwards.
@@ -112,6 +129,8 @@ const checkScript = ({ home, otherTurn }) => [
   `r read_codex_wal cat ${home}/.codex/logs_2.sqlite-wal`,
   `r read_codex_late_wal cat ${home}/.codex/other_7.sqlite-wal`,
   `r read_codex_known_wal cat ${home}/.codex/state_5.sqlite-wal`,
+  `r read_codex_new_wal cat ${home}/.codex/brandnew_3.sqlite-wal`,
+  `r read_private_home cat ${home}/.local/state/commonly/codex-private-homes/other-seat/sessions/s.jsonl`,
   `r read_public_home cat ${home}/.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl`,
   `r read_other_turn cat ${otherTurn}/token`,
   `r write_other_turn sh -c 'echo pwned > ${otherTurn}/last-message.txt'`,
@@ -134,8 +153,11 @@ const judge = (label, results, ctx) => {
     read_token: 'TOKEN', read_state: 'STATE', read_other_ws: 'OTHERWS', read_codex_auth: 'AUTH',
     read_codex_sessions: 'SESSIONS', read_ssh: 'SSH', read_other_turn: 'TURN',
     read_codex_db: 'DB', read_codex_wal: 'WAL', read_codex_late_wal: 'LATEWAL', read_codex_known_wal: 'KNOWNWAL',
-    // macOS keeps public homes under ~/.commonly; this path is Linux's.
-    ...(process.platform === 'linux' ? { read_public_home: 'PUBHOME' } : {}),
+    // macOS keeps public homes under ~/.commonly; this path is Linux's. A
+    // private seat's own home (F445) is Linux's too: on macOS it runs from the
+    // shared home, denied whole, so a new name there is out of reach anyway.
+    ...(process.platform === 'linux' ? { read_public_home: 'PUBHOME', read_private_home: 'PRIVHOME' } : {}),
+    read_codex_new_wal: 'NEWWAL',
   };
   const rows = [];
   if (!results.done) rows.push(['ran', false, 'the check script never finished: the sandbox did not start']);
@@ -154,6 +176,14 @@ const judge = (label, results, ctx) => {
   rows.push(['write_other_turn', readFileSync(join(otherTurn, 'last-message.txt'), 'utf8') === 'other turn reply',
     `exit ${results.write_other_turn?.code}`]);
   rows.push(['write_hook', !existsSync(join(workspace, '.git', 'hooks', 'pre-commit')), `exit ${results.write_hook?.code}`]);
+  if (process.platform === 'linux') {
+    // F445: the seat ran from a home of its own, and none of the shared home's
+    // history came with it.
+    const own = ownPrivateHome(ctx);
+    const copied = own ? filesUnder(own).filter((path) => readFileSync(path, 'utf8').includes('PROBE-MARKER-')) : [];
+    rows.push(['own_home_no_history', !!own && copied.length === 0,
+      own ? `${own}: ${copied.length ? `carries ${copied.join(', ')}` : 'no shared history'}` : 'no own home was made']);
+  }
   rows.push(['git_config', !readFileSync(join(workspace, '.git', 'config'), 'utf8').includes('probe'),
     `exit ${results.git_config?.code}`]);
   log(`\n== ${label} ==`);

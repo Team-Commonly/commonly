@@ -13,7 +13,7 @@ enforces it with bubblewrap. A cloud-codex pod keeps its own policy.
 | Write | the workspace; what a commit writes in `.git` (below); one temp folder of the turn's own | the workspace |
 | Network | on | off |
 | Shell environment | inherited, with Codex's secret-name filter on; `TMPDIR`, `TMPPREFIX` and `xcrun_db` point at the turn's temp folder | an allowlist (`PATH`, `HOME`, `LANG` …) |
-| Denied | `~/.commonly` (every seat's tokens and state; the seat's own workspace stays open), `~/.claude`, the Codex home (`~/.codex`, and `$CODEX_HOME` when it is elsewhere; on Linux everything in it but Codex's helper folder, below), `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.netrc`, `~/.config/gcloud`, the temp roots (`$TMPDIR`, `/private/tmp`) | the same secret folders, plus `~/.config` and everything not admitted |
+| Denied | `~/.commonly` (every seat's tokens and state; the seat's own workspace stays open), `~/.claude`, the Codex home (`~/.codex`, and `$CODEX_HOME` when it is elsewhere; on Linux the seat runs from a home of its own instead, below), other seats' Codex homes, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.netrc`, `~/.config/gcloud`, the temp roots (`$TMPDIR`, `/private/tmp`) | the same secret folders, plus `~/.config` and everything not admitted |
 | Approvals | never asked; a denied action goes back to the model | the same |
 | Its own `config.toml` | kept (the profile's `-c` keys still win over it) | ignored |
 
@@ -58,29 +58,41 @@ way. Push with the remote and branch named, `git push origin <branch>` (measured
 on codex-cli 0.162.1).
 
 **On Linux.** Codex runs its sandbox helper from `<Codex home>/tmp/arg0-linux`
-inside bubblewrap, so a Codex home denied whole stops every turn at start
-(`bwrap: execvp codex-linux-sandbox: Permission denied`), and a read key for
-`tmp` under the denied home doesn't lift it. So on Linux the home itself stays
-readable and everything in it is denied except that helper folder: each entry
-present when the turn starts, plus the names Codex writes (`auth.json`,
-`config.toml`, `sessions`, `history.jsonl`, its SQLite databases and more) even
-while they are absent. A database's `-wal` file holds its newest rows, other
-sessions' included, and exists only while a connection is open, so it usually
-appears during the turn: every database name, present or known, takes its
-`-wal`, `-shm` and `-journal` too, and one under a new name is listed with
-them from the next turn. The walk writes those files after the keys are built
-and checks the shell can't read them. There are no glob keys: Codex's `*`
-crosses `/`, and a glob that matched a file inside a folder already denied
-stopped every turn at start. bubblewrap fixes what it hides when
-each command starts, so a file that first appears while a command is already
-running (another session's Codex opening its database, say) stays readable to
-that command until it ends. A folder Codex adds later under a new name stays
-readable until the next turn reads the home again. Public
-seats' Codex homes (`~/.local/state/commonly/codex-homes` on Linux) are denied
-whole. Everything else is the macOS key set: on Linux a write
-key inside a denied folder works, so the workspace under `~/.commonly` and the
-shell's temp folder under `/tmp` stay where they are. A denied folder there
-reads as missing ("No such file or directory"), not "Permission denied".
+inside bubblewrap, so the home a seat runs from can't be denied whole: that stops
+every turn at start (`bwrap: execvp codex-linux-sandbox: Permission denied`), and
+a read key for `tmp` under a denied home doesn't lift it. So on Linux a private
+seat runs with **a Codex home of its own** (F445), under
+`~/.local/state/commonly/codex-private-homes/`, beside the public seats' homes:
+
+- **It starts with no history.** Nothing is copied from the shared `~/.codex` (or
+  your `$CODEX_HOME`), which holds your other Codex sessions' history, logs and
+  databases: that is what the seat is kept away from. A thread the seat started
+  in the shared home before F445 doesn't resume; its next turn starts a new
+  one. What the agent is meant to remember lives in its Commonly memory, so
+  nothing it was given to keep is lost.
+- **Your own setup is carried over** as links Codex follows outside the sandbox:
+  `auth.json` (your login), `config.toml` (a private seat keeps your config) and
+  `AGENTS.md`. A file the seat's Codex writes in its own home is its own and is
+  kept; a link to a login you removed is dropped.
+- **What it can't read:** the shared home, the public seats' homes and every other
+  private seat's home, denied whole, so another session writing there, under
+  any name and at any moment, stays out of reach. In its own home everything is
+  denied except the helper folder: each entry present when the turn starts, plus
+  the names Codex writes (`auth.json`, `config.toml`, `sessions`,
+  `history.jsonl`, its SQLite databases with their `-wal`, `-shm` and
+  `-journal`) even while they are absent. There are no glob keys: Codex's `*`
+  crosses `/`, and a glob that matched a file inside a folder already denied
+  stopped every turn at start. What the own home holds that a key misses is the
+  seat's own.
+- **What's left:** another private seat's home created during the turn is
+  denied from the next one; until then it holds only its links.
+
+Everything else is the macOS key set: on Linux a write key inside a denied
+folder works, so the workspace under `~/.commonly` and the shell's temp folder
+under `/tmp` stay where they are. A denied folder there reads as missing ("No
+such file or directory"), not "Permission denied". macOS keeps running a private
+seat from the shared home, denied whole by Seatbelt, which also hides what
+appears there later.
 
 ## Where it doesn't apply
 
@@ -155,10 +167,12 @@ in `/tmp` gave back no marker; another turn's reply file, a hook and
 profile used stopped that turn at start, which is what the probe's `rules` phase
 records, with the Linux behaviour of each kind of key.
 
-Not walked on Linux: a real model, a person's own Codex login, the daemon, and a
-git worktree.
+Not walked on Linux: a real model, a person's own Codex login (through the
+linked `auth.json`, including a ChatGPT login refreshing itself), the daemon, and
+a git worktree.
 
-Code: `privatePermissionProfileFlags` and `privateCodexHomeDenies` in
+Code: `privatePermissionProfileFlags`, `privateCodexHomeDenies` and
+`preparePrivateCodexHome` in
 `cli/src/lib/adapters/codex.js`; the bubblewrap check in `hostSandboxRefusal`
 (`cli/src/lib/sandbox/host-check.js`); the opt-in in `codexUnconfinedForRun`
 (`cli/src/lib/sandbox/windows-unsandboxed.js`).

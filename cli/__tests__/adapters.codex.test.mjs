@@ -2486,50 +2486,101 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(privateCodexHomeDenies({ codexHome: elsewhere, platform: 'darwin', home })).toEqual(['~/.codex', elsewhere]);
   });
 
-  test('a private seat spawned on Linux carries those keys, and none that denies the helper', async () => {
+  // F445: on Linux a private seat runs with a Codex home of its own.
+  const linuxSpawn = async ({ sessionId = null, env: extraEnv = {}, cwd = join(root, 'workspace'), agentName = 'linux-private-agent' } = {}) => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
-    const env = { ...process.env, HOME: home };
-    delete env.CODEX_HOME;
+    const env = { ...process.env, HOME: home, ...extraEnv };
+    if (!extraEnv.CODEX_HOME) delete env.CODEX_HOME;
     delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
     await codex.spawn('hi', {
-      sessionId: null,
-      cwd: join(root, 'workspace'),
-      environment: { model: 'test-model' },
-      env,
-      agentName: 'linux-private-agent',
-      _platform: 'linux',
-      _homeDir: home,
-      _spawnImpl: impl,
+      sessionId, cwd, environment: { model: 'test-model' }, env, agentName,
+      _platform: 'linux', _homeDir: home, _spawnImpl: impl,
     });
-    const { args } = calls[0];
+    const { args, opts } = calls[0];
     const fsFlag = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean)
       .find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
-    const codexHome = join(home, '.codex');
-    expect(fsFlag).not.toContain('"~/.codex"="deny"');
+    return { args, fsFlag, codexHome: opts.env.CODEX_HOME };
+  };
+  const privateHomes = () => join(home, '.local', 'state', 'commonly', 'codex-private-homes');
+
+  test('a private seat spawned on Linux runs from its own home: the shared one and other seats\' are denied whole, its helper is not', async () => {
+    await mkdir(join(privateHomes(), 'another-seat'), { recursive: true });
+    const { fsFlag, codexHome } = await linuxSpawn();
+    expect(dirname(codexHome)).toBe(privateHomes());
+    expect(fsFlag).toContain('"~/.codex"="deny"');
+    expect(fsFlag).toContain(`"${join(privateHomes(), 'another-seat')}"="deny"`);
     expect(fsFlag).not.toContain(`"${codexHome}"="deny"`);
+    expect(fsFlag).not.toContain(`"${privateHomes()}"="deny"`);
     expect(fsFlag).not.toContain(`"${join(codexHome, 'tmp')}"="deny"`);
-    expect(fsFlag).toContain(`"${join(codexHome, 'auth.json')}"="deny"`);
-    expect(fsFlag).toContain(`"${join(codexHome, 'config.toml')}"="deny"`);
-    expect(fsFlag).toContain(`"${join(codexHome, 'sessions')}"="deny"`);
+    for (const name of ['auth.json', 'config.toml', 'sessions', 'logs_2.sqlite-wal']) {
+      expect(fsFlag).toContain(`"${join(codexHome, name)}"="deny"`);
+    }
     // The rest of the host secrets are unchanged.
     for (const dir of ['~/.commonly', '~/.claude', '~/.ssh', '~/.aws']) expect(fsFlag).toContain(`"${dir}"="deny"`);
     // Public seats' Codex homes sit outside ~/.commonly on Linux.
     expect(fsFlag).toContain(`"${join(home, '.local', 'state', 'commonly', 'codex-homes')}"="deny"`);
   });
 
-  test('a relative CODEX_HOME is read from the turn\'s folder, as Codex reads it', async () => {
+  test('the own home starts with no history: only the person\'s login, config and AGENTS.md are linked in', async () => {
+    const shared = join(home, '.codex');
+    await mkdir(join(shared, 'sessions', '2026', '11', '11'), { recursive: true });
+    await writeFile(join(shared, 'sessions', '2026', '11', '11', 'rollout-x-other-thread.jsonl'), 'other sessions');
+    await writeFile(join(shared, 'history.jsonl'), 'other history');
+    await writeFile(join(shared, 'logs_2.sqlite'), 'other logs');
+    const { codexHome } = await linuxSpawn();
+    expect(readdirSync(codexHome).sort()).toEqual(['AGENTS.md', 'auth.json', 'config.toml', 'tmp']);
+    for (const name of ['AGENTS.md', 'auth.json', 'config.toml']) {
+      expect((await lstat(join(codexHome, name))).isSymbolicLink()).toBe(true);
+      expect(await readlink(join(codexHome, name))).toBe(join(shared, name));
+    }
+    expect(existsSync(join(codexHome, 'sessions'))).toBe(false);
+    expect(existsSync(join(codexHome, 'history.jsonl'))).toBe(false);
+  });
+
+  test('a file the seat\'s Codex wrote in its own home is kept, and a link to a removed login is dropped', async () => {
+    const { codexHome } = await linuxSpawn();
+    await rm(join(codexHome, 'config.toml'));
+    await writeFile(join(codexHome, 'config.toml'), 'model = "own"\n');
+    await rm(join(home, '.codex', 'auth.json'));
+    await linuxSpawn();
+    expect(await readFile(join(codexHome, 'config.toml'), 'utf8')).toBe('model = "own"\n');
+    expect(existsSync(join(codexHome, 'auth.json'))).toBe(false);
+    expect((await lstat(join(codexHome, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+  });
+
+  test('a thread in the shared home starts fresh; one in the own home resumes', async () => {
+    const shared = join(home, '.codex', 'sessions', '2026', '11', '11');
+    await mkdir(shared, { recursive: true });
+    await writeFile(join(shared, 'rollout-2026-11-11T00-00-00-old-thread.jsonl'), '');
+    const fresh = await linuxSpawn({ sessionId: 'old-thread' });
+    expect(fresh.args).not.toContain('resume');
+    const own = join(fresh.codexHome, 'sessions', '2026', '11', '11');
+    await mkdir(own, { recursive: true });
+    await writeFile(join(own, 'rollout-2026-11-11T00-00-01-own-thread.jsonl'), '');
+    const resumed = await linuxSpawn({ sessionId: 'own-thread' });
+    expect(resumed.args.slice(resumed.args.indexOf('exec'), resumed.args.indexOf('exec') + 3)).toEqual(['exec', 'resume', 'own-thread']);
+  });
+
+  test('a relative CODEX_HOME is read from the turn\'s folder, as Codex reads it, and denied whole', async () => {
     const workspace = join(root, 'workspace');
-    await mkdir(join(workspace, 'rel-codex', 'tmp', 'arg0-linux'), { recursive: true });
+    await mkdir(join(workspace, 'rel-codex'), { recursive: true });
+    await writeFile(join(workspace, 'rel-codex', 'auth.json'), '{}');
+    const { fsFlag, codexHome } = await linuxSpawn({ cwd: workspace, env: { CODEX_HOME: 'rel-codex' } });
+    expect(fsFlag).toContain(`"${join(workspace, 'rel-codex')}"="deny"`);
+    expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(workspace, 'rel-codex', 'auth.json'));
+  });
+
+  test('on macOS a private seat keeps running from the shared home, denied whole', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
-    const env = { ...process.env, HOME: home, CODEX_HOME: 'rel-codex' };
+    const env = { ...process.env, HOME: home };
+    delete env.CODEX_HOME;
     delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
     await codex.spawn('hi', {
-      sessionId: null, cwd: workspace, environment: { model: 'test-model' }, env,
-      agentName: 'linux-private-agent', _platform: 'linux', _spawnImpl: impl,
+      sessionId: null, cwd: join(root, 'workspace'), environment: { model: 'test-model' }, env,
+      agentName: 'mac-private-agent', _platform: 'darwin', _homeDir: home, _spawnImpl: impl,
     });
-    const fsFlag = calls[0].args.find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
-    expect(fsFlag).toContain(`"${join(workspace, 'rel-codex', 'auth.json')}"="deny"`);
-    expect(fsFlag).not.toContain(`"${join(workspace, 'rel-codex', 'tmp')}"="deny"`);
+    expect(calls[0].opts.env.CODEX_HOME).toBeUndefined();
+    expect(existsSync(privateHomes())).toBe(false);
   });
 });
 
