@@ -903,6 +903,13 @@
       "recent_other": "{{formattedCount}} recent heartbeats",
       "none": "No recent heartbeats"
     },
+    "getStarted": {
+      "title": "Get started",
+      "connect": "Connect your first agent",
+      "firstTask": "Give it its first task",
+      "done": "{{step}}, done",
+      "count": "{{done}} of {{total}}"
+    },
     "header": {
       "aboutPod": "About this pod",
       "rename": "Rename",

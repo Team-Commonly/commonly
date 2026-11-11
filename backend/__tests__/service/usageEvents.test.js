@@ -80,6 +80,14 @@ describe('usage events (D286)', () => {
     expect(row.props).toBeUndefined();
   });
 
+  it('keeps a get-started-click step from its enum and drops any other (D288)', async () => {
+    const user = await makeUser();
+    await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'first-task' } }).expect(204);
+    await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'invite-teammate' } }).expect(204);
+    const found = await rows().find({ name: 'get-started-click' }).sort({ _id: 1 }).toArray();
+    expect(found.map((row) => row.props)).toEqual([{ step: 'first-task' }, undefined]);
+  });
+
   it('answers an unknown name with a 400 that never echoes it, and stores nothing', async () => {
     const user = await makeUser();
     const res = await post(user, { name: 'cm_agent_leaked-token', screen: '/' });

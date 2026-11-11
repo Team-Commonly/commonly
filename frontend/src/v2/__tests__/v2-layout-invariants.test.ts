@@ -450,6 +450,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(pane, '.v2-pod-header--direct .v2-pod-header__meta')).toContain('margin-right: auto');
   });
 
+  test('the Get started bar holds its height outside the stream and wraps to full-width steps on a phone (D288)', () => {
+    const pane = read('../chat/chat-pane.css');
+    const bar = ruleBody(pane, '.v2-get-started');
+    expect(bar).toContain('flex: none');
+    expect(bar).toContain('display: flex');
+    const phone = blockContaining(pane, '@media (max-width: 760px)', '.v2-get-started {');
+    expect(phone).toContain('flex-wrap: wrap');
+    expect(phone).toContain('flex: 1 1 100%');
+    expect(ruleBody(pane, '.v2-root button.v2-get-started__step--now:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');

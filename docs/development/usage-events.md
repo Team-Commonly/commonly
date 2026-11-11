@@ -70,6 +70,10 @@ growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
 
 When a published page is added or removed, regenerate `backend/config/publicPages.json` from `buildPageDefinitions`. The test `the backend knows every published page path` fails until you do.
 
+## Sent by the first-run bar (D288)
+
+`get-started-click` carries `step: connect | first-task`, one per click on the Get started bar's current step. Read it beside the starter tasks' done times to see whether the bar moved anyone.
+
 ## Allowlisted, not yet sent
 
 `welcome-dismiss`, `hosted-install-click`, `hosted-install-result`, `agent-settings-open`, `runtime-model-save`, `agent-reply-seen`, `reaction-add`, `retry-click`, `board-open`, `task-open`, `decision-answer`, `empty-state-shown` and `stuck-help-click` are accepted but no surface sends them yet. `error-shown` isn't accepted, because the spec requires its code to be checked against the real error-code enum, which doesn't exist yet.

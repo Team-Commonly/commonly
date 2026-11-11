@@ -33,6 +33,7 @@ export const UI_EVENTS: Record<string, PropSchema> = {
   'decision-answer': { how: ['option', 'other'] },
   'empty-state-shown': {},
   'stuck-help-click': {},
+  'get-started-click': { step: ['connect', 'first-task'] },
 };
 
 // Route templates from the V2App table, without the /v2 mount.

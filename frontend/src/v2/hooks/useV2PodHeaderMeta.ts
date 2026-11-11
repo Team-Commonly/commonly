@@ -7,13 +7,31 @@ import { useSocket } from '../../context/SocketContext';
 // failed read leaves the header without that fragment rather than blank.
 // The open count then follows the board's own live wire: a task_updated for
 // this pod re-reads it, and so does a reconnect that may have missed one.
+// The same read carries the two starter tasks sign-up seeds (D288): the
+// first-run bar shows their state and stands in for the count until both
+// are done.
 
-interface TaskRow { status?: string }
+interface TaskRow { status?: string; sourceRef?: string }
 interface ConnectorRow { type?: string; status?: string; podId?: { _id?: string } | string | null }
+
+// Done flags for the seeded starter tasks; null when the pod has neither.
+export interface V2StarterSteps { connect: boolean; firstTask: boolean }
+
+export const CONNECT_AGENT_REF = 'onboarding:connect-agent';
+export const FIRST_TASK_REF = 'onboarding:first-task';
+
+export const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
+  const connect = tasks.find((task) => task.sourceRef === CONNECT_AGENT_REF);
+  const firstTask = tasks.find((task) => task.sourceRef === FIRST_TASK_REF);
+  if (!connect && !firstTask) return null;
+  // A missing row counts as done: the bar never asks for a step it can't track.
+  return { connect: !connect || connect.status === 'done', firstTask: !firstTask || firstTask.status === 'done' };
+};
 
 export interface V2PodHeaderMeta {
   boardOpen: number | null;
   channels: string[];
+  starter: V2StarterSteps | null;
 }
 
 export const useV2PodHeaderMeta = (podId: string | null | undefined): V2PodHeaderMeta => {
@@ -21,6 +39,7 @@ export const useV2PodHeaderMeta = (podId: string | null | undefined): V2PodHeade
   const { socket } = useSocket();
   const [boardOpen, setBoardOpen] = useState<number | null>(null);
   const [channels, setChannels] = useState<string[]>([]);
+  const [starter, setStarter] = useState<V2StarterSteps | null>(null);
   // A slower earlier read must not overwrite a newer one, and a read started
   // for a pod we have since left must not land on the next pod's header.
   const boardReadRef = useRef(0);
@@ -33,11 +52,17 @@ export const useV2PodHeaderMeta = (podId: string | null | undefined): V2PodHeade
         if (boardReadRef.current !== read) return;
         const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
         setBoardOpen(tasks.filter((task) => task.status === 'pending' || task.status === 'claimed' || task.status === 'in_progress').length);
+        setStarter(starterStepsFrom(tasks));
       })
-      .catch(() => { if (boardReadRef.current === read) setBoardOpen(null); });
+      .catch(() => {
+        if (boardReadRef.current !== read) return;
+        setBoardOpen(null);
+        setStarter(null);
+      });
   }, [api]);
 
   useEffect(() => {
+    setStarter(null);
     if (!podId) {
       setBoardOpen(null);
       setChannels([]);
@@ -76,5 +101,5 @@ export const useV2PodHeaderMeta = (podId: string | null | undefined): V2PodHeade
     };
   }, [podId, socket, loadBoardOpen]);
 
-  return { boardOpen, channels };
+  return { boardOpen, channels, starter };
 };
