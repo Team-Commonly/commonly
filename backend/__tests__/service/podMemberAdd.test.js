@@ -168,6 +168,26 @@ it('refuses a missing or non-string username, and an unknown pod', async () => {
   expect(await memberIds()).toHaveLength(2);
 });
 
+it.each([':podId', 'build', 'a'.repeat(25)])('refuses a malformed pod id %p with 400 and changes nothing', async (badId) => {
+  const res = await add(creator, 'teammate', badId);
+  expect(res.status).toBe(400);
+  expect(await memberIds()).toHaveLength(2);
+  expect(mockMirrorMemberAdded).not.toHaveBeenCalled();
+});
+
+it('reports a pod deleted between the read and the write, and mirrors nothing', async () => {
+  const realUpdateOne = Pod.updateOne.bind(Pod);
+  const spy = jest.spyOn(Pod, 'updateOne').mockImplementationOnce(async (...args) => {
+    await Pod.deleteOne({ _id: pod._id });
+    return realUpdateOne(...args);
+  });
+  const res = await add(creator, 'teammate');
+  spy.mockRestore();
+  expect(res.status).toBe(404);
+  expect(res.body.code).toBe('pod_not_found');
+  expect(mockMirrorMemberAdded).not.toHaveBeenCalled();
+});
+
 it('needs a signed-in caller', async () => {
   const res = await request(app).post(`/api/pods/${pod._id}/members`).send({ username: 'teammate' });
   expect(res.status).toBe(401);

@@ -79,10 +79,13 @@ export const addPodMemberByUsername = async (
   });
   if (!sharesAPod) return { refusal: 'teammate_not_found' };
 
-  await Pod.updateOne(
+  const written = await Pod.updateOne(
     { _id: pod._id },
     { $addToSet: { members: target._id }, $set: { updatedAt: new Date() } },
   );
+  // Deleted since the read: report it, and never mirror, since the mirror
+  // copies a pod it can't find into Postgres.
+  if (!written.matchedCount) return { refusal: 'pod_not_found' };
   // Best-effort, as on every other join path: a failure is logged inside.
   await mirrorMemberAdded(String(pod._id), targetId);
   return { alreadyMember: false, member };
