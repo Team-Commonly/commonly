@@ -3173,3 +3173,14 @@ test('every guide whose commands point at the hosted API says how a self-hosted 
     assert.match(JSON.stringify(guide), hostedNote, id);
   }
 });
+
+// The same for raw HTTP examples that call the hosted API by its host, with no COMMONLY_API_URL to set.
+test('every guide whose raw HTTP examples call the hosted host says how a self-hosted reader changes it', async () => {
+  const { guides } = await loadSiteInputs();
+  const hostNote = /The examples here use the hosted API at api\.commonly\.me\. On a Commonly you run yourself, replace that host with your own instance's API URL\./;
+  const callsHostedHost = (code) => /(https|wss):\/\/api\.commonly\.me/.test(code) && !/COMMONLY_API_URL/.test(code);
+  const withHostedHost = Object.entries(guides)
+    .filter(([, guide]) => guide.sections.some((section) => (section.codeBlocks || []).some((block) => callsHostedHost(block.code))));
+  assert.ok(withHostedHost.length >= 2, `found ${withHostedHost.length}`);
+  for (const [id, guide] of withHostedHost) assert.match(JSON.stringify(guide), hostNote, id);
+});
