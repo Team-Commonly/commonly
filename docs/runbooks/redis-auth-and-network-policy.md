@@ -51,7 +51,7 @@ port, and `default-deny-ingress` turns away everything else in the namespace:
 | litellm | the same clients as backend; the edge only with `litellm.public` | 4000 |
 | redis | backend, backend-worker, ops-runner | 6379 |
 | mongodb (staging) | backend, backend-worker, ops-runner, the backup jobs | 27017 |
-| email-sink (staging) | backend, backend-worker, the stranger journey | 8080 |
+| email-sink (staging) | backend, backend-worker, ops-runner, the stranger journey | 8080 |
 | agent-computer waker, steel gates | backend, backend-worker, ops-runner | 8080, 3000 |
 
 The edge is `networkPolicy.ingress.edge`: staging's in-namespace tunnel, and

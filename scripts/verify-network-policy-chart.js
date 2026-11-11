@@ -128,7 +128,8 @@ const ingressLanes = {
       ['app=backend', 'litellm', 4000], ['app=backend-worker', 'litellm', 4000],
       ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379],
       ['app=backend', 'mongodb', 27017], ['app=backend-worker', 'mongodb', 27017], ['component=backup', 'mongodb', 27017],
-      ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['component=stranger-journey', 'email-sink', 8080],
+      ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['app=ops-runner', 'email-sink', 8080],
+      ['component=stranger-journey', 'email-sink', 8080],
     ],
     // Nothing outside the namespace's tunnel reaches these.
     closed: [['app=backend', 'frontend', 80], ['app=litellm', 'redis', 6379], ['app=frontend', 'backend', 5000], ['app=cloudflared-commonly-k8s', 'litellm', 4000]],
@@ -155,13 +156,16 @@ const peerLabels = (spec, edgeApp) => {
   const [k, v] = spec.split('=');
   return { ns: null, labels: { [k]: v } };
 };
-// Does a policy's `from` admit a pod with these labels (ns null = same namespace)?
+// Does a policy's `from` admit a pod with these labels (ns null = the policy's
+// own namespace)? An ipBlock counts as admitting: pod IPs can fall inside it,
+// so a broad one must fail the closed checks, never pass them.
 const admits = (pol, { ns, labels }, port) => (pol.spec.ingress || []).some((rule) => {
   const portOk = !rule.ports || rule.ports.some((p) => p.port === port);
+  const fromNs = ns ?? pol.metadata.namespace;
   const fromOk = !rule.from || rule.from.some((peer) => {
-    if (peer.ipBlock) return false;
+    if (peer.ipBlock) return true;
     const nsOk = peer.namespaceSelector
-      ? ns !== null && selects(peer.namespaceSelector, { 'kubernetes.io/metadata.name': ns })
+      ? selects(peer.namespaceSelector, { 'kubernetes.io/metadata.name': fromNs })
       : ns === null;
     return nsOk && (!peer.podSelector || selects(peer.podSelector, labels));
   });
@@ -217,6 +221,31 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
       }
     }
   }
+}
+
+// admits() itself: a namespaceSelector peer that covers the policy's own
+// namespace admits same-namespace pods, and an ipBlock counts as admitting,
+// so neither can make a closed check pass.
+const probe = (peer) => admits({ metadata: { namespace: 'n' }, spec: { ingress: [{ from: [peer], ports: [{ port: 1 }] }] } },
+  { ns: null, labels: { app: 'x' } }, 1);
+expect(probe({ namespaceSelector: {} }), 'admits(): a namespaceSelector {} peer does not admit a same-namespace pod');
+expect(probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'n' } } }), 'admits(): a peer naming the own namespace does not admit its pods');
+expect(!probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'other' } } }), 'admits(): a peer naming another namespace admits same-namespace pods');
+expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is treated as refusing');
+
+// An edge peer must name pods: a bare namespaceSelector or an ipBlock would
+// admit whole namespaces or address ranges to frontend and backend.
+for (const bad of [[{ namespaceSelector: {} }], [{ ipBlock: { cidr: '0.0.0.0/0' } }], [{ podSelector: {} }]]) {
+  let rendered = true;
+  try {
+    execFileSync('helm', ['template', 'commonly-verify', chart, '-f', lanes.dev.files[0], '-f', lanes.dev.files[1],
+      '--set', 'networkPolicy.ingress.frontend.enabled=true', '--set-json', `networkPolicy.ingress.edge=${JSON.stringify(bad)}`],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    rendered = false;
+    expect(/each peer must name the edge pods/.test(String(e.stderr)), `edge ${JSON.stringify(bad)} failed for another reason: ${String(e.stderr).trim().split('\n')[0]}`);
+  }
+  expect(!rendered, `edge ${JSON.stringify(bad)} renders, admitting more than the edge pods`);
 }
 
 // A policy that admits the edge must refuse to render without one: an empty
