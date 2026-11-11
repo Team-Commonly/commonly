@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../src/server.js';
 import { buildTools } from '../src/tools.js';
-import { HttpError, TransportError } from '../src/client.js';
+import { HttpError, TransportError, request, requestUpload } from '../src/client.js';
 import {
   ANSWERABLE_API_STATUSES, PUBLIC_SEAT_ENV, READ_ONLY_TOOLS, UNREACHABLE_REFUSAL, showsCommonlyUnreachable,
 } from '../src/public-seat-gate.js';
@@ -161,6 +161,35 @@ describe('without the flag', () => {
     expect(posted.isError).toBeFalsy();
     expect(calls.map((c) => c.method)).toEqual(['GET', 'POST']);
     expect(handle.gate.latched).toBe(false);
+    await client.close();
+  });
+});
+
+// A response whose headers arrived but whose body never did is no answer
+// either, on both request paths, and on an upload whose fetch fails.
+describe('a reply that breaks after its headers', () => {
+  const brokenBody = async () => ({ ok: true, status: 200, text: async () => { throw new Error('terminated'); } });
+  const upload = { path: '/api/agents/runtime/pods/P/attachments', fileBuffer: Buffer.from('x'), fileName: 'x.txt' };
+
+  test('request and requestUpload both raise TransportError, with the underlying message', async () => {
+    await expect(request(cfg, { method: 'GET', path: '/x', _fetchImpl: brokenBody }))
+      .rejects.toMatchObject({ name: 'TransportError', message: 'terminated' });
+    await expect(requestUpload(cfg, { ...upload, _fetchImpl: brokenBody }))
+      .rejects.toMatchObject({ name: 'TransportError', message: 'terminated' });
+    await expect(requestUpload(cfg, { ...upload, _fetchImpl: async () => { throw new Error('fetch failed'); } }))
+      .rejects.toBeInstanceOf(TransportError);
+  });
+
+  test('a read whose body breaks latches a public seat, and the next post is refused unsent', async () => {
+    const calls = [];
+    global.fetch = async (url, init) => {
+      calls.push(init?.method);
+      return calls.length === 1 ? brokenBody() : respond(201, { ok: true });
+    };
+    const { call, client } = await connect(PUBLIC);
+    expect((await call(...READ)).isError).toBe(true);
+    expect(text(await call(...POST))).toBe(UNREACHABLE_REFUSAL);
+    expect(calls).toEqual(['GET']);
     await client.close();
   });
 });

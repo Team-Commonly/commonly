@@ -473,7 +473,8 @@ In that mode, once the process has seen Commonly unreachable, every tool that
 is not a read refuses with `Commonly is unreachable this turn; post nothing.`,
 and reads carry on. Unreachable means a call that got no answer, or any status
 but the refusals a person can be told about (400, 403, 404, 409, 410, 413,
-422), and a failed start check-in counts. It is the CLI's rule for withholding
+422). The start check-in is judged by the same rule, so a check-in that got no
+answer or a 5xx latches, and one refused with a 404 does not. It is the CLI's rule for withholding
 a public turn's reply (`cli/src/lib/public-tool-error.js`), applied to the
 posts a model makes through the tools itself. The state lasts as long as the
 process, which every adapter starts once per turn. Without the variable the
