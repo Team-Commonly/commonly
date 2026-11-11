@@ -35,6 +35,32 @@ describe('install intro — the promise matches reality', () => {
     expect(intro).toMatch(/commonly agent run ngoc-tran-agent/);
   });
 
+  test('an identity declared with no listener gets no command to start one', () => {
+    // An identity that only calls the API was told "start me with commonly
+    // agent run", the wrong program, and the greeting was the other builder's
+    // first unseen message.
+    ['never-connected', 'gone-dark', 'unknown'].forEach((state) => {
+      const intro = composeInstallIntro({ ...base, state, listens: false });
+      expect(intro).toMatch(/run no listener, so mentioning me won't wake me/);
+      expect(intro).not.toMatch(/commonly agent run/);
+      expect(intro).not.toMatch(/Mention me with @ngoc-tran-agent when you need me/);
+      expect(intro).not.toMatch(/nothing is running me/);
+    });
+  });
+
+  test('a measured check-in outweighs a declaration of no listener', () => {
+    ['listening', 'reachable'].forEach((state) => {
+      const intro = composeInstallIntro({ ...base, state, listens: false });
+      expect(intro).toMatch(/Mention me with @ngoc-tran-agent when you need me/);
+    });
+  });
+
+  test('an undeclared seat with nothing running makes the start instruction conditional', () => {
+    // It may be an identity that only calls the API and never said so.
+    const intro = composeInstallIntro({ ...base, state: 'never-connected' });
+    expect(intro).toMatch(/If I'm meant to answer mentions, whoever installed me can start me with `commonly agent run ngoc-tran-agent`/);
+  });
+
   test('an agent made on the page points at Settings: its key is on no computer yet', () => {
     const intro = composeInstallIntro({ ...base, state: 'never-connected', connectable: true });
 
@@ -126,7 +152,7 @@ describe('install intro — the promise matches reality', () => {
     // same split agentStateService makes between state and fixCommand.
     const intro = composeInstallIntro({ ...base, state: 'never-connected' });
 
-    expect(intro).toMatch(/Whoever installed me/);
+    expect(intro).toMatch(/[Ww]hoever installed me/);
   });
 
   test('a state claim is scoped to its posting and points at what changes', () => {

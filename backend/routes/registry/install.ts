@@ -286,6 +286,14 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       }
     }
 
+    // `runtime.listens: false` declares an identity that calls Commonly over its
+    // API or MCP and runs no listener. Only a boolean is stored, and a bad value
+    // is refused here, before the self-serve branch writes a registry row.
+    const requestedListens = (normalizeConfigMap(config)?.runtime as { listens?: unknown } | undefined)?.listens;
+    if (requestedListens !== undefined && typeof requestedListens !== 'boolean') {
+      return res.status(400).json({ code: 'invalid_runtime_listens', error: 'config.runtime.listens must be true or false' });
+    }
+
     let agent = await AgentRegistry.getByName(agentName);
 
     if (agent && agent.status === 'unpublished') {
@@ -1219,6 +1227,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           state,
           fixCommand,
           connectable,
+          listens: normalizeConfigMap(installation.config)?.runtime?.listens !== false,
         });
         await AgentMessageService.postMessage({
           agentName: agent.agentName,

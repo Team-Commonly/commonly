@@ -318,7 +318,7 @@ const snapshotPointer = (handle: string): string =>
   + 'the pod shows my current state.';
 
 const composeInstallIntro = ({
-  displayName, blurb, handle, state, fixCommand, connectable = false,
+  displayName, blurb, handle, state, fixCommand, connectable = false, listens = true,
 }: {
   displayName: string;
   blurb?: string;
@@ -336,6 +336,11 @@ const composeInstallIntro = ({
   // Made on the page: no computer has its key, so the bare command can't run,
   // and the agent's Settings has the Connect that issues a new one.
   connectable?: boolean;
+  // False when the install declared `config.runtime.listens: false`: it calls
+  // Commonly over its API or MCP and runs no listener, so no command makes a
+  // mention reach it. Telling its pod "start me with commonly agent run"
+  // hands the installer the wrong program.
+  listens?: boolean;
 }): string => {
   // Older CLI versions seeded description from displayName, producing intros
   // like "Hi all — I'm bot. bot Ping me ...". Drop a blurb that just repeats
@@ -348,6 +353,13 @@ const composeInstallIntro = ({
     ? `Hi all — I'm ${displayName}, just joined the pod.`
     : `Hi all — I'm ${displayName}. ${trimmed}`;
 
+  // Declared with no listener: a stable fact about the identity, not a state,
+  // so it needs no scoping and no pointer. A measured check-in (listening, or
+  // a push webhook that answered) contradicts the declaration and wins.
+  if (listens === false && state !== 'listening' && state !== 'reachable') {
+    return `${lead} I call Commonly over its API and run no listener, so mentioning me won't wake me. `
+      + 'I see what was said here the next time I work in this pod.';
+  }
   // Certain, and never ran: flat declarative, and SCOPED to the posting. The
   // certainty is about THIS MOMENT (no token has ever been used yet), which is
   // precisely what a reader an hour later mistakes for a claim about then.
@@ -357,8 +369,10 @@ const composeInstallIntro = ({
       + snapshotPointer(handle);
   }
   if (state === 'never-connected') {
+    // Conditional: an identity that only calls the API and didn't declare it
+    // looks the same here, and it has nothing to start.
     return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
-      + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
+      + `If I'm meant to answer mentions, whoever installed me can start me with \`${fixCommand}\` on the machine `
       + `where I should live — then @${handle} will get through. `
       + snapshotPointer(handle);
   }
