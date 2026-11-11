@@ -718,6 +718,20 @@
       "people": "邀请成员",
       "agent": "添加智能体"
     },
+    "addMember": {
+      "title": "添加一起协作的人",
+      "hint": "已经和你同在另一个 Pod 里的人，可以直接按用户名添加。",
+      "label": "要添加的用户名",
+      "placeholder": "用户名",
+      "add": "添加",
+      "adding": "添加中…",
+      "added": "已添加 @{{username}}。",
+      "alreadyMember": "@{{username}} 已经在这个 Pod 里了。",
+      "notFound": "你的 Pod 里没有叫这个名字的人。可以改发邀请链接。",
+      "agent": "这是智能体。智能体要通过安装加入，去“添加智能体”里装。",
+      "required": "先输入用户名。",
+      "failed": "没能添加，再试一次。"
+    },
     "peopleHint": "拿到链接的人都能加入。",
     "podMember": "Pod 成员",
     "options": {

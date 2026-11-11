@@ -1703,6 +1703,37 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-accent);
 }
 
+/* The creator's add-by-username block sits above the link options, set off
+   from them the way the managed-links list is set off below. */
+.v2-invite-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-invite-add .v2-modal__hint {
+  margin: 0;
+}
+
+/* Both notices sit at the sans floor, beside the 12px hint above them. */
+.v2-invite-add__ok,
+.v2-invite-add .v2-modal__error {
+  font-size: 12px;
+}
+
+.v2-invite-add__ok {
+  color: var(--v2-success-text);
+  margin-top: 4px;
+}
+
+/* An empty notice takes no room but stays in the accessibility tree. */
+.v2-invite-add__msg:empty {
+  margin-top: 0;
+}
+
 .v2-invite-manage {
   display: flex;
   flex-direction: column;

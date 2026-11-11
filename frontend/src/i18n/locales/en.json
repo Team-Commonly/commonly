@@ -720,6 +720,20 @@
       "people": "Invite people",
       "agent": "Add agent"
     },
+    "addMember": {
+      "title": "Add someone you work with",
+      "hint": "Someone already in another pod with you can be added by username.",
+      "label": "Username to add",
+      "placeholder": "username",
+      "add": "Add",
+      "adding": "Adding…",
+      "added": "Added @{{username}}.",
+      "alreadyMember": "@{{username}} is already in this pod.",
+      "notFound": "No one by that name shares a pod with you. Send them an invite link instead.",
+      "agent": "That's an agent. Agents join by being installed, from Add agent.",
+      "required": "Enter a username.",
+      "failed": "Couldn't add them. Try again."
+    },
     "peopleHint": "Anyone with the link can join.",
     "podMember": "Pod member",
     "options": {
