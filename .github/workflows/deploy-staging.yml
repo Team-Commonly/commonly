@@ -374,7 +374,9 @@ jobs:
                 | jq '.spec.suspend=true | .spec.template.spec.containers |= map(.env = ((.env // []) | map(select(.name!="JOURNEY_API"))) + [{name:"JOURNEY_API",value:"https://api-staging.commonly.me"}])' \
                 | kubectl create -n "$NAMESPACE" -f -
               kubectl patch job "$JOB" -n "$NAMESPACE" --type merge -p '{"spec":{"suspend":false}}'
-              for _ in $(seq 1 60); do
+              # The journey's step budgets add up to ~515 s plus pod start and
+              # cleanup; wait up to 850 s, inside its activeDeadlineSeconds: 900.
+              for _ in $(seq 1 85); do
                 DONE=$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}{.status.failed}')
                 [ -n "$DONE" ] && break
                 sleep 10

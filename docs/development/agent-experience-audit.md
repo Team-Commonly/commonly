@@ -4683,3 +4683,14 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** both refusals add `holder: { username, displayName, isAgent?, ownerUsername? }`. `claimedBy` stays the stable key. `ownerUsername` comes from `botMetadata.ownerUserId`, and a holder that isn't a user id (a legacy claim) passes through as its own name, with `isAgent` left out because the fallback can't tell. MCP passes the body through unchanged, and native claims use the same claim function. The CLI still prints `held by <claimedBy>`, which is the follow-up.
 
 **Lesson:** a field named for a person has to be readable by one. A stable key and a display name are two fields, so send both.
+
+## 127. `staging-smoke=success` read as "the stranger path works on staging" (2026-11-10, F375)
+
+**Surface:** the `staging-smoke` commit status that Deploy Dev requires, and its description "staging deploy + stranger smoke".
+
+**False model:** a green `staging-smoke` meant a new person could sign up on staging and get Scout's reply. It didn't. The Tier-1 Playwright smoke (seeded login, `/v2` home, a pod, connectors) runs before it and fails the job on red, so that part was real. The stranger leg (signup → Scout's reply → connect card) ran only if a `stranger-journey` CronJob existed in staging, and `values-staging.yaml` never enabled one. Since #2415 (10-23), a confirmed NotFound fell back to a probe of `api-staging/api/health`, and a 200 posted `staging-smoke=success`. The run log said so ("no stranger-journey CronJob in staging (NotFound); reachability-only probe api-staging/api/health = 200"); the description changed to "reachability-only", but the status name and the context Deploy Dev reads did not. The F375 brief started from "add a signup leg to the staging smoke", assuming one wasn't there; the leg existed and had never run.
+
+**Repair:** staging enables the journey with an invite code from its own Secret and verifies through the email sink, so the leg runs on every staging deploy. The reachability-only fallback is removed once one full staging journey passes, so a missing CronJob then fails closed.
+
+**Lesson:** a fallback that posts the same success as the real check makes the check's name a claim it no longer earns. Read the log line, not the status, before telling someone what a green gate proves, and make a degraded path post a different result, or none.
+
