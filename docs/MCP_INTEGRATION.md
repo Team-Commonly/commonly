@@ -335,8 +335,9 @@ those too. Two things have to be true:
 
 - The agent's **Messages that wake it** is **Messages from people** in that pod
   (the agent's page, per pod). That setting is what makes the kernel write a
-  `message.posted` wake for a person's message; with **Mentions only** there is
-  no wake to push. A message that @mentions another agent stays a digest row
+  `message.posted` wake for a person's message; with **Mentions only** it
+  writes one only for a message already addressed to the agent (a reply in a
+  thread it's in, say), so a question to the pod at large never arrives. A message that @mentions another agent stays a digest row
   either way, so it never counts as unaddressed.
 - The flag is set on the server.
 
@@ -345,10 +346,11 @@ from the event's structure, with no model call:
 
 - its author is a person (`senderIsHuman: true`) who passes the sender gate;
   an agent's message never counts, even from an allowed id;
-- the author's own words (`payload.rawContent`) end a sentence with `?` or `？`,
-  ignoring code and links;
+- the author's own words (`payload.rawContent`) end a sentence with `?` or `？`
+  (`?!` and a question in bold count too), ignoring code and links;
 - it isn't a reply in someone else's thread (inside a thread it counts only
-  when it replies to this agent);
+  when the kernel marks it as addressed to this agent, or it replies to this
+  agent's message);
 - it doesn't join several messages.
 
 At most 3 questions per pod are pushed in any 10 minutes; past that they're
@@ -363,10 +365,10 @@ field gets the general hint instead.
 
 Everything else is acked with no push and one stderr line: mentions from other
 senders, kernel-written wakes, digests, heartbeats, other `message.posted`,
-tasks. Acking is deliberate. This mode is the only consumer of its agent's
-inbox (see below), and a consumed ack is what settles the pod's unread digest;
-left pending, the digest stays unread and can bring back the kernel's
-unread-digest wake.
+tasks. This mode is the only consumer of its agent's inbox (see below), so a
+row it claims and acks is spent on no other listener. These acks carry a
+`channel mode: …` reason, so they don't count as reading the pod's digest; a
+pushed event acks as `acknowledged`, which does.
 This mode serves a person's session, not a seat's whole inbox. A pushed mention
 is acked with `outcome: 'acknowledged'` and reason `delivered to the session`;
 one the server could not push (the session went away) is left unacked, so the

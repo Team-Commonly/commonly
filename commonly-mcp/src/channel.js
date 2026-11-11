@@ -18,9 +18,9 @@
  * Everything else (other senders, agent-authored mentions not on the list,
  * heartbeats, other `message.posted`, tasks, digests) is acked with no push
  * and one stderr line: this is a person's session, not a seat's whole inbox.
- * Acking is deliberate: this mode is the only consumer of its identity, and a
- * consumed ack is what settles the pod's unread digest; left pending, it can
- * bring the kernel's unread-digest wake back. The docs
+ * This mode is the only consumer of its identity, so a claimed row is spent on
+ * no other listener. These acks carry a `channel mode:` reason, which the
+ * kernel doesn't count as reading the digest (digestConsumedBy). The docs
  * call an ungated channel a prompt-injection vector, so with no allowlist and
  * no owner to default to, nothing is claimed or pushed at all.
  *
@@ -46,7 +46,8 @@ const WAKE_TYPES = new Set(['chat.mention', 'thread.mention', 'message.posted'])
 const DEFAULT_INTERVAL_MS = 5000;
 const MAX_BACKOFF_MS = 60_000;
 const PAGE_LIMIT = 10;
-// 1:1 rooms, where a person's message already reaches the agent as addressed.
+// Personal pods (agent-room, agent-dm, and an agent's admin pod), where a
+// person's message already reaches the agent as addressed.
 const PERSONAL_POD_TYPES = new Set(['agent-room', 'agent-dm', 'agent-admin']);
 // A burst of questions in one pod must not become a burst of turns.
 export const QUESTION_CAP = 3;
@@ -75,7 +76,9 @@ export const isQuestion = (text) => {
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]*`/g, ' ')
     .replace(/\bhttps?:\/\/\S+/gi, ' ');
-  return /[?\uFF1F](?=$|[\s"'\u201D\u2019)\]])/.test(prose);
+  // A full-width mark ends a sentence wherever it sits (Chinese has no space
+  // after it); an ASCII one needs an end, a space, a closing mark or emphasis.
+  return /\uFF1F|\?(?=$|[\s"'\u201D\u2019)\]!*_~])/.test(prose);
 };
 
 /** `COMMONLY_MCP_CHANNEL_ALLOW`: comma-separated Commonly user ids. */
@@ -128,7 +131,7 @@ export const answerRootOfWake = (event) => {
   return /^\d{1,10}$/.test(raw) && Number.isSafeInteger(own) && own > 0 ? own : null;
 };
 
-const QUESTION_NOTE = '[Nobody was named in this message: a person asked the pod. '
+const QUESTION_NOTE = '[No agent was named in this message: a person asked the pod. '
   + 'Answer only if you can help, in the thread named by thread_root_id; otherwise post nothing.]';
 
 const COALESCED_NOTE = '[This wake joins more than one mention, so it names no single thread: '
@@ -179,7 +182,10 @@ const decideQuestion = (event, { allowed }) => {
   if (Array.isArray(payload.coalesced) && payload.coalesced.length > 0) {
     return { push: false, reason: 'it joins more than one message' };
   }
-  if (threadRootOf(payload) != null && !payload.repliesToYourMessage && !payload.answersYourQuestion) {
+  // Inside a thread, only what the kernel addressed to this agent: the thread's
+  // author or claimant, a reply to its message, or an answer to its question.
+  if (threadRootOf(payload) != null && !payload.addressed
+    && !payload.repliesToYourMessage && !payload.answersYourQuestion) {
     return { push: false, reason: "a reply in someone else's thread" };
   }
   const text = typeof payload.rawContent === 'string' ? payload.rawContent : payload.content;
@@ -295,7 +301,7 @@ export const startChannel = ({
     const silent = shared.filter((item) => item.messageWake === 'mentions')
       .map((item) => `"${item.podName || item.podId}"`);
     if (silent.length) {
-      say(`no question can arrive from ${silent.join(', ')}: that pod is set to "Mentions only". To hear them, set this `
+      say(`a question to the pod at large won't arrive from ${silent.join(', ')}: set to "Mentions only". To hear them, set this `
         + 'agent\'s "Messages that wake it" to "Messages from people" for that pod on the agent\'s page in Commonly.');
     }
   };

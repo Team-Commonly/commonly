@@ -99,6 +99,9 @@ describe('what counts as a question (structural, no model call)', () => {
     ['can someone check the deploy?', true],
     ['部署好了吗？', true],
     ['(is it down?) asking for a friend', true],
+    ['能帮我看下部署吗？我这边报错了', true],
+    ['is prod down?!', true],
+    ['**anyone free?**', true],
     ['done, see https://x.example/a?b=1', false],
     ['try `a?.b` there', false],
     ['```\nwhy?\n```', false],
@@ -137,6 +140,10 @@ describe('which question is pushed', () => {
     expect(decide(posted({}, { threadRootId: 55, repliesToYourMessage: true }), gate, on).push).toBe(true);
   });
 
+  it('pushes a question in a thread the kernel addressed to this agent', () => {
+    expect(decide(posted({}, { threadRootId: 55, addressed: true }), gate, on).push).toBe(true);
+  });
+
   it('leaves mentions exactly as they were', () => {
     const mention = posted({ type: 'chat.mention' }, { rawContent: 'no question mark' });
     expect(decide(mention, gate, on)).toEqual({ push: true });
@@ -148,7 +155,7 @@ describe('the pushed event', () => {
     const { content, meta } = channelEventFor(posted());
     expect(meta.thread_root_id).toBe('601');
     expect(meta.event_type).toBe('message.posted');
-    expect(content).toMatch(/Nobody was named/);
+    expect(content).toMatch(/No agent was named/);
     expect(content).toMatch(/otherwise post nothing/);
   });
 
@@ -157,7 +164,7 @@ describe('the pushed event', () => {
   });
 
   it('leaves a mention without the question note', () => {
-    expect(channelEventFor(posted({ type: 'chat.mention' })).content).not.toMatch(/Nobody was named/);
+    expect(channelEventFor(posted({ type: 'chat.mention' })).content).not.toMatch(/No agent was named/);
   });
 });
 
@@ -182,7 +189,7 @@ describe('poll loop', () => {
     });
     const { logs } = await drive({ api, acks: 1 });
     const text = logs.join('\n');
-    expect(text).toMatch(/no question can arrive from "Release": that pod is set to "Mentions only"/);
+    expect(text).toMatch(/won't arrive from "Release": set to "Mentions only"/);
     expect(text).toMatch(/"Messages from people"/);
     expect(text).not.toMatch(/"Design"|"Me"|"Admin"/);
   });
@@ -192,7 +199,7 @@ describe('poll loop', () => {
       installations: [{ type: 'installation', podId: 'p2', podName: 'Design', podType: 'chat', messageWake: 'human' }],
     });
     const { logs } = await drive({ api, acks: 1 });
-    expect(logs.join('\n')).not.toMatch(/no question can arrive/);
+    expect(logs.join('\n')).not.toMatch(/won't arrive from/);
   });
 
   it('reads the setting even with an explicit allowlist, and falls back to the general hint on an older server', async () => {
@@ -200,7 +207,7 @@ describe('poll loop', () => {
     const { logs } = await drive({ api, env: { ...ON, COMMONLY_MCP_CHANNEL_ALLOW: OWNER }, acks: 1 });
     const text = logs.join('\n');
     expect(text).toMatch(/arrives only from a pod where/);
-    expect(text).not.toMatch(/no question can arrive/);
+    expect(text).not.toMatch(/won't arrive from/);
   });
 
   it('with the flag unset, acks the question with no push and no questions line', async () => {
