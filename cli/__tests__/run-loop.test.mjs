@@ -76,6 +76,18 @@ const makeEvent = (overrides = {}) => ({
   ...overrides,
 });
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js). Tests of
+// something else give such a seat private pods; `withPrivatePods` answers
+// /installations itself, so the wrapped mock never sees that read.
+const PRIVATE_POD_FLAGS = { publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
+const withPrivatePods = (client, extra = {}, podIds = ['pod-abc']) => ({
+  ...client,
+  get: (url, ...rest) => (url === '/api/agents/runtime/installations'
+    ? Promise.resolve({ ...extra, installations: podIds.map((podId) => ({ podId, ...PRIVATE_POD_FLAGS })) })
+    : client.get(url, ...rest)),
+});
+
 // setTimeout that never fires — ensures performRun executes exactly one cycle.
 const noopTimeout = () => 0;
 
@@ -132,7 +144,7 @@ describe('performRun', () => {
     const { createOwnKeyResolver } = await import('../src/lib/own-key-launch.js');
     const { openSpawnCredential } = await import('../src/lib/spawn-credential.js');
     const mockPost = jest.fn().mockResolvedValue({});
-    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));
     const launchPost = jest.fn(async () => ({ set: true }));
     const resolveOwnProviderKey = createOwnKeyResolver({ instanceUrl: 'http://localhost:5000', machineId: 'machine', agentName: 'my-stub',
       loadRecord: () => ({ machineId: 'machine', instanceUrl: 'http://localhost:5000', daemonToken: 'cm_daemon_parent' }),
@@ -165,7 +177,7 @@ describe('performRun', () => {
     [['low', 'high'], undefined],
   ])('a device reporting efforts %j spawns with effort %s', async (efforts, expected) => {
     const mockPost = jest.fn().mockResolvedValue({});
-    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));
     const spawn = jest.fn(async () => ({ text: 'ok' }));
     const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
       agentName: 'my-stub', instanceId: 'default', reportRuntime: true,
@@ -182,7 +194,7 @@ describe('performRun', () => {
     const mockPost = jest.fn().mockResolvedValue({});
     const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
       ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
-        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+        ...PRIVATE_POD_FLAGS, runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
       : { events: [makeEvent()] }));
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
     const spawn = jest.fn(async (_prompt, ctx) => ({ text: 'ok',
@@ -204,7 +216,7 @@ describe('performRun', () => {
     const mockPost = jest.fn().mockResolvedValue({});
     const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
       ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
-        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+        ...PRIVATE_POD_FLAGS, runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
       : { events: [makeEvent()] }));
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
     const spawn = jest.fn(async () => ({ text: 'ok' }));
@@ -229,7 +241,7 @@ describe('performRun', () => {
     const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'delivery-abc' } })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
-    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: mockPost }));
 
     const spawn = jest.fn(async () => ({ text: 'hello back' }));
     const adapter = { name: 'codex', detect: stubAdapter.detect, spawn };
@@ -2338,7 +2350,7 @@ describe('performRun', () => {
       const get = jest.fn(async (route) => route.endsWith('/messages')
         ? { messages: [] } : { events: [event] });
       const post = jest.fn().mockResolvedValue({});
-      createClient.mockReturnValue({ get, post });
+      createClient.mockReturnValue(withPrivatePods({ get, post }));
       const spawn = jest.fn().mockResolvedValue({ text: 'BYO reply', newSessionId: null });
       ({ stop } = performRun({
         instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
@@ -2368,7 +2380,7 @@ describe('performRun', () => {
     const get = jest.fn(async (route) => route.endsWith('/messages')
       ? { messages: [] } : { events: [event] });
     const post = jest.fn().mockResolvedValue({});
-    createClient.mockReturnValue({ get, post });
+    createClient.mockReturnValue(withPrivatePods({ get, post }));
     const scheduled = [];
     const errors = [];
     const open = jest.fn(async () => {
@@ -3198,7 +3210,7 @@ describe('performRun', () => {
       eventNumber += 1;
       return { events: [makeEvent({ _id: `provider-turn-${eventNumber}` })] };
     });
-    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+    createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: jest.fn().mockResolvedValue({}) }));
     const seenSessionIds = [];
     const adapter = {
       name: 'opencode',
@@ -4856,7 +4868,7 @@ describe('performRun — the grant broker is withheld where no daemon will judge
     // its own suite.
     const mockGet = jest.fn().mockResolvedValue({ events, outsiderGrantNarrowed: false });
     const mockPost = jest.fn().mockResolvedValue({});
-    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: mockPost }, { outsiderGrantNarrowed: false }));
     const spawn = jest.fn(async () => ({ text: 'hello back' }));
     const adapter = { name: adapterName, detect: stubAdapter.detect, spawn };
     const log = jest.fn();

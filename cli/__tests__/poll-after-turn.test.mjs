@@ -61,12 +61,20 @@ const drainMicrotasks = async () => {
   }
 };
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js), so this
+// fixture's pods are.
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: 'pod-poll', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 // One tick, then report the delay the loop asked for before the next one.
 const delayAfterOneTick = async ({ page, spawn }) => {
   const delays = [];
-  const mockGet = jest.fn(async (routePath) => (
-    String(routePath).includes('/events') ? page : {}
-  ));
+  const mockGet = jest.fn(async (routePath) => {
+    if (routePath === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
+    return String(routePath).includes('/events') ? page : {};
+  });
   const mockPost = jest.fn().mockResolvedValue({});
   createClient.mockReturnValue({ get: mockGet, post: mockPost });
 

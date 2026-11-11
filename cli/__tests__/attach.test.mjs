@@ -505,8 +505,17 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
     }
     throw new Error(`unexpected POST to ${route}`);
   });
-  return { post, get: jest.fn(async (route) => (route === '/api/registry/install/memory-handoff'
-    ? { installTimeMemoryHandoff: true } : undefined)) };
+  // A seat with no sandbox attaches only to a pod confirmed private, so the
+  // pod these attaches target says it is.
+  const CONFIRMED_PRIVATE = { publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
+  return {
+    post,
+    get: jest.fn(async (route) => {
+      if (route === '/api/registry/install/memory-handoff') return { installTimeMemoryHandoff: true };
+      if (/^\/api\/pods\/[^/]+$/.test(route)) return CONFIRMED_PRIVATE;
+      return undefined;
+    }),
+  };
 };
 
 describe('performAttach', () => {
@@ -536,8 +545,20 @@ describe('performAttach', () => {
     client.get.mockResolvedValueOnce({});
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
       .rejects.toThrow(/confirmed private pod visibility/);
+    // Confined dsh needs only a pod that is not public.
+    const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
     client.get.mockResolvedValueOnce({ publicRead: false, communityListed: false });
-    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-private', adapterName: 'dsh' }))
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'pod-private', adapterName: 'dsh', environment: confined,
+    })).resolves.toBeUndefined();
+  });
+
+  test('an unconfined dsh runs as its owner, so it also needs the pod invite-only', async () => {
+    const client = { get: jest.fn(async () => ({ name: 'Team', publicRead: false, communityListed: false, joinPolicy: 'open' })) };
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-team', adapterName: 'dsh' }))
+      .rejects.toThrow(/"Team" is open to join/);
+    client.get.mockResolvedValue({ publicRead: false, communityListed: false, joinPolicy: 'invite-only' });
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-team', adapterName: 'dsh' }))
       .resolves.toBeUndefined();
   });
 
@@ -776,7 +797,8 @@ describe('performAttach', () => {
 
   test.each([undefined, {}, { installTimeMemoryHandoff: false }])('an older server refuses before publish or install: %j', async (capability) => {
     const client = makeClient();
-    client.get.mockResolvedValue(capability);
+    const answer = client.get.getMockImplementation();
+    client.get.mockImplementation(async (route) => (route === '/api/registry/install/memory-handoff' ? capability : answer(route)));
     await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
       .rejects.toThrow(/upgrade the server/);
     expect(client.post).not.toHaveBeenCalled();
@@ -784,7 +806,11 @@ describe('performAttach', () => {
 
   test('a missing capability endpoint refuses before publish or install', async () => {
     const client = makeClient();
-    client.get.mockRejectedValue(new Error('Not found'));
+    const answer = client.get.getMockImplementation();
+    client.get.mockImplementation(async (route) => {
+      if (route === '/api/registry/install/memory-handoff') throw new Error('Not found');
+      return answer(route);
+    });
     await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
       .rejects.toThrow('Not found');
     expect(client.post).not.toHaveBeenCalled();

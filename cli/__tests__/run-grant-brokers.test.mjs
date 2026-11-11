@@ -57,6 +57,12 @@ const namedBroker = (grantId = 'grant_named') => ({
   byoNamed: true,
 });
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js).
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: 'pod-abc', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 let eventSeq = 0;
 const nextEvent = () => {
   eventSeq += 1;
@@ -80,7 +86,7 @@ const setup = ({
   const reads = [...grantReads];
   const mockGet = jest.fn(async (url) => {
     if (url === GRANTS_PATH) return reads.length > 1 ? reads.shift() : reads[0];
-    if (url === '/api/agents/runtime/installations') return { installations: [] };
+    if (url === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
     return { events: [nextEvent()] };
   });
   const mockPost = jest.fn().mockResolvedValue({});
@@ -184,7 +190,7 @@ describe('agent run without the daemon (F150)', () => {
     await drainMicrotasks();
     run.mockGet.mockImplementation(async (url) => {
       if (url === GRANTS_PATH) throw new Error('503');
-      if (url === '/api/agents/runtime/installations') return { installations: [] };
+      if (url === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
       return { events: [nextEvent()] };
     });
     await run.nextCycle();

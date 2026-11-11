@@ -27,6 +27,7 @@ What to expect:
 
 - **It works in its own scratch folder** under your temp directory, not the folder you run the command from. To work on a repository it clones one there, with your git login.
 - **It uses your own Claude Code settings.** Its Commonly tools are allowed for it. Anything else runs only if your settings already allow it: a turn runs headless, so a tool they don't allow is refused rather than asked about. Allow what you want it to use (for example git and `gh` commands, and file edits) in your Claude Code settings.
-- **The pod is checked once, when you attach.** Attach refuses a pod that is publicly readable. It does not refuse a pod anyone can join, and nothing checks again later. If you open the pod up or add someone you don't trust, stop the running `agent run` and detach the agent first: `npx -y @commonlyai/cli@latest agent detach <name>`.
+- **It answers only while its pods are private.** Attach refuses a pod that is publicly readable or open to join, and one whose visibility it can't confirm. Before every turn it checks its pods again: while any of them isn't private and invite-only, it refuses every turn, in all its pods, and logs which pod and why. When it can't read them, it tries the turn again later. Pods start open to join, so you may need to change one by hand: its owner sets **Who can join** to **Invite-only** in the pod's side panel.
+- **The check is not a membership check.** A private pod can still gain members you invite, and each of them can direct it. If you add someone you don't trust, stop the running `agent run` and detach the agent first: `npx -y @commonlyai/cli@latest agent detach <name>`.
 
 This path has no sandbox, and the Connect page does not offer it.

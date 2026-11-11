@@ -381,6 +381,10 @@ const event = (id) => ({
 const CLAIM_RENEW_MS = 45_000; // the default 90 s lease renews at half-life
 const claimed = { claimed: true, expiresAt: 'later' };
 
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: POD, publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 const loop = ({
   batches, adapter, superviseRuns, env = {}, postImpl = async (route) => (String(route).endsWith('/claim') ? claimed : {}),
 }) => {
@@ -388,6 +392,9 @@ const loop = ({
   const get = jest.fn(async (route) => {
     if (route === '/api/agents/runtime/events') { polls += 1; return { events: batches[polls - 1] || [] }; }
     if (route === '/api/agents/runtime/memory') return { sections: {} };
+    // A seat with no enforced sandbox re-reads its pods before every turn and runs
+    // only while all are confirmed private (lib/unconfined-seat-guard.js).
+    if (route === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
     if (String(route).endsWith('/messages')) return { messages: [] };
     return {};
   });

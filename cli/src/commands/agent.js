@@ -97,6 +97,7 @@ import {
 } from '../lib/default-environment.js';
 import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import { withPublicSeatMcpFlag } from '../lib/public-seat-mcp-flag.js';
+import { UNCONFINED_TURN_REFUSAL, seatRunsUnconfined, unconfinedPodRefusalReason } from '../lib/unconfined-seat-guard.js';
 import {
   OUTSIDER_GRANT_MCP_UNCONFINED, outsiderGrantMcpRefusal, seatIsConfined, unshippedMcpEntries,
 } from '../lib/outsider-grant-mcp.js';
@@ -1096,10 +1097,10 @@ export const buildDefaultEnvironment = (adapterName) => {
  * work while the OS-level sandbox never engaged at all.
  *
  * Deny-by-default only means something if ABSENT is refused, so this is a hard
- * error rather than a warning. If the pod's visibility cannot be determined
- * (older server, network failure, permissions), attach proceeds — failing the
- * attach on an unrelated fault would be its own footgun — but says so, because
- * a silent skip is how the original hole stayed invisible.
+ * error rather than a warning. A seat the adapters do not confine
+ * (lib/unconfined-seat-guard.js `seatRunsUnconfined`) attaches only to a pod
+ * confirmed private and invite-only; a pod whose visibility cannot be read
+ * fails closed, and each turn checks again.
  * dsh is private-only, so it requires a successful visibility read and rejects
  * a public pod even without a sandbox declaration.
  */
@@ -1108,7 +1109,8 @@ export const assertSandboxDeclaredForPublicPod = async ({
   podId,
   environment,
   adapterName,
-  log = () => {},
+  // Kept for callers; every outcome here is now a return or a refusal.
+  log: _log = () => {},
 }) => {
   if (!podId || !client) return;
 
@@ -1125,7 +1127,9 @@ export const assertSandboxDeclaredForPublicPod = async ({
     if (pod?.publicRead || pod?.communityListed) {
       throw new Error('dsh supports private pods only; this pod is publicly readable');
     }
-    return;
+    // dsh's confined shape stops here; an unconfined dsh runs as its owner and
+    // meets the invite-only requirement below.
+    if (!seatRunsUnconfined({ environment, adapterName })) return;
   }
 
   // A `workspace` seat lets the room read its start directory (TASK-294), so it
@@ -1153,41 +1157,45 @@ export const assertSandboxDeclaredForPublicPod = async ({
     );
   }
 
-  // Normalized FIRST: the predicate below reads a
-  // legacy `internal` record as the `public` it means, the same mapping the
-  // attach gate and both adapters use. Reading it raw refused a record that
-  // means public one call before the gate #1840 fixes — TASK-113 claims
-  // attach's inconsistent derivation is closed, and this path is attach's.
-  const sandbox = normalizeSandboxTrust(environment?.sandbox);
-  const mode = sandbox?.mode;
-  const trust = sandbox?.trust;
-  // An ENFORCED declaration is one the adapters act on: a public trust (whose
-  // mode they resolve per host at spawn) or an explicit non-'none' mode. This
-  // mirrors the daemon's predicate in lib/default-environment.js, so the shape
-  // the daemon writes for an unconfigured seat is one attach also accepts.
-  const declared = mode !== 'none'
-    && (trust === 'public' || typeof mode === 'string');
-  if (declared) return;
+  // Confined means what the adapters enforce: a public trust (normalized, so a
+  // legacy `internal` counts), or dsh's own confined shape. A `sandbox.mode`
+  // with no trust is spawned bare by claude and codex, so it is unconfined here
+  // and per turn alike (lib/unconfined-seat-guard.js).
+  if (!seatRunsUnconfined({ environment, adapterName })) return;
 
+  // No enforced sandbox: the agent runs as its owner, so the pod has to be
+  // confirmed private, not merely not known to be public. A pod anyone can join
+  // is refused as a public one is, and one whose visibility cannot be read
+  // fails closed (lib/unconfined-seat-guard.js; each turn checks again).
   let pod = null;
   try {
     pod = await client.get(`/api/pods/${podId}`);
   } catch {
-    log(
-      'warning: could not read pod visibility, so the public-pod sandbox check '
-      + 'was skipped. If this pod is public, attach with sandbox.trust=public.',
+    throw new Error(
+      'This agent runs without a sandbox, so it would run with your own access, and this pod\'s '
+      + 'visibility could not be read. An agent without a sandbox attaches only to a pod confirmed '
+      + 'private and invite-only. Try again, or add "sandbox": { "trust": "public" } to its environment file.',
     );
-    return;
   }
+  if (podIsConfirmedPrivate(pod)) return;
 
   const isPublic = Boolean(pod?.publicRead) || Boolean(pod?.communityListed);
-  if (!isPublic) return;
+  if (!isPublic) {
+    const label = pod?.name ? `"${pod.name}"` : podId;
+    const why = pod?.joinPolicy === 'invite-only' ? 'did not report whether it is publicly readable' : 'is open to join';
+    throw new Error(
+      `${label} ${why}, and this agent runs without a sandbox, so anyone who joins could direct it with your `
+      + 'own access to files, commands and logins. Make the pod invite-only (its owner sets "Who can join" '
+      + 'to Invite-only in the pod\'s side panel in Commonly) and try again, or add '
+      + '"sandbox": { "trust": "public" } to its environment file.',
+    );
+  }
 
   const label = pod?.name ? `"${pod.name}"` : podId;
   throw new Error(
     `${label} is publicly readable, so this agent would take instructions from `
-    + 'people you do not control — but its environment declares no sandbox, and '
-    + 'an undeclared sandbox means NO sandbox.\n\n'
+    + 'people you do not control — but its environment declares no sandbox trust, and '
+    + 'without one this agent runs with NO sandbox.\n\n'
     + 'Add a sandbox block to the environment file and retry:\n\n'
     + '  "sandbox": { "trust": "public" }\n\n'
     + 'That is the whole declaration: the adapters pick the enforced mode for '
@@ -2361,22 +2369,35 @@ export const performRun = ({
       && effortRefusedByDevice(inventory, desiredEnvironment.effort)
       ? { ...desiredEnvironment, effort: undefined } : desiredEnvironment;
   };
-  const placeTurn = async () => {
-    await refreshSeatEnvironment();
-    if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
-      return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
-    }
-    let installations = null;
-    let readError = null;
+  const readSeatPods = async () => {
     try {
       const identity = await client.get('/api/agents/runtime/installations', {}, {
         signal: AbortSignal.timeout(5000),
       });
-      installations = Array.isArray(identity?.installations) ? identity.installations : [];
+      return { installations: Array.isArray(identity?.installations) ? identity.installations : [], readError: null };
     } catch (err) {
-      installations = null;
-      readError = err;
+      return { installations: null, readError: err };
     }
+  };
+  const placeTurn = async () => {
+    await refreshSeatEnvironment();
+    if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
+      const unchecked = { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
+      if (!seatRunsUnconfined({ environment: seatEnvironment, adapterName: adapter.name })) return unchecked;
+      // A seat with no sandbox runs as its owner, so each turn re-reads its
+      // pods and runs only while all are confirmed private
+      // (lib/unconfined-seat-guard.js). There is no confined fallback.
+      const { installations, readError } = await readSeatPods();
+      const reason = unconfinedPodRefusalReason(installations);
+      if (reason !== lastPlacementReason) {
+        log(reason
+          ? `turns are refused, because ${reason}: ${UNCONFINED_TURN_REFUSAL}`
+          : 'every pod is confirmed private again; turns run');
+        lastPlacementReason = reason;
+      }
+      return reason ? { ...unchecked, reason, readError, unconfinedRefused: true } : unchecked;
+    }
+    const { installations, readError } = await readSeatPods();
     const placement = codexUnconfined
       ? unconfinedTurnPlacement({ environment: seatEnvironment, installations, cwd: agentCwd })
       : workspaceTurnPlacement({
@@ -2836,7 +2857,7 @@ export const performRun = ({
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = hostSandboxRefusal({
+      const turnRefusal = placement.unconfinedRefused ? UNCONFINED_TURN_REFUSAL : hostSandboxRefusal({
         environment: placement.environment,
         adapterName: adapter.name,
         hostUnconfined,
@@ -2859,7 +2880,7 @@ export const performRun = ({
           try {
             await client.post(
               `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
-              { content: 'I can’t take this ask: this pod isn’t private, so I can’t run for it on my computer.' },
+              { content: 'I can’t take this ask: a pod I’m in isn’t private and invite-only, so I can’t run on my owner’s computer right now.' },
             );
           } catch (err) {
             if (err?.status !== 409 || err?.body?.code !== 'already_responded') throw err;
@@ -2868,7 +2889,7 @@ export const performRun = ({
         return {
           outcome: 'no_action',
           refused: { reason: 'delivery-refused' },
-          reason: 'host-cannot-confine-turn',
+          reason: placement.unconfinedRefused ? 'unconfined-pod-not-private' : 'host-cannot-confine-turn',
         };
       }
     }

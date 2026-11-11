@@ -84,8 +84,11 @@ const drain = async () => {
   }
 };
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js).
+const PRIVATE_POD = { podId: 'pod-abc', publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
 let delivery = 0;
-const spawnedEnvironment = async (environment, installations = []) => {
+const spawnedEnvironment = async (environment, installations = [PRIVATE_POD]) => {
   delivery += 1;
   let served = false;
   const mockGet = jest.fn(async (url) => {

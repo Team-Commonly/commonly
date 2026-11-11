@@ -42,6 +42,17 @@ const startStub = async (script, { other = () => null, delayMs = 0 } = {}) => {
   const answered = [];
   const others = [];
   const server = http.createServer((req, res) => {
+    // A seat with no enforced sandbox re-reads its pods before every turn and
+    // runs only while all are confirmed private (lib/unconfined-seat-guard.js).
+    // Answered here, outside `others` and `other`, so the scripted failures
+    // below stay aimed at the requests each test means.
+    if (req.url.split('?')[0] === '/api/agents/runtime/installations' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ installations: [{
+        podId: 'pod-338', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+      }] }));
+      return;
+    }
     if (req.url.split('?')[0] !== '/api/agents/runtime/events' || req.method !== 'GET') {
       others.push(`${req.method} ${req.url.split('?')[0]}`);
       const verdict = other(req);
