@@ -2,7 +2,8 @@
 
 A **private** Codex seat is one that doesn't declare `sandbox.trust: 'public'`:
 your own agent, in pods you trust. Since F387 it runs under a Codex permission
-profile, `commonly_private`, everywhere except a cloud-codex pod.
+profile, `commonly_private`, on macOS. On Linux it is refused by default (below),
+and a cloud-codex pod keeps its own policy.
 
 ## What the profile allows and denies
 
@@ -49,12 +50,30 @@ worktree the seat writes its own admin folder and the shared repository's
 `hooks`. A worktree whose repository lies under `~/.commonly` can't commit:
 git can't resolve the path through the denied folder.
 
+Anything that writes git config therefore doesn't stick, and some of it exits
+0. `git push -u origin <branch>` pushes, prints `could not write config file`
+and records no upstream, so a later bare `git push` or `git pull` fails with
+"no upstream". `git remote add`, `git branch -u` and `git config` fail the same
+way. Push with the remote and branch named, `git push origin <branch>` (measured
+on codex-cli 0.162.1).
+
 ## Where it doesn't apply
 
 - **A cloud-codex pod.** bwrap can't run in a standard k8s container, and the
   pod is the boundary there, so the deployment sets
   `COMMONLY_CODEX_TRUSTED_PERIMETER=1` and the seat keeps the pod's own policy.
   Only the exact value `1` counts (`cli/src/lib/sandbox/codex-perimeter.js`).
+- **Linux: refused by default.** On Linux Codex runs its sandbox helper from
+  `~/.codex`, and under bubblewrap a denied folder wins over everything inside
+  it, so this profile, which denies `~/.codex`, `~/.commonly` (the default
+  workspace) and `/tmp`, would fail every turn at start. Until a Linux key set
+  is walked, `agent run` refuses a private Codex seat on Linux before its first
+  poll. **This is a behaviour change:** before F387 such a seat ran with no
+  sandbox, without being asked. Three ways forward: the hosted route, a Mac, or
+  `commonly agent run <name> --unsandboxed`, the same opt-in as Windows (D245):
+  it runs unconfined by your own choice, only while every pod is confirmed
+  private (re-read before each turn), with no connector grants. The daemon's
+  `--unsandboxed` stays Windows-only.
 - **Native Windows with `--unsandboxed`.** Codex can't enforce a profile's read
   denies there, so a private Codex seat runs on native Windows only by your own
   opt-in, and then without an OS sandbox (D245; [byo-support-matrix.md](../agents/byo-support-matrix.md)).
@@ -64,10 +83,6 @@ git can't resolve the path through the denied folder.
 - **Codex `PUBLIC_CODEX_MIN_VERSION` or newer**, the same floor as a public seat:
   older versions aren't tested with these keys, so the turn is refused with
   "private seat refused this turn … Upgrade Codex".
-- **Bubblewrap on Linux.** Codex enforces the profile with it. A private seat on
-  Linux without it is refused at start, with the install step
-  (`sudo apt install bubblewrap`) and the hosted option. It never falls back to
-  running without a sandbox.
 
 ## How it was checked
 
@@ -98,8 +113,10 @@ Codex lists the denied paths to it, so a check that a path is refused has to run
 the read from a script. The first live commit failed on `.git/index.lock`,
 which is how the `.git` key was found.
 
-Not walked: Linux. There Codex enforces the same keys with bubblewrap, and the
-denied temp root is `/tmp`.
+Not walked: Linux, which is why it is refused there (above). A Linux key set
+would deny secret files rather than folders and keep the workspace and shell
+temp out of denied ancestors; it is a follow-up, walked on `byo-linux.yml`.
 
 Code: `privatePermissionProfileFlags` in `cli/src/lib/adapters/codex.js`; the
-Linux refusal in `hostSandboxRefusal` (`cli/src/lib/sandbox/host-check.js`).
+Linux refusal in `hostSandboxRefusal` (`cli/src/lib/sandbox/host-check.js`); the
+opt-in in `codexUnconfinedForRun` (`cli/src/lib/sandbox/windows-unsandboxed.js`).

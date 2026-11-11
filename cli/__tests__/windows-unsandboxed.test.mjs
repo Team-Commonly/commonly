@@ -16,6 +16,8 @@ import {
   hostReportFailureMessage,
   hostUnconfinedForRun,
   hostSandboxReport,
+  codexUnconfinedForRun,
+  codexUnsandboxedNotice,
 } from '../src/lib/sandbox/windows-unsandboxed.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../src/lib/sandbox/host-check.js';
 import { CLI } from '../src/lib/cli-hint.js';
@@ -38,11 +40,58 @@ beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'win-unsandboxed-')); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 describe('the flag', () => {
-  test('is refused everywhere but native Windows', () => {
+  test('is refused everywhere but native Windows, and a Codex agent run on Linux', () => {
     expect(unsandboxedFlagRefusal('win32')).toBeNull();
     for (const platform of ['darwin', 'linux']) {
       expect(unsandboxedFlagRefusal(platform)).toContain(`${UNSANDBOXED_FLAG} is only for native Windows`);
     }
+  });
+
+  // F387: a private Codex agent on Linux has no sandbox ready yet, so its
+  // person may run it unconfined by their own choice; nothing else on Linux.
+  test('on Linux, only for `agent run` of a Codex agent', () => {
+    expect(unsandboxedFlagRefusal('linux', { adapterName: 'codex' })).toBeNull();
+    // Before the record is read the adapter isn't known; the run checks again.
+    expect(unsandboxedFlagRefusal('linux', { deferred: true })).toBeNull();
+    for (const adapterName of ['claude', 'opencode', 'qwen', 'goose', 'pi']) {
+      expect(unsandboxedFlagRefusal('linux', { adapterName })).toContain('of a private Codex agent on Linux');
+      expect(unsandboxedFlagRefusal('linux', { adapterName, deferred: true })).toContain('is only for native Windows');
+    }
+    // The daemon passes no adapter, so its marker stays Windows-only.
+    expect(unsandboxedFlagRefusal('linux')).toContain('is only for native Windows');
+    expect(unsandboxedFlagRefusal('darwin', { adapterName: 'codex' })).toContain('is only for native Windows');
+  });
+});
+
+describe('a Codex run on Linux', () => {
+  const PRIVATE_PODS = [{ podId: 'p1', publicRead: false, communityListed: false, joinPolicy: 'invite-only' }];
+  const OPEN_PODS = [{ podId: 'p2', publicRead: false, communityListed: false, joinPolicy: 'open' }];
+
+  test('goes unconfined only with the opt-in, and only with every pod confirmed private', () => {
+    expect(codexUnconfinedForRun({
+      optedIn: true, adapterName: 'codex', environment: {}, installations: PRIVATE_PODS, platform: 'linux',
+    })).toBe(true);
+    expect(codexUnconfinedForRun({
+      optedIn: true, adapterName: 'codex', environment: {}, installations: OPEN_PODS, platform: 'linux',
+    })).toBe(false);
+    expect(codexUnconfinedForRun({
+      optedIn: true, adapterName: 'claude', environment: {}, installations: PRIVATE_PODS, platform: 'linux',
+    })).toBe(false);
+    expect(codexUnconfinedForRun({
+      optedIn: false, adapterName: 'codex', environment: {}, installations: PRIVATE_PODS, platform: 'linux',
+    })).toBe(false);
+    expect(codexUnconfinedForRun({
+      optedIn: true, adapterName: 'codex', environment: {}, installations: [], platform: 'linux',
+    })).toBe(false);
+    expect(codexUnconfinedForRun({
+      optedIn: true, adapterName: 'codex', environment: {}, installations: PRIVATE_PODS, platform: 'darwin',
+    })).toBe(false);
+  });
+
+  test('says what it costs without naming Windows', () => {
+    expect(codexUnsandboxedNotice('linux')).toMatch(/not ready on Linux yet, so nothing confines this agent/);
+    expect(codexUnsandboxedNotice('linux')).not.toMatch(/Windows/);
+    expect(codexUnsandboxedNotice('win32')).toMatch(/Windows has no sandbox Codex can use here/);
   });
 });
 

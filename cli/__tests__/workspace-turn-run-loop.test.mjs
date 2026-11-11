@@ -286,24 +286,26 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
   });
 });
 
-describe('performRun: a Windows Codex run opted in on private pods (F187)', () => {
+describe.each(['win32', 'linux'])('performRun: a Codex run opted in on private pods, on %s (F187, F387)', (platform) => {
   const originalPlatform = process.platform;
   const seat = { model: 'm' };
   beforeEach(() => {
     jest.clearAllMocks();
     fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
-    Object.defineProperty(process, 'platform', { value: 'win32' });
+    Object.defineProperty(process, 'platform', { value: platform });
   });
   afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
   const run = (installations, extra = {}) => runOneTurn({
     environment: seat, installations, adapterName: 'codex', codexUnconfined: true, ...extra,
   });
 
-  test('every pod private: the turn reaches Codex with no sandbox block and no hostUnconfined', async () => {
+  // F387: a private Codex seat otherwise gets the permission profile, so the
+  // person's opt-in has to reach the adapter, which reads hostUnconfined.
+  test('every pod private: the turn reaches Codex with no sandbox block, opted out of the profile', async () => {
     const { ctx } = await run([privatePod]);
     expect(ctx.environment.sandbox).toBeUndefined();
     expect(ctx.environment.model).toBe('m');
-    expect(ctx.hostUnconfined).toBeUndefined();
+    expect(ctx.hostUnconfined).toBe(true);
   });
 
   test('a private ask on a pod turned open is answered with a refusal, not left to expire', async () => {
@@ -352,5 +354,6 @@ describe('performRun: a Windows Codex run opted in on private pods (F187)', () =
       environment: { model: 'm', sandbox: { trust: 'public' } }, installations: [privatePod], adapterName: 'codex',
     });
     expect(ctx.environment.sandbox).toEqual({ trust: 'public' });
+    expect(ctx.hostUnconfined).toBeUndefined();
   });
 });

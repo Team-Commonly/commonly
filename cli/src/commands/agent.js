@@ -112,11 +112,11 @@ import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import {
-  UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
+  CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
 } from '../lib/sandbox/host-check.js';
 import {
-  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostReportFailureMessage, hostUnconfinedForRun, runOptedInUnsandboxed,
-  unsandboxedFlagRefusal,
+  UNSANDBOXED_NOTICE, codexUnconfinedForRun, codexUnsandboxedNotice, hostReportFailureMessage, hostUnconfinedForRun,
+  runOptedInUnsandboxed, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
@@ -2868,13 +2868,17 @@ export const performRun = ({
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = placement.unconfinedRefused ? UNCONFINED_TURN_REFUSAL : hostSandboxRefusal({
+      // A Codex run its person opted out of the sandbox was allowed for private
+      // pods only, so a turn placed public is refused on every platform. On
+      // Linux a public Codex seat would otherwise pass the host check and run
+      // in the owner's workspace with strangers able to direct it (F387).
+      const turnRefusal = placement.unconfinedRefused ? UNCONFINED_TURN_REFUSAL : (hostSandboxRefusal({
         environment: placement.environment,
         adapterName: adapter.name,
         hostUnconfined,
         optedIn: codexUnconfined,
         ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
-      });
+      }) || (codexUnconfined ? CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE : null));
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -3173,8 +3177,11 @@ export const performRun = ({
         // A public seat's Commonly server writes nothing once Commonly is
         // unreachable in its process (lib/public-seat-mcp-flag.js).
         environment: publicSeat ? withPublicSeatMcpFlag(placement.environment) : placement.environment,
-        // Only when set, so every other spawn context stays as it was.
-        ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
+        // Only when set, so every other spawn context stays as it was. A Codex
+        // run its person opted out with every pod confirmed private keeps
+        // Codex's own policy, never the permission profile (F387): the adapter
+        // reads this, not the environment.
+        ...(hostUnconfined === true || codexUnconfined === true ? { hostUnconfined: true } : {}),
         ...(publicSeat && !memoryWithheld && opened.ownerWoken === true ? { ownerWoken: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
@@ -5489,7 +5496,7 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
-    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
+    .option('--unsandboxed', 'Native Windows, or a private Codex agent on Linux: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
     .action(async (typedName, opts) => {
       // F306: the seat this run is. `name` is the local key (the token file,
       // the log label, the daemon's plist); the server identity is the record's.
@@ -5504,7 +5511,9 @@ Docs:
       const named = instanceId !== null;
       let name = named ? seatKey(agentArg, instanceId) : agentArg;
       if (opts.unsandboxed) {
-        const flagRefusal = unsandboxedFlagRefusal();
+        // On Linux the flag is for a Codex agent only, which the record says;
+        // it is checked again once that is read (F387).
+        const flagRefusal = unsandboxedFlagRefusal(process.platform, { adapterName: opts.adapter || null, deferred: true });
         if (flagRefusal) {
           console.error(`${stamp()} [${name}] ${flagRefusal}`);
           process.exit(1);
@@ -5580,6 +5589,13 @@ Docs:
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
       // keeps its trust and tool policy, and only the OS jail is skipped.
+      if (opts.unsandboxed) {
+        const flagRefusal = unsandboxedFlagRefusal(process.platform, { adapterName: record.adapter });
+        if (flagRefusal) {
+          console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          process.exit(1);
+        }
+      }
       const optedIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
       const hostUnconfined = hostUnconfinedForRun({
         optedIn,
@@ -5593,7 +5609,7 @@ Docs:
       // the saved record, loses its sandbox block. A read that fails stays
       // refused: nothing here may assume a pod is private.
       let codexUnconfined = false;
-      if (optedIn && record.adapter === 'codex' && process.platform === 'win32') {
+      if (optedIn && record.adapter === 'codex' && (process.platform === 'win32' || process.platform === 'linux')) {
         const seatClient = createClient({ instance: record.instanceUrl, token: record.runtimeToken });
         let installations = null;
         try {
@@ -5618,7 +5634,7 @@ Docs:
           }
         }
       }
-      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${CODEX_UNSANDBOXED_NOTICE}`);
+      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${codexUnsandboxedNotice(process.platform)}`);
       let runEnvironment = record.environment;
       if (codexUnconfined && runEnvironment) {
         const { sandbox: _sandbox, ...unsandboxed } = runEnvironment;

@@ -123,16 +123,27 @@ export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted, u
 };
 
 /**
- * F387: a private Codex seat on Linux runs under a permission profile, which
- * Codex enforces with bubblewrap. Without it every turn fails at session start,
- * so it is refused before the first poll. It never falls back to running
- * unconfined.
+ * F387: a private Codex seat on Linux is refused by default until a Linux
+ * permission profile is walked (see hostSandboxRefusal). The person can run it
+ * unconfined by their own choice, as on native Windows; it never falls back
+ * to that without being asked.
  */
-export const codexPrivateNoBwrapMessage = (error) => [
-  'A connected Codex runs inside its own sandbox here, and Codex needs bubblewrap for it.',
-  `This machine can't provide it: ${error}`,
-  'So this agent cannot listen for @mentions here yet. You can:',
-  '  - Install bubblewrap (`sudo apt install bubblewrap` on Debian or Ubuntu), then run the same command again.',
+export const CODEX_PRIVATE_LINUX_MESSAGE = [
+  'A private Codex agent runs inside a sandbox that keeps your other credentials out of its reach, and that sandbox is not ready on Linux yet,',
+  'so by default this agent cannot listen for @mentions here. You can:',
+  `  - In invite-only pods, run it without a sandbox: ${CLI} agent run <name> ${UNSANDBOXED_FLAG}.`
+    + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod,'
+    + ' people you invite later included, can direct it, and it gets no connector grants.',
+  '  - Run it on a Mac, where the sandbox is ready.',
+  HOSTED_LINE,
+].join('\n');
+
+// The person opted in, and a pod rules it out. Naming the flag again would
+// only send them round in a circle.
+export const CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE = [
+  'A pod this agent answers in is publicly readable or open to join, or did not report whether it is,',
+  'so it cannot run without a sandbox, and the sandbox for a private Codex agent is not ready on Linux yet. You can:',
+  '  - Run it on a Mac, where the sandbox is ready.',
   HOSTED_LINE,
 ].join('\n');
 
@@ -190,14 +201,16 @@ export const hostSandboxRefusal = ({
       return bwrap.namespaceRefused === true ? bwrapRefusedMessage(adapterName, bwrap) : null;
     }
     // F387: a private seat outside a cloud-codex pod runs under the private
-    // permission profile, which needs bubblewrap here too. Missing or refused,
-    // it is refused now, with the way to fix it, never run unconfined.
+    // permission profile. On Linux, Codex runs its sandbox helper from
+    // CODEX_HOME (~/.codex), and a denied ancestor always wins there (see the
+    // public Codex home in adapters/codex.js), so the profile's denies would
+    // fail every turn at bootstrap. Until a Linux key set is walked, the seat
+    // is refused before its first poll, unless the person ran it unconfined
+    // by their own --unsandboxed (D245, as on Windows: only with every pod
+    // confirmed private). Never unconfined without being asked.
     if (platform === 'linux' && trust !== 'workspace' && !codexTrustedPerimeter(env)) {
-      const bwrap = detectBwrap();
-      if (bwrap.available) return null;
-      return bwrap.namespaceRefused === true
-        ? bwrapRefusedMessage(adapterName, bwrap)
-        : codexPrivateNoBwrapMessage(bwrap.error);
+      if (hostUnconfined === true) return null;
+      return optedIn === true ? CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE : CODEX_PRIVATE_LINUX_MESSAGE;
     }
     if (platform !== 'win32') return null;
     if (trust === 'workspace') return null;

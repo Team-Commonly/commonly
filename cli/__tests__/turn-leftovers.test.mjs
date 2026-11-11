@@ -58,6 +58,8 @@ const runTurn = async (adapter, extra = {}) => {
   await adapter.spawn('hello', {
     environment: { model: 'test-model' },
     sessionId: null,
+    // A private Codex seat is version-gated (F387); CI has no codex binary.
+    _codexVersion: '0.162.1',
     _spawnImpl: (_cmd, _args, options) => {
       markedEnv = options.env;
       return realSpawn(process.execPath, ['-e', TURN, pidFile], { ...options, cwd: home });
