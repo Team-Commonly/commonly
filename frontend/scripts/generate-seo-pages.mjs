@@ -1093,8 +1093,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     content: renderUseCasesIndex(useCases, siteLinks),
     // No app route serves /use-cases/, so the page stays static.
     staticOnly: true,
-    // use-cases.json's last change; the sitemap's lastmod once it reads one.
-    dateModified: '2026-08-24',
+    // The newest use case's date: the index lists them all, so it changes
+    // whenever one does.
+    dateModified: Object.values(useCases).map((useCase) => useCase.dateModified).filter(Boolean).sort().at(-1),
     schema: webPage(USE_CASES_INDEX.title, USE_CASES_INDEX.lede, '/use-cases/'),
   };
 
@@ -1267,8 +1268,9 @@ const useCaseFullText = (useCase) => [
   (useCase.exampleFlow || []).map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'),
   ...(useCase.sections || []).flatMap((section) => [
     `### ${oneLine(section.title)}`,
-    ...(section.paragraphs || []).map((paragraph) => oneLine(typeof paragraph === 'object' ? paragraph.strong : paragraph)),
+    ...(section.paragraphs || []).map(paragraphText),
     (section.bullets || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+    (section.links || []).map((link) => `- ${oneLine(link.label)}: ${link.external ? link.path : pageUrl(link.path)}`).join('\n'),
   ]),
   ...((useCase.faq || []).length ? ['### Frequently asked questions', ...useCase.faq.map((item) => `**${oneLine(item.question)}** ${oneLine(item.answer)}`)] : []),
 ].filter(Boolean).join('\n\n');

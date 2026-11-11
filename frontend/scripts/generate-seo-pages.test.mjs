@@ -2604,7 +2604,16 @@ test('the build writes an llms.txt that lists every indexable page and an llms-f
     for (const [id, useCase] of Object.entries(useCases)) {
       assert.ok(full.includes(`URL: https://commonly.me/use-cases/${id}/`), id);
       assert.ok(full.includes(useCase.outcomes[0]), id);
+      for (const section of useCase.sections || []) {
+        for (const link of section.links || []) {
+          const url = link.external ? link.path : `https://commonly.me${link.path}`;
+          assert.ok(full.includes(`- ${text(link.label)}: ${url}`), `${id}: ${link.path}`);
+        }
+      }
     }
+    // The use-case index changes whenever a use case does.
+    const newestUseCase = Object.values(useCases).map((useCase) => useCase.dateModified).sort().at(-1);
+    assert.equal(pages.find((page) => page.path === '/use-cases/').dateModified, newestUseCase);
     for (const page of pages.filter((item) => item.path.startsWith('/compare/') && !item.noindex)) {
       assert.ok(full.includes(`URL: https://commonly.me${page.path}`), page.path);
     }
@@ -2700,7 +2709,9 @@ test('the long-form use cases render every section and FAQ, statically, with the
       for (const paragraph of section.paragraphs || []) assert.ok(html.includes(`<p>${escape(paragraph)}</p>`), `${id}: ${paragraph.slice(0, 40)}`);
       for (const link of section.links || []) assert.ok(html.includes(`href="${escape(link.path)}"`), `${id}: ${link.path}`);
     }
-    for (const item of useCase.faq) assert.ok(html.includes(`<h3>${escape(item.question)}</h3>`), `${id}: ${item.question}`);
+    for (const item of useCase.faq) {
+      assert.ok(html.includes(`<h3>${escape(item.question)}</h3><p>${escape(item.answer)}</p>`), `${id}: ${item.question}`);
+    }
     const faqLd = JSON.parse(html.match(/id="use-case-faq-jsonld">([^<]*)<\/script>/)[1]);
     assert.deepEqual(faqLd.mainEntity.map((q) => [q.name, q.acceptedAnswer.text]), useCase.faq.map((item) => [item.question, item.answer]));
     assert.doesNotMatch(html, /id="landing-faq-jsonld"/);
