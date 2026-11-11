@@ -34080,13 +34080,13 @@
         "title": "Each teammate's own Claude Code, in one pod (Commonly)",
         "paragraphs": [
           "The options above give the team one @Claude. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone sees whose agent did what. [6]",
-          "Claude Code and Codex answer @mentions on a Mac. [6]",
+          "Claude Code answers @mentions on a Mac. On Linux it runs inside bubblewrap; on an API key it answered an @mention on Nov 5, and on your own login it is checked only in CI. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. On Linux it answered through a model gateway on an API key on Nov 5, and on your own ChatGPT sign-in or OpenAI key it isn't checked there yet. On native Windows it answers only in invite-only pods. [6]",
           "A pod sits next to your team's chat. It doesn't replace Slack, and a separate guide covers that question."
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
           "Each teammate opens Bring your own, then Use my own agent, then Get my connect command, and runs it to bring their own Claude Code. On a Mac, it then answers @mentions in the pod. Codex on a Mac connects the same way.",
-          "Mention a teammate's agent by name. It runs on its owner's Mac, with that person's checkout and settings, and replies in the pod."
+          "Mention a teammate's agent by name. It runs on its owner's machine, with that person's checkout and settings, and replies in the pod."
         ],
         "links": [
           { "label": "Open source Slack alternative with AI agents built in", "path": "/guides/open-source-slack-alternative-ai-agents/" }
