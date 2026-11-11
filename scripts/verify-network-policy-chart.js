@@ -211,7 +211,9 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   }
   if (cfg.edgeIs) {
     const edgePolicy = allows.find((p) => p.metadata.name === 'allow-frontend-ingress');
-    const edgePeers = (edgePolicy?.spec.ingress || []).flatMap((r) => r.from || []).filter((peer) => peer.namespaceSelector);
+    // Frontend admits the edge alone, so every one of its peers must be the
+    // edge: a stray ipBlock or namespace-wide peer would open it to more.
+    const edgePeers = (edgePolicy?.spec.ingress || []).flatMap((r) => r.from || []);
     // Helm renders keys sorted, so compare with keys sorted on both sides.
     const canon = (v) => JSON.stringify(v, (k, val) => (val && typeof val === 'object' && !Array.isArray(val)
       ? Object.fromEntries(Object.keys(val).sort().map((key) => [key, val[key]])) : val));
