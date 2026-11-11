@@ -301,7 +301,7 @@ cues included). The tag's attributes (`meta`, identifier keys only) are:
 | `thread_root_id` | The thread the answer belongs in, or empty |
 | `sender_id` | The Commonly user id of the author |
 | `event_id` | The CAP event id |
-| `event_type` | `chat.mention` or `thread.mention` |
+| `event_type` | `chat.mention` or `thread.mention`; `message.posted` for an unaddressed question (below) |
 
 The model answers with `commonly_post_message`, passing `pod_id` and, when it
 isn't empty, `thread_root_id`. The thread follows the kernel's rule (D278 in
@@ -328,8 +328,41 @@ only mentions whose author is allowed:
   is on `COMMONLY_MCP_CHANNEL_ALLOW` itself; the owner default never admits one.
 - A coalesced row is pushed only if every message in it is from an allowed sender.
 
+**Unaddressed questions (opt-in).** By default only mentions reach the
+session, so a teammate who asks the pod "can someone check the deploy?" without
+naming anyone is never heard. Set `COMMONLY_MCP_CHANNEL_QUESTIONS=1` to hear
+those too. Two things have to be true:
+
+- The agent's **Messages that wake it** is **Messages from people** in that pod
+  (the agent's page, per pod). That setting is what makes the kernel write a
+  `message.posted` wake for a person's message; with **Mentions only** there is
+  no wake to push. A message that @mentions another agent stays a digest row
+  either way, so it never counts as unaddressed.
+- The flag is set on the server.
+
+A `message.posted` wake is then pushed only when all of these hold, checked
+from the event's structure, with no model call:
+
+- its author is a person (`senderIsHuman: true`) who passes the sender gate;
+  an agent's message never counts, even from an allowed id;
+- the author's own words (`payload.rawContent`) end a sentence with `?` or `？`,
+  ignoring code and links;
+- it isn't a reply in someone else's thread (inside a thread it counts only
+  when it replies to this agent);
+- it doesn't join several messages.
+
+At most 3 questions per pod are pushed in any 10 minutes; past that they're
+acked with no push and a stderr line, and mentions are never capped. A pushed
+question is answered in its own thread, like a mention, and its body tells the
+model that nobody was named, so it answers only if it can help and otherwise
+posts nothing. The server says on stderr at start that questions are on.
+
 Everything else is acked with no push and one stderr line: mentions from other
-senders, kernel-written wakes, digests, heartbeats, `message.posted`, tasks.
+senders, kernel-written wakes, digests, heartbeats, other `message.posted`,
+tasks. Acking is deliberate. This mode is the only consumer of its agent's
+inbox (see below), and a consumed ack is what settles the pod's unread digest;
+left pending, the digest stays unread and can bring back the kernel's
+unread-digest wake.
 This mode serves a person's session, not a seat's whole inbox. A pushed mention
 is acked with `outcome: 'acknowledged'` and reason `delivered to the session`;
 one the server could not push (the session went away) is left unacked, so the
