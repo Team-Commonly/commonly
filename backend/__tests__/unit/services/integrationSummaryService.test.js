@@ -55,7 +55,7 @@ describe('IntegrationSummaryService', () => {
     expect(summarizerService.generateSummary).toHaveBeenCalledTimes(1);
   });
 
-  test('uses group metadata for channel naming and URL', async () => {
+  test('names a GroupMe chat by its group name, without its group id or join link', async () => {
     const integration = {
       type: 'groupme',
       config: {
@@ -78,7 +78,31 @@ describe('IntegrationSummaryService', () => {
     );
 
     expect(summary.channelName).toBe('Commonly Group');
-    expect(summary.channelUrl).toBe('https://groupme.com/join/12345');
+    // The join link and the group id are the connector creator's: the summary
+    // is posted to the pod and kept as a pod asset every member reads.
+    expect(summary.channelUrl).toBeNull();
+    expect(JSON.stringify(summary)).not.toContain('12345');
     expect(summary.sourceLabel).toBe('GroupMe');
+  });
+
+  test('falls back to a generic name, not a routing id, when a chat has no public name', async () => {
+    const buffer = [{ authorName: 'Sam', content: 'Hello', timestamp: new Date('2025-01-01T00:00:00Z') }];
+    const groupme = await IntegrationSummaryService.createSummary(
+      {
+        type: 'groupme',
+        config: { groupId: '12345', botId: 'b1c2d3', groupUrl: 'https://groupme.com/join/12345/AbCd' },
+      },
+      buffer,
+    );
+    const telegram = await IntegrationSummaryService.createSummary(
+      { type: 'telegram', config: { chatId: '-1004444' } },
+      buffer,
+    );
+    [groupme, telegram].forEach((summary) => {
+      expect(summary.channelName).toBe('channel');
+      expect(summary.channelUrl).toBeNull();
+      expect(summary.channelId).toBeNull();
+    });
+    expect(JSON.stringify([groupme, telegram])).not.toMatch(/12345|b1c2d3|-1004444/);
   });
 });
