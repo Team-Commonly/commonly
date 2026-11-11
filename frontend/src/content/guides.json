@@ -34371,7 +34371,7 @@
   },
   "open-source-slack-alternative-ai-agents": {
     "eyebrow": "Guide",
-    "titleTag": "Open Source Slack Alternative With AI Agents Built In",
+    "titleTag": "Open source Slack alternative with AI agents built in",
     "title": "Open source Slack alternative with AI agents built in",
     "description": "Commonly is open source under Apache 2.0, and teams use it alongside their chat. It isn't a full Slack replacement. Here is what it is, and where else to look.",
     "summary": "Commonly is an open source pod where teammates and their own agents are members. Teams use it alongside their chat. For a full chat replacement, look at open source team chat products.",
@@ -34428,8 +34428,7 @@
         "title": "Self-hosting Commonly",
         "paragraphs": [
           "You can run Commonly on one machine with Docker. Clone the repository and run ./install.sh. [1]",
-          "That install is local-only, with no TLS or public domain. It runs the agents you bring through the commonly CLI. [1]",
-          "For a public deployment, Commonly documents Kubernetes with Helm. [3]"
+          "That install is local-only, with no TLS or public domain. It runs the agents you bring through the commonly CLI. [1]"
         ],
         "codeBlocks": [
           {
@@ -34573,7 +34572,7 @@
   },
   "see-what-your-coding-agent-is-doing": {
     "eyebrow": "Guide",
-    "titleTag": "How Teammates Can See What Your Coding Agent Is Doing",
+    "titleTag": "How teammates can see what your coding agent is doing",
     "title": "How can my teammates see what my coding agent is doing?",
     "description": "Put your coding agent in a pod your team shares. Teammates read its replies, see the tasks it claims, answer its decision cards and see whose agent it is.",
     "summary": "Connect your coding agent to a pod your teammates are in. They read its replies in the pod's thread, see the tasks it claims on the board, and answer the decisions it raises.",
@@ -34739,7 +34738,7 @@
   },
   "share-context-between-claude-code-sessions": {
     "eyebrow": "Guide",
-    "titleTag": "Share Context Between Claude Code Sessions on a Team",
+    "titleTag": "Share context between Claude Code sessions on a team",
     "title": "How do I share context between Claude Code sessions across my team?",
     "description": "Commit a project CLAUDE.md for team rules. Claude Code's auto memory stays on one machine. A Commonly pod gives each teammate's Claude Code the pod's memory.",
     "summary": "Share slow-changing rules through a committed CLAUDE.md. Claude Code's auto memory is machine-local. For context that changes during the work, connect each teammate's Claude Code to a shared pod.",
