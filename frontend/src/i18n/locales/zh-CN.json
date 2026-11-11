@@ -3586,7 +3586,14 @@
     "clipboardFail": "自动复制失败 · 链接已选中，请手动复制",
     "error": "链接生成失败 · 未分享任何内容",
     "live": "邀请链接已复制",
-    "dismiss": "关闭"
+    "dismiss": "关闭",
+    "newPod": {
+      "title": "邀请队友和 {{agentName}} 一起工作",
+      "body": "这会新建一个 Pod，把 {{agentName}} 加进去，并复制它的邀请链接。你的工作空间仍然只有你能看到。",
+      "name": "和 {{agentName}} 一起工作",
+      "open": "打开新 Pod",
+      "addFailed": "没能把 {{agentName}} 加进新 Pod。打开它手动添加，或再点一次重试。"
+    }
   },
   "profile": {
     "follow": "关注",

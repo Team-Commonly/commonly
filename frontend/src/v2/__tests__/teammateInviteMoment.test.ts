@@ -26,7 +26,10 @@ test('waits for the person to ask, then chooses the first non-kernel agent reply
   expect(teammateInviteMoment([welcome, ask, system, failed, answer], 'person', agentKeys, agentKeys, false))
     .toEqual({ messageId: '3', username: 'scout-person', source: 'first-agent-post' });
 });
-test('Scout in the owned workspace uses its separate disclosure and dismissal placement', () => {
-  expect(teammateInviteMoment([ask, answer], 'person', agentKeys, agentKeys, true)?.source).toBe('scout-first-session');
-  expect(teammateInviteMoment([ask, answer], 'person', agentKeys, new Set(), true)?.source).toBe('first-agent-post');
+test('in the owned workspace Scout\'s answer never counts; the person\'s own agent\'s does, as its own placement (D288)', () => {
+  expect(teammateInviteMoment([ask, answer], 'person', agentKeys, agentKeys, true)).toBeNull();
+  const own = msg('4', 'mine', 'claude-code-laptop', true);
+  expect(teammateInviteMoment([ask, answer, own], 'person', new Set(['scout-person', 'claude-code-laptop']), agentKeys, true))
+    .toEqual({ messageId: '4', username: 'claude-code-laptop', source: 'workspace-own-agent' });
+  expect(teammateInviteMoment([ask, own], 'person', new Set(['claude-code-laptop']), agentKeys, false)?.source).toBe('first-agent-post');
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import V2BringTeammate from '../components/V2BringTeammate';
+import { MemoryRouter } from 'react-router-dom';
+import V2BringTeammate, { resetTeammateDismissalForTest } from '../components/V2BringTeammate';
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
@@ -10,6 +11,12 @@ jest.mock('../hooks/useV2Api', () => ({ useV2Api: () => mockApi }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const mockRecord = jest.fn();
 const mockRecordOnce = jest.fn();
+const mockTrack = jest.fn();
+const mockTrackOnce = jest.fn();
+jest.mock('../utils/usageEvents', () => ({
+  trackUsage: (...args: unknown[]) => mockTrack(...args),
+  trackUsageOnce: (...args: unknown[]) => mockTrackOnce(...args),
+}));
 jest.mock('../utils/byoTelemetry', () => ({
   recordByoStep: (...args: unknown[]) => mockRecord(...args),
   recordByoStepOnce: (...args: unknown[]) => mockRecordOnce(...args),
@@ -19,6 +26,7 @@ const props = { podId: 'pod', podName: 'Work', userId: 'person', source: 'solo-p
 const press = () => fireEvent.click(screen.getByRole('button', { name: 'teammate.act' }));
 beforeEach(() => {
   localStorage.clear();
+  resetTeammateDismissalForTest();
   jest.resetAllMocks();
   mockGet.mockResolvedValue([]);
   mockPost.mockResolvedValue({ token });
@@ -144,4 +152,155 @@ test('marks: a card dismissed earlier never pings shown', () => {
   mockRecordOnce.mockClear();
   render(<V2BringTeammate {...props} />);
   expect(mockRecordOnce).not.toHaveBeenCalled();
+});
+
+// D288: in the person's own workspace the card never shares the workspace. A
+// press makes an invite-only team pod, adds the agent that answered through
+// the add-to-pod route, and copies a link to that new pod.
+describe('from the workspace: a new pod with the agent in it (D288)', () => {
+  const newPodId = 'b'.repeat(24);
+  const workspaceProps = {
+    podId: 'workspace', podName: 'My Workspace', userId: 'person', source: 'workspace-own-agent' as const,
+    agentName: 'Laptop Claude', newPod: { agentName: 'claude-code', instanceId: 'laptop' },
+  };
+  const renderCard = (extra = {}) => render(<MemoryRouter><V2BringTeammate {...workspaceProps} {...extra} /></MemoryRouter>);
+  const addPath = `/api/registry/agents/claude-code/pods/${newPodId}?instanceId=laptop`;
+  beforeEach(() => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return Promise.resolve({ success: true });
+      return Promise.resolve({ token });
+    });
+  });
+
+  test('a press makes the pod, adds the agent, then invites into the new pod, never the workspace', async () => {
+    const onPodCreated = jest.fn();
+    renderCard({ onPodCreated });
+    expect(mockGet).not.toHaveBeenCalled();
+    press();
+    await screen.findByText('teammate.live');
+    const urls = mockPost.mock.calls.map(([url]) => url);
+    expect(urls).toEqual(['/api/pods', addPath, `/api/pods/${newPodId}/invites`]);
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ type: 'team', joinPolicy: 'invite-only' });
+    expect(urls.some((url) => String(url).includes('/api/pods/workspace'))).toBe(false);
+    expect(mockWrite).toHaveBeenCalledWith(`${window.location.origin}/v2/invite/${token}`);
+    expect(screen.getByTestId('teammate-open-new-pod')).toHaveAttribute('href', `/v2/pods/${newPodId}`);
+    expect(mockTrack).toHaveBeenCalledWith('teammate-card-click', { props: { where: 'workspace' }, podId: 'workspace' });
+    // The pod list refreshes as soon as the pod exists, so the sidebar shows it.
+    expect(onPodCreated).toHaveBeenCalledTimes(1);
+  });
+
+  test('a later mount reuses the pod it made and never makes a second', async () => {
+    const first = renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    first.unmount();
+    mockPost.mockClear();
+    mockGet.mockResolvedValue([]);
+    renderCard();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(`/api/pods/${newPodId}/invites`));
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([`/api/pods/${newPodId}/invites`]);
+  });
+
+  test('a failed agent add still gives a link, and the next press tries the add again', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return Promise.reject(Object.assign(new Error('500'), { response: { status: 500 } }));
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockWrite).toHaveBeenCalledTimes(1);
+    mockPost.mockClear();
+    mockPost.mockImplementation((url: string) => (url === addPath ? Promise.resolve({ success: true }) : Promise.resolve({ token })));
+    // The button reads "copied" for a moment after a copy; press it by its role in the card.
+    const copyButton = document.querySelector('button.v2-teammate__copy') as HTMLButtonElement;
+    await waitFor(() => expect(copyButton).not.toBeDisabled());
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(addPath, {}));
+    expect(mockPost.mock.calls.map(([url]) => url)).not.toContain('/api/pods');
+  });
+
+  const refuse = (status: number, data: object = {}) => Promise.reject(Object.assign(new Error(String(status)), { response: { status, data } }));
+
+  test('only an active row already in the pod counts as added; any other 409 says the agent is not in it', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(409, { code: 'agent_not_active' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.getByTestId('teammate-agent-not-added')).toHaveTextContent('teammate.newPod.addFailed');
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').agentAdded).toBe(false);
+  });
+
+  test('an agent already active in the pod reads as added, with no warning', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(409, { code: 'agent_already_in_pod', status: 'active' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.queryByTestId('teammate-agent-not-added')).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').agentAdded).toBe(true);
+  });
+
+  test('a saved pod that is gone is forgotten, and the press makes a new one', async () => {
+    const gonePod = 'd'.repeat(24);
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: gonePod, agentAdded: true }));
+    mockGet.mockImplementation((url: string) => (url.includes(gonePod) ? refuse(404) : Promise.resolve([])));
+    renderCard();
+    await waitFor(() => expect(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop')).toBeNull());
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual(['/api/pods', addPath, `/api/pods/${newPodId}/invites`]);
+  });
+
+  test('a 404 for the agent, not the pod, keeps the pod and says the agent is not in it', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(404, { error: 'Agent not found in registry' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.getByTestId('teammate-agent-not-added')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').podId).toBe(newPodId);
+  });
+
+  test('a pod another tab made since this card mounted is reused, not duplicated', async () => {
+    renderCard();
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: newPodId, agentAdded: true }));
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([`/api/pods/${newPodId}/invites`]);
+  });
+
+  test('a second agent gets its own pod, never the first agent\'s', async () => {
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: 'e'.repeat(24), agentAdded: true }));
+    renderCard({ newPod: { agentName: 'codex', instanceId: 'mac' } });
+    press();
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/pods', expect.anything()));
+  });
+
+  test('records shown and dismissed as usage events, and a server-side dismissal keeps it hidden', () => {
+    const view = renderCard();
+    expect(mockTrackOnce).toHaveBeenCalledWith(
+      'teammate-card-shown.workspace.workspace-own-agent', 'teammate-card-shown', { props: { where: 'workspace' }, podId: 'workspace' },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'teammate.dismiss' }));
+    expect(mockTrack).toHaveBeenCalledWith('teammate-card-dismiss', { props: { where: 'workspace' }, podId: 'workspace' });
+    view.unmount();
+    localStorage.clear();
+    renderCard({ dismissedEverywhere: true });
+    expect(screen.queryByRole('button', { name: 'teammate.act' })).not.toBeInTheDocument();
+  });
 });

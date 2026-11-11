@@ -23,9 +23,12 @@ export function teammateInviteMoment(
     const bot = typeof author?.isBot === 'boolean' ? author.isBot : agentKeys.has(username.toLowerCase());
     const metadata = (message as V2Message & { metadata?: { runFailed?: boolean } }).metadata;
     if (!bot || metadata?.runFailed) continue;
+    // D288: in the person's own workspace only their own agent's answer counts.
+    // Scout's doesn't, and the card there invites into a new pod, never this one.
+    if (workspace && scoutKeys.has(username.toLowerCase())) continue;
     return {
       messageId: String(message.id), username,
-      source: workspace && scoutKeys.has(username.toLowerCase()) ? 'scout-first-session' : 'first-agent-post',
+      source: workspace ? 'workspace-own-agent' : 'first-agent-post',
     };
   }
   return null;
