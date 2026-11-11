@@ -36,7 +36,7 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const { default: codexAdapter, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+const { default: codexAdapter, codexNativeBinary, privateCodexHomeDenies } = await import('../src/lib/adapters/codex.js');
 // These turns use a fake spawn, so no Codex answers for its version. A test of
 // the version itself is in adapters.codex.version-floor.test.mjs.
 const codex = {
@@ -2416,6 +2416,123 @@ describe('the workspace git tool', () => {
   });
 });
 
+// F444: on Linux Codex execs its sandbox helper from <CODEX_HOME>/tmp/arg0-linux
+// inside bwrap, so a denied home stops every private turn at start (measured on
+// codex-cli 0.164.0). There the home stays readable and everything in it but
+// the helper folder is denied; macOS denies it whole.
+describe('the Codex home a private seat runs with (F444)', () => {
+  let root;
+  let home;
+  beforeEach(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), 'commonly-codex-home-')));
+    home = join(root, 'home');
+    const codexHome = join(home, '.codex');
+    await mkdir(join(codexHome, 'sessions'), { recursive: true });
+    await mkdir(join(codexHome, 'tmp', 'arg0-linux'), { recursive: true });
+    await mkdir(join(codexHome, 'tmp', 'other-scratch'), { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), '{}');
+    await writeFile(join(codexHome, 'config.toml'), '');
+    await writeFile(join(codexHome, 'AGENTS.md'), 'instructions');
+  });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  test('on Linux, from ~/.codex: every entry is denied but the helper path, and absent secrets are named too', () => {
+    const codexHome = join(home, '.codex');
+    const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
+    expect(denies).not.toContain('~/.codex');
+    expect(denies).not.toContain(codexHome);
+    for (const name of ['auth.json', 'config.toml', 'sessions', 'AGENTS.md']) {
+      expect(denies).toContain(join(codexHome, name));
+    }
+    // Written by Codex later; a key for a missing path is accepted on Linux.
+    for (const name of ['archived_sessions', 'history.jsonl', 'log']) {
+      expect(denies).toContain(join(codexHome, name));
+    }
+    expect(denies).toContain(join(codexHome, 'tmp', 'other-scratch'));
+    expect(denies).not.toContain(join(codexHome, 'tmp'));
+    expect(denies.some((path) => path.startsWith(join(codexHome, 'tmp', 'arg0-linux')))).toBe(false);
+  });
+
+  test('on Linux, a database takes its -wal, -shm and -journal, listed or known, and no key is a glob', async () => {
+    const codexHome = join(home, '.codex');
+    await writeFile(join(codexHome, 'other_7.sqlite'), '');
+    const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
+    // The -wal holds the newest rows of every session using this home, and
+    // appears only while a connection is open: absent when the keys are built.
+    for (const db of ['other_7.sqlite', 'logs_2.sqlite', 'state_5.sqlite']) {
+      for (const suffix of ['', '-wal', '-shm', '-journal']) expect(denies).toContain(join(codexHome, `${db}${suffix}`));
+    }
+    for (const name of ['session_index.jsonl', 'shell_snapshots', 'memories']) expect(denies).toContain(join(codexHome, name));
+    // Codex's `*` crosses `/`: a glob matching a file inside a denied folder
+    // stops every turn at start on Linux (run 43103991434).
+    expect(denies.some((path) => /[*?[]/.test(path))).toBe(false);
+  });
+
+  test('on Linux, from another CODEX_HOME: that home is treated the same, and ~/.codex is denied whole', async () => {
+    const elsewhere = join(root, 'elsewhere-codex');
+    await mkdir(join(elsewhere, 'tmp', 'arg0-linux'), { recursive: true });
+    await writeFile(join(elsewhere, 'auth.json'), '{}');
+    const denies = privateCodexHomeDenies({ codexHome: elsewhere, platform: 'linux', home });
+    expect(denies).toContain('~/.codex');
+    expect(denies).toContain(join(elsewhere, 'auth.json'));
+    expect(denies).toContain(join(elsewhere, 'sessions'));
+    expect(denies).not.toContain(elsewhere);
+    expect(denies).not.toContain(join(elsewhere, 'tmp'));
+  });
+
+  test('on macOS the home is denied whole, and a CODEX_HOME elsewhere is denied too', () => {
+    expect(privateCodexHomeDenies({ codexHome: join(home, '.codex'), platform: 'darwin', home })).toEqual(['~/.codex']);
+    const elsewhere = join(root, 'elsewhere-codex');
+    expect(privateCodexHomeDenies({ codexHome: elsewhere, platform: 'darwin', home })).toEqual(['~/.codex', elsewhere]);
+  });
+
+  test('a private seat spawned on Linux carries those keys, and none that denies the helper', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, HOME: home };
+    delete env.CODEX_HOME;
+    delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    await codex.spawn('hi', {
+      sessionId: null,
+      cwd: join(root, 'workspace'),
+      environment: { model: 'test-model' },
+      env,
+      agentName: 'linux-private-agent',
+      _platform: 'linux',
+      _homeDir: home,
+      _spawnImpl: impl,
+    });
+    const { args } = calls[0];
+    const fsFlag = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean)
+      .find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
+    const codexHome = join(home, '.codex');
+    expect(fsFlag).not.toContain('"~/.codex"="deny"');
+    expect(fsFlag).not.toContain(`"${codexHome}"="deny"`);
+    expect(fsFlag).not.toContain(`"${join(codexHome, 'tmp')}"="deny"`);
+    expect(fsFlag).toContain(`"${join(codexHome, 'auth.json')}"="deny"`);
+    expect(fsFlag).toContain(`"${join(codexHome, 'config.toml')}"="deny"`);
+    expect(fsFlag).toContain(`"${join(codexHome, 'sessions')}"="deny"`);
+    // The rest of the host secrets are unchanged.
+    for (const dir of ['~/.commonly', '~/.claude', '~/.ssh', '~/.aws']) expect(fsFlag).toContain(`"${dir}"="deny"`);
+    // Public seats' Codex homes sit outside ~/.commonly on Linux.
+    expect(fsFlag).toContain(`"${join(home, '.local', 'state', 'commonly', 'codex-homes')}"="deny"`);
+  });
+
+  test('a relative CODEX_HOME is read from the turn\'s folder, as Codex reads it', async () => {
+    const workspace = join(root, 'workspace');
+    await mkdir(join(workspace, 'rel-codex', 'tmp', 'arg0-linux'), { recursive: true });
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, HOME: home, CODEX_HOME: 'rel-codex' };
+    delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    await codex.spawn('hi', {
+      sessionId: null, cwd: workspace, environment: { model: 'test-model' }, env,
+      agentName: 'linux-private-agent', _platform: 'linux', _spawnImpl: impl,
+    });
+    const fsFlag = calls[0].args.find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain(`"${join(workspace, 'rel-codex', 'auth.json')}"="deny"`);
+    expect(fsFlag).not.toContain(`"${join(workspace, 'rel-codex', 'tmp')}"="deny"`);
+  });
+});
+
 // F441: Codex runs git in the workspace outside the seat's profile, so a public
 // seat whose repository is set to run programs is refused before Codex starts.
 // The real-git check is in workspace-git-config.test.mjs and, with a real
@@ -2470,6 +2587,5 @@ describe('a repository set up to run programs', () => {
     const { error, calls } = await seat(null, refuser);
     expect(error).toBeUndefined();
     expect(refuser).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(1);
-  });
+    expect(calls).toHaveLength(1);  });
 });
