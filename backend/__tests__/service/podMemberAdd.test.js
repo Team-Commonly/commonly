@@ -140,6 +140,14 @@ it('refuses an agent caller on its cm_ user token, even on a pod the agent creat
   expect(await memberIds(own._id)).not.toContain(String(teammate._id));
 });
 
+it('refuses an agent as the one added: agents join by being installed', async () => {
+  await Pod.create({ name: 'with-bot', type: 'chat', createdBy: creator._id, members: [creator._id, agent._id] });
+  const res = await add(creator, 'helper-bot');
+  expect(res.status).toBe(400);
+  expect(res.body.code).toBe('agent_not_addable');
+  expect(await memberIds()).not.toContain(String(agent._id));
+});
+
 it('refuses a third person in a 1:1 DM pod', async () => {
   const room = await Pod.create({ name: 'helper', type: 'agent-room', createdBy: creator._id, members: [creator._id, agent._id] });
   const res = await add(creator, 'teammate', room._id);
