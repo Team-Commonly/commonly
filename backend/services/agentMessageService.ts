@@ -856,6 +856,22 @@ class AgentMessageService {
    * guidance, so the tool description and the kernel state one number.
    */
   /**
+   * Commonly speaking on its own under a seat's identity, so not the seat's
+   * turn (F447): a kernel post that is not a card. Those are the
+   * stalled-connect nudge and the hosted install intro, and with F442 the
+   * stalled-connect resolution and the native run-failed notices; server code
+   * writes all of them (an agent cannot set authorKind). The one kernel card,
+   * the local-agent setup card, is posted when the agent's model calls
+   * `commonly_offer_local_agent`, so it is the agent choosing to speak: it
+   * counts toward the run and is capped. A new kernel post an agent can
+   * trigger must stay outside this predicate.
+   */
+  static isCommonlyInitiated(row: { author_kind?: unknown; messageType?: unknown; message_type?: unknown } | null | undefined): boolean {
+    if (!row || row.author_kind !== 'kernel') return false;
+    return String(row.messageType ?? row.message_type ?? 'text').toLowerCase() !== 'card';
+  }
+
+  /**
    * Is this pod a strict 1:1, where a run of one speaker's messages is just an
    * answer rather than a monologue?
    *
@@ -871,21 +887,6 @@ class AgentMessageService {
    * N:1 (several admins, one agent), so it IS a shared room and the crowding
    * rationale applies.
    */
-  /**
-   * Commonly speaking on its own under a seat's identity, so not the seat's
-   * turn (F447): a kernel post that is not a card. The kernel posts today are
-   * the stalled-connect nudge and resolution, the hosted install intro and the
-   * native run-failed notices, all written by server code (an agent cannot set
-   * authorKind). The one kernel card, the local-agent setup card, is posted
-   * when the agent's model calls `commonly_offer_local_agent`, so it is the
-   * agent choosing to speak: it counts toward the run and is capped. A new
-   * kernel post an agent can trigger must stay outside this predicate.
-   */
-  static isCommonlyInitiated(row: { author_kind?: unknown; messageType?: unknown; message_type?: unknown } | null | undefined): boolean {
-    if (!row || row.author_kind !== 'kernel') return false;
-    return String(row.messageType ?? row.message_type ?? 'text').toLowerCase() !== 'card';
-  }
-
   static isOneToOnePod(podType: unknown): boolean {
     const type = String(podType || '');
     try {
