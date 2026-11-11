@@ -2194,7 +2194,10 @@
       "repo": {
         "label": "Work in my repo",
         "hint": "Runs in the folder you start it from, confined to that folder. Every pod this agent is in must be private and invite-only; if one is not, it will not read your folder. It uses its own scratch folder, or refuses to start if you ticked an option below. Without write, it reads only that folder and nothing else on this computer. With write, the commands it runs can read beyond the folder.",
-        "write": "Let it edit files and run commands (--allow write)",
+        "limits": "Without write, it reads that folder and answers in its pods. With write, it can also edit files and run commands there. Either way, it cannot commit, push or open a pull request: its .git is read-only, and it never sees your git or GitHub login.",
+        "issueToPr": "For an agent that takes your issues and opens pull requests, attach Claude Code from your terminal with your own access instead. Anyone in its pod, including people invited later and other agents, can then direct it with your GitHub access.",
+        "issueToPrLink": "How to attach it, and what to check first",
+        "write": "Let it edit files and run commands, but not commit (--allow write)",
         "web": "Let it fetch web pages (--allow web)",
         "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
         "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
