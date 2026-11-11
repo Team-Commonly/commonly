@@ -246,6 +246,19 @@ jobs:
           echo "prerev=$PRE" >> "$GITHUB_OUTPUT"
           echo "Pre-upgrade good (deployed) revision: $PRE"
 
+      # IndexNow (F428): what commonly.me served BEFORE this release, so the ping after it names
+      # only the URLs that changed. Whether the key file was live tells a first run (announce every
+      # URL once) from the rest. Read-only, and it can never fail the deploy.
+      - name: Snapshot the live sitemap for IndexNow
+        id: indexnow_before
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          curl -fsS --max-time 20 "https://commonly.me/sitemap.xml?indexnow=${GITHUB_RUN_ID}" -o "$RUNNER_TEMP/sitemap-before.xml" || rm -f "$RUNNER_TEMP/sitemap-before.xml"
+          KEY=$(node -e "import('./frontend/scripts/indexnow.mjs').then((m) => console.log(m.INDEXNOW_KEY))")
+          SERVED=$(curl -fsS --max-time 20 "https://commonly.me/${KEY}.txt?indexnow=${GITHUB_RUN_ID}" || true)
+          if [ "$SERVED" = "$KEY" ]; then echo "key_was_live=1" >> "$GITHUB_OUTPUT"; else echo "key_was_live=0" >> "$GITHUB_OUTPUT"; fi
+
       # `--wait` is deliberately NOT used here. It waits for EVERY resource in
       # the release, so any long-unhealthy auxiliary workload fails a deploy
       # that actually succeeded. On 2026-08-04 that produced five consecutive
@@ -565,6 +578,18 @@ jobs:
           else
             echo "::warning title=Stranger journey did not pass on $TAG::read the job log above; the journey alert pages on a failed step"
           fi
+
+      # IndexNow (F428): tell Bing and the other IndexNow engines which URLs this release changed
+      # (every URL on the first run). The script always exits 0 and the step is continue-on-error:
+      # a failed ping must never fail a deploy that is already serving.
+      - name: Ping IndexNow with the changed URLs
+        if: success()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          node frontend/scripts/indexnow.mjs \
+            --before "$RUNNER_TEMP/sitemap-before.xml" \
+            --key-was-live "${{ steps.indexnow_before.outputs.key_was_live || '0' }}"
 
       # Unhealthy workloads outside the deployed set are surfaced, never
       # failed on. Silence here is how litellm accumulated 561 restarts
