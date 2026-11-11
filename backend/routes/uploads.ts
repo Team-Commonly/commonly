@@ -566,6 +566,7 @@ router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (re
 // Auth — preview shares the raw-file route's pod-scoped authorization below.
 // A private deck must not become readable merely because it is rendered.
 const OFFICECLI_OUTPUT_MAX = 64 * 1024;
+const OFFICECLI_KILL_GRACE_MS = 3_000;
 type PptxRender = { html: string } | { error: string; code?: number };
 const officecliPreview = (() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -585,15 +586,25 @@ const officecliPreview = (() => {
     new Promise((resolve) => {
       // TMPDIR points officecli's own temp output into cwd, so the render is
       // read from, and removed with, this request's directory.
-      const child = spawn('officecli', args, { cwd, env: { ...process.env, TMPDIR: cwd } });
+      // .NET's single-file extraction cache stays in the shared tmp, so each
+      // render does not unpack it again.
+      const child = spawn('officecli', args, {
+        cwd,
+        env: { ...process.env, TMPDIR: cwd, DOTNET_BUNDLE_EXTRACT_BASE_DIR: osMod.tmpdir() },
+      });
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let grace: ReturnType<typeof setTimeout> | null = null;
+      const timedOutResult = { stdout: '', stderr: 'render timeout', code: -1 };
       // At the deadline the process is killed, and the result waits for it to
       // exit, so the directory is not removed while it can still write there.
+      // A helper holding its pipes open would keep `close` from ever coming,
+      // so a short grace period resolves the render as timed out regardless.
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGKILL');
+        grace = setTimeout(() => resolve(timedOutResult), OFFICECLI_KILL_GRACE_MS);
+        try { child.kill('SIGKILL'); } catch { /* the grace timer still resolves */ }
       }, timeoutMs);
       child.stdout.on('data', (chunk: Buffer) => {
         if (stdout.length < OFFICECLI_OUTPUT_MAX) stdout += chunk.toString();
@@ -607,7 +618,8 @@ const officecliPreview = (() => {
       });
       child.on('close', (code: number | null) => {
         clearTimeout(timer);
-        resolve(timedOut ? { stdout: '', stderr: 'render timeout', code: -1 } : { stdout, stderr, code: code ?? -1 });
+        if (grace) clearTimeout(grace);
+        resolve(timedOut ? timedOutResult : { stdout, stderr, code: code ?? -1 });
       });
     });
 
@@ -659,8 +671,9 @@ const PPTX_RENDER_CONCURRENCY = 2;
 let pptxRendersInFlight = 0;
 // The rendered page runs scripts (three.js from a CDN) in a sandbox with no
 // origin of its own, so the deck's content cannot act as this origin.
-// It may load its viewer script from a CDN, but it sends nothing anywhere:
-// no fetches, no form posts, and images only from the page itself.
+// Its viewer script and fonts may come from any https CDN, so a deck could
+// still learn that it was opened; it cannot fetch, post a form, change its
+// base URL or load an image from anywhere but the page itself.
 const PPTX_PREVIEW_CSP = [
   'sandbox allow-scripts',
   "default-src 'none'",
@@ -670,6 +683,7 @@ const PPTX_PREVIEW_CSP = [
   'font-src https: data:',
   "connect-src 'none'",
   "form-action 'none'",
+  "base-uri 'none'",
 ].join('; ');
 
 router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRuntimeAuth, async (req: AuthReq, res: Res) => {

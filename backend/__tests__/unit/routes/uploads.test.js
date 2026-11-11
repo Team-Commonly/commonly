@@ -337,6 +337,35 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       }
     });
 
+    it('resolves after a short grace when the killed process never closes its pipes', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+      try {
+        const child = hungChild();
+        child.kill = jest.fn(() => setImmediate(() => child.emit('exit', null, 'SIGKILL')));
+        mockSpawn.mockImplementation(() => child);
+        deck();
+        const done = request(app).get('/api/uploads/deck.pptx/preview-pptx-html').then((res) => res);
+        await until(() => mockSpawn.mock.calls.length > 0);
+        jest.advanceTimersByTime(30_000);
+        await until(() => child.kill.mock.calls.length > 0);
+        jest.advanceTimersByTime(3_000);
+        const res = await done;
+        expect(res.status).toBe(500);
+        // The slot came back: the next render spawns rather than answering 503.
+        jest.useRealTimers();
+        const next = hungChild();
+        mockSpawn.mockImplementation(() => {
+          setImmediate(() => next.emit('close', 1));
+          return next;
+        });
+        deck();
+        expect((await request(app).get('/api/uploads/deck.pptx/preview-pptx-html')).status).toBe(500);
+        expect(mockSpawn).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('answers 503 past the concurrent render cap instead of spawning more', async () => {
       const children = [];
       mockSpawn.mockImplementation(() => {
