@@ -29,6 +29,8 @@ const LOGIN_FAILED_WORDINGS = [
   /\bupstream refused 401\b/, // the same refusal, read from pi's stream
   /^\w+ exited(?: with code)? \d+: 401\b/, // pi's text, which names no upstream
   /workspace routing discovery unauthorized/,
+  // Any other text carrying Claude Code's wording keeps this general line.
+  /(?:^|: | \| )Not logged in · Please run \/login/,
   /API Error: 400 This API key is not scoped to a workspace/,
   // The wrapper's own refusals of a Claude login (adapters/claude.js).
   /the Claude login on this machine expires in/,
@@ -37,8 +39,11 @@ const LOGIN_FAILED_WORDINGS = [
 // F436: what Claude Code prints, and exits 1 on, when it has no login on the
 // computer (2.1.318, walked on windows-latest). No key is wrong and no allowance
 // is spent: someone signs in to Claude Code there, and the next turn works.
+// Anchored on the claude adapter's own exit line, first in its tail or after
+// the stderr | stdout join, because this match acks the message unanswered:
+// the same words from another adapter or a tool keep the general login line.
 const CLAUDE_SIGNED_OUT_WORDINGS = [
-  /(?:^|: | \| )Not logged in · Please run \/login/,
+  /^claude exited(?: with code)? \d+: (?:[^\n]*? \| )?Not logged in · Please run \/login/,
 ];
 const WONT_START_WORDINGS = [
   /^spawn \S+ ENOENT/,

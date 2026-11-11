@@ -3,6 +3,7 @@ import { classifySpawnFailure, SPAWN_FAILURE_CLASS } from '../src/lib/spawn-retr
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { claudeFailureTail } from '../src/lib/adapters/claude.js';
+import { claimReleaseFor } from '../src/lib/claim-outcome.js';
 import {
   CLAUDE_SIGNED_OUT_NOTICE,
   LOGIN_NOTICE,
@@ -51,6 +52,16 @@ describe('cantAnswerNotice', () => {
       expect(CLAUDE_SIGNED_OUT_NOTICE).not.toMatch(/\/login|key/);
     });
 
+    // The signed-out match acks a message unanswered, so only the claude
+    // adapter's own exit line counts. Elsewhere the words keep the login line.
+    test.each([
+      ['another adapter', 'codex turn failed: Not logged in · Please run /login'],
+      ['a line that is not the exit line', 'inbox batch processing failed: tool said: Not logged in · Please run /login'],
+      ['a later line of the tail', 'claude exited with code 1: boom\nNot logged in · Please run /login'],
+    ])('%s quoting the words is not Claude Code signing out', (_name, message) => {
+      expect(isClaudeSignedOut(new Error(message))).toBe(false);
+    });
+
     test('a key or route refusal is not a sign-in', () => {
       expect(isClaudeSignedOut(adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized'))).toBe(false);
       expect(isClaudeSignedOut(new Error('claude exited with code 1: You\'ve hit your weekly limit · resets Nov 3 at 5pm'))).toBe(false);
@@ -62,6 +73,10 @@ describe('cantAnswerNotice', () => {
     });
 
     test('the turn is acked as an error and handed on, not completed', () => {
+      // A person's broadcast goes to another listener, a direct mention closes as refused.
+      const broadcast = { type: 'message.posted', payload: { senderIsHuman: true } };
+      expect(claimReleaseFor(broadcast, claudeSignedOutResult())).toEqual({ outcome: 'refused', reason: 'delivery-refused' });
+      expect(claimReleaseFor({ type: 'chat.mention' }, claudeSignedOutResult()).outcome).toBe('refused');
       expect(claudeSignedOutResult()).toEqual({
         outcome: 'error',
         refused: { reason: 'delivery-refused' },
@@ -336,7 +351,7 @@ describe('cantAnswerNotice', () => {
   // between a tool's quoted refusal and a statement about this seat's key.
   test('a public seat quoting a tool\'s error is not reporting its own key', () => {
     const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
-    expect(cantAnswerNotice(new Error(message))?.cause).toBe('claude-signed-out');
+    expect(cantAnswerNotice(new Error(message))?.cause).toBe('login');
     expect(cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBeNull();
   });
 

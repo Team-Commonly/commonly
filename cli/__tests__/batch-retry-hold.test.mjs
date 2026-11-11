@@ -649,6 +649,28 @@ describe('performRun — a signed-out Claude Code is a setup fault, not an outag
     } finally { run.handle.stop(); }
   });
 
+  test('a private ask, which runs alone, is acked the same way and only logged', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'quick question', {
+        type: 'agent.ask',
+        payload: { requestId: 'ask/1', fromAgent: 'planner', fromInstanceId: 'default', question: 'quick question', deliveryId: 'nonce-a' },
+      })]],
+    });
+    const spawn = jest.fn().mockRejectedValue(signedOut());
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.acks).toEqual([expect.objectContaining({
+        id: 'evt-a',
+        result: expect.objectContaining({ outcome: 'error', reason: 'claude-signed-out' }),
+      })]);
+      expect(noticesIn(server.post)).toHaveLength(0);
+      expect(retryReports(run.errors)).toEqual([]);
+      expect(run.logs.some((line) => line.startsWith('[agent.ask]') && line.includes('sign in'))).toBe(true);
+    } finally { run.handle.stop(); }
+  });
+
   test.each([
     ['Claude Code signed out', () => new Error('claude exited with code 1: Not logged in · Please run /login')],
     ['an expired key', () => adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key')],
