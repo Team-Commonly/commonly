@@ -248,7 +248,7 @@ const killTree = (pid) => spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)
 const counts = (list) => Object.entries(list.reduce((acc, p) => ({ ...acc, [p]: (acc[p] || 0) + 1 }), {}))
   .map(([p, n]) => `${p} x${n}`).join('\n  ');
 
-const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_MS } = {}) => {
+const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_MS, freshShell = false } = {}) => {
   const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token: TOKEN, agentName: AGENT, adapter: 'claude' })
     .split('\n');
   if (lines.length !== 4 || !/^npm\.cmd i -g \S+$/.test(lines[0]) || !/^commonly\.cmd agent run /.test(lines[3])) {
@@ -273,7 +273,7 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
   // no token record, no prepared tools, no Claude Code state.
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script.join('\n')], {
     cwd: profile,
-    env: { ...process.env, USERPROFILE: profile, HOME: profile },
+    env: { ...(freshShell ? windowsPowerShellEnv() : process.env), USERPROFILE: profile, HOME: profile },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -320,12 +320,26 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
     ['token used', api.calls.length > apiBefore ? 'pass' : 'fail'],
     ['@mention delivered', leg.delivered ? 'pass' : 'fail'],
     ['model reached', model.paths.length > modelBefore ? 'pass' : 'fail'],
-    ['reply', replied() ? 'pass' : 'fail'],
+    // "agent reply" is the model's answer; a turn that fails can still tell the
+    // pod why, so the two are separate rows (run 43069712462 read as silent).
+    ['agent reply', replied() ? 'pass' : 'fail'],
+    ['pod told', leg.posts.length ? `yes: ${JSON.stringify(String(leg.posts[0]?.content || '').slice(0, 160))}` : 'no'],
     ['ack', leg.acked ? 'pass' : 'fail'],
   ];
   const firstError = out.split(/\r?\n/).map((l) => l.trim())
     .find((l) => /running scripts is disabled|is not recognized|error|denied|not logged in|log ?in|api key/i.test(l)) || '';
   return { problems, installExit, delivered: leg.delivered, steps, firstError };
+};
+
+// The workflow step runs under pwsh 7, whose PSModulePath leaks into a child
+// Windows PowerShell 5.1, which then can't load its own Security module:
+// Get-/Set-ExecutionPolicy fail, and the policy is never set (run 43070735149).
+// A person's fresh PowerShell window has no such entry, so the policy helpers
+// and the fresh-PC legs drop it and let 5.1 rebuild its default.
+const windowsPowerShellEnv = () => {
+  const env = { ...process.env };
+  Object.keys(env).filter((key) => key.toLowerCase() === 'psmodulepath').forEach((key) => { delete env[key]; });
+  return env;
 };
 
 // Fresh-PC legs (F342) change the runner user's script policy for their run.
@@ -334,7 +348,7 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
 // stdin ignored, as the legs do: run 43069712462 read an empty policy with a stdin pipe.
 const powershell = (command) => {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 60_000,
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 60_000, env: windowsPowerShellEnv(),
   });
   if (!String(result.stdout || '').trim() && /Get-/.test(command)) {
     log(`powershell ${JSON.stringify(command)}: exit ${result.status}, signal ${result.signal}, error ${result.error?.message || 'none'}, stderr ${String(result.stderr || '').slice(0, 500)}`);
@@ -376,14 +390,14 @@ else fail('this tree: COMMONLY_BYO_TREE_TARBALL is not set, so this checkout was
 
 if (tarball) {
   // Gated: the page's .cmd lines must reach a reply on a Restricted policy.
-  const blocked = await withRestrictedPolicy(() => walk('scripts blocked', `npm.cmd i -g ${tarball}`));
+  const blocked = await withRestrictedPolicy(() => walk('scripts blocked', `npm.cmd i -g ${tarball}`, { freshShell: true }));
   if (blocked.skipped) fail(`scripts blocked: ${blocked.skipped}, so the leg proves nothing`);
   else {
     stepTable('scripts blocked', blocked);
     publishedOutcome(blocked).fail.forEach((problem) => fail(`scripts blocked: ${problem}`));
   }
   // Reported: the bare lines on the same policy, to show where they stop.
-  const bare = await withRestrictedPolicy(() => walk('scripts blocked, bare', `npm.cmd i -g ${tarball}`, { bare: true, timeoutMs: REPORT_LEG_TIMEOUT_MS }));
+  const bare = await withRestrictedPolicy(() => walk('scripts blocked, bare', `npm.cmd i -g ${tarball}`, { bare: true, timeoutMs: REPORT_LEG_TIMEOUT_MS, freshShell: true }));
   if (bare.skipped) console.log(`::warning::scripts blocked, bare: ${bare.skipped}`);
   else stepTable('scripts blocked, bare', bare);
 }
