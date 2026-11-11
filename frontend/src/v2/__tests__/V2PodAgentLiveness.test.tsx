@@ -107,6 +107,34 @@ describe('group pod agent liveness', () => {
     expect(row).toHaveTextContent('Sam Agent last checked in 3h ago');
   });
 
+  test('says what failed when a webhook agent did not take its last delivery', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'gone-dark', lastUsedAt: HOURS_AGO_3,
+      isOwner: false, deliveryError: { at: HOURS_AGO_3, kind: 'http', status: 502 },
+    }]);
+    renderChat(makeDetail());
+
+    const row = await screen.findByTestId('pod-agent-liveness');
+    expect(row).toHaveTextContent("Sam Agent didn't get the last message (HTTP 502, 3h ago). It can't get new ones until its endpoint is back.");
+    expect(row).not.toHaveTextContent('checked in');
+  });
+
+  test.each([
+    ['timeout', undefined, 'timed out'],
+    ['network', undefined, "couldn't connect"],
+    ['refused', undefined, 'address not allowed'],
+    ['http', undefined, 'HTTP error'],
+  ])('names a %s webhook failure in words', async (kind, status, words) => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'gone-dark', lastUsedAt: null,
+      isOwner: false, deliveryError: { at: HOURS_AGO_3, kind, ...(status ? { status } : {}) },
+    }]);
+    renderChat(makeDetail());
+
+    const row = await screen.findByTestId('pod-agent-liveness');
+    expect(row).toHaveTextContent(`(${words}, 3h ago)`);
+  });
+
   test.each([
     ['listening', { state: 'listening', lastUsedAt: HOURS_AGO_3 }],
     ['hosted (reachable)', { state: 'reachable', lastUsedAt: null, hosted: true }],

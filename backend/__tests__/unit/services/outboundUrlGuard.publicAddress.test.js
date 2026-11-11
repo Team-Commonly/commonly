@@ -99,6 +99,7 @@ describe('postToPublicAddress', () => {
 
       expect(isOutboundUrlRefused(error)).toBe(true);
       expect(error.message).toBe(`outbound URL refused: host hooks.example.test resolves to ${address}, which is not allowed`);
+      expect(error.kind).toBe('refused');
       expect(lookupSpy).toHaveBeenCalledTimes(1);
       noConnection();
     });
@@ -160,6 +161,8 @@ describe('postToPublicAddress', () => {
       const error = await refusalOf(postToPublicAddress('https://nowhere.example.test/', POST));
 
       expect(error.message).toBe('outbound URL refused: host nowhere.example.test does not resolve');
+      // A caller reports this as unreachable, not as an address Commonly refuses.
+      expect(error.kind).toBe('unresolved');
       noConnection();
     });
   });
@@ -280,6 +283,7 @@ describe('postToPublicAddress', () => {
       const error = await refusalOf(postToPublicAddress(`http://hooks.example.test:${port}/hop/0`, POST));
 
       expect(error.message).toBe('outbound URL refused: more than 5 redirects');
+      expect(error.kind).toBe('redirects');
       expect(received.map((r) => r.url)).toEqual(['/hop/0', '/hop/1', '/hop/2', '/hop/3', '/hop/4', '/hop/5']);
     });
 
@@ -297,6 +301,8 @@ describe('postToPublicAddress', () => {
 
       expect(error.message).toBe('response body exceeds 1048576 bytes');
       expect(isOutboundUrlRefused(error)).toBe(false);
+      // The endpoint did answer, and the error says with what.
+      expect(error).toMatchObject({ code: 'RESPONSE_TOO_LARGE', status: 200 });
     });
 
     test('with the flag unset, the same local receiver is refused', async () => {

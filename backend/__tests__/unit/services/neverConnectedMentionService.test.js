@@ -26,7 +26,8 @@ jest.mock('../../../services/systemActionLineService', () => ({
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
 const leanOnly = (value) => ({ lean: async () => value });
 
-const { noteNeverConnectedMention, noteOfflineMention } = require('../../../services/neverConnectedMentionService');
+const { noteNeverConnectedMention, noteOfflineMention, agentReach } = require('../../../services/neverConnectedMentionService');
+const { webhookUrlHash } = require('../../../services/agentStateService');
 
 const NOW = new Date('2026-10-31T20:00:00.000Z');
 const byoInstall = {
@@ -191,5 +192,26 @@ describe('a mention of a Bring your own agent that went offline (F300)', () => {
     }));
     expect(await noteOfflineMention(args)).toBe(false);
     expect(mockEmitOffline).not.toHaveBeenCalled();
+  });
+
+  // A push webhook whose last delivery failed derives gone-dark for the pod's
+  // status line. These notices, and the hand-off to the pod's host that reads
+  // the same agentReach, are about a listener, so they stay silent: the mention
+  // is still delivered to the webhook and retried.
+  it('says nothing about a push webhook whose last delivery failed, and agentReach reads it as unknown', async () => {
+    const url = 'https://x.test/hook';
+    mockFindInstall.mockReturnValue(leanOnly({
+      ...byoInstall,
+      config: { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: url } },
+      webhookDelivery: {
+        urlHash: webhookUrlHash(url), lastAttemptAt: NOW, lastFailedAt: NOW, lastFailure: 'http', lastFailureStatus: 502,
+      },
+    }));
+    expect(await noteOfflineMention(args)).toBe(false);
+    expect(mockEmitOffline).not.toHaveBeenCalled();
+    const reach = await agentReach({
+      podId: 'pod-1', agentName: 'nova', instanceId: 'default', now: NOW,
+    });
+    expect(reach.state).toBe('unknown');
   });
 });

@@ -6,14 +6,17 @@
  *    fresh → listening, stale → gone-dark
  *  - the union of BOTH token stores decides (finding D: legacy/new split
  *    made live agents read null)
- *  - native and push-webhook installs are 'reachable' by construction
+ *  - native installs are 'reachable' by construction; a push webhook is
+ *    measured by its last delivery to the URL registered now
  *  - gateway/cloud classes are 'unknown' — never guessed (finding A)
  *  - fixCommand attaches ONLY for the owner, only in fixable states
  *    (split key: instructions to someone who can't perform them are the
  *    P1/P2 contradiction)
  */
 
-const { deriveAgentState, offersConnect, AGENT_LISTENING_STALE_MS } = require('../../../services/agentStateService');
+const {
+  deriveAgentState, offersConnect, AGENT_LISTENING_STALE_MS, webhookUrlHash, WEBHOOK_RUN_INSTRUCTION,
+} = require('../../../services/agentStateService');
 
 const NOW = 1_700_000_000_000;
 
@@ -194,14 +197,82 @@ describe('deriveAgentState', () => {
     }
   });
 
-  test('a push webhook (webhookUrl set) is reachable regardless of token use', () => {
-    const row = deriveAgentState(
-      byoInstall({ config: { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: 'https://x.example/cap' } } }),
-      [],
-      'owner-1',
-      NOW,
-    );
-    expect(row.state).toBe('reachable');
+  describe('a push webhook is measured by its last delivery, never assumed reachable', () => {
+    const URL = 'https://x.example/cap';
+    const pushInstall = (webhookDelivery) => byoInstall({
+      config: { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: URL } },
+      ...(webhookDelivery === undefined ? {} : { webhookDelivery }),
+    });
+    const at = (msAgo) => new Date(NOW - msAgo);
+
+    test('nothing sent to it yet reads unknown, not reachable, whatever its tokens say', () => {
+      const row = deriveAgentState(pushInstall(), [{ lastListenedAt: at(1_000) }], 'owner-1', NOW);
+      expect(row.state).toBe('unknown');
+      expect(row.lastUsedAt).toBeNull();
+      expect(row.deliveryError).toBeUndefined();
+      expect(row.fixCommand).toBeUndefined();
+    });
+
+    test('an endpoint that answered the last delivery is reachable, as of that answer', () => {
+      const row = deriveAgentState(pushInstall({
+        urlHash: webhookUrlHash(URL), lastAttemptAt: at(60_000), lastOkAt: at(60_000),
+      }), [], 'owner-1', NOW);
+      expect(row.state).toBe('reachable');
+      expect(row.lastUsedAt).toBe(at(60_000).toISOString());
+      expect(row.deliveryError).toBeUndefined();
+    });
+
+    test('a failure after the last answer is gone-dark, with what failed and when', () => {
+      const install = pushInstall({
+        urlHash: webhookUrlHash(URL),
+        lastAttemptAt: at(30_000),
+        lastOkAt: at(3_600_000),
+        lastFailedAt: at(30_000),
+        lastFailure: 'http',
+        lastFailureStatus: 502,
+      });
+      const owner = deriveAgentState(install, [], 'owner-1', NOW);
+      expect(owner.state).toBe('gone-dark');
+      expect(owner.lastUsedAt).toBe(at(3_600_000).toISOString());
+      expect(owner.deliveryError).toEqual({ at: at(30_000).toISOString(), kind: 'http', status: 502 });
+      expect(owner.fixCommand).toBe(WEBHOOK_RUN_INSTRUCTION);
+      // The explanation goes to every viewer; the instruction only to the owner.
+      const viewer = deriveAgentState(install, [], 'someone-else', NOW);
+      expect(viewer.deliveryError).toEqual(owner.deliveryError);
+      expect(viewer.fixCommand).toBeUndefined();
+    });
+
+    test('a failure on a URL that never answered is gone-dark with no last answer', () => {
+      const row = deriveAgentState(pushInstall({
+        urlHash: webhookUrlHash(URL), lastAttemptAt: at(5_000), lastFailedAt: at(5_000), lastFailure: 'timeout',
+      }), [], 'owner-1', NOW);
+      expect(row.state).toBe('gone-dark');
+      expect(row.lastUsedAt).toBeNull();
+      expect(row.deliveryError).toEqual({ at: at(5_000).toISOString(), kind: 'timeout' });
+    });
+
+    test('an answer after a failure clears it', () => {
+      const row = deriveAgentState(pushInstall({
+        urlHash: webhookUrlHash(URL), lastOkAt: at(1_000), lastFailedAt: at(9_000), lastFailure: 'network',
+      }), [], 'owner-1', NOW);
+      expect(row.state).toBe('reachable');
+      expect(row.deliveryError).toBeUndefined();
+    });
+
+    test('an outcome recorded for another URL says nothing about this one', () => {
+      const row = deriveAgentState(pushInstall({
+        urlHash: webhookUrlHash('https://old.example/hook'), lastFailedAt: at(1_000), lastFailure: 'http', lastFailureStatus: 500,
+      }), [], 'owner-1', NOW);
+      expect(row.state).toBe('unknown');
+      expect(row.deliveryError).toBeUndefined();
+    });
+
+    test('a status rides only on an HTTP failure, and an unknown kind reads as a network failure', () => {
+      const row = deriveAgentState(pushInstall({
+        urlHash: webhookUrlHash(URL), lastFailedAt: at(1_000), lastFailure: 'bogus', lastFailureStatus: 500,
+      }), [], 'owner-1', NOW);
+      expect(row.deliveryError).toEqual({ at: at(1_000).toISOString(), kind: 'network' });
+    });
   });
 
   test('gateway/cloud classes are unknown — never guessed from a shared boot timestamp (finding A)', () => {

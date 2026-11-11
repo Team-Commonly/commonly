@@ -841,7 +841,15 @@
       "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back.",
       "awayTwo": "{{first}} and {{second}} aren't answering right now",
       "awayMany_one": "{{first}}, {{second}} and {{formattedCount}} other aren't answering right now",
-      "awayMany_other": "{{first}}, {{second}} and {{formattedCount}} others aren't answering right now"
+      "awayMany_other": "{{first}}, {{second}} and {{formattedCount}} others aren't answering right now",
+      "webhookFailed": "{{agentName}} didn't get the last message ({{reason}}, {{age}}). It can't get new ones until its endpoint is back."
+    },
+    "webhookFailure": {
+      "httpStatus": "HTTP {{status}}",
+      "http": "HTTP error",
+      "timeout": "timed out",
+      "network": "couldn't connect",
+      "refused": "address not allowed"
     },
     "typing": {
       "one": "{{name}} is thinking…",
@@ -860,7 +868,10 @@
       "neverOwnerConnect": "@{{handle}} isn't connected — it won't see this.",
       "neverPeer": "@{{handle}} isn't connected — it won't see this. Its owner can connect it.",
       "darkOwner": "@{{handle}} hasn't checked in for a while and may not answer. Wake it: {{command}}",
-      "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer."
+      "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer.",
+      "typeaheadWebhook": "Agent · @{{handle}} — didn't get the last message",
+      "webhookOwner": "@{{handle}} didn't get the last message and may not get this one. Fix: {{command}}",
+      "webhookPeer": "@{{handle}} didn't get the last message and may not get this one."
     },
     "mobile": {
       "showPods": "Show pods",

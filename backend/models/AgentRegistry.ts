@@ -219,6 +219,15 @@ export interface IAgentInstallationRegistry extends Document {
   lastFoundWorkAt?: Date | null;
   installedBy: Types.ObjectId;
   skillLoad?: { at: Date; mounted: string[]; conflicted: string[]; status?: 'available' | 'unavailable' };
+  /** The last push-webhook delivery outcome, for the URL hashed in urlHash; see agentStateService. */
+  webhookDelivery?: {
+    urlHash?: string;
+    lastAttemptAt?: Date;
+    lastOkAt?: Date;
+    lastFailedAt?: Date;
+    lastFailure?: 'http' | 'timeout' | 'network' | 'refused';
+    lastFailureStatus?: number;
+  };
   usage: {
     lastUsedAt?: Date;
     totalCalls: number;
@@ -274,6 +283,20 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     skillLoad: {
       type: new Schema({ at: Date, mounted: [String], conflicted: [String], status: { type: String, enum: ['available', 'unavailable'] } }, { _id: false }),
+      default: undefined,
+    },
+    // A push webhook's last delivery, so its status is measured, not assumed.
+    // Only the failure's kind and HTTP status are kept: transport error text
+    // can carry the installer's URL credentials.
+    webhookDelivery: {
+      type: new Schema({
+        urlHash: String,
+        lastAttemptAt: Date,
+        lastOkAt: Date,
+        lastFailedAt: Date,
+        lastFailure: { type: String, enum: ['http', 'timeout', 'network', 'refused'] },
+        lastFailureStatus: Number,
+      }, { _id: false }),
       default: undefined,
     },
     usage: {

@@ -60,14 +60,30 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 // bounds its length.
 const MAX_REASON_LENGTH = 200;
 
+/**
+ * Why a URL was refused, for a caller that reports it without the message
+ * (which names the host): the address or the response is not allowed, the
+ * host does not resolve, or the destination redirected too many times.
+ */
+export type OutboundRefusalKind = 'refused' | 'unresolved' | 'redirects';
+
 class OutboundUrlRefusedError extends Error {
   readonly code = OUTBOUND_URL_REFUSED;
 
-  constructor(reason: string) {
+  readonly kind: OutboundRefusalKind;
+
+  constructor(reason: string, kind: OutboundRefusalKind = 'refused') {
     super(`outbound URL refused: ${reason.slice(0, MAX_REASON_LENGTH)}`);
     this.name = 'OutboundUrlRefusedError';
+    this.kind = kind;
   }
 }
+
+/**
+ * The code on the error a request ends with when a response body passes its
+ * cap. It carries the response's status: the endpoint did answer.
+ */
+export const RESPONSE_TOO_LARGE = 'RESPONSE_TOO_LARGE';
 
 /**
  * True for the error this module throws when it refuses a URL or a redirect
@@ -167,7 +183,7 @@ const getFromAllowedHost = async (
       return { ok: true, status: response.status, bytes: await readBytesCapped(response, maxBytes) };
     }
     await response.body?.cancel();
-    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`);
+    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`, 'redirects');
     request = toAllowedRequest(location, allowedOrigins, request.url);
   }
 };
@@ -418,9 +434,9 @@ const toPublicDestination = async (
   const answers: dns.LookupAddress[] = family
     ? [{ address: host, family }]
     : await dns.promises.lookup(host, { all: true, verbatim: true }).catch(() => {
-      throw new OutboundUrlRefusedError(`host ${host} does not resolve`);
+      throw new OutboundUrlRefusedError(`host ${host} does not resolve`, 'unresolved');
     });
-  if (!answers.length) throw new OutboundUrlRefusedError(`host ${host} does not resolve`);
+  if (!answers.length) throw new OutboundUrlRefusedError(`host ${host} does not resolve`, 'unresolved');
   // Every answer must pass, not just the first, so a name with a public and a
   // private record is refused rather than decided by which one is used.
   const refused = answers.find((answer) => !isAllowedAddress(answer.address, policy.allowPrivate()));
@@ -505,7 +521,7 @@ const requestPinned = (
       if (settled) return;
       if (received + chunk.length > read.maxBytes) {
         if (read.overflow === 'error') {
-          req.destroy(new Error(`response body exceeds ${read.maxBytes} bytes`));
+          req.destroy(Object.assign(new Error(`response body exceeds ${read.maxBytes} bytes`), { code: RESPONSE_TOO_LARGE, status }));
           return;
         }
         chunks.push(chunk.subarray(0, read.maxBytes - received));
@@ -549,7 +565,7 @@ export const postToPublicAddress = async (
       const ok = response.status >= 200 && response.status < 300;
       return { ok, status: response.status, text: response.text };
     }
-    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`);
+    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`, 'redirects');
     if (response.status !== 307 && response.status !== 308) {
       const { 'Content-Type': _contentType, ...rest } = request.headers;
       request = { method: 'GET', headers: rest };
@@ -620,7 +636,7 @@ export const getFromPublicAddress = async (rawUrl: string): Promise<PublicPageRe
       };
     }
     if (redirects >= MAX_FETCH_REDIRECTS) {
-      throw new OutboundUrlRefusedError(`more than ${MAX_FETCH_REDIRECTS} redirects`);
+      throw new OutboundUrlRefusedError(`more than ${MAX_FETCH_REDIRECTS} redirects`, 'redirects');
     }
     destination = await toPublicDestination(response.location, destination.url, AGENT_FETCH_POLICY);
   }
