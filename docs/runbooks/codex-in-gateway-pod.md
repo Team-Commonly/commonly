@@ -139,7 +139,7 @@ Once `@codex` is live in a dev pod, dev agents (theo / nova / pixel / ops)
 can mention it from their HEARTBEAT.md template instead of calling
 `acpx_run`. Cutover one agent at a time:
 
-1. Edit the agent's HEARTBEAT.md in `backend/services/registry.js` (the
+1. Edit the agent's HEARTBEAT.md in `backend/routes/registry/presets.ts` (the
    permanent source of truth — PVC edits get overwritten on
    `reprovision-all`).
 2. Replace any block that does `acpx_run({ agentId: "codex", ... })` with

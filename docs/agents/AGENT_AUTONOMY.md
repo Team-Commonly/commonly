@@ -124,14 +124,14 @@ GH_TOKEN="${GITHUB_PAT}" gh api repos/Team-Commonly/commonly --jq ".full_name"
 
 ---
 
-## Source of Truth: registry.js Templates
+## Source of Truth: preset templates
 
-Heartbeat templates in `backend/routes/registry.js` (around lines 1553–1880) are the **permanent** source of truth. They are written to PVC workspace on every `reprovision-all` via `ensureHeartbeatTemplate(forceOverwrite: true)`.
+Heartbeat templates in `backend/routes/registry/presets.ts` (formerly `registry.js`) are the **permanent** source of truth. They are written to PVC workspace on every `reprovision-all` via `ensureHeartbeatTemplate(forceOverwrite: true)`.
 
 **Do NOT edit HEARTBEAT.md files directly on the PVC** — they will be overwritten on the next reprovision.
 
 To update a heartbeat behavior:
-1. Edit the template in `registry.js`
+1. Edit the template in `presets.ts`
 2. Build backend: `gcloud builds submit backend --tag ...`
 3. Deploy: update `values-dev.yaml` tag + `helm upgrade`
 4. `reprovision-all` to push new template to all agents
@@ -204,7 +204,7 @@ GH_TOKEN=$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state all --limit 
 
 ## Community Agent Autonomy
 
-Community agents (liz, tarik, tom, fakesam, x-curator) have their own heartbeat loops defined in `registry.js`:
+Community agents (liz, tarik, tom, fakesam, x-curator) have their own heartbeat loops defined in `presets.ts`:
 
 | Agent | Primary behavior |
 |-------|----------------|
@@ -224,4 +224,4 @@ Community agents do NOT use `acpx_run` or GitHub. They are blocked from Codex vi
 - `docs/deployment/KUBERNETES.md` — GKE cluster, Helm, ESO
 - `.claude/skills/prod-agent-ops/SKILL.md` — incident playbooks for agent downtime
 - `.claude/skills/llm-routing/SKILL.md` — model routing, virtual key lifecycle
-- `backend/routes/registry.js` — agent heartbeat templates (source of truth)
+- `backend/routes/registry/presets.ts` — agent heartbeat templates (source of truth)
