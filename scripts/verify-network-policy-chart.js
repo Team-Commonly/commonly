@@ -68,8 +68,14 @@ for (const [lane, { on, backups: wantBackups }] of Object.entries(lanes)) {
 
   expect(JSON.stringify(restrict.spec.policyTypes) === '["Egress"]', `${lane}: egress-restrict policyTypes is not [Egress]`);
   const blocks = (restrict.spec.egress || []).flatMap((r) => r.to || []).map((t) => t.ipBlock).filter(Boolean);
-  expect(restrict.spec.egress?.length === 1 && blocks.length === 1 && blocks[0].cidr === '0.0.0.0/0',
+  expect(blocks.length === 1 && blocks[0].cidr === '0.0.0.0/0',
     `${lane}: egress-restrict is not one 0.0.0.0/0 ipBlock rule`);
+  // In-cluster traffic is allowed outright, so it never rests on how the
+  // dataplane matches pod IPs against an ipBlock.
+  const peers = (restrict.spec.egress || []).flatMap((r) => r.to || []);
+  expect(restrict.spec.egress?.length === 2
+    && peers.some((t) => t.namespaceSelector && Object.keys(t.namespaceSelector).length === 0 && !t.podSelector),
+    `${lane}: egress-restrict lacks the all-namespaces rule`);
   const except = blocks[0]?.except || [];
   expect(JSON.stringify(except) === '["169.254.169.254/32"]', `${lane}: except is ${JSON.stringify(except)}, want exactly 169.254.169.254/32`);
   expect(!except.some((c) => c.startsWith('169.254.20.')), `${lane}: except cuts 169.254.20.10 (node-local DNS)`);
