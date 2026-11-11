@@ -126,7 +126,9 @@ const BringTeammateContent: React.FC<Props> = ({
         // agent, a narrowing confirm or any other refusal leaves it out.
         if (response?.status === 409 && response.data?.code === 'agent_already_in_pod' && response.data.status === 'active') {
           keepNewPod({ podId: current.podId, agentAdded: true });
-        } else if (response?.status === 404) {
+        } else if (response?.status === 404 && (response.data as { error?: string } | undefined)?.error === 'Pod not found') {
+          // Only a missing pod is forgotten: the route also 404s an agent with
+          // no registry row, and that must not make a new pod on every press.
           forgetNewPod();
           throw error;
         } else {
@@ -290,6 +292,9 @@ const BringTeammateContent: React.FC<Props> = ({
   return children ? <>{children(card)}</> : card;
 };
 const V2BringTeammate: React.FC<Props> = (props) => (
-  <BringTeammateContent key={`${props.podId}.${props.userId}.${props.source}`} {...props} />
+  <BringTeammateContent
+    key={`${props.podId}.${props.userId}.${props.source}.${props.newPod ? `${props.newPod.agentName}.${props.newPod.instanceId}` : ''}`}
+    {...props}
+  />
 );
 export default V2BringTeammate;

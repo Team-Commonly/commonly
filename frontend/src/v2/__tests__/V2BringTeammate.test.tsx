@@ -260,6 +260,19 @@ describe('from the workspace: a new pod with the agent in it (D288)', () => {
     expect(mockPost.mock.calls.map(([url]) => url)).toEqual(['/api/pods', addPath, `/api/pods/${newPodId}/invites`]);
   });
 
+  test('a 404 for the agent, not the pod, keeps the pod and says the agent is not in it', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(404, { error: 'Agent not found in registry' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.getByTestId('teammate-agent-not-added')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').podId).toBe(newPodId);
+  });
+
   test('a pod another tab made since this card mounted is reused, not duplicated', async () => {
     renderCard();
     localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: newPodId, agentAdded: true }));
