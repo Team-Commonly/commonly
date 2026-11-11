@@ -323,8 +323,11 @@ export const scan = async ({
   // in memory rather than with a query per message.
   const eligiblePods = [...new Set(eligible.map((m) => String(m.pod_id)))];
   const { rows: allInPods } = await pgQuery(
+    // System lines are stored under the agent they're about; one is not that
+    // agent answering (F434).
     'SELECT id, pod_id, user_id, created_at FROM messages'
-    + ' WHERE pod_id = ANY($1) AND created_at >= $2 ORDER BY created_at ASC',
+    + " WHERE pod_id = ANY($1) AND created_at >= $2 AND COALESCE(message_type, '') <> 'system'"
+    + ' ORDER BY created_at ASC',
     [eligiblePods, windowStart],
   );
 
@@ -492,6 +495,7 @@ const resolveOpenEpisodes = async ({
     const { rows } = await pgQuery(
       'SELECT id, pod_id, user_id, created_at FROM messages'
       + ' WHERE pod_id = $1 AND created_at > $2 AND user_id <> $3'
+      + " AND COALESCE(message_type, '') <> 'system'"
       + ' ORDER BY created_at ASC LIMIT 25',
       [String(ep.podId), new Date(ep.firstTypedAt), String(ep.userId)],
     );

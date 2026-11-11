@@ -94,6 +94,27 @@ describe('pod context members', () => {
     expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
   });
 
+  // F434: "Rivet isn't connected yet" is stored under Rivet's bot user, but
+  // Rivet didn't write it. It is marked as the platform's and gets no @handle.
+  it('marks a system line stored under an agent as system, with no mention', async () => {
+    AgentMessageService.getRecentMessages.mockResolvedValueOnce([
+      {
+        id: 'm1', username: 'Rivet', userId: { _id: BOT_ID, username: 'Rivet' }, messageType: 'system', content: "Rivet isn't connected yet",
+      },
+      { id: 'm2', username: 'Rivet', userId: { _id: BOT_ID, username: 'Rivet' }, content: 'shipped' },
+    ]);
+
+    const context = await PodContextService.getPodContext({
+      podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none',
+    });
+
+    const [systemLine, post] = context.recentMessages;
+    expect(systemLine).toMatchObject({ id: 'm1', system: true });
+    expect(systemLine).not.toHaveProperty('mention');
+    expect(post).toMatchObject({ id: 'm2', mention: 'codex-swe-dogfood' });
+    expect(post).not.toHaveProperty('system');
+  });
+
   // F362: commonly_request_decision names its deciders by user id, and this
   // roster is where an agent reads who is in the pod.
   it("gives each member the user id a decision's deciderUserIds takes", async () => {

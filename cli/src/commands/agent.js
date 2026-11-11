@@ -905,7 +905,10 @@ const findOwnPost = (messages, earlierIds) => {
     // With `self`, only THIS agent's own post counts. Without it (an older
     // server), fall back to the legacy any-bot test — which drops this agent's
     // reply whenever another agent answers first (#757).
-    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && (serverKnowsSelf ? m.self === true : true)) {
+    // A system line is stored under the agent it is about; it is never this
+    // agent's post, even from a server that predates F434's `self` fix.
+    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && m.messageType !== 'system'
+      && (serverKnowsSelf ? m.self === true : true)) {
       return {
         id: String(m._id || m.id),
         author: m.username || 'unknown',

@@ -141,6 +141,43 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
     });
   });
 
+  // F434: the route serves the real `self` flag. A system line stored under the
+  // caller's bot user ("seat isn't connected yet") must reach it as self:false.
+  test('a system line stored under the caller reaches it as self:false', async () => {
+    const originalHost = process.env.PG_HOST;
+    process.env.PG_HOST = 'configured';
+    let realService;
+    jest.isolateModules(() => {
+      jest.doMock('../../../models/pg/Message', () => ({
+        findByPodId: jest.fn().mockResolvedValue([
+          {
+            id: 1, user_id: 'bot-1', username: 'seat', is_bot: true, message_type: 'system', content: "seat isn't connected yet",
+          },
+          {
+            id: 2, user_id: 'bot-1', username: 'seat', is_bot: true, message_type: 'text', content: 'my reply',
+          },
+        ]),
+      }));
+      realService = jest.requireActual('../../../services/agentMessageService');
+    });
+    AgentMessageService.getRecentMessages.mockImplementation(
+      (...args) => realService.getRecentMessages(...args),
+    );
+    try {
+      const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+      expect(res.status).toBe(200);
+      expect(res.body.messages.map((m) => [m.content, m.self])).toEqual([
+        ["seat isn't connected yet", false],
+        ['my reply', true],
+      ]);
+    } finally {
+      jest.dontMock('../../../models/pg/Message');
+      AgentMessageService.getRecentMessages.mockReset();
+      if (originalHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = originalHost;
+    }
+  });
+
   test('reports end-of-history when the extra row is absent', async () => {
     AgentMessageService.getRecentMessages.mockResolvedValue([
       { id: 'oldest', createdAt: '2026-07-31T21:00:00.000Z' },
