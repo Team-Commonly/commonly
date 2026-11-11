@@ -103,6 +103,48 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     expect(result.skippedGuest).toBe(1);
   });
 
+  it('leaves an identity that declared no listener alone, and still nudges its listening twin', async () => {
+    const quiet = await seat('quiet-agent', [{ tokenHash: 'hq', createdAt: ISSUED }]);
+    await AgentInstallation.updateOne({ _id: quiet._id }, { $set: { 'config.runtime.listens': false } });
+    await seat('loud-agent', [{ tokenHash: 'hl', createdAt: ISSUED }]);
+
+    const result = await scan({ now: NOW });
+    expect(result.skippedNoListener).toBe(1);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost.mock.calls[0][0].content).not.toContain('quiet-agent');
+    expect(await StalledConnectEpisode.countDocuments({ agentName: 'quiet-agent' })).toBe(0);
+  });
+
+  describe('an episode opened before the install declared no listener', () => {
+    it('closes on MCP use without offering a listener', async () => {
+      const row = await seat('late-quiet', [{ tokenHash: 'lq', createdAt: ISSUED }]);
+      await AgentInstallation.updateOne({ 'runtimeTokens.tokenHash': 'lq' }, { $set: usageStamp('runtimeTokens.$', mcpClient) });
+      await scan({ now: NOW });
+      expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(1);
+      await AgentInstallation.updateOne({ _id: row._id }, { $set: { 'config.runtime.listens': false } });
+
+      const result = await scan({ now: NOW });
+      expect(result.resolved).toHaveLength(1);
+      const { content } = mockPost.mock.calls[0][0];
+      expect(content).toContain('connected from your MCP client');
+      expect(content).toContain("I won't answer @");
+      expect(content).not.toContain('listener');
+      expect(content).not.toContain('commonly agent run');
+    });
+
+    it('closes quietly when it was never used, since nothing will ever start', async () => {
+      const row = await seat('never-quiet', [{ tokenHash: 'nq', createdAt: ISSUED }]);
+      await scan({ now: NOW });
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      await AgentInstallation.updateOne({ _id: row._id }, { $set: { 'config.runtime.listens': false } });
+
+      const result = await scan({ now: NOW });
+      expect(result.resolved).toHaveLength(1);
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(0);
+    });
+  });
+
   it('tells one person about one token once, across their pod and their room', async () => {
     const owner = await User.create({ username: 'ori', email: 'ori@people.test', password: 'not-a-login' });
     const bot = await botRow('ori-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);

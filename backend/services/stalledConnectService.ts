@@ -67,6 +67,8 @@ export interface StalledScanResult {
   skippedNotStalled: number;
   skippedGuest: number;
   skippedSameToken: number;
+  /** Installs that declared `config.runtime.listens: false`: nothing is meant to run. */
+  skippedNoListener: number;
 }
 
 export interface TokenEpisodeKey {
@@ -225,7 +227,7 @@ export const scan = async ({
   const { AgentInstallation } = require('../models/AgentRegistry');
 
   const result: StalledScanResult = {
-    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0,
+    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0, skippedNoListener: 0,
   };
 
   await resolveConnected({ now, result });
@@ -277,6 +279,13 @@ export const scan = async ({
     if (!issuedAt) continue;
     if (now.getTime() - issuedAt.getTime() < patienceMinutes * MINUTE_MS) {
       result.skippedTooRecent += 1;
+      continue;
+    }
+    // An identity that declared it runs no listener calls Commonly over its API
+    // when it works. Its install greeting already says a mention won't wake it,
+    // so "nothing is running, start it with `commonly agent run`" would be false.
+    if (install.config?.runtime?.listens === false) {
+      result.skippedNoListener += 1;
       continue;
     }
 
@@ -527,11 +536,9 @@ const resolveConnected = async ({
   })));
   const resolveEpisode = async (ep: Record<string, any>): Promise<void> => {
     const install = await AgentInstallation.findById(ep.installationId).lean();
-    // An uninstall keeps the row, and a post here would put the bot back in the pod.
-    if (!install || install.status === 'uninstalled') {
-      // Uninstalled while stalled: close it silently. There is no room to
-      // congratulate and nobody waiting on the promise. Plain `resolve`, not
-      // `resolveActioned`: nobody started the agent the nudge asked about.
+    // Close with no post. Plain `resolve`, not `resolveActioned`: nobody
+    // started the agent the nudge asked about.
+    const closeQuietly = async (): Promise<void> => {
       if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId));
       await StalledConnectEpisode.updateOne(
         { _id: ep._id, status: 'open' },
@@ -540,8 +547,16 @@ const resolveConnected = async ({
       result.resolved.push({
         episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
       });
+    };
+    // An uninstall keeps the row, and a post here would put the bot back in the
+    // pod. There is no room to congratulate and nobody waiting on the promise.
+    if (!install || install.status === 'uninstalled') {
+      await closeQuietly();
       return;
     }
+    // An install that declared no listener can have an episode opened before it
+    // said so. It will never listen, so that episode must not wait for it.
+    const noListener = install.config?.runtime?.listens === false;
     const userTokens = tokensBySeat.get(botKey(String(ep.agentName), String(ep.instanceId))) || [];
     const derived = deriveAgentState(
       install as any, userTokens as any, String(install.installedBy || ''), now.getTime(),
@@ -554,11 +569,14 @@ const resolveConnected = async ({
     let mcpSeenAt: Date | null = null;
     let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
     if (derived.state === 'never-connected') {
-      if (!ep.tokenIssuedAt) return;
-      const since = new Date(ep.tokenIssuedAt);
-      const installTokens = (install as { runtimeTokens?: BotTokens }).runtimeTokens || [];
-      mcpSeenAt = latestMcpSeenSince([installTokens, userTokens], since);
-      if (!mcpSeenAt) return;
+      if (ep.tokenIssuedAt) {
+        const installTokens = (install as { runtimeTokens?: BotTokens }).runtimeTokens || [];
+        mcpSeenAt = latestMcpSeenSince([installTokens, userTokens], new Date(ep.tokenIssuedAt));
+      }
+      if (!mcpSeenAt) {
+        if (noListener) await closeQuietly();
+        return;
+      }
       try {
         const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
           { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;
@@ -594,6 +612,7 @@ const resolveConnected = async ({
             seenAt: mcpSeenAt,
             fixCommand,
             openedOs,
+            noListener,
           })
           : composeStalledConnectResolution({
             displayName: ep.displayName || String(ep.agentName),
