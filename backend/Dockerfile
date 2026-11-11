@@ -22,8 +22,8 @@ FROM node:22
 WORKDIR /app
 
 # OfficeCLI binary. Its one backend caller, the PPTX preview route, was
-# retired (F405); whether anything else in this image runs it is checked
-# before the binary is removed, which is a separate change. Pinned by version and by the SHA-256 recorded below, so a
+# retired (F405), and nothing else in this image runs it. Removing it is a
+# separate change. Pinned by version and by the SHA-256 recorded below, so a
 # future upstream artifact swap fails the build instead of silently shipping.
 # The hashes are the release's SHA256SUMS entries, cross-checked against the
 # downloaded assets on 2026-11-09. They are recorded here rather than fetched
@@ -45,7 +45,7 @@ WORKDIR /app
 #   gateway  (openclaw, `latest`)     1.0.143   ← upstream latest, 2026-07-28
 #
 # Seventy-three releases apart, in one system, for the same file formats: this
-# image renders .pptx for the preview route, the gateway extracts .docx/.pptx
+# image rendered .pptx for the preview route (retired, F405), the gateway extracts .docx/.pptx
 # for commonly_read_attachment. Do not reason about one from the other.
 #
 # Deliberately not "fixed" by bumping to 1.0.143 — the pin is doing its job,

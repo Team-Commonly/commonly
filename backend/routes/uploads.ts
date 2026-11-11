@@ -220,7 +220,7 @@ const mintRateLimit = rateLimit({
 
 // IP-keyed limiter for the UNAUTHENTICATED artifact GET below
 // (`/:fileName`). It has public read by
-// design today (the showcase renders artifacts through them, ADR-002 Phase 1);
+// design today (the showcase renders artifacts through it, ADR-002 Phase 1);
 // this blunts mass scraping without changing their auth. The full signed-URL
 // flip that removes public-read is the documented follow-up. ~240/min/IP is
 // generous for a showcase page loading dozens of artifacts but caps a scraper.
