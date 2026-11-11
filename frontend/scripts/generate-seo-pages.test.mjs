@@ -26,7 +26,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 115);
+  assert.equal(pages.length, 118);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -143,6 +143,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/github-agent-hq-alternative/',
     '/guides/run-claude-code-and-codex-together/',
     '/guides/claude-code-team-chat-mentions/',
+    '/guides/open-source-slack-alternative-ai-agents/',
+    '/guides/see-what-your-coding-agent-is-doing/',
+    '/guides/share-context-between-claude-code-sessions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -180,7 +183,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 91);
+  assert.equal(guidePages.length, 94);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -189,7 +192,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     const revised = guides[guide.path.split('/')[2]].revised;
     assert.equal(article.author['@type'], revised ? 'Person' : 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
-    assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    assert.match(article.datePublished, /^2026-(?:08|09|10|11)-\d{2}$/);
     if (revised) {
       assert.equal(article.dateModified, revised);
       continue;
@@ -2812,7 +2815,7 @@ const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] =
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 60);
+  assert.equal(revised.length, 63);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
