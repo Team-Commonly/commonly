@@ -1,0 +1,45 @@
+# Values for the dev cluster's ingress-nginx release (chart ingress-nginx
+# 4.15.1, release nginx-ingress, namespace ingress-nginx). The release is
+# separate from the commonly chart; apply with:
+#   helm upgrade nginx-ingress ingress-nginx/ingress-nginx --version 4.15.1 \
+#     -n ingress-nginx -f k8s/ingress-nginx/values-dev.yaml
+# One controller on the on-demand dev pool and one on the spot pool, so neither
+# a dev-node drain nor a spot reclaim (ADR-015) takes both. If the spot pool has
+# no nodes, both run on dev. The cloudflared tunnels (values-dev.yaml) are
+# placed the same way.
+controller:
+  replicaCount: 2
+  service:
+    type: ClusterIP
+  tolerations:
+    - key: pool
+      operator: Equal
+      value: dev
+      effect: NoSchedule
+    - key: workload-tier
+      operator: Equal
+      value: spot
+      effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: pool
+                operator: In
+                values: ["dev"]
+          - matchExpressions:
+              - key: workload-tier
+                operator: In
+                values: ["spot"]
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: cloud.google.com/gke-nodepool
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/instance: nginx-ingress
+          app.kubernetes.io/component: controller
+      matchLabelKeys:
+        - pod-template-hash

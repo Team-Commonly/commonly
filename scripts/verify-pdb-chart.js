@@ -6,8 +6,10 @@
 // use minAvailable, which holds a one-replica drain until GKE's timeout.
 // frontend, cloudflared and the web backend must each have one, plus a hostname
 // spread that selects their own pods. The backend's worker is deliberately
-// unguarded: it is one Recreate replica, so a drain just moves it. Renders the
-// chart itself:
+// unguarded: it is one Recreate replica, so a drain just moves it. In the dev
+// lane the edge (cloudflared, and ingress-nginx from k8s/ingress-nginx/
+// values-dev.yaml) is split across the dev and spot pools. Renders the chart
+// itself:
 //   node scripts/verify-pdb-chart.js
 const { execFileSync } = require('child_process');
 const yaml = require('js-yaml');
@@ -45,6 +47,27 @@ const selects = (selector, labels) => {
 const failures = [];
 const expect = (cond, msg) => { if (!cond) failures.push(msg); };
 
+// The edge (cloudflared, and the ingress-nginx controller from its own values
+// file) runs one replica on the on-demand dev pool and one on the spot pool:
+// it may land only on those two pools, tolerates both taints, and a hard spread
+// across node pools over its own pods keeps two replicas off one pool.
+const EDGE_POOLS = [['pool', 'dev'], ['workload-tier', 'spot']];
+const expectEdgePlacement = (who, spec, spreads, labels) => {
+  const terms = spec.affinity?.nodeAffinity?.requiredDuringSchedulingIgnoredDuringExecution?.nodeSelectorTerms || [];
+  const allowed = terms.map((t) => (t.matchExpressions || []).map((e) => `${e.key} ${e.operator} ${(e.values || []).join(',')}`).join(' & '));
+  expect(JSON.stringify(allowed.sort()) === JSON.stringify(EDGE_POOLS.map(([k, v]) => `${k} In ${v}`).sort()),
+    `${who}: required node affinity is ${JSON.stringify(allowed)}, want exactly the dev pool or the spot pool`);
+  expect(!spec.nodeSelector || Object.keys(spec.nodeSelector).length === 0, `${who}: a nodeSelector pins it to one pool`);
+  for (const [key, value] of EDGE_POOLS) {
+    expect((spec.tolerations || []).some((t) => t.key === key && t.value === value && t.effect === 'NoSchedule'),
+      `${who}: does not tolerate ${key}=${value}:NoSchedule`);
+  }
+  const byPool = (spreads || []).find((t) => t.topologyKey === 'cloud.google.com/gke-nodepool' && selects(t.labelSelector, labels));
+  expect(byPool && byPool.whenUnsatisfiable === 'DoNotSchedule' && byPool.maxSkew === 1,
+    `${who}: no hard maxSkew-1 spread across node pools over its own pods`);
+  expect(byPool && (byPool.matchLabelKeys || []).includes('pod-template-hash'), `${who}: its pool spread counts old ReplicaSets mid-roll`);
+};
+
 for (const lane of Object.keys(lanes)) {
   const docs = render(lane);
   const workloads = docs.filter((d) => ['Deployment', 'StatefulSet'].includes(d.kind));
@@ -77,8 +100,23 @@ for (const lane of Object.keys(lanes)) {
   // The positive control: dev, the lane that deploys, renders both.
   if (lane === 'dev') {
     for (const name of GUARDED) expect(workloads.some((x) => x.metadata.name === name), `${lane}: ${name} not rendered`);
+    const tunnel = workloads.find((x) => x.metadata.name === 'cloudflared-commonly-k8s');
+    if (tunnel) {
+      const spec = tunnel.spec.template.spec;
+      expectEdgePlacement(`${lane}: cloudflared`, spec, spec.topologySpreadConstraints, tunnel.spec.template.metadata.labels);
+    }
   }
 }
+
+// The ingress-nginx controller is its own release; its values file must place
+// it like the tunnels. The chart labels controller pods with these three.
+const nginx = yaml.load(require('fs').readFileSync('k8s/ingress-nginx/values-dev.yaml', 'utf8')).controller;
+expect(nginx.replicaCount === 2, `ingress-nginx: replicaCount is ${nginx.replicaCount}, want 2`);
+expectEdgePlacement('ingress-nginx', nginx, nginx.topologySpreadConstraints, {
+  'app.kubernetes.io/name': 'ingress-nginx',
+  'app.kubernetes.io/instance': 'nginx-ingress',
+  'app.kubernetes.io/component': 'controller',
+});
 
 if (failures.length) {
   console.error(failures.join('\n'));

@@ -355,13 +355,40 @@ monitoring:
 cloudflared:
   enabled: true
   namespace: ingress-nginx
-  nodeSelector:
-    pool: dev
+  # One tunnel on the on-demand dev pool and one on the spot pool, so neither a
+  # dev-node drain nor a spot reclaim (ADR-015) takes both. If the spot pool has
+  # no nodes, both run on dev. k8s/ingress-nginx/values-dev.yaml places the
+  # controller the same way.
   tolerations:
     - key: "pool"
       operator: "Equal"
       value: "dev"
       effect: "NoSchedule"
+    - key: "workload-tier"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: pool
+                operator: In
+                values: ["dev"]
+          - matchExpressions:
+              - key: workload-tier
+                operator: In
+                values: ["spot"]
+  extraTopologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: cloud.google.com/gke-nodepool
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: cloudflared-commonly-k8s
+      matchLabelKeys:
+        - pod-template-hash
   ingressService: ingress-nginx-controller.ingress-nginx.svc.cluster.local
 
 litellm:
