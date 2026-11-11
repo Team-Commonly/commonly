@@ -103,6 +103,10 @@ class IntegrationSummaryService {
       source: integration.type,
       sourceLabel: SOURCE_LABELS[integration.type] || 'External',
       serverName: integration.config?.serverName || null,
+      // The summary reaches every pod member: the bot posts it and the pod
+      // asset keeps it. So it names the chat only by fields any member may
+      // read, never by the connector creator's routing state (a GroupMe group
+      // id or join link, a Telegram chat id; INTEGRATION_ROUTING_STATE_CONFIG_KEYS).
       channelName:
         integration.config?.channelName
         || integration.config?.groupName
@@ -110,14 +114,10 @@ class IntegrationSummaryService {
         || integration.config?.username
         || integration.config?.igUserId
         || integration.config?.channelId
-        || integration.config?.groupId
-        || integration.config?.chatId
         || 'channel',
-      channelUrl: integration.config?.channelUrl
-        || integration.config?.groupUrl
-        || null,
+      channelUrl: integration.config?.channelUrl || null,
       serverId: integration.config?.serverId || null,
-      channelId: integration.config?.channelId || integration.config?.chatId || null,
+      channelId: integration.config?.channelId || null,
       summaryType,
     };
   }
