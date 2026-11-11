@@ -86,7 +86,7 @@ describe('registry presets', () => {
       return CATALOG_NEEDS[id] || null;
     };
     expect(needsOf('officecli')).toEqual(['shell']);
-    const problems = PRESET_DEFINITIONS.flatMap((preset) => {
+    const problemsIn = (presets) => presets.flatMap((preset) => {
       const has = RUNTIME_HAS[preset.installHints?.runtime] || [];
       return (preset.defaultSkills || []).flatMap((skill) => {
         const needs = needsOf(skill.id);
@@ -94,7 +94,13 @@ describe('registry presets', () => {
         return needs.filter((need) => !has.includes(need)).map((need) => `${preset.id}:${skill.id} needs ${need}`);
       });
     });
-    expect(problems).toEqual([]);
+    // The check bites: a shell skill on the gateway and an unknown skill both fail.
+    expect(problemsIn([{
+      id: 'probe',
+      installHints: { runtime: 'openclaw' },
+      defaultSkills: [{ id: 'tavily' }, { id: 'no-such-skill' }],
+    }])).toEqual(['probe:tavily needs shell', 'probe:no-such-skill (unclassified)']);
+    expect(problemsIn(PRESET_DEFINITIONS)).toEqual([]);
   });
 
   it('no openclaw preset tells its agent to reach for the gh skill', () => {
