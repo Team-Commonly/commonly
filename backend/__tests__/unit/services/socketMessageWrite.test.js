@@ -16,7 +16,8 @@ const PGPod = require('../../../models/pg/Pod');
 const { syncPodFromMongo } = require('../../../services/pgPodSyncService');
 const MongoMessage = require('../../../models/Message');
 const {
-  writeSocketMessage, MESSAGE_STORE_UNAVAILABLE, MESSAGE_SEND_FAILED_EVENT,
+  writeSocketMessage, refuseSocketMessageType, MESSAGE_STORE_UNAVAILABLE, MESSAGE_TYPE_NOT_ALLOWED,
+  MESSAGE_SEND_FAILED_EVENT,
 } = require('../../../services/socketMessageWrite');
 
 // The refusal names the send so the client can drop its optimistic copy.
@@ -100,5 +101,69 @@ describe('the refused-send event name', () => {
 
     expect(chatRoom).toContain(`socket.on('${MESSAGE_SEND_FAILED_EVENT}', handleSendFailed)`);
     expect(chatRoom).toContain(`socket.off('${MESSAGE_SEND_FAILED_EVENT}', handleSendFailed)`);
+  });
+});
+
+// A person's socket send may be only what the legacy composer sends. Any other
+// type is the platform's: a client-chosen 'system' is stored under the sender
+// and read everywhere as a kernel line. Refused, never coerced.
+describe('the socket message type', () => {
+  const check = (messageType) => refuseSocketMessageType({ podId: 'p1', content: 'hi', messageType });
+  const refused = (messageType) => ({
+    ...MESSAGE_TYPE_NOT_ALLOWED, podId: 'p1', content: 'hi', messageType: String(messageType),
+  });
+
+  it('admits text, which the composer sends', () => {
+    expect(check('text')).toBeNull();
+  });
+
+  it('admits image, which the composer sends after an upload', () => {
+    expect(check('image')).toBeNull();
+  });
+
+  it('refuses system, the platform\'s line type', () => {
+    expect(check('system')).toEqual(refused('system'));
+  });
+
+  it('refuses card, the platform\'s card type', () => {
+    expect(check('card')).toEqual(refused('card'));
+  });
+
+  it('refuses file, which no socket composer sends', () => {
+    expect(check('file')).toEqual(refused('file'));
+  });
+
+  it('refuses gif, which no socket composer sends', () => {
+    expect(check('gif')).toEqual(refused('gif'));
+  });
+
+  it('refuses a near-miss spelling rather than normalising it', () => {
+    expect(check('System')).toEqual(refused('System'));
+  });
+
+  it('refuses a type that is not a string', () => {
+    expect(check({ toString: () => 'text' })).toEqual(expect.objectContaining({ code: 'MESSAGE_TYPE_NOT_ALLOWED' }));
+    expect(check(null)).toEqual(refused(null));
+  });
+
+  // The handler is inline in server.ts and needs a live server; pin that it
+  // answers the refusal on the refused-send event before either store write.
+  describe('in the sendMessage handler', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../../server.ts'), 'utf8');
+    const start = src.indexOf("'sendMessage',");
+    const handler = src.slice(start, src.indexOf('socket.on(', start + 1));
+    const refusal = handler.indexOf('refuseSocketMessageType(');
+
+    it('checks the type before the PG and the MongoDB write', () => {
+      expect(refusal).toBeGreaterThan(-1);
+      expect(refusal).toBeLessThan(handler.indexOf('writeSocketMessage('));
+      expect(refusal).toBeLessThan(handler.indexOf('new Message('));
+    });
+
+    it('answers on the refused-send event and stops', () => {
+      const branch = handler.slice(refusal, handler.indexOf('}', handler.indexOf('if (typeRefusal)')) + 1);
+      expect(branch).toContain('socket.emit(socketWrite.MESSAGE_SEND_FAILED_EVENT, typeRefusal)');
+      expect(branch).toContain('return;');
+    });
   });
 });
