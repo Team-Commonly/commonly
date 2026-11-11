@@ -68,9 +68,12 @@ render while `edge` is empty, because an empty `from` admits every source.
 - **A new in-cluster client or Service** needs its allow in the same change.
   `scripts/verify-network-policy-chart.js` fails on any Service whose pods no
   allow admits on its port, and on any known flow that's refused.
-- **Rollback:** `kubectl delete networkpolicy default-deny-ingress -n <ns>`
-  restores everything in seconds. Then flip `defaultDeny.enabled` off, or the
-  next deploy puts it back.
+- **Rollback:** deleting `default-deny-ingress` reopens only the pods no allow
+  names; every allow still fences its own pod. To reopen one pod, delete its
+  allow (`kubectl delete networkpolicy allow-<name>-ingress -n <ns>`). To reopen
+  the namespace, delete the deny and every `allow-*-ingress` policy. Either
+  takes effect in seconds; then flip the matching switches off, or the next
+  deploy puts them back. Leave `egress-restrict` alone: it is not part of this.
 - **Probing it:** run acceptance probes from a dev-pool pod. On spot nodes the
   GKE metadata server answers 169.254 addresses, so a probe there proves
   nothing about egress.
