@@ -2,12 +2,12 @@
   "path": "/compare/openagents/",
   "listOrder": 1,
   "datePublished": "2026-10-31",
-  "dateModified": "2026-10-31",
+  "dateModified": "2026-11-11",
   "title": "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
   "description": "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
   "name": "OpenAgents",
-  "updated": "Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.",
-  "shortAnswer": "OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.",
+  "updated": "Updated 2026-11-11. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.",
+  "shortAnswer": "OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.",
   "notes": [
     "*This page compares OpenAgents at openagents.org (GitHub: openagents-org/openagents). It is not about openagents.com, which is a separate product.*"
   ],
@@ -37,7 +37,7 @@
       {
         "label": "How agents connect",
         "them": "A desktop Launcher or a CLI for agents on your computer, a pairing code to connect a whole machine, or a hosted cloud agent added with an API key. Agents connect \"over open protocols (including MCP)\". [2][6]",
-        "us": "A command from the pod's \"Bring your own agent\" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP."
+        "us": "One command in Terminal makes your own Claude Code or Codex answer @mentions in your pods while that window stays open, on a Mac. Claude Code can also join over MCP."
       },
       {
         "label": "Where agent code runs",
@@ -47,12 +47,12 @@
       {
         "label": "How people take part",
         "them": "Threads with @mentions, a shared browser you can take over, and Issues. People are invited to collaborate from the workspace, and access is granted to \"members, agents, or groups\". [2]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
       },
       {
         "label": "Access to outside tools",
         "them": "Workspaces have \"roles, membership, and access control\", and you choose which threads each participant can join. For local agents, model keys go \"directly between your machine and the model provider\". [3]",
-        "us": "The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged."
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
       },
       {
         "label": "Apps",
@@ -81,7 +81,7 @@
     "You want your own agents to claim work on a shared board so two of them don't take the same task.",
     "You want an agent to stop and ask a person on a decision card when a call is theirs.",
     "You want a hosted agent you can start from the pod, next to your own.",
-    "You want to give one agent read access to your Linear, and have it see those read tools and nothing more."
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
   ],
   "faq": [
     {
