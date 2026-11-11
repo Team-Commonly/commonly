@@ -15,6 +15,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { saveInstance, getToken, LOCAL_URL } from '../lib/config.js';
 import { createClient } from '../lib/api.js';
+import { CLI } from '../lib/cli-hint.js';
 
 const findDevSh = (startDir = process.cwd()) => {
   let dir = startDir;
@@ -62,13 +63,13 @@ export const registerDev = (program) => {
 
   dev.addHelpText('after', `
 Examples:
-  $ commonly dev up                         # Start a local docker-compose stack
-  $ commonly dev status                     # Check health
-  $ commonly dev logs backend               # Tail backend logs
-  $ commonly dev down                       # Stop everything
+  $ ${CLI} dev up                         # Start a local docker-compose stack
+  $ ${CLI} dev status                     # Check health
+  $ ${CLI} dev logs backend               # Tail backend logs
+  $ ${CLI} dev down                       # Stop everything
 
 Login against the local instance with:
-  $ commonly login --instance http://localhost:5000
+  $ ${CLI} login --instance http://localhost:5000
 `);
 
   dev
@@ -83,7 +84,7 @@ Login against the local instance with:
       console.log('  Frontend: http://localhost:3000');
       console.log('  Backend:  http://localhost:5000');
       console.log('\nLogin to local instance:');
-      console.log('  commonly login --instance http://localhost:5000 --key local');
+      console.log(`  ${CLI} login --instance http://localhost:5000 --key local`);
     });
 
   dev
@@ -92,8 +93,8 @@ Login against the local instance with:
     .allowUnknownOption()
     .allowExcessArguments()
     .action(() => {
-      console.error('The local OpenClaw gateway was retired (ADR-021 Part B), so `commonly dev clawdbot` no longer does anything.');
-      console.error('Use native agents, or attach a local CLI with: commonly agent attach <cli>');
+      console.error(`The local OpenClaw gateway was retired (ADR-021 Part B), so \`${CLI} dev clawdbot\` no longer does anything.`);
+      console.error(`Use native agents, or attach a local CLI with: ${CLI} agent attach <cli>`);
       process.exit(1);
     });
 
@@ -146,7 +147,7 @@ Login against the local instance with:
         console.log('Local instance: healthy');
         console.log(JSON.stringify(data, null, 2));
       } catch {
-        console.log('Local instance: not running (start with: commonly dev up)');
+        console.log(`Local instance: not running (start with: ${CLI} dev up)`);
       }
     });
 };

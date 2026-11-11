@@ -10,6 +10,7 @@ import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
 import { createPollLiveness, formatStall, resolvePollLivenessMs } from './poll-liveness.js';
+import { CLI } from './cli-hint.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -168,7 +169,7 @@ export const startPoller = ({
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
             + `This connection takes its key from --token, then COMMONLY_TOKEN, then your saved login. `
             + `If the key was rotated or revoked, re-run with the new key in --token or COMMONLY_TOKEN; `
-            + `with neither set, run commonly login${loginInstance ? ` --instance ${loginInstance}` : ''}.`,
+            + `with neither set, run ${CLI} login${loginInstance ? ` --instance ${loginInstance}` : ''}.`,
           ));
           running = false;
           return;

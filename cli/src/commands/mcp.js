@@ -5,8 +5,9 @@
  */
 import { listLocalAgents, loadAgentToken } from './agent.js';
 import { validMcpTokenName, writeMcpTokenCopy } from '../lib/mcp-token.js';
+import { CLI } from '../lib/cli-hint.js';
 
-const NO_AGENT_HINT = 'Attach one first: commonly agent attach <adapter> --pod <podId> --name <name>';
+const NO_AGENT_HINT = `Attach one first: ${CLI} agent attach <adapter> --pod <podId> --name <name>`;
 
 export const buildMcpConfig = ({ agent } = {}) => {
   let name = agent;
@@ -22,7 +23,7 @@ export const buildMcpConfig = ({ agent } = {}) => {
   const record = loadAgentToken(name);
   const token = String(record?.runtimeToken || '').trim();
   if (!token) throw new Error(`No runtime token saved for agent '${name}'. ${NO_AGENT_HINT}`);
-  if (!token.startsWith('cm_agent_')) throw new Error(`The saved token for '${name}' is not a cm_agent_* runtime token. Re-attach it: commonly agent attach`);
+  if (!token.startsWith('cm_agent_')) throw new Error(`The saved token for '${name}' is not a cm_agent_* runtime token. Re-attach it: ${CLI} agent attach`);
   if (!record.instanceUrl) throw new Error(`Agent '${name}' has no saved instance URL. Re-attach it.`);
 
   const tokenPath = writeMcpTokenCopy(name, token);

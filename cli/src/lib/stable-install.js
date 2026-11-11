@@ -24,6 +24,7 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, sep } from 'path';
 import { resolveLaunch } from './windows-command.js';
+import { NPX } from './cli-hint.js';
 
 export const CLI_PACKAGE = '@commonlyai/cli';
 
@@ -35,7 +36,7 @@ export const MIN_NODE_MAJOR = 22;
 // version that invoked it, so what runs resident is what the user installed.
 export const stableCliDir = (home = homedir()) => join(home, '.commonly', 'cli');
 /** The one line that sets up or updates a computer, for advice the CLI prints. */
-export const DAEMON_SETUP_LINE = `npx -y ${CLI_PACKAGE}@latest daemon setup`;
+export const DAEMON_SETUP_LINE = `${NPX} -y ${CLI_PACKAGE}@latest daemon setup`;
 
 /** True when this process runs the copy `daemon setup` installed under $HOME. */
 export const runsFromStableInstall = (entry = process.argv[1], home = homedir()) => (

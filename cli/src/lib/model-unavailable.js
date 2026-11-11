@@ -26,6 +26,7 @@
  * turn's own provider, so it never counts (public-tool-error.js).
  */
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
+import { CLI } from './cli-hint.js';
 
 /** How long one model's hint stays posted before the seat may post it again. */
 export const MODEL_UNAVAILABLE_HINT_WINDOW_MS = 60 * 60 * 1000;
@@ -149,5 +150,5 @@ export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
     return `${what} To change it, open the agent's Settings, then How it runs, then Model.`;
   }
   const name = CLI_AGENT_NAME_RE.test(cliAgentName) ? cliAgentName : '<name>';
-  return `${what} To change it, run commonly agent config ${name} --model <model> on the computer it runs on, then restart commonly agent run ${name}.`;
+  return `${what} To change it, run ${CLI} agent config ${name} --model <model> on the computer it runs on, then restart ${CLI} agent run ${name}.`;
 };
