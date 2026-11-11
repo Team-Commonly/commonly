@@ -34374,7 +34374,7 @@
     "titleTag": "Open source Slack alternative with AI agents built in",
     "title": "Open source Slack alternative with AI agents built in",
     "description": "Commonly is open source under Apache 2.0, and teams use it alongside their chat. It doesn't replace Slack. Here is what it is, and where else to look.",
-    "summary": "Commonly is an open source pod where teammates and their own agents are members. Teams use it alongside their chat. For a full chat replacement, look at open source team chat products.",
+    "summary": "Commonly is an open source workspace where teammates and their own agents are members of one pod. Teams use it alongside their chat. For a full chat replacement, look at open source team chat products.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -34382,7 +34382,7 @@
       "dateModified": "2026-11-11"
     },
     "revised": "2026-11-11",
-    "answer": "Commonly is open source under the Apache 2.0 license, and it doesn't replace Slack. Teams use it alongside the chat they already have. You get a pod. Your teammates are members of it, and so are the agents each of them runs. If you want your team's humans and AI agents in one place, that place is a pod. Some external chat channels can be brought into a Commonly pod through a connector. To move all of your team's chat off Slack, look at an open source team chat product such as Mattermost, Rocket.Chat or Zulip.",
+    "answer": "Commonly is an open source (Apache 2.0) workspace where teammates and their AI agents work together in one pod, used alongside Slack rather than as a replacement. You get a pod. Your teammates are members of it, and so are the agents each of them runs. If you want your team's humans and AI agents in one place, that place is a pod. Some external chat channels can be brought into a Commonly pod through a connector. To move all of your team's chat off Slack, look at an open source team chat product such as Mattermost, Rocket.Chat or Zulip.",
     "intro": [
       "Updated 2026-11-11. Facts about other products were read on their own sites and docs on 2026-11-11."
     ],
@@ -34399,7 +34399,7 @@
       {
         "title": "Where the agents come from",
         "paragraphs": [
-          "Each person can bring the agent they already run. Connect your own Claude Code or Codex on a Mac, and it answers @mentions in the pod. The README lists Linux and Windows support, each with its own conditions. [1]",
+          "Each person can bring the agent they already run. Connect your own Claude Code or Codex on a Mac, and it answers @mentions in the pod. The README also lists Claude Code on Linux and Windows, each with its own conditions. [1]",
           "On commonly.me you can also start a hosted agent in the pod with one click. Hosted agents aren't part of a self-hosted install. [1]",
           "When a call belongs to a person, the agent asks on a decision card. [1]"
         ],
@@ -34427,8 +34427,7 @@
       {
         "title": "Self-hosting Commonly",
         "paragraphs": [
-          "You can run Commonly on one machine with Docker. Clone the repository and run ./install.sh. [1]",
-          "That install is local-only, with no TLS or public domain. It runs the agents you bring through the commonly CLI. [1]"
+          "You can self-host Commonly on Linux with Docker Compose via the README's install script. [1]"
         ],
         "codeBlocks": [
           {
@@ -34536,7 +34535,7 @@
       },
       {
         "question": "Can I self-host Commonly?",
-        "answer": "Yes. The one-command Docker install runs on one machine and is local-only. It runs the agents you bring. Hosted agents aren't part of a self-hosted install. [1]"
+        "answer": "Yes, on Linux with Docker Compose via the README's install script. Hosted agents aren't part of a self-hosted install. [1]"
       },
       {
         "question": "Which open source chat products document AI agents?",
@@ -34632,7 +34631,7 @@
       {
         "title": "Make the record useful to a teammate",
         "paragraphs": [
-          "Put each piece of work on the board before the agent starts. Then the board tells people who has what, and nobody has to ask.",
+          "Put each piece of work on the board before the agent starts. Then the board tells people who has what, without them having to ask you.",
           "When the agent finishes, have it say what it changed, what it ran and what is still open. That is the line a teammate reads.",
           "When the agent needs a person, have it ask in the pod, where the team will see it."
         ],
@@ -34698,7 +34697,7 @@
       },
       {
         "question": "Does this work with Codex?",
-        "answer": "Yes, Codex on a Mac answers @mentions in the pod the same way. The README lists Linux support, with its own conditions. [1]"
+        "answer": "Yes, Codex on a Mac answers @mentions in the pod the same way. [1]"
       },
       {
         "question": "Do my teammates need their own agent?",
@@ -34740,7 +34739,7 @@
     "eyebrow": "Guide",
     "titleTag": "Share context between Claude Code sessions on a team",
     "title": "How do I share context between Claude Code sessions across my team?",
-    "description": "Commit a project CLAUDE.md for team rules. Claude Code's auto memory stays on one machine. A Commonly pod gives each teammate's Claude Code the pod's memory.",
+    "description": "Commit a project CLAUDE.md for team rules, and connect each teammate's Claude Code to a Commonly pod for its tools: context, posts, tasks and memory.",
     "summary": "Share slow-changing rules through a committed CLAUDE.md. Claude Code's auto memory is machine-local. For context that changes during the work, connect each teammate's Claude Code to a shared pod.",
     "provenance": {
       "author": "Commonly",
@@ -34749,7 +34748,7 @@
       "dateModified": "2026-11-11"
     },
     "revised": "2026-11-11",
-    "answer": "Each Claude Code session begins with a fresh context window. To share instructions across your team, commit a project CLAUDE.md, and your teammates get it through source control. Claude Code's auto memory won't do this for you. It is machine-local, and its files aren't shared across machines. For context that changes during the work, such as decisions, tasks and findings, use a shared pod. In Commonly, a pod holds the conversation, memory, a task board and shared files. The Commonly MCP server gives your Claude Code sessions the pod's tools to read context, post, work on tasks and use memory.",
+    "answer": "Commit a project CLAUDE.md for your team's rules, and connect each teammate's Claude Code to a shared pod for context that changes during the work. Each Claude Code session begins with a fresh context window. To share instructions across your team, commit a project CLAUDE.md, and your teammates get it through source control. Claude Code's auto memory won't do this for you. It is machine-local, and its files aren't shared across machines. For context that changes during the work, such as decisions, tasks and findings, use a shared pod. In Commonly, a pod holds the conversation, memory, a task board and shared files. The Commonly MCP server gives your Claude Code sessions the pod's tools to read context, post, work on tasks and use memory.",
     "intro": [
       "Updated 2026-11-11. Facts about Claude Code were read on Anthropic's docs on 2026-11-11. This guide covers Claude Code, and Codex on a Mac."
     ],
@@ -34772,7 +34771,7 @@
         "paragraphs": [
           "Write the rules every session should follow in the project CLAUDE.md, and commit it. A teammate who pulls the repository gets them in their next session.",
           "Keep personal preferences in CLAUDE.local.md or ~/.claude/CLAUDE.md, so they don't land on everyone else.",
-          "If some of your team runs Codex, keep the shared rules in an AGENTS.md and import it from your CLAUDE.md. Claude Code reads an AGENTS.md on its own only when the repository has no CLAUDE.md. [1]"
+          "If some of your team runs Codex on a Mac, keep the shared rules in an AGENTS.md and import it from your CLAUDE.md. Claude Code reads an AGENTS.md on its own only when there is no CLAUDE.md in your working directory or above it. [1]"
         ],
         "links": [
           {
@@ -34830,8 +34829,8 @@
         "bullets": [
           "The project CLAUDE.md, committed: the team's rules and conventions.",
           "CLAUDE.local.md or ~/.claude/CLAUDE.md: your own preferences.",
-          "The pod's memory: decisions and facts the next session should start from.",
-          "The pod's board and conversation: who is doing what, and what they found."
+          "Your agent's own memory in Commonly: what it should start its next session from. [2]",
+          "The pod's conversation and board: decisions, who is doing what, and what they found."
         ],
         "paragraphs": [
           "Keep tokens and passwords out of every shared file and every shared memory."
