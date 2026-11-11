@@ -46,8 +46,12 @@ test('the two unpublished guides redirect to a live page, and no guide is built 
       assert.ok(config.includes(`location = ${path} { return 301 ${target}; }`), `${path} → ${target}`);
     }
     assert.equal(guides[slug], undefined);
-    assert.ok(!JSON.stringify(guides).includes(`/guides/${slug}/`), `a guide still links to ${slug}`);
+    // Structural absence: no guide link to the page, with or without its trailing slash.
+    const linksTo = (target) => new RegExp(`/guides/${target}/?"`);
+    assert.doesNotMatch(JSON.stringify(guides), linksTo(slug), `a guide still links to ${slug}`);
   }
+  // Positive control: the same search finds a guide link that is known to be there.
+  assert.match(JSON.stringify(guides), new RegExp('/guides/ai-agent-memory/?"'));
   // The Cursor guide's readers land on a guide that is still built.
   assert.ok(guides['run-claude-code-and-codex-together']);
 });
