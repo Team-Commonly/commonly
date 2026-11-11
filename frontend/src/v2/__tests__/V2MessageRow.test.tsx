@@ -334,6 +334,29 @@ describe('V2MessageRow', () => {
     expect(line?.querySelector('button')).toBeNull();
   });
 
+  // F449: the decline line rendered as an ordinary message from the owner,
+  // because the row had no notice key for its action.
+  test('renders run-request-declined as a quiet line naming the owner, who asked and the agent', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '47', pod_id: 'pod-1', user_id: 'owner-1',
+          content: 'stored server text', message_type: 'system',
+          created_at: '2026-11-11T22:55:00.000Z',
+          payload: {
+            kind: 'system-action', action: 'run-request-declined',
+            actorName: 'Ana', requesterName: 'Ben', agentLabel: 'Nova',
+          },
+          user: { username: 'ana', isBot: false },
+        }} />
+      </MemoryRouter>,
+    );
+    const line = screen.getByText("Ana declined Ben's request, so Nova won't run it.").closest('.v2-system-action-line');
+    expect(line).toHaveClass('v2-system-action-line--notice');
+    expect(screen.queryByText('stored server text')).not.toBeInTheDocument();
+    expect(line?.querySelector('button')).toBeNull();
+  });
+
   // F339: new people @mentioned their own never-connected agent, read "Its owner
   // can connect it", and left without connecting.
   const notConnected = (agentKey?: string) => ({

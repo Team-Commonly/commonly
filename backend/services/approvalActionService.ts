@@ -1276,10 +1276,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   if (!row) return { status: 404, body: { error: 'Approval not found' } };
 
   if (String(row.ownerUserId) !== String(callerUserId)) {
-    // A parked call's owner is the connection owner (ADR-033 D5), not the
-    // workspace owner that legacy action cards ask.
-    const owner = row.actionType === 'tool_call' ? 'credential owner' : 'workspace owner';
-    return { status: 403, body: { error: `Only the ${owner} can decide this` } };
+    // A parked call's owner is the connection owner (ADR-033 D5), and a held
+    // run request's is the agent's owner, as its card says (F449); legacy
+    // action cards ask the workspace owner.
+    const owner = row.actionType === 'tool_call' ? 'the credential owner'
+      : row.actionType === 'run_request' ? "this agent's owner" : 'the workspace owner';
+    return { status: 403, body: { error: `Only ${owner} can decide this` } };
   }
   // ADR-017 §Decision-authorization: no agent may decide, even one holding
   // the owner's pod. Route-level auth already excludes agent tokens; this is

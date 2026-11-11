@@ -175,6 +175,8 @@ describe('answering a held run request', () => {
     mockApprovalFindById.mockResolvedValue(row());
     const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: 'user-b', decision: 'approved' });
     expect(res.status).toBe(403);
+    // F449: the card says the agent's owner decides, so the refusal says so too.
+    expect(res.body.error).toBe("Only this agent's owner can decide this");
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
@@ -260,6 +262,22 @@ describe('holding a request', () => {
     const created = await mockApprovalCreate.mock.results[0].value;
     expect(created.status).toBe('moot');
     expect(recordActionApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the card says the agent can reach', () => {
+  // F449: the walk saw the raw keys integration:read and
+  // integration:messages:read beside the worded chips.
+  test('integration grants and the agent:* aliases map to worded codes, with no raw key left', () => {
+    const reach = runRequests.reachOf({
+      scopes: ['integration:read', 'integration:messages:read', 'agent:context:read', 'agent:messages:write'],
+    });
+    expect(reach.sort()).toEqual(['integrations:messages:read', 'integrations:read', 'pod:post', 'pod:read']);
+  });
+
+  test('the plural integration spellings land on the same codes', () => {
+    expect(runRequests.reachOf({ scopes: ['integrations:read', 'integrations:messages:read'] }).sort())
+      .toEqual(['integrations:messages:read', 'integrations:read']);
   });
 });
 

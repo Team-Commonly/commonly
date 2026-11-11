@@ -65,6 +65,17 @@ describe('a held run request', () => {
     expect(reach).toHaveTextContent('calendar:write');
   });
 
+  // F449: the walk saw these two as raw keys.
+  test('words the integration reach codes, so no raw key shows', () => {
+    renderCard({ ...base, params: { ...base.params, reach: ['integrations:read', 'integrations:messages:read'] } });
+    const reach = screen.getByTestId('approval-reach');
+    expect(rr.reach_integrations_read).toBeTruthy();
+    expect(rr.reach_integrations_messages_read).toBeTruthy();
+    expect(reach).toHaveTextContent(rr.reach_integrations_read);
+    expect(reach).toHaveTextContent(rr.reach_integrations_messages_read);
+    expect(reach).not.toHaveTextContent('integrations:');
+  });
+
   test('the owner gets Approve, Narrow and Decline', () => {
     renderCard(base);
     expect(screen.getByRole('button', { name: en.approvalCard.approve })).toBeInTheDocument();
