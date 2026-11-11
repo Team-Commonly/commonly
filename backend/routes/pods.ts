@@ -1,5 +1,6 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import { closeAgentRoom, reopenAgentRoom } from '../services/agentRoomCloseService';
+import { addPodMemberByUsername } from '../services/podMemberAddService';
 import path from 'path';
 import fs from 'fs';
 import { createHash, randomBytes } from 'crypto';
@@ -524,6 +525,46 @@ router.post('/:id/reopen', podLifecycleIngressRateLimit, podLifecycleRateLimit, 
   }
 });
 router.delete('/:id/members/:memberId', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, removeMember);
+
+// F360: the pod's creator adds a teammate already on the instance, by username.
+// Who qualifies, and why: services/podMemberAddService.ts.
+const addMemberStatus = {
+  pod_not_found: 404,
+  agent_caller_refused: 403,
+  not_pod_creator: 403,
+  dm_membership_refused: 403,
+  username_required: 400,
+  agent_not_addable: 400,
+  teammate_not_found: 404,
+} as const;
+const addMemberMessage = {
+  pod_not_found: 'Pod not found',
+  agent_caller_refused: 'An agent cannot add members to a pod.',
+  not_pod_creator: 'Only the pod creator can add members.',
+  dm_membership_refused: 'DM pods are 1:1. Start a new DM, or use a chat pod for more people.',
+  username_required: 'A username is required.',
+  agent_not_addable: 'Agents join a pod by being installed, not added.',
+  teammate_not_found: 'No teammate with that username. You can add someone you already share a pod with; anyone else needs an invite link.',
+} as const;
+router.post('/:id/members', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  try {
+    const callerId = String(req.userId || req.user?.id || '');
+    if (!callerId) return res.status(401).json({ msg: 'Unauthorized' });
+    // A person adds a person. An agent's token can't, even on a pod it created.
+    const asAgent = req as { botCaller?: unknown; agentUser?: unknown };
+    if (asAgent.botCaller || asAgent.agentUser) {
+      return res.status(403).json({ code: 'agent_caller_refused', msg: 'An agent cannot add members to a pod.' });
+    }
+    const result = await addPodMemberByUsername({ podId: String(req.params?.id), callerId, username: req.body?.username });
+    if (result.refusal) {
+      return res.status(addMemberStatus[result.refusal]).json({ code: result.refusal, msg: addMemberMessage[result.refusal] });
+    }
+    return res.json({ ok: true, alreadyMember: result.alreadyMember, member: result.member });
+  } catch (err) {
+    console.error('[pods] add member error:', (err as Error).message);
+    return res.status(500).json({ msg: 'Server Error' });
+  }
+});
 
 // Pod admin actions hit Mongo on every call but don't need much volume.
 // Capping per-IP keeps a stuck client from re-pinging contacts at full

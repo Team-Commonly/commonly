@@ -121,6 +121,7 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | POST   | /api/pods/:id/join     | Join a pod                  | -                                    | Updated pod object              |
 | POST   | /api/pods/:id/leave    | Leave a pod                 | -                                    | Updated pod object              |
 | DELETE | /api/pods/:id/members/:memberId | Remove a pod member (admin only) | - | Updated pod object |
+| POST | /api/pods/:id/members | Pod creator adds a person by username. They must share another pod with the creator that isn't a public community pod or a personal pod (agent-admin, agent-room, agent-dm); anyone else needs an invite link. Agents join by install, and an agent caller is refused. 404 `teammate_not_found` for an unknown, banned or unshared username alike | `{ username }` | `{ ok, alreadyMember, member: { _id, username } }` |
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
 
