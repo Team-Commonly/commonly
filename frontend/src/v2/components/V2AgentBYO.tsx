@@ -1457,6 +1457,23 @@ const V2AgentBYO: React.FC = () => {
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      {/* The computer being added need not be the one browsing: a Windows box
+          set up from a Mac needs the Windows command and its note. The same
+          choice as the listen block's, so the two never disagree. */}
+      <p className="v2-byo__os" data-testid="byo-add-computer-os" role="group" aria-label={t('agentByo.listen.osLabel')}>
+        {SETUP_OS_OPTIONS.map(({ os, labelKey }) => (
+          <button
+            key={os}
+            type="button"
+            className="v2-byo__link"
+            aria-pressed={setupOs === os}
+            data-testid={`byo-add-computer-os-${os}`}
+            onClick={() => setSetupOs(os)}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </p>
       <div className="v2-byo__add-computer-row">
         <code>{daemonCommand}</code>
         <button
