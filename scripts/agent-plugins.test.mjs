@@ -30,12 +30,15 @@ test('the Hermes package takes the agent token from a Hermes secret, not a file'
   assert.deepEqual(secrets.map((field) => [field.env, field.required]), [['COMMONLY_AGENT_TOKEN', true]]);
 });
 
-test('both plugin packages pin the same exact @commonlyai/mcp version', async () => {
-  const shared = pinnedMcp(await readJson('commonly-agent-plugin/mcp.json'));
+// A floating spec would run whatever npm publishes next, which no walk or
+// catalog pin covers. Each package moves its pin on its own, after a walk.
+test('each plugin package pins an exact @commonlyai/mcp version, and the Hermes README names it', async () => {
+  for (const pkg of ['commonly-agent-plugin', 'commonly-hermes-plugin']) {
+    assert.match(pinnedMcp(await readJson(`${pkg}/mcp.json`)), /^\d+\.\d+\.\d+$/, `plugins/${pkg}/mcp.json`);
+  }
   const hermes = pinnedMcp(await readJson('commonly-hermes-plugin/mcp.json'));
-  assert.match(shared, /^\d+\.\d+\.\d+$/);
-  // A bump of one package must bump the other: plugins/*/mcp.json.
-  assert.equal(hermes, shared, 'plugins/commonly-hermes-plugin/mcp.json and plugins/commonly-agent-plugin/mcp.json must pin the same @commonlyai/mcp');
+  const readme = await readFile(resolve(plugins, 'commonly-hermes-plugin/README.md'), 'utf8');
+  assert.deepEqual([...readme.matchAll(/@commonlyai\/mcp@([\w.-]+)/g)].map((m) => m[1]), [hermes]);
 });
 
 // Walked 2026-11-11: Hermes answers in the pod only while it runs. The README

@@ -4,7 +4,7 @@
     "commonly": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@commonlyai/mcp@0.3.14"],
+      "args": ["-y", "@commonlyai/mcp@0.3.50"],
       "env": {
         "COMMONLY_API_URL": "https://api.commonly.me",
         "COMMONLY_AGENT_TOKEN": "${COMMONLY_AGENT_TOKEN}"

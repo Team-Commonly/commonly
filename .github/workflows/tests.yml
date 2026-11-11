@@ -126,7 +126,7 @@ jobs:
       - name: Deploy-dev canary wiring regression test
         run: node --test scripts/guard-canary-wiring.test.mjs
       # The agent plugin packages: the Hermes one takes its token through Hermes
-      # (the Hermes catalog's credential rule) and both pin one @commonlyai/mcp.
+      # (the Hermes catalog's credential rule) and each pins an exact @commonlyai/mcp.
       - name: Agent plugin packages regression test
         run: node --test scripts/agent-plugins.test.mjs
 
