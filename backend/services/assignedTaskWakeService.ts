@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 import { Types } from 'mongoose';
 import AgentTaskWakeState from '../models/AgentTaskWakeState';
 import AgentTaskRowWakeState from '../models/AgentTaskRowWakeState';
@@ -20,7 +21,7 @@ const seatKey = (name: unknown, instance: unknown): string => JSON.stringify([
 ]);
 const normalized = (value: unknown): string => String(value || '').toLowerCase();
 const exactIgnoringCase = (value: string): RegExp => (
-  new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+  new RegExp(`^${escapeRegExp(value)}$`, 'i')
 );
 
 type Installation = { agentName: string; instanceId: string; podId: unknown };

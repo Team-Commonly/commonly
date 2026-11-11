@@ -24,6 +24,7 @@
  * The line carries the connector's display name only. The repository, account
  * and grant stay out of it, and an entry is only ever read for its own agent.
  */
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 import { Types } from 'mongoose';
 import RoomGrant from '../models/RoomGrant';
 import type { IRoomGrantRemovalCue } from '../models/RoomGrant';
@@ -151,8 +152,6 @@ export const noteAgentRemovedFromGrant = async (grant: RemovedGrant, agentId: st
   if (!grantConnector(grant.tools)) return 0;
   return writeEntries(grant.grantId, await entriesFor([agentId], true));
 };
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Whether the agent can use a live broker grant on this connector again. A pod

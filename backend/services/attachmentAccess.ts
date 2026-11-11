@@ -19,6 +19,7 @@
  * this as a deliberate slow scan; Phase 2's structured `attachments` model
  * replaces the scans with indexed lookups.
  */
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 
@@ -180,10 +181,6 @@ const MESSAGE_SCAN_LIMIT = 20;
 const PLAUSIBLE_FILENAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
 function isPlausibleFileName(fileName: string): boolean {
   return PLAUSIBLE_FILENAME_RE.test(fileName);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

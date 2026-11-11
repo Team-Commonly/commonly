@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 import crypto from 'crypto';
 import User from '../models/User';
 import Pod from '../models/Pod';
@@ -488,7 +489,7 @@ class AgentIdentityService {
     // Explicit renames must not inherit the install-time resolver's
     // already-suffixed fast path. That path preserves generated labels during
     // reprovision, but here the caller can type a peer's exact label.
-    const escapedName = desiredName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedName = escapeRegExp(desiredName.trim());
     const peers = await User.find({
       _id: { $ne: user._id },
       $or: [{ isBot: true }, { botType: 'agent' }],

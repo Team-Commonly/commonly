@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 // Recipient-owned attention is written beside its authoritative source. It is
 // intentionally not rebuilt from message history or task prose at read time.
 // A one-time direct-source backfill materializes facts that predate adoption.
@@ -214,7 +215,7 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
       const handle = String(member.username || '').trim();
       if (!handle || String(member._id) === String(authorId)) return false;
       if (options.isAlreadyAcknowledged?.(member._id, 'msg_' + String(messageId))) return false;
-      return new RegExp(`(^|[^A-Za-z0-9_-])@${handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'i').test(content);
+      return new RegExp(`(^|[^A-Za-z0-9_-])@${escapeRegExp(handle)}(?![A-Za-z0-9_-])`, 'i').test(content);
     });
     if (!recipients.length) return;
     const answering = await peopleThisAgentIsAnswering(message, authorId, content, podId);
@@ -576,7 +577,6 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
 // ("X's ruling, 10-19: ...") asks nothing, and no instance's names live here:
 // the previous pattern spelled one person's name, and one report beginning
 // with a member's name opened 40 rows across a pod's four humans (2026-10-19).
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HANDOFF_LEAD = String.raw`(?:awaiting|waiting\s+(?:on|for)|ready\s+for|needs?)`;
 const HUMAN_PRESS_RE = /\bhuman\s+(?:merge\s+)?press\b/i;
 const ASKS_A_HUMAN_RE = new RegExp(String.raw`\b${HANDOFF_LEAD}\s+(?:the\s+|a\s+)?human\b`, 'i');

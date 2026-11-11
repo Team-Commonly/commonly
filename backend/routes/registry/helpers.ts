@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../../utils/escape';
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
@@ -54,8 +55,6 @@ const parseVerifiedFilter = (value: any) => {
   if (value === 'false') return false;
   return null;
 };
-
-const escapeRegExp = (value: any) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 

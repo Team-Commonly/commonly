@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
 import { Types } from 'mongoose';
 import { compareTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
@@ -35,7 +36,7 @@ function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown
 }
 
 function exactSeatKeyIgnoringCase(key: unknown): RegExp {
-  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegExp(key);
   return new RegExp(`^${escaped}$`, 'i');
 }
 
