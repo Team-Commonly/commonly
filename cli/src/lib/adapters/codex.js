@@ -467,7 +467,13 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
   // turn starts empty but for its links.
   const others = entriesOf(dirname(home)).filter((name) => name !== basename(home)).sort()
     .map((name) => join(dirname(home), name));
-  return { home, source, others };
+  // The links into the shared home, which is denied whole with their targets.
+  const links = [];
+  for (const name of PRIVATE_HOME_LINKS) {
+    const stat = await statOrNull(join(home, name));
+    if (stat?.isSymbolicLink() && pathResolve(home, await readlink(join(home, name))) === join(source, name)) links.push(name);
+  }
+  return { home, source, others, links };
 };
 
 // `login: false` is the proxy route (D250): codex authenticates with the
@@ -873,7 +879,13 @@ const entriesOf = (dir) => {
   }
 };
 
-export const privateCodexHomeDenies = ({ codexHome = null, platform = process.platform, home = homedir() } = {}) => {
+// `links`: entries of the run home that are links into a home denied whole
+// (F445). A key on one makes bwrap follow it into the hidden folder and stop
+// every turn at start ("Can't create file at …/auth.json: No such file or
+// directory", run 43114789288); its target is out of reach already.
+export const privateCodexHomeDenies = ({
+  codexHome = null, platform = process.platform, home = homedir(), links = [],
+} = {}) => {
   const defaultHome = join(home, '.codex');
   const runHome = codexHome ? realOrSelf(codexHome) : null;
   const runsFromDefault = !runHome || runHome === realOrSelf(defaultHome);
@@ -891,6 +903,7 @@ export const privateCodexHomeDenies = ({ codexHome = null, platform = process.pl
         .forEach((name) => SQLITE_SIDECARS.forEach((suffix) => names.add(`${name}${suffix}`)));
     }
     names.delete(keep);
+    if (depth === 0) links.forEach((name) => names.delete(name));
     denies.push(...[...names].sort().map((name) => join(dir, name)));
     dir = join(dir, keep);
   }
@@ -968,6 +981,7 @@ const privatePermissionProfileFlags = ({
   codexHome = null,
   home = homedir(),
   otherCodexHomes = [],
+  codexHomeLinks = [],
 } = {}) => {
   const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
   const posix = platform !== 'win32';
@@ -985,7 +999,7 @@ const privatePermissionProfileFlags = ({
     // no drive and Codex would refuse the whole profile (as with /private/tmp
     // in publicPermissionProfileFlags).
     posix ? '"/"="read"' : '":minimal"="read"',
-    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home }), ...otherCodexHomes]
+    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home, links: codexHomeLinks }), ...otherCodexHomes]
       .map((path) => `${toml(path)}="deny"`),
     ...deniedTemp.map((path) => `${toml(path)}="deny"`),
     ...(shellTemp ? [`${toml(shellTemp)}="write"`] : []),
@@ -1138,6 +1152,7 @@ const buildArgs = ({
   privateCodexHome = null,
   privateHome = homedir(),
   privateOtherCodexHomes = [],
+  privateCodexHomeLinks = [],
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1196,6 +1211,7 @@ const buildArgs = ({
         codexHome: privateCodexHome,
         home: privateHome,
         otherCodexHomes: privateOtherCodexHomes,
+        codexHomeLinks: privateCodexHomeLinks,
       });
   const common = [
     '--json',
@@ -1632,6 +1648,7 @@ export default {
             ...(privateCodexHome ? [privateCodexHome.source, ...privateCodexHome.others] : []),
           ])]
           : [],
+        privateCodexHomeLinks: privateCodexHome?.links || [],
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

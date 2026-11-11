@@ -2512,8 +2512,14 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(fsFlag).not.toContain(`"${codexHome}"="deny"`);
     expect(fsFlag).not.toContain(`"${privateHomes()}"="deny"`);
     expect(fsFlag).not.toContain(`"${join(codexHome, 'tmp')}"="deny"`);
-    for (const name of ['auth.json', 'config.toml', 'sessions', 'logs_2.sqlite-wal']) {
+    for (const name of ['sessions', 'history.jsonl', 'logs_2.sqlite-wal']) {
       expect(fsFlag).toContain(`"${join(codexHome, name)}"="deny"`);
+    }
+    // The links into the shared home carry no key: bwrap would follow one into
+    // the hidden folder and not start (run 43114789288). Their targets are
+    // denied with that home.
+    for (const name of ['auth.json', 'config.toml', 'AGENTS.md']) {
+      expect(fsFlag).not.toContain(`"${join(codexHome, name)}"="deny"`);
     }
     // The rest of the host secrets are unchanged.
     for (const dir of ['~/.commonly', '~/.claude', '~/.ssh', '~/.aws']) expect(fsFlag).toContain(`"${dir}"="deny"`);

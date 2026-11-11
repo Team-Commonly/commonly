@@ -131,6 +131,8 @@ const checkScript = ({ home, otherTurn }) => [
   `r read_codex_known_wal cat ${home}/.codex/state_5.sqlite-wal`,
   `r read_codex_new_wal cat ${home}/.codex/brandnew_3.sqlite-wal`,
   `r read_private_home cat ${home}/.local/state/commonly/codex-private-homes/other-seat/sessions/s.jsonl`,
+  // F445: the own home links the login in from the shared home; reading through the link is refused.
+  `r read_auth_link sh -c 'cat ${home}/.local/state/commonly/codex-private-homes/*/auth.json'`,
   `r read_public_home cat ${home}/.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl`,
   `r read_other_turn cat ${otherTurn}/token`,
   `r write_other_turn sh -c 'echo pwned > ${otherTurn}/last-message.txt'`,
@@ -158,6 +160,7 @@ const judge = (label, results, ctx) => {
     // shared home, denied whole, so a new name there is out of reach anyway.
     ...(process.platform === 'linux' ? { read_public_home: 'PUBHOME', read_private_home: 'PRIVHOME' } : {}),
     read_codex_new_wal: 'NEWWAL',
+    ...(process.platform === 'linux' ? { read_auth_link: 'AUTH' } : {}),
   };
   const rows = [];
   if (!results.done) rows.push(['ran', false, 'the check script never finished: the sandbox did not start']);
