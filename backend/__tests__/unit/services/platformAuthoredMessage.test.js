@@ -26,6 +26,15 @@ describe('platformAuthoredKind', () => {
     expect(platformAuthoredKind({ message_type: 'text', author_kind: 'kernel' })).toBe('platform_post');
   });
 
+  test('a "starts" prompt the platform writes as text is the platform\'s', () => {
+    expect(platformAuthoredKind({ message_type: 'text', payload: { kind: 'starts', starts: [] } }))
+      .toBe('platform_post');
+  });
+
+  test('a text row with no payload is its author\'s', () => {
+    expect(platformAuthoredKind({ message_type: 'text', payload: null })).toBeNull();
+  });
+
   test('the ui card an agent posts itself is the agent\'s', () => {
     expect(platformAuthoredKind({ message_type: 'card', payload: { kind: 'ui', v: 1, lang: 'openui@1' } })).toBeNull();
   });

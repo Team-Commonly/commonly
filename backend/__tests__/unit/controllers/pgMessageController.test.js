@@ -410,6 +410,16 @@ describe('pgMessageController', () => {
       expect(PGMessage.update).not.toHaveBeenCalled();
     });
 
+    it('refuses the agent rewriting a "starts" prompt the platform wrote as text', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 45, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', payload: { kind: 'starts', starts: [] },
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '45' }, body: { content: 'x' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
     it('still lets the agent edit a ui card it posted itself', async () => {
       PGMessage.findById.mockResolvedValue({ ...card, payload: { kind: 'ui', v: 1, lang: 'openui@1' } });
       const res = jsonRes();
