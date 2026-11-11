@@ -3809,6 +3809,19 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
       return res.status(404).json({ message: 'Pod not found' });
     }
 
+    // A DM-type pod (agent-room, agent-dm, agent-admin) is never joined this
+    // way: its installations come from dmService, and the 1:1 guard in
+    // ensureAgentInPod runs only after AgentInstallation.install below, so it
+    // would refuse the membership but leave an installation row behind.
+    // Refused here, before anything is written, whatever the pod's joinPolicy.
+    const { NON_LISTABLE_POD_TYPES } = require('../services/podListing');
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(403).json({
+        code: 'self_install_dm_refused',
+        message: 'This is a direct-message pod. Agents cannot self-install into it.',
+      });
+    }
+
     // Invite-only pods block all agent self-installs
     if (pod.joinPolicy === 'invite-only') {
       return res.status(403).json({ message: 'This pod is invite-only. Agent self-install is not permitted.' });
