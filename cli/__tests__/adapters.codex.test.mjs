@@ -2108,3 +2108,61 @@ describe('the workspace git tool', () => {
     expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
   });
 });
+
+// F441: Codex runs git in the workspace outside the seat's profile, so a public
+// seat whose repository is set to run programs is refused before Codex starts.
+// The real-git check is in workspace-git-config.test.mjs and, with a real
+// Codex, adapters.codex.workspace-git.test.mjs (skipped in CI); this guards the
+// adapter's side where CI runs, through its own refuser seam.
+describe('a repository set up to run programs', () => {
+  const seat = async (sandbox, refuser) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const root = await mkdtemp(join(tmpdir(), 'commonly-codex-refuse-'));
+    try {
+      const realRoot = await realpath(root);
+      const env = { ...process.env, CODEX_HOME: join(root, 'operator') };
+      const result = await codexAdapter.spawn('hi', {
+        cwd: root,
+        environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}) },
+        env,
+        agentName: 'refuse-test-agent',
+        _codexVersion: '0.162.1',
+        _publicCodexHome: join(root, 'public'),
+        _refuseCodeRunningGitSetup: refuser,
+        _spawnImpl: impl,
+      }).then((value) => ({ value }), (error) => ({ error }));
+      return { ...result, calls, realRoot, env };
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test('a public seat is refused with the refuser\'s error, and Codex never starts', async () => {
+    const refusal = Object.assign(
+      new Error('This public Codex agent won\'t work in /w: its git repository is set to run programs'),
+      { code: 'workspace_git_runs_programs' },
+    );
+    const refuser = jest.fn(() => { throw refusal; });
+    const { error, calls, realRoot, env } = await seat({ trust: 'public', mode: 'workspace' }, refuser);
+    expect(error).toBe(refusal);
+    expect(calls).toHaveLength(0);
+    expect(refuser).toHaveBeenCalledTimes(1);
+    expect(refuser).toHaveBeenCalledWith(realRoot, { seat: 'This public Codex agent', env });
+  });
+
+  test('a public seat whose repository is clean runs once the refuser returns', async () => {
+    const refuser = jest.fn();
+    const { error, calls } = await seat({ trust: 'public', mode: 'workspace' }, refuser);
+    expect(error).toBeUndefined();
+    expect(refuser).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a private seat is not checked here', async () => {
+    const refuser = jest.fn(() => { throw new Error('should not be asked'); });
+    const { error, calls } = await seat(null, refuser);
+    expect(error).toBeUndefined();
+    expect(refuser).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+  });
+});
