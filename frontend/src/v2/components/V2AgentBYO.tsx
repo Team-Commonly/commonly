@@ -68,7 +68,10 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
 // only in that window. Install line and run line are the same on both, except
 // that on native Windows `agent run` refuses without --unsandboxed: there is no
-// sandbox there, and the flag is the person choosing to run without one. For
+// sandbox there, and the flag is the person choosing to run without one. On
+// Windows both lines name npm's .cmd shims (F342): PowerShell runs the .ps1 shim
+// for a bare `npm` or `commonly`, and Windows 11's default script policy refuses
+// it before the token is ever used; a .cmd is not a script to that policy. For
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
 export const connectSnippet = ({
@@ -93,9 +96,9 @@ export const connectSnippet = ({
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
     : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
   return [
-    CLI_INSTALL_COMMAND,
+    os === 'windows' ? CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ') : CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `${os === 'windows' ? 'commonly.cmd' : 'commonly'} agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs
@@ -1445,8 +1448,9 @@ const V2AgentBYO: React.FC = () => {
   // PowerShell, so there is no per-line split any more. On Windows it carries
   // --unsandboxed, forwarded to the install step (agents run without a sandbox
   // there, as `agent run` does).
+  // npx.cmd on Windows for the same reason as connectSnippet's npm.cmd (F342).
   const daemonCommand = setupOs === 'windows'
-    ? `${daemonSetupCommand(apiUrl)} --unsandboxed`
+    ? `${daemonSetupCommand(apiUrl).replace(/^npx /, 'npx.cmd ')} --unsandboxed`
     : daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
@@ -1461,7 +1465,7 @@ const V2AgentBYO: React.FC = () => {
   // as one more value ("missing required argument 'commandOrUrl'",
   // windows-latest, 2026-11-04). mcp-windows.yml runs this exact line.
   const claudeSnippetWindows = issued
-    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
+    ? `npm.cmd i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
     : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling
@@ -2289,9 +2293,11 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
-            {listenerAvailable && (
+            {/* No Windows hint: the .cmd lines never meet PowerShell's script
+                policy, and we don't ask people to loosen it (F342). */}
+            {listenerAvailable && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
+                {t('agentByo.listen.npmPermission')}
               </p>
             )}
             {listenerAvailable && !machinesNeedUpdate && (

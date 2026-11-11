@@ -146,7 +146,7 @@ describe('BYO listener snippet', () => {
   test('the connect command is the first box; the MCP line is optional; the bare key is folded away', async () => {
     await issueToken();
     const pres = Array.from(document.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent || '');
-    const listener = pres.findIndex((txt) => /commonly agent run /.test(txt));
+    const listener = pres.findIndex((txt) => /commonly(\.cmd)? agent run /.test(txt));
     const claudeMcp = pres.findIndex((txt) => /claude mcp add commonly/.test(txt));
     expect(listener).toBe(0);
     expect(claudeMcp).toBeGreaterThan(listener);
@@ -159,7 +159,7 @@ describe('BYO listener snippet', () => {
   // sprint-review on #2287: one test carried four properties, so a break named
   // the wrong one. One property per test.
   const listenCommand = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
-    .find((el) => /commonly agent run /.test(el.textContent || ''));
+    .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
 
   test('what it needs is said before the command it is about', async () => {
     await issueToken();
@@ -252,7 +252,7 @@ describe('BYO listener snippet', () => {
     // Several <pre class="v2-byo__pre"> render on the issued screen (the token,
     // the MCP add command, the Cursor config, the listener); pick the listener.
     const pre = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || ''));
+      .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
     expect(pre).toBeDefined();
     const lines = (pre.textContent || '').split('\n');
     expect(lines).toHaveLength(4);
@@ -284,7 +284,7 @@ describe('BYO listener snippet', () => {
     const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
     const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
     const listener = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || ''));
+      .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
     const mcpBox = () => screen.getByTestId('byo-mcp-claude').querySelector('.v2-byo__pre').textContent || '';
 
     // jsdom puts its host's process.platform in the user agent, lower case. On
@@ -312,10 +312,10 @@ describe('BYO listener snippet', () => {
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-windows')).toHaveAttribute('aria-pressed', 'true');
       expect((listener()?.textContent || '').split('\n')).toEqual([
-        'npm i -g @commonlyai/cli@latest',
+        'npm.cmd i -g @commonlyai/cli@latest',
         expect.stringMatching(/^\$env:COMMONLY_API_URL="\S+"$/),
         '$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"',
-        expect.stringMatching(/^commonly agent run \S+ --adapter claude --unsandboxed$/),
+        expect.stringMatching(/^commonly\.cmd agent run \S+ --adapter claude --unsandboxed$/),
       ]);
       expect(listener()?.textContent).not.toMatch(/export /);
       expect(screen.getByTestId('byo-listen')).toHaveTextContent(/^Run this in PowerShell/);
@@ -330,7 +330,7 @@ describe('BYO listener snippet', () => {
       expect(note).not.toHaveTextContent(/tested on Windows/);
       expect(note).toHaveTextContent('it only reads its folder unless you add --allow write, which lets it edit files there.');
       expect(note).toHaveTextContent('It can’t run commands on Windows, and it gets no connector grants.');
-      expect(note).toHaveTextContent('commonly daemon install --unsandboxed sets it up as a task that starts when you log in');
+      expect(note).toHaveTextContent('commonly.cmd daemon install --unsandboxed sets it up as a task that starts when you log in');
       expect(note).not.toHaveTextContent(/WSL|Codex/);
       // PowerShell, not Terminal, on Windows.
       expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/^This stops when this PowerShell window closes\./);
@@ -340,11 +340,13 @@ describe('BYO listener snippet', () => {
       expect(note.nextElementSibling).toContainElement(listener());
       // The macOS/Linux confinement notes don't hold here, and npm's EACCES advice is a Unix one.
       expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
-      expect(screen.getByTestId('byo-listen-npm-hint')).toHaveTextContent(/Set-ExecutionPolicy -Scope CurrentUser RemoteSigned/);
-      expect(screen.getByTestId('byo-listen-npm-hint')).not.toHaveTextContent(/sudo|nvm/);
+      // The .cmd lines never meet PowerShell's script policy, and the page asks
+      // no one to loosen it (F342), so Windows gets no install hint at all.
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect(screen.getByTestId('byo-listen')).not.toHaveTextContent(/Set-ExecutionPolicy/);
       expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
       expect(mcpBox().split('\n')).toEqual([
-        'npm i -g @commonlyai/mcp',
+        'npm.cmd i -g @commonlyai/mcp',
         expect.stringMatching(/^claude mcp add commonly cmd \/c commonly-mcp -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token$/),
       ]);
       // PowerShell drops a bare `--` through npm's claude.ps1 shim, and the line
@@ -475,7 +477,7 @@ describe('BYO listener snippet', () => {
     test('Codex on Windows in an invite-only pod: the PowerShell line with --unsandboxed, and what that costs', async () => {
       setUserAgent(WINDOWS);
       await issueToken('codex', PRIVATE_POD);
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex --unsandboxed$/);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly\.cmd agent run \S+ --adapter codex --unsandboxed$/);
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
       const note = screen.getByTestId('byo-listen-windows');
       expect(note).toHaveTextContent(/nothing confines/);
@@ -548,7 +550,7 @@ describe('BYO listener: Work in my repo', () => {
   const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
   const runLine = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
     .map((el) => el.textContent || '')
-    .find((txt) => /commonly agent run /.test(txt));
+    .find((txt) => /commonly(\.cmd)? agent run /.test(txt));
 
   beforeEach(() => {
     Object.defineProperty(window.navigator, 'userAgent', { value: MAC_UA, configurable: true });

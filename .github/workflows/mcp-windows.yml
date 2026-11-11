@@ -1,6 +1,6 @@
 name: MCP on Windows
 
-# The Bring your own page's Windows MCP lines (npm i -g @commonlyai/mcp, then
+# The Bring your own page's Windows MCP lines (npm.cmd i -g @commonlyai/mcp, then
 # `cmd /c commonly-mcp` under Claude Code), run on a real Windows host: the
 # server must answer initialize, list its tools, and reach the API with its
 # token. Run against the published package and this checkout's, and then

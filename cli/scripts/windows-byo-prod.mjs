@@ -64,8 +64,8 @@ export const windowsProfileRoot = () => homedir();
 export const windowsLineProblems = (lines, { agentName, adapter }) => {
   if (lines.length !== 4) return [`the page's Windows lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
   const problems = [];
-  if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
-  const run = `commonly agent run ${agentName} --adapter ${adapter} --unsandboxed`;
+  if (!/^npm\.cmd i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm.cmd install: ${lines[0]}`);
+  const run = `commonly.cmd agent run ${agentName} --adapter ${adapter} --unsandboxed`;
   if (lines[3] !== run) problems.push(`line 4 is not the ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
   return problems;
 };
@@ -79,7 +79,8 @@ export const windowsLineProblems = (lines, { agentName, adapter }) => {
 export const walkInstallLines = (lines, { cli = 'published', tarball = '' } = {}) => {
   if (cli !== 'tree') return lines;
   if (!tarball) throw new Error('cli=tree needs this checkout packed (COMMONLY_BYO_TREE_TARBALL)');
-  return [`npm i -g ${tarball}`, ...lines.slice(1)];
+  // The page's own npm entry (npm.cmd on Windows), so the tree leg meets the same script policy.
+  return [`${lines[0].split(' ')[0]} i -g ${tarball}`, ...lines.slice(1)];
 };
 
 export const runProdWalk = async ({ pageConnectSnippet }) => {

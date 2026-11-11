@@ -30,12 +30,14 @@ describe('connectSnippet', () => {
     ]);
   });
 
-  test('Windows: the same install line, $env: assignments in place of export, and --unsandboxed on the run line', () => {
+  // npm.cmd and commonly.cmd, not the .ps1 shims a bare name resolves to:
+  // Windows 11's default script policy refuses those (F342).
+  test('Windows: the .cmd shims, $env: assignments in place of export, and --unsandboxed on the run line', () => {
     expect(connectSnippet({ ...base, os: 'windows' }).split('\n')).toEqual([
-      'npm i -g @commonlyai/cli@latest',
+      'npm.cmd i -g @commonlyai/cli@latest',
       '$env:COMMONLY_API_URL="https://api.commonly.me"',
       '$env:COMMONLY_AGENT_TOKEN="cm_agent_abc123"',
-      'commonly agent run my-claude --adapter claude --unsandboxed',
+      'commonly.cmd agent run my-claude --adapter claude --unsandboxed',
     ]);
     expect(connectSnippet({ ...base, os: 'windows' })).not.toMatch(/export /);
   });
@@ -49,9 +51,9 @@ describe('connectSnippet', () => {
       .toBe('commonly agent run my-claude --adapter codex');
     expect(connectSnippet({ ...base, os: 'unix' })).not.toContain('--unsandboxed');
     expect(connectSnippet({ ...base, os: 'windows', allow: 'write' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter claude --allow write --unsandboxed');
+      .toBe('commonly.cmd agent run my-claude --adapter claude --allow write --unsandboxed');
     expect(connectSnippet({ ...base, os: 'windows', adapter: 'codex' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter codex --unsandboxed');
+      .toBe('commonly.cmd agent run my-claude --adapter codex --unsandboxed');
   });
 });
 
@@ -85,7 +87,7 @@ describe('connectSnippet for a second instance (F306 part 2)', () => {
     expect(connectSnippet({ ...base, os: 'unix', instanceId: 'nova' }).split('\n').at(-1))
       .toBe('commonly agent run my-claude --instance-id nova --adapter claude');
     expect(connectSnippet({ ...base, os: 'windows', instanceId: 'nova' }).split('\n').at(-1))
-      .toBe('commonly agent run my-claude --instance-id nova --adapter claude --unsandboxed');
+      .toBe('commonly.cmd agent run my-claude --instance-id nova --adapter claude --unsandboxed');
   });
 
   test('the default instance, no instance, or an id the CLI would refuse adds nothing', () => {

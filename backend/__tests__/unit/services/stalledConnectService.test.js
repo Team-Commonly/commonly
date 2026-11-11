@@ -272,7 +272,7 @@ describe('stalledConnectService.scan', () => {
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain('If you ran it on Windows: Claude Code answers @mentions there with CLI 0.1.243 or newer, '
       + 'from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.');
-    expect(content).toContain('Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window');
+    expect(content).toContain('Check yours with `commonly.cmd --version`, and run all of the page’s lines again in one PowerShell window');
     expect(content).toContain('Or choose “Run it here” on the Bring your own page for a hosted agent');
     expect(content).not.toContain('may not answer @mentions yet');
     expect(content).not.toMatch(/on a Mac/);

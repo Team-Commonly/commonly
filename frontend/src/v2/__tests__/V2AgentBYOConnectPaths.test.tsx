@@ -194,7 +194,7 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(command.textContent).not.toContain('&&');
     expect(command.textContent).not.toContain('\n');
     expect(command.textContent).not.toContain('npm i -g');
-    expect(command.textContent).toBe('npx -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed');
+    expect(command.textContent).toBe('npx.cmd -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed');
     // The flag is explained under the block it appears in.
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
       'On Windows there’s no sandbox. With --unsandboxed, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.',
