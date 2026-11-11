@@ -104,9 +104,8 @@ describe('the refused-send event name', () => {
   });
 });
 
-// A person's socket send may be only what the legacy composer sends. Any other
-// type is the platform's: a client-chosen 'system' is stored under the sender
-// and read everywhere as a kernel line. Refused, never coerced.
+// A person's socket send may be only what the legacy composer sends; the
+// other types are written by the platform. Refused, never coerced.
 describe('the socket message type', () => {
   const check = (messageType) => refuseSocketMessageType({ podId: 'p1', content: 'hi', messageType });
   const refused = (messageType) => ({
