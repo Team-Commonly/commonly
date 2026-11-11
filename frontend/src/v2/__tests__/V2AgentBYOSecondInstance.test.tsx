@@ -226,4 +226,15 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     ));
     expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
   });
+
+  test('a Reconnect link for a second instance that is not on a computer offers no computer to place it on', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-machine-select')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(tokenBodies()).toHaveLength(1));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+  });
 });

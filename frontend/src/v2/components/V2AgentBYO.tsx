@@ -476,11 +476,11 @@ const V2AgentBYO: React.FC = () => {
   const choosingMode = !choicesKnown || hostedOffered || machineOffered;
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
-  // machine link for a second instance falls back the same way, unless it is a
-  // wrapper's own Reconnect link (reconnect=1): that restarts a seat already on
-  // a computer, which the daemon holds the key for, and places nothing.
+  // machine link for a second instance falls back the same way, unless that
+  // instance is already a wrapper on a computer: its Reconnect restarts it
+  // there, with the key the daemon holds, and places nothing.
   const modeUnavailable = (chosenMode === 'hosted' && !hostedOffered)
-    || (chosenMode === 'machine' && Boolean(secondInstance) && !prefill.reconnect);
+    || (chosenMode === 'machine' && Boolean(secondInstance) && existingConnection?.runtimeType !== 'wrapper');
   const mode = modeUnavailable
     ? (choosingMode ? null : 'byo')
     : chosenMode ?? (choosingMode ? null : 'byo');
