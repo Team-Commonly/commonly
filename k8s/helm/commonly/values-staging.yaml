@@ -323,3 +323,11 @@ strangerJourney:
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
+
+# Tighten pod egress (templates/network/egress-restrict.yaml): pods may reach
+# any address except exceptCidrs; pods whose component is in exemptComponents
+# keep full egress (backup uses Workload Identity).
+networkPolicy:
+  egress:
+    restrict:
+      enabled: true
