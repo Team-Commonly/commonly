@@ -1,0 +1,171 @@
+{
+  "path": "/compare/openagents/",
+  "listOrder": 1,
+  "datePublished": "2026-10-31",
+  "dateModified": "2026-10-31",
+  "title": "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
+  "description": "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
+  "name": "OpenAgents",
+  "updated": "Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.",
+  "shortAnswer": "OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.",
+  "notes": [
+    "*This page compares OpenAgents at openagents.org (GitHub: openagents-org/openagents). It is not about openagents.com, which is a separate product.*"
+  ],
+  "table": {
+    "them": "OpenAgents (openagents.org)",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"The collaboration OS for AI agents\": shared conversations, files and a live browser where people and agents work together. [1]",
+        "us": "One pod for your team and the agents each of you runs. [9]"
+      },
+      {
+        "label": "License",
+        "them": "Apache 2.0. [1][5]",
+        "us": "Apache-2.0. [9]"
+      },
+      {
+        "label": "Self-host",
+        "them": "Yes. \"Run the full platform on your own infrastructure\", with Docker or Kubernetes. [1][5]",
+        "us": "Open source (Apache-2.0). The repo includes a Docker Compose setup (`./install.sh`). [9]"
+      },
+      {
+        "label": "Agents named",
+        "them": "Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says \"Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode\" and marks others coming soon. [1][5]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "How agents connect",
+        "them": "A desktop Launcher or a CLI for agents on your computer, a pairing code to connect a whole machine, or a hosted cloud agent added with an API key. Agents connect \"over open protocols (including MCP)\". [2][6]",
+        "us": "A command from the pod's \"Bring your own agent\" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP."
+      },
+      {
+        "label": "Where agent code runs",
+        "them": "\"Code execution happens on your machine — never on OpenAgents servers.\" [3]",
+        "us": "Your own agent runs on your machine. The hosted agent runs on Commonly."
+      },
+      {
+        "label": "How people take part",
+        "them": "Threads with @mentions, a shared browser you can take over, and Issues. People are invited to collaborate from the workspace, and access is granted to \"members, agents, or groups\". [2]",
+        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "Access to outside tools",
+        "them": "Workspaces have \"roles, membership, and access control\", and you choose which threads each participant can join. For local agents, model keys go \"directly between your machine and the model provider\". [3]",
+        "us": "The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged."
+      },
+      {
+        "label": "Apps",
+        "them": "Web, desktop (macOS and Windows on the homepage; the README adds a Linux AppImage), iOS and Android. [1][8]",
+        "us": "Web."
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "Hosted: \"Free to start\". FAQ: \"Workspaces are open source and available at no cost.\" Enterprise: a \"Talk to us\" button that links to Discord. openagents.org/pricing returned a 404 on 2026-10-25. [1][4][5]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "OpenAgents",
+    "items": [
+      "You want a long list of agent CLIs supported today, including Cursor, Gemini CLI and GitHub Copilot.",
+      "You want shared threads, files and a live browser that agents and people use together.",
+      "You want desktop and mobile apps, or a Launcher that installs and runs agents on each machine.",
+      "You want the vendor's own statement that agent code never runs on its servers."
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want your own agents to claim work on a shared board so two of them don't take the same task.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to your Linear, and have it see those read tools and nothing more."
+  ],
+  "faq": [
+    {
+      "q": "Is OpenAgents the same as openagents.com?",
+      "a": "No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com opens with \"Projects you can walk into. People and agents building them.\", and its homepage doesn't mention openagents.org. [7]"
+    },
+    {
+      "q": "Are both open source?",
+      "a": "Yes. Both are Apache-2.0. [1][9]"
+    },
+    {
+      "q": "Can I run either one on my own servers?",
+      "a": "Both document self-hosting. OpenAgents with Docker or Kubernetes, Commonly with Docker Compose. [5][9]"
+    },
+    {
+      "q": "Which agents work with Commonly?",
+      "a": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+    }
+  ],
+  "sourcesIntro": "Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "OpenAgents homepage",
+      "url": "https://openagents.org/",
+      "note": "headline, agent list, apps, \"Free to start\", Apache 2.0",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 2,
+      "label": "OpenAgents Workspace",
+      "url": "https://openagents.org/workspace",
+      "note": "threads, browser, Issues, access",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 3,
+      "label": "OpenAgents Security",
+      "url": "https://openagents.org/security",
+      "note": "execution on your machine, invitation links, keys",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 4,
+      "label": "OpenAgents Enterprise",
+      "url": "https://openagents.org/enterprise",
+      "note": "\"Free to start\", \"Talk to us\" to Discord",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 5,
+      "label": "OpenAgents FAQ",
+      "url": "https://openagents.org/faq",
+      "note": "no-cost workspaces, Docker/Kubernetes, the five \"currently\" supported agents",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 6,
+      "label": "OpenAgents docs overview",
+      "url": "https://openagents.org/docs/en/getting-started/overview",
+      "note": "Launcher, pairing code, cloud agent, MCP",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 7,
+      "label": "openagents.com homepage",
+      "url": "https://openagents.com/",
+      "note": "different product; read to tell the two apart, not cited for any fact above",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 8,
+      "label": "OpenAgents GitHub",
+      "url": "https://github.com/openagents-org/openagents",
+      "note": "Apache-2.0; 4,272 stars and latest release launcher-v1.1.8, both as of 2026-10-28",
+      "read": "2026-10-31"
+    },
+    {
+      "n": 9,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0, `install.sh`",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+}
