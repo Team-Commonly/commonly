@@ -291,6 +291,9 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           podId={detail.pod._id}
           podName={detail.pod.name || 'pod'}
           initialTab={inviteInitialTab}
+          canAddMember={Boolean(currentUser && detail.pod.createdBy?._id
+            && detail.pod.createdBy._id === (currentUser._id || currentUser.id))}
+          onMemberAdded={() => { void detail.refresh(); }}
           onClose={closeInvite}
         />
       )}

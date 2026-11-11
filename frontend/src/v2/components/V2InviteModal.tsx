@@ -15,8 +15,20 @@ interface V2InviteModalProps {
   podId: string;
   podName: string;
   initialTab?: V2InviteTab;
+  /** The pod's creator may add someone they already share a pod with, by username. */
+  canAddMember?: boolean;
+  onMemberAdded?: () => void;
   onClose: () => void;
 }
+
+type AddNotice = { tone: 'ok' | 'error'; text: string };
+
+// The server's refusal codes, in the words this dialog uses for them.
+const addRefusalKey: Record<string, string> = {
+  teammate_not_found: 'inviteModal.addMember.notFound',
+  agent_not_addable: 'inviteModal.addMember.agent',
+  username_required: 'inviteModal.addMember.required',
+};
 
 interface ManagedInvite {
   token: string;
@@ -64,7 +76,7 @@ const expiryLabel = (value: string | null | undefined, t: TFunction, locale: str
 };
 
 const V2InviteModal: React.FC<V2InviteModalProps> = ({
-  open, podId, podName, initialTab = 'people', onClose,
+  open, podId, podName, initialTab = 'people', canAddMember = false, onMemberAdded, onClose,
 }) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language || 'en';
@@ -82,6 +94,9 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [addName, setAddName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addNotice, setAddNotice] = useState<AddNotice | null>(null);
 
   const loadInvites = useCallback(async () => {
     if (!podId) return;
@@ -110,6 +125,9 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
     setCopiedToken(null);
     setBusy(false);
     setRevokingToken(null);
+    setAddName('');
+    setAdding(false);
+    setAddNotice(null);
     if (!open) setInvites([]);
   }, [open, podId, initialTab]);
 
@@ -143,6 +161,37 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
       setBusy(false);
     }
   }, [api, expiry, loadInvites, maxUses, podId, t]);
+
+  const handleAdd = useCallback(async (event: React.FormEvent) => {
+    event.preventDefault();
+    const username = addName.trim().replace(/^@/, '');
+    if (!podId) return;
+    if (!username) {
+      setAddNotice({ tone: 'error', text: t('inviteModal.addMember.required') });
+      return;
+    }
+    setAdding(true);
+    setAddNotice(null);
+    try {
+      const data = await api.post<{ alreadyMember?: boolean; member?: { username?: string } }>(
+        `/api/pods/${podId}/members`,
+        { username },
+      );
+      const name = data?.member?.username || username;
+      if (data?.alreadyMember) {
+        setAddNotice({ tone: 'ok', text: t('inviteModal.addMember.alreadyMember', { username: name }) });
+      } else {
+        setAddNotice({ tone: 'ok', text: t('inviteModal.addMember.added', { username: name }) });
+        setAddName('');
+        onMemberAdded?.();
+      }
+    } catch (err) {
+      const code = (err as { response?: { data?: { code?: string } } }).response?.data?.code || '';
+      setAddNotice({ tone: 'error', text: t(addRefusalKey[code] || 'inviteModal.addMember.failed') });
+    } finally {
+      setAdding(false);
+    }
+  }, [addName, api, onMemberAdded, podId, t]);
 
   const handleCopy = useCallback(async (link: string, token: string) => {
     if (!link) return;
@@ -210,6 +259,37 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
         <div className="v2-modal__body">
           {tab === 'people' && (
             <>
+              {canAddMember && (
+                <section className="v2-invite-add" aria-labelledby="add-member-title">
+                  <div className="v2-modal__section-title" id="add-member-title">{t('inviteModal.addMember.title')}</div>
+                  <p className="v2-modal__hint">{t('inviteModal.addMember.hint')}</p>
+                  <form className="v2-invite-link-row" onSubmit={handleAdd}>
+                    <input
+                      type="text"
+                      className="v2-invite-link"
+                      aria-label={t('inviteModal.addMember.label')}
+                      placeholder={t('inviteModal.addMember.placeholder')}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      maxLength={65}
+                      value={addName}
+                      onChange={(event) => setAddName(event.target.value)}
+                    />
+                    <button type="submit" className="v2-invite-card__cta v2-invite-card__cta--secondary" disabled={adding}>
+                      {adding ? t('inviteModal.addMember.adding') : t('inviteModal.addMember.add')}
+                    </button>
+                  </form>
+                  {addNotice && (
+                    <div
+                      className={addNotice.tone === 'error' ? 'v2-modal__error' : 'v2-invite-add__ok'}
+                      role={addNotice.tone === 'error' ? 'alert' : 'status'}
+                    >
+                      {addNotice.text}
+                    </div>
+                  )}
+                </section>
+              )}
               <p className="v2-modal__hint">
                 {t('inviteModal.peopleHint')}
               </p>

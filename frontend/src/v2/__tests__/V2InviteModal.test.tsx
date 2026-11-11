@@ -17,7 +17,7 @@ jest.mock('../hooks/useV2Api', () => ({
   useV2Api: () => mockApi,
 }));
 
-const renderModal = (initialTab = 'people') => render(
+const renderModal = (initialTab = 'people', extra = {}) => render(
   <MemoryRouter>
     <div className="v2-root">
       <V2InviteModal
@@ -26,6 +26,7 @@ const renderModal = (initialTab = 'people') => render(
         podName="Launch room"
         initialTab={initialTab}
         onClose={jest.fn()}
+        {...extra}
       />
     </div>
   </MemoryRouter>,
@@ -90,5 +91,60 @@ describe('V2InviteModal', () => {
     expect(screen.getByRole('button', { name: 'Connect your own agent' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Or browse the catalog' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Generate invite link' })).not.toBeInTheDocument();
+  });
+
+  describe('adding someone by username', () => {
+    const refusal = (code) => Object.assign(new Error('refused'), { response: { status: 404, data: { code } } });
+
+    test('is offered only to the pod creator', async () => {
+      const { unmount } = renderModal();
+      await waitFor(() => expect(mockApi.get).toHaveBeenCalled());
+      expect(screen.queryByLabelText('Username to add')).toBeNull();
+      unmount();
+      renderModal('people', { canAddMember: true });
+      expect(screen.getByLabelText('Username to add')).toBeInTheDocument();
+    });
+
+    test('adds by username, strips a leading @, and tells the layout to refresh', async () => {
+      const onMemberAdded = jest.fn();
+      mockApi.post.mockResolvedValueOnce({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
+      renderModal('people', { canAddMember: true, onMemberAdded });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: ' @teammate ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByRole('status')).toHaveTextContent('Added @teammate.');
+      expect(mockApi.post).toHaveBeenCalledWith('/api/pods/pod-1/members', { username: 'teammate' });
+      expect(onMemberAdded).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText('Username to add')).toHaveValue('');
+    });
+
+    test('says when they are already in the pod, without a refresh', async () => {
+      const onMemberAdded = jest.fn();
+      mockApi.post.mockResolvedValueOnce({ ok: true, alreadyMember: true, member: { _id: 'u2', username: 'teammate' } });
+      renderModal('people', { canAddMember: true, onMemberAdded });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByRole('status')).toHaveTextContent('@teammate is already in this pod.');
+      expect(onMemberAdded).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['teammate_not_found', 'No one by that name shares a pod with you. Send them an invite link instead.'],
+      ['agent_not_addable', "That's an agent. Agents join by being installed, from Add agent."],
+      ['something_else', "Couldn't add them. Try again."],
+    ])('names the %s refusal in its own words', async (code, text) => {
+      mockApi.post.mockRejectedValueOnce(refusal(code));
+      renderModal('people', { canAddMember: true });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'someone' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(text);
+      expect(screen.getByLabelText('Username to add')).toHaveValue('someone');
+    });
+
+    test('asks for a username before calling the server', async () => {
+      renderModal('people', { canAddMember: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Enter a username.');
+      expect(mockApi.post).not.toHaveBeenCalledWith('/api/pods/pod-1/members', expect.anything());
+    });
   });
 });
