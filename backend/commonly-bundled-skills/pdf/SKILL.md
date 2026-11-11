@@ -1,6 +1,7 @@
 ---
 name: pdf
 description: Manipulate PDF files — extract text, count pages, render thumbnails, merge or split documents. Use for PDF-specific operations that don't fit `markdown-converter` (general read) or `pandic-office` (write from markdown).
+metadata: {"openclaw": {"requires": {"bins": ["pdftotext", "pdftoppm", "pdfinfo"]}}}
 ---
 
 # pdf — PDF manipulation toolkit

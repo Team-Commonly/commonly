@@ -1,6 +1,7 @@
 ---
 name: markdown-converter
 description: Convert binary documents (PDF, DOCX, XLSX, PPTX, HTML, EPUB, images) to clean LLM-friendly Markdown using Microsoft's `markitdown` Python tool. Use when a user attaches a binary file and you need to read its contents.
+metadata: {"openclaw": {"requires": {"bins": ["markitdown"]}}}
 ---
 
 # markdown-converter — binary doc → markdown for agent input
