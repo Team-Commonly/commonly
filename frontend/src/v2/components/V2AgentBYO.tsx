@@ -472,19 +472,6 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
-  // "On my computer" places a second instance only on a computer whose daemon
-  // keeps a key per instance (F427, CLI 0.1.328): an older one keeps one key per
-  // agent name and refuses it. A computer that has not checked in since its
-  // upgrade reads as older until it does.
-  const placeableMachines = useMemo(
-    () => (secondInstance ? machines.filter((m) => keepsInstanceKeys(m.cliVersion)) : machines),
-    [machines, secondInstance],
-  );
-  // Computers on file, none of which can take this instance yet: the page says
-  // how to update one, in place of the line that adds a computer.
-  const machinesNeedUpdate = Boolean(secondInstance) && machines.length > 0 && placeableMachines.length === 0;
-  const machineOffered = placeableMachines.length > 0;
-  const choosingMode = !choicesKnown || hostedOffered || machineOffered;
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
   // machine link for a second instance falls back the same way, unless the
@@ -494,6 +481,20 @@ const V2AgentBYO: React.FC = () => {
   const wrapperReconnect = existingConnection?.runtimeType === 'wrapper'
     && (Boolean(prefill.reconnect) || ['revoked', 'stale'].includes(existingConnection.connection.state))
     && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin');
+  // "On my computer" places a second instance only on a computer whose daemon
+  // keeps a key per instance (F427, CLI 0.1.328): an older one keeps one key per
+  // agent name and refuses it. A computer that has not checked in since its
+  // upgrade reads as older until it does. A wrapper Reconnect places nothing,
+  // and its instance may run on an older computer, so it lists every one.
+  const placeableMachines = useMemo(
+    () => (secondInstance && !wrapperReconnect ? machines.filter((m) => keepsInstanceKeys(m.cliVersion)) : machines),
+    [machines, secondInstance, wrapperReconnect],
+  );
+  // Computers on file, none of which can take this instance yet: the page says
+  // how to update one, in place of the line that adds a computer.
+  const machinesNeedUpdate = Boolean(secondInstance) && machines.length > 0 && placeableMachines.length === 0;
+  const machineOffered = placeableMachines.length > 0;
+  const choosingMode = !choicesKnown || hostedOffered || machineOffered;
   const modeUnavailable = (chosenMode === 'hosted' && !hostedOffered)
     || (chosenMode === 'machine' && Boolean(secondInstance) && !wrapperReconnect && !machineOffered);
   const mode = modeUnavailable

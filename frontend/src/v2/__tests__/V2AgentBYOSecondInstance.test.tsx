@@ -284,7 +284,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
   });
 
-  test('a computer link to a connected second-instance wrapper, without reconnect, offers no computer to place it on', async () => {
+  test('a computer link to a connected second-instance wrapper, without reconnect, offers no older computer to place it on', async () => {
     mockServer({ machines: [MACBOOK] });
     const plain = axios.get.getMockImplementation();
     axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
@@ -297,6 +297,38 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await new Promise((r) => { setTimeout(r, 400); });
     expect(screen.queryByTestId('byo-machine-select')).toBeNull();
     expect(screen.queryByRole('button', { name: /^assign/i })).toBeNull();
+  });
+
+  // On a computer that keeps a key per instance, the same link offers that
+  // computer, as it does for the default instance: placing it there moves it.
+  test('a computer link to a connected second-instance wrapper, without reconnect, offers a 0.1.328 computer', async () => {
+    mockServer({ machines: [STUDIO] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter: 'claude' }, connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }] } })
+      : plain(url)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&mode=machine');
+    renderPage();
+    const select = await screen.findByTestId('byo-machine-select');
+    expect(within(select).getAllByRole('option').map((o) => o.value)).toEqual(['m2']);
+  });
+
+  // A wrapper Reconnect places nothing, and the instance may run on an older
+  // computer, so the picker lists every computer there.
+  test('a second instance\'s wrapper Reconnect lists every computer, older ones included', async () => {
+    mockServer({ machines: [{ ...MACBOOK, cliVersion: '0.1.300' }, STUDIO] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter: 'claude' }, connection: { state: 'revoked', lastSeenAt: null } }] } })
+      : plain(url)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 });
+    const select = await screen.findByTestId('byo-machine-select');
+    expect(within(select).getAllByRole('option').map((o) => o.value)).toEqual(['m1', 'm2']);
+    expect(screen.queryByText('Update your computer')).toBeNull();
   });
 
   // With no computer on file, the add-a-computer block and the quick-try hint

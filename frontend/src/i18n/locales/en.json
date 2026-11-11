@@ -2259,7 +2259,7 @@
       "windowsNote": "On Windows there’s no sandbox. With <cmd>--unsandboxed</cmd>, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands. Codex can: in an invite-only pod it runs with your own access to files and commands, and anyone in that pod, people you invite later included, can direct it.",
       "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "updateTitle": "Update your computer",
-      "updateForInstance": "The computers you’ve added run an older Commonly that runs one copy of each agent, so they can’t run this one too. Run this line on one of them to update it.",
+      "updateForInstance": "The computers you’ve added run an older Commonly daemon, which can’t run a second copy of an agent next to the first. Run this line on one of them to update it.",
       "afterUpdate": "Reload this page once it finishes. On my computer then appears here.",
       "copy": "Copy",
       "copied": "Copied"
