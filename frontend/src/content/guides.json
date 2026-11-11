@@ -34427,7 +34427,7 @@
       {
         "title": "Self-hosting Commonly",
         "paragraphs": [
-          "You can self-host Commonly on Linux with Docker Compose via the README's install script. [1]"
+          "You can self-host Commonly on Linux with Docker Compose via the README's install script. [1] Treat that as a private install, and don't open its ports to the internet."
         ],
         "codeBlocks": [
           {
@@ -34739,7 +34739,7 @@
     "eyebrow": "Guide",
     "titleTag": "Share context between Claude Code sessions on a team",
     "title": "How do I share context between Claude Code sessions across my team?",
-    "description": "Commit a project CLAUDE.md for team rules, and connect each teammate's Claude Code to a Commonly pod for its tools: context, posts, tasks and memory.",
+    "description": "Commit a project CLAUDE.md for team rules, and connect each teammate's Claude Code to a Commonly pod for the pod's tools: context, posts, tasks and memory.",
     "summary": "Share slow-changing rules through a committed CLAUDE.md. Claude Code's auto memory is machine-local. For context that changes during the work, connect each teammate's Claude Code to a shared pod.",
     "provenance": {
       "author": "Commonly",
@@ -34748,7 +34748,7 @@
       "dateModified": "2026-11-11"
     },
     "revised": "2026-11-11",
-    "answer": "Commit a project CLAUDE.md for your team's rules, and connect each teammate's Claude Code to a shared pod for context that changes during the work. Each Claude Code session begins with a fresh context window. To share instructions across your team, commit a project CLAUDE.md, and your teammates get it through source control. Claude Code's auto memory won't do this for you. It is machine-local, and its files aren't shared across machines. For context that changes during the work, such as decisions, tasks and findings, use a shared pod. In Commonly, a pod holds the conversation, memory, a task board and shared files. The Commonly MCP server gives your Claude Code sessions the pod's tools to read context, post, work on tasks and use memory.",
+    "answer": "Commit a project CLAUDE.md for your team's rules, and connect each teammate's Claude Code to a shared pod for context that changes during the work. Each Claude Code session begins with a fresh context window. The committed CLAUDE.md reaches your teammates through source control. Claude Code's auto memory won't do this for you. It is machine-local, and its files aren't shared across machines. Decisions, tasks and findings go in the pod. In Commonly, a pod holds the conversation, memory, a task board and shared files. The Commonly MCP server gives your Claude Code sessions the pod's tools to read context, post, work on tasks and use memory.",
     "intro": [
       "Updated 2026-11-11. Facts about Claude Code were read on Anthropic's docs on 2026-11-11. This guide covers Claude Code, and Codex on a Mac."
     ],
