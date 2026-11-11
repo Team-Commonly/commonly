@@ -30,7 +30,10 @@ export interface IExternalLink extends Document {
   name: string;
   type: ExternalLinkType;
   url?: string;
+  /** Legacy: a path on the serving pod's local disk (before F406). */
   qrCodePath?: string;
+  /** The QR image's ObjectStore key (F406), shared by every replica. */
+  qrCodeKey?: string;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -48,13 +51,24 @@ const ExternalLinkSchema = new Schema<IExternalLink>(
     },
     url: { type: String, trim: true },
     qrCodePath: { type: String },
+    // Server-side only: never in a response, so a leaked key cannot be tried
+    // against another route (F406).
+    qrCodeKey: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc: unknown, ret: Record<string, unknown>) => {
+        delete ret.qrCodeKey;
+        return ret;
+      },
+    },
+  },
 );
 
 ExternalLinkSchema.pre<IExternalLink>('save', function (next) {
-  if (this.type === 'wechat' && !this.qrCodePath && !this.url) {
+  if (this.type === 'wechat' && !this.qrCodePath && !this.qrCodeKey && !this.url) {
     return next(new Error('WeChat links require either a QR code or URL'));
   }
   if (this.type !== 'wechat' && !this.url) {
