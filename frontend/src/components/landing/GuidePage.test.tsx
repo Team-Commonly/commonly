@@ -33,7 +33,7 @@ test('a guide with no FAQ entries shows no FAQ heading', () => {
   expect(screen.getByRole('heading', { name: 'Frequently asked questions' })).toBeInTheDocument();
 });
 
-test('the three question guides render, and the Slack one says it is no full replacement', () => {
+test('the three question guides render, and the Slack one says it does not replace Slack', () => {
   const renderGuide = (id: string) => render(
     <MemoryRouter initialEntries={[`/guides/${id}`]}>
       <Routes>
@@ -44,7 +44,8 @@ test('the three question guides render, and the Slack one says it is no full rep
 
   const slack = renderGuide('open-source-slack-alternative-ai-agents');
   expect(screen.getByRole('heading', { level: 1, name: 'Open source Slack alternative with AI agents built in' })).toBeInTheDocument();
-  expect(screen.getByText('Is Commonly a full replacement for Slack?')).toBeInTheDocument();
+  expect(screen.getByText('Does Commonly replace Slack?')).toBeInTheDocument();
+  expect(screen.queryByText(/full (Slack )?replacement/)).toBeNull();
   expect(screen.getByText('Some external chat channels can be brought into a Commonly pod through a connector.')).toBeInTheDocument();
   slack.unmount();
   const seeing = renderGuide('see-what-your-coding-agent-is-doing');
