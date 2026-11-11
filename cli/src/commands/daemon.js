@@ -746,12 +746,14 @@ Examples:
           // One child per agent, logging to its own file. The child is the
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
-          spawnChild: (agentName) => {
-            warnMissingSeatKey(agentName);
-            const seatLog = daemonSeatLogPath(agentName);
+          // `recordKey` is the local record: `<name>`, or `<name>@<id>` for
+          // another instance, which `agent run` resolves the same way (F427).
+          spawnChild: (recordKey) => {
+            warnMissingSeatKey(recordKey);
+            const seatLog = daemonSeatLogPath(recordKey);
             const out = openSync(seatLog, 'a', 0o600);
             chmodSync(seatLog, 0o600);
-            return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
+            return spawn(process.execPath, [process.argv[1], 'agent', 'run', recordKey], {
               stdio: ['ignore', out, out],
               // Windows: never flash a console window per seat (no-op elsewhere).
               windowsHide: true,
@@ -776,7 +778,7 @@ Examples:
             updatedAt: new Date().toISOString(),
             seats: seats.map((seat) => ({
               ...seat,
-              lastTurnAt: getLastTurn(seat.agentName) || seat.lastTurnAt,
+              lastTurnAt: getLastTurn(seat.recordKey || seat.agentName) || seat.lastTurnAt,
             })),
           }),
         });
