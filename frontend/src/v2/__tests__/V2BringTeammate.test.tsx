@@ -174,7 +174,8 @@ describe('from the workspace: a new pod with the agent in it (D288)', () => {
   });
 
   test('a press makes the pod, adds the agent, then invites into the new pod, never the workspace', async () => {
-    renderCard();
+    const onPodCreated = jest.fn();
+    renderCard({ onPodCreated });
     expect(mockGet).not.toHaveBeenCalled();
     press();
     await screen.findByText('teammate.live');
@@ -185,6 +186,8 @@ describe('from the workspace: a new pod with the agent in it (D288)', () => {
     expect(mockWrite).toHaveBeenCalledWith(`${window.location.origin}/v2/invite/${token}`);
     expect(screen.getByTestId('teammate-open-new-pod')).toHaveAttribute('href', `/v2/pods/${newPodId}`);
     expect(mockTrack).toHaveBeenCalledWith('teammate-card-click', { props: { where: 'workspace' }, podId: 'workspace' });
+    // The pod list refreshes as soon as the pod exists, so the sidebar shows it.
+    expect(onPodCreated).toHaveBeenCalledTimes(1);
   });
 
   test('a later mount reuses the pod it made and never makes a second', async () => {

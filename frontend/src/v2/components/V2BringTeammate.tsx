@@ -32,6 +32,8 @@ interface Props {
   newPod?: TeammateNewPod;
   /** The account's dismissal, stored server-side: once dismissed, the card never shows again. */
   dismissedEverywhere?: boolean;
+  /** Called once a press made the new pod, so the pod list can show it at once. */
+  onPodCreated?: () => void;
   /** Called when the card appears, so a thread at its end can keep the card in view. */
   onShown?: () => void;
   /** Keep request state above transcript slots that move during thread toggles. */
@@ -49,7 +51,7 @@ const errorOf = (error: unknown) => (error as { response?: { status?: number; da
 
 /** State and pending requests belong to one viewer/pod/placement. */
 const BringTeammateContent: React.FC<Props> = ({
-  podId, podName, userId, source, agentName, enabled = true, newPod, dismissedEverywhere = false, onShown, children,
+  podId, podName, userId, source, agentName, enabled = true, newPod, dismissedEverywhere = false, onPodCreated, onShown, children,
 }) => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -112,6 +114,7 @@ const BringTeammateContent: React.FC<Props> = ({
       if (!pod?._id || !/^[a-f0-9]{24}$/.test(pod._id)) throw new Error('invalid pod');
       current = { podId: pod._id, agentAdded: false };
       keepNewPod(current);
+      onPodCreated?.();
     }
     if (!current.agentAdded) {
       try {

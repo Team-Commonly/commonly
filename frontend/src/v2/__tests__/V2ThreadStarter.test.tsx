@@ -713,13 +713,16 @@ describe('second-person prompt placements', () => {
     ];
     const newPodId = 'c'.repeat(24);
     axios.post.mockImplementation((url) => Promise.resolve({ data: url === '/api/pods' ? { _id: newPodId } : { token: 'a'.repeat(32), success: true } }));
-    renderChat(detail);
+    const refresh = jest.fn();
+    renderChat(detail, { podsState: { pods: [], loading: false, error: null, refresh, createPod: jest.fn(), deletePod: jest.fn(), patchLastMessage: jest.fn() } });
     expect(await screen.findByText(/Your workspace stays private/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(`/api/pods/${newPodId}/invites`, expect.anything(), expect.anything()));
     const urls = axios.post.mock.calls.map(([url]) => url);
     expect(urls).toContain(`/api/registry/agents/claude-code/pods/${newPodId}?instanceId=laptop`);
     expect(urls.some((url) => url.startsWith('/api/pods/p1/'))).toBe(false);
+    // The sidebar's pod list re-reads at once, so the new pod shows without a reload.
+    expect(refresh).toHaveBeenCalledWith({ silent: true });
   });
 
   test('in the workspace Scout\'s answer, which carries its display name, never offers the card', async () => {

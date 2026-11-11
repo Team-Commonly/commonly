@@ -2182,6 +2182,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             enabled={Boolean(teammateMoment)}
             newPod={teammateNewPod}
             dismissedEverywhere={teammateDismissedEverywhere}
+            onPodCreated={refreshPodList}
             onShown={followCardIfAtBottom}>
             {(teammateCard) => <V2ThreadMessages
             messages={messages}
