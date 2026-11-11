@@ -1449,13 +1449,31 @@ const V2AgentBYO: React.FC = () => {
     }
     setIssued(null);
   };
-  // The daemon block lives in Other ways to connect on both the start form and
-  // the result page, so the stop-on-close line can point to it from the result.
+  // The daemon block leads the start form in BYO mode (F370) and otherwise sits
+  // in Other ways to connect, on the start form and the result page, so the
+  // stop-on-close line can point to it from the result.
   // On Windows `daemon install` registers a logon task (D245).
   const addComputerBlock = machines.length === 0 ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      {/* The computer being added need not be the one browsing: a Windows box
+          set up from a Mac needs the Windows command and its note. The same
+          choice as the listen block's, so the two never disagree. */}
+      <p className="v2-byo__os" data-testid="byo-add-computer-os" role="group" aria-label={t('agentByo.listen.osLabel')}>
+        {SETUP_OS_OPTIONS.map(({ os, labelKey }) => (
+          <button
+            key={os}
+            type="button"
+            className="v2-byo__link"
+            aria-pressed={setupOs === os}
+            data-testid={`byo-add-computer-os-${os}`}
+            onClick={() => setSetupOs(os)}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </p>
       <div className="v2-byo__add-computer-row">
         <code>{daemonCommand}</code>
         <button
@@ -1803,6 +1821,10 @@ const V2AgentBYO: React.FC = () => {
             </div>
             </>
           )}
+          {/* F370: with no computer yet, the daemon line leads the BYO form, after
+              the mode picker when there is one. It is the path that keeps an agent
+              running; the run command below is the quick try. */}
+          {mode === 'byo' && addComputerBlock}
           {mode === 'machine' && (
             <label className={`v2-byo__field${errorField === 'machine' ? ' v2-byo__field--error' : ''}`}>
               <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
@@ -1955,7 +1977,7 @@ const V2AgentBYO: React.FC = () => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
-            {addComputerBlock}
+            {mode !== 'byo' && addComputerBlock}
           <p className="v2-byo__footnote">
             {listenerAvailable && <>{t('agentByo.footnote.cliRoute', { byo: t('agentByo.mode.byo') })}{' '}</>}
             {t('agentByo.footnote.notSure')}{' '}
