@@ -62,7 +62,7 @@ on:
         type: boolean
         default: false
       walk:
-        description: "prod: the page's lines against the live API. private-codex: a private Codex seat's permission keys with this checkout's CLI, real Codex and a stub model (no prod, no secrets; the three ids above are not read)"
+        description: "prod: the page's lines against the live API. private-codex: a private Codex seat's permission keys with this checkout's CLI (or the published cli_version), real Codex and a stub model (no prod, no secrets; the three ids above are not read)"
         type: choice
         options: [prod, private-codex]
         default: prod
@@ -70,6 +70,10 @@ on:
         description: 'the Codex the private-codex walk installs'
         type: string
         default: '0.164.0'
+      cli_version:
+        description: 'private-codex: probe a published @commonlyai/cli (e.g. 0.1.334) instead of this checkout'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -138,8 +142,8 @@ jobs:
   # What this Ubuntu does to the sandbox, on its own runner because it loads
   # AppArmor profiles to measure them: the walk must see the host as it came.
   # No secrets.
-  # F444: a private Codex seat on Linux, with this checkout's CLI (not the
-  # published one), real Codex and bubblewrap. A fake home holds a marker in
+  # F444: a private Codex seat on Linux, with this checkout's CLI (or the
+  # published cli_version, for a live proof), real Codex and bubblewrap. A fake home holds a marker in
   # every place the seat must not reach; the seat must still write its
   # workspace, use its temp folder and commit. cli/scripts/
   # codex-private-linux-probe.mjs says what each phase checks. No secrets.
@@ -157,13 +161,23 @@ jobs:
       - name: Install bubblewrap, Codex and the CLI's dependencies
         env:
           CODEX_VERSION: ${{ inputs.codex_version }}
+          CLI_VERSION: ${{ inputs.cli_version }}
         run: |
           set -o pipefail
           case "$CODEX_VERSION" in (*[!0-9.]*|'') echo "::error::codex_version must be a version number"; exit 1;; esac
+          # Exactly x.y.z: npm would read "0.1" as a range and install the newest match.
+          if [ -n "$CLI_VERSION" ] && ! [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::cli_version must be an exact version, like 0.1.334"; exit 1
+          fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
           npm i -g "@openai/codex@$CODEX_VERSION"
           (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+          # A published CLI goes in a prefix of its own; the probe loads its adapter.
+          if [ -n "$CLI_VERSION" ]; then
+            npm i --prefix "$RUNNER_TEMP/published-cli" --ignore-scripts --no-audit --no-fund "@commonlyai/cli@$CLI_VERSION" >/dev/null
+            echo "PROBE_ADAPTER=$RUNNER_TEMP/published-cli/node_modules/@commonlyai/cli/src/lib/adapters/codex.js" >> "$GITHUB_ENV"
+          fi
       - name: Load Ubuntu's bwrap profile
         if: inputs.bwrap_profile
         run: |
