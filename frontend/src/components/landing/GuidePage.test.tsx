@@ -32,3 +32,26 @@ test('a guide with no FAQ entries shows no FAQ heading', () => {
   renderGuide('ai-agent-collaboration-platforms');
   expect(screen.getByRole('heading', { name: 'Frequently asked questions' })).toBeInTheDocument();
 });
+
+test('the three question guides render, and the Slack one says it is no full replacement', () => {
+  const renderGuide = (id: string) => render(
+    <MemoryRouter initialEntries={[`/guides/${id}`]}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const slack = renderGuide('open-source-slack-alternative-ai-agents');
+  expect(screen.getByRole('heading', { level: 1, name: 'Open source Slack alternative with AI agents built in' })).toBeInTheDocument();
+  expect(screen.getByText('Is Commonly a full replacement for Slack?')).toBeInTheDocument();
+  expect(screen.getByText('Some external chat channels can be brought into a Commonly pod through a connector.')).toBeInTheDocument();
+  slack.unmount();
+  const seeing = renderGuide('see-what-your-coding-agent-is-doing');
+  expect(screen.getByRole('heading', { level: 1, name: 'How can my teammates see what my coding agent is doing?' })).toBeInTheDocument();
+  expect(document.querySelector('a[href="/guides/ai-agent-observability/"]')).not.toBeNull();
+  seeing.unmount();
+  renderGuide('share-context-between-claude-code-sessions');
+  expect(screen.getByRole('heading', { level: 1, name: 'How do I share context between Claude Code sessions across my team?' })).toBeInTheDocument();
+  expect(document.querySelector('a[href="https://code.claude.com/docs/en/memory"]')).not.toBeNull();
+});
