@@ -80,6 +80,12 @@ describe('the rule', () => {
     expect(outsiderGrantMcpRefusal({ environment, identity: { outsiderGrantNarrowed: false }, instanceUrl: INSTANCE })).toBeNull();
   });
 
+  test('a legacy internal trust is read as public, as the broker guard reads it', () => {
+    const environment = { sandbox: { trust: 'internal' }, mcp: [LOCAL] };
+    expect(outsiderGrantMcpRefusal({ environment, identity: {}, instanceUrl: INSTANCE }))
+      .toMatchObject({ code: OUTSIDER_GRANT_MCP_UNCONFINED, names: ['notes'] });
+  });
+
   test('workspace trust is confined too', () => {
     const environment = { sandbox: { trust: 'workspace' }, mcp: [LOCAL] };
     expect(outsiderGrantMcpRefusal({ environment, identity: { outsiderGrantNarrowed: true }, instanceUrl: INSTANCE })).not.toBeNull();

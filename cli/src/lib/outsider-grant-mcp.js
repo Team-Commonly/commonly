@@ -17,18 +17,25 @@
  * `outsider-grant-mcp.test.mjs` pins those flags, so a scope added to an
  * adapter fails that test before it widens this set.
  *
- * Only confined seats (`sandbox.trust` public or workspace) are checked. An
+ * Only confined seats (`sandbox.trust` public or workspace, with the legacy
+ * `internal` read as public) are checked. An
  * unconfined seat named on a grant runs on its owner's machine with a shell,
  * under the owner's consent that what it reads can leave, so a local MCP
  * server adds nothing it lacks (§12, the F94 amendment).
  */
 import { isShippedCommonlyMcpEntry, isShippedGrantBrokerEntry } from './declared-mcp-guard.js';
+import { effectiveSandboxTrust } from './environment.js';
 
 export const OUTSIDER_GRANT_MCP_UNCONFINED = 'outsider_grant_mcp_unconfined';
 
 const CONFINED_TRUSTS = new Set(['public', 'workspace']);
 
-export const seatIsConfined = (environment) => CONFINED_TRUSTS.has(environment?.sandbox?.trust);
+// Read through the legacy table, as the broker guard and the adapters read it:
+// a record still carrying `internal` is confined as `public`, and is handed
+// the broker as a public seat, so it is checked as one.
+export const seatIsConfined = (environment) => CONFINED_TRUSTS.has(
+  effectiveSandboxTrust(environment?.sandbox?.trust),
+);
 
 // The server flags a broker on a grant that names this seat (`byoNamed`). It is
 // a marker for the guard, not something the client reads, so it is set aside
