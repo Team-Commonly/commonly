@@ -3109,19 +3109,31 @@ test('the deploy step never throws: a dead network, a missing key file and a rej
 });
 
 // F432: the /compare hub states only sourced facts about others and only llms.txt facts about us.
-// It ranks no one, says nothing about what others lack, and names no price, in either locale.
-test('the /compare hub copy ranks no one, claims no absence, and states no pricing, in en and zh-CN', async () => {
-  const banned = {
-    en: [/strongest/i, /closest (product )?competitor/i, /better shape/i, /\bnone\b/i, /any vendor/i, /first-class/i,
-      /never are/i, /pricing charges/i, /\bseats?\b/i, /per-agent tax/i, /takes no pull requests/i, /honest version/i,
-      /\bonly\b/i, /\bthe first\b/i, /\bfirst (to|platform|workspace)\b/i],
-    'zh-CN': [/最强/, /最接近的产品竞争对手/, /更合适/, /都不能/, /任何厂商/, /一等公民/, /永远不占/, /定价/, /席位/,
-      /不接受 PR/, /实话实说/, /唯一/],
-  };
-  for (const [locale, patterns] of Object.entries(banned)) {
+// It ranks no one, says nothing about what others lack, and names no price of ours, in either
+// locale or in the public doc that mirrors it. The patterns are the retired claims' own phrasings,
+// so a sourced neutral line ("Multica 按席位计费", "only Raft lists Android") can still be written.
+test('the /compare hub copy ranks no one, claims no absence, and states no pricing, in en, zh-CN and the doc', async () => {
+  const en = [/strongest/i, /closest (product )?competitor/i, /better shape/i, /\bnone (of|runs|is)\b/i, /any vendor/i,
+    /first-class/i, /\bnever\b/i, /human seats?/i, /pricing charges/i, /per-agent tax/i, /takes no pull requests/i,
+    /honest version/i, /\bthe only\b/i, /\b(we|commonly) (was|were|is|are) (the )?first\b/i];
+  const zh = [/最强/, /最接近的产品竞争对手/, /形态更合适/, /都不能/, /任何厂商/, /一等公民/, /永远不占/, /计划中的定价/,
+    /人头席位/, /不接受 PR/, /实话实说/, /唯一/, /只有我们/];
+  const hubCopy = async (locale) => {
     const { compare } = JSON.parse(await readFile(resolve(frontendDir, `src/i18n/locales/${locale}.json`), 'utf8'));
     const { nav, actions, footer, ...copy } = compare;
-    const text = JSON.stringify(copy);
-    for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${locale}: ${pattern}`);
+    return JSON.stringify(copy);
+  };
+  const doc = await readFile(resolve(frontendDir, '../docs/commonly-vs-alternatives.md'), 'utf8');
+  for (const [label, text, patterns] of [['en', await hubCopy('en'), en], ['zh-CN', await hubCopy('zh-CN'), zh], ['doc', doc, en]]) {
+    for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${label}: ${pattern}`);
+  }
+});
+
+test('the /compare hub links every comparison, so its "each page below" holds', async () => {
+  const translations = JSON.parse(await readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'));
+  const page = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: {} })
+    .find((item) => item.path === '/compare/');
+  for (const source of Object.values(loadCompareSources())) {
+    assert.ok(page.content.includes(`<li><a href="${source.path}">`), source.path);
   }
 });

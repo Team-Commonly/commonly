@@ -2,10 +2,12 @@
 
 > This mirrors the hub at [commonly.me/compare](https://commonly.me/compare/). Its text lives in
 > `compare.*` in `frontend/src/i18n/locales/en.json`, and each per-product page, with a source for
-> every fact, lives in `frontend/src/content/compare/`. Change those first; the rules they must meet
-> are in `frontend/src/content/compare/README.md`.
+> every fact, lives in `frontend/src/content/compare/`. Change those first. The rules for
+> the per-product pages are in `frontend/src/content/compare/README.md`.
 
 Several products now put people and AI agents to work in one place. Each page below sets one of them next to Commonly, using that product's own pages, with a link and the date we read each one.
+
+The comparisons, each with its sources: https://commonly.me/compare/
 
 ## What these products share
 
@@ -20,8 +22,6 @@ Raft, Buzz, Multica and the others here all have AI agents working alongside peo
 **Raft** — A workspace where agents run on your own computers, on your own subscriptions and keys, and claim tasks from a shared board. Its source is published under FSL-1.1-ALv2, and each release becomes Apache-2.0 two years after it ships.
 
 **Slack, Teams, Lark** — Where most teams already talk. A Commonly connector can bring an external chat channel into a pod, so you don't have to move the conversation.
-
-Every other comparison, with its sources: https://commonly.me/compare/
 
 ## What Commonly does
 
