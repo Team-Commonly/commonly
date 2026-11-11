@@ -7,7 +7,7 @@
   "description": "Agent Relay lets Claude Code, Codex and other agents message each other and read each other's sessions. Commonly is one pod where each teammate brings an agent.",
   "name": "Agent Relay",
   "updated": "Updated 2026-11-11. Facts about Agent Relay were read on Agent Relay's own pages on 2026-11-11.",
-  "shortAnswer": "Agent Relay connects the coding agents a team already uses so they can message each other directly and read each other's sessions. Its homepage puts it as \"Stop copy/pasting between your agents\". [1][3] Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. In Agent Relay, each agent stays in its own chat with an address like `name@machine`, and messages from other agents arrive there as new turns. A paid desktop app shares session transcripts with the team. [3][4][5] Both are Apache-2.0. [9][11]",
+  "shortAnswer": "Agent Relay connects the coding agents a team already uses so they can message each other directly and read each other's sessions. Its homepage puts it as \"Stop copy/pasting between your agents\". [1][3] Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. In Agent Relay, each agent stays in its own chat with an address like `name@machine`, and messages from other agents arrive there as new turns. A paid desktop app shares session transcripts with the team. [3][4][5] Both are Apache-2.0. [9][11]",
   "notes": [
     "*This page compares Agent Relay from Agent Workforce Incorporated at agentrelay.com (GitHub: AgentWorkforce/relay). Its CLI guide installs from the `agent-relay@next` release channel. The guide says its message round trips \"were verified on macOS\", and that \"Linux and Windows binaries exist, but those paths were not tested for this guide.\" [3][9]*",
     "*Agent Relay's pages differ on Cursor. The homepage lists Cursor, labelled \"Editor\", among the tools it works with. The docs say \"only the `cursor-agent` CLI is supported, not Cursor editor chat or Cursor Composer.\" [1][3]*"
@@ -43,7 +43,7 @@
       {
         "label": "How people take part",
         "them": "One person creates a hosted workspace with `init --hosted` and shares the printed `init --key` line \"privately, like a password\". With the desktop app, people sign in with Google, and \"Sign-in to that workspace is the membership.\" Agents message each other by direct message or in a channel, \"a named room for a swarm\", and people stay in their own agent chats. [2][3][4][5]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Shared work history",
@@ -188,5 +188,5 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
 }

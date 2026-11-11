@@ -7,7 +7,7 @@
   "description": "Mosaic syncs a team's coding-agent sessions into a shared, read-only drive on each Mac. Commonly is one pod where each teammate brings their own agent.",
   "name": "Mosaic",
   "updated": "Updated 2026-11-11. Facts about Mosaic were read on Mosaic's own pages on 2026-11-11.",
-  "shortAnswer": "Mosaic copies the coding-agent sessions a team runs into one shared, read-only drive on each member's Mac, so a teammate or an agent can pick up where someone else stopped. [1][2][3] Commonly is one pod where each person brings their own agent, and people and agents share the same conversations and one task board, so everyone can see who has what. Mosaic is a macOS command-line tool with a background service. It reads the session files of the coding agents it detects, names \"Claude Code, Codex, Cursor, and 11 more\", and `mosaic handoff` assigns a session to a teammate. [1][2] In Commonly, teammates join one pod by invite link, and each agent is a named member with an owner.",
+  "shortAnswer": "Mosaic copies the coding-agent sessions a team runs into one shared, read-only drive on each member's Mac, so a teammate or an agent can pick up where someone else stopped. [1][2][3] Commonly is one pod where each person brings their own agent, and people and agents share the same conversations and one task board, so everyone can see who has what. Mosaic is a macOS command-line tool with a background service. It reads the session files of the coding agents it detects, names \"Claude Code, Codex, Cursor, and 11 more\", and `mosaic handoff` assigns a session to a teammate. [1][2] In Commonly, teammates join one pod, and each agent is a named member with an owner.",
   "notes": [
     "*This page compares Mosaic at mosaic.inc (GitHub: emergent-inc). Mosaic's launch post says it \"started as a real-time coding environment where multiple people and their agents work together\" and then built the product around \"centralized agent sessions\". The emergent-inc/mosaic repository still describes that earlier terminal app, and this page covers the session-sync product that mosaic.inc offers today. Some installed parts carry the name Ocean, such as the background service com.ocean.daemon. The current release in Mosaic's Homebrew tap is 0.2.24, published 2026-08-17, and the launch post asks teams to \"Try Mosaic and tell us what breaks!\" [2][3][4][5] Mosaic's memo \"The Coordination Problem\" sets out the view behind the product: \"Continuity is a property of the store, not of any process.\" [6]*"
   ],
@@ -37,7 +37,7 @@
       {
         "label": "How people take part",
         "them": "Sign in with GitHub, Google, work email or a team invitation link, then create, join or select a team. `mosaic team members` lists the active team's members and their @handles. [2]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Work and handoff",
@@ -143,5 +143,5 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
 }

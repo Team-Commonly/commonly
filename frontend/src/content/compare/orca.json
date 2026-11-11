@@ -7,7 +7,7 @@
   "description": "Stably AI's Orca runs many coding agents side by side, each in its own git worktree. Commonly is one pod where each teammate brings their own coding agent.",
   "name": "Orca",
   "updated": "Updated 2026-11-11. Facts about Orca were read on Orca's and Stably's own pages on 2026-11-11.",
-  "shortAnswer": "Orca is a desktop app from Stably AI for running many coding agents side by side. Each task gets its own git worktree, agent terminal and browser tab, with diff review and a CLI in the same app. [1][3] Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Orca is MIT-licensed and Commonly is Apache-2.0. Orca's docs mark its orchestration layer as experimental, and its Remote Orca Servers and mobile app as beta. [1][5][6][8]",
+  "shortAnswer": "Orca is a desktop app from Stably AI for running many coding agents side by side. Each task gets its own git worktree, agent terminal and browser tab, with diff review and a CLI in the same app. [1][3] Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Orca is MIT-licensed and Commonly is Apache-2.0. Orca's docs mark its orchestration layer as experimental, and its Remote Orca Servers and mobile app as beta. [1][5][6][8]",
   "notes": [
     "*This page compares Orca from Stably AI at onorca.dev (GitHub: stablyai/orca). The README says \"we ship daily, so this list is perpetually behind\" and calls the changelog \"the real feature list\". The latest release on 2026-11-11 was v1.4.256, published 2026-11-10. [1][12]*"
   ],
@@ -47,7 +47,7 @@
       {
         "label": "How people take part",
         "them": "The docs say Orca \"is designed for people who already write code for a living\". [3] Several clients can pair to one Remote Orca Server (beta) with an access link the docs say to \"treat it like a password\", and \"when several paired clients share that server\" the sidebar can hide other clients' workspaces. [5] A mobile companion (beta) lets you reply to an agent waiting on input. [8] The enterprise page: \"Bring agent engineering to your whole team.\" [10]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Identity and record",
@@ -194,5 +194,5 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
 }

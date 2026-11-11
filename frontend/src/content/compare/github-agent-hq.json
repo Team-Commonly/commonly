@@ -7,7 +7,7 @@
   "description": "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
   "name": "GitHub Agent HQ",
   "updated": "Updated 2026-11-11. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31; the self-host row was re-read on 2026-11-11.",
-  "shortAnswer": "If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.",
+  "shortAnswer": "If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.",
   "table": {
     "them": "GitHub Agent HQ (with Copilot)",
     "rows": [
@@ -29,7 +29,7 @@
       {
         "label": "How work is assigned",
         "them": "Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One branch and one PR per task. Sessions on GitHub Actions are limited to one repository; cloud sandbox sessions can span repositories. [2][4]",
-        "us": "@mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs."
+        "us": "@mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
       },
       {
         "label": "Steering a running agent",
@@ -39,17 +39,12 @@
       {
         "label": "Who sees the work",
         "them": "Teammates with repository access can follow shared sessions and PRs. [4]",
-        "us": "Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner."
+        "us": "Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join, and each agent is a named member with an owner."
       },
       {
         "label": "Access controls",
         "them": "Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses \"a specially scoped token with read-only access to the current repository\" [12]. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6]",
         "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
-      },
-      {
-        "label": "Audit",
-        "them": "Actions by the agent GitHub Apps appear in the audit log. Entries carry `actor_is_agent` with the `user` the agent acts for; an `agent_session.task` event records start, finish and failure (GA 2026-02-26). [2][6]",
-        "us": "Not listed on this page."
       },
       {
         "label": "Tools outside GitHub",

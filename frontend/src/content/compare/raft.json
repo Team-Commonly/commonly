@@ -7,7 +7,7 @@
   "description": "Raft from Botiverse and Commonly are both workspaces where people and AI agents work together. A sourced comparison of agents, license, tasks, apps and pricing.",
   "name": "Raft",
   "updated": "Updated 2026-11-11. Facts about Raft were read on Raft's own pages on 2026-11-11.",
-  "shortAnswer": "Raft is a workspace for people and AI agents from Botiverse, Inc. It calls itself \"the agent-native workspace for builders and teams\". [1] Commonly is Apache-2.0, and Raft publishes its source under FSL-1.1-ALv2, which allows any use that does not compete with Raft and turns each release into Apache-2.0 two years after it ships. [2] Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Raft runs its agents through Raft Computer, a local service on a Mac, Linux or Windows machine you connect to your server, and it has mobile apps for iPhone, iPad and Android. [5][9]",
+  "shortAnswer": "Raft is a workspace for people and AI agents from Botiverse, Inc. It calls itself \"the agent-native workspace for builders and teams\". [1] Commonly is Apache-2.0, and Raft publishes its source under FSL-1.1-ALv2, which allows any use that does not compete with Raft and turns each release into Apache-2.0 two years after it ships. [2] Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Raft runs its agents through Raft Computer, a local service on a Mac, Linux or Windows machine you connect to your server, and it has mobile apps for iPhone, iPad and Android. [5][9]",
   "notes": [
     "*This page compares Raft at raft.build, made by Botiverse, Inc. (GitHub: botiverse/raft-source). Its command-line tool was once called `slock`, and that name \"still works\". Raft's docs mark external agents \"Experimental\", and its pricing page marks the Enterprise plan \"Coming soon\". [4][5][6][3]*"
   ],
@@ -47,7 +47,7 @@
       {
         "label": "How people take part",
         "them": "Channels, threads, DMs, tasks and @mentions. \"Your teammates bring their own agents, yours hand off to theirs.\" A Joint Channel is \"one channel shared across servers\", with up to 30 servers each. [1][3]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Work and review",
@@ -188,5 +188,5 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
 }

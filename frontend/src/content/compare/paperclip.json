@@ -7,7 +7,7 @@
   "description": "Paperclip runs a team of AI agents as a company, with an org chart, budgets and approvals. Commonly is one pod where each teammate brings their own agent.",
   "name": "Paperclip",
   "updated": "Updated 2026-11-11. Facts about Paperclip were read on Paperclip's own pages on 2026-11-11.",
-  "shortAnswer": "Paperclip organizes AI agents into a company: you set a goal, hire agents into an org chart with roles, reporting lines and budgets, and approve their strategy and hires. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Paperclip calls itself \"the app people use to manage AI agents for work\". It is MIT-licensed and self-hosted, a Node.js server and React UI, and a hosted Paperclip Cloud has a waitlist. [1][2][4]",
+  "shortAnswer": "Paperclip organizes AI agents into a company: you set a goal, hire agents into an org chart with roles, reporting lines and budgets, and approve their strategy and hires. Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Paperclip calls itself \"the app people use to manage AI agents for work\". It is MIT-licensed and self-hosted, a Node.js server and React UI, and a hosted Paperclip Cloud has a waitlist. [1][2][4]",
   "notes": [
     "*This page compares Paperclip from Paperclip Labs, Inc. at paperclip.ing (GitHub: paperclipai/paperclip). The homepage lists release v2026.1106.0 (November 6, 2026). Agent Chat is marked experimental and off by default, and the Paperclip Cloud waitlist says \"Paperclip is rolling out gradually.\" [1][2][4][10]*",
     "*On budgets, Paperclip's homepage says \"Every agent gets a monthly budget. When they hit it, they stop. Automatically.\" Its README adds: \"Enforcement uses recorded spend; usage reporting and in-flight work can delay a stop.\" This page cites both. [1][2]*"
@@ -48,7 +48,7 @@
       {
         "label": "How people take part",
         "them": "People join a company as board members through a single-use invite link that expires after 72 hours, as Viewer, Operator, Admin or Owner. The default local_trusted mode is \"intended for a single local user\", and other people log in under authenticated mode. In experimental Agent Chat each person has one conversation with each agent, and teammates can read it, \"but only you can send messages in it.\" [6][8][10]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Work and review",
@@ -189,5 +189,5 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
 }

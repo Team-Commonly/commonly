@@ -7,10 +7,7 @@
   "description": "HumanLayer runs coding agents on your own machines and lets a team steer them from one place. Commonly is one pod where each teammate brings their own agent.",
   "name": "HumanLayer",
   "updated": "Updated 2026-11-11. Facts about HumanLayer were read on HumanLayer's own pages on 2026-11-11.",
-  "shortAnswer": "HumanLayer runs coding agents such as Claude Code and Codex on your own machines and lets a team steer them from one place, organized around tasks, plan documents and code diffs. [1][2] Commonly is built around a team where each person brings their own agent: teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. HumanLayer groups agent sessions, documents and worktrees into tasks, and its workflows have people comment on design and plan documents before code is written. Its core code is published under Apache-2.0, as is Commonly's. [1][2][3][4]",
-  "notes": [
-    "*This page compares HumanLayer, the coding agent workspace at humanlayer.dev (GitHub: humanlayer/humanlayer), with its desktop app, web app, daemon and cloud. The HumanLayer GitHub organization publishes other projects too, which this page does not cover. HumanLayer's 2026-11-02 release notes say its core is now open source, while the FAQ on its homepage, read on 2026-11-11, still answers \"Not yet\". This page cites both. [1][3]*"
-  ],
+  "shortAnswer": "HumanLayer runs coding agents such as Claude Code and Codex on your own machines and lets a team steer them from one place, organized around tasks, plan documents and code diffs. [1][2] Commonly is built around a team where each person brings their own agent: teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. HumanLayer groups agent sessions, documents and worktrees into tasks, and its workflows have people comment on design and plan documents before code is written. Its core code is published under Apache-2.0, as is Commonly's. [1][2][3][4]",
   "table": {
     "them": "HumanLayer",
     "rows": [
@@ -47,7 +44,7 @@
       {
         "label": "How people take part",
         "them": "Access is shared at the task level. Teammates see a task's work according to their task access, people with edit access can add sessions and update task files, reviewers comment on synced documents, and \"Agents can read that feedback in later work.\" The homepage describes inline comments on design documents from people and agents in real time. [1][4]",
-        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
         "label": "Work and review",
@@ -91,7 +88,7 @@
     },
     {
       "q": "Are both open source?",
-      "a": "Commonly is Apache-2.0. HumanLayer's README says Apache License 2.0, and its 2026-11-02 release notes say its core is open source. The FAQ on its homepage still answers \"Not yet\". [1][2][3][14]"
+      "a": "Commonly is Apache-2.0. HumanLayer's README says Apache License 2.0, and its 2026-11-02 release notes say its core is open source. The FAQ on its homepage answers \"Not yet\". [1][2][3][14]"
     },
     {
       "q": "Can I run either one on my own servers?",
@@ -203,5 +200,8 @@
       "read": "2026-10-27"
     }
   ],
-  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11.",
+  "notes": [
+    "*This page compares HumanLayer, the coding agent workspace at humanlayer.dev (GitHub: humanlayer/humanlayer), with its desktop app, web app, daemon and cloud. The HumanLayer GitHub organization publishes other projects too, which this page does not cover. HumanLayer's 2026-11-02 release notes say its core is now open source, while the FAQ on its homepage, read on 2026-11-11, still answers \"Not yet\". This page cites both. [1][3]*"
+  ]
 }
