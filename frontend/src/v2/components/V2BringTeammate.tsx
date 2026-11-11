@@ -38,6 +38,15 @@ interface Props {
   children?: (card: React.ReactNode) => React.ReactNode;
 }
 
+// A dismissal reaches the account mark at once, but the signed-in user is
+// only re-read on load: until then this keeps every other card away too.
+let dismissedThisLoad = false;
+/** Test seam: forget a dismissal made in this page load. */
+export const resetTeammateDismissalForTest = (): void => { dismissedThisLoad = false; };
+
+type NewPodState = { podId: string; agentAdded: boolean; addFailed?: boolean };
+const errorOf = (error: unknown) => (error as { response?: { status?: number; data?: { code?: string; status?: string } } }).response;
+
 /** State and pending requests belong to one viewer/pod/placement. */
 const BringTeammateContent: React.FC<Props> = ({
   podId, podName, userId, source, agentName, enabled = true, newPod, dismissedEverywhere = false, onShown, children,
@@ -62,29 +71,40 @@ const BringTeammateContent: React.FC<Props> = ({
   const where = newPod ? 'workspace' : 'pod';
   // The pod the link opens. In the workspace it is the pod a press created,
   // kept so a retry or a reload reuses it rather than making another.
-  const newPodKey = `v2.teammate.newpod.${podId}`;
-  const readNewPod = (): { podId: string; agentAdded: boolean } | null => {
+  // One saved pod per workspace and agent, so a second agent's card never
+  // invites into the first one's pod.
+  const newPodKey = newPod ? `v2.teammate.newpod.${podId}.${newPod.agentName}.${newPod.instanceId}` : '';
+  const readNewPod = (): NewPodState | null => {
     try {
       const saved = JSON.parse(localStorage.getItem(newPodKey) || 'null');
       return saved && /^[a-f0-9]{24}$/.test(saved.podId) ? { podId: saved.podId, agentAdded: saved.agentAdded === true } : null;
     } catch { return null; }
   };
-  const [createdPod, setCreatedPod] = useState(() => (newPod ? readNewPod() : null));
+  const [createdPod, setCreatedPod] = useState<NewPodState | null>(() => (newPod ? readNewPod() : null));
   const createdPodRef = useRef(createdPod);
   const inNewPod = Boolean(newPod);
 
-  const keepNewPod = (next: { podId: string; agentAdded: boolean }) => {
+  const keepNewPod = (next: NewPodState) => {
     createdPodRef.current = next;
     setCreatedPod(next);
-    try { localStorage.setItem(newPodKey, JSON.stringify(next)); } catch { /* this mount still has it */ }
+    try { localStorage.setItem(newPodKey, JSON.stringify({ podId: next.podId, agentAdded: next.agentAdded })); } catch { /* this mount still has it */ }
   };
+  // The saved pod was deleted or the person lost it: forget it, so the next
+  // press makes a new one instead of failing on the old id forever.
+  const forgetNewPod = () => {
+    createdPodRef.current = null;
+    setCreatedPod(null);
+    try { localStorage.removeItem(newPodKey); } catch { /* nothing saved */ }
+  };
+  const podGone = (error: unknown) => [403, 404].includes(errorOf(error)?.status || 0);
 
   // Make the new pod, then put the agent that answered in it through the
-  // ordinary add-to-pod path. A failed add still leaves a pod to invite into;
-  // the next press tries the add again.
+  // ordinary add-to-pod path. A refused add still leaves a pod to invite into,
+  // says so on the card, and the next press tries the add again.
   const ensureInviteePod = async (): Promise<string> => {
     if (!newPod) return podId;
-    let current = createdPodRef.current;
+    // Another tab, or an earlier mount, may have made the pod since this one read it.
+    let current = createdPodRef.current || readNewPod();
     if (!current) {
       const pod = await apiRef.current.post<{ _id?: string }>('/api/pods', {
         name: t('teammate.newPod.name', { agentName }), description: '', type: 'team', joinPolicy: 'invite-only',
@@ -99,10 +119,19 @@ const BringTeammateContent: React.FC<Props> = ({
           `/api/registry/agents/${encodeURIComponent(newPod.agentName)}/pods/${current.podId}?instanceId=${encodeURIComponent(newPod.instanceId)}`,
           {},
         );
-        keepNewPod({ ...current, agentAdded: true });
+        keepNewPod({ podId: current.podId, agentAdded: true });
       } catch (error) {
-        const status = (error as { response?: { status?: number } }).response?.status;
-        if (status === 409) keepNewPod({ ...current, agentAdded: true });
+        const response = errorOf(error);
+        // Only an active row already in the pod counts as added. A paused
+        // agent, a narrowing confirm or any other refusal leaves it out.
+        if (response?.status === 409 && response.data?.code === 'agent_already_in_pod' && response.data.status === 'active') {
+          keepNewPod({ podId: current.podId, agentAdded: true });
+        } else if (response?.status === 404) {
+          forgetNewPod();
+          throw error;
+        } else {
+          keepNewPod({ podId: current.podId, agentAdded: false, addFailed: true });
+        }
       }
     }
     return current.podId;
@@ -114,7 +143,13 @@ const BringTeammateContent: React.FC<Props> = ({
   const readExisting = useCallback(async () => {
     const inviteePodId = inNewPod ? createdPodRef.current?.podId : podId;
     if (!inviteePodId) return '';
-    const rows = await apiRef.current.get<InviteLink[]>(`/api/pods/${inviteePodId}/invites`);
+    let rows: InviteLink[];
+    try {
+      rows = await apiRef.current.get<InviteLink[]>(`/api/pods/${inviteePodId}/invites`);
+    } catch (error) {
+      if (inNewPod && podGone(error)) { forgetNewPod(); return ''; }
+      throw error;
+    }
     const existing = rows.find((row) => {
       const creator = typeof row.createdBy === 'string' ? row.createdBy : row.createdBy?._id;
       return creator === userId && row.source === source && /^[a-f0-9]{32}$/.test(row.token)
@@ -189,9 +224,10 @@ const BringTeammateContent: React.FC<Props> = ({
           field.current?.focus(); field.current?.select();
         }
       }
-    } catch {
+    } catch (error) {
       // A lost POST response is recovered through GET on the next press.
       lookup.current = null;
+      if (inNewPod && podGone(error)) forgetNewPod();
       if (stillHere()) setState('error');
     } finally {
       busy.current = false;
@@ -204,7 +240,7 @@ const BringTeammateContent: React.FC<Props> = ({
   const title = newPod ? t('teammate.newPod.title', { agentName }) : t('teammate.title', { podName });
   const label = state === 'creating' ? 'creating' : state === 'copied' ? 'copied'
     : state === 'manual' ? 'copyRetry' : state === 'error' ? 'retry' : 'act';
-  const shown = enabled && !dismissed && !dismissedEverywhere;
+  const shown = enabled && !dismissed && !dismissedEverywhere && !dismissedThisLoad;
   const onShownRef = useRef(onShown);
   onShownRef.current = onShown;
   useEffect(() => {
@@ -227,6 +263,7 @@ const BringTeammateContent: React.FC<Props> = ({
         </button>
         <button type="button" className="v2-teammate__dismiss" aria-label={t('teammate.dismiss')} onClick={() => {
           setDismissed(true);
+          dismissedThisLoad = true;
           recordByoStep(apiRef.current, 'invite-card-dismissed');
           trackUsage('teammate-card-dismiss', { props: { where }, podId });
           try { localStorage.setItem(storageKey, '1'); } catch { /* This mount still dismisses. */ }
@@ -237,6 +274,9 @@ const BringTeammateContent: React.FC<Props> = ({
       {url && <div className="v2-teammate__link">
         <input ref={field} readOnly value={url} aria-label={t('teammate.act')} className={state === 'manual' ? 'v2-teammate__manual' : ''} onFocus={(event) => event.currentTarget.select()} />
         <p>{t(state === 'manual' ? 'teammate.clipboardFail' : 'teammate.meta')}</p>
+        {newPod && createdPod?.addFailed && (
+          <p className="v2-teammate__note" data-testid="teammate-agent-not-added">{t('teammate.newPod.addFailed', { agentName })}</p>
+        )}
         {newPod && createdPod && (
           <Link className="v2-teammate__open" to={`/v2/pods/${createdPod.podId}`} data-testid="teammate-open-new-pod">
             {t('teammate.newPod.open')}

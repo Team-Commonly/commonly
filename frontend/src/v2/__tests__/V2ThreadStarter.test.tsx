@@ -6,6 +6,7 @@ import {
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import V2Thread from '../components/V2Thread';
+import { resetTeammateDismissalForTest } from '../components/V2BringTeammate';
 import { AuthContext } from '../../context/AuthContext';
 
 // SocketContext exports only the provider + hook (no raw context object),
@@ -643,7 +644,7 @@ describe('V2Thread just-created Pod starter panel', () => {
 
 describe('second-person prompt placements', () => {
   beforeEach(() => {
-    jest.clearAllMocks(); sessionStorage.clear(); localStorage.clear();
+    jest.clearAllMocks(); sessionStorage.clear(); localStorage.clear(); resetTeammateDismissalForTest();
     axios.post.mockReset();
     navigator.clipboard.writeText.mockReset().mockResolvedValue(undefined);
     axios.get.mockImplementation((url) => Promise.resolve({ data: /\/invites$/.test(url) ? [] : {} }));
@@ -719,6 +720,16 @@ describe('second-person prompt placements', () => {
     const urls = axios.post.mock.calls.map(([url]) => url);
     expect(urls).toContain(`/api/registry/agents/claude-code/pods/${newPodId}?instanceId=laptop`);
     expect(urls.some((url) => url.startsWith('/api/pods/p1/'))).toBe(false);
+  });
+
+  test('in the workspace Scout\'s answer, which carries its display name, never offers the card', async () => {
+    const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
+    detail.agents = [{ agentName: 'scout', instanceId: 'u0123456789', status: 'active', displayName: 'Scout' }];
+    detail.members = [member, { ...agent, username: 'Scout' }];
+    detail.messages = [messages[0], { ...messages[1], user: { username: 'Scout', isBot: true } }];
+    renderChat(detail);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
   });
 
   test('a server-side dismissal keeps the card away in every pod', async () => {

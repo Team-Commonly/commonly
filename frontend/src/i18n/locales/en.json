@@ -3599,7 +3599,8 @@
       "title": "Bring a teammate in to work with {{agentName}}",
       "body": "This starts a new pod with {{agentName}} in it and copies an invite link to that pod. Your workspace stays private.",
       "name": "Working with {{agentName}}",
-      "open": "Open the new pod"
+      "open": "Open the new pod",
+      "addFailed": "Couldn't add {{agentName}} to the new pod. Open it to add them, or press again to retry."
     }
   },
   "profile": {

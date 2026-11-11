@@ -1621,15 +1621,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // D288: there the card waits for the person's own agent, not Scout, and its
   // press makes a new pod with that agent in it and invites into that one.
   const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
+  // Scout's chat messages carry its display name, not its per-user username,
+  // so both identify it.
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
-    .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
+    .flatMap((agent) => [
+      buildAgentUsername(agent.agentName, agent.instanceId || 'default'),
+      agent.displayName || '', agent.profile?.displayName || '',
+    ]).filter(Boolean).map((key) => key.toLowerCase()));
   const rawTeammateMoment = soloHuman && detail.initialMessagesLoaded === true
     && !hasMore && !loading && !firstRunVisible
     ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
   const momentAuthor = rawTeammateMoment?.username.toLowerCase() || '';
-  const momentAgent = momentAuthor ? (agents || []).find((agent) => (
+  const momentAgent = momentAuthor ? (agents || []).find((agent) => agent.agentName !== 'scout' && (
     buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase() === momentAuthor
-    || (agent.profile?.displayName || agent.displayName || '').toLowerCase() === momentAuthor
+    || (agent.displayName || agent.profile?.displayName || '').toLowerCase() === momentAuthor
   )) : undefined;
   const teammateNewPod = scoutWorkspace && momentAgent
     ? { agentName: momentAgent.agentName, instanceId: momentAgent.instanceId || 'default' } : undefined;

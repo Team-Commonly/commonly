@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2BringTeammate from '../components/V2BringTeammate';
+import V2BringTeammate, { resetTeammateDismissalForTest } from '../components/V2BringTeammate';
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
@@ -26,6 +26,7 @@ const props = { podId: 'pod', podName: 'Work', userId: 'person', source: 'solo-p
 const press = () => fireEvent.click(screen.getByRole('button', { name: 'teammate.act' }));
 beforeEach(() => {
   localStorage.clear();
+  resetTeammateDismissalForTest();
   jest.resetAllMocks();
   mockGet.mockResolvedValue([]);
   mockPost.mockResolvedValue({ token });
@@ -218,6 +219,60 @@ describe('from the workspace: a new pod with the agent in it (D288)', () => {
     fireEvent.click(copyButton);
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(addPath, {}));
     expect(mockPost.mock.calls.map(([url]) => url)).not.toContain('/api/pods');
+  });
+
+  const refuse = (status: number, data: object = {}) => Promise.reject(Object.assign(new Error(String(status)), { response: { status, data } }));
+
+  test('only an active row already in the pod counts as added; any other 409 says the agent is not in it', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(409, { code: 'agent_not_active' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.getByTestId('teammate-agent-not-added')).toHaveTextContent('teammate.newPod.addFailed');
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').agentAdded).toBe(false);
+  });
+
+  test('an agent already active in the pod reads as added, with no warning', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/api/pods') return Promise.resolve({ _id: newPodId });
+      if (url === addPath) return refuse(409, { code: 'agent_already_in_pod', status: 'active' });
+      return Promise.resolve({ token });
+    });
+    renderCard();
+    press();
+    await screen.findByText('teammate.live');
+    expect(screen.queryByTestId('teammate-agent-not-added')).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop') || '{}').agentAdded).toBe(true);
+  });
+
+  test('a saved pod that is gone is forgotten, and the press makes a new one', async () => {
+    const gonePod = 'd'.repeat(24);
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: gonePod, agentAdded: true }));
+    mockGet.mockImplementation((url: string) => (url.includes(gonePod) ? refuse(404) : Promise.resolve([])));
+    renderCard();
+    await waitFor(() => expect(localStorage.getItem('v2.teammate.newpod.workspace.claude-code.laptop')).toBeNull());
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual(['/api/pods', addPath, `/api/pods/${newPodId}/invites`]);
+  });
+
+  test('a pod another tab made since this card mounted is reused, not duplicated', async () => {
+    renderCard();
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: newPodId, agentAdded: true }));
+    press();
+    await screen.findByText('teammate.live');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([`/api/pods/${newPodId}/invites`]);
+  });
+
+  test('a second agent gets its own pod, never the first agent\'s', async () => {
+    localStorage.setItem('v2.teammate.newpod.workspace.claude-code.laptop', JSON.stringify({ podId: 'e'.repeat(24), agentAdded: true }));
+    renderCard({ newPod: { agentName: 'codex', instanceId: 'mac' } });
+    press();
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/pods', expect.anything()));
   });
 
   test('records shown and dismissed as usage events, and a server-side dismissal keeps it hidden', () => {
