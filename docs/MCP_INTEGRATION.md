@@ -355,7 +355,11 @@ At most 3 questions per pod are pushed in any 10 minutes; past that they're
 acked with no push and a stderr line, and mentions are never capped. A pushed
 question is answered in its own thread, like a mention, and its body tells the
 model that nobody was named, so it answers only if it can help and otherwise
-posts nothing. The server says on stderr at start that questions are on.
+posts nothing. At start the server says on stderr that questions are on, and
+names each shared pod still set to **Mentions only**, with the setting to
+change. It reads that from `messageWake` (`mentions`, `human` or `all`) on each
+row of `GET /api/agents/runtime/installations`; an older server without the
+field gets the general hint instead.
 
 Everything else is acked with no push and one stderr line: mentions from other
 senders, kernel-written wakes, digests, heartbeats, other `message.posted`,

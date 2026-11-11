@@ -38,12 +38,12 @@ const posted = (over = {}, payload = {}) => ({
   },
 });
 
-const fakeApi = (pages) => {
+const fakeApi = (pages, { installations = [] } = {}) => {
   const calls = [];
   let page = 0;
   const requestImpl = async (_config, { method, path, body }) => {
     calls.push({ method, path, body });
-    if (path === '/api/agents/runtime/installations') return { installations: [], ownerUserId: OWNER };
+    if (path === '/api/agents/runtime/installations') return { installations, ownerUserId: OWNER };
     if (path === '/api/agents/runtime/events') {
       const next = pages[page];
       page += 1;
@@ -169,6 +169,38 @@ describe('poll loop', () => {
     expect(api.acks()[0].body.result.outcome).toBe('acknowledged');
     expect(logs.join('\n')).toMatch(/questions are on/);
     expect(logs.join('\n')).toMatch(/Messages from people/);
+  });
+
+  it('names each shared pod set to Mentions only, and the setting to change', async () => {
+    const api = fakeApi([[posted()]], {
+      installations: [
+        { type: 'installation', podId: 'p1', podName: 'Release', podType: 'chat', messageWake: 'mentions' },
+        { type: 'installation', podId: 'p2', podName: 'Design', podType: 'chat', messageWake: 'human' },
+        { type: 'installation', podId: 'p3', podName: 'Me', podType: 'agent-room', messageWake: 'mentions' },
+        { type: 'dm', podId: 'p4', podName: 'Admin', podType: 'agent-admin' },
+      ],
+    });
+    const { logs } = await drive({ api, acks: 1 });
+    const text = logs.join('\n');
+    expect(text).toMatch(/no question can arrive from "Release": that pod is set to "Mentions only"/);
+    expect(text).toMatch(/"Messages from people"/);
+    expect(text).not.toMatch(/"Design"|"Me"|"Admin"/);
+  });
+
+  it('says nothing per pod when every shared pod already hears people', async () => {
+    const api = fakeApi([[posted()]], {
+      installations: [{ type: 'installation', podId: 'p2', podName: 'Design', podType: 'chat', messageWake: 'human' }],
+    });
+    const { logs } = await drive({ api, acks: 1 });
+    expect(logs.join('\n')).not.toMatch(/no question can arrive/);
+  });
+
+  it('reads the setting even with an explicit allowlist, and falls back to the general hint on an older server', async () => {
+    const api = fakeApi([[posted()]], { installations: [{ type: 'installation', podId: 'p1', podName: 'Release', podType: 'chat' }] });
+    const { logs } = await drive({ api, env: { ...ON, COMMONLY_MCP_CHANNEL_ALLOW: OWNER }, acks: 1 });
+    const text = logs.join('\n');
+    expect(text).toMatch(/arrives only from a pod where/);
+    expect(text).not.toMatch(/no question can arrive/);
   });
 
   it('with the flag unset, acks the question with no push and no questions line', async () => {

@@ -46,6 +46,8 @@ const WAKE_TYPES = new Set(['chat.mention', 'thread.mention', 'message.posted'])
 const DEFAULT_INTERVAL_MS = 5000;
 const MAX_BACKOFF_MS = 60_000;
 const PAGE_LIMIT = 10;
+// 1:1 rooms, where a person's message already reaches the agent as addressed.
+const PERSONAL_POD_TYPES = new Set(['agent-room', 'agent-dm', 'agent-admin']);
 // A burst of questions in one pod must not become a burst of turns.
 export const QUESTION_CAP = 3;
 export const QUESTION_WINDOW_MS = 10 * 60 * 1000;
@@ -263,10 +265,39 @@ export const startChannel = ({
 
   const resolveGate = async () => {
     const explicit = new Set(parseAllowlist(env.COMMONLY_MCP_CHANNEL_ALLOW));
-    if (explicit.size > 0) return { allowed: explicit, explicit };
+    if (explicit.size > 0) return { allowed: explicit, explicit, body: null };
     const body = await call({ method: 'GET', path: INSTALLATIONS_PATH });
     const owner = typeof body?.ownerUserId === 'string' && body.ownerUserId.trim() ? body.ownerUserId.trim() : null;
-    return { allowed: new Set(owner ? [owner] : []), explicit };
+    return { allowed: new Set(owner ? [owner] : []), explicit, body };
+  };
+
+  // Questions arrive only where the kernel writes a message wake, so name the
+  // shared pods set to Mentions only. Best-effort: a failed read or an older
+  // server that doesn't report the setting falls back to the general hint.
+  const reportQuestionPods = async (body) => {
+    say(`questions are on: an allowed person's question that names nobody is pushed, at most ${QUESTION_CAP} `
+      + `per pod in ${QUESTION_WINDOW_MS / 60000} minutes.`);
+    let installations = body?.installations;
+    if (!Array.isArray(installations)) {
+      try {
+        installations = (await call({ method: 'GET', path: INSTALLATIONS_PATH }))?.installations;
+      } catch {
+        installations = null;
+      }
+    }
+    const shared = (Array.isArray(installations) ? installations : [])
+      .filter((item) => item?.type === 'installation' && !PERSONAL_POD_TYPES.has(String(item?.podType ?? '')));
+    if (!shared.length || shared.some((item) => typeof item.messageWake !== 'string')) {
+      say('a question arrives only from a pod where this agent\'s "Messages that wake it" is "Messages from people" '
+        + '(the agent\'s page in Commonly, per pod).');
+      return;
+    }
+    const silent = shared.filter((item) => item.messageWake === 'mentions')
+      .map((item) => `"${item.podName || item.podId}"`);
+    if (silent.length) {
+      say(`no question can arrive from ${silent.join(', ')}: that pod is set to "Mentions only". To hear them, set this `
+        + 'agent\'s "Messages that wake it" to "Messages from people" for that pod on the agent\'s page in Commonly.');
+    }
   };
 
   const ack = async (event, result) => {
@@ -327,11 +358,8 @@ export const startChannel = ({
             stop();
             break;
           }
-          if (questions) {
-            say(`questions are on: an allowed person's question that names nobody is pushed, at most ${QUESTION_CAP} `
-              + `per pod in ${QUESTION_WINDOW_MS / 60000} minutes. It arrives only where this agent's "Messages that wake it" `
-              + 'is "Messages from people".');
-          }
+          // eslint-disable-next-line no-await-in-loop
+          if (questions) await reportQuestionPods(gate.body);
         }
         const page = await call({ method: 'GET', path: EVENTS_PATH, query: { limit: PAGE_LIMIT } });
         const events = Array.isArray(page?.events) ? page.events : [];
