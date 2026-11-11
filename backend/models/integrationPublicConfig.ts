@@ -103,6 +103,12 @@ export const INTEGRATION_ROUTING_STATE_CONFIG_KEYS = [
   'discordUserId',
   'messageBuffer',
   'relayMap',
+  // A GroupMe connector's bot and group. Posting as a GroupMe bot takes only
+  // its bot id, so the id is the creator's to hold, like the routing above.
+  // `groupName` stays visible, as `chatTitle` does.
+  'botId',
+  'groupId',
+  'groupUrl',
 ] as const;
 
 /**

@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
-import ChatRoom, { uploadImageSrc } from './ChatRoom';
+import ChatRoom, { uploadImageSrc, groupmeSaveRefusal, groupmeIdsWithheld } from './ChatRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -325,4 +325,29 @@ test('a send the server refuses is removed and shown in the composer (TASK-503)'
     .toContain('Messages are temporarily unavailable. Please try again shortly.');
   // The room stays mounted and listening: the refusal is not a page error.
   expect(container.textContent).toContain('Room');
+});
+
+// A GroupMe connector's ids go only to its creator and an admin. A pod creator
+// who manages someone else's connector opens the form without them, and can
+// still save the rest: a blank id keeps the stored one.
+describe('the GroupMe form save check', () => {
+  const connectedWithoutIds = { status: 'connected', config: { groupName: 'Study group', linked: false } };
+
+  test('a connected row whose ids were withheld saves with both id fields blank', () => {
+    expect(groupmeIdsWithheld(connectedWithoutIds)).toBe(true);
+    expect(groupmeSaveRefusal({ integration: connectedWithoutIds, botId: '', groupId: '' })).toBeNull();
+  });
+
+  test('a draft that never had ids still needs both', () => {
+    const draft = { status: 'pending', config: {} };
+    expect(groupmeIdsWithheld(draft)).toBe(false);
+    expect(groupmeSaveRefusal({ integration: draft, botId: 'b1', groupId: '' })).toBe('Please provide both Bot ID and Group ID.');
+    expect(groupmeSaveRefusal({ integration: draft, botId: 'b1', groupId: 'g1' })).toBeNull();
+  });
+
+  test('the creator, who was sent the ids, still has to keep both filled', () => {
+    const own = { status: 'connected', config: { botId: 'b1', groupId: 'g1' } };
+    expect(groupmeIdsWithheld(own)).toBe(false);
+    expect(groupmeSaveRefusal({ integration: own, botId: '', groupId: 'g1' })).toBe('Please provide both Bot ID and Group ID.');
+  });
 });

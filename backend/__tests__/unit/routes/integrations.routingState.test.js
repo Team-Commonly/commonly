@@ -197,6 +197,41 @@ describe('integration routing state', () => {
     expect(res.body.config).not.toHaveProperty('linkedUserId');
   });
 
+  const groupmeConfig = () => ({
+    botId: 'b1c2d3e4f5a6',
+    groupId: '12345678',
+    groupUrl: 'https://groupme.com/join_group/12345678/AbCdEf',
+    groupName: 'Study group',
+  });
+
+  it('withholds a GroupMe connector’s bot and group from a pod member who did not create it', async () => {
+    await Integration.create({
+      podId: pod._id, scope: 'pod', type: 'groupme', status: 'connected', createdBy: creator._id, isActive: true, config: groupmeConfig(),
+    });
+    const other = (await get(member._id)).body.find((row) => row.type === 'groupme');
+    expect(other.config.groupName).toBe('Study group');
+    expect(other.config).not.toHaveProperty('botId');
+    expect(other.config).not.toHaveProperty('groupId');
+    expect(other.config).not.toHaveProperty('groupUrl');
+    const own = (await get(creator._id)).body.find((row) => row.type === 'groupme');
+    expect(own.config).toMatchObject({ botId: 'b1c2d3e4f5a6', groupId: '12345678' });
+  });
+
+  it('keeps the stored bot and group when a pod creator saves the GroupMe form without them', async () => {
+    const foreign = await Integration.create({
+      podId: memberPod._id, scope: 'pod', type: 'groupme', status: 'connected', createdBy: creator._id, isActive: true, config: groupmeConfig(),
+    });
+    // The form sends no ids it was never given.
+    const res = await request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(member._id))
+      .send({ config: { groupName: 'Renamed group', agentAccessEnabled: false }, status: 'connected' });
+    expect(res.status).toBe(200);
+    expect(res.body.config).not.toHaveProperty('botId');
+    const stored = await Integration.findById(foreign._id).lean();
+    expect(stored.config).toMatchObject({ botId: 'b1c2d3e4f5a6', groupId: '12345678', groupName: 'Renamed group' });
+  });
+
   it('strips relayMap, messageBuffer and webhookListenerEnabled from a client write', async () => {
     const res = await request(app)
       .post('/api/integrations')

@@ -67,6 +67,23 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import './ChatRoom.css';
 
+/**
+ * A GroupMe connector's bot and group ids go only to its creator and an admin.
+ * Anyone else who manages it (a pod creator) opens the form with both fields
+ * empty: a connected row has them stored, so a blank field keeps the stored
+ * value. A draft that never had them still needs both.
+ */
+export const groupmeIdsWithheld = (integration: { status?: string; config?: Record<string, unknown> } | null | undefined): boolean => (
+    integration?.status === 'connected' && !integration?.config?.botId && !integration?.config?.groupId
+);
+
+export const groupmeSaveRefusal = ({
+    integration, botId, groupId,
+}: { integration: { status?: string; config?: Record<string, unknown> } | null | undefined; botId: string; groupId: string }): string | null => {
+    if (groupmeIdsWithheld(integration)) return null;
+    return (!botId.trim() || !groupId.trim()) ? 'Please provide both Bot ID and Group ID.' : null;
+};
+
 // An image message carries either a bare upload reference (legacy) or the
 // same `[[upload:<key>|<name>|<size>|image]]` manifest a file does (direction
 // C, one attachment model). Both resolve to the instance's upload URL.
@@ -1328,8 +1345,9 @@ const ChatRoom = () => {
             setGroupmeError('Integration not ready yet.');
             return;
         }
-        if (!groupmeBotId.trim() || !groupmeGroupId.trim()) {
-            setGroupmeError('Please provide both Bot ID and Group ID.');
+        const idsRefusal = groupmeSaveRefusal({ integration: groupmeIntegration, botId: groupmeBotId, groupId: groupmeGroupId });
+        if (idsRefusal) {
+            setGroupmeError(idsRefusal);
             return;
         }
         if (groupmeAgentAccessEnabled && !groupmeAccessToken.trim()) {
@@ -1344,8 +1362,10 @@ const ChatRoom = () => {
             const token = localStorage.getItem('token');
             await axios.patch(`/api/integrations/${groupmeIntegration._id}`, {
                 config: {
-                    botId: groupmeBotId.trim(),
-                    groupId: groupmeGroupId.trim(),
+                    // A member who didn't create this connector is not sent its
+                    // bot or group id, so a blank field keeps the stored value.
+                    botId: groupmeBotId.trim() || undefined,
+                    groupId: groupmeGroupId.trim() || undefined,
                     accessToken: groupmeAccessToken.trim() || undefined,
                     agentAccessEnabled: groupmeAgentAccessEnabled,
                     groupName: groupmeGroupName.trim() || undefined,
@@ -3788,12 +3808,14 @@ const ChatRoom = () => {
                                             size="small"
                                             value={groupmeBotId}
                                             onChange={(event) => setGroupmeBotId(event.target.value)}
+                                            helperText={groupmeIdsWithheld(groupmeIntegration) ? 'Saved. Leave blank to keep it.' : undefined}
                                         />
                                         <TextField
                                             label="Group ID"
                                             size="small"
                                             value={groupmeGroupId}
                                             onChange={(event) => setGroupmeGroupId(event.target.value)}
+                                            helperText={groupmeIdsWithheld(groupmeIntegration) ? 'Saved. Leave blank to keep it.' : undefined}
                                         />
                                         <TextField
                                             label="Access Token (for agent message fetch)"
