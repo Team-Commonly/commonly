@@ -148,5 +148,7 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
 });
 
 module.exports = presetsRouter;
+// Exported for its unit test; no preset names a default skill today (F418).
+module.exports.resolvePresetSkills = resolvePresetSkills;
 
 export {};
