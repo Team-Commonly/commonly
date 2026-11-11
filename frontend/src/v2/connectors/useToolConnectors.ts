@@ -373,6 +373,7 @@ export const useToolConnectors = (
       byo_unconfined_host: t('tools.byo.errors.unconfinedHost'),
       byo_unreported_host: t('tools.byo.errors.unreportedHost'),
       byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported', { harnesses: grantHarnessNames(t) }),
+      byo_public_only: t('tools.byo.errors.publicOnly'),
     };
     return code && Object.prototype.hasOwnProperty.call(labels, code) ? labels[code] : null;
   };

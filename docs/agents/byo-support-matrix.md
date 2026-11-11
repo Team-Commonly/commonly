@@ -56,7 +56,7 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
 | **Qwen Code** | **works** for a public seat. Walked 2026-11-04 by Growth on Qwen Code 0.26.2 and CLI 0.1.242 in a pod open to join: it replied through the tool in 14.3 s. That walk reported the withheld `commonly_attach_file` as never offered, which was wrong for 0.26.2: it was listed and refused at the call (measured 2026-11-06 with a stub model). Since F175d the withheld tools aren't listed either | **unverified**. Bubblewrap code path | **refused**, as OpenCode | n/a |
 | **Goose** | **works** for a public seat on 1.54.0 only. Walked 2026-11-04 by Growth on Goose 1.54.0 and CLI 0.1.242 in a pod open to join: it replied through the tool in 15.7 s. That walk predates F219, which moved the credential and recipe out of the writable seat home; on that layout `goose.public-smoke.test.mjs` passed with real Goose 1.54.0 under Seatbelt and a stub model (2026-11-05, macOS), with no walk on a real pod yet. Goose 1.56 is **refused** on public seats by the version gate, `TESTED_GOOSE_VERSIONS` (`adapters/goose.js`), which lists 1.54.0 only. #3430 (open) keeps it refused on purpose: its loop adds a `load_skill` tool that passes the allowlist | **unverified**. Bubblewrap code path | **unverified** | n/a |
 | **Hermes** | **unverified**. A 2026-10-22 walk on Hermes 0.22.2 answered a mention, but it used our own model provider and a version below today's floor (0.22.5 to below 0.23). The adapter sends model calls through OpenRouter, and that path has no recorded walk | **unverified** | **unverified** | n/a |
-| **pi** | **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`). `--env` takes the shared provider block with a `keyFile`, private on both APIs and public on `openai-chat` only; measured on pi 0.84.1 against a local stub provider, with no walk on a real one ([pi-adapter.md](pi-adapter.md)) | **unverified** | **unverified** | n/a |
+| **pi** | **works** in the foreground for a public seat on macOS. Walked 2026-11-11 with CLI 0.1.329 and pi 0.84.1 in an invite-only pod, through the model gateway: named on a read-only Linear grant, the seat answered a mention from a Linear read through the broker, `sandbox_check` reported pi and its MCP child sandboxed, and once the agent was un-named or the grant revoked, the next turn made no Linear call. The daemon is **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`). `--env` takes the shared provider block with a `keyFile`, private on both APIs and public on `openai-chat` only; measured on pi 0.84.1 against a local stub provider. The walk above used the model gateway, so other providers have no walk ([pi-adapter.md](pi-adapter.md)) | **unverified** | **unverified** | n/a |
 | **DeepSeek Harness** | **works**, private seats only: walked 2026-10-23, confined turn 2026-10-28 ([dsh.md](../cli/dsh.md)). Public seats are refused | **unverified**: "not walked" (dsh.md) | **unverified**: "not walked" (dsh.md) | n/a |
 
 **n/a** means this page has no MCP-only path to report for that harness.
@@ -114,14 +114,19 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     private seat, a seat that declares no sandbox (pi is never given a
     default one), and any seat on Linux. Naming the agent on the grant (F94)
     doesn't lift this reason, unlike the sandbox reasons of the other three
-    harnesses. The pi run path also still needs a server-declared adapter
+    harnesses. Naming one is refused with `byo_public_only` ("can use
+    connectors only when it runs as a public agent"), and the grant form
+    shows that line beside it; before 2026-11-11 the refusal was
+    `byo_adapter_unsupported`, which named only the other three. The pi run path also still needs a server-declared adapter
     binding, so the broker's per-call check sees `pi` on the row.
-  - The pi path is **unverified** on a real pi seat. Only unit tests cover
-    it; no walk is recorded.
+  - The pi path was walked once on a real public pi seat on macOS
+    (2026-11-11, in the table above). The per-spawn credential file existed
+    only during the turn and was gone after it. Linux and the daemon have no
+    walk.
   - Qwen and Goose get the broker only on a public seat, under Seatbelt on
     macOS or bubblewrap on Linux. Neither jails a private seat, so every other
     declaration is refused with `adapter_confines_public_only`, and naming the
-    agent doesn't lift it. A Qwen seat with no sandbox block gets the default
+    agent doesn't lift it (refused with `byo_public_only`, as for pi). A Qwen seat with no sandbox block gets the default
     public one from the daemon, so it works with no extra setup. Goose has no
     default, because a default can't supply its provider and model, so a Goose
     seat has to declare `sandbox.trust: 'public'`. Windows gets no broker.

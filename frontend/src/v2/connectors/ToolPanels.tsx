@@ -657,6 +657,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
   const byoReason = (agent: ByoCandidate) => {
     if (agent.reason === 'unconfined_host') return t('tools.byo.reasonUnconfinedHost');
     if (agent.reason === 'unreported_host') return t('tools.byo.reasonUnreportedHost');
+    if (agent.reason === 'public_only') return t('tools.byo.reasonPublicOnly');
     return t('tools.byo.reasonAdapterUnsupported', { harnesses: grantHarnessNames(t) });
   };
   const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
