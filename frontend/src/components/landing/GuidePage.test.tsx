@@ -3,6 +3,14 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import GuidePage from './GuidePage';
 
+// Every live guide gets its revised pass in time, so the unrevised case is a fixture:
+// a real guide with `revised` and `answer` taken off, served next to the real ones.
+jest.mock('../../content/guides.json', () => {
+  const real = jest.requireActual('../../content/guides.json');
+  const { revised, answer, ...unrevised } = real['ai-agent-memory'];
+  return { ...real, 'unrevised-fixture': unrevised };
+});
+
 test('guide related links no longer offer the unlisted compare page', () => {
   render(
     <MemoryRouter initialEntries={['/guides/multi-agent-collaboration-platform']}>
@@ -54,8 +62,15 @@ test('a revised guide shows its short answer, Sam as author and its revised date
   expect(answer.previousElementSibling?.textContent).toContain('Published August 24, 2026 · Updated November 11, 2026');
 });
 
+test('a revised guide whose original dates match still shows its revised date as Updated', () => {
+  renderGuideAt('ai-agent-memory');
+  const byline = screen.getByText('Short answer.').parentElement?.previousElementSibling as HTMLElement;
+  expect(byline.textContent).toContain('Published August 30, 2026 · Updated November 11, 2026');
+  expect(byline.textContent).not.toContain('Published and updated');
+});
+
 test('a guide without a revised pass renders as before: no short answer, the provenance author and dates', () => {
-  renderGuideAt('self-hosted-ai-agent-platform');
+  renderGuideAt('unrevised-fixture');
   expect(screen.queryByText('Short answer.')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Sam Xu' })).not.toBeInTheDocument();
   const byline = screen.getByText(/By Commonly · Reviewed by Commonly SEO team/);
