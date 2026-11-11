@@ -32,9 +32,7 @@ const PRESET_DEFINITIONS = [
       scopes: ['agent:context:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Deep web research, source validation, competitive analysis.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Research Analyst** — a deep-research specialist who turns raw information into actionable intelligence. You don't just search — you validate, cross-reference, and synthesize.
@@ -86,10 +84,7 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
       scopes: ['agent:context:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'video-frames', reason: 'Debug UI/video capture artifacts when needed.' },
-      { id: 'openai-whisper-api', reason: 'Transcribe captured audio/video snippets in workflows.' },
-    ],
+    defaultSkills: [],
   },
   {
     // First-party "codex" agent — what other agents on the platform call when
@@ -204,12 +199,7 @@ plain inline diff/review request there is nothing to commit.)
       scopes: ['integration:read', 'integration:messages:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'discord', reason: 'Discord workflows and operations.' },
-      { id: 'slack', reason: 'Slack workflows and operations.' },
-      { id: 'trello', reason: 'Create and track ops tasks from integration events.' },
-      { id: 'weather', reason: 'Lightweight utility skill available by default.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'autonomy-curator',
@@ -239,9 +229,7 @@ plain inline diff/review request there is nothing to commit.)
       scopes: ['agent:events:read', 'agent:events:ack', 'agent:messages:write'],
       runtime: 'internal',
     },
-    defaultSkills: [
-      { id: 'weather', reason: 'Example no-key utility fallback in low-config setups.' },
-    ],
+    defaultSkills: [],
   },
   {
     id: 'x-curator',
@@ -266,10 +254,7 @@ plain inline diff/review request there is nothing to commit.)
       scopes: ['integration:read', 'integration:messages:read', 'agent:context:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Optional enrichment and source validation for discovered topics.' },
-      { id: 'trello', reason: 'Turn curated topics into follow-up tasks.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **X Curator** — a broad news curator and trend spotter who surfaces the stories worth paying attention to.
@@ -366,11 +351,7 @@ Add URL to ## Posted. Update ## Pod Map if a new pod was created.
       scopes: ['integration:read', 'integration:messages:read', 'agent:context:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'discord', reason: 'Cross-channel social signal collection.' },
-      { id: 'slack', reason: 'Community ops and social trend relay.' },
-      { id: 'weather', reason: 'Simple utility fallback skill.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Social Trend Scout** — a trend discovery agent who separates signal from noise.
@@ -447,9 +428,7 @@ Sources: 🔗 [url1], 🔗 [url2]
       scopes: ['agent:events:read', 'agent:events:ack', 'agent:messages:write', 'integration:read', 'integration:write'],
       runtime: 'internal',
     },
-    defaultSkills: [
-      { id: 'weather', reason: 'Example low-friction utility fallback.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Social Amplifier** — a content amplification agent. Your job is to find posts worth sharing, repost or rewrite them with attribution, and keep the pod feed lively.`,
@@ -1075,11 +1054,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
       scopes: ['integration:read', 'agent:context:read', 'agent:messages:write'],
       runtime: 'openclaw',
     },
-    defaultSkills: [
-      { id: 'discord', reason: 'Community interaction patterns and moderation etiquette.' },
-      { id: 'trello', reason: 'Capture follow-up ideas and campaign actions.' },
-      { id: 'weather', reason: 'General utility fallback.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Community Hype Host** — an engagement catalyst. You turn notable posts into fun, human-friendly conversation starters: prompts, follow-up questions, short discussion seeds. You keep the energy warm and inviting without being over the top. You make people want to respond.`,
@@ -1581,9 +1556,7 @@ Check ActionItems for overdue. Or state-of-play: "Three threads open. [A] needs 
       { key: 'GEMINI_API_KEY', purpose: 'Strategic analysis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Market research and competitive intelligence.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Product Strategist** — a seasoned product mind. You lead with the problem, not the solution. You say no clearly, respectfully, and often.
@@ -1662,9 +1635,7 @@ You are **Product Strategist** — a seasoned product mind. You lead with the pr
       { key: 'GEMINI_API_KEY', purpose: 'Campaign strategy', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Market research and social listening.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Marketing Strategist** — the marketing lead who orchestrates campaigns across channels, aligns messaging to product positioning, and turns strategy into executable plans.
@@ -1744,9 +1715,7 @@ You are **Marketing Strategist** — the marketing lead who orchestrates campaig
       { key: 'GEMINI_API_KEY', purpose: 'Growth analysis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Research growth benchmarks and viral case studies.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Growth Hacker** — the experiment-obsessed growth specialist who finds the channel nobody's exploited yet and scales it.
@@ -1825,9 +1794,7 @@ You are **Growth Hacker** — the experiment-obsessed growth specialist who find
       { key: 'GEMINI_API_KEY', purpose: 'Content generation', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Research topics and validate claims.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **Content Creator** — a multi-platform content strategist who crafts stories that make people stop scrolling and start caring.
@@ -1905,9 +1872,7 @@ You are **Content Creator** — a multi-platform content strategist who crafts s
       { key: 'GEMINI_API_KEY', purpose: 'Content creation', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Research trending topics for threads.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **X Content Creator** — a real-time conversation expert who builds brand authority on Twitter/X through viral threads and thought leadership.
@@ -1996,9 +1961,7 @@ Add to Drafts. Under 4 sentences.
       { key: 'GEMINI_API_KEY', purpose: 'Citation analysis', envAny: ['GEMINI_API_KEY'] },
     ],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
-    defaultSkills: [
-      { id: 'tavily', reason: 'Research what AI models cite for product category queries.' },
-    ],
+    defaultSkills: [],
     soulTemplate: `# SOUL.md
 
 You are **AI Citation Strategist** — the AEO (Answer Engine Optimization) specialist who ensures the brand shows up when people ask AI assistants about agent platforms and developer tools.
