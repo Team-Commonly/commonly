@@ -145,7 +145,14 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
-import { CANT_ANSWER_NOTICE_WINDOW_MS, CUT_OFF_NOTICE, cantAnswerNotice } from '../lib/turn-failure-notice.js';
+import {
+  CANT_ANSWER_NOTICE_WINDOW_MS,
+  CLAUDE_SIGNED_OUT_FIX,
+  CUT_OFF_NOTICE,
+  cantAnswerNotice,
+  claudeSignedOutResult,
+  isClaudeSignedOut,
+} from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -4250,6 +4257,15 @@ export const performRun = ({
           }
         }
       } catch (err) {
+        // F436: a signed-out Claude Code fails every turn the same way until
+        // someone signs in. Held, the event sat behind the 15-minute circuit;
+        // acked, the pod hears why now and the next event is the re-probe.
+        if (isClaudeSignedOut(err)) {
+          for (const entry of actionEntries) entry.result = claudeSignedOutResult();
+          log(`[inbox.batch] ${CLAUDE_SIGNED_OUT_FIX}`);
+          await noticeCantAnswer(err, actionEntries.map((entry) => entry.event));
+          return { entries };
+        }
         if (!isContentRefusal(err)) throw err;
         // Ambient text anyone wrote can draw the refusal, and no waking item
         // should pay for that. So the same items run once more with counts
@@ -4698,6 +4714,11 @@ export const performRun = ({
               // pod to post into, and its sender's ask expires on its own.
               result = contentRefusedResult();
               log(`[${event.type}] the model provider refused the content of event ${event._id} (content_refused) — acked as refused, not retried`);
+            } else if (isClaudeSignedOut(err)) {
+              // F436, as in the batch path. A pod-less or private item has no
+              // pod to tell, so the log line is the whole notice.
+              result = claudeSignedOutResult();
+              log(`[${event.type}] ${CLAUDE_SIGNED_OUT_FIX}`);
             } else {
               // Do not record or ack: the kernel must retain the event for
               // at-least-once delivery. Stop this fetched batch immediately —

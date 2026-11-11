@@ -4,12 +4,15 @@ import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../src/lib/p
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { claudeFailureTail } from '../src/lib/adapters/claude.js';
 import {
+  CLAUDE_SIGNED_OUT_NOTICE,
   LOGIN_NOTICE,
   OUT_OF_ALLOWANCE_NOTICE,
   TOOLS_UNAVAILABLE_NOTICE,
   WONT_START_NOTICE,
   cantAnswerNotice,
+  claudeSignedOutResult,
   codexVersionNotice,
+  isClaudeSignedOut,
 } from '../src/lib/turn-failure-notice.js';
 
 const causeOf = (error) => cantAnswerNotice(error)?.cause ?? null;
@@ -20,14 +23,51 @@ describe('cantAnswerNotice', () => {
       ['an expired gateway key, walked on prod', adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key. Key Expiry time 2026-11-06')],
       ['a missing bearer', adapterFailure('codex turn failed', 'Error running remote compact task: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header')],
       ['a ChatGPT workspace', new Error('codex turn failed: workspace routing discovery unauthorized (401)')],
-      ['a claude login', new Error('claude exited with code 1: Not logged in · Please run /login')],
-      ['a claude login after a stderr line', new Error('claude exited with code 1: ⚠ connectors are disabled | Not logged in · Please run /login')],
       ['an unscoped key', new Error('claude exited with code 1: x | API Error: 400 This API key is not scoped to a workspace')],
       ['pi with a status it printed', new Error('pi exited 1: 401 {"error":"unauthorized"}')],
       ['pi with a refused route', new Error('upstream refused 401: invalid key')],
       ['a login the wrapper refused', new Error('the Claude login on this machine expires in 3 min, before this turn could end.')],
     ])('%s', (_name, error) => {
       expect(cantAnswerNotice(error)?.text).toBe(LOGIN_NOTICE);
+    });
+  });
+
+  // F436: Claude Code's own wording when no one is signed in on the computer.
+  // The line names that fix, not "the key or login".
+  describe('Claude Code signed out on the computer', () => {
+    test.each([
+      ['as Claude Code prints it', 'claude exited with code 1: Not logged in · Please run /login'],
+      ['after a stderr line', 'claude exited with code 1: ⚠ connectors are disabled | Not logged in · Please run /login'],
+      ['with the Seatbelt seat\'s own hint after it', 'claude exited with code 1: Not logged in · Please run /login. Sign in with `claude` in your own terminal on this Mac, or set ANTHROPIC_API_KEY (in the service env for daemon seats)'],
+    ])('%s', (_name, message) => {
+      const error = new Error(message);
+      expect(cantAnswerNotice(error)).toEqual({ cause: 'claude-signed-out', text: CLAUDE_SIGNED_OUT_NOTICE });
+      expect(isClaudeSignedOut(error)).toBe(true);
+    });
+
+    test('the line names signing in to Claude Code on that computer', () => {
+      expect(CLAUDE_SIGNED_OUT_NOTICE).toContain('Claude Code isn’t signed in on the computer I run on');
+      expect(CLAUDE_SIGNED_OUT_NOTICE).toContain('sign in');
+      expect(CLAUDE_SIGNED_OUT_NOTICE).not.toMatch(/\/login|key/);
+    });
+
+    test('a key or route refusal is not a sign-in', () => {
+      expect(isClaudeSignedOut(adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized'))).toBe(false);
+      expect(isClaudeSignedOut(new Error('claude exited with code 1: You\'ve hit your weekly limit · resets Nov 3 at 5pm'))).toBe(false);
+    });
+
+    test('a tool quoting the wording on a public seat is not this seat signing out', () => {
+      const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
+      expect(isClaudeSignedOut(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBe(false);
+    });
+
+    test('the turn is acked as an error and handed on, not completed', () => {
+      expect(claudeSignedOutResult()).toEqual({
+        outcome: 'error',
+        refused: { reason: 'delivery-refused' },
+        reason: 'claude-signed-out',
+        details: { failureClass: 'configuration' },
+      });
     });
   });
 
@@ -296,7 +336,7 @@ describe('cantAnswerNotice', () => {
   // between a tool's quoted refusal and a statement about this seat's key.
   test('a public seat quoting a tool\'s error is not reporting its own key', () => {
     const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
-    expect(cantAnswerNotice(new Error(message))?.cause).toBe('login');
+    expect(cantAnswerNotice(new Error(message))?.cause).toBe('claude-signed-out');
     expect(cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBeNull();
   });
 
@@ -343,7 +383,7 @@ describe('cantAnswerNotice', () => {
   });
 
   test('every line fits one chat message and says what to do', () => {
-    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, TOOLS_UNAVAILABLE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
+    [CLAUDE_SIGNED_OUT_NOTICE, LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, TOOLS_UNAVAILABLE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
       expect(line.length).toBeLessThanOrEqual(400);
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');

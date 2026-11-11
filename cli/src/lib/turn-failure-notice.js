@@ -29,11 +29,16 @@ const LOGIN_FAILED_WORDINGS = [
   /\bupstream refused 401\b/, // the same refusal, read from pi's stream
   /^\w+ exited(?: with code)? \d+: 401\b/, // pi's text, which names no upstream
   /workspace routing discovery unauthorized/,
-  /(?:^|: | \| )Not logged in · Please run \/login/,
   /API Error: 400 This API key is not scoped to a workspace/,
   // The wrapper's own refusals of a Claude login (adapters/claude.js).
   /the Claude login on this machine expires in/,
   /refusing a Claude login/,
+];
+// F436: what Claude Code prints, and exits 1 on, when it has no login on the
+// computer (2.1.318, walked on windows-latest). No key is wrong and no allowance
+// is spent: someone signs in to Claude Code there, and the next turn works.
+const CLAUDE_SIGNED_OUT_WORDINGS = [
+  /(?:^|: | \| )Not logged in · Please run \/login/,
 ];
 const WONT_START_WORDINGS = [
   /^spawn \S+ ENOENT/,
@@ -75,6 +80,11 @@ const AGAIN = 'After that, send your message again if I still haven’t answered
 
 export const LOGIN_NOTICE = 'I can’t answer right now: the key or login on the computer I run on isn’t working. '
   + `Whoever runs me needs to fix it and start me again. ${AGAIN}`;
+export const CLAUDE_SIGNED_OUT_NOTICE = 'I can’t answer right now: Claude Code isn’t signed in on the computer I run on. '
+  + `Whoever runs me needs to open Claude Code there and sign in. ${AGAIN}`;
+// What the seat's own log says, for whoever runs it.
+export const CLAUDE_SIGNED_OUT_FIX = 'Claude Code is not signed in on this computer: open Claude Code here and sign in '
+  + '(/login). The waiting message was acked, not held, so the next message starts a turn at once.';
 export const WONT_START_NOTICE = 'I can’t answer right now: the tool I run on wouldn’t start on my computer. '
   + `Whoever runs me needs to fix that and start me again. ${AGAIN}`;
 export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI account I run on has used up its allowance. '
@@ -113,6 +123,8 @@ export const cantAnswerNotice = (error) => {
   // claudeFailureTail drops tool and assistant JSON. This cut is for what can
   // still arrive: a torn stream line, or an error event after stderr.
   const text = String(error?.message ?? '').split(/(?:^|: | \| |\n)\{"type":/)[0];
+  // Before the general login line: this one names its own fix.
+  if (matches(CLAUDE_SIGNED_OUT_WORDINGS, text)) return { cause: 'claude-signed-out', text: CLAUDE_SIGNED_OUT_NOTICE };
   // Before the allowance check: a 401 is settled, whatever else its body says.
   if (matches(LOGIN_FAILED_WORDINGS, text)) return { cause: 'login', text: LOGIN_NOTICE };
   if (matches(WONT_START_WORDINGS, text)) return { cause: 'wont-start', text: WONT_START_NOTICE };
@@ -121,3 +133,21 @@ export const cantAnswerNotice = (error) => {
   }
   return null;
 };
+
+/**
+ * A turn that failed because Claude Code is signed out on this computer (F436).
+ * It is a setup fault, not an outage: retrying cannot fix it, and holding the
+ * event behind the 15-minute circuit kept the person waiting with no answer.
+ * The run loop acks it instead and posts CLAUDE_SIGNED_OUT_NOTICE, and the
+ * next event spawns at once, which is the re-probe.
+ */
+export const isClaudeSignedOut = (error) => cantAnswerNotice(error)?.cause === 'claude-signed-out';
+
+/** The turn result a signed-out turn is acked with: a person's message is handed to another listener. */
+export const CLAUDE_SIGNED_OUT_REASON = 'claude-signed-out';
+export const claudeSignedOutResult = () => ({
+  outcome: 'error',
+  refused: { reason: 'delivery-refused' },
+  reason: CLAUDE_SIGNED_OUT_REASON,
+  details: { failureClass: 'configuration' },
+});
