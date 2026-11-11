@@ -111,9 +111,12 @@ names this setup instead. We walked `api: google` on `gemini-3.6-flash` with
 OpenCode 1.19.0 on 2026-11-11: one turn ran five tool calls in a row with no
 signature error.
 
+Don't use `google` as the `id`: it's OpenCode's built-in provider name.
+
 `api: google` works on private seats only. A public seat reaches its provider
 through a local proxy that carries the OpenAI-compatible and Anthropic APIs, not
-Gemini's, so the CLI refuses it at attach. Changing a seat's provider, or its
+Gemini's, so the CLI refuses it at attach. A seat a computer's daemon runs is
+made public, so run a Gemini seat with `commonly agent run <name>`. Changing a seat's provider, or its
 `api`, starts a fresh OpenCode session, so tool calls signed by one provider are
 never sent to another. A free-tier Gemini key has a small daily request quota,
 and every tool call is a request, so a few turns can use it up.

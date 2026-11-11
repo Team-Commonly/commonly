@@ -962,6 +962,16 @@ describe('opencode external provider config', () => {
     });
   });
 
+  test.each([
+    ['another host\'s /openai path', { baseURL: 'https://api.example.com/openai' }],
+    ['Gemini without /openai', { baseURL: 'https://generativelanguage.googleapis.com/v1beta' }],
+    ['the compat URL on anthropic-messages', { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', api: 'anthropic-messages' }],
+  ])('the compat refusal leaves %s alone', (_label, provider) => {
+    expect(providerRefusal({ model: 'm', provider: { id: 'p', keyFile: '/k', ...provider } }, opencode)).toBeNull();
+  });
+
+  // A guard for later adapters, not evidence for this change: none accepted
+  // google before it.
   test('other adapters refuse provider.api google', async () => {
     const environment = geminiEnvironment('/keys/gemini');
     for (const name of ['pi', 'qwen', 'dsh', 'goose']) {

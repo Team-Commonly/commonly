@@ -738,11 +738,13 @@ const openCodeProviderVerdict = (environment) => {
   // routes cover the OpenAI-compatible and Anthropic wires. Gemini's own API
   // needs routes the proxy doesn't carry.
   if (provider.api === 'google' && effectiveSandboxTrust(environment?.sandbox?.trust) === 'public') {
-    return 'provider.api "google" is for private OpenCode seats; a public seat reaches its provider through the local proxy, which does not carry Gemini\'s API';
+    return 'provider.api "google" is for private OpenCode seats; a public seat reaches its provider through the local proxy, which does not carry Gemini\'s API. '
+      + 'A seat a computer\'s daemon runs is made public, so run a Gemini seat with `commonly agent run <name>`';
   }
   if ((provider.api || 'openai-chat') === 'openai-chat' && isGeminiCompatEndpoint(provider)) {
     return 'Gemini\'s OpenAI-compatible endpoint drops the thought signatures Gemini 3 needs for a second tool call; '
-      + 'set provider.api to "google" and provider.baseURL to https://generativelanguage.googleapis.com/v1beta';
+      + 'in the environment file set provider.api to "google" and provider.baseURL to https://generativelanguage.googleapis.com/v1beta, '
+      + 'then run `commonly agent config <name> --env <file>` (the agent starts a fresh session)';
   }
   return undefined;
 };
