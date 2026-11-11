@@ -8,8 +8,8 @@
 // spread that selects their own pods. The backend's worker is deliberately
 // unguarded: it is one Recreate replica, so a drain just moves it. In the dev
 // lane the edge (cloudflared, and ingress-nginx from k8s/ingress-nginx/
-// values-dev.yaml) is split across the dev and spot pools. Renders the chart
-// itself:
+// values-dev.yaml) and the frontend are split across the dev and spot pools.
+// Renders the chart itself:
 //   node scripts/verify-pdb-chart.js
 const { execFileSync } = require('child_process');
 const yaml = require('js-yaml');
@@ -101,10 +101,11 @@ for (const lane of Object.keys(lanes)) {
   // The positive control: dev, the lane that deploys, renders both.
   if (lane === 'dev') {
     for (const name of GUARDED) expect(workloads.some((x) => x.metadata.name === name), `${lane}: ${name} not rendered`);
-    const tunnel = workloads.find((x) => x.metadata.name === 'cloudflared-commonly-k8s');
-    if (tunnel) {
-      const spec = tunnel.spec.template.spec;
-      expectEdgePlacement(`${lane}: cloudflared`, spec, spec.topologySpreadConstraints, tunnel.spec.template.metadata.labels);
+    for (const name of ['cloudflared-commonly-k8s', 'frontend']) {
+      const w = workloads.find((x) => x.metadata.name === name);
+      if (!w) continue;
+      const spec = w.spec.template.spec;
+      expectEdgePlacement(`${lane}: ${name}`, spec, spec.topologySpreadConstraints, w.spec.template.metadata.labels);
     }
   }
 }

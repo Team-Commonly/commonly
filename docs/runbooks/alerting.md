@@ -155,8 +155,8 @@ cluster has three pools ([ADR-015](../adr/ADR-015-spot-pool-for-stateless-worklo
 
 | pool | taint | runs |
 |---|---|---|
-| dev-pool | `pool=dev:NoSchedule` | backend, redis, LiteLLM, commonly-bot, cloudflared, the ingress controller (2 replicas): each with a `pool: dev` selector and the matching toleration |
-| spot-pool | `workload-tier=spot:NoSchedule` | frontend, the stranger journey, the backup Jobs |
+| dev-pool | `pool=dev:NoSchedule` | backend, redis, LiteLLM, commonly-bot, each with a `pool: dev` selector and the matching toleration; one replica each of frontend, cloudflared and the ingress controller |
+| spot-pool | `workload-tier=spot:NoSchedule` | the other replica of frontend, cloudflared and the ingress controller (a hard spread across node pools puts one on each); the stranger journey, the backup Jobs |
 | default-pool (e2-medium) | none | the system pods: kube-dns, metrics-server, ESO, kube-state-metrics |
 
 Look for these causes:
