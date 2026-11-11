@@ -1,6 +1,11 @@
 // @ts-nocheck
 
-import { backfillMessageAuthorKind, MessageAuthorKindBackfillDeps } from '../../../scripts/backfill-message-author-kind';
+import {
+  backfillMessageAuthorKind,
+  episodeMessageReferences,
+  episodeReferenceQuery,
+  MessageAuthorKindBackfillDeps,
+} from '../../../scripts/backfill-message-author-kind';
 
 const makeDeps = (overrides: Partial<MessageAuthorKindBackfillDeps> = {}): MessageAuthorKindBackfillDeps => ({
   getEpisodeReferences: async () => ['101', '507f1f77bcf86cd799439011', 'not-a-message'],
@@ -63,5 +68,40 @@ describe('backfill-message-author-kind', () => {
     mongoRows[0].authorKind = 'kernel';
     const second = await backfillMessageAuthorKind(deps, { apply: true });
     expect(second).toMatchObject({ alreadyKernel: 4, toBackfill: 0, appliedPostgres: 0, appliedMongo: 0 });
+  });
+
+  // F446: since F442 the resolution post is written as kernel; older ones were
+  // stored as the agent's, and the episode keeps their id beside the nudge's.
+  describe('which episode messages it reads (F446)', () => {
+    it('collects the resolution post as well as the nudge, skipping unset ids', () => {
+      expect(episodeMessageReferences([
+        { nudgeMessageId: '101', resolutionMessageId: '102' },
+        { nudgeMessageId: '103' },
+        { resolutionMessageId: '507f1f77bcf86cd799439011' },
+        { nudgeMessageId: '', resolutionMessageId: '  ' },
+        { nudgeMessageId: 104 },
+      ])).toEqual(['101', '102', '103', '507f1f77bcf86cd799439011']);
+    });
+
+    it('finds an episode that has only a resolution post', () => {
+      expect(episodeReferenceQuery()).toEqual({
+        $or: [
+          { nudgeMessageId: { $type: 'string', $ne: '' } },
+          { resolutionMessageId: { $type: 'string', $ne: '' } },
+        ],
+      });
+    });
+
+    it('marks a resolution-only episode\'s message like a nudge', async () => {
+      const updatePostgresRows = jest.fn(async (ids: string[]) => ids.length);
+      const report = await backfillMessageAuthorKind(makeDeps({
+        getEpisodeReferences: async () => episodeMessageReferences([{ resolutionMessageId: '205' }]),
+        getPostgresRows: async () => [{ id: 205, author_kind: null }],
+        getMongoRows: async () => [],
+        updatePostgresRows,
+      }), { apply: true });
+      expect(updatePostgresRows).toHaveBeenCalledWith(['205']);
+      expect(report).toMatchObject({ toBackfill: 1, appliedPostgres: 1 });
+    });
   });
 });
