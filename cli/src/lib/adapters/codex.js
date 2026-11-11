@@ -752,12 +752,6 @@ const PRIVATE_SECRET_DENIES = Object.freeze([
   '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud',
 ]);
 
-// The folders a commit writes. Codex keeps a workspace's `.git` read-only even
-// inside a writable root, and only an explicit absolute key opens it (measured
-// with `codex sandbox` on 0.162.1: the same key inside :workspace_roots did
-// not). A git worktree keeps its admin folder outside the workspace (`.git` is
-// a file naming it), so a commit writes there and in the repository it belongs
-// to. Read from the files git leaves, without running git.
 const realOrSelf = (path) => {
   try {
     return realpathSync(path);
@@ -765,12 +759,33 @@ const realOrSelf = (path) => {
     return path;
   }
 };
-const gitAdminWritePaths = (workspace) => [...new Set(gitAdminPaths(workspace).map(realOrSelf))];
-const gitAdminPaths = (workspace) => {
+
+// What a commit writes, and nothing that runs code. Codex keeps a workspace's
+// `.git` read-only even inside a writable root, and only an explicit absolute
+// key opens it (measured with `codex sandbox` on 0.162.1: the same key inside
+// :workspace_roots did not). `config` and `hooks` stay read-only, because a
+// hook or a config-defined program (core.fsmonitor, a filter) would run as the
+// person in every later git command there, outside any sandbox; renaming over
+// them is refused too (measured). A git worktree keeps its admin folder
+// outside the workspace (`.git` is a file naming it), and a commit there also
+// writes the shared repository's objects, refs and logs, and packed-refs when
+// git repacks them. Read from the files git leaves, without running git.
+// Measured: a worktree whose repository lies under the denied ~/.commonly
+// can't commit (git can't resolve the path), whatever these keys are.
+const gitAdminKeys = (workspace) => {
   if (!workspace) return [];
   const dotGit = join(workspace, '.git');
+  const ownRepository = (dir) => {
+    const real = realOrSelf(dir);
+    return [
+      [real, 'write'],
+      [join(real, 'config'), 'read'],
+      [join(real, 'config.worktree'), 'read'],
+      [join(real, 'hooks'), 'read'],
+    ];
+  };
   try {
-    if (statSync(dotGit).isDirectory()) return [dotGit];
+    if (statSync(dotGit).isDirectory()) return ownRepository(dotGit);
   } catch {
     return [];
   }
@@ -782,9 +797,17 @@ const gitAdminPaths = (workspace) => {
     try {
       commonDir = pathResolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
     } catch {
-      // A plain linked gitdir with no shared repository.
+      // A linked gitdir that is a whole repository of its own.
+      return ownRepository(gitDir);
     }
-    return [...new Set([gitDir, commonDir].filter(Boolean))];
+    const realGitDir = realOrSelf(gitDir);
+    const realCommon = realOrSelf(commonDir);
+    return [
+      [realGitDir, 'write'],
+      [join(realGitDir, 'config.worktree'), 'read'],
+      ...['objects', 'refs', 'logs', 'packed-refs', 'packed-refs.lock']
+        .map((name) => [join(realCommon, name), 'write']),
+    ];
   } catch {
     // An unreadable `.git` file.
     return [];
@@ -803,30 +826,48 @@ const privatePermissionProfileFlags = ({
   codexHelperReadPaths = [],
   platform = process.platform,
   workspace = null,
-  tempDir = null,
+  tempRoots = [],
+  shellTempDir = null,
 } = {}) => {
   const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
   const posix = platform !== 'win32';
-  const realTemp = tempDir ? realOrSelf(tempDir) : null;
-  // macOS's temp root holds other sessions' temp dirs. The seat's own temp dir
-  // stays writable; when that dir IS the root, the root can't also be denied.
-  const denyTempRoot = posix && realTemp !== '/private/tmp';
+  // The temp roots hold every seat's per-turn folder: its runtime token and the
+  // reply file Codex posts from. So they are denied whole, and the shell gets
+  // one folder of its own inside this turn's, as TMPDIR (and TMPPREFIX, which
+  // zsh takes its heredoc files from). Codex, and the MCP child that reads the
+  // token, run outside the profile. On Windows these keys have no drive.
+  const deniedTemp = posix
+    ? [...new Set(['/private/tmp', ...tempRoots.filter(Boolean).map(realOrSelf)])]
+    : [];
+  const shellTemp = posix && shellTempDir ? realOrSelf(shellTempDir) : null;
   const filesystem = [
     // Codex reads every key as a path for its own platform; on Windows "/" has
     // no drive and Codex would refuse the whole profile (as with /private/tmp
     // in publicPermissionProfileFlags).
     posix ? '"/"="read"' : '":minimal"="read"',
     ...PRIVATE_SECRET_DENIES.map((path) => `${toml(path)}="deny"`),
-    ...(denyTempRoot ? ['"/private/tmp"="deny"'] : []),
-    ...(realTemp ? [`${toml(realTemp)}="write"`] : []),
+    ...deniedTemp.map((path) => `${toml(path)}="deny"`),
+    ...(shellTemp ? [`${toml(shellTemp)}="write"`] : []),
     '":workspace_roots"={"."="write",".commonly/**"="deny",".codex/**"="deny"}',
-    ...gitAdminWritePaths(workspace).map((path) => `${toml(path)}="write"`),
+    ...gitAdminKeys(workspace).map(([path, mode]) => `${toml(path)}=${toml(mode)}`),
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
     ...mcpReadDirectories.map((path) => `${toml(path)}="read"`),
     ...codexHelperReadPaths.map((path) => `${toml(path)}="read"`),
   ].join(',');
-  const shellSet = gitConfigKeyShellSet(commitAttributionEnv);
+  const shellSet = [
+    ...gitConfigKeyShellSet(commitAttributionEnv),
+    ...(shellTemp
+      ? [
+        `${toml('TMPDIR')}=${toml(shellTemp)}`,
+        `${toml('TMPPREFIX')}=${toml(join(shellTemp, 'zsh'))}`,
+        // macOS's /usr/bin tools are xcrun shims, which keep a cache in the
+        // user temp root (denied above) and print an error on every call
+        // without this.
+        `${toml('xcrun_db')}=${toml(join(shellTemp, 'xcrun_db'))}`,
+      ]
+      : []),
+  ];
   return [
     '-c', `default_permissions=${toml(PRIVATE_PERMISSION_PROFILE)}`,
     '-c', `permissions.${PRIVATE_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
@@ -951,7 +992,8 @@ const buildArgs = ({
   trustedContainerPerimeter = false,
   operatorUnconfined = false,
   privateWorkspace = null,
-  tempDir = null,
+  tempRoots = [],
+  shellTempDir = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1005,7 +1047,8 @@ const buildArgs = ({
         codexHelperReadPaths,
         platform,
         workspace: privateWorkspace,
-        tempDir,
+        tempRoots,
+        shellTempDir,
       });
   const common = [
     '--json',
@@ -1374,6 +1417,10 @@ export default {
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv, { login: !route })
         : null;
+      // The private shell's TMPDIR: inside this turn's folder, which `finally`
+      // removes, and beside (not over) the token's folder.
+      const privateShellTemp = privateProfile ? join(dir, 'shell-tmp') : null;
+      if (privateShellTemp) await mkdir(privateShellTemp, { mode: 0o700 });
       if (route) {
         providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
           provider: { baseURL: route.baseURL },
@@ -1404,7 +1451,10 @@ export default {
         trustedContainerPerimeter,
         operatorUnconfined,
         privateWorkspace: privateProfile && ctx.cwd ? pathResolve(ctx.cwd) : null,
-        tempDir: privateProfile ? (childEnv.TMPDIR || tmpdir()) : null,
+        // Both roots: this process's, where every seat's per-turn folder
+        // lives, and the one the shell would inherit.
+        tempRoots: privateProfile ? [tmpdir(), childEnv.TMPDIR] : [],
+        shellTempDir: privateShellTemp,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

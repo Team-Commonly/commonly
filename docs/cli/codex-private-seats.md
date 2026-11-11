@@ -9,10 +9,10 @@ profile, `commonly_private`, everywhere except a cloud-codex pod.
 | | Private seat (`commonly_private`) | Public seat (`commonly_public`) |
 |---|---|---|
 | Read the disk | yes, all of it except the denied folders | only Codex's minimal set and the workspace |
-| Write | the workspace, its `.git` (or a git worktree's admin folders), `$TMPDIR` | the workspace |
+| Write | the workspace; what a commit writes in `.git` (below); one temp folder of the turn's own | the workspace |
 | Network | on | off |
-| Shell environment | inherited, with Codex's secret-name filter on | an allowlist (`PATH`, `HOME`, `LANG` …) |
-| Denied | `~/.commonly` (every seat's tokens and state; the seat's own workspace stays open), `~/.claude`, `~/.codex`, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.netrc`, `~/.config/gcloud`, `/private/tmp` | the same secret folders, plus `~/.config` and everything not admitted |
+| Shell environment | inherited, with Codex's secret-name filter on; `TMPDIR`, `TMPPREFIX` and `xcrun_db` point at the turn's temp folder | an allowlist (`PATH`, `HOME`, `LANG` …) |
+| Denied | `~/.commonly` (every seat's tokens and state; the seat's own workspace stays open), `~/.claude`, `~/.codex`, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.netrc`, `~/.config/gcloud`, the temp roots (`$TMPDIR`, `/private/tmp`) | the same secret folders, plus `~/.config` and everything not admitted |
 | Approvals | never asked; a denied action goes back to the model | the same |
 | Its own `config.toml` | kept (the profile's `-c` keys still win over it) | ignored |
 
@@ -23,7 +23,31 @@ itself. Public seats keep the strict profile.
 
 A credential the seat uses itself stays readable to its tools. On macOS `gh`
 keeps its login in the keychain, and a shell command the seat runs can reach
-it, so `gh` works under the profile.
+it, so `gh` works under the profile. `~/.config/gh` is readable on purpose: on
+Linux without a keyring its `hosts.yml` holds the gh token in plain text. So
+are `~/.git-credentials` and `~/.npmrc`, which git and npm use, and everything
+else the denies don't name: `~/.pypirc`, other tools' tokens under `~/.config`,
+shell history, browser profiles. That is what "readable disk" means.
+
+**The temp roots.** Every seat's per-turn folder sits in the user temp root:
+its runtime token and the reply file Codex posts from. So the temp roots are
+denied whole, and the shell gets one folder inside its own turn's, as `TMPDIR`
+(and `TMPPREFIX`, which zsh takes heredoc files from). Codex itself, and the
+MCP server that reads the token, run outside the profile. macOS's `/usr/bin`
+tools are xcrun shims that keep a cache in the user temp root and print an
+error on every call when they can't, so `xcrun_db` points the cache into the
+turn's folder too.
+
+**`.git`.** Codex keeps a workspace's `.git` read-only even inside a writable
+root, and only an explicit absolute key opens it. The profile opens what a
+commit writes and nothing that runs code: `.git` is writable, but its `config`,
+`config.worktree` and `hooks` stay read-only. A hook or a config-defined
+program (`core.fsmonitor`, a filter) would run as you in every later git
+command there, outside any sandbox. Renaming over them is refused too. In a git
+worktree the seat writes its own admin folder and the shared repository's
+`objects`, `refs`, `logs` and `packed-refs`, never that repository's `config` or
+`hooks`. A worktree whose repository lies under `~/.commonly` can't commit:
+git can't resolve the path through the denied folder.
 
 ## Where it doesn't apply
 
@@ -49,25 +73,33 @@ it, so `gh` works under the profile.
 
 On macOS, codex-cli 0.162.1, with the adapter's own flags applied through
 `codex sandbox` (no model call), from a workspace under
-`~/.commonly/workspaces/`: workspace and `$TMPDIR` writes worked, Homebrew git ran,
+`~/.commonly/workspaces/`: workspace writes worked, Homebrew git ran,
 `gh api user` answered from the keychain login, the network was reachable;
 `~/.ssh`, `~/.commonly/tokens` and another seat's workspace were denied. A
 user `config.toml` setting `sandbox_mode = "danger-full-access"`,
 `default_permissions = ":danger-no-sandbox"` or its own
 `[permissions.commonly_public]` table did not override the profile.
 
+With the same tool: another turn's token and reply file in the temp root were
+refused, the turn's own `TMPDIR` and a heredoc worked, a commit worked in a
+plain repo and in a worktree, and writing a hook, `git config`, or renaming
+over `config` or `hooks` were refused, in the workspace's repository and in a
+worktree's shared one.
+
 Then one real turn, 2026-11-11, same Codex, through the adapter with an isolated
 `CODEX_HOME` (not `HOME`, which would lose the keychain `gh` login): the seat
-committed in its workspace, `gh api user` answered, and a script it ran was
-refused both `~/.ssh` and another seat's file under `~/.commonly`
-("Operation not permitted").
+committed in its workspace and `gh api user` answered. A script it ran was
+refused `~/.ssh`, another seat's file under `~/.commonly`, and another turn's
+token and reply file in the temp root ("Operation not permitted"), and wrote its
+own `TMPDIR`. No xcrun cache errors.
 
-**`.git` needs its own key.** Codex keeps a workspace's `.git` read-only even
-inside a writable root. The first live commit failed on `.git/index.lock`; an
-explicit absolute `"<workspace>/.git"="write"` key opens it, and the same key
-inside `:workspace_roots` does not. **A model asked to read a denied path may
-decline instead of trying**, because Codex lists the denied paths to it, so a
-check that a path is refused has to run the read from a script.
+**A model asked to read a denied path may decline instead of trying**, because
+Codex lists the denied paths to it, so a check that a path is refused has to run
+the read from a script. The first live commit failed on `.git/index.lock`,
+which is how the `.git` key was found.
+
+Not walked: Linux. There Codex enforces the same keys with bubblewrap, and the
+denied temp root is `/tmp`.
 
 Code: `privatePermissionProfileFlags` in `cli/src/lib/adapters/codex.js`; the
 Linux refusal in `hostSandboxRefusal` (`cli/src/lib/sandbox/host-check.js`).

@@ -590,7 +590,19 @@ describe('codex adapter — spawn()', () => {
       '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud', '/private/tmp']) {
       expect(fsFlag).toContain(`"${dir}"="deny"`);
     }
-    expect(fsFlag).toContain(`"${realpathSync(seatTemp)}"="write"`);
+    // The temp roots hold every seat's per-turn folder (token, reply file), so
+    // they are denied; the shell writes only its own folder inside this turn's.
+    expect(fsFlag).toContain(`"${realpathSync(seatTemp)}"="deny"`);
+    expect(fsFlag).toContain(`"${realpathSync(tmpdir())}"="deny"`);
+    expect(fsFlag).not.toContain(`"${realpathSync(seatTemp)}"="write"`);
+    const shellTemp = /"([^"]*\/commonly-codex-[^"/]+\/shell-tmp)"="write"/.exec(fsFlag)?.[1];
+    expect(shellTemp).toBeTruthy();
+    expect(shellTemp.startsWith(`${realpathSync(tmpdir())}/`)).toBe(true);
+    const shellSetFlag = cFlags.find((f) => f.startsWith('shell_environment_policy.set='));
+    expect(shellSetFlag).toContain(`"TMPDIR"="${shellTemp}"`);
+    expect(shellSetFlag).toContain(`"TMPPREFIX"="${shellTemp}/zsh"`);
+    // xcrun shims (/usr/bin/git) cache in the denied user temp root otherwise.
+    expect(shellSetFlag).toContain(`"xcrun_db"="${shellTemp}/xcrun_db"`);
     expect(fsFlag).toContain('":workspace_roots"={"."="write"');
     expect(cFlags).toContain('permissions.commonly_private.network.enabled=true');
     expect(cFlags).toContain('shell_environment_policy.inherit="all"');
@@ -656,8 +668,18 @@ describe('codex adapter — spawn()', () => {
     const args = calls[0].args;
     const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
     const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
-    expect(fsFlag).toContain(`"${realpathSync(gitDir)}"="write"`);
-    expect(fsFlag).toContain(`"${realpathSync(commonDir)}"="write"`);
+    const realGitDir = realpathSync(gitDir);
+    const realCommon = realpathSync(commonDir);
+    expect(fsFlag).toContain(`"${realGitDir}"="write"`);
+    expect(fsFlag).toContain(`"${realGitDir}/config.worktree"="read"`);
+    for (const name of ['objects', 'refs', 'logs', 'packed-refs', 'packed-refs.lock']) {
+      expect(fsFlag).toContain(`"${realCommon}/${name}"="write"`);
+    }
+    // The shared repository's config and hooks run code in everyone's git
+    // commands there, so the repository folder itself is never writable.
+    expect(fsFlag).not.toContain(`"${realCommon}"="write"`);
+    expect(fsFlag).not.toContain(`"${realCommon}/hooks"="write"`);
+    expect(fsFlag).not.toContain(`"${realCommon}/config"="write"`);
     await rm(repo, { recursive: true, force: true });
   });
 
@@ -685,8 +707,61 @@ describe('codex adapter — spawn()', () => {
     const args = calls[0].args;
     const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
     const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
-    expect(fsFlag).toContain(`"${realpathSync(join(workspace, '.git'))}"="write"`);
+    const dotGit = realpathSync(join(workspace, '.git'));
+    expect(fsFlag).toContain(`"${dotGit}"="write"`);
+    // What runs code stays read-only: a more specific key wins (measured).
+    expect(fsFlag).toContain(`"${dotGit}/config"="read"`);
+    expect(fsFlag).toContain(`"${dotGit}/config.worktree"="read"`);
+    expect(fsFlag).toContain(`"${dotGit}/hooks"="read"`);
     await rm(workspace, { recursive: true, force: true });
+  });
+
+  test('F387: no other seat\'s per-turn folder is reachable from a private shell', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    // Another seat's turn, as writeCredentialFile and -o leave it.
+    const sibling = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
+    await mkdir(join(sibling, 'other-seat-1'));
+    await writeFile(join(sibling, 'other-seat-1', 'token'), 'not-a-real-token');
+    let seen = null;
+    const { impl, calls } = makeSpawnImpl({
+      outputContents: 'ok',
+      // The shell folder exists while the turn runs, inside this turn's folder.
+      onCall: (args) => {
+        const fsFlag = args.find((a) => a.startsWith('permissions.commonly_private.filesystem='));
+        const shellTemp = /"([^"]*\/shell-tmp)"="write"/.exec(fsFlag)?.[1];
+        seen = { shellTemp, exists: shellTemp ? existsSync(shellTemp) : false };
+      },
+    });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work', {
+      sessionId: null,
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      runtimeToken: 'cm_agent_'.padEnd(73, 'S'),
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const fsFlag = args.find((a) => a.startsWith('permissions.commonly_private.filesystem='));
+    const keys = [...fsFlag.matchAll(/"([^"]+)"="(read|write|deny)"/g)].map(([, path, mode]) => ({ path, mode }));
+    const realSibling = realpathSync(sibling);
+    // Nothing admits the sibling, or any folder holding it, for read or write.
+    const admits = keys.filter(({ path, mode }) => mode !== 'deny' && path !== '/'
+      && (realSibling === path || realSibling.startsWith(`${path}/`)));
+    expect(admits).toEqual([]);
+    // Its root is denied, and the shell's one writable temp folder is this
+    // turn's own, a sibling of the token's folder rather than its parent.
+    expect(keys).toContainEqual({ path: realpathSync(tmpdir()), mode: 'deny' });
+    expect(seen.exists).toBe(true);
+    expect(seen.shellTemp.endsWith('/shell-tmp')).toBe(true);
+    expect(realSibling.startsWith(`${seen.shellTemp}/`)).toBe(false);
+    await rm(sibling, { recursive: true, force: true });
   });
 
   // TASK-273: a public seat whose MCP did not start used to run with a notice,
