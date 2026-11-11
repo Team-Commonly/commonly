@@ -41,6 +41,7 @@ const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'agent-not-connected': 'agentNotConnected',
   'mention-unanswered': 'mentionUnanswered',
   'run-request-refused': 'runRequestRefused',
+  'run-request-declined': 'runRequestDeclined',
 };
 
 const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;
@@ -718,7 +719,8 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           src={message.user?.profile_picture || undefined}
           size="sm"
           tone="flat"
-          kind="agent"
+          // The decline line is the owner's, a person; the others speak for an agent.
+          kind={noticeKey === 'runRequestDeclined' ? 'human' : 'agent'}
           seed={message.user_id || undefined}
         />
         <span className="v2-system-action-line__notice">
@@ -728,7 +730,12 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
               {' '}
               <Link className="v2-system-action-line__link" to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
             </>
-          ) : t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}
+          ) : t(`podChat.systemActions.${noticeKey}`, {
+            name: actorLabel,
+            // F449: the decline line names who asked and the agent too.
+            requester: message.payload?.requesterName || '',
+            agent: message.payload?.agentLabel || '',
+          })}
         </span>
         {time && <time dateTime={message.created_at}>{time}</time>}
       </div>

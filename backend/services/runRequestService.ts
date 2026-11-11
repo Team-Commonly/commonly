@@ -98,6 +98,13 @@ const SCOPE_REACH: Record<string, string> = {
   'posts:write': 'pod:post',
   'memory:read': 'memory:read',
   'memory:write': 'memory:write',
+  // Presets grant these spellings; they reach the same places (F449).
+  'agent:context:read': 'pod:read',
+  'agent:messages:write': 'pod:post',
+  'integration:read': 'integrations:read',
+  'integrations:read': 'integrations:read',
+  'integration:messages:read': 'integrations:messages:read',
+  'integrations:messages:read': 'integrations:messages:read',
 };
 
 /**
