@@ -92,7 +92,7 @@ const cleanMarkdownLine = (line: string): string => line
   .replace(/[*_`]/g, '')
   .trim();
 
-export const extractTopItems = (content: string | undefined, limit = 5): string[] => {
+const extractTopItems = (content: string | undefined, limit = 5): string[] => {
   const lines = String(content || '').split('\n').map((line) => line.trim()).filter(Boolean);
   const bullets = lines.filter((line) => /^[-*]\s+/.test(line));
   const candidates = bullets.length > 0

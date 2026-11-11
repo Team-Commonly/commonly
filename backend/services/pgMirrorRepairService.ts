@@ -94,7 +94,7 @@ export interface RepairReport {
 
 /** Session advisory lock keys. (313, 2) is legacyMessageCopy; (1129270605, 504) the migration runner. */
 export const LOCK_KEYS = [313, 183];
-export const JUMP_THRESHOLD = 20;
+const JUMP_THRESHOLD = 20;
 const TOMBSTONE_USERNAME = 'Deleted user';
 const USER_FIELDS = '_id username displayName isBot botMetadata profilePicture createdAt';
 const MAX_STORED_KEYS = 5000;
@@ -102,9 +102,9 @@ const MAX_STORED_KEYS = 5000;
 export const PAGE_TIMEOUT_MS = 10000;
 const MAX_DETAIL_LINES = 200;
 /** Ghost deletes stop when more than this share of all pod_members rows are ghosts... */
-export const GHOST_FLOOR_RATIO = 0.2;
+const GHOST_FLOOR_RATIO = 0.2;
 /** ...and there are more than this many: a small instance's handful of ghosts is still repaired. */
-export const GHOST_FLOOR_MIN = 10;
+const GHOST_FLOOR_MIN = 10;
 /** PG column widths (config/migrations/0001). A longer Mongo value cannot be mirrored. */
 const POD_FIELD_LIMITS: Record<string, number> = { name: 100, type: 50, created_by: 24 };
 const USERNAME_LIMIT = 100;
@@ -636,6 +636,6 @@ async function runLocked(
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD, GHOST_FLOOR_RATIO, GHOST_FLOOR_MIN, PAGE_TIMEOUT_MS,
+  runPgMirrorRepair, LOCK_KEYS, PAGE_TIMEOUT_MS,
   selectStoredKeys,
 };

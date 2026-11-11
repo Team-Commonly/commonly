@@ -10,6 +10,29 @@ Run knip in a capped container on a throwaway copy, so `node_modules` and the `k
 mkdir -p <dir> && git archive HEAD backend frontend package.json | tar -x -C <dir>
 ```
 
+Write the config into the copy, so the counts can be compared with the next run. These are the configs batch 2 used, with `npx -y knip@5 --include exports,types --reporter json` in a `node:22` container capped at 4 GB:
+
+```jsonc
+// backend/knip.json
+{
+  "entry": ["server.ts", "scripts/**/*.{js,ts}", "migrations/**/*.{js,ts}", "seed/**/*.{js,ts}", "instrument.ts", "__tests__/**/*.{js,ts}"],
+  "project": ["**/*.{js,ts}"],
+  "ignore": ["dist/**", "coverage/**"]
+}
+// frontend/knip.json: the copy has no node_modules, and knip's vite plugin
+// exits on "Cannot find module 'vite'", so name the entries instead.
+{
+  "vite": false,
+  "vitest": false,
+  "entry": ["src/index.tsx", "src/setupTests.ts", "src/**/*.test.{js,jsx,ts,tsx}", "src/**/__tests__/**/*.{js,jsx,ts,tsx}", "src/**/__mocks__/**/*.{js,jsx,ts,tsx}"],
+  "project": ["src/**/*.{js,jsx,ts,tsx}"]
+}
+```
+
+Leave `backend/vendor/seats/**` out of the count. It is a vendored copy of `packages/seats`, and its exports are that package's API.
+
+**The word match's pathspec:** write `git grep -w -l -F <name> <ref> -- . ':(exclude)_external'`. The short form `':!_external'` fails with `Unimplemented pathspec magic '_'`. A script that reads only stdout then sees no hits, so every candidate looks clean.
+
 ## False positives
 
 - **`const svc = require('./x'); svc.name()`.** knip does not follow member access on a required module object, and most backend callers are written this way. Of 140 flagged backend exports whose name appears elsewhere in the repo, about 90 appear as `something.name`, and 39 are referenced only from tests. Exports of `connectorDeliveryFailureService` are flagged while seven backend modules require it.

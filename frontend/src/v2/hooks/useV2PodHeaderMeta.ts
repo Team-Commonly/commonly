@@ -17,8 +17,8 @@ interface ConnectorRow { type?: string; status?: string; podId?: { _id?: string 
 // Done flags for the seeded starter tasks; null when the pod has neither.
 export interface V2StarterSteps { connect: boolean; firstTask: boolean }
 
-export const CONNECT_AGENT_REF = 'onboarding:connect-agent';
-export const FIRST_TASK_REF = 'onboarding:first-task';
+const CONNECT_AGENT_REF = 'onboarding:connect-agent';
+const FIRST_TASK_REF = 'onboarding:first-task';
 
 export const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
   const connect = tasks.find((task) => task.sourceRef === CONNECT_AGENT_REF);

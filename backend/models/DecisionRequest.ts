@@ -17,7 +17,7 @@ export interface DecisionOption {
 // A DecisionRequest is intentionally limited to advisory forks. Any class
 // that could authorize an outward-facing act, credential use, or other
 // side-effect belongs to ApprovalAction instead.
-export const DECISION_CLASSES = ['strategy', 'implementation', 'prioritization'] as const;
+const DECISION_CLASSES = ['strategy', 'implementation', 'prioritization'] as const;
 export type DecisionClass = typeof DECISION_CLASSES[number];
 
 export interface DecisionRuling {

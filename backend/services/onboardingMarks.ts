@@ -55,7 +55,7 @@ const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
 export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
-export const SURFACE_MARKS: readonly SurfaceMark[] = [
+const SURFACE_MARKS: readonly SurfaceMark[] = [
   'inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt',
 ];
 
@@ -239,7 +239,7 @@ export function markByoCommandCopied(userId: unknown, commandType: 'mcp' | 'cli'
  * gets its own write-once field, so a later listen copy after an MCP copy
  * leaves a trace. The existing first-copy marks above are unchanged.
  */
-export const BYO_COPY_TYPES = ['listen', 'mcp-claude', 'mcp-cursor', 'daemon', 'token'] as const;
+const BYO_COPY_TYPES = ['listen', 'mcp-claude', 'mcp-cursor', 'daemon', 'token'] as const;
 export type ByoCopyType = typeof BYO_COPY_TYPES[number];
 const BYO_COPY_FIELD: Record<ByoCopyType, string> = {
   listen: 'onboarding.byoListenCopiedAt',

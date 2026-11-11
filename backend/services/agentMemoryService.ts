@@ -33,7 +33,7 @@ export function isAgentWritableSection(key: string): key is AgentWritableSection
 
 // Valid YYYY-MM-DD — ADR-003 daily[].date shape. Strict: must be a calendar-
 // valid date (Date.parse rejects e.g. 2026-02-30).
-export const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function isValidYMD(s: unknown): boolean {
   if (typeof s !== 'string') return false;

@@ -30,7 +30,7 @@ export interface MachineView {
 // D5 heartbeat payload bounds. A daemon reports every agent it supervises;
 // anything beyond the machine-level cap is a malfunctioning reporter, not a
 // bigger fleet — drop the tail rather than storing unbounded caller input.
-export const MAX_REPORTED_AGENT_STATES = 100;
+const MAX_REPORTED_AGENT_STATES = 100;
 const AGENT_RUN_STATES = new Set(['running', 'stopped', 'crashed']);
 
 export function normalizeAgentStates(raw: unknown): IMachineAgentState[] | null {
@@ -372,7 +372,6 @@ export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTo
 module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
   MAX_MACHINES_PER_OWNER,
-  MAX_REPORTED_AGENT_STATES,
   normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,

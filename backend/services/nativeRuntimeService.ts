@@ -380,10 +380,10 @@ export function hostedEngineAvailable(engine: string = engineForNewHostedInstall
 // (Scout quoted 200 turns a day after the free line became 30, #2237).
 const HOSTED_FREE_CAPS = hostedCaps();
 const HOSTED_PRO_CAPS = hostedCaps({ pro: true });
-export const HOSTED_LIMITS_LINE = `${HOSTED_FREE_CAPS.agentsPerUser} hosted `
+const HOSTED_LIMITS_LINE = `${HOSTED_FREE_CAPS.agentsPerUser} hosted `
   + `agent${HOSTED_FREE_CAPS.agentsPerUser === 1 ? '' : 's'} per account and `
   + `${HOSTED_FREE_CAPS.turnsPerDay} turns a day (${HOSTED_PRO_CAPS.turnsPerDay} on Pro)`;
-export const HOSTED_OFFER_LABEL = 'Run it here';
+const HOSTED_OFFER_LABEL = 'Run it here';
 // The model a hosted turn runs on. hostedNativeRunConfig leaves `model` unset,
 // so it is DEFAULT_MODEL. Named here for the same reason as the limits: Scout
 // answers "can I use DeepSeek?" from the deployment, not from its own copy.
@@ -391,7 +391,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'deepseek-v4-flash': 'DeepSeek V4 Flash',
   'claude-haiku-5-5': 'Claude Haiku 5.5',
 };
-export const HOSTED_MODEL_NAME = MODEL_DISPLAY_NAMES[DEFAULT_MODEL] || DEFAULT_MODEL;
+const HOSTED_MODEL_NAME = MODEL_DISPLAY_NAMES[DEFAULT_MODEL] || DEFAULT_MODEL;
 
 // --- tool schema (OpenAI function-calling format) -------------------------
 //
@@ -2302,7 +2302,7 @@ export async function fetchRecentPodMessages(
 export const RECENT_MESSAGES_MAX = 20;
 export const RECENT_MESSAGE_CHARS = 600;
 
-export function formatRecentMessagesBlock(
+function formatRecentMessagesBlock(
   messages: Array<{ id: string; author: string; content: string }>,
   answeringMessageId: string,
   count: number,

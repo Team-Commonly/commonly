@@ -57,7 +57,7 @@ export interface HostedMcpDriftAlertDeps {
  * failed write) logs again after this long while it lasts. It is never
  * suppressed: the next fresh assessment reads the config and tries to file.
  */
-export const DRIFT_ALERT_RELOG_MS = 60 * 60 * 1000;
+const DRIFT_ALERT_RELOG_MS = 60 * 60 * 1000;
 
 /**
  * The pin set, the drifted tools AND the pod the card goes to. A re-pin is a

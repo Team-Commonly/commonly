@@ -22,7 +22,7 @@ import { isSandboxConfigured } from './turnSandboxService';
 import { isSearchConfigured } from './webSearchService';
 
 export const HOSTED_ENGINE_NATIVE = 'native';
-export const HOSTED_ENGINE_DURABLE_OBJECT = 'durable-object';
+const HOSTED_ENGINE_DURABLE_OBJECT = 'durable-object';
 export type HostedEngine = typeof HOSTED_ENGINE_NATIVE | typeof HOSTED_ENGINE_DURABLE_OBJECT;
 
 export const readHostedConfig = (installation: any): Record<string, unknown> => {
@@ -185,7 +185,7 @@ export const HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES = 5;
  * agent, or an hourly one for a working morning. `HOSTED_HEARTBEAT_RUNS_PER_DAY`
  * overrides it, and 0 switches hosted heartbeats off.
  */
-export const DEFAULT_HOSTED_HEARTBEAT_RUNS_PER_DAY = 6;
+const DEFAULT_HOSTED_HEARTBEAT_RUNS_PER_DAY = 6;
 
 export const hostedHeartbeatRunsPerDay = (): number => {
   const raw = String(process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY ?? '').trim();
@@ -233,7 +233,7 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
 ];
 
 /** Recent messages a hosted turn sees, as Scout does. */
-export const HOSTED_NATIVE_RECENT_MESSAGES = 8;
+const HOSTED_NATIVE_RECENT_MESSAGES = 8;
 
 /** The opt-in tools this instance can actually offer a hosted turn. */
 export interface HostedNativeAbilities {

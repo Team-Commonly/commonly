@@ -310,7 +310,7 @@ const editDeferredReply = async (interaction: DiscordInteraction, content: strin
 // minute (F161). Claimed before the run, so two calls racing in the same
 // second still make one. Per process: a second replica keeps its own clock,
 // which at worst doubles the rate, never removes the limit.
-export const SUMMARY_COOLDOWN_MS = 60_000;
+const SUMMARY_COOLDOWN_MS = 60_000;
 const summaryRanAt = new Map<string, number>();
 
 const claimSummaryRun = (row: DiscordCommandRow): boolean => {
@@ -397,7 +397,6 @@ module.exports = {
   mayChangeRelaySettings,
   findBoundRows,
   resetSummaryCooldowns,
-  SUMMARY_COOLDOWN_MS,
   renderDiscordTldr,
   handleDiscordRelayCommand,
 };

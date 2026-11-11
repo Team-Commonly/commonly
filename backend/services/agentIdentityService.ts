@@ -106,7 +106,7 @@ export const isReservedAgentEmail = (email: unknown): boolean => (
 /** The refusal's declared code: callers identify it structurally. */
 export const AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict';
 export const AGENT_IDENTITY_CONFLICT_CODE = 'agent_identity_conflict';
-export const AGENT_DISPLAY_NAME_TAKEN_CODE = 'agent_display_name_taken';
+const AGENT_DISPLAY_NAME_TAKEN_CODE = 'agent_display_name_taken';
 
 export class AgentUsernameConflictError extends Error {
   readonly code = AGENT_USERNAME_CONFLICT_CODE;
