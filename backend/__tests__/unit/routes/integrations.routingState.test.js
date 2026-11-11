@@ -279,6 +279,24 @@ describe('integration routing state', () => {
     const blankToken = await turnOn(member._id, { accessToken: '   ' });
     expect(blankToken.status).toBe(403);
 
+    // A value Mongoose would also store as true is refused at the edge, not cast.
+    for (const value of ['true', 1, 'yes']) {
+      // eslint-disable-next-line no-await-in-loop
+      const cast = await request(app)
+        .patch(`/api/integrations/${foreign._id}`)
+        .set('x-test-user', String(member._id))
+        .send({ config: { agentAccessEnabled: value }, status: 'connected' });
+      expect([400, 403]).toContain(cast.status);
+      // eslint-disable-next-line no-await-in-loop
+      expect((await Integration.findById(foreign._id).lean()).config.agentAccessEnabled).toBe(false);
+    }
+    const yes = await request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(member._id))
+      .send({ config: { agentAccessEnabled: 'yes' }, status: 'connected' });
+    expect(yes.status).toBe(400);
+    expect(yes.body.message).toBe('agentAccessEnabled must be true or false');
+
     const own = await turnOn(creator._id);
     expect(own.status).toBe(200);
     const stored = await Integration.findById(foreign._id).lean();

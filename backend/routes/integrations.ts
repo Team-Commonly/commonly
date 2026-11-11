@@ -139,8 +139,9 @@ const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string,
 // one the guards recognise must be refused at the edge, or the value skips
 // the linkedUserId stamp and the group refusal (#1293 through a different
 // literal). Accepted: true/false and the legacy string forms 'true'/'false';
-// everything else is a 400, never a silent cast.
-const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
+// everything else is a 400, never a silent cast. agentAccessEnabled takes the
+// same rule: the GroupMe saved-token guard below compares it strictly too.
+const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages', 'agentAccessEnabled'];
 // Gate names become Mongo subdocument keys. They are accepted only in the
 // canonical ObjectId form before a request can turn one into a dotted update
 // path; this also gives every caller the same bounded membership-check cost.
@@ -1226,7 +1227,7 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // with the saved token; anyone else brings their own.
     if (integration.type === 'groupme' && incoming?.agentAccessEnabled === true
       && currentConfig.agentAccessEnabled !== true
-      && String(integration.createdBy || '') !== requesterId
+      && String((integration.createdBy as { _id?: unknown } | undefined)?._id || integration.createdBy || '') !== requesterId
       && !(typeof incoming.accessToken === 'string' && incoming.accessToken.trim())) {
       return res.status(403).json({
         code: 'groupme_saved_token_not_yours',
