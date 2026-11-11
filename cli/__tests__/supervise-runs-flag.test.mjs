@@ -65,6 +65,10 @@ const event = (id, content, over = {}) => ({
   ...over,
 });
 
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: POD_ID, publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 const harness = ({ events, adapter, env = {}, extra = {} }) => {
   let polls = 0;
   const get = jest.fn(async (route) => {
@@ -73,6 +77,9 @@ const harness = ({ events, adapter, env = {}, extra = {} }) => {
       return { events: polls === 1 ? events : [] };
     }
     if (route === '/api/agents/runtime/memory') return { sections: {} };
+    // A seat with no enforced sandbox re-reads its pods before every turn and runs
+    // only while all are confirmed private (lib/unconfined-seat-guard.js).
+    if (route === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
     if (String(route).endsWith('/messages')) return { messages: [] };
     return {};
   });

@@ -45,6 +45,14 @@ const startStub = async (first) => {
   let polls = 0;
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // A seat with no enforced sandbox re-reads its pods before every turn and
+    // runs only while all are confirmed private (lib/unconfined-seat-guard.js).
+    if (req.method === 'GET' && req.url.split('?')[0] === '/api/agents/runtime/installations') {
+      res.end(JSON.stringify({ installations: [{
+        podId: POD, publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+      }] }));
+      return;
+    }
     const isPoll = req.method === 'GET' && req.url.split('?')[0] === '/api/agents/runtime/events';
     if (isPoll) polls += 1;
     res.end(isPoll && polls === 1 ? JSON.stringify({ events: [first], inboxCount: 1 }) : '{}');

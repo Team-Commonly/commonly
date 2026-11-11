@@ -166,27 +166,32 @@ export const withDefaultMcpServer = (environment, adapterName) => {
  * are the same thing to the adapter, and this is the path that decides what an
  * undeclared sandbox means.
  */
+/**
+ * Whether an environment declares a sandbox the adapters ENFORCE: a public or
+ * workspace trust (whose mode they resolve, and refuse to spawn without, every
+ * adapter but claude refusing `workspace` outright, TASK-294) or an explicit
+ * non-'none' mode. `mode: 'none'`, an empty block and a missing one are all the
+ * same thing to a spawn: no confinement.
+ *
+ * Normalized first (Wren 71719): a legacy `internal` means `public` here as it
+ * does to the attach gate and the adapters.
+ */
+export const declaresEnforcedSandbox = (environment) => {
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  return sandbox !== null && typeof sandbox === 'object'
+    && sandbox.mode !== 'none'
+    && (sandbox.trust === 'public' || sandbox.trust === 'workspace'
+      || typeof sandbox.mode === 'string');
+};
+
 export const withDefaultSandbox = (environment) => {
   if (environment !== null && environment !== undefined
     && (typeof environment !== 'object' || Array.isArray(environment))) {
     return environment;
   }
-  // Normalized first (Wren 71719): `assertSandboxDeclaredForPublicPod`'s own
-  // comment says this predicate mirrors it, and a legacy `internal` record
-  // means `public` to both. Read raw, this one replaced a record the attach
-  // gate accepts — benign (same effective trust) but not a mirror, and the
-  // comment would be false. The ORIGINAL block is what gets returned below.
-  const sandbox = normalizeSandboxTrust(environment?.sandbox);
-  // An ENFORCED declaration is one the adapters act on: a public or workspace
-  // trust (whose mode they resolve, and refuse to spawn without — every adapter
-  // but claude refuses `workspace` outright, TASK-294) or an explicit non-'none'
-  // mode. `mode: 'none'`, an empty block and a missing one are all the same
-  // thing to a spawn — no confinement — so all three are replaced here.
-  const enforced = sandbox !== null && typeof sandbox === 'object'
-    && sandbox.mode !== 'none'
-    && (sandbox.trust === 'public' || sandbox.trust === 'workspace'
-      || typeof sandbox.mode === 'string');
-  if (enforced) return environment;
+  // `mode: 'none'`, an empty block and a missing one are replaced; the ORIGINAL
+  // block is what is returned when it is enforced.
+  if (declaresEnforcedSandbox(environment)) return environment;
   return { ...(environment || {}), sandbox: defaultSeatSandbox() };
 };
 

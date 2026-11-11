@@ -55,15 +55,23 @@ const drain = async () => {
   }
 };
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js), so this
+// fixture's pods are.
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: 'pod-walk', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 // Each entry of `pages` is one poll. The next tick runs only when asked for.
 const run = async (pages) => {
   const queue = [...pages];
   const prompts = [];
   let nextTick = null;
   createClient.mockReturnValue({
-    get: jest.fn(async (route) => (
-      String(route).includes('/events') ? { events: queue.shift() || [] } : {}
-    )),
+    get: jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
+      return String(route).includes('/events') ? { events: queue.shift() || [] } : {};
+    }),
     post: jest.fn().mockResolvedValue({}),
   });
   const { stop } = performRun({

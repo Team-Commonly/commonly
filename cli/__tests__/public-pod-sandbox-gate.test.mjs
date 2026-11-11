@@ -17,7 +17,9 @@ import { assertSandboxDeclaredForPublicPod } from '../src/commands/agent.js';
 const clientFor = (pod) => ({ get: jest.fn().mockResolvedValue(pod) });
 
 const PUBLIC_POD = { _id: 'p1', name: 'Commonly HQ', publicRead: true };
-const PRIVATE_POD = { _id: 'p2', name: 'My Workspace', publicRead: false };
+const PRIVATE_POD = {
+  _id: 'p2', name: 'My Workspace', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+};
 const SANDBOXED = { sandbox: { trust: 'public', mode: 'read-only' } };
 
 describe('public-pod sandbox gate', () => {
@@ -125,17 +127,30 @@ describe('public-pod sandbox gate', () => {
     expect(client.get).not.toHaveBeenCalled();
   });
 
-  test('an unreadable pod warns and proceeds rather than failing the attach', async () => {
-    // Failing attach on an unrelated network fault would be its own footgun —
-    // but a SILENT skip is how the original hole stayed invisible, so it warns.
-    const log = jest.fn();
+  // A seat with no sandbox runs with its owner's access, so the pod must be
+  // confirmed private: an unreadable pod, one open to join and one that does
+  // not report its visibility all fail closed (lib/unconfined-seat-guard.js).
+  test('an unreadable pod refuses an agent with no sandbox, and says how to retry', async () => {
     const client = { get: jest.fn().mockRejectedValue(new Error('403')) };
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'p1', environment: null }))
+      .rejects.toThrow(/visibility could not be read.*confirmed private and invite-only/s);
+  });
 
-    await expect(assertSandboxDeclaredForPublicPod({
-      client, podId: 'p1', environment: null, log,
-    })).resolves.toBeUndefined();
+  test.each([
+    ['open to join', { name: 'Open pod', publicRead: false, communityListed: false, joinPolicy: 'open' }, /"Open pod" is open to join/],
+    ['open by default (no joinPolicy)', { name: 'Old pod', publicRead: false, communityListed: false }, /"Old pod" is open to join/],
+    ['invite-only but silent on visibility', { name: 'Quiet pod', joinPolicy: 'invite-only' }, /"Quiet pod" did not report whether it is publicly readable/],
+  ])('a pod %s refuses an agent with no sandbox', async (_label, pod, message) => {
+    await expect(assertSandboxDeclaredForPublicPod({ client: clientFor(pod), podId: 'p3', environment: null }))
+      .rejects.toThrow(message);
+    await expect(assertSandboxDeclaredForPublicPod({ client: clientFor(pod), podId: 'p3', environment: null }))
+      .rejects.toThrow(/anyone who joins could direct it with your own access/);
+  });
 
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/could not read pod visibility/i));
+  test('the same pod admits the agent once it declares a sandbox', async () => {
+    const pod = { name: 'Open pod', publicRead: false, communityListed: false, joinPolicy: 'open' };
+    await expect(assertSandboxDeclaredForPublicPod({ client: clientFor(pod), podId: 'p3', environment: SANDBOXED }))
+      .resolves.toBeUndefined();
   });
 });
 
@@ -172,7 +187,7 @@ describe('workspace trust needs a confirmed private pod', () => {
 
   test('refuses a pod that does not report both fields, rather than guessing private', async () => {
     await expect(assertSandboxDeclaredForPublicPod({
-      client: clientFor(PRIVATE_POD), podId: 'p2', environment: WORKSPACE,
+      client: clientFor({ _id: 'p2', name: 'My Workspace', publicRead: false }), podId: 'p2', environment: WORKSPACE,
     })).rejects.toThrow(/did not report its visibility/);
   });
 

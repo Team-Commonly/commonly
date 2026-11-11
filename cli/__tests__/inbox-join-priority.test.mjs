@@ -85,6 +85,13 @@ const drainMicrotasks = async () => {
   }
 };
 
+// A seat with no enforced sandbox re-reads its pods before every turn and runs
+// only while all are confirmed private (lib/unconfined-seat-guard.js), so this
+// fixture's pods are.
+const PRIVATE_INSTALLATIONS = { installations: [{
+  podId: POD, publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+}] };
+
 // A claim-once inbox: each /events call returns everything currently pending
 // and marks it taken, exactly like claimPage. `arrivals[i]` is what lands in
 // the inbox before tick i.
@@ -94,6 +101,7 @@ const runTicks = async ({ arrivals, ticks = 2, spawn, runOptions = {} }) => {
   let pending = [];
   let poll = 0;
   const mockGet = jest.fn(async (routePath, params = {}) => {
+    if (routePath === '/api/agents/runtime/installations') return PRIVATE_INSTALLATIONS;
     if (String(routePath).includes('/events')) {
       pending = pending.concat(arrivals[poll] || []);
       poll += 1;
