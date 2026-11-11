@@ -108,7 +108,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-
 function normalizeText(value: string): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }

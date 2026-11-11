@@ -56,7 +56,6 @@ const parseVerifiedFilter = (value: any) => {
   return null;
 };
 
-
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
 // Both browser JWT and API-token auth supply req.user.username. Preserve the

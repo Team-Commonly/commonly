@@ -1,4 +1,3 @@
-import { escapeRegExp as escapeRegex } from '../utils/escape';
 /**
  * Attachment access — signed short-TTL tokens + ACL check (ADR-002 Phase 1b).
  *
@@ -20,6 +19,7 @@ import { escapeRegExp as escapeRegex } from '../utils/escape';
  * this as a deliberate slow scan; Phase 2's structured `attachments` model
  * replaces the scans with indexed lookups.
  */
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 
@@ -182,7 +182,6 @@ const PLAUSIBLE_FILENAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
 function isPlausibleFileName(fileName: string): boolean {
   return PLAUSIBLE_FILENAME_RE.test(fileName);
 }
-
 
 /**
  * PG scan for messages whose `content` references `urlFragment` (the full

@@ -23,7 +23,6 @@ const primaryUrl = (raw: string | undefined, fallback: string): string => (
   String(raw || '').split(',').map((value) => value.trim()).find(Boolean) || fallback
 ).replace(/\/$/, '');
 
-
 // A row is claimed before crossing the mail provider boundary. A retry never
 // sends the same ask twice, even when a source writer retries after a timeout.
 export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {

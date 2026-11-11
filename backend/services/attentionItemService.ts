@@ -215,7 +215,7 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
       const handle = String(member.username || '').trim();
       if (!handle || String(member._id) === String(authorId)) return false;
       if (options.isAlreadyAcknowledged?.(member._id, 'msg_' + String(messageId))) return false;
-      return new RegExp(`(^|[^A-Za-z0-9_-])@${handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'i').test(content);
+      return new RegExp(`(^|[^A-Za-z0-9_-])@${escapeRegExp(handle)}(?![A-Za-z0-9_-])`, 'i').test(content);
     });
     if (!recipients.length) return;
     const answering = await peopleThisAgentIsAnswering(message, authorId, content, podId);

@@ -85,7 +85,6 @@ const primaryUrl = (raw: string | undefined, fallback: string): string => {
   return (configured || fallback).replace(/\/$/, '');
 };
 
-
 const cleanMarkdownLine = (line: string): string => line
   .replace(/^[-*]\s+/, '')
   .replace(/^#+\s*/, '')
