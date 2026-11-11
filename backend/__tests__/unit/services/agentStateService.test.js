@@ -38,7 +38,10 @@ describe('offersConnect', () => {
   it('holds it back from what Bring your own cannot connect', () => {
     expect(offersConnect(byoInstall({ config: { runtime: { runtimeType: 'wrapper', host: 'byo' } } }))).toBe(false);
     expect(offersConnect(byoInstall(), 'machine-1')).toBe(false);
-    expect(offersConnect(byoInstall({ instanceId: 'nova' }))).toBe(false);
+  });
+
+  it('offers Connect to a second instance too: the link carries its instanceId (F306)', () => {
+    expect(offersConnect(byoInstall({ instanceId: 'nova' }))).toBe(true);
   });
 
   it('holds it back from a push webhook and a native agent, which have nothing to connect', () => {

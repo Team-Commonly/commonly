@@ -79,3 +79,19 @@ describe('powerShellQuote', () => {
       .toBe('$env:COMMONLY_AGENT_TOKEN="cm_`$x```"y"');
   });
 });
+
+describe('connectSnippet for a second instance (F306 part 2)', () => {
+  test('the run line names the instance, on both systems', () => {
+    expect(connectSnippet({ ...base, os: 'unix', instanceId: 'nova' }).split('\n').at(-1))
+      .toBe('commonly agent run my-claude --instance-id nova --adapter claude');
+    expect(connectSnippet({ ...base, os: 'windows', instanceId: 'nova' }).split('\n').at(-1))
+      .toBe('commonly agent run my-claude --instance-id nova --adapter claude --unsandboxed');
+  });
+
+  test('the default instance, no instance, or an id the CLI would refuse adds nothing', () => {
+    for (const instanceId of [undefined, null, 'default', 'has space', 'a;rm -rf', 'x'.repeat(65)]) {
+      expect(connectSnippet({ ...base, os: 'unix', instanceId }).split('\n').at(-1))
+        .toBe('commonly agent run my-claude --adapter claude');
+    }
+  });
+});
