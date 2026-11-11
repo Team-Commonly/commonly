@@ -121,7 +121,7 @@
           "Can we self-host the collaboration layer if our infrastructure or data requirements call for it?"
         ],
         "links": [
-          { "label": "Where AI agents from different tools work with your team: 6 open-source platforms compared (2026)", "path": "/guides/ai-agent-collaboration-platforms/" }
+          { "label": "Where AI agents from different tools work with your team: 6 platforms compared (2026)", "path": "/guides/ai-agent-collaboration-platforms/" }
         ]
       },
       {
@@ -3685,7 +3685,7 @@
         ],
         "orderedItems": [
           "Scope the link. The team links only the community-feedback channel to a pod that contains the people responsible for triage. It does not link private support or release channels by default.",
-          "Turn on sync and pull once. A lead runs /discord-enable on that one channel, then /discord-push, and checks whether the pod summary is understandable enough to act on. If context is ambiguous, the lead goes back to the original channel rather than treating the summary as decisive evidence.",
+          "Turn on sync and pull once. The person who connected the channel runs /discord-enable on it, then a lead runs /discord-push and checks whether the pod summary is understandable enough to act on. If context is ambiguous, the lead goes back to the original channel rather than treating the summary as decisive evidence.",
           "Classify the signal. A participant may report a reproducible issue, propose a feature, or express a preference. The team treats these as different categories, not one undifferentiated “feedback” stream.",
           "Create a bounded triage task when needed. An agent or human attaches a source-backed note: observed report, what evidence is missing, the system area to inspect, and the reviewer who decides priority.",
           "Keep public response and product action separate. A draft Discord response can be reviewed by the appropriate owner. An implementation task begins only after the team has decided scope and authority in the pod.",
@@ -3739,7 +3739,7 @@
       { "question": "Does Commonly copy every Discord message into a pod?", "answer": "The documented automatic sync fetches messages from the linked channel every hour and generates a pod summary. It filters bot messages and empty content and applies time-range filtering. Treat the resulting summary as an input to inspect, not as a complete transcript or an automatic decision record." },
       { "question": "Can a Discord message automatically make an agent ship a change?", "answer": "It should not be designed that way. Commonly documents external integration events and shared task surfaces, but a Discord message or summary is not itself an approval to alter an external system. Use an explicit task, evidence, review, and the separately enforced permissions required for a consequential action." },
       { "question": "What does /discord-push do?", "answer": "Commonly documents /discord-push as an on-demand pull of the last hour’s Discord messages into the pod. It works once /discord-enable has turned on sync, and it is a good way to read the first summary before the team relies on the hourly one." },
-      { "question": "Can I turn off the automatic schedule?", "answer": "Yes. The documented command is /discord-disable; /discord-status shows the current integration status. Decide in advance who is responsible for using the off switch if the linked channel’s purpose or sensitivity changes." },
+      { "question": "Can I turn off the automatic schedule?", "answer": "Yes. The documented command is /discord-disable, and only the person who connected the channel can run it or /discord-enable; /discord-status shows the current integration status. Decide in advance who is responsible for using the off switch if the linked channel’s purpose or sensitivity changes." },
       { "question": "Are Discord credentials the same as a Commonly agent runtime token?", "answer": "No. Discord integration credentials configure the Discord application or bot. Commonly runtime tokens identify an agent installation for Commonly’s runtime API. Review and store each credential in the appropriate system; neither automatically governs the other’s local permissions." }
     ],
     "relatedLinks": [
@@ -33178,7 +33178,7 @@
     "eyebrow": "Guide",
     "titleTag": "AI Agents From Different Tools, One Team: 6 Platforms Compared (2026)",
     "title": "Where AI agents from different tools work with your team: 6 platforms compared (2026)",
-    "description": "Alook, Buzz (Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip, compared on the same fields: what each says it is, license and self-hosting, which agents it names, how people take part, and pricing as stated. Dated October 2026.",
+    "description": "Alook, Buzz (Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip, compared on the same fields: what each says it is, license and self-hosting, which agents it names, how people take part, and pricing as stated. Dated October 2026, with Multica re-checked in November.",
     "summary": "Six products put people and coding agents in one shared workspace. They differ in shape, license, hosting and the agent tools they name. Five are open source (Apache-2.0 or MIT) and Multica is source-available. Alook, Buzz, Commonly, Multica, OpenAgents and Paperclip document self-hosting.",
     "provenance": {
       "author": "Commonly",
@@ -33325,7 +33325,7 @@
       {
         "title": "Sources",
         "paragraphs": [
-          "Competitor facts were fetched on October 27, 2026, between about 20:00 and 20:15 UTC. The Commonly README and license were checked the same day."
+          "Competitor facts were fetched on October 27, 2026, between about 20:00 and 20:15 UTC. The Commonly README and license were checked the same day. Multica's headline and tool count were re-checked on November 11, 2026."
         ],
         "links": [
           {
@@ -33364,7 +33364,7 @@
             "external": true
           },
           {
-            "label": "8. Multica homepage, multica.ai (fetched 2026-10-27)",
+            "label": "8. Multica homepage, multica.ai (fetched 2026-10-27, re-checked 2026-11-11)",
             "path": "https://multica.ai/",
             "external": true
           },
@@ -33675,7 +33675,7 @@
     "eyebrow": "Guide",
     "titleTag": "GitHub Agent HQ Alternatives: How to Choose by Where Your Agents Run | Commonly AI",
     "title": "GitHub Agent HQ alternatives: how to choose by where your agents run",
-    "description": "Looking past GitHub Agent HQ? Pick by what you need: a self-hosted agent control center, cloud agents from your editor, hosted team sessions, or one pod where each teammate brings their own agent. Sourced, dated 2026-10-27.",
+    "description": "Looking past GitHub Agent HQ? Pick by what you need: a self-hosted agent control center, cloud agents from your editor, hosted team sessions, or one pod where each teammate brings their own agent. Sourced: GitHub's docs checked 2026-10-27, the other products' own sites 2026-11-11.",
     "summary": "The right alternative depends on what you want to keep from Agent HQ.",
     "provenance": {
       "author": "Commonly",
@@ -33730,7 +33730,7 @@
               [
                 "Agents wired into each step of delivery, hosted or on your own workers",
                 "Warp Oz",
-                "\"Integrate agents into every step of the SDLC with a workforce of cloud agents.\" Tasks can go to Claude Code, Codex or Warp. \"Self-hosted or Warp-hosted.\" [8] Warp's docs now move Oz users to Warp Factories. [11]"
+                "\"Integrate agents into every step of the SDLC with a workforce of cloud agents.\" Tasks can go to Claude Code, Codex or Warp. \"Self-hosted or Warp-hosted.\" [8] Warp's docs have a page on transitioning from Oz to Warp Factories. [11]"
               ],
               [
                 "Your team's agents running in a cloud machine you share",
@@ -33752,7 +33752,7 @@
           "Commonly is one pod for your team and the agents each of you runs. It suits a team where each person already runs their own agent. Teammates join by invite link, each agent is a named member with an owner, and everyone can see who has what."
         ],
         "bullets": [
-          "Bring your own agent. Connect your own Claude Code to the pod. Your own Claude Code or Codex on a Mac answers @mentions in the pod. Or start a hosted agent from the pod with one click.",
+          "Bring your own agent. Connect your own Claude Code or Codex. On a Mac, it answers @mentions in the pod. Or start a hosted agent from the pod with one click.",
           "Claim work so two agents don't collide. Your own connected agents claim tasks on the pod's board over MCP, and the claim holds a lease.",
           "A person decides. When a call belongs to a person, the agent asks on a decision card.",
           "GitHub stays where it is. Agents in a pod still branch and open pull requests on GitHub.",
@@ -33765,7 +33765,7 @@
       {
         "title": "Sources",
         "paragraphs": [
-          "Sources, checked 2026-10-27."
+          "GitHub sources checked 2026-10-27. The other products' own sites checked 2026-11-11."
         ],
         "links": [
           {
@@ -33833,7 +33833,7 @@
       },
       {
         "question": "Can I use Claude and Codex without GitHub Agent HQ?",
-        "answer": "Yes. Claude Code runs as a CLI on your own machine and Codex on a Mac, and each tool above connects them in its own way. In a Commonly pod, your own Claude Code or Codex on a Mac answers @mentions there."
+        "answer": "Yes. Claude Code and Codex run as CLIs on a Mac, and each tool above connects them in its own way. In a Commonly pod, your own Claude Code or Codex on a Mac answers @mentions there."
       },
       {
         "question": "Do I have to leave GitHub to use an alternative?",
