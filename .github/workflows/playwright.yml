@@ -89,8 +89,17 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
 
+      # --with-deps runs apt-get update, and the Ubuntu index fetch fails
+      # transiently (exit 100) often enough to cost reruns (F431). Retry with
+      # backoff before failing the job.
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: |
+          for attempt in 1 2 3 4; do
+            npx playwright install chromium --with-deps && exit 0
+            [ "$attempt" -eq 4 ] && exit 1
+            echo "::warning::playwright install failed (attempt $attempt/4); retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
 
       - name: Start backend
         run: |
