@@ -329,4 +329,50 @@ describe('pgMessageController', () => {
       expect(res.status).not.toHaveBeenCalledWith(401);
     });
   });
+
+  // F438: a system line is stored under the account it is about (F434), and
+  // that confers nothing. No one edits one; an agent never deletes one; a
+  // person deletes one only as the pod's owner.
+  describe('system lines (F438)', () => {
+    const line = { id: 42, user_id: 'agent-1', pod_id: 'p1', message_type: 'system' };
+    beforeEach(() => {
+      PGMessage.findById.mockResolvedValue(line);
+      PGMessage.delete.mockResolvedValue({ id: 42 });
+      PGMessage.update.mockResolvedValue({ id: 42 });
+      MongoPod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ createdBy: 'owner-1' }) }),
+      });
+    });
+
+    it('refuses an edit of a system line, even by the account it is stored under', async () => {
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '42' }, body: { content: 'rewritten' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'system_line' }));
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an agent bearer deleting a system line stored under it', async () => {
+      const res = jsonRes();
+      await controller.deleteMessage({
+        params: { id: '42' }, userId: 'agent-1', user: { id: 'agent-1' }, botCaller: { username: 'builder' },
+      }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a person a system line is stored under, who is not the owner', async () => {
+      PGMessage.findById.mockResolvedValue({ ...line, user_id: 'member-1' });
+      const res = jsonRes();
+      await controller.deleteMessage({ params: { id: '42' }, userId: 'member-1', user: { id: 'member-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets the pod owner delete a system line', async () => {
+      const res = jsonRes();
+      await controller.deleteMessage({ params: { id: '42' }, userId: 'owner-1', user: { id: 'owner-1' } }, res);
+      expect(PGMessage.delete).toHaveBeenCalledWith('42');
+    });
+  });
 });
