@@ -61,12 +61,12 @@ describe('reprovision and the rows a revoke reaches', () => {
     expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
   });
 
-  it('a gateway row with no outside sibling still rotates', async () => {
+  it('a gateway row with no outside sibling is past the sibling check, and skipped as retired', async () => {
     const installation = await seed('cto', { runtimeType: 'moltbot' });
     await seed('other', { runtimeType: 'claude-code', host: 'byo' });
     const result = await reprovisionInstallation({ installation, force: true });
-    expect(result.skipped).toBeUndefined();
-    expect(revokeRuntimeTokensForAgent).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ skipped: true, skipReason: 'runtime_retired' });
+    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
   });
 });
 

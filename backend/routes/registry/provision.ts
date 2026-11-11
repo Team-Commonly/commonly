@@ -15,7 +15,7 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const DMService = require('../../services/dmService');
 const {
-  composeGatewayRetired,
+  moltbotRuntimeRetired,
   provisionAgentRuntime,
   startAgentRuntime,
   restartAgentRuntime,
@@ -204,15 +204,15 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       }
     }
 
-    // Refused before any token is minted or rotated. Without this the start
-    // fails and the install is still recorded as provisioned.
-    if (composeGatewayRetired(runtimeType)) {
-      logInstallRefusal('registry.provision', 'local_gateway_retired', {
+    // Refused before any token is minted or rotated. Nothing runs a moltbot any
+    // more, so a provision would record an agent as provisioned that never starts.
+    if (moltbotRuntimeRetired(runtimeType)) {
+      logInstallRefusal('registry.provision', 'runtime_retired', {
         userId, agentName: name, instanceId: normalizedInstanceId, podId,
       });
       return res.status(410).json({
-        code: 'local_gateway_retired',
-        message: 'The local OpenClaw gateway was retired. Use a native agent, or attach a local CLI.',
+        code: 'runtime_retired',
+        message: 'OpenClaw agents were retired. Use a native agent, or attach a local CLI.',
       });
     }
 

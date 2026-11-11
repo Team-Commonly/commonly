@@ -62,9 +62,10 @@ const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 // measurement. A holder that only makes MCP calls never checks in, so it reads
 // never-connected and gets no deferral: it cannot receive the lease warning.
 // The other four are not the opposite of live, they are differently-shaped:
-//   - 'reachable' is asserted BY CONSTRUCTION for native + push-webhook
-//     installs. Deferring on it would defer forever on a class whose liveness
-//     was never checked.
+//   - 'reachable' is asserted BY CONSTRUCTION for native installs, and for a
+//     push webhook it means only that the last delivery was answered. Neither
+//     is a holder checking in, so deferring on it would defer on a class whose
+//     liveness the lease warning can't reach.
 //   - 'unknown' is the gateway/cloud tier saying so out loud (one shared boot
 //     timestamp for a whole fleet). Deferring on an explicit "we don't know"
 //     converts an honest abstention into a tenure grant.
