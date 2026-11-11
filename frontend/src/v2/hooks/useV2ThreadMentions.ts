@@ -21,6 +21,8 @@ interface MentionAgentState {
   instanceId?: string;
   connectPodId?: string;
   noSavedKey?: boolean;
+  /** A push webhook's last delivery failed: it is not a listener that went quiet. */
+  deliveryError?: unknown;
 }
 
 interface MentionItem extends V2ComposerMention {
@@ -85,11 +87,13 @@ export const useV2ThreadMentions = ({
         && !isOpaqueInstanceToken(instance)
         ? instance
         : (slugifyAgentHandle(label) || name.toLowerCase());
-      const reach = agentStateByHandle.get(value)?.state || agentStateByHandle.get(name.toLowerCase())?.state;
+      const row = agentStateByHandle.get(value) || agentStateByHandle.get(name.toLowerCase());
+      const reach = row?.state;
+      const webhookFailed = Boolean(row?.deliveryError);
       const subtitle = reach === 'never-connected'
         ? t('podChat.mentionState.typeaheadNever', { handle: value })
         : reach === 'gone-dark'
-          ? t('podChat.mentionState.typeaheadDark', { handle: value })
+          ? t(webhookFailed ? 'podChat.mentionState.typeaheadWebhook' : 'podChat.mentionState.typeaheadDark', { handle: value })
           : t('podChat.mentions.agentSubtitle', { handle: value });
       return {
         id: username,
@@ -160,7 +164,13 @@ export const useV2ThreadMentions = ({
       }
       seen.add(agentName);
       const connectLink = state.noSavedKey ? agentConnectLink(state) : '';
-      rows.push({ agentName, state: state.state, fixCommand: state.fixCommand, ...(connectLink ? { connectLink } : {}) });
+      rows.push({
+        agentName,
+        state: state.state,
+        fixCommand: state.fixCommand,
+        ...(connectLink ? { connectLink } : {}),
+        ...(state.deliveryError ? { webhookFailed: true } : {}),
+      });
       return rows;
     }, []);
   }, [agentStateByHandle, draft]);

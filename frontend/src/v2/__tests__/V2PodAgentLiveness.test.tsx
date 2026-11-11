@@ -115,7 +115,7 @@ describe('group pod agent liveness', () => {
     renderChat(makeDetail());
 
     const row = await screen.findByTestId('pod-agent-liveness');
-    expect(row).toHaveTextContent("Sam Agent's webhook didn't take the last message (HTTP 502, 3h ago). It answers once its endpoint is back.");
+    expect(row).toHaveTextContent("Sam Agent didn't get the last message (HTTP 502, 3h ago). It can't get new ones until its endpoint is back.");
     expect(row).not.toHaveTextContent('checked in');
   });
 

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
-import { postToPublicAddress } from './outboundUrlGuard';
+import { postToPublicAddress, RESPONSE_TOO_LARGE } from './outboundUrlGuard';
 import { webhookUrlHash } from './agentStateService';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
@@ -386,6 +386,7 @@ const postInlineReply = async (
 };
 
 type WebhookFailure = 'http' | 'timeout' | 'network' | 'refused';
+type WebhookDeliveryOutcome = { ok: true } | { ok: false; failure: WebhookFailure; status?: number };
 
 // Records the delivery's outcome on the install, so the pod shows a webhook
 // that stopped answering instead of calling every URL reachable. Keyed to the
@@ -394,7 +395,7 @@ type WebhookFailure = 'http' | 'timeout' | 'network' | 'refused';
 export const recordWebhookDelivery = async (
   installation: InstallationDoc,
   webhookUrl: string,
-  outcome: { ok: true } | { ok: false; failure: WebhookFailure; status?: number },
+  outcome: WebhookDeliveryOutcome,
   now: Date = new Date(),
 ): Promise<void> => {
   if (!installation?._id) return;
@@ -424,6 +425,24 @@ export const recordWebhookDelivery = async (
   } catch (err) {
     console.warn('[webhook] could not record the delivery outcome:', (err as Error).message);
   }
+};
+
+/**
+ * What a delivery that threw says about the endpoint. A 2xx whose body passed
+ * the cap still answered. A host that no longer resolves cannot be reached,
+ * which is not the same as an address Commonly refuses, and a redirect loop is
+ * the endpoint's own HTTP answer.
+ */
+export const webhookFailureOutcome = (err: unknown): WebhookDeliveryOutcome => {
+  const { name, code, kind, status } = (err || {}) as { name?: string; code?: string; kind?: string; status?: number };
+  if (code === RESPONSE_TOO_LARGE && typeof status === 'number' && status >= 200 && status < 300) return { ok: true };
+  if (name === 'AbortError') return { ok: false, failure: 'timeout' };
+  if (name === 'OutboundUrlRefusedError') {
+    if (kind === 'unresolved') return { ok: false, failure: 'network' };
+    if (kind === 'redirects') return { ok: false, failure: 'http' };
+    return { ok: false, failure: 'refused' };
+  }
+  return { ok: false, failure: 'network' };
 };
 
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
@@ -533,9 +552,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       console.warn(`[webhook] ${event.agentName} delivery failed`);
     }
     if (!answered) {
-      const failure: WebhookFailure = name === 'AbortError' ? 'timeout'
-        : name === 'OutboundUrlRefusedError' ? 'refused' : 'network';
-      await recordWebhookDelivery(installation, webhookUrl, { ok: false, failure });
+      await recordWebhookDelivery(installation, webhookUrl, webhookFailureOutcome(err));
     }
   }
 };

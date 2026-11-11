@@ -154,6 +154,29 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(warning.textContent).not.toContain("isn't connected");
   });
 
+  test('a push webhook whose last delivery failed says so, not that it stopped checking in', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'gone-dark', isOwner: true,
+      fixCommand: 'Run the program behind your webhook URL.',
+      deliveryError: { at: new Date().toISOString(), kind: 'http', status: 502 },
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam' },
+    });
+    const option = await screen.findByRole('option');
+    expect(option.textContent).toContain("didn't get the last message");
+    expect(option.textContent).not.toContain('checked in');
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam-agent still there?' },
+    });
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toBe("@sam-agent didn't get the last message and may not get this one. Fix: Run the program behind your webhook URL.");
+  });
+
   test('a listening agent draws no warning at all', async () => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', state: 'listening', isOwner: true,

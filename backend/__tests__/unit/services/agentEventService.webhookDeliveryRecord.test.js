@@ -10,6 +10,7 @@ jest.mock('../../../models/AgentEvent', () => ({
 }));
 jest.mock('../../../services/outboundUrlGuard', () => ({
   postToPublicAddress: jest.fn(),
+  RESPONSE_TOO_LARGE: 'RESPONSE_TOO_LARGE',
 }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: jest.fn(), findOne: jest.fn(), updateOne: jest.fn() },
@@ -78,11 +79,15 @@ describe('webhook delivery outcome', () => {
   });
 
   test.each([
-    ['AbortError', 'timeout'],
-    ['OutboundUrlRefusedError', 'refused'],
-    ['TypeError', 'network'],
-  ])('a thrown %s is recorded as %s, with no status and no error text', async (name, failure) => {
-    postToPublicAddress.mockRejectedValue(named(name));
+    ['AbortError', undefined, 'timeout'],
+    ['OutboundUrlRefusedError', 'refused', 'refused'],
+    // A lapsed domain or tunnel can't be reached; Commonly isn't refusing it.
+    ['OutboundUrlRefusedError', 'unresolved', 'network'],
+    // A redirect loop is the endpoint's own answer.
+    ['OutboundUrlRefusedError', 'redirects', 'http'],
+    ['TypeError', undefined, 'network'],
+  ])('a thrown %s (%s) is recorded as %s, with no status and no error text', async (name, kind, failure) => {
+    postToPublicAddress.mockRejectedValue(Object.assign(named(name), kind ? { kind } : {}));
     await AgentEventService.deliverEventViaWebhook(installation, event);
     const [{ update }] = sets();
     expect(update.$set['webhookDelivery.lastFailure']).toBe(failure);
@@ -90,6 +95,17 @@ describe('webhook delivery outcome', () => {
     const stored = JSON.stringify(sets());
     expect(stored).not.toContain('secret');
     expect(stored).not.toContain('agent.example.com');
+  });
+
+  test('a 2xx whose body passed the cap still answered; a non-2xx one did not', async () => {
+    const tooLarge = (status) => Object.assign(new Error('response body exceeds 1 bytes'), { code: 'RESPONSE_TOO_LARGE', status });
+    postToPublicAddress.mockRejectedValueOnce(tooLarge(200));
+    await AgentEventService.deliverEventViaWebhook(installation, event);
+    expect(sets()[0].update.$set['webhookDelivery.lastOkAt']).toBeInstanceOf(Date);
+    AgentInstallation.updateOne.mockClear();
+    postToPublicAddress.mockRejectedValueOnce(tooLarge(500));
+    await AgentEventService.deliverEventViaWebhook(installation, event);
+    expect(sets()[0].update.$set['webhookDelivery.lastFailure']).toBe('network');
   });
 
   test('a failure on our side after the endpoint answered is not recorded as the endpoint failing', async () => {

@@ -1,7 +1,7 @@
 import {
   emitNotConnectedLine, emitOfflineLine, hasNotConnectedLineToday, hasOfflineLineSince,
 } from './systemActionLineService';
-import { deriveAgentState, type AgentReachState } from './agentStateService';
+import { classifyRuntime, deriveAgentState, type AgentReachState } from './agentStateService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
@@ -20,6 +20,13 @@ type NeverConnectedAgent = {
  * The agent's bot row and `deriveAgentState` verdict for its active install in
  * this pod, the one derivation the notices below and the wake fan-out
  * (agentMentionService) all read. Null when either row is missing.
+ *
+ * A push webhook reads as `unknown` here even when its last delivery failed.
+ * These readers act on a listener that stopped checking in: the offline line
+ * and the hand-off to the pod's host both say so, and a push webhook has no
+ * listener. Its mention is still delivered and retried, so handing the ask to
+ * another agent would answer it twice once the endpoint is back. The pod's
+ * status line says the delivery failed (agent-states).
  */
 export async function agentReach({
   podId, agentName, instanceId, now = new Date(),
@@ -38,12 +45,9 @@ export async function agentReach({
   }).select('username profilePicture botMetadata agentRuntimeTokens').lean() as NeverConnectedAgent | null;
   if (!agent) return null;
 
-  const { state } = deriveAgentState(
-    install as Parameters<typeof deriveAgentState>[0],
-    agent.agentRuntimeTokens || [],
-    '',
-    now.getTime(),
-  );
+  const row = install as Parameters<typeof deriveAgentState>[0];
+  const { state } = deriveAgentState(row, agent.agentRuntimeTokens || [], '', now.getTime());
+  if (classifyRuntime(row).isPushWebhook && state === 'gone-dark') return { agent, state: 'unknown' };
   return { agent, state };
 }
 

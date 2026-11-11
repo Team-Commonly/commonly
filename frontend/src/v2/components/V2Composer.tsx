@@ -22,6 +22,8 @@ export interface V2ComposerWarning {
   fixCommand?: string;
   /** Bring your own, where this agent can get a key; only its installer has one. */
   connectLink?: string;
+  /** A push webhook whose last delivery failed, not a listener that went quiet. */
+  webhookFailed?: boolean;
 }
 
 interface V2ComposerProps {
@@ -255,8 +257,10 @@ const V2Composer: React.FC<V2ComposerProps> = ({
                   ? t('podChat.mentionState.neverOwner', { handle: warning.agentName, command: warning.fixCommand })
                   : t('podChat.mentionState.neverPeer', { handle: warning.agentName }))
                 : (warning.fixCommand
-                  ? t('podChat.mentionState.darkOwner', { handle: warning.agentName, command: warning.fixCommand })
-                  : t('podChat.mentionState.darkPeer', { handle: warning.agentName })))}
+                  ? t(warning.webhookFailed ? 'podChat.mentionState.webhookOwner' : 'podChat.mentionState.darkOwner',
+                    { handle: warning.agentName, command: warning.fixCommand })
+                  : t(warning.webhookFailed ? 'podChat.mentionState.webhookPeer' : 'podChat.mentionState.darkPeer',
+                    { handle: warning.agentName })))}
             </span>
           ))}
         </div>

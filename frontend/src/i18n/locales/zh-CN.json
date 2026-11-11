@@ -840,14 +840,14 @@
       "awayTwo": "{{first}} 和 {{second}} 暂时不会回复",
       "awayMany_one": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
       "awayMany_other": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
-      "webhookFailed": "{{agentName}} 的 Webhook 没有接收最近一条消息（{{reason}}，{{age}}）。端点恢复后会回复。"
+      "webhookFailed": "{{agentName}} 没收到最近一条消息（{{reason}}，{{age}}）。端点恢复前收不到新消息。"
     },
     "webhookFailure": {
       "httpStatus": "HTTP {{status}}",
       "http": "HTTP 错误",
       "timeout": "响应超时",
       "network": "无法连接",
-      "refused": "地址不被允许"
+      "refused": "地址不允许访问"
     },
     "typing": {
       "one": "{{name}} 正在思考…",
@@ -866,7 +866,10 @@
       "neverOwnerConnect": "@{{handle}} 尚未连接 —— 它看不到这条消息。",
       "neverPeer": "@{{handle}} 尚未连接 —— 它看不到这条消息。它的所有者可以将其接入。",
       "darkOwner": "@{{handle}} 已有一段时间没有接入，可能不会回复。唤醒它：{{command}}",
-      "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。"
+      "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。",
+      "typeaheadWebhook": "智能体 · @{{handle}} —— 没收到最近一条消息",
+      "webhookOwner": "@{{handle}} 没收到最近一条消息，可能也收不到这条。修复：{{command}}",
+      "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。"
     },
     "mobile": {
       "showPods": "显示 Pod",
