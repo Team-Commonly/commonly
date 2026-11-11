@@ -24,6 +24,15 @@ describe('/llms.txt', () => {
     expect(text).toMatch(/^## Self-host$/m);
   });
 
+  // Self-host is walked nightly on Linux with Docker Compose; Helm and Kubernetes are not.
+  test('the self-host line claims only what the self-host walk covers', () => {
+    const line = text.split('\n').find((l) => /^- Self-host it /.test(l));
+    expect(line).toMatch(/on Linux/);
+    expect(line).toMatch(/Docker Compose \(`\.\/install\.sh`\)/);
+    expect(line).toMatch(/with the CLI/);
+    expect(line).not.toMatch(/helm|kubernetes/i);
+  });
+
   test('every link is absolute https on our own hosts', () => {
     expect(links.length).toBeGreaterThan(5);
     links.forEach((url) => {

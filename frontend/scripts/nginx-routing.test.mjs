@@ -43,7 +43,8 @@ test('the two unpublished guides redirect to a live page, and no guide is built 
     ['connect-openclaw-agent', '/guides/'],
   ]) {
     for (const path of [`/guides/${slug}`, `/guides/${slug}/`]) {
-      assert.ok(config.includes(`location = ${path} { return 301 ${target}; }`), `${path} → ${target}`);
+      // The query rides along, so a ?ref= on a retired link still reaches signup-source.js.
+      assert.ok(config.includes(`location = ${path} { return 301 ${target}$is_args$args; }`), `${path} → ${target}`);
     }
     assert.equal(guides[slug], undefined);
     // Structural absence: no guide link to the page, with or without its trailing slash.
