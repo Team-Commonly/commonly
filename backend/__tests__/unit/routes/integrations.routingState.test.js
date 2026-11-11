@@ -343,6 +343,75 @@ describe('integration routing state', () => {
     }
   });
 
+  describe('removing a saved GroupMe token', () => {
+    const ConnectorSecret = require('../../../models/ConnectorSecret');
+    const { storeGroupmeAccessToken } = require('../../../services/chatConnectorTokens');
+    let saved;
+    beforeEach(() => {
+      saved = [process.env.CONNECTOR_SECRET_KEYS, process.env.CONNECTOR_SECRET_ACTIVE_KEY];
+      process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 5).toString('base64')}`;
+      process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+    });
+    afterEach(() => {
+      [process.env.CONNECTOR_SECRET_KEYS, process.env.CONNECTOR_SECRET_ACTIVE_KEY] = saved;
+      if (saved[0] === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+      if (saved[1] === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    });
+
+    const withToken = async (podId = pod._id) => {
+      const row = await Integration.create({
+        podId, scope: 'pod', type: 'groupme', status: 'connected', createdBy: creator._id, isActive: true,
+        config: { ...groupmeConfig(), agentAccessEnabled: true },
+      });
+      const { accessTokenRef } = await storeGroupmeAccessToken(String(row._id), 'stored-token');
+      await Integration.updateOne({ _id: row._id }, { $set: { 'config.accessTokenRef': accessTokenRef } });
+      return { row, ref: accessTokenRef };
+    };
+    const remove = (rowId, userId) => request(app)
+      .delete(`/api/integrations/${rowId}/access-token`)
+      .set('x-test-user', String(userId));
+
+    it('deletes the secret, drops the ref and turns agent access off', async () => {
+      const { row, ref } = await withToken();
+      expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(1);
+      const res = await remove(row._id, creator._id);
+      expect(res.status).toBe(200);
+      expect(res.body.config).not.toHaveProperty('accessTokenSaved');
+      expect(res.body.config.agentAccessEnabled).toBe(false);
+      const stored = await Integration.findById(row._id).lean();
+      expect(stored.config).not.toHaveProperty('accessTokenRef');
+      expect(stored.config.agentAccessEnabled).toBe(false);
+      expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(0);
+    });
+
+    it('lets a pod creator who did not connect it remove it, and the echo stays projected', async () => {
+      const { row, ref } = await withToken(memberPod._id);
+      const res = await remove(row._id, member._id);
+      expect(res.status).toBe(200);
+      expect(res.body.config).not.toHaveProperty('botId');
+      expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(0);
+    });
+
+    it('refuses a member who cannot change the connector, and keeps the token', async () => {
+      const { row, ref } = await withToken();
+      const res = await remove(row._id, member._id);
+      expect(res.status).toBe(403);
+      expect((await Integration.findById(row._id).lean()).config.accessTokenRef).toBe(ref);
+      expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(1);
+    });
+
+    it('is GroupMe only, and a row with no token just turns agent access off', async () => {
+      const telegram = await Integration.findOne({ type: 'telegram' });
+      expect((await remove(telegram._id, creator._id)).status).toBe(400);
+      const bare = await Integration.create({
+        podId: pod._id, scope: 'pod', type: 'groupme', status: 'connected', createdBy: creator._id, isActive: true,
+        config: { ...groupmeConfig(), agentAccessEnabled: false },
+      });
+      expect((await remove(bare._id, creator._id)).status).toBe(200);
+      expect((await remove('not-an-id', creator._id)).status).toBe(400);
+    });
+  });
+
   it('strips relayMap, messageBuffer and webhookListenerEnabled from a client write', async () => {
     const res = await request(app)
       .post('/api/integrations')
