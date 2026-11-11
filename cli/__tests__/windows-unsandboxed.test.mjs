@@ -18,6 +18,7 @@ import {
   hostSandboxReport,
 } from '../src/lib/sandbox/windows-unsandboxed.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../src/lib/sandbox/host-check.js';
+import { CLI } from '../src/lib/cli-hint.js';
 import { detectBwrap } from '../src/lib/sandbox/bwrap.js';
 import { defaultSeatSandbox } from '../src/lib/default-environment.js';
 import { withholdGrantBroker } from '../src/lib/grant-broker-guard.js';
@@ -184,8 +185,9 @@ describe('what a Windows user is told', () => {
   test('the refusal names Windows and the flag, and offers WSL, which runs Claude Code in the Linux sandbox since F96', () => {
     const message = windowsSandboxMessage('claude');
     expect(message).toContain('no sandbox for Windows yet');
-    expect(message).toContain(`commonly agent run <name> ${UNSANDBOXED_FLAG}`);
-    expect(message).toContain(`commonly daemon install ${UNSANDBOXED_FLAG}`);
+    // commonly.cmd where this suite runs on Windows CI (F435).
+    expect(message).toContain(`${CLI} agent run <name> ${UNSANDBOXED_FLAG}`);
+    expect(message).toContain(`${CLI} daemon install ${UNSANDBOXED_FLAG}`);
     expect(message).toContain('no connector grants');
     expect(message).toContain("Commonly's restricted tool settings");
     expect(message).toContain('WSL 2 (Ubuntu): install Node and Claude Code inside WSL');

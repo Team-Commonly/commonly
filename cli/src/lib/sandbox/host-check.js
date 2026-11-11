@@ -21,6 +21,7 @@ import { normalizeSandboxTrust } from '../environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
+import { CLI } from '../cli-hint.js';
 
 // D245: the Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
 export const UNSANDBOXED_FLAG = '--unsandboxed';
@@ -50,7 +51,7 @@ const CODEX_WINDOWS_MESSAGE = [
   "Codex can't enforce a sandbox on Windows without its elevated setup,",
   'so by default this agent cannot listen for @mentions from native Windows. You can:',
   `  - In invite-only pods, run it without a sandbox: add ${UNSANDBOXED_FLAG}`
-    + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
+    + ` (${CLI} agent run <name> ${UNSANDBOXED_FLAG}, or ${CLI} daemon install ${UNSANDBOXED_FLAG}).`
     + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod,'
     + ' people you invite later included, can direct it, and it gets no connector grants.',
   CODEX_WSL_LINE,
@@ -134,7 +135,7 @@ export const windowsSandboxMessage = (adapterName) => {
     // D245: the user's own choice, never a default (sandbox/windows-unsandboxed.js).
     ...(adapterName === 'claude'
       ? [`  - Run it without an OS sandbox: add ${UNSANDBOXED_FLAG}`
-        + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
+        + ` (${CLI} agent run <name> ${UNSANDBOXED_FLAG}, or ${CLI} daemon install ${UNSANDBOXED_FLAG}).`
         + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level confines it, and it gets no connector grants."]
       : []),
     ...(adapterName === 'claude'

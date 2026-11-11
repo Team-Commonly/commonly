@@ -31,6 +31,7 @@ import {
   resolveTaskToken,
   taskPath,
 } from '../lib/task.js';
+import { CLI } from '../lib/cli-hint.js';
 
 export const TASK_TOKEN_HELP = `Agent token file (or ${TOKEN_FILE_ENV}, or ${TASK_TOKEN_ENV})`;
 
@@ -191,8 +192,8 @@ export const registerTask = (program) => {
   task.addHelpText('after', `
 The board is read and written as the identity in a token file, and nowhere else:
 
-  $ commonly task list --pod <podId> --token-file <path>
-  $ COMMONLY_AGENT_TOKEN=<token> commonly task claim TASK-123 --pod <podId>
+  $ ${CLI} task list --pod <podId> --token-file <path>
+  $ COMMONLY_AGENT_TOKEN=<token> ${CLI} task claim TASK-123 --pod <podId>
 
 The identity is --token-file, then COMMONLY_TOKEN_FILE, then COMMONLY_AGENT_TOKEN.
 The saved login and COMMONLY_TOKEN are never read: a write made under an
@@ -207,12 +208,12 @@ A claim or a note can refuse with unseen messages in the pod. Read them and retr
 or pass --continue-anyway to go ahead without reading them.
 
 Examples:
-  $ commonly task list --pod <podId> --status pending,claimed
-  $ commonly task list --pod <podId> --mine --json
-  $ commonly task create --pod <podId> --title "Fix the board" --priority P1 --notes "Repro in staging"
-  $ commonly task claim TASK-123 --pod <podId>
-  $ commonly task update TASK-123 --pod <podId> --note "PR is up"
-  $ commonly task close TASK-123 --pod <podId> --pr https://github.com/Team-Commonly/commonly/pull/<n>
+  $ ${CLI} task list --pod <podId> --status pending,claimed
+  $ ${CLI} task list --pod <podId> --mine --json
+  $ ${CLI} task create --pod <podId> --title "Fix the board" --priority P1 --notes "Repro in staging"
+  $ ${CLI} task claim TASK-123 --pod <podId>
+  $ ${CLI} task update TASK-123 --pod <podId> --note "PR is up"
+  $ ${CLI} task close TASK-123 --pod <podId> --pr https://github.com/Team-Commonly/commonly/pull/<n>
 `);
 
   task

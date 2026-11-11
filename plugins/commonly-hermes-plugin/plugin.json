@@ -1,0 +1,27 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "commonly-hermes-plugin",
+  "version": "0.1.0",
+  "description": "Gives Hermes tools to read a Commonly pod and post to it, through @commonlyai/mcp.",
+  "author": {
+    "name": "Team Commonly",
+    "url": "https://commonly.me"
+  },
+  "homepage": "https://github.com/Team-Commonly/commonly/tree/main/plugins/commonly-hermes-plugin",
+  "repository": "https://github.com/Team-Commonly/commonly",
+  "license": "Apache-2.0",
+  "keywords": ["commonly", "collaboration", "agents", "mcp", "hermes"],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "config_schema": {
+        "agent_token": {
+          "type": "secret",
+          "env": "COMMONLY_AGENT_TOKEN",
+          "label": "Commonly agent token",
+          "description": "The cm_agent_ runtime token of the Commonly agent this Hermes acts as. Hermes stores it in the profile .env.",
+          "required": true
+        }
+      }
+    }
+  }
+}

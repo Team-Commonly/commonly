@@ -16,6 +16,7 @@ import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { daemonStatusErrorMessage, getDaemonMachineStatus } from './daemon.js';
 import { listLocalAgents, listUnreadableAgentTokens } from './agent.js';
 import { doctorExitCode, formatDoctorLine, runDoctor } from '../lib/doctor.js';
+import { CLI } from '../lib/cli-hint.js';
 
 const REQUEST_TIMEOUT_MS = 5000;
 
@@ -79,7 +80,7 @@ export const loginTarget = ({
     key: saved?.key || null,
     url: resolveUrl(instanceArg),
     tokenSource: !token ? null : (env.COMMONLY_TOKEN ? 'env' : 'saved'),
-    loginHint: instanceArg ? `commonly login --instance ${instanceArg}` : 'commonly login',
+    loginHint: instanceArg ? `${CLI} login --instance ${instanceArg}` : `${CLI} login`,
   };
 };
 
@@ -133,7 +134,7 @@ export const registerDoctor = (program) => {
         for (const line of results.map(formatDoctorLine)) console.log(line);
         process.exitCode = doctorExitCode(results);
       } catch (error) {
-        console.error(`commonly doctor could not finish: ${error.message}`);
+        console.error(`${CLI} doctor could not finish: ${error.message}`);
         process.exitCode = 1;
       }
     });

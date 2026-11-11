@@ -145,7 +145,14 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
-import { CANT_ANSWER_NOTICE_WINDOW_MS, CUT_OFF_NOTICE, cantAnswerNotice } from '../lib/turn-failure-notice.js';
+import {
+  CANT_ANSWER_NOTICE_WINDOW_MS,
+  CLAUDE_SIGNED_OUT_FIX,
+  CUT_OFF_NOTICE,
+  cantAnswerNotice,
+  claudeSignedOutResult,
+  isClaudeSignedOut,
+} from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -164,6 +171,7 @@ import {
 } from '../lib/enforcement.js';
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
+import { CLI } from '../lib/cli-hint.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -190,7 +198,7 @@ export const saveAgentToken = (name, record) => {
   try {
     refreshMcpTokenCopy(name, record?.runtimeToken);
   } catch (err) {
-    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: ${CLI} mcp config --agent ${name}`);
   }
 };
 
@@ -216,7 +224,7 @@ export const seatKey = (agentName, instanceId) => (
 );
 
 const runCommandFor = (agentName, instanceId) => (
-  `commonly agent run ${agentName}${isDefaultInstanceId(instanceId) ? '' : ` --instance-id ${instanceId}`}`
+  `${CLI} agent run ${agentName}${isDefaultInstanceId(instanceId) ? '' : ` --instance-id ${instanceId}`}`
 );
 
 /**
@@ -402,7 +410,7 @@ export const serverAdapterBindingRefusal = ({
   if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
   const refusal = `Adapter '${adapter}' is not declared for this Commonly installation.`;
   if (!includeAttachGuidance) return refusal;
-  return `${refusal} A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
+  return `${refusal} A pod owner must sign in with ${CLI} login, then run ${CLI} agent attach ${adapter}`
     + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
     + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`;
 };
@@ -449,7 +457,7 @@ export const printAttachRunGuidance = ({
   warn = console.warn,
 } = {}) => {
   if (binding?.canRun) {
-    log(`\n  Run with:    commonly agent run ${agentName}`);
+    log(`\n  Run with:    ${CLI} agent run ${agentName}`);
   } else {
     warn(`\n  WARNING: ${binding?.warning || 'The server did not confirm this adapter binding.'}`);
   }
@@ -490,7 +498,7 @@ export const checkRunAllowRequest = ({ record, requested = [] }) => {
     message: [
       `'${name}' was set up with ${saved.length ? `--allow ${saved.join(',')}` : 'no --allow'}; `
         + `--allow ${requested.join(',')} was not applied.`,
-      `To change it: commonly agent detach ${name} --force, then re-run with the Connect-page `
+      `To change it: ${CLI} agent detach ${name} --force, then re-run with the Connect-page `
         + `env exports and --allow ${requested.join(',')}.`,
     ].join('\n'),
   };
@@ -522,8 +530,8 @@ export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) 
     ok: false,
     message: [
       `'${name}' is bound to the ${bound} adapter by its token file (${tokenPath}); --adapter ${requested} was not applied.`,
-      `To run it with ${requested} here: commonly agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
-      `A daemon-managed seat switches with: commonly agent config ${name} --adapter ${requested}`,
+      `To run it with ${requested} here: ${CLI} agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
+      `A daemon-managed seat switches with: ${CLI} agent config ${name} --adapter ${requested}`,
     ].join('\n'),
   };
 };
@@ -683,7 +691,7 @@ const listAgents = async (opts, deps) => {
   if (opts.local) {
     const agents = listLocalAgents();
     if (agents.length === 0) {
-      log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+      log(`No agents attached locally. Run: ${CLI} agent attach <adapter> --pod <podId> --name <n>`);
       return 0;
     }
     log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
@@ -696,7 +704,7 @@ const listAgents = async (opts, deps) => {
   }
 
   const token = tokenFor(opts.instance);
-  if (!token) { error('Not logged in. Run: commonly login'); return 1; }
+  if (!token) { error(`Not logged in. Run: ${CLI} login`); return 1; }
 
   const client = clientFactory({ instance: instanceUrlFor(opts.instance), token });
 
@@ -778,7 +786,7 @@ export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
   if (hits.length > 1) {
     const pairs = hits.map((h) => `${h.name || h.agentName}/${h.instanceId}`).join(', ');
     throw new Error(`${hits.length} seats are named '${typed}' here: ${pairs}. `
-      + `Run: commonly agent logs <agentName> --pod ${podId} --instance-id <instance>`);
+      + `Run: ${CLI} agent logs <agentName> --pod ${podId} --instance-id <instance>`);
   }
   if (hits.length === 0) {
     // A typo must not read like an idle seat, so say what was read instead.
@@ -905,7 +913,10 @@ const findOwnPost = (messages, earlierIds) => {
     // With `self`, only THIS agent's own post counts. Without it (an older
     // server), fall back to the legacy any-bot test — which drops this agent's
     // reply whenever another agent answers first (#757).
-    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && (serverKnowsSelf ? m.self === true : true)) {
+    // A system line is stored under the agent it is about; it is never this
+    // agent's post, even from a server that predates F434's `self` fix.
+    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && m.messageType !== 'system'
+      && (serverKnowsSelf ? m.self === true : true)) {
       return {
         id: String(m._id || m.id),
         author: m.username || 'unknown',
@@ -1256,7 +1267,7 @@ export const updateAgentConfiguration = async ({
     throw new Error('token record is missing agentName — re-attach the agent');
   }
   if (runtimeKey) {
-    if (adapter || envPath) throw new Error('--adapter and --env require an owner login; run commonly login');
+    if (adapter || envPath) throw new Error(`--adapter and --env require an owner login; run ${CLI} login`);
     const controls = Object.fromEntries(Object.entries({ model, effort })
       .filter(([, value]) => value !== null && value !== undefined));
     if (!Object.keys(controls).length) throw new Error('provide --model or --effort');
@@ -1528,13 +1539,13 @@ export const performAttach = async ({
           'Instead:',
           '  - Run it without an OS sandbox, which is your choice: use the commands on the Connect page.'
             + ' They set COMMONLY_API_URL and COMMONLY_AGENT_TOKEN, then run'
-            + ` commonly agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
+            + ` ${CLI} agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
             + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level"
             + ' confines it, and it gets no connector grants.'
             // agent run prefers a saved record over the page's env vars, so an
             // older record of that name would run with its own settings (#3407).
             + ' If this computer already has an agent saved under that name, the run uses that one and its'
-            + ' settings instead: remove it first with commonly agent detach <name> --force.',
+            + ` settings instead: remove it first with ${CLI} agent detach <name> --force.`,
           '  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.',
           '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
         ].join('\n') : windowsSandboxMessage(adapterName)));
@@ -2360,7 +2371,7 @@ export const performRun = ({
         const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
         const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
         log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
-          + `don't apply to it yet. Run once: commonly agent config ${agentName}${flags}`);
+          + `don't apply to it yet. Run once: ${CLI} agent config ${agentName}${flags}`);
       }
     }
     // Dropped only when the device listed its levels and this one is not
@@ -4250,6 +4261,15 @@ export const performRun = ({
           }
         }
       } catch (err) {
+        // F436: a signed-out Claude Code fails every turn the same way until
+        // someone signs in. Held, the event sat behind the 15-minute circuit;
+        // acked, the pod hears why now and the next event is the re-probe.
+        if (isClaudeSignedOut(err)) {
+          for (const entry of actionEntries) entry.result = claudeSignedOutResult();
+          log(`[inbox.batch] ${CLAUDE_SIGNED_OUT_FIX}`);
+          await noticeCantAnswer(err, actionEntries.map((entry) => entry.event));
+          return { entries };
+        }
         if (!isContentRefusal(err)) throw err;
         // Ambient text anyone wrote can draw the refusal, and no waking item
         // should pay for that. So the same items run once more with counts
@@ -4698,6 +4718,11 @@ export const performRun = ({
               // pod to post into, and its sender's ask expires on its own.
               result = contentRefusedResult();
               log(`[${event.type}] the model provider refused the content of event ${event._id} (content_refused) — acked as refused, not retried`);
+            } else if (isClaudeSignedOut(err)) {
+              // F436, as in the batch path. A pod-less or private item has no
+              // pod to tell, so the log line is the whole notice.
+              result = claudeSignedOutResult();
+              log(`[${event.type}] ${CLAUDE_SIGNED_OUT_FIX}`);
             } else {
               // Do not record or ack: the kernel must retain the event for
               // at-least-once delivery. Stop this fetched batch immediately —
@@ -4807,7 +4832,7 @@ export const performRun = ({
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
             + `If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. `
-            + `To remove the agent from its pod: commonly agent detach ${agentName}`,
+            + `To remove the agent from its pod: ${CLI} agent detach ${agentName}`,
           ));
           running = false;
           return;
@@ -5105,17 +5130,17 @@ export const registerAgent = (program) => {
   agent.addHelpText('after', `
 Examples:
   # Wrap your local claude binary as a pod agent (ADR-005)
-  $ commonly agent attach claude --pod <podId> --name my-claude
-  $ commonly agent run my-claude
-  $ commonly agent detach my-claude
+  $ ${CLI} agent attach claude --pod <podId> --name my-claude
+  $ ${CLI} agent run my-claude
+  $ ${CLI} agent detach my-claude
 
   # Scaffold a custom Python agent (ADR-006)
-  $ commonly agent init --language python --name research-bot --pod <podId>
+  $ ${CLI} agent init --language python --name research-bot --pod <podId>
 
   # List installed agents
-  $ commonly agent list
-  $ commonly agent config my-claude --adapter claude --model gpt-5.4 --effort high
-  $ commonly agent config my-claude --model gpt-5.4 --effort high
+  $ ${CLI} agent list
+  $ ${CLI} agent config my-claude --adapter claude --model gpt-5.4 --effort high
+  $ ${CLI} agent config my-claude --model gpt-5.4 --effort high
 
 Docs:
   https://github.com/Team-Commonly/commonly/blob/main/docs/agents/LOCAL_CLI_WRAPPER.md
@@ -5135,7 +5160,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5190,7 +5215,7 @@ Docs:
         }
         if (runtimeToken) {
           console.log(`\nRuntime token: ${runtimeToken}`);
-          console.log('Use this with: commonly agent connect --name <name> --token <token>');
+          console.log(`Use this with: ${CLI} agent connect --name <name> --token <token>`);
         }
       } catch (err) {
         console.error(`Registration failed: ${err.message}`);
@@ -5213,7 +5238,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = opts.token || getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const port = parseInt(opts.port, 10);
       const localUrl = `http://localhost:${port}${opts.path}`;
@@ -5280,12 +5305,12 @@ Docs:
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
-    .option('--wake-on-message', 'Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: commonly agent wake <name> on|off')
+    .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5344,7 +5369,7 @@ Docs:
             });
           } catch (err) {
             console.warn(`Memory import failed (agent is still attached): ${err.message}`);
-            console.warn(`Retry with: commonly agent import-memory ${opts.name}`);
+            console.warn(`Retry with: ${CLI} agent import-memory ${opts.name}`);
           }
         }
 
@@ -5376,7 +5401,7 @@ Docs:
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        console.error(`No token for '${name}'. Attach it first: ${CLI} agent attach <adapter> --pod <podId> --name ${name}`);
         process.exit(1);
       }
       try {
@@ -5403,13 +5428,13 @@ Docs:
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        console.error(`No token for '${name}'. Attach it first: ${CLI} agent attach <adapter> --pod <podId> --name ${name}`);
         process.exit(1);
       }
       // Skill registration is a USER action (pod-membership-checked route),
       // unlike memory import which authenticates as the agent.
       const userToken = getToken(opts.instance);
-      if (!userToken) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!userToken) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       try {
         const skills = detectSkills({ explicitDir: opts.dir ? pathResolve(opts.dir) : null });
@@ -5538,7 +5563,7 @@ Docs:
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` commonly agent attach <adapter> --pod <podId> --name ${agentArg}`,
+            + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
           );
           process.exit(1);
         }
@@ -5626,7 +5651,7 @@ Docs:
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
           `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
-          + `To give it the default: commonly agent detach ${name} --force, then either run a fresh command `
+          + `To give it the default: ${CLI} agent detach ${name} --force, then either run a fresh command `
           + 'from the Connect page, or attach it again with an environment file that sets sandbox.trust: public.',
         );
       }
@@ -5792,8 +5817,8 @@ Docs:
           if (!userToken) {
             console.error(
               `No user login found for ${record.instanceUrl}. Either run `
-              + `'commonly login --instance ${record.instanceUrl}' first, or `
-              + `'commonly agent detach ${name} --force' to clean up local files only.`,
+              + `'${CLI} login --instance ${record.instanceUrl}' first, or `
+              + `'${CLI} agent detach ${name} --force' to clean up local files only.`,
             );
             process.exit(1);
           }
@@ -5837,7 +5862,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5942,7 +5967,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       }
 
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
       const printActivity = async () => {
         const seat = await resolveLogsSeat(client, opts.pod, name, opts.instanceId);
@@ -5982,19 +6007,19 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instance = opts.instance || record.instanceUrl;
       const ownerToken = getToken(instance);
       const runtimeKey = !opts.adapter && !opts.env && !ownerToken && Boolean(record.runtimeToken);
       const token = runtimeKey ? record.runtimeToken : ownerToken;
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       try {
         const instanceUrl = resolveInstanceUrl(instance);
         if (runtimeKey && (!record.instanceUrl
           || new URL(instanceUrl).href.replace(/\/$/, '') !== new URL(record.instanceUrl).href.replace(/\/$/, ''))) {
-          throw new Error('Changing --instance requires an owner login for that instance; run commonly login');
+          throw new Error(`Changing --instance requires an owner login for that instance; run ${CLI} login`);
         }
         const client = createClient({ instance: instanceUrl, token });
         const result = await updateAgentConfiguration({
@@ -6034,12 +6059,12 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       }
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
       const token = getToken(opts.instance || record.instanceUrl);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: instanceUrl, token });
       try {
         const result = await setWakeOnMessage({ client, record, enabled });
@@ -6061,12 +6086,12 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
       const token = getToken(opts.instance || record.instanceUrl);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: instanceUrl, token });
       try {
         const result = await clearUnsandboxedMark({ client, record });
@@ -6085,7 +6110,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (name, opts) => {
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
@@ -6109,7 +6134,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action((name, opts) => {
       const record = loadAgentToken(name);
       if (!record?.runtimeToken) {
-        console.error(`No runtime token found for '${name}'. Run commonly agent attach first.`);
+        console.error(`No runtime token found for '${name}'. Run ${CLI} agent attach first.`);
         process.exit(1);
       }
       const podId = opts.pod || record.podId;

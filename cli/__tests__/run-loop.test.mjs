@@ -1189,6 +1189,51 @@ describe('performRun', () => {
     );
   });
 
+  test("F434: a system line stored under this agent is not its post, even when an old server says self: true", async () => {
+    // "my-stub isn't connected yet" is stored under this seat's bot user. A
+    // server predating F434 stamps it self: true, but the seat didn't write
+    // it, so it must not swallow the seat's real reply.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false, self: false }] }
+          : {
+            messages: [
+              { _id: 'm1', isBot: false, self: false },
+              {
+                _id: 'm2', isBot: true, self: true, messageType: 'system', username: 'my-stub', content: "my-stub isn't connected yet",
+              },
+            ],
+          };
+      }
+      return { events: [makeEvent({ _id: 'evt-systemline' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'my real reply' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      reply('my real reply'),
+    );
+  });
+
   test('#757: our own post still suppresses even when another agent posted too', async () => {
     // Both happened in the window. Ours is what matters — suppress.
     let messagesCall = 0;

@@ -25,7 +25,9 @@ describe('the Windows prod walk', () => {
     expect(windowsLineProblems(claude, { agentName: 'win-walk', adapter: 'claude' })).toEqual([]);
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'codex' })).toEqual([]);
     // Both run unsandboxed on Windows, by the flag the page's line carries.
-    expect(codex[3]).toBe('commonly agent run win-walk --adapter codex --unsandboxed');
+    expect(codex[3]).toBe('commonly.cmd agent run win-walk --adapter codex --unsandboxed');
+    // The .cmd shims, so Windows 11's default script policy never applies (F342).
+    expect(claude[0]).toBe('npm.cmd i -g @commonlyai/cli@latest');
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'claude' }))
       .toEqual([expect.stringMatching(/line 4/)]);
     expect(windowsLineProblems(claude.slice(0, 3), { agentName: 'win-walk', adapter: 'claude' }))

@@ -484,6 +484,11 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
+    // A system line is the platform's record, stored under the account it is
+    // about (F434). Being that account confers nothing: no agent may delete
+    // one, and a person may only as the pod's creator, below (F438).
+    const isSystemLine = message.message_type === 'system';
+
     // An agent runtime token (dualAuth → agentRuntimeAuth) sets req.agentUser,
     // not req.user/req.userId. An agent may delete only a message it authored,
     // only while it holds an active AgentInstallation in that message's pod,
@@ -491,6 +496,10 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
     if (req.agentUser?._id) {
       const agentId = getCallerId(req);
       const podId = String(message.pod_id);
+      if (isSystemLine) {
+        res.status(403).json({ msg: 'Agents may not delete system lines', code: 'system_line' });
+        return;
+      }
       if (String(message.user_id) !== agentId) {
         res.status(403).json({ msg: 'Agents may delete only their own messages', code: 'not_message_author' });
         return;
@@ -511,6 +520,10 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // gives its runtime token: only its own message, only while installed
       // in the pod, and never the pod-creator override below (F149).
       if (req.botCaller) {
+        if (isSystemLine) {
+          res.status(403).json({ msg: 'Agents may not delete system lines', code: 'system_line' });
+          return;
+        }
         if (message.user_id.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });
           return;
@@ -519,7 +532,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
           res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
           return;
         }
-      } else if (message.user_id.toString() !== userId.toString()) {
+      } else if (isSystemLine || message.user_id.toString() !== userId.toString()) {
         const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
         if (!pod || pod.createdBy?.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });

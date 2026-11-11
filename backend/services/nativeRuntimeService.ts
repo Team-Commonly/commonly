@@ -2277,6 +2277,19 @@ export async function fetchRecentPodMessages(
   const { listPodMessages } = require('../repositories/messageRepository');
   const rows = await listPodMessages(String(podId), { limit }) as Array<Record<string, unknown>>;
   return rows.filter((row) => !isRoomNotice(row)).map((row) => {
+    // The other system lines (task-claimed, run-request-refused, …) are stored
+    // under the agent they're about. Show them as the platform's, not as that
+    // agent speaking, and give them no author to address (F434).
+    if ((row.message_type ?? row.messageType) === 'system') {
+      return {
+        id: String(row.id || row._id || ''),
+        author: 'Commonly',
+        authorId: null,
+        authorIsBot: null,
+        content: contentWithCardOutcome(row),
+        createdAt: row.createdAt || row.created_at || null,
+      };
+    }
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
     // Only the raw `is_bot` is trusted: the PG mapper's `userId.isBot` reads

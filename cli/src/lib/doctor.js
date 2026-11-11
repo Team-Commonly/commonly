@@ -16,6 +16,7 @@ import { delimiter, join } from 'node:path';
 import { DAEMON_SETUP_LINE, runsFromStableInstall } from './stable-install.js';
 import { parseVersion, versionOlderThan } from './mcp-server-version.js';
 import { signedOutHint } from './adapter-login.js';
+import { CLI, NPM } from './cli-hint.js';
 
 export const PASS = 'pass';
 export const FAIL = 'fail';
@@ -62,7 +63,7 @@ export const checkInstall = ({
   pathValue, platform, isExecutable, runVersion, runningVersion, fromSetup = runsFromStableInstall(),
 }) => {
   // A `daemon setup` copy is updated by running setup again, never a global install.
-  const fix = fromSetup ? DAEMON_SETUP_LINE : 'npm install -g @commonlyai/cli';
+  const fix = fromSetup ? DAEMON_SETUP_LINE : `${NPM} install -g @commonlyai/cli`;
   const found = findOnPath({ command: 'commonly', pathValue, platform, isExecutable });
   if (!found.length) return result('install', FAIL, 'no `commonly` on PATH', fix);
   const [binary] = found;
@@ -94,7 +95,7 @@ export const checkLogin = async ({ target, fetchUser }) => {
     if ([401, 403].includes(error?.status)) {
       return result('login', FAIL, `${where} rejected ${tokenName}`, refix);
     }
-    return result('login', FAIL, `could not reach ${target.url}: ${error?.message || error}`, 'check the network, then re-run commonly doctor');
+    return result('login', FAIL, `could not reach ${target.url}: ${error?.message || error}`, `check the network, then re-run ${CLI} doctor`);
   }
   const who = user?.username || user?.email || user?._id;
   if (!who) return result('login', FAIL, `${where} answered without a user`, refix);
@@ -125,17 +126,17 @@ export const checkDaemon = async ({
   }
   const name = record.machineName || 'this computer';
   if (!fileExists(serviceFile)) {
-    return result('daemon', FAIL, `${name} is registered but its login service is not installed (${serviceFile})`, 'commonly daemon install');
+    return result('daemon', FAIL, `${name} is registered but its login service is not installed (${serviceFile})`, `${CLI} daemon install`);
   }
   let machine;
   try {
     machine = await fetchMachine(record);
   } catch (error) {
-    return result('daemon', FAIL, describeError(error), 'commonly daemon status');
+    return result('daemon', FAIL, describeError(error), `${CLI} daemon status`);
   }
   const heard = `last heartbeat ${ago(machine?.lastSeenAt, now)}`;
   if (machine?.status !== 'online') {
-    return result('daemon', FAIL, `${machine?.name || name} is ${machine?.status || 'unknown'}, ${heard}`, 'commonly daemon restart, then commonly daemon logs');
+    return result('daemon', FAIL, `${machine?.name || name} is ${machine?.status || 'unknown'}, ${heard}`, `${CLI} daemon restart, then ${CLI} daemon logs`);
   }
   return result('daemon', PASS, `${machine.name || name} online, service installed, ${heard}`);
 };
@@ -159,7 +160,7 @@ export const checkAdapters = async ({ agents, getAdapter, unreadable = [] }) => 
     byAdapter.get(adapter).push(agent.name);
   }
   const unreadableLine = unreadable.length
-    ? [result('adapters', FAIL, `the token file of ${nameList(unreadable)} is not readable JSON (~/.commonly/tokens)`, 'commonly agent detach <name> --force, then attach it again')]
+    ? [result('adapters', FAIL, `the token file of ${nameList(unreadable)} is not readable JSON (~/.commonly/tokens)`, `${CLI} agent detach <name> --force, then attach it again`)]
     : [];
   if (!byAdapter.size) {
     return unreadableLine.length ? unreadableLine : [result('adapters', SKIP, 'no agents are attached on this computer')];
@@ -169,12 +170,12 @@ export const checkAdapters = async ({ agents, getAdapter, unreadable = [] }) => 
     const id = `adapter:${name}`;
     const used = `used by ${nameList(agentNames)}`;
     if (name === '?') {
-      results.push(result(id, FAIL, `no adapter recorded in the token file, ${used}`, 'commonly agent detach <name> --force, then attach it again'));
+      results.push(result(id, FAIL, `no adapter recorded in the token file, ${used}`, `${CLI} agent detach <name> --force, then attach it again`));
       continue;
     }
     const adapter = getAdapter(name);
     if (!adapter) {
-      results.push(result(id, FAIL, `unknown adapter '${name}', ${used}`, `commonly agent detach <name> --force, then attach it again`));
+      results.push(result(id, FAIL, `unknown adapter '${name}', ${used}`, `${CLI} agent detach <name> --force, then attach it again`));
       continue;
     }
     if (typeof adapter.detect !== 'function') {
@@ -225,7 +226,7 @@ export const checkMacClaude = ({
     // A failed preflight most often means doctor itself is inside a sandbox
     // (an agent's turn), where a nested sandbox-exec is refused.
     const fixes = [];
-    if (!seatbelt?.available) fixes.push('run commonly doctor from a normal Terminal, not from inside an agent\'s sandbox');
+    if (!seatbelt?.available) fixes.push(`run ${CLI} doctor from a normal Terminal, not from inside an agent's sandbox`);
     if (missing.length > (seatbelt?.available ? 0 : 1)) {
       fixes.push('sign in to this Mac as the user the agent runs as, and run claude once to log in');
     }

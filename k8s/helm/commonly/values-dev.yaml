@@ -540,3 +540,10 @@ opsRunner:
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
+
+# Tighten pod egress (templates/network/egress-restrict.yaml): off here until
+# staging has run with it.
+networkPolicy:
+  egress:
+    restrict:
+      enabled: false

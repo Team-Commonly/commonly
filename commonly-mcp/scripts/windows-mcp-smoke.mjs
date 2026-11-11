@@ -4,7 +4,7 @@
  * windows-latest job in .github/workflows/mcp-windows.yml). The page tells a
  * Windows user to run, in PowerShell:
  *
- *   npm i -g @commonlyai/mcp
+ *   npm.cmd i -g @commonlyai/mcp
  *   claude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=... -e COMMONLY_AGENT_TOKEN=...
  *
  * Claude Code then starts `cmd /c commonly-mcp` with those two variables and
@@ -12,7 +12,7 @@
  * it installs the package globally, starts `cmd /c commonly-mcp` against a stub
  * Commonly API, sends initialize and tools/list, and checks the server's
  * start-up call reached the API with the token. It runs three times:
- *   published   - `npm i -g @commonlyai/mcp`, exactly the page's line
+ *   published   - `npm.cmd i -g @commonlyai/mcp`, exactly the page's line
  *   this tree   - this checkout's commonly-mcp, so a PR that breaks Windows fails
  *   Claude Code - the page's own `claude mcp add` line, run in PowerShell, then
  *                 `claude mcp list`, which launches the server the way a
@@ -57,7 +57,7 @@ if (!snippet) {
   process.exit(1);
 }
 const [installLine, addLine, ...rest] = snippet[1].split('\\n');
-if (rest.length || !/^npm i -g \S+$/.test(installLine || '') || !/^claude mcp add /.test(addLine || '')) {
+if (rest.length || !/^npm\.cmd i -g \S+$/.test(installLine || '') || !/^claude mcp add /.test(addLine || '')) {
   console.error(`windows-mcp-smoke: the page's Windows snippet changed shape: ${JSON.stringify(snippet[1])}`);
   process.exit(1);
 }
@@ -245,7 +245,7 @@ try {
   log(`Claude Code: ${(installed.stdout || installed.stderr || '').trim() || '(no version printed)'}`);
 
   log(`published: ${installLine}`);
-  npm(installLine.replace(/^npm /, ''));
+  npm(installLine.replace(/^npm\.cmd /, ''));
   await session('published');
   await claudeCode('published');
 

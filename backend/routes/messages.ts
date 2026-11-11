@@ -208,7 +208,14 @@ router.patch('/:id/created-at', auth, async (req: any, res: any) => {
     const message = await PGMessage.findById(id);
     if (!message) return res.status(404).json({ msg: 'message not found' });
 
-    if (String(message.user_id) !== String(userId)) {
+    // A system line is stored under the account it is about (F434); that
+    // account may not move it, and an agent never may. Only the pod creator
+    // retimes one (F438).
+    const isSystemLine = message.message_type === 'system';
+    if (isSystemLine && req.botCaller) {
+      return res.status(403).json({ msg: 'Agents may not retime system lines', code: 'system_line' });
+    }
+    if (isSystemLine || String(message.user_id) !== String(userId)) {
       const pod = await Pod.findById(message.pod_id);
       if (!pod || String(pod.createdBy) !== String(userId)) {
         return res.status(403).json({ msg: 'must be message author or pod creator' });

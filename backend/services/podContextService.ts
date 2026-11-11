@@ -461,7 +461,7 @@ class PodContextService {
     // not just read a rolled-up summary. Honors the tool's "recent messages"
     // contract. Compact + capped; full history is commonly_get_messages.
     let recentMessages: Array<{
-      id: string; author: string; mention: string; content: string; createdAt: unknown;
+      id: string; author: string; mention?: string; system?: true; content: string; createdAt: unknown;
     }> = [];
     let recentMessagesRead = false;
     try {
@@ -473,15 +473,21 @@ class PodContextService {
         podId,
         { mentionMap },
       );
-      recentMessages = withMention.map((m: Record<string, unknown>) => ({
-        id: String(m.id || m._id || ''),
-        author: (m.username as string)
-          || ((m.userId as { username?: string })?.username)
-          || 'unknown',
-        mention: m.mention as string,
-        content: String(m.content || '').slice(0, 500),
-        createdAt: m.createdAt || m.created_at,
-      }));
+      recentMessages = withMention.map((m: Record<string, unknown>) => {
+        // A system line is stored under the agent it is about, so its author
+        // reads as that agent. Mark it, and drop the @handle that would make
+        // it look like the agent's own post (F434).
+        const system = m.messageType === 'system';
+        return {
+          id: String(m.id || m._id || ''),
+          author: (m.username as string)
+            || ((m.userId as { username?: string })?.username)
+            || 'unknown',
+          ...(system ? { system: true as const } : { mention: m.mention as string }),
+          content: String(m.content || '').slice(0, 500),
+          createdAt: m.createdAt || m.created_at,
+        };
+      });
     } catch {
       recentMessages = [];
     }

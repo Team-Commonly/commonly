@@ -778,3 +778,16 @@ backup:
     gcs:
       bucket: ""
       path: postgresql
+
+# NetworkPolicies, one switch each: networkPolicy.{ingress,egress}.<name>.enabled.
+networkPolicy:
+  egress:
+    # Tighten pod egress (templates/network/egress-restrict.yaml): pods may
+    # reach any address except exceptCidrs; pods whose component is in
+    # exemptComponents keep full egress (backup uses Workload Identity).
+    restrict:
+      enabled: false
+      exceptCidrs:
+        - 169.254.169.254/32
+      exemptComponents:
+        - backup

@@ -109,6 +109,15 @@ The allowance line has two gates. The failure must class as QUOTA in
 stays silent too, so a new allowance failure needs an entry in both. The key and
 wouldn't-start lines have the wording gate only.
 
+A signed-out Claude Code is its own cause (F436). Claude Code exits 1 with `Not
+logged in · Please run /login` when no one is signed in on the computer. No
+retry fixes that, and holding the event behind the 15-minute circuit kept the
+person waiting with no answer (17.8 minutes on a walk). So the wrapper acks the
+event as an error, which hands a person's message on to another listener, and
+the pod's line says to sign in to Claude Code on that computer. The seat's log
+says the same. The circuit doesn't open, so the next message spawns at once,
+and that spawn is the re-probe.
+
 A new wording goes in a list once a seat has logged it or the vendor publishes
 it, and anything unmatched stays silent in the pod, as it was before. An API key
 out of credit uses the allowance line as it stands, since whoever runs the seat

@@ -1,0 +1,59 @@
+{{- /*
+Tighten pod egress: pods in the release namespace may reach any address except
+exceptCidrs; pods whose component is in exemptComponents keep full egress
+(backup uses Workload Identity). The exemption is its own allow-all policy, and
+NetworkPolicies are additive, so a later egress rule cannot narrow it.
+Gated by networkPolicy.egress.restrict.enabled (default false); checked by
+scripts/verify-network-policy-chart.js.
+*/ -}}
+{{- $cfg := .Values.networkPolicy.egress.restrict -}}
+{{- if $cfg.enabled }}
+{{- $ns := include "commonly.namespace" . }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-restrict
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: component
+        operator: NotIn
+        values:
+          {{- toYaml $cfg.exemptComponents | nindent 10 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml $cfg.exceptCidrs | nindent 14 }}
+    # Any pod in any namespace, stated outright: some dataplanes don't match
+    # cluster pod IPs against an ipBlock, and in-cluster traffic must not
+    # depend on which one runs.
+    - to:
+        - namespaceSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-restrict-exempt
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: component
+        operator: In
+        values:
+          {{- toYaml $cfg.exemptComponents | nindent 10 }}
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+{{- end }}
