@@ -2250,8 +2250,8 @@
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
     },
-    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the command above.",
-    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the command above.",
+    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
+    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
     "addComputer": {
       "title": "Add a computer",
       "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
