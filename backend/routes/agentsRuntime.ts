@@ -63,6 +63,7 @@ const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
 const { adapterForRuntimeBinding, normalizeAdapter } = require('../services/grantBrokerConfinement');
 const { grantBrokersForRuntimeSeat } = require('../services/seatGrantBrokerProjection');
+const { podsWithOutsiderWritableGrants } = require('../services/nativeOutsiderGrantPolicy');
 const {
   assertAgentRuntimeMayJoinPod,
   runtimeTypeFromConfig,
@@ -690,6 +691,21 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const ownerOnRecord = req.agentUser?.botMetadata?.ownerUserId;
     const ownerUserId = ownerOnRecord ? String(ownerOnRecord) : null;
 
+    // Which of this seat's pods an outsider-writable grant reaches, computed
+    // as runtime auth computes it (agentRuntimeAuth's narrowing check): the
+    // installations' pods, read with no cache, and a failed read narrows every
+    // one of them. The CLI reads `outsiderGrantNarrowed` before each turn and
+    // refuses a confined seat whose MCP set holds more than the shipped servers,
+    // which only the machine can see.
+    const censusPodIds: string[] = [...new Set<string>(podIds.map(String))];
+    let narrowedPods: Set<string>;
+    try {
+      narrowedPods = new Set([...await podsWithOutsiderWritableGrants(censusPodIds)].map(String));
+    } catch (error: any) {
+      console.error('Outsider grant census for /installations failed:', error?.message || error);
+      narrowedPods = new Set(censusPodIds);
+    }
+
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
       return {
@@ -711,6 +727,8 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // from people) or 'all'. A channel session that asked for unaddressed
         // questions reads it to name the pods where none can arrive.
         messageWake: messageWakeOf(inst?.config),
+        // An outsider-writable grant reaches this pod, so the seat is narrowed.
+        outsiderGrantReaches: narrowedPods.has(String(inst?.podId || '')),
         ...podVisibility(pod),
         type: 'installation',
       };
@@ -735,6 +753,8 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       // null when no installation declares a seat: then nothing is saved.
       runtimeSourcePodId,
       ownerUserId,
+      // True while any outsider-writable grant reaches one of this seat's pods.
+      outsiderGrantNarrowed: narrowedPods.size > 0,
       installations: [...installationList, ...dmList],
     });
   } catch (error: any) {

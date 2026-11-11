@@ -35,6 +35,10 @@ jest.mock('../../../models/Pod', () => ({
     }),
   })),
 }));
+const mockNarrowedPods = jest.fn(async () => new Set());
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podsWithOutsiderWritableGrants: (...args) => mockNarrowedPods(...args),
+}));
 jest.mock('../../../services/agentEventService', () => ({}));
 jest.mock('../../../services/hostedRuntimeService', () => ({}));
 jest.mock('../../../services/agentIdentityService', () => ({
@@ -302,5 +306,41 @@ describe('GET /installations message wake', () => {
     } finally {
       mockInstallations = null;
     }
+  });
+
+  describe('outsider-writable grants', () => {
+    afterEach(() => mockNarrowedPods.mockImplementation(async () => new Set()));
+
+    test('no grant reaches the seat: not narrowed, and no row is marked', async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.outsiderGrantNarrowed).toBe(false);
+      expect(response.body.installations[0].outsiderGrantReaches).toBe(false);
+    });
+
+    test('a grant reaching one installation pod narrows the seat and marks that row only', async () => {
+      mockInstallations = [mockInstallation, { ...mockInstallation, podId: 'pod-2' }];
+      mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }, { _id: 'pod-2', name: 'Other', type: 'team' }];
+      mockNarrowedPods.mockImplementation(async () => new Set(['pod-2']));
+      try {
+        const response = await request(app).get('/api/agents/runtime/installations');
+        expect(mockNarrowedPods).toHaveBeenLastCalledWith(['pod-1', 'pod-2']);
+        expect(response.body.outsiderGrantNarrowed).toBe(true);
+        expect(response.body.installations.filter((row) => row.type === 'installation')
+          .map((row) => [row.podId, row.outsiderGrantReaches])).toEqual([['pod-1', false], ['pod-2', true]]);
+      } finally {
+        mockInstallations = null;
+        mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }];
+      }
+    });
+
+    test('a failed grant read narrows the seat, as runtime auth does', async () => {
+      mockNarrowedPods.mockImplementation(async () => { throw new Error('mongo down'); });
+      const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const response = await request(app).get('/api/agents/runtime/installations');
+      spy.mockRestore();
+      expect(response.status).toBe(200);
+      expect(response.body.outsiderGrantNarrowed).toBe(true);
+      expect(response.body.installations[0].outsiderGrantReaches).toBe(true);
+    });
   });
 });

@@ -97,6 +97,9 @@ import {
 } from '../lib/default-environment.js';
 import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
+  OUTSIDER_GRANT_MCP_UNCONFINED, outsiderGrantMcpRefusal, seatIsConfined, unshippedMcpEntries,
+} from '../lib/outsider-grant-mcp.js';
+import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
   readPodFocus,
@@ -2865,6 +2868,44 @@ export const performRun = ({
           outcome: 'no_action',
           refused: { reason: 'delivery-refused' },
           reason: 'host-cannot-confine-turn',
+        };
+      }
+    }
+    // §12 C: a confined seat that a connector grant may reach runs with only the
+    // shipped MCP servers (lib/outsider-grant-mcp.js). The server is asked only
+    // when this turn's set holds something else, so an ordinary seat makes no
+    // extra read. A failed read defers the turn, as the placement read does.
+    if (seatIsConfined(placement.environment) && unshippedMcpEntries(placement.environment, instanceUrl).length) {
+      let identity;
+      try {
+        identity = await client.get('/api/agents/runtime/installations', {}, {
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch (err) {
+        throw Object.assign(
+          new Error(`turn deferred, because whether a connector grant reaches this seat could not be read: ${err.message}`, {
+            cause: err,
+          }),
+          { status: err.status },
+        );
+      }
+      const mcpRefusal = outsiderGrantMcpRefusal({ environment: placement.environment, identity, instanceUrl });
+      if (mcpRefusal) {
+        log(`turn refused: ${mcpRefusal.message}`);
+        if (event.type === 'agent.ask' && event.payload?.requestId) {
+          try {
+            await client.post(
+              `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
+              { content: 'I can’t take this ask: I’m set up with tools that can’t run next to this pod’s connector.' },
+            );
+          } catch (err) {
+            if (err?.status !== 409 || err?.body?.code !== 'already_responded') throw err;
+          }
+        }
+        return {
+          outcome: 'no_action',
+          refused: { reason: 'delivery-refused' },
+          reason: OUTSIDER_GRANT_MCP_UNCONFINED,
         };
       }
     }
