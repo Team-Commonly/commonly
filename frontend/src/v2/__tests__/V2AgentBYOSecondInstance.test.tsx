@@ -3,7 +3,7 @@
 // instanceId) must set up that instance. The page used to install and key the
 // default one, so the instance on the card never got a key and a sibling did.
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -94,6 +94,42 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(installBodies()[0].instanceId).toBeUndefined();
     expect(tokenBodies()[0].instanceId).toBeUndefined();
     await waitFor(() => expect(screen.getByText(/commonly agent run other-claude --adapter claude/)).toBeInTheDocument());
+  });
+
+  test('a key replacement after a rename is for the default instance, never the link\'s', async () => {
+    mockServer();
+    const issue = axios.post.getMockImplementation();
+    axios.post.mockImplementation((url, body) => (/runtime-tokens/.test(url) && !body?.force
+      ? Promise.resolve({ data: { existing: true } }) : issue(url, body)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.change(screen.getByDisplayValue('sam-claude'), { target: { value: 'other-claude' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    const confirm = await screen.findByTestId('byo-replace-key-confirmation');
+    fireEvent.click(within(confirm).getAllByRole('button')[0]);
+
+    await waitFor(() => expect(tokenBodies()).toHaveLength(2));
+    expect(tokenBodies()[1]).toMatchObject({ force: true, instanceId: 'default' });
+    await waitFor(() => expect(screen.getByText(/commonly agent run other-claude --adapter claude/)).toBeInTheDocument());
+  });
+
+  test('a key replacement on the link\'s own name is for that instance', async () => {
+    mockServer();
+    const issue = axios.post.getMockImplementation();
+    axios.post.mockImplementation((url, body) => (/runtime-tokens/.test(url) && !body?.force
+      ? Promise.resolve({ data: { existing: true } }) : issue(url, body)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    const confirm = await screen.findByTestId('byo-replace-key-confirmation');
+    fireEvent.click(within(confirm).getAllByRole('button')[0]);
+
+    await waitFor(() => expect(tokenBodies()).toHaveLength(2));
+    expect(tokenBodies()[1]).toMatchObject({ force: true, instanceId: 'nova' });
+    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
   });
 
   test('the default instance\'s link is unchanged', async () => {

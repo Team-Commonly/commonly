@@ -318,7 +318,7 @@ const V2AgentBYO: React.FC = () => {
   const [namesReady, setNamesReady] = useState(false);
   const [nameLookupError, setNameLookupError] = useState(false);
   const [nameLookupRetry, setNameLookupRetry] = useState(0);
-  const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string; instanceId?: string | null } | null>(null);
   // F164: the install route asks for a confirm when joining this pod would
   // confine the agent's writes elsewhere. A confirm only ever applies to the
   // name, pod and mode it was shown for.
@@ -1057,11 +1057,12 @@ const V2AgentBYO: React.FC = () => {
         // that carries it, which would drop the seat's webhook and auth. So a
         // model for a different harness than the seat runs isn't saved here.
         const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
-        // The install names no instance, so the server derives it from the
-        // display name: 'default' unless a persona's name differs from the end
-        // of the agent's name. The check below treats every persona as that
-        // case, to stay safe. Only on 'default' is
-        // the seat that answered "already installed" the one these calls reach.
+        // Outside a second instance's link the install names no instance, so
+        // the server derives it from the display name: 'default' unless a
+        // persona's name differs from the end of the agent's name. The check
+        // below treats every persona, and every non-default link, as not
+        // 'default', to stay safe: only on 'default' is the seat that answered
+        // "already installed" the one these calls reach.
         if (Object.keys(controls).length && (personaCard || prefill.instanceId !== 'default')) {
           setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
           return;
@@ -1111,7 +1112,7 @@ const V2AgentBYO: React.FC = () => {
         { label: 'BYO MCP — initial issue', ...(secondInstance ? { instanceId: secondInstance } : {}) },
       );
       if (tokenRes?.existing) {
-        setPendingReplacement({ agentName: cleanName, podId });
+        setPendingReplacement({ agentName: cleanName, podId, instanceId: secondInstance });
         return;
       }
       const tok = tokenRes?.token;
@@ -1142,15 +1143,19 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     try {
       const { agentName, podId: targetPodId } = target;
+      // The instance the key is for: the one the replace prompt was raised for,
+      // else the page's own target. A renamed agent is the default instance,
+      // never the link's, so a replacement can't rotate another instance's key.
+      const instanceId = target.instanceId || secondInstance;
       const tokenRes = await api.post<{ token?: string }>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
-        { label: 'BYO MCP — replacement', force: true, instanceId: prefill.instanceId },
+        { label: 'BYO MCP — replacement', force: true, instanceId: instanceId || 'default' },
       );
       if (!tokenRes?.token) {
         setError(t('agentByo.errors.tokenEmpty'));
         return;
       }
-      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: secondInstance });
+      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId });
       setListenState('waiting');
       setMemoryText('');
       setMemoryDone(false);

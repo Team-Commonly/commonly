@@ -290,7 +290,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect(row.state).toBe('never-connected');
     expect(row.instanceId).toBe('nova');
     expect(row.connectPodId).toBe(String(home._id));
-    if (row.fixCommand) expect(row.fixCommand).toBe('commonly agent run persona --instance-id nova');
+    expect(row.fixCommand).toBe('commonly agent run persona --instance-id nova');
   });
 
   it('keeps the notice when the lookup fails', async () => {
