@@ -15,7 +15,7 @@
 // expected to paste into their MCP host config immediately. If lost, they
 // can explicitly replace the old key without changing the agent identity.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -23,6 +23,7 @@ import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } fr
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
+import { keepsInstanceKeys } from '../utils/machineInstanceKeys';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -159,6 +160,8 @@ type MachineRow = {
   // D245: the daemon runs with no sandbox. Only a native Windows daemon reports
   // this (cli hostSandboxReport), and the CLI gives its seats no grant broker.
   hostUnconfined?: boolean;
+  // The CLI version its daemon last reported running; null when too old to say.
+  cliVersion?: string | null;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
@@ -469,10 +472,18 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
-  // Nor is "On my computer", nor anything that points to it: the daemon keeps
-  // one local key per agent name, so a computer that runs the default instance
-  // refuses this one (F427 gives it per-instance keys; these lines come back then).
-  const machineOffered = machines.length > 0 && !secondInstance;
+  // "On my computer" places a second instance only on a computer whose daemon
+  // keeps a key per instance (F427, CLI 0.1.328): an older one keeps one key per
+  // agent name and refuses it. A computer that has not checked in since its
+  // upgrade reads as older until it does.
+  const placeableMachines = useMemo(
+    () => (secondInstance ? machines.filter((m) => keepsInstanceKeys(m.cliVersion)) : machines),
+    [machines, secondInstance],
+  );
+  // Computers on file, none of which can take this instance yet: the page says
+  // how to update one, in place of the line that adds a computer.
+  const machinesNeedUpdate = Boolean(secondInstance) && machines.length > 0 && placeableMachines.length === 0;
+  const machineOffered = placeableMachines.length > 0;
   const choosingMode = !choicesKnown || hostedOffered || machineOffered;
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
@@ -484,7 +495,7 @@ const V2AgentBYO: React.FC = () => {
     && (Boolean(prefill.reconnect) || ['revoked', 'stale'].includes(existingConnection.connection.state))
     && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin');
   const modeUnavailable = (chosenMode === 'hosted' && !hostedOffered)
-    || (chosenMode === 'machine' && Boolean(secondInstance) && !wrapperReconnect);
+    || (chosenMode === 'machine' && Boolean(secondInstance) && !wrapperReconnect && !machineOffered);
   const mode = modeUnavailable
     ? (choosingMode ? null : 'byo')
     : chosenMode ?? (choosingMode ? null : 'byo');
@@ -497,6 +508,12 @@ const V2AgentBYO: React.FC = () => {
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
+  // The preselected computer is one this instance can be placed on.
+  useEffect(() => {
+    if (placeableMachines.length > 0 && !placeableMachines.some((m) => m.machineId === machineId)) {
+      setMachineId(defaultMachine(placeableMachines)?.machineId || '');
+    }
+  }, [placeableMachines, machineId]);
   const selectedMachine = machines.find((m) => m.machineId === machineId);
   const selectedMachineName = selectedMachine
     ? machineDisplayName(selectedMachine, machines, t, i18n.language)
@@ -1495,10 +1512,15 @@ const V2AgentBYO: React.FC = () => {
   // in Other ways to connect, on the start form and the result page, so the
   // stop-on-close line can point to it from the result.
   // On Windows `daemon install` registers a logon task (D245).
-  const addComputerBlock = machines.length === 0 && !secondInstance ? (
+  // A new computer's setup installs the current CLI, so it takes any instance.
+  // Computers already on file that can't take this instance get the same line,
+  // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
+  const addComputerBlock = machines.length === 0 || machinesNeedUpdate ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-      <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      <span className="v2-byo__label">{t(machinesNeedUpdate ? 'agentByo.addComputer.updateTitle' : 'agentByo.addComputer.title')}</span>
+      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">
+        {t(machinesNeedUpdate ? 'agentByo.addComputer.updateForInstance' : 'agentByo.addComputer.recommended')}
+      </p>
       {/* The computer being added need not be the one browsing: a Windows box
           set up from a Mac needs the Windows command and its note. The same
           choice as the listen block's, so the two never disagree. */}
@@ -1531,7 +1553,7 @@ const V2AgentBYO: React.FC = () => {
           <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
         </p>
       )}
-      <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+      <p className="v2-byo__hint">{t(machinesNeedUpdate ? 'agentByo.addComputer.afterUpdate' : 'agentByo.addComputer.after')}</p>
     </div>
   ) : null;
   // D247: a runner other than Claude Code and Codex takes the place of the
@@ -1876,7 +1898,7 @@ const V2AgentBYO: React.FC = () => {
                 className="v2-byo__input"
                 data-testid="byo-machine-select"
               >
-                {machines.map((m) => (
+                {placeableMachines.map((m) => (
                   <option key={m.machineId} value={m.machineId}>
                     {machineDisplayName(m, machines, t, i18n.language)} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
                   </option>
@@ -2008,7 +2030,7 @@ const V2AgentBYO: React.FC = () => {
             && connectorLine(listenAdapter, setupOs)}
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
-          {mode === 'byo' && machines.length === 0 && !secondInstance && listenerAvailable && (
+          {mode === 'byo' && machines.length === 0 && listenerAvailable && (
             <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
@@ -2267,11 +2289,11 @@ const V2AgentBYO: React.FC = () => {
                 {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
               </p>
             )}
-            {listenerAvailable && !secondInstance && (
+            {listenerAvailable && !machinesNeedUpdate && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
                 {t(setupOs === 'windows'
-                  ? (machines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
-                  : (machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
+                  ? (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
+                  : (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (

@@ -41,6 +41,8 @@ const renderPage = () => render(
 );
 
 const MACBOOK = { machineId: 'm1', name: 'Sams-MacBook', status: 'online', lastSeenAt: new Date().toISOString() };
+// F427: a daemon on CLI 0.1.328 or later keeps a key per instance.
+const STUDIO = { machineId: 'm2', name: 'Sams-Studio', status: 'online', lastSeenAt: new Date().toISOString(), cliVersion: '0.1.328' };
 
 const mockServer = ({ machines = [] } = {}) => {
   axios.get.mockImplementation((url) => {
@@ -173,21 +175,65 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --adapter claude/)).toBeInTheDocument());
   });
 
-  // The daemon keeps one local key per agent name, so a computer running the
-  // default instance refuses a second one (F427). Until then nothing on the
-  // page points a second instance at "On my computer".
-  test('a second instance is not offered "On my computer", before or after the key', async () => {
-    mockServer({ machines: [MACBOOK] });
+  // A daemon older than CLI 0.1.328 keeps one local key per agent name, so a
+  // computer running the default instance refuses a second one (F427). Such a
+  // computer isn't offered, and the page says how to update it instead.
+  test('a computer on an older CLI is not offered for a second instance; the page says how to update it', async () => {
+    mockServer({ machines: [{ ...MACBOOK, cliVersion: '0.1.327' }] });
     window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
     renderPage();
     await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    expect(await screen.findByText('Update your computer')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-add-computer')).toHaveTextContent('daemon setup');
+    expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
     expect(screen.queryByTestId('byo-result-on-my-computer')).toBeNull();
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    // The line that says "choose On my computer" would point at nothing.
     expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+  });
+
+  test('a computer whose daemon reports no version reads as older', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(await screen.findByText('Update your computer')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+  });
+
+  test('a second instance is placed on a computer whose daemon keeps a key per instance', async () => {
+    mockServer({ machines: [STUDIO] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-machine'));
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/request', expect.objectContaining({
+      agentName: 'sam-claude', instanceId: 'nova', machineId: 'm2',
+    }), expect.anything()));
+  });
+
+  test('with an older and a newer computer, only the newer one is listed and chosen', async () => {
+    mockServer({ machines: [{ ...MACBOOK, cliVersion: '0.1.300' }, STUDIO] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-machine'));
+    const select = await screen.findByTestId('byo-machine-select');
+    expect(within(select).getAllByRole('option').map((o) => o.value)).toEqual(['m2']);
+    expect(select).toHaveValue('m2');
+    expect(screen.queryByText('Update your computer')).toBeNull();
+  });
+
+  test('the default instance is offered every computer, whatever its version', async () => {
+    mockServer({ machines: [MACBOOK, STUDIO] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-machine'));
+    const select = await screen.findByTestId('byo-machine-select');
+    expect(within(select).getAllByRole('option').map((o) => o.value)).toEqual(['m1', 'm2']);
   });
 
   test('a computer link for a second instance opens on Bring your own instead', async () => {
@@ -254,18 +300,18 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
   });
 
   // With no computer on file, the add-a-computer block and the quick-try hint
-  // lead the form; neither is offered to a second instance.
-  test('with no computer on file, a second instance gets no add-a-computer block or quick-try hint', async () => {
+  // lead the form. A computer set up now runs the current CLI, which takes a
+  // second instance, so it gets them too.
+  test('with no computer on file, a second instance gets the add-a-computer block and quick-try hint', async () => {
     mockServer({ machines: [] });
     window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
     renderPage();
     await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
-    expect(screen.queryByTestId('byo-quick-try')).toBeNull();
+    expect(screen.getByText('Add a computer')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-quick-try')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
-    expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+    expect(screen.getByTestId('byo-listen-stops-on-close')).toBeInTheDocument();
   });
 
   test('with no computer on file, the default instance still gets the add-a-computer block', async () => {

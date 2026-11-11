@@ -177,6 +177,29 @@ describe('a machine records what it runs on', () => {
   });
 });
 
+// F427: the BYO page offers a second instance of an agent only to a computer
+// whose daemon keeps a key per instance, so the owner's list carries the CLI
+// version its daemon last reported, and nothing else of the host.
+describe("the owner's machine list carries the daemon's CLI version", () => {
+  const list = (user) => request(app)
+    .get('/api/machines')
+    .set('Authorization', `Bearer ${generateTestToken(user._id)}`);
+
+  it('names the version the last check-in reported, and null for a daemon that sent none', async () => {
+    const owner = await person();
+    const reported = await register(owner, { name: 'laptop', host: MAC }).expect(201);
+    await register(owner, { name: 'old box' }).expect(201);
+    await heartbeat(reported.body.daemonToken, reported.body.machine.id, { host: { ...MAC, cliVersion: '0.1.328' } }).expect(200);
+    const { body } = await list(owner).expect(200);
+    const byName = Object.fromEntries(body.machines.map((m) => [m.name, m]));
+    expect(byName.laptop.cliVersion).toBe('0.1.328');
+    expect(byName['old box'].cliVersion).toBeNull();
+    // Only the version: the platform, OS and arch stay off the list.
+    expect(byName.laptop).not.toHaveProperty('host');
+    expect(byName.laptop).not.toHaveProperty('platform');
+  });
+});
+
 describe('a machine records when one of its agents first answered a person', () => {
   const setup = async () => {
     const owner = await person();
