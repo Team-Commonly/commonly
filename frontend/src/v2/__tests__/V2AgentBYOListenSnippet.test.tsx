@@ -572,6 +572,32 @@ describe('BYO listener: Work in my repo', () => {
     expect(screen.getByTestId('byo-repo-saved-note')).toHaveTextContent(/detach/);
   });
 
+  // Each level says what it can do, and neither promises a commit or a pull
+  // request: the confined seat's .git is read-only and it has no GitHub login.
+  test('says what each level can do, and points issue-to-PR at the terminal attach without offering it here', async () => {
+    await issueToken(undefined, PRIVATE_POD);
+    const limits = screen.getByTestId('byo-repo-limits');
+    expect(limits).toHaveTextContent(/cannot commit, push or open a pull request/);
+    expect(screen.getByTestId('byo-repo-issue-to-pr')).toHaveTextContent(/other agents, can then direct it with your GitHub access/);
+    const link = screen.getByTestId('byo-repo-issue-to-pr').querySelector('a');
+    expect(link?.getAttribute('href')).toMatch(/docs\/agents\/claude-code-with-your-own-access\.md$/);
+    fireEvent.click(screen.getByTestId('byo-repo-toggle'));
+    expect(screen.getByTestId('byo-repo-write')?.parentElement).toHaveTextContent(/but not commit/);
+    fireEvent.click(screen.getByTestId('byo-repo-write'));
+    // Nothing on the page widens past the confined write grant.
+    expect(runLine()).not.toMatch(/unsandboxed|dangerously|skip-permissions/);
+  });
+
+  test('the docs page it links to exists, and its warning names later invitees and other agents', () => {
+    // eslint-disable-next-line global-require
+    const fs = require('fs');
+    // eslint-disable-next-line global-require
+    const path = require('path');
+    const doc = fs.readFileSync(path.join(__dirname, '../../../../docs/agents/claude-code-with-your-own-access.md'), 'utf8');
+    expect(doc).toMatch(/people invited later, and other agents in the pod/);
+    expect(doc).toMatch(/agent attach claude --pod <podId>/);
+  });
+
   // The CLI reads a pod that omits a flag as public; the repo choice must too.
   test.each([
     ['open to join', { joinPolicy: 'open', publicRead: false, communityListed: false }],
