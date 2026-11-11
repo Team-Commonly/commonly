@@ -22,7 +22,8 @@ import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
   liveInUsePids, mcpHomeDir, newestInstalledVersion, packageDirFor, pinShippedSpec, planMcpSpawn,
-  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, versionDirFor, warmLooksWanted,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, selectedMcpWritesReadyFile,
+  versionDirFor, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { exactVersion } from '../src/lib/mcp-server-version.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, runCommand, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
@@ -394,6 +395,22 @@ describe('prepareMcpSpawn — the warm is kicked when it is due, and only then',
     })).toEqual(['node', bin]);
     expect(selectedMcpVersionDir(['node', bin], home)).toBe(versionDirFor(home, '0.3.13'));
     expect(selectedMcpVersionDir(['node', join(home, 'current')], home)).toBeNull();
+  });
+
+  // F421: only a release that says it writes the ready file is asked for one.
+  test('selectedMcpWritesReadyFile reads the selected release\'s own package.json', () => {
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.13');
+    expect(selectedMcpWritesReadyFile(['node', bin], home)).toBe(false);
+    const pkgPath = join(home, '0.3.13', 'node_modules', '@commonlyai/mcp', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    writeFileSync(pkgPath, JSON.stringify({ ...pkg, commonly: { readyFile: true } }));
+    expect(selectedMcpWritesReadyFile(['node', bin], home)).toBe(true);
+    writeFileSync(pkgPath, JSON.stringify({ ...pkg, commonly: { readyFile: 'yes' } }));
+    expect(selectedMcpWritesReadyFile(['node', bin], home)).toBe(false);
+    writeFileSync(pkgPath, '{not json');
+    expect(selectedMcpWritesReadyFile(['node', bin], home)).toBe(false);
+    expect(selectedMcpWritesReadyFile(['npx', '-y', '@commonlyai/mcp@latest'], home)).toBe(false);
   });
 
   test('a failed home read cannot return a cold package runner to a public seat', () => {

@@ -88,6 +88,12 @@ export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI accou
 // (CUT_OFF_LINE in agentMessageService.ts, pinned by a test).
 export const CUT_OFF_NOTICE = 'I got cut off before I could finish that, so please ask me again if anything is missing.';
 
+// F421: a public seat whose Commonly tools never came up. Its model would have
+// answered without reading the pod, so the wrapper withholds that answer and
+// says this instead; the event stays unacked and is answered once the tools work.
+export const TOOLS_UNAVAILABLE_NOTICE = 'I can’t answer right now: the tools I use to read and post here '
+  + `weren’t working on the computer I run on. Whoever runs me needs to fix that. ${AGAIN}`;
+
 export const codexVersionNotice = (required) => 'I can’t answer right now: the computer I run on needs '
   + `Codex ${required} or newer. Whoever runs me needs to upgrade it and start me again. ${AGAIN}`;
 
@@ -96,7 +102,11 @@ const matches = (wordings, text) => wordings.some((wording) => wording.test(text
 /** The cause a pod should hear about, and its line, or null when it should hear nothing. */
 export const cantAnswerNotice = (error) => {
   // A public seat's withheld turn quotes a TOOL's error, not its own provider's.
-  if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) return null;
+  // A tool that failed mid-turn usually means Commonly itself was unreachable,
+  // so a line could not reach the pod either; it stays silent and retries.
+  if (error?.code === PUBLIC_TOOL_FAILED_CODE) return null;
+  // Tools that never started leave the API reachable, and a stranger waiting.
+  if (error?.code === PUBLIC_MCP_NOT_READY_CODE) return { cause: 'tools-unavailable', text: TOOLS_UNAVAILABLE_NOTICE };
   if (error?.code === PUBLIC_CODEX_VERSION_CODE) {
     return { cause: 'codex-version', text: codexVersionNotice(error.requiredVersion) };
   }
