@@ -112,7 +112,7 @@ import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import {
-  CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
+  CODEX_OPTED_IN_PUBLIC_POD_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
 } from '../lib/sandbox/host-check.js';
 import {
   UNSANDBOXED_NOTICE, codexUnconfinedForRun, codexUnsandboxedNotice, hostReportFailureMessage, hostUnconfinedForRun,
@@ -2878,7 +2878,7 @@ export const performRun = ({
         hostUnconfined,
         optedIn: codexUnconfined,
         ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
-      }) || (codexUnconfined ? CODEX_PRIVATE_LINUX_OPTED_IN_MESSAGE : null));
+      }) || (codexUnconfined ? CODEX_OPTED_IN_PUBLIC_POD_MESSAGE : null));
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -5652,6 +5652,12 @@ Docs:
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
+      }
+      // F444: on Linux a private Codex seat has a sandbox, so a flag its pods
+      // rule out leaves it there; say so rather than let the flag look applied.
+      if (optedIn && record.adapter === 'codex' && process.platform === 'linux' && !codexUnconfined) {
+        console.warn(`${stamp()} [${name}] ${UNSANDBOXED_FLAG} was not applied: a pod this agent answers in `
+          + "isn't confirmed private and invite-only, so it runs in Codex's own sandbox.");
       }
       if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {

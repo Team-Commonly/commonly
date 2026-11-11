@@ -55,8 +55,8 @@ export const unsandboxedMarkerPath = (home = homedir()) => join(home, '.commonly
 
 /**
  * The flag answers a gap in the sandbox: native Windows has none, and a private
- * Codex agent on Linux has none ready yet (F387). So on Linux it is accepted
- * only for `agent run` of a Codex agent: pass `adapterName` once it is known,
+ * Codex agent on Linux has none where bubblewrap can't start (F387, F444). So
+ * on Linux it is accepted only for `agent run` of a Codex agent: pass `adapterName` once it is known,
  * or `deferred` before the record is read (the run checks again after). The
  * daemon's marker stays Windows-only.
  */
@@ -123,9 +123,8 @@ export const hostUnconfinedForRun = ({
 };
 
 /**
- * Does this Codex run go unconfined? Only on win32, or on Linux where a private
- * Codex agent has no sandbox ready yet (F387), only by the user's own
- * opt-in, and only when every pod the seat answers in is confirmed private:
+ * Does this Codex run go unconfined? Only on win32, or on Linux (F387, F444),
+ * only by the user's own opt-in, and only when every pod the seat answers in is confirmed private:
  * `installations` is the server's read of them, and an empty or failed read is
  * a no. Workspace trust stays with Codex's own refusal. The caller removes the
  * sandbox block for this run only, so the saved record keeps its public trust
@@ -152,7 +151,7 @@ export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbo
 /** Codex has no restricted tool settings to keep, so its line says what it costs instead. */
 export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
 
-export const CODEX_LINUX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): the sandbox for a private Codex agent is not ready on Linux yet, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
+export const CODEX_LINUX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): you ran this Codex agent without its sandbox, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
 
 export const codexUnsandboxedNotice = (platform = process.platform) => (platform === 'linux'
   ? CODEX_LINUX_UNSANDBOXED_NOTICE

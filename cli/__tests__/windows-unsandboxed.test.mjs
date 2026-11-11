@@ -47,8 +47,9 @@ describe('the flag', () => {
     }
   });
 
-  // F387: a private Codex agent on Linux has no sandbox ready yet, so its
-  // person may run it unconfined by their own choice; nothing else on Linux.
+  // F387, F444: a private Codex agent on Linux has no sandbox where bubblewrap
+  // can't start, so its person may run it unconfined by their own choice;
+  // nothing else on Linux.
   test('on Linux, only for `agent run` of a Codex agent', () => {
     expect(unsandboxedFlagRefusal('linux', { adapterName: 'codex' })).toBeNull();
     // Before the record is read the adapter isn't known; the run checks again.
@@ -89,7 +90,7 @@ describe('a Codex run on Linux', () => {
   });
 
   test('says what it costs without naming Windows', () => {
-    expect(codexUnsandboxedNotice('linux')).toMatch(/not ready on Linux yet, so nothing confines this agent/);
+    expect(codexUnsandboxedNotice('linux')).toMatch(/you ran this Codex agent without its sandbox, so nothing confines this agent/);
     expect(codexUnsandboxedNotice('linux')).not.toMatch(/Windows/);
     expect(codexUnsandboxedNotice('win32')).toMatch(/Windows has no sandbox Codex can use here/);
   });
