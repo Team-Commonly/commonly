@@ -745,13 +745,12 @@ jobs:
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "180"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
-          # Two frontend replicas never share a node, so a spot reclaim leaves one serving; with the spot
-          # pool capped at 2 nodes, a rollout must replace in place (maxSurge 0) or it deadlocks (2026-10-19).
+          # Two frontend replicas, one on the dev pool and one on the spot pool, so a spot reclaim leaves
+          # one serving (verify-pdb-chart.js checks the placement). The dev pool has room for a surge pod,
+          # so a rollout adds before it removes and never drops below two ready.
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.replicas' /tmp/dev-rendered.yaml)" = "2"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxSurge' /tmp/dev-rendered.yaml)" = "0"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxUnavailable' /tmp/dev-rendered.yaml)" = "1"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey' /tmp/dev-rendered.yaml)" = "kubernetes.io/hostname"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels.app' /tmp/dev-rendered.yaml)" = "frontend"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxSurge' /tmp/dev-rendered.yaml)" = "1"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxUnavailable' /tmp/dev-rendered.yaml)" = "0"
           # A frontend pod keeps serving until ingress-nginx has dropped it, or a request waits out the 5 s connect timeout.
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.containers[] | select(.name == "frontend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
           # LiteLLM is public for its /v1 API only; `/` exposed the master-key admin login (2026-10-07).
