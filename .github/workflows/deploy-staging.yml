@@ -281,11 +281,6 @@ jobs:
             echo "::warning title=Record failed::could not write the verified-revision ConfigMap ($CURREV) for $RELEASE; the next rollback will fall back to last-deployed. Check the deploy service account's configmap RBAC."
           fi
 
-      - name: Set up Node for the Tier-1 smoke
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       # Tier-1 UI smoke (Playwright): health/ready, seeded non-admin login, /v2 home + a pod +
       # /v2/connectors + Bring-your-own render with no console errors, left rail no horizontal
       # scroll at 1440 & 390px. It FAILS THE JOB on red, so the staging-smoke commit status step
@@ -306,16 +301,18 @@ jobs:
             echo "::error title=Tier-1 smoke::STAGING_SMOKE_EMAIL/PW and STAGING_SMOKE_FRESH_EMAIL/PW repo secrets must all be set (the connectors-fold check fails closed without the fresh account)"
             exit 1
           fi
-          cd scripts/staging-smoke
-          npm install --no-audit --no-fund --silent
-          # apt index fetches fail transiently (F431); retry before failing.
-          for attempt in 1 2 3 4; do
-            npx playwright install --with-deps chromium && break
-            [ "$attempt" -eq 4 ] && exit 1
-            echo "::warning::playwright install failed (attempt $attempt/4); retrying in $((attempt * 20))s"
-            sleep $((attempt * 20))
-          done
-          node staging-smoke.mjs
+          # Run in Playwright's image, which ships Chromium and its system deps,
+          # so the smoke never runs apt: an Ubuntu mirror outage on 2026-11-11
+          # failed `playwright install --with-deps` for hours and blocked every
+          # roll (F431). The tag must equal the playwright pin in
+          # scripts/staging-smoke/package.json; bump the tag and digest together.
+          # `-e NAME` passes the step's env through without echoing values.
+          docker run --rm --ipc=host \
+            -v "$PWD/scripts/staging-smoke:/smoke" -w /smoke \
+            -e SMOKE_BASE -e SMOKE_API -e SMOKE_EMAIL -e SMOKE_PW \
+            -e SMOKE_FRESH_EMAIL -e SMOKE_FRESH_PW \
+            mcr.microsoft.com/playwright:v1.48.2-noble@sha256:c43809dabac73ac46b136409daa0a7d5411fb3ccc1e7d0fad1be5383a7a0f6ef \
+            sh -c 'want=$(node -p "require(\"./package.json\").dependencies.playwright"); if [ "$want" != "1.48.2" ]; then echo "::error::scripts/staging-smoke pins playwright $want but the smoke image is v1.48.2; bump the image tag and digest in deploy-staging.yml"; exit 1; fi; npm install --no-audit --no-fund --silent && node staging-smoke.mjs'
 
       # The stranger-path smoke drives signup -> welcome -> question -> connect
       # card against api-staging.commonly.me. Its pass/fail IS the staging-smoke

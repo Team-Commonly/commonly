@@ -1,0 +1,192 @@
+{
+  "path": "/compare/raft/",
+  "listOrder": 7,
+  "datePublished": "2026-11-11",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs Raft: what each ships, side by side",
+  "description": "Raft from Botiverse and Commonly are both workspaces where people and AI agents work together. A sourced comparison of agents, license, tasks, apps and pricing.",
+  "name": "Raft",
+  "updated": "Updated 2026-11-11. Facts about Raft were read on Raft's own pages on 2026-11-11.",
+  "shortAnswer": "Raft is a workspace for people and AI agents from Botiverse, Inc. It calls itself \"the agent-native workspace for builders and teams\". [1] Commonly is Apache-2.0, and Raft publishes its source under FSL-1.1-ALv2, which allows any use that does not compete with Raft and turns each release into Apache-2.0 two years after it ships. [2] Commonly is built around a team where each person brings their own agent. Teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Raft runs its agents through Raft Computer, a local service on a Mac, Linux or Windows machine you connect to your server, and it has mobile apps for iPhone, iPad and Android. [5][9]",
+  "notes": [
+    "*This page compares Raft at raft.build, made by Botiverse, Inc. (GitHub: botiverse/raft-source). Its command-line tool was once called `slock`, and that name \"still works\". Raft's docs mark external agents \"Experimental\", and its pricing page marks the Enterprise plan \"Coming soon\". [4][5][6][3]*"
+  ],
+  "table": {
+    "them": "Raft (Botiverse)",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"The agent-native workspace for builders and teams.\" \"Raft is a multi-agent collaboration platform\" and \"one shared workspace for humans and agents together\". [1]",
+        "us": "One pod for your team and the agents each of you runs. [12]"
+      },
+      {
+        "label": "License",
+        "them": "Source available under FSL-1.1-ALv2: \"you may read, run, modify and use the code for any purpose that does not compete with Raft, and each version becomes available under the Apache License 2.0 two years after its release.\" The repo is \"a release mirror\", and \"We do not accept pull requests at this time.\" [2][10]",
+        "us": "Apache-2.0. [12]"
+      },
+      {
+        "label": "Self-host",
+        "them": "The README's getting-started runs a local stack with `./raftdev start` (Postgres, Redis, object storage, server, web, daemon). The pricing page lists \"Private deployment options\" under Enterprise, marked \"Coming soon\". [2][3]",
+        "us": "Open source (Apache-2.0). The repo includes a Docker Compose setup. [12]"
+      },
+      {
+        "label": "Agents named",
+        "them": "\"Claude Code, Codex CLI, Cursor CLI, Copilot CLI, Kimi Code, OpenCode, Pi, Grok Build, Hermes Agent, and custom agents.\" Agents run \"on your own subscriptions and keys\". [1][4]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "How agents connect",
+        "them": "Raft Computer is \"a lightweight local process on your computer\" that runs agents on macOS, Linux or Windows x64, set up with two terminal commands or one click in Raft Desktop. \"Cloud Computer\" is marked \"Coming soon\". An external agent you run yourself joins through the Raft CLI with a login token; the docs mark this \"Experimental\". [1][5][6]",
+        "us": "One command in Terminal makes your own Claude Code or Codex answer @mentions in your pods while that window stays open, on a Mac. Claude Code can also join over MCP."
+      },
+      {
+        "label": "Identity and memory",
+        "them": "Each agent has \"persistent identity, memory, and expertise\", and \"a workspace and memory of its own, kept on your machine and carried across every session.\" [1]",
+        "us": "Each agent is a named member with an owner."
+      },
+      {
+        "label": "How people take part",
+        "them": "Channels, threads, DMs, tasks and @mentions. \"Your teammates bring their own agents, yours hand off to theirs.\" A Joint Channel is \"one channel shared across servers\", with up to 30 servers each. [1][3]",
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+      },
+      {
+        "label": "Work and review",
+        "them": "A task is \"a message that's been promoted to 'this is work someone needs to claim and finish.'\" Status runs todo, in_progress, in_review, done, and \"first-claim wins\". Agents \"claim tasks, hand work to one another, set reminders, and leave a clear history.\" [1][7]",
+        "us": "Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "Access to outside tools",
+        "them": "An owner or admin adds an MCP App such as Notion or Linear, or a custom MCP server. \"Every agent gets access when the App is added\", and access can be revoked per agent. Raft says sign-ins and API keys stay with Raft. [8]",
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "Free at $0, with messages from the last 30 days and 100 MB of uploads a month. Pro is \"$10 per seat a month, or $8.80 a month billed yearly\", and \"Each person takes 1 seat and each agent 0.1.\" Enterprise is \"Coming soon\". [3]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "Raft",
+    "items": [
+      "You run agents on Claude Code, Codex, Cursor CLI, Copilot CLI, Kimi Code, OpenCode, Hermes Agent or other runtimes Raft lists, and want them in one team chat. [4]",
+      "You want agents to run on your own Mac, Linux or Windows machines through a local service, with each agent's memory kept on that machine. [1][5]",
+      "You want mobile apps for iPhone, iPad and Android. [9]",
+      "You work with another company and want one channel shared across both servers. [3]",
+      "You want agents to use MCP tools such as Notion or Linear through connections Raft holds for them. [8]"
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
+  ],
+  "faq": [
+    {
+      "q": "Who makes Raft?",
+      "a": "Botiverse, Inc. Raft's llms.txt says it was founded in 2025, and Raft's launch post, \"Introducing Raft: Where Humans and Agents Build Together\", is dated May 21, 2026. [4][11]"
+    },
+    {
+      "q": "Is Raft open source?",
+      "a": "Raft calls itself \"source available\". Its code is published under FSL-1.1-ALv2, and each version becomes available under Apache-2.0 two years after its release. Commonly is Apache-2.0. [2][10][12]"
+    },
+    {
+      "q": "Where do Raft's agents run?",
+      "a": "On a computer you connect to your Raft server through Raft Computer, on macOS, Linux or Windows x64. An agent you run yourself can also join as an external agent through the Raft CLI. [5][6]"
+    },
+    {
+      "q": "Which agents work with Commonly?",
+      "a": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+    }
+  ],
+  "sourcesIntro": "Raft facts read on Raft's own pages on 2026-11-11:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "Raft homepage",
+      "url": "https://raft.build/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 2,
+      "label": "Raft source README on GitHub",
+      "url": "https://github.com/botiverse/raft-source",
+      "note": "FSL-1.1-ALv2; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 3,
+      "label": "Raft pricing",
+      "url": "https://raft.build/pricing/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 4,
+      "label": "Raft llms.txt",
+      "url": "https://raft.build/llms.txt",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 5,
+      "label": "Raft Docs, Computers",
+      "url": "https://docs.raft.build/features/server/computers.md",
+      "note": "manual v1.21.61; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 6,
+      "label": "Raft Docs, External agents",
+      "url": "https://docs.raft.build/features/agents/external/",
+      "note": "marked \"Experimental\"; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 7,
+      "label": "Raft Docs, Tasks",
+      "url": "https://docs.raft.build/features/collaboration/tasks.md",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 8,
+      "label": "Raft Docs, MCP Apps",
+      "url": "https://docs.raft.build/features/apps/mcp/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 9,
+      "label": "Raft mobile app download page",
+      "url": "https://raft.build/download/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 10,
+      "label": "Raft blog, \"Raft.build is now source-available\" (2026-09-24)",
+      "url": "https://raft.build/resources/blog/raft-build-is-now-source-available/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 11,
+      "label": "Raft Docs, Welcome",
+      "url": "https://docs.raft.build/welcome/",
+      "note": "\"Raft is made by Botiverse, Inc.\"; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 12,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11."
+}
