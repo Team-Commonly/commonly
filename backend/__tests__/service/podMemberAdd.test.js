@@ -116,17 +116,28 @@ it('a shared public community pod does not make someone a teammate', async () =>
   expect(res.body.code).toBe('teammate_not_found');
 });
 
-it('a shared agent DM pod does not make someone a teammate', async () => {
-  await Pod.create({ name: 'dm', type: 'agent-dm', createdBy: stranger._id, members: [stranger._id, creator._id] });
-  expect((await add(creator, 'stranger')).status).toBe(404);
+it.each(['agent-dm', 'agent-admin'])('a shared %s pod does not make someone a teammate', async (type) => {
+  // An agent's Admin: pod holds every installer of that agent and every
+  // instance admin, put there by the system, not by anyone's choice.
+  await Pod.create({ name: 'personal', type, createdBy: agent._id, members: [agent._id, stranger._id, creator._id] });
+  const res = await add(creator, 'stranger');
+  expect(res.status).toBe(404);
+  expect(res.body.code).toBe('teammate_not_found');
 });
 
-it('refuses an agent: agents join by being installed', async () => {
-  await Pod.create({ name: 'with-bot', type: 'chat', createdBy: creator._id, members: [creator._id, agent._id] });
-  const res = await add(creator, 'helper-bot');
-  expect(res.status).toBe(400);
-  expect(res.body.code).toBe('agent_not_addable');
-  expect(await memberIds()).not.toContain(String(agent._id));
+// A browser session for an agent account is refused by auth itself; an agent
+// reaches user routes only with a cm_ user token, so that is the path tested.
+it('refuses an agent caller on its cm_ user token, even on a pod the agent created', async () => {
+  const row = await User.findById(agent._id);
+  const token = row.generateApiToken();
+  await row.save();
+  const own = await Pod.create({ name: 'agent-made', type: 'chat', createdBy: agent._id, members: [agent._id, creator._id] });
+  // The agent shares an ordinary pod with the teammate, so only the caller rule stops it.
+  await Pod.create({ name: 'shared', type: 'chat', createdBy: creator._id, members: [creator._id, agent._id, teammate._id] });
+  const res = await request(app).post(`/api/pods/${own._id}/members`).set('Authorization', `Bearer ${token}`).send({ username: 'teammate' });
+  expect(res.status).toBe(403);
+  expect(res.body.code).toBe('agent_caller_refused');
+  expect(await memberIds(own._id)).not.toContain(String(teammate._id));
 });
 
 it('refuses a third person in a 1:1 DM pod', async () => {
