@@ -132,6 +132,32 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
   });
 
+  test('after a rename, Reconnect shows and re-keys only the renamed agent\'s default instance', async () => {
+    mockServer();
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [
+        { name: 'other-claude', instanceId: 'nova', installedBy: 'u1', runtime: { runtimeType: 'webhook' }, connection: { state: 'revoked' } },
+        { name: 'other-claude', instanceId: 'default', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+          connection: { state: 'stale', lastSeenAt: new Date(Date.now() - 8 * 60000).toISOString() } },
+      ] } })
+      : plain(url)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.change(screen.getByDisplayValue('sam-claude'), { target: { value: 'other-claude' } });
+    const reconnect = await screen.findByRole('button', { name: 'Reconnect' });
+    // The card shows the default instance's state, the one Reconnect re-keys.
+    await screen.findByText(/8 min/);
+    expect(screen.queryByText(/revoked/i)).toBeNull();
+    await waitFor(() => expect(reconnect).toBeEnabled());
+    fireEvent.click(reconnect);
+
+    await waitFor(() => expect(tokenBodies()).toHaveLength(1));
+    expect(tokenBodies()[0]).toMatchObject({ force: true, instanceId: 'default' });
+    expect(installBodies()).toHaveLength(0);
+  });
+
   test('the default instance\'s link is unchanged', async () => {
     mockServer();
     window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');

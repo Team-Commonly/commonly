@@ -464,8 +464,11 @@ const V2AgentBYO: React.FC = () => {
   // instanceId) sets up that instance, not the default one, while the name is
   // still the link's. A persona install derives its own instance, as before.
   // Hosting runs a default instance only, so it isn't offered for one.
-  const secondInstance = prefill.instanceId !== 'default' && !personaCard
-    && sanitizeAgentName(name) === prefill.name ? prefill.instanceId : null;
+  // The instance an existing agent is looked up, reconnected and re-keyed as:
+  // the link's while the name is still the link's, else the default one, since
+  // a renamed agent is a different agent.
+  const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
+  const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
   const choosingMode = !choicesKnown || hostedOffered || machines.length > 0;
   // "Run it here" counts only once the instance says it can host: a hosted
@@ -512,7 +515,7 @@ const V2AgentBYO: React.FC = () => {
     // A different seat's connection is dropped now, not when this lookup lands,
     // so its Reconnect (and the harness it implies) never shows under another
     // name or pod. A refresh of the same seat keeps it, without a flicker.
-    const seatKey = `${podId}:${sanitizeAgentName(name)}:${prefill.instanceId}`;
+    const seatKey = `${podId}:${sanitizeAgentName(name)}:${linkInstance}`;
     setExistingConnection((current) => (current?.seat === seatKey ? current : null));
     let cancelled = false;
     const timer = setTimeout(() => {
@@ -520,7 +523,7 @@ const V2AgentBYO: React.FC = () => {
         .then((result) => {
           if (cancelled) return;
           const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name)
-            && agent.instanceId === prefill.instanceId && agent.connection);
+            && agent.instanceId === linkInstance && agent.connection);
           setExistingConnection(match?.connection ? {
             connection: match.connection,
             runtimeType: match.runtime?.runtimeType || '',
@@ -532,7 +535,7 @@ const V2AgentBYO: React.FC = () => {
         .catch(() => { if (!cancelled) setExistingConnection(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
+  }, [api, name, nameTouched, podId, linkInstance, prefill.reconnect]);
   // F353: a name that resolves to an existing seat opens on the harness that seat
   // runs, from a reconnect link or a typed name alike. Defaulting to Claude Code
   // printed `--adapter claude` for a Codex agent. It follows the seat when the
@@ -606,7 +609,7 @@ const V2AgentBYO: React.FC = () => {
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
-    agentName: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
+    agentName: string; instanceId: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
   } | null>(null);
 
   useEffect(() => {
@@ -621,7 +624,7 @@ const V2AgentBYO: React.FC = () => {
         );
         if (cancelled) return;
         const status = roster.agents?.find((agent) => agent.name === reconnectRequest.agentName
-          && agent.instanceId === prefill.instanceId)?.connection;
+          && agent.instanceId === reconnectRequest.instanceId)?.connection;
         if (status?.state === 'connected' && status.lastSeenAt
           && Date.parse(status.lastSeenAt) >= Date.parse(reconnectRequest.requestedAt)) {
           setReconnectRequest((current) => current && { ...current, state: 'connected' });
@@ -635,7 +638,7 @@ const V2AgentBYO: React.FC = () => {
     void check();
     const timer = setInterval(() => { void check(); }, MACHINE_STATUS_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [api, podId, prefill.instanceId, reconnectRequest]);
+  }, [api, podId, reconnectRequest]);
 
   // Watch the placement come up: the machine heartbeat carries per-agent
   // supervisor states, so "live" here means the daemon actually spawned it.
@@ -976,9 +979,9 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     try {
       const response = await api.post<{ requestedAt: string }>('/api/agent-binding/reconnect', {
-        agentName: cleanName, instanceId: prefill.instanceId,
+        agentName: cleanName, instanceId: linkInstance,
       });
-      setReconnectRequest({ agentName: cleanName, requestedAt: response.requestedAt, state: 'waiting' });
+      setReconnectRequest({ agentName: cleanName, instanceId: linkInstance, requestedAt: response.requestedAt, state: 'waiting' });
     } catch (err) {
       const e = err as { response?: { data?: { code?: string; message?: string } }; message?: string };
       setError(e.response?.data?.code === 'machine_key_revoked'
@@ -1112,7 +1115,7 @@ const V2AgentBYO: React.FC = () => {
         { label: 'BYO MCP — initial issue', ...(secondInstance ? { instanceId: secondInstance } : {}) },
       );
       if (tokenRes?.existing) {
-        setPendingReplacement({ agentName: cleanName, podId, instanceId: secondInstance });
+        setPendingReplacement({ agentName: cleanName, podId, instanceId: linkInstance });
         return;
       }
       const tok = tokenRes?.token;
@@ -1143,19 +1146,20 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     try {
       const { agentName, podId: targetPodId } = target;
-      // The instance the key is for: the one the replace prompt was raised for,
-      // else the page's own target. A renamed agent is the default instance,
-      // never the link's, so a replacement can't rotate another instance's key.
-      const instanceId = target.instanceId || secondInstance;
+      // The instance the key is for: the one the replace prompt was raised
+      // for, else the one the page looked up and shows (Reconnect). A renamed
+      // agent is the default instance, never the link's, so a replacement
+      // can't rotate another instance's key.
+      const instanceId = target.instanceId || linkInstance;
       const tokenRes = await api.post<{ token?: string }>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
-        { label: 'BYO MCP — replacement', force: true, instanceId: instanceId || 'default' },
+        { label: 'BYO MCP — replacement', force: true, instanceId },
       );
       if (!tokenRes?.token) {
         setError(t('agentByo.errors.tokenEmpty'));
         return;
       }
-      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId });
+      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: instanceId === 'default' ? null : instanceId });
       setListenState('waiting');
       setMemoryText('');
       setMemoryDone(false);
