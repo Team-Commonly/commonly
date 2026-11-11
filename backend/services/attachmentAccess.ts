@@ -1,3 +1,4 @@
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 /**
  * Attachment access — signed short-TTL tokens + ACL check (ADR-002 Phase 1b).
  *
@@ -182,9 +183,6 @@ function isPlausibleFileName(fileName: string): boolean {
   return PLAUSIBLE_FILENAME_RE.test(fileName);
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * PG scan for messages whose `content` references `urlFragment` (the full

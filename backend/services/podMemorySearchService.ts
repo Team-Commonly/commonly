@@ -1,3 +1,4 @@
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 // eslint-disable-next-line global-require
 const PodAsset = require('../models/PodAsset');
 // eslint-disable-next-line global-require
@@ -107,9 +108,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function escapeRegex(input: string): string {
-  return String(input || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function normalizeText(value: string): string {
   return String(value || '').replace(/\s+/g, ' ').trim();

@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 import type { Types } from 'mongoose';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
@@ -113,7 +114,7 @@ class DMService {
   }
 
   static escapeRegex(value = ''): string {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escapeRegExp(value);
   }
 
   static async syncPgDmMembers(dmPodId: string, ownerId: unknown, agentId: unknown): Promise<void> {

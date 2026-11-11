@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 /**
  * Who counts as a human, and why it takes TWO signals.
  *
@@ -53,7 +54,6 @@ export const BOT_FILTER = {
  */
 const RESERVED_EMAIL_DOMAIN_RE = /@(?:[^@\s]+\.)?(?:invalid|test|example|localhost|example\.(?:com|net|org))$/i;
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const parseInternalAccounts = (raw: string | undefined) => {
   const usernames: string[] = [];

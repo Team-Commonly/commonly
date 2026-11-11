@@ -1,3 +1,4 @@
+import { escapeRegExp as escapeRegex } from '../utils/escape';
 /**
  * F181: tell an agent, on its next mention, that a connector it held was taken
  * away by a person, so it does not tell them to "reconnect" something that was
@@ -152,7 +153,6 @@ export const noteAgentRemovedFromGrant = async (grant: RemovedGrant, agentId: st
   return writeEntries(grant.grantId, await entriesFor([agentId], true));
 };
 
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Whether the agent can use a live broker grant on this connector again. A pod

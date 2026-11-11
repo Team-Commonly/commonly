@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escape';
 // eslint-disable-next-line global-require
 const AgentEventService = require('./agentEventService');
 // eslint-disable-next-line global-require
@@ -798,7 +799,6 @@ const formatHandoffCue = (handle: string): string => `[@${handle} handed this to
 const handoffField = (handle: string | undefined): { handoffCue?: string } => (
   handle ? { handoffCue: formatHandoffCue(handle) } : {}
 );
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Whole-handle match: `@aria` in "thanks @aria." but not in "@aria-dev".
 const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
   `(^|[^A-Za-z0-9_-])@${escapeRegExp(handle)}(?![A-Za-z0-9_-])`,
