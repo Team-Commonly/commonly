@@ -62,7 +62,7 @@ on:
         type: boolean
         default: false
       walk:
-        description: "prod: the page's lines against the live API. private-codex: a private Codex seat's permission keys with this checkout's CLI, real Codex and a stub model (no prod, no secrets; the three ids above are not read)"
+        description: "prod: the page's lines against the live API. private-codex: a private Codex seat's permission keys with this checkout's CLI (or the published cli_version), real Codex and a stub model (no prod, no secrets; the three ids above are not read)"
         type: choice
         options: [prod, private-codex]
         default: prod
@@ -142,8 +142,8 @@ jobs:
   # What this Ubuntu does to the sandbox, on its own runner because it loads
   # AppArmor profiles to measure them: the walk must see the host as it came.
   # No secrets.
-  # F444: a private Codex seat on Linux, with this checkout's CLI (not the
-  # published one), real Codex and bubblewrap. A fake home holds a marker in
+  # F444: a private Codex seat on Linux, with this checkout's CLI (or the
+  # published cli_version, for a live proof), real Codex and bubblewrap. A fake home holds a marker in
   # every place the seat must not reach; the seat must still write its
   # workspace, use its temp folder and commit. cli/scripts/
   # codex-private-linux-probe.mjs says what each phase checks. No secrets.
@@ -165,7 +165,10 @@ jobs:
         run: |
           set -o pipefail
           case "$CODEX_VERSION" in (*[!0-9.]*|'') echo "::error::codex_version must be a version number"; exit 1;; esac
-          case "$CLI_VERSION" in (*[!0-9.]*) echo "::error::cli_version must be a version number"; exit 1;; esac
+          # Exactly x.y.z: npm would read "0.1" as a range and install the newest match.
+          if [ -n "$CLI_VERSION" ] && ! [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::cli_version must be an exact version, like 0.1.334"; exit 1
+          fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
           npm i -g "@openai/codex@$CODEX_VERSION"

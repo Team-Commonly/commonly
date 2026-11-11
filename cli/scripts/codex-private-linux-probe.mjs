@@ -345,7 +345,15 @@ const turn = async () => {
 const version = spawnSync(CODEX, ['--version'], { encoding: 'utf8' });
 const bwrap = spawnSync('bwrap', ['--unshare-all', '--ro-bind', '/', '/', 'true'], { encoding: 'utf8' });
 log(`platform ${process.platform}; ${clip(version.stdout || version.error?.message)}; bwrap ${bwrap.status === 0 ? 'starts' : `fails: ${clip(bwrap.stderr || bwrap.error?.message)}`}`);
-log(`adapter: ${process.env.PROBE_ADAPTER ? `published, ${ADAPTER_PATH}` : 'this checkout'}`);
+// The package the adapter came from, read from its own package.json.
+const adapterVersion = () => {
+  try {
+    return JSON.parse(readFileSync(join(dirname(ADAPTER_PATH), '..', '..', '..', 'package.json'), 'utf8')).version;
+  } catch {
+    return 'unknown';
+  }
+};
+log(`adapter: ${process.env.PROBE_ADAPTER ? 'published' : 'this checkout'} @commonlyai/cli ${adapterVersion()}, ${ADAPTER_PATH}`);
 for (const phase of phases) {
   try {
     if (phase === 'rules') await rules();
