@@ -192,7 +192,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
 
   test('a computer link for a second instance opens on Bring your own instead', async () => {
     mockServer({ machines: [MACBOOK] });
-    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&mode=machine');
     renderPage();
     await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
@@ -206,5 +206,24 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');
     renderPage();
     expect(await screen.findByTestId('byo-mode-machine')).toBeInTheDocument();
+  });
+
+  // A wrapper's Reconnect link (Your Team, Settings) restarts the seat on its
+  // own computer; it isn't a new placement, so it keeps the computer mode.
+  test.each([['claude'], ['opencode']])('a second instance\'s wrapper Reconnect still reconnects (%s), with no computer listed', async (adapter) => {
+    mockServer({ machines: [] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter }, connection: { state: 'revoked', lastSeenAt: null } }] } })
+      : plain(url)));
+    axios.post.mockResolvedValue({ data: { requestedAt: '2026-11-11T14:00:00Z' } });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect', { agentName: 'sam-claude', instanceId: 'nova' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
   });
 });
