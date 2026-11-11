@@ -95,6 +95,12 @@ export async function removeOrphanPresetSkills(
     report.perSkill[skill] = (report.perSkill[skill] || 0) + 1;
     report.perPod[pod] = (report.perPod[pod] || 0) + 1;
   }
+  const counted = tally(report);
+  if (!counted.reconciles) {
+    report.action = opts.action;
+    report.problem = `per-skill ${counted.skillRows} / per-pod ${counted.podRows} do not both equal matched ${docs.length}; nothing deleted`;
+    return report;
+  }
   if (opts.action === 'dry-run') {
     report.action = 'dry-run';
     return report;
@@ -131,6 +137,22 @@ export async function removeOrphanPresetSkills(
   return report;
 }
 
+/** rows-per-pod -> number of pods, and whether both breakdowns sum to `matched`. */
+export function tally(report: RemovalReport) {
+  const histogram: Record<string, number> = {};
+  for (const n of Object.values(report.perPod)) histogram[n] = (histogram[n] || 0) + 1;
+  const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+  const podRows = sum(report.perPod);
+  const skillRows = sum(report.perSkill);
+  return {
+    histogram,
+    pods: Object.keys(report.perPod).length,
+    podRows,
+    skillRows,
+    reconciles: podRows === report.matched && skillRows === report.matched,
+  };
+}
+
 export function exitCodeFor(report: RemovalReport): number {
   if (report.action === 'refused') return 2;
   if (report.problem) return 3;
@@ -148,8 +170,11 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<void> 
   console.log(`${tag} action  : ${r.action}`);
   console.log(`${tag} matched : ${r.matched}`);
   console.log(`${tag} per skill: ${JSON.stringify(r.perSkill)}`);
-  console.log(`${tag} pods    : ${Object.keys(r.perPod).length}`);
+  const t = tally(r);
+  console.log(`${tag} pods    : ${t.pods}`);
   console.log(`${tag} per pod : ${JSON.stringify(r.perPod)}`);
+  console.log(`${tag} histogram (rows per pod: pods): ${JSON.stringify(t.histogram)}`);
+  console.log(`${tag} sums    : per-skill ${t.skillRows}, per-pod ${t.podRows}, matched ${r.matched}, reconciles ${t.reconciles}`);
   if (r.backupCollection) console.log(`${tag} backup  : ${r.backedUp} rows in collection ${r.backupCollection}`);
   if (r.backupFile) console.log(`${tag} backup  : ${r.matched} rows in file ${r.backupFile}`);
   if (r.action === 'delete') console.log(`${tag} deleted : ${r.deleted}, remaining ${r.remaining}`);

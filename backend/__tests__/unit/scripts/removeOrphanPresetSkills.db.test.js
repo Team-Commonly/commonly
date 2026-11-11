@@ -4,7 +4,7 @@
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const {
-  removeOrphanPresetSkills, exitCodeFor, DEFAULT_BACKUP_COLLECTION,
+  removeOrphanPresetSkills, exitCodeFor, tally, DEFAULT_BACKUP_COLLECTION,
 } = require('../../../scripts/remove-orphan-preset-skills');
 
 let mongod;
@@ -82,6 +82,14 @@ describe('removeOrphanPresetSkills', () => {
     const expected = before.filter((d) => d.metadata.skillName !== 'weather');
     expect(backup.sort((a, b) => String(a._id).localeCompare(String(b._id))))
       .toEqual(expected.sort((a, b) => String(a._id).localeCompare(String(b._id))));
+  });
+
+  it('the histogram and both breakdowns are computed from the rows and reconcile to matched', async () => {
+    const r = await removeOrphanPresetSkills(db, { action: 'dry-run' });
+    expect(tally(r)).toEqual({
+      histogram: { 1: 1, 2: 1 }, pods: 2, podRows: 3, skillRows: 3, reconciles: true,
+    });
+    expect(tally({ ...r, matched: 4 }).reconciles).toBe(false);
   });
 
   it('a restore from the backup is one insertMany', async () => {
