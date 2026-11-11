@@ -104,6 +104,119 @@ for (const [lane, { on, backups: wantBackups }] of Object.entries(lanes)) {
   expect(selects(restrict.spec.podSelector, { app: 'some-agent' }), `${lane}: egress-restrict misses an unlabelled pod`);
 }
 
+// The ingress policies (templates/network/ingress-allow.yaml). Under
+// default-deny-ingress, every known in-cluster flow must still be admitted,
+// and every Service's pods admitted on the Service's own port, so a Service
+// added later without an allow fails here rather than on staging. The
+// dev+ingress lane turns every policy on in dev's shape to check the prod
+// flows before prod turns them on.
+const DEV_EDGE = [{
+  namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'ingress-nginx' } },
+  podSelector: { matchLabels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } },
+}];
+// Dev's data tier is outside the cluster, so dev renders no mongodb or email-sink.
+const DEV_INGRESS_KEYS = ['frontend', 'backend', 'litellm', 'redis', 'agentComputer', 'defaultDeny'];
+const ingressLanes = {
+  default: { files: lanes.default.files, on: [] },
+  dev: { files: lanes.dev.files, on: [] },
+  staging: {
+    files: lanes.staging.files,
+    on: ['frontend', 'backend', 'litellm', 'redis', 'mongodb', 'emailSink', 'defaultDeny'],
+    edgeApp: 'cloudflared-commonly-k8s',
+    flows: [
+      ['app=cloudflared-commonly-k8s', 'frontend', 80], ['app=cloudflared-commonly-k8s', 'backend', 5000],
+      ['app=backend', 'litellm', 4000], ['app=backend-worker', 'litellm', 4000],
+      ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379],
+      ['app=backend', 'mongodb', 27017], ['app=backend-worker', 'mongodb', 27017], ['component=backup', 'mongodb', 27017],
+      ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['component=stranger-journey', 'email-sink', 8080],
+    ],
+    // Nothing outside the namespace's tunnel reaches these.
+    closed: [['app=backend', 'frontend', 80], ['app=litellm', 'redis', 6379], ['app=frontend', 'backend', 5000], ['app=cloudflared-commonly-k8s', 'litellm', 4000]],
+  },
+  'dev+ingress': {
+    files: lanes.dev.files,
+    setJson: [`networkPolicy.ingress.edge=${JSON.stringify(DEV_EDGE)}`, 'networkPolicy.ingress.litellm.public=true',
+      ...DEV_INGRESS_KEYS.map((k) => `networkPolicy.ingress.${k}.enabled=true`),
+      // One agent computer user, so the waker and a steel gate render.
+      'backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'],
+    on: DEV_INGRESS_KEYS,
+    edge: true,
+    flows: [
+      ['edge', 'frontend', 80], ['edge', 'backend', 5000], ['edge', 'litellm', 4000],
+      ...['backend', 'backend-worker', 'commonly-bot', 'ops-runner', 'cloud-codex'].flatMap((a) => [[`app=${a}`, 'backend', 5000], [`app=${a}`, 'litellm', 4000]]),
+      ...['backend', 'backend-worker', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'redis', 6379],
+        [`app=${a}`, 'agent-computer-waker', 8080], [`app=${a}`, 'agent-computer-steel', 3000]]),
+    ],
+    closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000]],
+  },
+};
+const peerLabels = (spec, edgeApp) => {
+  if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };
+  const [k, v] = spec.split('=');
+  return { ns: null, labels: { [k]: v } };
+};
+// Does a policy's `from` admit a pod with these labels (ns null = same namespace)?
+const admits = (pol, { ns, labels }, port) => (pol.spec.ingress || []).some((rule) => {
+  const portOk = !rule.ports || rule.ports.some((p) => p.port === port);
+  const fromOk = !rule.from || rule.from.some((peer) => {
+    if (peer.ipBlock) return false;
+    const nsOk = peer.namespaceSelector
+      ? ns !== null && selects(peer.namespaceSelector, { 'kubernetes.io/metadata.name': ns })
+      : ns === null;
+    return nsOk && (!peer.podSelector || selects(peer.podSelector, labels));
+  });
+  return portOk && fromOk;
+});
+
+for (const [lane, cfg] of Object.entries(ingressLanes)) {
+  const args = ['template', 'commonly-verify', chart];
+  for (const f of cfg.files) args.push('-f', f);
+  for (const s of cfg.setJson || []) args.push('--set-json', s);
+  const docs = yaml.loadAll(execFileSync('helm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).filter(Boolean);
+  const policies = docs.filter((d) => d.kind === 'NetworkPolicy' && (d.spec.policyTypes || []).includes('Ingress'));
+  const deny = policies.find((p) => p.metadata.name === 'default-deny-ingress');
+  const allows = policies.filter((p) => p !== deny);
+  if (!cfg.on.length) {
+    expect(policies.length === 0, `${lane}: ingress policies render with every switch off: ${policies.map((p) => p.metadata.name).join(', ')}`);
+    continue;
+  }
+  expect(deny && Object.keys(deny.spec.podSelector || {}).length === 0 && !deny.spec.ingress,
+    `${lane}: no default-deny-ingress over every pod`);
+  const workloads = docs.filter((d) => ['Deployment', 'StatefulSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d));
+  const ns = deny?.metadata.namespace;
+  for (const p of policies) expect(p.metadata.namespace === ns, `${lane}: ${p.metadata.name} renders outside ${ns}`);
+  const podsOf = (app) => workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === app);
+  // Every allow targets real pods, so a renamed label can't leave one guarding nothing.
+  for (const p of allows) {
+    expect(workloads.some((w) => selects(p.spec.podSelector, podTemplate(w).metadata?.labels)), `${lane}: ${p.metadata.name} selects no rendered pod`);
+  }
+  if (cfg.edgeApp) {
+    expect(podsOf(cfg.edgeApp).length > 0, `${lane}: the edge ${cfg.edgeApp} is not rendered in ${ns}`);
+  }
+  const admitted = (from, toApp, port) => allows.some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, peerLabels(from), port));
+  for (const [from, toApp, port] of cfg.flows) {
+    expect(admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is refused`);
+  }
+  for (const [from, toApp, port] of cfg.closed) {
+    expect(!admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
+  }
+  // Every Service's pods are admitted on the port the Service sends to.
+  for (const svc of docs.filter((d) => d.kind === 'Service' && d.metadata.namespace === ns && d.spec.selector)) {
+    const backends = workloads.filter((w) => w.metadata.namespace === ns && selects({ matchLabels: svc.spec.selector }, podTemplate(w).metadata?.labels));
+    for (const w of backends) {
+      const containers = podTemplate(w).spec.containers || [];
+      for (const sp of svc.spec.ports || []) {
+        const target = sp.targetPort ?? sp.port;
+        const port = typeof target === 'number' ? target
+          : containers.flatMap((c) => c.ports || []).find((cp) => cp.name === target)?.containerPort;
+        const labels = podTemplate(w).metadata.labels;
+        expect(allows.some((p) => selects(p.spec.podSelector, labels) && (p.spec.ingress || []).some((r) => (r.ports || []).some((rp) => rp.port === port))),
+          `${lane}: Service ${svc.metadata.name} sends to ${w.metadata.name}:${port}, which no allow admits`);
+      }
+    }
+  }
+}
+
 if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);

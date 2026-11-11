@@ -781,6 +781,32 @@ backup:
 
 # NetworkPolicies, one switch each: networkPolicy.{ingress,egress}.<name>.enabled.
 networkPolicy:
+  # Each listening pod admits only its known clients on its own port
+  # (templates/network/ingress-allow.yaml), and defaultDeny turns away the
+  # rest. An allow does nothing until defaultDeny is on, so turn allows on first.
+  ingress:
+    # NetworkPolicy peers where outside traffic enters: the tunnel or the
+    # ingress controller. frontend, backend and a public litellm admit them.
+    edge: []
+    frontend:
+      enabled: false
+    backend:
+      enabled: false
+    litellm:
+      enabled: false
+      # Admit the edge too, when litellm has a public hostname.
+      public: false
+    redis:
+      enabled: false
+    mongodb:
+      enabled: false
+    emailSink:
+      enabled: false
+    # The waker and every steel-<userId> gate.
+    agentComputer:
+      enabled: false
+    defaultDeny:
+      enabled: false
   egress:
     # Tighten pod egress (templates/network/egress-restrict.yaml): pods may
     # reach any address except exceptCidrs; pods whose component is in
