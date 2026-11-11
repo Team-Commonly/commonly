@@ -38,7 +38,8 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
-const { CUT_OFF_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { CUT_OFF_NOTICE, TOOLS_UNAVAILABLE_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { PUBLIC_MCP_NOT_READY_CODE } = await import('../src/lib/public-tool-error.js');
 
 const drainMicrotasks = async () => {
   for (let i = 0; i < 40; i += 1) {
@@ -234,6 +235,24 @@ describe('a third failure on an answer already started', () => {
       await fireRetries(run, 2);
       expect(spawn).toHaveBeenCalledTimes(3);
       expect(server.wrapperPosts.map((body) => body.content)).toEqual([WONT_START_NOTICE]);
+    } finally { run.handle.stop(); }
+  });
+
+  // F421: a public seat whose Commonly tools never came up. The adapter withholds
+  // the model's tool-less answer, so this fixed line is all the pod ever reads.
+  test('a seat whose Commonly tools never started posts only the tools line, never the model\'s answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-no-tools')]] });
+    const spawn = jest.fn(async () => {
+      throw Object.assign(new Error('public seat withheld this turn\'s reply: Commonly MCP server commonly never reported ready'), {
+        code: PUBLIC_MCP_NOT_READY_CODE,
+      });
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.map((body) => body.content)).toEqual([TOOLS_UNAVAILABLE_NOTICE]);
     } finally { run.handle.stop(); }
   });
 

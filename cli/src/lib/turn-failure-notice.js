@@ -92,7 +92,7 @@ export const CUT_OFF_NOTICE = 'I got cut off before I could finish that, so plea
 // answered without reading the pod, so the wrapper withholds that answer and
 // says this instead; the event stays unacked and is answered once the tools work.
 export const TOOLS_UNAVAILABLE_NOTICE = 'I can’t answer right now: the tools I use to read and post here '
-  + `weren’t working on the computer I run on. Whoever runs me needs to fix that. ${AGAIN}`;
+  + `aren’t working on my computer. Whoever runs me needs to fix that. ${AGAIN}`;
 
 export const codexVersionNotice = (required) => 'I can’t answer right now: the computer I run on needs '
   + `Codex ${required} or newer. Whoever runs me needs to upgrade it and start me again. ${AGAIN}`;

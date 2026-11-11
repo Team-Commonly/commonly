@@ -343,7 +343,7 @@ describe('cantAnswerNotice', () => {
   });
 
   test('every line fits one chat message and says what to do', () => {
-    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
+    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, TOOLS_UNAVAILABLE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
       expect(line.length).toBeLessThanOrEqual(400);
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');
