@@ -367,7 +367,10 @@ export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
       </nav>`;
 };
 
-const renderCompare = (compare) => {
+const renderCompare = (compare, compareSources = {}, siteLinks = '') => {
+  // The lede promises "each page below": list every comparison, in listOrder (F432).
+  const comparisonLinks = Object.values(compareSources).map((source) => `
+    <li><a href="${escapeHtml(source.path)}">${escapeHtml(source.title)}</a></li>`).join('');
   const alternativeCards = Object.values(compare.alts).map((alternative) => `
     <article class="seo-card">
       <h3>${escapeHtml(alternative.name)}</h3>
@@ -391,6 +394,11 @@ const renderCompare = (compare) => {
           <p class="seo-actions"><a class="seo-primary" href="/v2/register">${escapeHtml(compare.actions.getStarted)}</a></p>
         </section>
         <section>
+          <h2>${escapeHtml(compare.pagesTitle)}</h2>
+          <ul>${comparisonLinks}
+          </ul>
+        </section>
+        <section>
           <h2>${escapeHtml(compare.sameTitle)}</h2>
           <p>${escapeHtml(compare.same)}</p>
         </section>
@@ -404,6 +412,7 @@ const renderCompare = (compare) => {
         </section>
         <section class="seo-band"><h2>${escapeHtml(compare.closeTitle)}</h2><p>${escapeHtml(compare.close)}</p><p>${escapeHtml(compare.closeUs)}</p></section>
         <p class="seo-note">${escapeHtml(compare.note)}</p>
+        ${siteLinks}
       </main>
       <footer class="seo-footer"><a href="/">Commonly</a> · <a href="https://github.com/Team-Commonly/commonly">GitHub</a></footer>
     </div>`;
@@ -893,9 +902,12 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     outputPath: 'compare/index.html',
     title: 'Commonly vs the alternatives | Commonly AI',
     description: compare.lede,
-    content: renderCompare(compare),
+    content: renderCompare(compare, compareSources, siteLinks),
+    // The SPA has no /compare/ route and hides #seo-page once JS runs, so the hub ships without
+    // the app bundle, like each comparison page (CodeRabbit on #3930).
+    staticOnly: true,
     schema: webPage(compare.title, compare.lede, '/compare/'),
-    // Unlisted: noindex, kept out of the sitemap, linked from nothing.
+    // Unlisted: noindex and kept out of the sitemap. It links out to every comparison.
     noindex: true,
   }];
 

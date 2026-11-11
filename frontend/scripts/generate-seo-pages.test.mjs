@@ -3120,11 +3120,52 @@ test('the deploy step never throws: a dead network, a missing key file and a rej
   assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
 });
 
+// F432: the /compare hub states only sourced facts about others and only llms.txt facts about us.
+// It ranks no one, says nothing about what others lack, and names no price of ours, in either
+// locale or in the public doc that mirrors it. The patterns are the retired claims' own phrasings,
+// so a sourced neutral line ("Multica 按席位计费", "only Raft lists Android") can still be written.
+test('the /compare hub copy ranks no one, claims no absence, and states no pricing, in en, zh-CN and the doc', async () => {
+  const en = [/strongest/i, /closest (product )?competitor/i, /better shape/i, /\bnone (of|runs|is)\b/i, /any vendor/i,
+    /first-class/i, /\bnever\b/i, /human seats?/i, /pricing charges/i, /per-agent tax/i, /takes no pull requests/i,
+    /honest version/i, /\bthe only\b/i, /\b(we|commonly) (was|were|is|are) (the )?first\b/i];
+  const zh = [/最强/, /最接近的产品竞争对手/, /形态更合适/, /都不能/, /任何厂商/, /一等公民/, /永远不占/, /计划中的定价/,
+    /人头席位/, /不接受 PR/, /实话实说/, /唯一/, /只有我们/];
+  const hubCopy = async (locale) => {
+    const { compare } = JSON.parse(await readFile(resolve(frontendDir, `src/i18n/locales/${locale}.json`), 'utf8'));
+    const { nav, actions, footer, ...copy } = compare;
+    return JSON.stringify(copy);
+  };
+  const doc = await readFile(resolve(frontendDir, '../docs/commonly-vs-alternatives.md'), 'utf8');
+  for (const [label, text, patterns] of [['en', await hubCopy('en'), en], ['zh-CN', await hubCopy('zh-CN'), zh], ['doc', doc, en]]) {
+    for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${label}: ${pattern}`);
+  }
+});
+
+test('the /compare hub links every comparison, so its "each page below" holds', async () => {
+  const translations = JSON.parse(await readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'));
+  const page = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: {} })
+    .find((item) => item.path === '/compare/');
+  for (const source of Object.values(loadCompareSources())) {
+    assert.ok(page.content.includes(`<li><a href="${source.path}">`), source.path);
+  }
+  // With JS on, the app would hide this page and has no route for it, so it must ship without the bundle.
+  assert.equal(page.staticOnly, true);
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>x()</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const html = renderStaticPage(template, page);
+  assert.doesNotMatch(html, /type="module"/);
+  assert.doesNotMatch(html, /document\.documentElement/);
+});
+
 // F433: "calls through a grant are logged" is held until the scope walk passes on prod. No guide,
-// llms.txt base or page string may say it, in any wording that pairs a grant with logging.
+// llms.txt base, page string or /compare data file may say it, in any wording that pairs a grant
+// with logging (the /compare files since #3926 removed it there).
 test('no public text claims grant calls are logged while that claim is held', async () => {
   const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b/i;
-  for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json']) {
+  const { readdir } = await import('node:fs/promises');
+  const compareFiles = (await readdir(resolve(frontendDir, 'src/content/compare')))
+    .filter((file) => file.endsWith('.json')).map((file) => `src/content/compare/${file}`);
+  assert.ok(compareFiles.length >= 10);
+  for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json', ...compareFiles]) {
     const text = await readFile(resolve(frontendDir, file), 'utf8');
     assert.doesNotMatch(text, held, file);
   }
