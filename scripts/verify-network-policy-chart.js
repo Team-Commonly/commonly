@@ -118,7 +118,21 @@ const DEV_EDGE = [{
 const DEV_INGRESS_KEYS = ['frontend', 'backend', 'litellm', 'redis', 'agentComputer', 'defaultDeny'];
 const ingressLanes = {
   default: { files: lanes.default.files, on: [] },
-  dev: { files: lanes.dev.files, on: [] },
+  // Prod's first step: frontend and redis allows, no deny. Each allow isolates
+  // the pods it selects as soon as it applies, so its clients must be whole.
+  dev: {
+    files: lanes.dev.files,
+    on: ['frontend', 'redis'],
+    deny: false,
+    edgeIs: DEV_EDGE,
+    flows: [
+      ['edge', 'frontend', 80],
+      ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379], ['app=ops-runner', 'redis', 6379],
+    ],
+    // The tunnel shares the controller's namespace but must go through it.
+    closed: [['ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
+      ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379]],
+  },
   staging: {
     files: lanes.staging.files,
     on: ['frontend', 'backend', 'litellm', 'redis', 'mongodb', 'emailSink', 'defaultDeny'],
@@ -153,8 +167,10 @@ const ingressLanes = {
 };
 const peerLabels = (spec, edgeApp) => {
   if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };
-  const [k, v] = spec.split('=');
-  return { ns: null, labels: { [k]: v } };
+  // `ns/key=value` is a pod in another namespace; bare `key=value` is in the chart's.
+  const [nsPart, label] = spec.includes('/') ? spec.split('/') : [null, spec];
+  const [k, v] = label.split('=');
+  return { ns: nsPart, labels: { [k]: v } };
 };
 // Does a policy's `from` admit a pod with these labels (ns null = the policy's
 // own namespace)? An ipBlock counts as admitting: pod IPs can fall inside it,
@@ -184,10 +200,25 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
     expect(policies.length === 0, `${lane}: ingress policies render with every switch off: ${policies.map((p) => p.metadata.name).join(', ')}`);
     continue;
   }
-  expect(deny && Object.keys(deny.spec.podSelector || {}).length === 0 && !deny.spec.ingress,
-    `${lane}: no default-deny-ingress over every pod`);
+  if (cfg.deny === false) {
+    expect(!deny, `${lane}: default-deny-ingress renders, want the allows alone`);
+    const want = cfg.on.map((k) => `allow-${k}-ingress`).sort();
+    const got = allows.map((p) => p.metadata.name).sort();
+    expect(JSON.stringify(got) === JSON.stringify(want), `${lane}: ingress allows are ${got.join(', ')}, want ${want.join(', ')}`);
+  } else {
+    expect(deny && Object.keys(deny.spec.podSelector || {}).length === 0 && !deny.spec.ingress,
+      `${lane}: no default-deny-ingress over every pod`);
+  }
+  if (cfg.edgeIs) {
+    const edgePolicy = allows.find((p) => p.metadata.name === 'allow-frontend-ingress');
+    const edgePeers = (edgePolicy?.spec.ingress || []).flatMap((r) => r.from || []).filter((peer) => peer.namespaceSelector);
+    // Helm renders keys sorted, so compare with keys sorted on both sides.
+    const canon = (v) => JSON.stringify(v, (k, val) => (val && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(Object.keys(val).sort().map((key) => [key, val[key]])) : val));
+    expect(canon(edgePeers) === canon(cfg.edgeIs), `${lane}: the edge peer is ${JSON.stringify(edgePeers)}, want the ingress-nginx controller`);
+  }
   const workloads = docs.filter((d) => ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d));
-  const ns = deny?.metadata.namespace;
+  const ns = (deny || policies[0])?.metadata.namespace;
   for (const p of policies) expect(p.metadata.namespace === ns, `${lane}: ${p.metadata.name} renders outside ${ns}`);
   const podsOf = (app) => workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === app);
   // Every allow targets real pods, so a renamed label can't leave one guarding nothing.
@@ -204,11 +235,14 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   for (const [from, toApp, port] of cfg.closed) {
     expect(!admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
   }
-  // Every Service's pods are admitted on the port the Service sends to.
+  // Every Service's pods are admitted on the port the Service sends to. With no
+  // deny, only the pods an allow selects are isolated, so only they are checked.
+  const isolated = (labels) => cfg.deny !== false || allows.some((p) => selects(p.spec.podSelector, labels));
   for (const svc of docs.filter((d) => d.kind === 'Service' && d.metadata.namespace === ns && d.spec.selector)) {
-    const backends = workloads.filter((w) => w.metadata.namespace === ns && selects({ matchLabels: svc.spec.selector }, podTemplate(w).metadata?.labels));
+    const selected = workloads.filter((w) => w.metadata.namespace === ns && selects({ matchLabels: svc.spec.selector }, podTemplate(w).metadata?.labels));
     // A Service with no rendered backend would pass the loop below unchecked.
-    expect(backends.length > 0, `${lane}: Service ${svc.metadata.name} selects no rendered workload, so its allow can't be checked`);
+    expect(selected.length > 0, `${lane}: Service ${svc.metadata.name} selects no rendered workload, so its allow can't be checked`);
+    const backends = selected.filter((w) => isolated(podTemplate(w).metadata?.labels));
     for (const w of backends) {
       const containers = podTemplate(w).spec.containers || [];
       for (const sp of svc.spec.ports || []) {
@@ -254,7 +288,9 @@ for (const key of ['frontend', 'backend']) {
   let rendered = true;
   try {
     execFileSync('helm', ['template', 'commonly-verify', chart, '-f', lanes.dev.files[0], '-f', lanes.dev.files[1],
-      '--set', `networkPolicy.ingress.${key}.enabled=true`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      // Dev's values carry an edge since prod's first step, so clear it here.
+      '--set', `networkPolicy.ingress.${key}.enabled=true`, '--set-json', 'networkPolicy.ingress.edge=[]'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     rendered = false;
     expect(/needs networkPolicy\.ingress\.edge/.test(String(e.stderr)), `${key} with no edge failed for another reason: ${String(e.stderr).trim().split('\n')[0]}`);

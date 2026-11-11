@@ -65,6 +65,16 @@ render while `edge` is empty, because an empty `from` admits every source.
 - **Rollout:** staging first, all allows plus the deny, soaked 48 h across
   stranger-journey runs and staging smokes. Then prod one pod at a time
   (frontend and redis first), then prod's deny alone, in low traffic.
+- **Prod step 1 (`values-dev.yaml`):** `allow-frontend-ingress` (the
+  ingress-nginx controller only) and `allow-redis-ingress` (backend,
+  backend-worker, ops-runner), no deny. Checked live, read-only, 2026-11-11:
+  - the controller's pods carry `app.kubernetes.io/name=ingress-nginx` and
+    `app.kubernetes.io/component=controller`, in the namespace labelled
+    `kubernetes.io/metadata.name=ingress-nginx`, and don't use the host network;
+  - the Cloudflare tunnel in that namespace dials the controller's Service,
+    never frontend, so the edge names the controller's pods, not the namespace
+    (the verifier refuses a namespace-wide edge);
+  - the dev workloads that name redis are exactly those three.
 - **A new in-cluster client or Service** needs its allow in the same change.
   `scripts/verify-network-policy-chart.js` fails on any Service whose pods no
   allow admits on its port, and on any known flow that's refused.
