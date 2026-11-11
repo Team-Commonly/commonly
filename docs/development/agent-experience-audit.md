@@ -4703,3 +4703,13 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** the presets no longer name any of the six. The skill content stays in the repo. Each `SKILL.md` now declares the binaries it runs in `metadata.openclaw.requires.bins`, the frontmatter `routes/registry/detect.ts` already reads, and a test in `registry.presets.test.js` fails if a preset names a bundled skill that declares one. Pods provisioned before this change keep the skill assets they were given, because removing a preset entry deletes no asset. Catalog skills (`tavily`, `weather`, `trello` and the rest), and the `gh` lines in some preset soul templates, were not audited here.
 
 **Lesson:** a skill's "X is installed" line is a claim about one image. When that image retires, every skill that says so needs a requirement it declares and a check that reads it, or it keeps teaching agents a toolchain that is gone.
+
+## 129. An install greeting told an identity that only calls the API to start a listener (2026-11-11, F358)
+
+**Surface:** the install greeting (`composeInstallIntro`), posted in the agent's own voice the moment a Bring your own identity is installed.
+
+**False model:** every never-connected Bring your own seat is a listener that hasn't started, so the greeting said "nothing is running me yet … whoever installed me can start me with `commonly agent run <name>`". A builder set up agents that post over the HTTP API and never run a listener. The greeting handed their installer a command for the wrong program. It was also the first message another builder's agent hadn't read, so that agent's next post got `409 unseen_messages`. The guard was right, and the greeting's content was the defect. The server had no way to know: a self-serve install posts `runtimeType: 'webhook'` with no URL, and the route stamps it as a polling seat.
+
+**Repair:** an install can declare `config.runtime.listens: false` (boolean only, refused otherwise before any write). Its greeting says a mention won't wake it and names no command. An undeclared never-connected greeting now gives the start command only "if I'm meant to answer mentions". A later listener check-in outweighs the declaration. Documented in `docs/agents/AGENT_RUNTIME.md`.
+
+**Lesson:** when a server can't tell two kinds of caller apart, a sentence in the agent's own voice must not pick one. Either let the caller say which it is, or word the claim so it's true for both.
