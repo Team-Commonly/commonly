@@ -871,6 +871,21 @@ class AgentMessageService {
    * N:1 (several admins, one agent), so it IS a shared room and the crowding
    * rationale applies.
    */
+  /**
+   * Commonly speaking on its own under a seat's identity, so not the seat's
+   * turn (F447): a kernel post that is not a card. The kernel posts today are
+   * the stalled-connect nudge and resolution, the hosted install intro and the
+   * native run-failed notices, all written by server code (an agent cannot set
+   * authorKind). The one kernel card, the local-agent setup card, is posted
+   * when the agent's model calls `commonly_offer_local_agent`, so it is the
+   * agent choosing to speak: it counts toward the run and is capped. A new
+   * kernel post an agent can trigger must stay outside this predicate.
+   */
+  static isCommonlyInitiated(row: { author_kind?: unknown; messageType?: unknown; message_type?: unknown } | null | undefined): boolean {
+    if (!row || row.author_kind !== 'kernel') return false;
+    return String(row.messageType ?? row.message_type ?? 'text').toLowerCase() !== 'card';
+  }
+
   static isOneToOnePod(podType: unknown): boolean {
     const type = String(podType || '');
     try {
@@ -940,10 +955,9 @@ class AgentMessageService {
       // (uiCardValidation), so no agent can mark its own post this way. A
       // system line skips; it neither counts nor ends the run.
       if (String((message as { messageType?: string })?.messageType || '').toLowerCase() === 'system') continue;
-      // Nor are Commonly's own posts under the seat (author_kind 'kernel': a
-      // stalled-connect nudge or resolution, a run-failed notice, the hosted
-      // intro). They skip the same way (F447).
-      if ((message as { author_kind?: string | null })?.author_kind === 'kernel') continue;
+      // Nor is Commonly speaking on its own under the seat; it skips the same
+      // way (F447, see isCommonlyInitiated for which kernel posts that is).
+      if (AgentMessageService.isCommonlyInitiated(message)) continue;
       run += 1;
     }
     return run;
@@ -1017,13 +1031,13 @@ class AgentMessageService {
       }>;
       if (!firedAt && !heartbeats.length) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-      // An approval receipt under the agent's identity is a system line, and a
-      // kernel post is Commonly's: neither speaks for the agent nor spends a
-      // turn (as countConsecutiveRun, F447).
+      // An approval receipt under the agent's identity is a system line, and
+      // Commonly's own posts are Commonly's: neither speaks for the agent nor
+      // spends a turn (as countConsecutiveRun, F447).
       const ownAt = recent
         .filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId))
         .filter((message) => String((message as { messageType?: string })?.messageType || '').toLowerCase() !== 'system')
-        .filter((message) => (message as { author_kind?: string | null })?.author_kind !== 'kernel')
+        .filter((message) => !AgentMessageService.isCommonlyInitiated(message))
         .map((message) => new Date(message?.createdAt || 0).valueOf());
       const now = Date.now();
       // The wake at `wakeAt` still owes its turn: nothing posted since, or
@@ -1901,10 +1915,11 @@ class AgentMessageService {
       const failureForPerson = failureNotice === true && personWaiting === true;
       // A long answer reaches the cap on its own, and then the cut-off line is
       // the one post the person still needs (F279).
-      // A kernel post is Commonly speaking under the seat, not the seat holding
-      // the floor either (F447). Only server code sets authorKind; the runtime
-      // route does not forward it, so an agent cannot claim this.
-      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine || authorKind === 'kernel')
+      // Commonly speaking on its own under the seat is not the seat holding the
+      // floor either (F447). The setup card is kernel but the agent's choice,
+      // so it stays capped (isCommonlyInitiated).
+      const commonlyInitiated = AgentMessageService.isCommonlyInitiated({ author_kind: authorKind, messageType });
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine || commonlyInitiated)
         ? 0 : AgentMessageService.resolveConsecutiveRunCap((pod as { agentRunCap?: unknown } | null)?.agentRunCap);
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id, runCap);

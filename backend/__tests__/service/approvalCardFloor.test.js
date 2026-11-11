@@ -407,13 +407,29 @@ describe('a permanent refusal thrown by the message service (F180 HOLD, LOW)', (
   });
 });
 
-// F447: Commonly's own posts under the seat (author_kind 'kernel': the
-// stalled-connect nudge and resolution, run-failed notices, the hosted intro)
-// are not the seat holding the floor. A stalled seat's room can hold several
-// before the seat ever speaks, and the resolution was refused behind them.
+// F447: Commonly speaking on its own under the seat (a kernel post that is not
+// a card: the stalled-connect nudge, the hosted intro; the resolution and the
+// run-failed notices once F442 lands) is not the seat holding the floor. A
+// stalled seat's room can hold several nudges before the seat ever speaks.
+// These post the way those server writers do: postMessage with authorKind.
 describe('kernel posts and the run cap (F447)', () => {
   const kernelPost = (content) => AgentMessageService.postMessage({
     agentName: 'alice', instanceId: 'default', podId: String(pod._id), content, authorKind: 'kernel',
+  });
+  // The local-agent setup card, posted as commonly_offer_local_agent does:
+  // kernel, but the agent's model chose to post it.
+  const setupCard = (n) => AgentMessageService.postMessage({
+    agentName: 'alice',
+    instanceId: 'default',
+    podId: String(pod._id),
+    content: 'Connect a local agent with the command below.',
+    messageType: 'card',
+    metadata: { source: 'native-runtime', handoff: 'byo' },
+    payload: require('../../services/byoHandoffService').buildByoHandoffPayload({
+      adapter: 'claude', podId: String(pod._id), agentName: `helper-${n}`, memoryFrom: 'alice', memoryInstance: 'default',
+    }),
+    personWaiting: true,
+    authorKind: 'kernel',
   });
 
   test('a kernel post goes out though the seat holds the floor', async () => {
@@ -456,5 +472,24 @@ describe('kernel posts and the run cap (F447)', () => {
     expect(forged.body).toMatchObject({ reason: 'consecutive_run_cap' });
     expect((await stored()).length).toBe(before);
     expect((await stored()).every((m) => m.authorKind !== 'kernel')).toBe(true);
+  });
+
+  test('the setup card is the agent speaking: capped like its own posts', async () => {
+    for (const text of ['one', 'two', 'three']) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await agentPost(text)).status).toBe(200);
+    }
+    const card = await setupCard(1);
+    expect(card).toMatchObject({ reason: 'consecutive_run_cap' });
+    expect((await stored()).filter((m) => m.messageType === 'card')).toHaveLength(0);
+  });
+
+  test('setup cards count toward the run, so they cannot clear it', async () => {
+    for (const n of [1, 2, 3]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await setupCard(n)).success).toBe(true);
+    }
+    expect(await AgentMessageService.holdsFloor(pod._id, seat._id, 'chat')).toBe(true);
+    expect((await setupCard(4))).toMatchObject({ reason: 'consecutive_run_cap' });
   });
 });
