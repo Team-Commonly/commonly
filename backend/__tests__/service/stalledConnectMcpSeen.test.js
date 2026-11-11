@@ -244,8 +244,10 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     const second = await scan({ now: NOW });
     expect(second.resolved).toHaveLength(1);
     expect(mockPost).toHaveBeenCalledTimes(1);
-    const { content, metadata } = mockPost.mock.calls[0][0];
+    const { content, metadata, authorKind } = mockPost.mock.calls[0][0];
     expect(metadata.kind).toBe('stalled-connect-resolved');
+    // F442: Commonly's line, like the nudge it resolves; not the agent's.
+    expect(authorKind).toBe('kernel');
     expect(content).toContain('connected from your MCP client');
     expect(content).toContain('that takes the listener');
 

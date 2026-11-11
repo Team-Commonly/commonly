@@ -420,6 +420,39 @@ describe('pgMessageController', () => {
       expect(PGMessage.update).not.toHaveBeenCalled();
     });
 
+    it('refuses the agent rewriting a run-failed notice, though the run stamped it (F442)', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 47,
+        user_id: 'agent-1',
+        pod_id: 'p1',
+        message_type: 'text',
+        author_kind: 'kernel',
+        payload: { runId: 'r1', runPodId: 'p1' },
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '47' }, body: { content: 'all fine' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'platform_post' }));
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the agent bearer deleting a run-failed notice (F442)', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 47,
+        user_id: 'agent-1',
+        pod_id: 'p1',
+        message_type: 'text',
+        author_kind: 'kernel',
+        payload: { runId: 'r1', runPodId: 'p1' },
+      });
+      const res = jsonRes();
+      await controller.deleteMessage({
+        params: { id: '47' }, userId: 'agent-1', user: { id: 'agent-1' }, botCaller: { username: 'builder' },
+      }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
     it('still lets the agent edit its own reply a native run stamped', async () => {
       PGMessage.findById.mockResolvedValue({
         id: 46, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', payload: { runId: 'r1', runPodId: 'p1' },

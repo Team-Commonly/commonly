@@ -2455,6 +2455,9 @@ export async function runAgent(
         displayName,
         installationConfig: cfg,
         metadata: { source: 'native-runtime', runFailed: true },
+        // Our fixed text, not the agent's: it is stored under the agent but the
+        // agent may not delete or rewrite it (F440, F442).
+        authorKind: 'kernel',
         failureNotice: true,
         personWaiting: true,
         kind: 'error',
@@ -3641,6 +3644,8 @@ export async function runAgent(
           displayName,
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
+          // The platform's line, stored under the agent (F440, F442).
+          authorKind: 'kernel',
           failureNotice: true,
           personWaiting: personAsked,
           kind: 'error',
