@@ -3107,3 +3107,21 @@ test('the deploy step never throws: a dead network, a missing key file and a rej
   assert.equal(refused.ok, false);
   assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
 });
+
+// F432: the /compare hub states only sourced facts about others and only llms.txt facts about us.
+// It ranks no one, says nothing about what others lack, and names no price, in either locale.
+test('the /compare hub copy ranks no one, claims no absence, and states no pricing, in en and zh-CN', async () => {
+  const banned = {
+    en: [/strongest/i, /closest (product )?competitor/i, /better shape/i, /\bnone\b/i, /any vendor/i, /first-class/i,
+      /never are/i, /pricing charges/i, /\bseats?\b/i, /per-agent tax/i, /takes no pull requests/i, /honest version/i,
+      /\bonly\b/i, /\bthe first\b/i, /\bfirst (to|platform|workspace)\b/i],
+    'zh-CN': [/最强/, /最接近的产品竞争对手/, /更合适/, /都不能/, /任何厂商/, /一等公民/, /永远不占/, /定价/, /席位/,
+      /不接受 PR/, /实话实说/, /唯一/],
+  };
+  for (const [locale, patterns] of Object.entries(banned)) {
+    const { compare } = JSON.parse(await readFile(resolve(frontendDir, `src/i18n/locales/${locale}.json`), 'utf8'));
+    const { nav, actions, footer, ...copy } = compare;
+    const text = JSON.stringify(copy);
+    for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${locale}: ${pattern}`);
+  }
+});
