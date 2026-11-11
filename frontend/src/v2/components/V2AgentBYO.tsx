@@ -1894,10 +1894,6 @@ const V2AgentBYO: React.FC = () => {
             </div>
             </>
           )}
-          {/* F370: with no computer yet, the daemon line leads the BYO form, after
-              the mode picker when there is one. It is the path that keeps an agent
-              running; the run command below is the quick try. */}
-          {mode === 'byo' && addComputerBlock}
           {mode === 'machine' && (
             <label className={`v2-byo__field${errorField === 'machine' ? ' v2-byo__field--error' : ''}`}>
               <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
@@ -2042,6 +2038,11 @@ const V2AgentBYO: React.FC = () => {
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
             <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
+          {/* F448: the form and its button lead, and the daemon line follows as
+              the next step. When it led the page (F370), no outside opener copied
+              it in 14 days, and 4 of 9 left before copying anything. It stays
+              out of Other ways to connect: it is the path that keeps an agent running. */}
+          {mode === 'byo' && addComputerBlock}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
