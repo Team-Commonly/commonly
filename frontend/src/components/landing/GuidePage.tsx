@@ -5,6 +5,7 @@ import {
   Button,
   Container,
   Divider,
+  Link,
   Stack,
   Typography,
 } from '@mui/material';
@@ -58,6 +59,9 @@ interface Guide {
   title: string;
   description: string;
   provenance: GuideProvenance;
+  /** D295 (F430): set together with `answer` when a guide's pass lands. */
+  revised?: string;
+  answer?: string;
   intro: string[];
   sections: GuideSection[];
   faq: GuideFaq[];
@@ -71,6 +75,10 @@ interface Guide {
 }
 
 const GUIDES = guides as Record<string, Guide>;
+
+// Mirrors the static page (scripts/generate-seo-pages.mjs, renderGuideProvenance):
+// a guide with `revised` names Sam as its author and shows `revised` as its Updated date.
+export const GUIDE_AUTHOR = { name: 'Sam Xu', url: 'https://x.com/sam_commonly' };
 
 const formatGuideDate = (value: string) => new Intl.DateTimeFormat('en-US', {
   dateStyle: 'long',
@@ -101,6 +109,7 @@ const GuidePage: React.FC = () => {
       </Box>
     );
   }
+  const modified = guide.revised || guide.provenance.dateModified;
 
   return (
     <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary }}>
@@ -125,12 +134,20 @@ const GuidePage: React.FC = () => {
           {guide.description}
         </Typography>
         <Typography sx={{ color: guidePalette.textTertiary, fontSize: '0.875rem', lineHeight: 1.7, mb: 5 }}>
-          By {guide.provenance.author} · Reviewed by {guide.provenance.reviewer}
+          By {guide.revised
+            ? <Link href={GUIDE_AUTHOR.url} rel="author" sx={{ color: 'inherit' }}>{GUIDE_AUTHOR.name}</Link>
+            : guide.provenance.author} · Reviewed by {guide.provenance.reviewer}
           <br />
-          {guide.provenance.datePublished === guide.provenance.dateModified
+          {guide.provenance.datePublished === modified
             ? `Published and updated ${formatGuideDate(guide.provenance.datePublished)}`
-            : `Published ${formatGuideDate(guide.provenance.datePublished)} · Updated ${formatGuideDate(guide.provenance.dateModified)}`}
+            : `Published ${formatGuideDate(guide.provenance.datePublished)} · Updated ${formatGuideDate(modified)}`}
         </Typography>
+
+        {guide.answer && (
+          <Typography sx={{ color: guidePalette.textPrimary, fontSize: '1.05rem', lineHeight: 1.75, mb: 3 }}>
+            <strong>Short answer.</strong> {guide.answer}
+          </Typography>
+        )}
 
         <Stack spacing={2} sx={{ color: guidePalette.textSecondary, fontSize: '1.05rem', lineHeight: 1.75, mb: 7 }}>
           {guide.intro.map((paragraph) => <Typography key={paragraph}>{paragraph}</Typography>)}
