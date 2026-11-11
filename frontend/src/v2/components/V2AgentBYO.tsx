@@ -469,10 +469,23 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
-  const choosingMode = !choicesKnown || hostedOffered || machines.length > 0;
+  // Nor is "On my computer", nor anything that points to it: the daemon keeps
+  // one local key per agent name, so a computer that runs the default instance
+  // refuses this one (F427 gives it per-instance keys; these lines come back then).
+  const machineOffered = machines.length > 0 && !secondInstance;
+  const choosingMode = !choicesKnown || hostedOffered || machineOffered;
   // "Run it here" counts only once the instance says it can host: a hosted
-  // link must not arm a hosted install before, or without, that answer.
-  const mode = chosenMode === 'hosted' && !hostedOffered
+  // link must not arm a hosted install before, or without, that answer. A
+  // machine link for a second instance falls back the same way, unless the
+  // page is reconnecting that instance's wrapper (canReconnect's wrapper case):
+  // Reconnect restarts it on its computer, with the key the daemon holds, and
+  // places nothing.
+  const wrapperReconnect = existingConnection?.runtimeType === 'wrapper'
+    && (Boolean(prefill.reconnect) || ['revoked', 'stale'].includes(existingConnection.connection.state))
+    && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin');
+  const modeUnavailable = (chosenMode === 'hosted' && !hostedOffered)
+    || (chosenMode === 'machine' && Boolean(secondInstance) && !wrapperReconnect);
+  const mode = modeUnavailable
     ? (choosingMode ? null : 'byo')
     : chosenMode ?? (choosingMode ? null : 'byo');
   // Shown from first paint for a hosted link (no flash of the full page while
@@ -1482,7 +1495,7 @@ const V2AgentBYO: React.FC = () => {
   // in Other ways to connect, on the start form and the result page, so the
   // stop-on-close line can point to it from the result.
   // On Windows `daemon install` registers a logon task (D245).
-  const addComputerBlock = machines.length === 0 ? (
+  const addComputerBlock = machines.length === 0 && !secondInstance ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
@@ -1797,7 +1810,7 @@ const V2AgentBYO: React.FC = () => {
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
           {hostedHeldLine}
-          {(hostedOffered || machines.length > 0) && (
+          {(hostedOffered || machineOffered) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
             <div className="v2-byo__modes" role="group" aria-labelledby="byo-modes-question">
@@ -1817,7 +1830,7 @@ const V2AgentBYO: React.FC = () => {
                   </V2Hint>
                 </div>
               )}
-              {machines.length > 0 && (
+              {machineOffered && (
                 <div className="v2-byo__mode-option">
                   <button
                     type="button"
@@ -1995,7 +2008,7 @@ const V2AgentBYO: React.FC = () => {
             && connectorLine(listenAdapter, setupOs)}
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
-          {mode === 'byo' && machines.length === 0 && listenerAvailable && (
+          {mode === 'byo' && machines.length === 0 && !secondInstance && listenerAvailable && (
             <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
@@ -2254,7 +2267,7 @@ const V2AgentBYO: React.FC = () => {
                 {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
               </p>
             )}
-            {listenerAvailable && (
+            {listenerAvailable && !secondInstance && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
                 {t(setupOs === 'windows'
                   ? (machines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
@@ -2410,7 +2423,7 @@ const V2AgentBYO: React.FC = () => {
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
             {addComputerBlock}
-            {machines.length > 0 && (
+            {machineOffered && (
               // A computer on file: the machine choice is the start form's mode
               // picker, which this result page does not show, so offer it here.
               <button

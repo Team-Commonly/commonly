@@ -5,8 +5,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  assertNoOpenHolds, buildPageDefinitions, fitDescription, fitTitle, generateSeoPages, publicHitScript, renderMarkdown, renderStaticPage,
+  assertCompareSourced, assertNoOpenHolds, buildPageDefinitions, compareMarkdown, fitDescription, fitTitle, generateSeoPages,
+  loadCompareSources, publicHitScript, renderMarkdown, renderStaticPage,
 } from './generate-seo-pages.mjs';
+import {
+  INDEXNOW_KEY, changedUrls, indexNowKeyFile, indexNowPayload, parseSitemap, pingIndexNow, runAfterDeploy,
+} from './indexnow.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -2884,4 +2888,222 @@ test('a use-case title change leaves every other page\'s footer as it was (linkL
   const { renderLlmsTxt } = await import('./generate-seo-pages.mjs');
   const llms = renderLlmsTxt({ base, guides: inputs.guides, useCases: inputs.useCases, pages });
   for (const useCase of Object.values(inputs.useCases)) assert.ok(llms.includes(`[${useCase.title}]`), useCase.title);
+});
+
+// /compare as data (F429, D295): one file per competitor, one template, and no competitor fact
+// without a source that says where and when it was read.
+const compareFixture = () => ({
+  path: '/compare/example/',
+  listOrder: 9,
+  datePublished: '2026-11-11',
+  dateModified: '2026-11-11',
+  title: 'Commonly vs Example: what each ships',
+  description: 'A factual comparison.',
+  name: 'Example',
+  updated: 'Updated 2026-11-11. Facts about Example were read on its own pages on 2026-11-11.',
+  shortAnswer: 'Example is a thing. [1]',
+  table: { them: 'Example', rows: [{ label: 'License', them: 'MIT. [1]', us: 'Apache-2.0. [2]' }] },
+  pickThem: { name: 'Example', items: ['You want MIT. [1]'] },
+  pickUs: ['You want a pod.'],
+  faq: [{ q: 'Is it open source?', a: 'Yes. [1]' }],
+  sourcesIntro: 'Example facts read on 2026-11-11:',
+  sources: [
+    { n: 1, label: 'Example homepage', url: 'https://example.com/', read: '2026-11-11' },
+    { n: 2, label: 'Commonly README', url: 'https://github.com/Team-Commonly/commonly', read: '2026-11-11' },
+  ],
+  closing: 'Commonly facts come from the Commonly README.',
+});
+
+test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
+  const dir = resolve(frontendDir, 'src/content/compare');
+  const loaded = loadCompareSources(dir);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz']);
+  for (const id of Object.keys(loaded)) {
+    const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
+    assert.equal(loaded[id].markdown, compareMarkdown(data));
+    assert.equal(loaded[id].path, `/compare/${id}/`);
+    assert.ok(data.sources.every((source) => /^https:\/\//.test(source.url) && /^\d{4}-\d{2}-\d{2}$/.test(source.read)), id);
+    assert.ok(data.table.rows.every((row) => /\[\d+\]/.test(row.them)), id);
+  }
+  // The template lays out what the hand-written pages had: heading, dated line, table, sources.
+  const buzz = loaded.buzz.markdown;
+  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-09\./);
+  assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
+  assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
+  // A malformed file names itself.
+  const broken = await mkdtemp(join(tmpdir(), 'seo-compare-broken-'));
+  try {
+    await writeFile(join(broken, 'bad.json'), '{ nope }');
+    assert.throws(() => loadCompareSources(broken), /^Error: compare\/bad\.json: /);
+  } finally {
+    await rm(broken, { recursive: true, force: true });
+  }
+  // The one fact this change added carries its source.
+  assert.match(loaded['github-agent-hq'].markdown, /\| \*\*License \/ self-host\*\* \| Hosted GitHub service\. .*self-hosted runners.*\[4\] \|/);
+});
+
+test('a compare page with an unsourced competitor fact, an undated source or a dangling citation fails the build', () => {
+  assert.doesNotThrow(() => assertCompareSourced('example', compareFixture()));
+
+  const unsourced = compareFixture();
+  unsourced.table.rows[0].them = 'MIT.';
+  assert.throws(() => assertCompareSourced('example', unsourced), /compare\/example: "License" states a Example fact with no source/);
+
+  const undated = compareFixture();
+  delete undated.sources[0].read;
+  assert.throws(() => assertCompareSourced('example', undated), /source 1 has no read date/);
+
+  const noUrl = compareFixture();
+  noUrl.sources[0].url = 'example.com';
+  assert.throws(() => assertCompareSourced('example', noUrl), /source 1 has no https URL/);
+
+  const dangling = compareFixture();
+  dangling.faq[0].a = 'Yes. [3]';
+  assert.throws(() => assertCompareSourced('example', dangling), /\[3\] cites no listed source/);
+
+  const badDate = compareFixture();
+  badDate.dateModified = '11/11/2026';
+  assert.throws(() => assertCompareSourced('example', badDate), /dateModified is not YYYY-MM-DD/);
+
+  const linkOnly = compareFixture();
+  linkOnly.table.rows[0].them = 'MIT. [1](https://example.com/)';
+  assert.throws(() => assertCompareSourced('example', linkOnly), /"License" states a Example fact with no source/);
+
+  const inserted = compareFixture();
+  inserted.sources.splice(1, 0, { n: 2, label: 'New', url: 'https://example.org/', read: '2026-11-11' });
+  assert.throws(() => assertCompareSourced('example', inserted), /source 3 is numbered 2/);
+
+  const backwards = compareFixture();
+  backwards.datePublished = '2026-11-12';
+  assert.throws(() => assertCompareSourced('example', backwards), /dateModified 2026-11-11 is before datePublished 2026-11-12/);
+
+  const elsewhere = compareFixture();
+  elsewhere.path = '/compare/other/';
+  assert.throws(() => assertCompareSourced('example', elsewhere), /path \/compare\/other\/ is not \/compare\/example\//);
+
+  const unordered = compareFixture();
+  delete unordered.listOrder;
+  assert.throws(() => assertCompareSourced('example', unordered), /listOrder is not a whole number/);
+
+  // A markdown link elsewhere on the page is not a citation either, and doesn't need a source.
+  const linked = compareFixture();
+  linked.pickUs = ['See [the guide](/guides/x/).'];
+  assert.doesNotThrow(() => assertCompareSourced('example', linked));
+});
+
+test('a compare page carries its dates in the WebPage structured data and the sitemap, matching its data file', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-compare-dates-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const sitemap = await readFile(join(outputDir, 'sitemap.xml'), 'utf8');
+    for (const id of ['openagents', 'github-agent-hq', 'buzz']) {
+      const data = JSON.parse(await readFile(resolve(frontendDir, `src/content/compare/${id}.json`), 'utf8'));
+      const html = await readFile(join(outputDir, `compare/${id}/index.html`), 'utf8');
+      const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/)[1])['@graph'];
+      const page = graph.find((node) => node['@type'] === 'WebPage');
+      assert.equal(page.datePublished, data.datePublished, id);
+      assert.equal(page.dateModified, data.dateModified, id);
+      assert.ok(html.includes(`Updated ${data.dateModified}.`), id);
+      assert.ok(sitemap.includes(`<loc>https://commonly.me/compare/${id}/</loc><lastmod>${data.dateModified}</lastmod>`), id);
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+// IndexNow (F428). The key file must be in the build, the ping must name only what changed, and
+// nothing in the deploy step may throw or fail.
+const sitemapXml = (entries) => `<?xml version="1.0" encoding="UTF-8"?>\n<urlset>\n${entries
+  .map(([loc, lastmod]) => `  <url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`).join('\n')}\n</urlset>\n`;
+
+test('the build serves the IndexNow key, alone, at /<key>.txt, and the sitemap it pings from parses whole', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-indexnow-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    const pages = await generateSeoPages({ outputDir });
+    assert.equal(await readFile(join(outputDir, indexNowKeyFile()), 'utf8'), INDEXNOW_KEY);
+    // IndexNow's key rule: 8 to 128 characters of a-z, A-Z, 0-9 and dashes.
+    assert.match(INDEXNOW_KEY, /^[a-zA-Z0-9-]{8,128}$/);
+    const entries = parseSitemap(await readFile(join(outputDir, 'sitemap.xml'), 'utf8'));
+    assert.equal(entries.size, pages.filter((page) => !page.noindex).length);
+    assert.ok(entries.size > 100);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('IndexNow names only new URLs and moved lastmods, or every URL on the first run', () => {
+  const before = sitemapXml([
+    ['https://commonly.me/', ''],
+    ['https://commonly.me/guides/a/', '2026-11-01'],
+    ['https://commonly.me/guides/b/', '2026-11-01'],
+  ]);
+  const after = sitemapXml([
+    ['https://commonly.me/', ''],
+    ['https://commonly.me/guides/a/', '2026-11-01'],
+    ['https://commonly.me/guides/b/', '2026-11-11'],
+    ['https://commonly.me/guides/c/', '2026-11-11'],
+    ['https://elsewhere.example/x/', ''],
+  ]);
+  assert.deepEqual(changedUrls({ beforeXml: before, afterXml: after, keyWasLive: true }), [
+    'https://commonly.me/guides/b/', 'https://commonly.me/guides/c/',
+  ]);
+  const all = ['https://commonly.me/', 'https://commonly.me/guides/a/', 'https://commonly.me/guides/b/', 'https://commonly.me/guides/c/'];
+  assert.deepEqual(changedUrls({ beforeXml: before, afterXml: after, keyWasLive: false }), all);
+  // An unreadable before-sitemap can't say what changed, so it sends everything.
+  assert.deepEqual(changedUrls({ beforeXml: '', afterXml: after, keyWasLive: true }), all);
+  assert.deepEqual(changedUrls({ beforeXml: after, afterXml: after, keyWasLive: true }), []);
+});
+
+test('the IndexNow POST carries host, key, key location and the URLs, and accepts 200 or 202', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return { status: 202 };
+  };
+  const result = await pingIndexNow(['https://commonly.me/guides/b/'], { fetchImpl });
+  assert.deepEqual(result, { ok: true, status: 202, sent: 1, note: 'accepted' });
+  assert.equal(calls[0].url, 'https://api.indexnow.org/indexnow');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), indexNowPayload(['https://commonly.me/guides/b/']));
+  assert.deepEqual(indexNowPayload(['u']), {
+    host: 'commonly.me', key: INDEXNOW_KEY, keyLocation: `https://commonly.me/${INDEXNOW_KEY}.txt`, urlList: ['u'],
+  });
+  assert.equal((await pingIndexNow([], { fetchImpl })).sent, 0);
+  assert.equal(calls.length, 1);
+  assert.equal((await pingIndexNow(['u'], { fetchImpl: async () => ({ status: 403 }) })).ok, false);
+});
+
+test('the deploy step never throws: a dead network, a missing key file and a rejected ping all resolve', async () => {
+  const lines = [];
+  const log = (line) => lines.push(line);
+  const down = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
+  assert.equal((await runAfterDeploy({ argv: [], fetchImpl: down, log })).ok, false);
+  assert.match(lines.at(-1), /skipped: getaddrinfo ENOTFOUND/);
+
+  const notServed = async () => ({ ok: true, status: 200, text: async () => '<!doctype html>' });
+  assert.equal((await runAfterDeploy({ argv: [], fetchImpl: notServed, log })).note, 'key file not served');
+
+  const after = sitemapXml([['https://commonly.me/', ''], ['https://commonly.me/guides/a/', '2026-11-11']]);
+  const posted = [];
+  const live = async (url, init) => {
+    if (init?.method === 'POST') {
+      posted.push(JSON.parse(init.body).urlList);
+      return { status: 200 };
+    }
+    if (url.includes(indexNowKeyFile())) return { ok: true, status: 200, text: async () => `${INDEXNOW_KEY}\n` };
+    return { ok: true, status: 200, text: async () => after };
+  };
+  const first = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: live, log });
+  assert.equal(first.sent, 2);
+  assert.match(lines.at(-1), /accepted: 2 of 2 sitemap URLs \(first run, every URL\), HTTP 200/);
+  assert.deepEqual(posted[0], ['https://commonly.me/', 'https://commonly.me/guides/a/']);
+
+  const rejected = async (url, init) => (init?.method === 'POST' ? { status: 422 } : live(url, init));
+  const refused = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: rejected, log });
+  assert.equal(refused.ok, false);
+  assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
 });
