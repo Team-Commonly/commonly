@@ -22,7 +22,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 105);
+  assert.equal(pages.length, 108);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -36,6 +36,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/use-cases/community/',
     '/use-cases/pod-browser/',
     '/use-cases/app-marketplace/',
+    '/use-cases/bring-your-own-agents/',
+    '/use-cases/agent-task-board/',
+    '/use-cases/agent-decisions/',
     '/use-cases/',
     '/guides/',
     '/guides/multi-agent-collaboration-platform/',
@@ -2157,8 +2160,11 @@ test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', 
       assert.ok(rendered.includes(`<dd>${escape(item.answer)}</dd>`), item.answer);
     }
 
-    // Every other page stays without it.
-    assert.ok(pages.filter((page) => page.path !== '/').every((page) => !page.faqSchema));
+    // Every other page stays without it, except the long-form use cases, which
+    // carry their own FAQ under a different id.
+    const useCaseFaqPages = pages.filter((page) => page.faqSchemaId === 'use-case-faq-jsonld');
+    assert.ok(pages.filter((page) => page.path !== '/' && !useCaseFaqPages.includes(page)).every((page) => !page.faqSchema));
+    assert.ok(useCaseFaqPages.every((page) => page.path.startsWith('/use-cases/')));
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
@@ -2598,7 +2604,16 @@ test('the build writes an llms.txt that lists every indexable page and an llms-f
     for (const [id, useCase] of Object.entries(useCases)) {
       assert.ok(full.includes(`URL: https://commonly.me/use-cases/${id}/`), id);
       assert.ok(full.includes(useCase.outcomes[0]), id);
+      for (const section of useCase.sections || []) {
+        for (const link of section.links || []) {
+          const url = link.external ? link.path : `https://commonly.me${link.path}`;
+          assert.ok(full.includes(`- ${text(link.label)}: ${url}`), `${id}: ${link.path}`);
+        }
+      }
     }
+    // The use-case index changes whenever a use case does.
+    const newestUseCase = Object.values(useCases).map((useCase) => useCase.dateModified).sort().at(-1);
+    assert.equal(pages.find((page) => page.path === '/use-cases/').dateModified, newestUseCase);
     for (const page of pages.filter((item) => item.path.startsWith('/compare/') && !item.noindex)) {
       assert.ok(full.includes(`URL: https://commonly.me${page.path}`), page.path);
     }
@@ -2672,6 +2687,40 @@ test('a compare or use-case page with a malformed date stops the build (F395)', 
     () => buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: broken, guides }),
     /dateModified that is not YYYY-MM-DD/,
   );
+});
+
+// D286: the use cases that answer "how does my team run several people's
+// agents together" are long-form pages, served static like the guides, so the
+// page a reader gets is the one a crawler reads.
+test('the long-form use cases render every section and FAQ, statically, with their own FAQPage JSON-LD', async () => {
+  const useCases = JSON.parse(await readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'));
+  const pages = await realPages();
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const escape = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  const longForm = ['bring-your-own-agents', 'agent-task-board', 'agent-decisions'];
+  for (const id of longForm) {
+    const useCase = useCases[id];
+    const page = pages.find((candidate) => candidate.path === `/use-cases/${id}/`);
+    assert.equal(page.staticOnly, true, id);
+    const html = renderStaticPage(template, page);
+    assert.doesNotMatch(html, /index-abcd\.js/, `${id} ships no React bundle`);
+    for (const section of useCase.sections) {
+      assert.ok(html.includes(`<h2>${escape(section.title)}</h2>`), `${id}: ${section.title}`);
+      for (const paragraph of section.paragraphs || []) assert.ok(html.includes(`<p>${escape(paragraph)}</p>`), `${id}: ${paragraph.slice(0, 40)}`);
+      for (const link of section.links || []) assert.ok(html.includes(`href="${escape(link.path)}"`), `${id}: ${link.path}`);
+    }
+    for (const item of useCase.faq) {
+      assert.ok(html.includes(`<h3>${escape(item.question)}</h3><p>${escape(item.answer)}</p>`), `${id}: ${item.question}`);
+    }
+    const faqLd = JSON.parse(html.match(/id="use-case-faq-jsonld">([^<]*)<\/script>/)[1]);
+    assert.deepEqual(faqLd.mainEntity.map((q) => [q.name, q.acceptedAnswer.text]), useCase.faq.map((item) => [item.question, item.answer]));
+    assert.doesNotMatch(html, /id="landing-faq-jsonld"/);
+    const main = html.slice(html.indexOf('<main>'), html.indexOf('</main>')).replace(/<[^>]+>/g, ' ');
+    assert.ok(main.split(/\s+/).filter(Boolean).length > 600, `${id} is long enough to answer the question`);
+    for (const guide of useCase.relatedGuides) assert.ok(pages.some((candidate) => candidate.path === guide.path), `${id}: ${guide.path}`);
+  }
+  // Every use case is static now, short ones included.
+  assert.ok(pages.filter((page) => /^\/use-cases\/[a-z-]+\/$/.test(page.path)).every((page) => page.staticOnly));
 });
 
 // D286: the backend counts a logged-out hit against a published page only when
