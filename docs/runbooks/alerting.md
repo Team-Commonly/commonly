@@ -287,13 +287,22 @@ funnel script drops `*.invalid`. The steps:
 
 | Step | Passes when | Budget |
 |---|---|---|
-| signup | register, then login returns a token | 15 s |
+| signup | register, then login returns a token (on staging: with the invite code, after following the verification link from the email sink) | 35 s |
 | workspace | "My Workspace" exists | 60 s |
 | welcome | Scout's message carries `payload.kind: 'starts'` with both start labels | 90 s |
 | answer | Scout replies to Hamza's day-2 question (verbatim, 2026-09-12) | 60 s |
 | card | a `connect_local_agent` approval card within 3 Scout turns | 240 s |
 | approve | resolve returns 200 with `connectPath` `/v2/agents/byo?pod=<pod>&name=<seat>` | 15 s |
 | byo | the BYO page's load calls succeed for that pod, and the seat is listed in it | 15 s |
+| cleanup | the seat, the pod and the account are deleted (`DELETE /api/users/me`); a surviving account fails the run | — |
+
+**Staging runs it as the staging-smoke gate (F375).** `deploy-staging.yml` builds a Job from the
+staging CronJob after every staging rollout, and its pass or fail is the `staging-smoke` status
+Deploy Dev requires. Staging is invite-only and signs in verified accounts only, so the staging
+values give it `inviteCodeSecret` (the `staging-journey-invite` Secret, key `INVITE_CODE`) and the
+chart wires the email sink's read token (`email-sink` / `read-token`); the journey reads only its
+own address's mail. It signs up on `@ops.commonly.invalid`, which is in staging's
+`authAllowedDomains`. Read a staging run with the commands below in `commonly-staging`.
 
 Read the run:
 

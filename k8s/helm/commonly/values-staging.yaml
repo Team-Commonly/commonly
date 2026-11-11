@@ -297,3 +297,26 @@ redis:
 # fresh keys, never prod's). Without it every hosted-MCP OAuth callback on staging threw.
 connectorSecrets:
   enabled: true
+
+# The stranger journey against staging (F375): a fresh signup on
+# @ops.commonly.invalid (in authAllowedDomains above), verified through the
+# email sink, Scout's welcome and reply, the connect card, then the account
+# deleted. deploy-staging runs it as the staging-smoke gate. Staging is
+# invite-only, so signup sends the code in the staging-journey-invite Secret
+# (SRE, 11-10; never printed). The workflow still falls back to a
+# reachability-only probe when the CronJob is missing; that fallback goes once a
+# full staging journey has passed.
+strangerJourney:
+  enabled: true
+  apiUrl: "https://api-staging.commonly.me"
+  inviteCodeSecret:
+    name: staging-journey-invite
+    key: INVITE_CODE
+  # Staging's backend is on the spot lane too; a reclaim mid-run fails one gate.
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - key: "workload-tier"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"

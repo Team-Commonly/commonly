@@ -16,13 +16,21 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
   7. byo         the calls the BYO page makes on load succeed for that path, and
                  the seat is listed in the pod (the rendered page itself is not
                  checked here; that needs a browser)
-  8. cleanup     the seat is uninstalled and the pod deleted with its messages.
-                 The bare account row stays: there is no self-delete route, and
-                 the admin delete removes only the user row. It is
-                 eng-smoke-journey-*@ops.commonly.invalid, which Growth's
-                 filters exclude. The backend's synthetic-account purge
-                 (services/syntheticAccountPurgeService.ts, TASK-260) removes
-                 it once that job is switched on.
+  8. cleanup     the seat is uninstalled, the pod deleted with its messages,
+                 and the account deleted through DELETE /api/users/me (F375).
+                 An account that survives fails the run, whatever the steps
+                 did. It is eng-smoke-journey-*@ops.commonly.invalid, which
+                 Growth's filters exclude, and the synthetic-account purge
+                 (services/syntheticAccountPurgeService.ts, TASK-260) is the
+                 backstop for a run killed before cleanup.
+
+On an invite-only instance (staging), JOURNEY_INVITE_CODE carries a code from
+the instance's own secret, and signup sends it. Staging also limits sign-in to
+verified accounts and sends its mail to an in-cluster sink
+(services/stagingEmailSink.ts): with JOURNEY_EMAIL_SINK_URL and
+JOURNEY_EMAIL_SINK_TOKEN set, signup reads this account's verification link
+from the sink and follows it before logging in. Neither the code, the token nor
+the link is printed.
 
 Every step prints one JSON line {journey, step, ok, ms, budget_ms, ...}; the last
 line is {journey, result}. Exit 0 only if every hard step passed inside its
@@ -45,6 +53,11 @@ import urllib.request
 API = os.environ.get('JOURNEY_API', 'https://api.commonly.me').rstrip('/')
 EMAIL_DOMAIN = os.environ.get('JOURNEY_EMAIL_DOMAIN', 'ops.commonly.invalid')
 TRIGGER = os.environ.get('JOURNEY_TRIGGER', 'manual')
+INVITE_CODE = os.environ.get('JOURNEY_INVITE_CODE', '').strip()
+EMAIL_SINK_URL = os.environ.get('JOURNEY_EMAIL_SINK_URL', '').rstrip('/')
+EMAIL_SINK_TOKEN = os.environ.get('JOURNEY_EMAIL_SINK_TOKEN', '').strip()
+# How long signup waits for the verification mail to reach the sink.
+VERIFY_WAIT_S = 20
 # Cloudflare rejects Python's default User-Agent (error 1010).
 UA = 'commonly-sre-journey/1.0'
 
@@ -62,7 +75,7 @@ WELCOME_LABELS = ('Connect an agent I already use', 'Start a pod for a project')
 # How long Scout must stay silent, without a card, before the journey answers
 # its next question. Its runs post within seconds; 20 s rides out a slow turn.
 SCOUT_QUIET_S = 20
-BUDGET_S = {'signup': 15, 'workspace': 60, 'welcome': 90, 'answer': 60, 'card': 240, 'approve': 15, 'byo': 15}
+BUDGET_S = {'signup': 15 + VERIFY_WAIT_S, 'workspace': 60, 'welcome': 90, 'answer': 60, 'card': 240, 'approve': 15, 'byo': 15}
 
 
 class StepFailed(Exception):
@@ -87,6 +100,29 @@ def call(method, path, body=None, token=None):
             return err.code, json.loads(err.read() or b'null')
         except ValueError:
             return err.code, None
+
+
+def sink_links(email):
+    """Links in the sink's mail to this address, newest message first."""
+    req = urllib.request.Request(
+        f'{EMAIL_SINK_URL}/inbox?' + urllib.parse.urlencode({'to': email}),
+        headers={'User-Agent': UA, 'Authorization': f'Bearer {EMAIL_SINK_TOKEN}'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            data = json.loads(res.read() or b'null') or {}
+    except (urllib.error.URLError, ValueError):
+        return []
+    return [link for message in data.get('messages', []) for link in message.get('links', [])]
+
+
+def verification_token(links):
+    for link in links:
+        query = urllib.parse.urlparse(link).query
+        if 'verify-email' in link and query:
+            token = urllib.parse.parse_qs(query).get('token', [''])[0]
+            if token:
+                return token
+    return None
 
 
 def run_step(name, fn):
@@ -160,15 +196,26 @@ class Journey:
         return message_id(data)
 
     def signup(self):
-        status, data = call('POST', '/api/auth/register',
-                            {'username': self.username, 'email': self.email, 'password': self.password})
+        body = {'username': self.username, 'email': self.email, 'password': self.password}
+        if INVITE_CODE:
+            body['invitationCode'] = INVITE_CODE
+        status, data = call('POST', '/api/auth/register', body)
         if status >= 300:
             raise StepFailed(f'register returned {status}: {(data or {}).get("message") or (data or {}).get("error")}')
+        detail = {}
+        if EMAIL_SINK_URL and EMAIL_SINK_TOKEN:
+            token = poll(lambda: verification_token(sink_links(self.email)), VERIFY_WAIT_S, every_s=2)
+            if not token:
+                raise StepFailed(f'no verification mail reached the sink in {VERIFY_WAIT_S} s')
+            status, _ = call('GET', '/api/auth/verify-email?' + urllib.parse.urlencode({'token': token}))
+            if status >= 300:
+                raise StepFailed(f'verify-email returned {status}')
+            detail['verified'] = True
         status, data = call('POST', '/api/auth/login', {'email': self.email, 'password': self.password})
         self.token = (data or {}).get('token')
         if not self.token:
             raise StepFailed(f'login returned {status} without a token')
-        return {'username': self.username}
+        return {'username': self.username, **detail}
 
     def workspace(self):
         def find():
@@ -307,15 +354,24 @@ class Journey:
         return {}
 
     def cleanup(self):
-        if not (self.token and self.pod):
-            return
+        """Remove what the run made. True when no account is left behind."""
+        if not self.token:
+            # No login, so no account this run can reach. A register that
+            # succeeded before a failed login is the purge job's to remove.
+            return True
         results = {}
-        if self.seat:
-            status, _ = call('DELETE', f'/api/registry/agents/{self.seat}/pods/{self.pod}', token=self.token)
-            results['seat'] = status
-        status, _ = call('DELETE', f'/api/pods/{self.pod}', token=self.token)
-        results['pod'] = status
+        if self.pod:
+            if self.seat:
+                status, _ = call('DELETE', f'/api/registry/agents/{self.seat}/pods/{self.pod}', token=self.token)
+                results['seat'] = status
+            status, _ = call('DELETE', f'/api/pods/{self.pod}', token=self.token)
+            results['pod'] = status
+        status, _ = call('DELETE', '/api/users/me', {'confirmation': 'DELETE', 'password': self.password},
+                         token=self.token)
+        results['account'] = status
+        account_gone = status < 300
         emit(step='cleanup', ok=all(code < 300 for code in results.values()), status=results)
+        return account_gone
 
 
 def main():
@@ -324,15 +380,21 @@ def main():
              ('answer', journey.answer), ('card', journey.card_step), ('approve', journey.approve),
              ('byo', journey.byo)]
     started = time.monotonic()
+    failure = None
     try:
         for name, fn in steps:
             run_step(name, fn)
     except StepFailed as err:
-        emit(result='fail', failed_step=name, error=str(err), ms=int((time.monotonic() - started) * 1000))
-        return 1
+        failure = {'failed_step': name, 'error': str(err)}
     finally:
-        journey.cleanup()
-    emit(result='pass', ms=int((time.monotonic() - started) * 1000))
+        account_gone = journey.cleanup()
+    if failure is None and not account_gone:
+        failure = {'failed_step': 'cleanup', 'error': 'the account survived cleanup'}
+    ms = int((time.monotonic() - started) * 1000)
+    if failure:
+        emit(result='fail', ms=ms, **failure)
+        return 1
+    emit(result='pass', ms=ms)
     return 0
 
 
