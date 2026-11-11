@@ -476,6 +476,75 @@
 
 .v2-root button.v2-pod-header__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
+/* D288: the first-run bar (first-run artboard). It sits under the header, out
+   of the stream, so the stream stays bottom-anchored (D215). Only the current
+   step is a key; a done step is struck, a later one waits. */
+.v2-get-started {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 10px 28px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-bg-subtle);
+}
+.v2-get-started__sp { flex: 1; }
+.v2-get-started__title { margin-right: 4px; color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); }
+.v2-root button.v2-get-started__step {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-muted);
+  font: 500 13px/1 var(--v2-font);
+  white-space: nowrap;
+  cursor: default;
+}
+.v2-get-started__n {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-muted);
+  font: 600 11px/1 var(--v2-font-mono);
+}
+.v2-root button.v2-get-started__step--now {
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  box-shadow: inset 0 0 0 1px var(--v2-border), var(--v2-key-inset);
+  color: var(--v2-text-primary);
+  cursor: pointer;
+}
+.v2-root button.v2-get-started__step--now:hover { box-shadow: inset 0 0 0 1px var(--v2-border-strong), var(--v2-key-inset); }
+.v2-root button.v2-get-started__step--now:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+.v2-get-started__step--now .v2-get-started__n { background: var(--v2-accent-fill); color: var(--v2-on-accent); }
+.v2-root button.v2-get-started__step--done { text-decoration: line-through; text-decoration-color: var(--v2-border); }
+.v2-get-started__step--done .v2-get-started__n { background: var(--v2-accent-soft); color: var(--v2-accent-text); }
+.v2-get-started__count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+/* The bar stands in for the board chip, so it keeps the way to the board. */
+.v2-root button.v2-get-started__board { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; margin-left: 4px; background: transparent; border: 1px solid var(--v2-border-soft); border-radius: 6px; color: var(--v2-text-muted); font: 500 12px/1 var(--v2-font); cursor: pointer; white-space: nowrap; }
+.v2-root button.v2-get-started__board:hover { color: var(--v2-text-primary); border-color: var(--v2-border); }
+.v2-root button.v2-get-started__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+
+/* Phone (artboard 390): the title on its own line, then each step full width
+   at 36px; the count is dropped. */
+@media (max-width: 760px) {
+  .v2-get-started { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  .v2-get-started__title { flex: 1 1 auto; margin: 0 0 2px; }
+  /* The board button shares the title's line; the steps wrap below at full width. */
+  .v2-root button.v2-get-started__board { order: 1; margin-left: 0; }
+  .v2-root button.v2-get-started__step { order: 2; height: 36px; flex: 1 1 100%; }
+  .v2-root button.v2-get-started__step > svg:last-child { margin-left: auto; }
+  .v2-get-started__sp, .v2-get-started__count { display: none; }
+}
+
 /* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
    width; the input takes the spare room and the buttons keep their content width. */
 .v2-pod-header__rename {

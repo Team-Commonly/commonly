@@ -120,11 +120,23 @@ describe('reprovision of a refused identity', () => {
     expect(restartAgentRuntime).not.toHaveBeenCalled();
   });
 
-  it('an entitled identity provisions as before', async () => {
+  // The moltbot runtime is retired: an entitled identity is skipped before any
+  // token is issued or any gateway entry written, and a bulk run carries on.
+  it('an entitled moltbot identity is skipped as retired, with no token and no provision', async () => {
     cloudRuntimeMayRun.mockResolvedValue(true);
-    await reprovisionInstallation({ installation: install('openclaw') });
+    const result = await reprovisionInstallation({ installation: install('openclaw') });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'runtime_retired', runtimeType: 'moltbot' });
     expect(removeOpenClawAccount).not.toHaveBeenCalled();
-    expect(provisionAgentRuntime).toHaveBeenCalled();
+    expect(issueRuntimeTokenForAgent).not.toHaveBeenCalled();
+    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
+    expect(provisionAgentRuntime).not.toHaveBeenCalled();
+  });
+
+  it('every other runtime still reaches the provisioner', async () => {
+    cloudRuntimeMayRun.mockResolvedValue(true);
+    const result = await reprovisionInstallation({ installation: install('commonly-bot', 'default') });
+    expect(result.skipReason).toBeUndefined();
+    expect(provisionAgentRuntime).toHaveBeenCalledWith(expect.objectContaining({ runtimeType: 'internal' }));
   });
 
   it('only the gateway runtime is read', async () => {

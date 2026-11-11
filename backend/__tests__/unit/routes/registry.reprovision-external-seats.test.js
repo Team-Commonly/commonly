@@ -96,8 +96,14 @@ describe('reprovision and tokens', () => {
     untouched(installation);
   });
 
+  it('moltbot keeps its token: the runtime is retired, so nothing is rotated or provisioned', async () => {
+    const installation = install('openclaw', { runtimeType: 'moltbot' });
+    const result = await reprovisionInstallation({ installation, force: true });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'runtime_retired' });
+    untouched(installation);
+  });
+
   it.each([
-    ['moltbot', 'openclaw', { runtimeType: 'moltbot' }],
     ['internal', 'commonly-bot', { runtimeType: 'internal', host: 'cloud' }],
     ['internal with no runtime record', 'commonly-bot', null],
   ])('%s still rotates, because the provisioner hands the new token over', async (_label, agentName, runtime) => {

@@ -1533,11 +1533,14 @@ const removeOpenClawAccount = async ({ agentName, instanceId, gateway }: any = {
 };
 
 
-// Docker mode starts moltbot from a compose service that retired with the
-// gateway (ADR-021 Part B), so the start can only fail. A k8s gateway, or a
-// gateway an operator runs with docker provisioning off, is not affected.
-const composeGatewayRetired = (runtimeType: any) => (
-  runtimeType === 'moltbot' && !isK8sMode() && isDockerProvisioningEnabled()
+// The moltbot runtime is retired (ADR-021 Part B): no gateway runs in Helm, in
+// compose or in Deploy Dev, so a provision can only mint tokens for an agent
+// nothing will start. The two callers of provisionAgentRuntime (the provision
+// route and reprovision) refuse it in every mode, before any token or gateway
+// write. The driver below stays until it is deleted, and the runtime type stays
+// known, because it still describes historical rows.
+const moltbotRuntimeRetired = (runtimeType: any) => (
+  String(runtimeType || '').trim().toLowerCase() === 'moltbot'
 );
 
 const syncOpenClawSkills = async (options = {}) => {
@@ -1759,7 +1762,7 @@ module.exports = {
   // Core provisioning (works in both modes)
   provisionAgentRuntime,
   removeOpenClawAccount,
-  composeGatewayRetired,
+  moltbotRuntimeRetired,
   runtimeReceivesToken,
   getOpenClawConfigPath,
   getCommonlyBotConfigPath,

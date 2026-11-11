@@ -1,6 +1,6 @@
-// The local compose gateway retired under ADR-021 Part B. In docker mode a
-// moltbot provision used to mint tokens, fail to start the removed service and
-// record the install as provisioned. It now refuses first.
+// The moltbot runtime retired under ADR-021 Part B. A moltbot provision used to
+// mint tokens for a gateway nothing runs and record the install as provisioned.
+// It now refuses first, in every mode.
 const request = require('supertest');
 const express = require('express');
 
@@ -49,7 +49,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/registry', provisionRouter);
 
-describe('moltbot provision with the local gateway retired', () => {
+describe('moltbot provision with the runtime retired', () => {
   const saved = {};
   const ENV = ['AGENT_PROVISIONER_DOCKER', 'AGENT_PROVISIONER_K8S'];
   const provision = () => request(app).post('/api/registry/pods/pod-1/agents/openclaw/provision').send({});
@@ -71,23 +71,23 @@ describe('moltbot provision with the local gateway retired', () => {
     });
   });
 
-  it('refuses in docker mode before any identity or token work', async () => {
-    process.env.AGENT_PROVISIONER_DOCKER = '1';
+  // The runtime is retired in every mode: no gateway runs in Helm or compose.
+  it.each([
+    ['docker mode', { AGENT_PROVISIONER_DOCKER: '1' }],
+    ['k8s mode', { AGENT_PROVISIONER_DOCKER: '1', AGENT_PROVISIONER_K8S: '1' }],
+    ['docker provisioning off', {}],
+  ])('refuses in %s before any identity or token work', async (_mode, env) => {
+    Object.assign(process.env, env);
     const res = await provision();
     expect(res.status).toBe(410);
-    expect(res.body.code).toBe('local_gateway_retired');
+    expect(res.body.code).toBe('runtime_retired');
     expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
   });
 
-  it('leaves k8s mode to the driver step', async () => {
-    process.env.AGENT_PROVISIONER_DOCKER = '1';
-    process.env.AGENT_PROVISIONER_K8S = '1';
-    await provision();
-    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalled();
-  });
-
-  it('leaves a gateway an operator runs alone, with docker provisioning off', async () => {
-    await provision();
+  it.each(['internal', 'native', 'claude-code', 'webhook'])('leaves the %s runtime alone', async (runtime) => {
+    AgentIdentityService.getAgentTypeConfig.mockReturnValueOnce({ runtime });
+    const res = await provision();
+    expect(res.body.code).not.toBe('runtime_retired');
     expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalled();
   });
 });

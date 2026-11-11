@@ -912,6 +912,14 @@
       "recent_one": "最近收到{{formattedCount}}次心跳",
       "recent_other": "最近收到{{formattedCount}}次心跳"
     },
+    "getStarted": {
+      "title": "开始使用",
+      "connect": "接入你的第一个智能体",
+      "firstTask": "给它派第一个任务",
+      "done": "{{step}}，已完成",
+      "count": "{{done}}/{{total}}",
+      "board": "任务板"
+    },
     "header": {
       "aboutPod": "关于这个 Pod",
       "rename": "重命名",
