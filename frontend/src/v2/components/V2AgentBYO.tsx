@@ -636,7 +636,7 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; };
   }, [api, choicesKnown, defaultAgentName, heldNameLink, mode, namePrefill, nameLookupRetry, nameTouched, personaCard, podId,
     prefill.reconnect, prefill.name]);
-  const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
+  const [placed, setPlaced] = useState<{ agentName: string; instanceId: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
     agentName: string; instanceId: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
@@ -683,7 +683,10 @@ const V2AgentBYO: React.FC = () => {
         const data = await api.get<{ machines?: MachineRow[] }>('/api/machines');
         if (cancelled) return;
         const machine = (data?.machines || []).find((m) => m.machineId === placed.machineId);
-        const seat = machine?.agentStates?.find((s) => s.agentName === placed.agentName);
+        // The placed instance's own seat: the default instance may already run
+        // on this computer under the same name (F427).
+        const seat = machine?.agentStates?.find((s) => s.agentName === placed.agentName
+          && String(s.instanceId || 'default').toLowerCase() === placed.instanceId.toLowerCase());
         if (seat?.state === 'running') {
           setPlacedState('running');
           clearInterval(timer);
@@ -989,6 +992,7 @@ const V2AgentBYO: React.FC = () => {
       });
       setPlaced({
         agentName: cleanName,
+        instanceId: secondInstance || 'default',
         machineId,
         machineName: selectedMachineName,
       });

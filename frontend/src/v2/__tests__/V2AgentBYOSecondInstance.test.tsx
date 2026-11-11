@@ -216,6 +216,36 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     }), expect.anything()));
   });
 
+  // After placing, the page polls the computer until the placed instance runs.
+  // The default instance, running there under the same name, is not it.
+  const placeOnStudio = async (agentStates) => {
+    mockServer({ machines: [{ ...STUDIO, agentStates }] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await screen.findByText(/Waiting for the daemon on/);
+  };
+
+  test('a running default instance does not mark the placed second instance as running', async () => {
+    await placeOnStudio([
+      { agentName: 'sam-claude', instanceId: 'default', state: 'running' },
+      { agentName: 'sam-claude', instanceId: 'nova', state: 'stopped' },
+    ]);
+    await new Promise((r) => { setTimeout(r, 4600); });
+    expect(screen.queryByText(/Running on/)).toBeNull();
+    expect(screen.getByText(/Waiting for the daemon on/)).toBeInTheDocument();
+  }, 15000);
+
+  test('the placed second instance reads as running once its own seat runs', async () => {
+    await placeOnStudio([
+      { agentName: 'sam-claude', instanceId: 'default', state: 'stopped' },
+      { agentName: 'sam-claude', instanceId: 'nova', state: 'running' },
+    ]);
+    expect(await screen.findByText(/Running on/, {}, { timeout: 6000 })).toBeInTheDocument();
+  }, 15000);
+
   test('with an older and a newer computer, only the newer one is listed and chosen', async () => {
     mockServer({ machines: [{ ...MACBOOK, cliVersion: '0.1.300' }, STUDIO] });
     window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
