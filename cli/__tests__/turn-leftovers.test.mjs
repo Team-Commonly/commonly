@@ -24,7 +24,14 @@ const claude = (await import('../src/lib/adapters/claude.js')).default;
 const codex = (await import('../src/lib/adapters/codex.js')).default;
 const { KEEP_PROCESS_ENV, TURN_MARK_ENV } = await import('@commonlyai/seats/turn-processes');
 
-afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
+// On Linux a private Codex seat runs from a Codex home of its own (F445), which
+// must not sit inside its workspace; here the workspace is the mocked home.
+const privateCodexHomes = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-turn-leftovers-codex-'));
+
+afterAll(() => {
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(privateCodexHomes, { recursive: true, force: true });
+});
 
 const POSIX = process.platform !== 'win32';
 
@@ -67,6 +74,7 @@ const runTurn = async (adapter, extra = {}) => {
     _lockProbe: async () => false,
     env: { ...process.env, HOME: home },
     cwd: home,
+    _privateCodexHome: path.join(privateCodexHomes, `turn-${adapter.name}`),
     ...extra,
   });
   const [leftover, kept] = fs.readFileSync(pidFile, 'utf8').trim().split(',').map(Number);
@@ -180,6 +188,7 @@ describe('codex: what a public seat\'s turn leaves running', () => {
       _homeDir: home,
       _codexVersion: '0.162.1',
       _publicCodexHome: path.join(home, `codex-home-${trust || 'private'}-${Date.now()}`),
+      _privateCodexHome: path.join(privateCodexHomes, `seat-${trust || 'private'}`),
       env: { ...outside, HOME: home, CODEX_HOME: path.join(home, 'operator-codex') },
     };
   };
