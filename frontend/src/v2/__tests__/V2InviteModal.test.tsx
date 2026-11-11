@@ -102,7 +102,7 @@ describe('V2InviteModal', () => {
       expect(screen.getByRole('alert')).toBeEmptyDOMElement();
     });
 
-    test('drops a reply that lands after the dialog unmounted', async () => {
+    test('drops the notice of a reply that lands after the dialog unmounted, and still reconciles its pod', async () => {
       let resolve;
       mockApi.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
       const onMemberAdded = jest.fn();
@@ -112,7 +112,8 @@ describe('V2InviteModal', () => {
       view.unmount();
       resolve({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
       await new Promise((r) => setTimeout(r, 0));
-      expect(onMemberAdded).not.toHaveBeenCalled();
+      // Nothing is shown, but the pod the add was sent for still reconciles.
+      expect(onMemberAdded).toHaveBeenCalledWith('pod-1');
     });
 
     test('is offered only to the pod creator', async () => {
@@ -133,17 +134,18 @@ describe('V2InviteModal', () => {
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Added @teammate.'));
       expect(mockApi.post).toHaveBeenCalledWith('/api/pods/pod-1/members', { username: 'teammate' });
       expect(onMemberAdded).toHaveBeenCalledTimes(1);
+      expect(onMemberAdded).toHaveBeenCalledWith('pod-1');
       expect(screen.getByLabelText('Username to add')).toHaveValue('');
     });
 
-    test('says when they are already in the pod, without a refresh', async () => {
+    test('says when they are already in the pod, and reconciles the list', async () => {
       const onMemberAdded = jest.fn();
       mockApi.post.mockResolvedValueOnce({ ok: true, alreadyMember: true, member: { _id: 'u2', username: 'teammate' } });
       renderModal('people', { canAddMember: true, onMemberAdded });
       fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('@teammate is already in this pod.'));
-      expect(onMemberAdded).not.toHaveBeenCalled();
+      expect(onMemberAdded).toHaveBeenCalledWith('pod-1');
     });
 
     test.each([
@@ -159,7 +161,7 @@ describe('V2InviteModal', () => {
       expect(screen.getByLabelText('Username to add')).toHaveValue('someone');
     });
 
-    test('drops a reply that lands after the dialog moved to another pod', async () => {
+    test('drops the notice of a reply that lands after the dialog moved to another pod', async () => {
       let resolve;
       mockApi.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
       const onMemberAdded = jest.fn();
@@ -177,8 +179,37 @@ describe('V2InviteModal', () => {
       await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/pods/pod-2/invites'));
       await new Promise((r) => setTimeout(r, 0));
       expect(screen.getByRole('status')).toHaveTextContent('');
-      expect(onMemberAdded).not.toHaveBeenCalled();
+      // Named by the pod the add was sent for; the layout refreshes only if
+      // that pod is still the one selected.
+      expect(onMemberAdded).toHaveBeenCalledWith('pod-1');
+      expect(onMemberAdded).not.toHaveBeenCalledWith('pod-2');
       expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled();
+    });
+
+    test('a reply that lands after the dialog closed shows nothing and still reconciles its pod', async () => {
+      let resolve;
+      mockApi.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+      const onMemberAdded = jest.fn();
+      const view = renderModal('people', { canAddMember: true, onMemberAdded });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      view.rerender(
+        <MemoryRouter>
+          <div className="v2-root">
+            <V2InviteModal open={false} podId="pod-1" podName="Pod" initialTab="people" onClose={jest.fn()} canAddMember onMemberAdded={onMemberAdded} />
+          </div>
+        </MemoryRouter>,
+      );
+      resolve({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
+      await waitFor(() => expect(onMemberAdded).toHaveBeenCalledWith('pod-1'));
+      view.rerender(
+        <MemoryRouter>
+          <div className="v2-root">
+            <V2InviteModal open podId="pod-1" podName="Pod" initialTab="people" onClose={jest.fn()} canAddMember onMemberAdded={onMemberAdded} />
+          </div>
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
     });
 
     test('asks for a username before calling the server', async () => {

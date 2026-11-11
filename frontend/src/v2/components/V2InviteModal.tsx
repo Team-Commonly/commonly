@@ -17,7 +17,9 @@ interface V2InviteModalProps {
   initialTab?: V2InviteTab;
   /** The pod's creator may add someone they already share a pod with, by username. */
   canAddMember?: boolean;
-  onMemberAdded?: () => void;
+  // Called with the pod the add was sent for, even when the reply lands after
+  // the dialog closed or moved, so that pod's member list still reconciles.
+  onMemberAdded?: (podId: string) => void;
   onClose: () => void;
 }
 
@@ -178,13 +180,19 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
       return;
     }
     const scope = addScopeRef.current;
+    const requestPodId = podId;
     setAdding(true);
     setAddNotice(null);
     try {
       const data = await api.post<{ alreadyMember?: boolean; member?: { username?: string } }>(
-        `/api/pods/${podId}/members`,
+        `/api/pods/${requestPodId}/members`,
         { username },
       );
+      // The member is in the pod whatever happened to the dialog, so its list
+      // is reconciled even when this reply is no longer the dialog's to show.
+      // "Already a member" reconciles too: an add whose reply was dropped is
+      // retried, and that retry is the one that reaches here.
+      onMemberAdded?.(requestPodId);
       if (scope !== addScopeRef.current) return;
       const name = data?.member?.username || username;
       if (data?.alreadyMember) {
@@ -192,7 +200,6 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
       } else {
         setAddNotice({ tone: 'ok', text: t('inviteModal.addMember.added', { username: name }) });
         setAddName('');
-        onMemberAdded?.();
       }
     } catch (err) {
       if (scope !== addScopeRef.current) return;
