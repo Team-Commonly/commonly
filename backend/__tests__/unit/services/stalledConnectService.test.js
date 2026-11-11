@@ -151,11 +151,18 @@ describe('stalledConnectService.scan', () => {
     expect(content).not.toContain('commonly agent run');
   });
 
+  it('sends a second instance made on the page to Connect too: the link carries its instance (F306)', async () => {
+    setup({ installs: [install({ ...madeOnPage, instanceId: 'other' })] });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('press Connect');
+    expect(mockPost.mock.calls[0][0].content).not.toContain('commonly agent run');
+  });
+
   it.each([
     ['an attached agent, whose key is saved', { config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, undefined],
     ['an agent init bot, whose key is saved', { config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }, undefined],
     ['a seat on a machine', madeOnPage, 'machine-1'],
-    ['a second instance', { ...madeOnPage, instanceId: 'other' }, undefined],
   ])('keeps the command for %s', async (_label, over, machineId) => {
     setup({ installs: [install(over)], machineId });
     await scan({ now: NOW });

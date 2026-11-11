@@ -70,8 +70,16 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // sandbox there, and the flag is the person choosing to run without one. For
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
+// F306: a second instance (the same name, another instanceId) holds its own
+// key, so its run line names the instance; the CLI then saves that key beside
+// the default's instead of over it. The id is checked against the CLI's own
+// rule, since it lands in a pasted command.
+const INSTANCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+export const instanceFlag = (instanceId?: string | null): string => (
+  instanceId && instanceId !== 'default' && INSTANCE_ID_RE.test(instanceId) ? ` --instance-id ${instanceId}` : ''
+);
 export const connectSnippet = ({
-  os, apiUrl, token, agentName, adapter, allow = '',
+  os, apiUrl, token, agentName, adapter, allow = '', instanceId = null,
 }: {
   os: ConnectSnippetOs;
   apiUrl: string;
@@ -79,6 +87,7 @@ export const connectSnippet = ({
   agentName: string;
   adapter: string;
   allow?: string;
+  instanceId?: string | null;
 }): string => {
   const env = os === 'windows'
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
@@ -86,7 +95,7 @@ export const connectSnippet = ({
   return [
     CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `commonly agent run ${agentName}${instanceFlag(instanceId)} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs
@@ -320,7 +329,9 @@ const V2AgentBYO: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
-  const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
+  const [issued, setIssued] = useState<{
+    token: string; agentName: string; podId: string; issuedAt: number; instanceId?: string | null;
+  } | null>(null);
   const [hasCopied, setHasCopied] = useState(false);
   const [showHostedOffer, setShowHostedOffer] = useState(false);
   const offeredPanels = useRef(new Set<string>());
@@ -449,7 +460,13 @@ const V2AgentBYO: React.FC = () => {
   const hostedHeld = hosting?.configured && hosting.held
     && !(heldNameLink && (sanitizeAgentName(name) === prefill.name || name === lastSuggestedName.current))
     ? hosting.held : null;
-  const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held);
+  // F306: a Connect link for a second instance (the same name, another
+  // instanceId) sets up that instance, not the default one, while the name is
+  // still the link's. A persona install derives its own instance, as before.
+  // Hosting runs a default instance only, so it isn't offered for one.
+  const secondInstance = prefill.instanceId !== 'default' && !personaCard
+    && sanitizeAgentName(name) === prefill.name ? prefill.instanceId : null;
+  const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
   const choosingMode = !choicesKnown || hostedOffered || machines.length > 0;
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer.
@@ -906,7 +923,7 @@ const V2AgentBYO: React.FC = () => {
       try {
         await api.post('/api/registry/install', {
           agentName: cleanName,
-          instanceId: 'default',
+          instanceId: secondInstance || 'default',
           podId,
           scopes: DEFAULT_INSTALL_SCOPES,
           config: {
@@ -935,7 +952,7 @@ const V2AgentBYO: React.FC = () => {
         if (!/already installed/i.test(msg)) throw installErr;
       }
       await api.post('/api/agent-binding/request', {
-        agentName: cleanName, instanceId: 'default', machineId,
+        agentName: cleanName, instanceId: secondInstance || 'default', machineId,
       });
       setPlaced({
         agentName: cleanName,
@@ -1008,6 +1025,9 @@ const V2AgentBYO: React.FC = () => {
         await api.post('/api/registry/install', {
           agentName: cleanName,
           podId,
+          // Named only for a second instance: an install that names none keeps
+          // the server's own pick (default, or a persona's instance).
+          ...(secondInstance ? { instanceId: secondInstance } : {}),
           scopes: DEFAULT_INSTALL_SCOPES,
           // D247: the runner, model and effort travel with the agent, so
           // Settings shows them and the listener reads them before each turn.
@@ -1088,7 +1108,7 @@ const V2AgentBYO: React.FC = () => {
       // returns existing:true in that case, so no key is revoked here.
       const tokenRes = await api.post<{ token?: string; existing?: boolean }>(
         `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}/runtime-tokens`,
-        { label: 'BYO MCP — initial issue' },
+        { label: 'BYO MCP — initial issue', ...(secondInstance ? { instanceId: secondInstance } : {}) },
       );
       if (tokenRes?.existing) {
         setPendingReplacement({ agentName: cleanName, podId });
@@ -1099,7 +1119,7 @@ const V2AgentBYO: React.FC = () => {
         setError(t('agentByo.errors.tokenEmpty'));
       } else {
         setIssued({
-          token: tok, agentName: cleanName, podId, issuedAt: Date.now(),
+          token: tok, agentName: cleanName, podId, issuedAt: Date.now(), instanceId: secondInstance,
         });
         setListenState('waiting');
         setMemoryText('');
@@ -1130,7 +1150,7 @@ const V2AgentBYO: React.FC = () => {
         setError(t('agentByo.errors.tokenEmpty'));
         return;
       }
-      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now() });
+      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: secondInstance });
       setListenState('waiting');
       setMemoryText('');
       setMemoryDone(false);
@@ -1421,6 +1441,7 @@ const V2AgentBYO: React.FC = () => {
       agentName: issued.agentName,
       adapter: listenAdapter,
       allow: allowFlag,
+      instanceId: issued.instanceId,
     })
     : '';
 

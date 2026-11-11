@@ -19,6 +19,18 @@ const seat = (runtime, agentName = 'Echo-Bot') => ({
 });
 
 describe('runInstructionFor (TASK-019)', () => {
+  test('a second instance\'s command names the instance, which holds its own key (F306)', () => {
+    expect(runInstructionFor({ ...seat({ host: 'byo', runtimeType: 'webhook' }), instanceId: 'nova' }))
+      .toBe('commonly agent run echo-bot --instance-id nova');
+    expect(runInstructionFor({ ...seat({ runtimeType: 'local-cli' }), instanceId: 'DEFAULT' }))
+      .toBe('commonly agent run echo-bot');
+  });
+
+  test('an instance id the CLI would refuse is left out of the command', () => {
+    expect(runInstructionFor({ ...seat({ host: 'byo', runtimeType: 'webhook' }), instanceId: 'a b;c' }))
+      .toBe('commonly agent run echo-bot');
+  });
+
   test('a BYO wrapper gets the run command, lowercased', () => {
     expect(runInstructionFor(seat({ host: 'byo', runtimeType: 'webhook' })))
       .toBe('commonly agent run echo-bot');

@@ -142,9 +142,9 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(pod, 'direct')).connectPodId).toBeUndefined();
   });
 
-  it('gives a group pod\'s second instance and machine seat none', async () => {
+  it('gives a group pod\'s machine seat none; a second instance gets Connect (F306)', async () => {
     await install('second', home._id, BYO, owner._id, 'other');
-    expect((await rowIn(home, 'second')).connectPodId).toBeUndefined();
+    expect((await rowIn(home, 'second')).connectPodId).toBe(String(home._id));
     await install('placed', home._id);
     await User.create({
       username: 'placed-bot', email: 'placed@test.com', password: 'password123', isBot: true,
@@ -282,13 +282,15 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect(dark.connectPodId).toBeUndefined();
   });
 
-  it('gives a second instance none: the page would make a sibling', async () => {
+  it('gives a second instance Connect too, and a command that names it (F306)', async () => {
     const room = await makePod('Room', 'agent-room');
     await install('persona', home._id, BYO, owner._id, 'nova');
     await install('persona', room._id, BYO, owner._id, 'nova');
     const row = await rowIn(room, 'persona');
     expect(row.state).toBe('never-connected');
-    expect(row.connectPodId).toBeUndefined();
+    expect(row.instanceId).toBe('nova');
+    expect(row.connectPodId).toBe(String(home._id));
+    if (row.fixCommand) expect(row.fixCommand).toBe('commonly agent run persona --instance-id nova');
   });
 
   it('keeps the notice when the lookup fails', async () => {

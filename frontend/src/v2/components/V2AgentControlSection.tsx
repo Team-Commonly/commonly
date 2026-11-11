@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
-import { isDefaultInstance } from '../utils/agentKey';
 
 interface Props {
   agentName: string;
@@ -54,7 +53,7 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
         {/* The command needs a key on that machine, and this page hands one out. On a wrapper
             it would offer Reconnect, which refuses an agent never bound to a computer. A second
             instance would get a sibling. */}
-        {copyable && runtimeType !== 'wrapper' && isDefaultInstance(instanceId) && <Link className="b b-g b-sm" to={byoLink}>{t('agentConnection.connect')}</Link>}
+        {copyable && runtimeType !== 'wrapper' && <Link className="b b-g b-sm" to={byoLink}>{t('agentConnection.connect')}</Link>}
         {(needsReconnect || canRegenerateMachineKey) && (
           <Link className="b b-g b-sm" to={byoLink}>
             {t(needsReconnect ? 'agentConnection.reconnect' : 'agentSettings.regenerate')}

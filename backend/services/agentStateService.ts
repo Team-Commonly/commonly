@@ -133,28 +133,36 @@ export function classifyRuntime(installation: InstallationRow): {
 export const WEBHOOK_RUN_INSTRUCTION = 'Run the program behind your webhook URL. '
   + 'A webhook agent has no `commonly` run command; see docs/agents/WEBHOOK_SDK.md.';
 
+// The CLI's own rule for an instance id (cli `agent run --instance-id`), which
+// becomes part of a file name there and of a pasted command here.
+const INSTANCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+
 // What to tell an owner who must make an agent run. `commonly agent run` only
 // starts a polling BYO wrapper. A push webhook runs the owner's own endpoint,
 // and a native or hosted seat runs on Commonly, so neither gets that command.
-// Null means there is no instruction to give.
+// A second instance holds its own key, so its command names the instance: the
+// name alone starts the default one. Null means there is no instruction to give.
 export function runInstructionFor(installation: InstallationRow): string | null {
   const { isByo, isPushWebhook } = classifyRuntime(installation);
   // A webhook URL wins over a host stamp: an install stamped host 'byo' that
   // pushes to a URL has no wrapper for `commonly agent run` to start.
   if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
-  if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
-  return null;
+  if (!isByo) return null;
+  const command = `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
+  const instanceId = String(installation.instanceId || 'default');
+  return instanceId.toLowerCase() !== 'default' && INSTANCE_ID_RE.test(instanceId)
+    ? `${command} --instance-id ${instanceId}` : command;
 }
 
 // Whether Bring your own's Connect can help a never-connected agent. It can't
 // for a wrapper, which Reconnect refuses unless it was bound to a computer, or
-// for a seat on a machine, which starts from that machine. Nor for a second
-// instance: the page installs the default one, so it would make a sibling.
+// for a seat on a machine, which starts from that machine. A second instance
+// can: the Connect link carries its instanceId, and the page installs and
+// issues the key for that instance, with `--instance-id` in the command.
 export function offersConnect(installation: InstallationRow, machineId?: unknown): boolean {
   const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
   return classifyRuntime(installation).isByo
     && runtimeType !== 'wrapper'
-    && String(installation.instanceId || 'default').toLowerCase() === 'default'
     && !machineId;
 }
 
