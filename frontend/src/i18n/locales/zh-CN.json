@@ -839,7 +839,15 @@
       "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。",
       "awayTwo": "{{first}} 和 {{second}} 暂时不会回复",
       "awayMany_one": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
-      "awayMany_other": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复"
+      "awayMany_other": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
+      "webhookFailed": "{{agentName}} 的 Webhook 没有接收最近一条消息（{{reason}}，{{age}}）。端点恢复后会回复。"
+    },
+    "webhookFailure": {
+      "httpStatus": "HTTP {{status}}",
+      "http": "HTTP 错误",
+      "timeout": "响应超时",
+      "network": "无法连接",
+      "refused": "地址不被允许"
     },
     "typing": {
       "one": "{{name}} 正在思考…",

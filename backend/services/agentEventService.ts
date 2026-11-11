@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress } from './outboundUrlGuard';
+import { webhookUrlHash } from './agentStateService';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
@@ -384,6 +385,47 @@ const postInlineReply = async (
   return null;
 };
 
+type WebhookFailure = 'http' | 'timeout' | 'network' | 'refused';
+
+// Records the delivery's outcome on the install, so the pod shows a webhook
+// that stopped answering instead of calling every URL reachable. Keyed to the
+// URL it was measured against: an outcome for an old URL starts over. Never
+// throws into delivery, and never stores the URL or the transport error text.
+export const recordWebhookDelivery = async (
+  installation: InstallationDoc,
+  webhookUrl: string,
+  outcome: { ok: true } | { ok: false; failure: WebhookFailure; status?: number },
+  now: Date = new Date(),
+): Promise<void> => {
+  if (!installation?._id) return;
+  const urlHash = webhookUrlHash(webhookUrl);
+  const fields: Record<string, unknown> = outcome.ok
+    ? { lastAttemptAt: now, lastOkAt: now }
+    : {
+      lastAttemptAt: now,
+      lastFailedAt: now,
+      lastFailure: outcome.failure,
+      ...(typeof outcome.status === 'number' ? { lastFailureStatus: outcome.status } : {}),
+    };
+  const set = Object.fromEntries(Object.entries(fields).map(([key, value]) => [`webhookDelivery.${key}`, value]));
+  const unset = !outcome.ok && typeof outcome.status !== 'number'
+    ? { 'webhookDelivery.lastFailureStatus': 1 } : undefined;
+  try {
+    const same = await AgentInstallation.updateOne(
+      { _id: installation._id, 'webhookDelivery.urlHash': urlHash },
+      { $set: set, ...(unset ? { $unset: unset } : {}) },
+    );
+    if (!same?.matchedCount) {
+      await AgentInstallation.updateOne(
+        { _id: installation._id },
+        { $set: { webhookDelivery: { urlHash, ...fields } } },
+      );
+    }
+  } catch (err) {
+    console.warn('[webhook] could not record the delivery outcome:', (err as Error).message);
+  }
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -409,6 +451,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     ? `sha256=${crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex')}`
     : undefined;
 
+  let answered = false;
   try {
     // The URL is whatever the installer registered, so delivery goes through
     // the open-destination guard: public addresses only, connection pinned to
@@ -425,8 +468,13 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
 
     if (!res.ok) {
       console.warn(`[webhook] ${event.agentName} HTTP ${res.status}`);
+      await recordWebhookDelivery(installation, webhookUrl, { ok: false, failure: 'http', status: res.status });
       return;
     }
+    // The endpoint answered. What it did with the event is its outcome below;
+    // whether it can be reached is settled here.
+    answered = true;
+    await recordWebhookDelivery(installation, webhookUrl, { ok: true });
 
     let response: Record<string, unknown> = {};
     try { response = JSON.parse(res.text) as Record<string, unknown>; } catch (_) { /* no body is fine */ }
@@ -476,10 +524,18 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   } catch (err) {
     // URLs and transport error text can contain installer credentials, including
     // redirect destinations. Keep diagnostics independent of those values.
-    if ((err as Error)?.name === 'AbortError') {
+    // A failure after the endpoint answered 2xx was already recorded as
+    // reachable; only a transport failure lands here unrecorded.
+    const name = (err as Error)?.name;
+    if (name === 'AbortError') {
       console.warn(`[webhook] ${event.agentName} timed out after 10s`);
     } else {
       console.warn(`[webhook] ${event.agentName} delivery failed`);
+    }
+    if (!answered) {
+      const failure: WebhookFailure = name === 'AbortError' ? 'timeout'
+        : name === 'OutboundUrlRefusedError' ? 'refused' : 'network';
+      await recordWebhookDelivery(installation, webhookUrl, { ok: false, failure });
     }
   }
 };

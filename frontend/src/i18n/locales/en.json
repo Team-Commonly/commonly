@@ -841,7 +841,15 @@
       "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back.",
       "awayTwo": "{{first}} and {{second}} aren't answering right now",
       "awayMany_one": "{{first}}, {{second}} and {{formattedCount}} other aren't answering right now",
-      "awayMany_other": "{{first}}, {{second}} and {{formattedCount}} others aren't answering right now"
+      "awayMany_other": "{{first}}, {{second}} and {{formattedCount}} others aren't answering right now",
+      "webhookFailed": "{{agentName}}'s webhook didn't take the last message ({{reason}}, {{age}}). It answers once its endpoint is back."
+    },
+    "webhookFailure": {
+      "httpStatus": "HTTP {{status}}",
+      "http": "HTTP error",
+      "timeout": "timed out",
+      "network": "couldn't connect",
+      "refused": "address not allowed"
     },
     "typing": {
       "one": "{{name}} is thinking…",

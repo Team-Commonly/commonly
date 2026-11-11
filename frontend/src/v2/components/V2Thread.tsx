@@ -97,6 +97,8 @@ interface AgentStateRow {
   connectPodId?: string;
   /** Made on the page: no computer has its key, so the bare command can't start it. */
   noSavedKey?: boolean;
+  /** A push webhook whose last delivery failed; absent from an older backend. */
+  deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -1656,8 +1658,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     typeof s?.agentName === 'string' && s.agentName
     && (s.state === 'never-connected' || s.state === 'gone-dark')
   ));
+  // A webhook that failed its last delivery says what failed, not "last checked in".
+  const webhookFailedLine = (row: AgentStateRow) => {
+    const failure = row.deliveryError as NonNullable<AgentStateRow['deliveryError']>;
+    const reason = failure.kind === 'http'
+      ? (typeof failure.status === 'number'
+        ? t('podChat.webhookFailure.httpStatus', { status: failure.status })
+        : t('podChat.webhookFailure.http'))
+      : t(`podChat.webhookFailure.${failure.kind}`);
+    return t('podChat.podAgentLiveness.webhookFailed', {
+      agentName: row.displayName || row.agentName,
+      reason,
+      age: localizeRelativeTime(failure.at, t),
+    });
+  };
   const podAgentLivenessLine = (row: typeof podAgentLiveness[number]) => (
-    row.state === 'never-connected' || !row.lastUsedAt
+    row.deliveryError ? webhookFailedLine(row) : row.state === 'never-connected' || !row.lastUsedAt
       ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
       : t('podChat.podAgentLiveness.offlineSince', {
         agentName: row.displayName || row.agentName,
@@ -2369,7 +2385,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                     <ShellGlyph name={directAgentReach === 'never-connected' ? 'alert' : 'info'} size={16} />
                   </span>
                   <div className="v2-chat__agent-room-status-body">
-                    {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                    {directAgent.state?.deliveryError
+                      ? webhookFailedLine({ ...directAgent.state, displayName: directAgent.displayName })
+                      : t(directAgentLivenessKey, { agentName: directAgent.displayName })}
                     {directAgentFixCommand && !directAgent?.state?.noSavedKey && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>

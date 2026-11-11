@@ -37,6 +37,13 @@ describe('runInstructionFor (TASK-019)', () => {
     expect(instruction).not.toMatch(/commonly agent run/);
   });
 
+  test('a push webhook stamped host byo still gets the webhook instruction, not a run command', () => {
+    const instruction = runInstructionFor(seat({
+      runtimeType: 'webhook', host: 'byo', webhookUrl: 'https://example.com/hook',
+    }));
+    expect(instruction).toBe(WEBHOOK_RUN_INSTRUCTION);
+  });
+
   test('a native seat has no instruction to give', () => {
     expect(runInstructionFor(seat({ runtimeType: 'native' }))).toBeNull();
   });

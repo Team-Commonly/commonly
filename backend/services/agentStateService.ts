@@ -12,8 +12,12 @@
  *     never-connected · fresh → listening · stale → gone-dark. `lastUsedAt`
  *     is not: any authenticated call stamps it, so one MCP tool call made a
  *     seat nobody was running read as listening (TASK-719, TASK-721).
- *   - push webhooks (webhookUrl set) and native runtime: reachable by
- *     construction — no dot, no guess.
+ *   - native runtime: reachable by construction — no dot, no guess.
+ *   - push webhooks (webhookUrl set): measured by the last delivery to the
+ *     URL now registered. Its endpoint answered → reachable · it failed after
+ *     the last answer → gone-dark, carrying the failure's kind · nothing sent
+ *     to this URL yet → unknown. These were reachable by construction until
+ *     a dead URL read as live in every pod. See docs/agents/push-webhook-status.md.
  *   - everything else (gateway moltbots, cloud): 'unknown'. The gateway
  *     stamps one shared boot timestamp for a whole fleet (finding A);
  *     pretending to know is the false positive the ratified doc bans.
@@ -28,6 +32,7 @@
  * legacy/new split that made live agents read null (finding D). Pure function: callers fetch, this
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
+import crypto from 'crypto';
 import { hostedRunsNative } from './hostedEngine';
 import { BYO_STALE_MS } from './agentConnectionStateService';
 import { newestPerInstall } from './newestPerInstall';
@@ -38,6 +43,25 @@ export type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'r
 
 interface TokenRow { lastUsedAt?: Date | string | null; lastListenedAt?: Date | string | null }
 
+interface WebhookDeliveryRow {
+  urlHash?: string;
+  lastAttemptAt?: Date | string | null;
+  lastOkAt?: Date | string | null;
+  lastFailedAt?: Date | string | null;
+  lastFailure?: string;
+  lastFailureStatus?: number;
+}
+
+/** Keys a recorded delivery to the URL it went to, without storing the URL. */
+export const webhookUrlHash = (url: string): string => crypto.createHash('sha256')
+  .update(String(url)).digest('hex').slice(0, 32);
+
+export interface WebhookDeliveryError {
+  at: string;
+  kind: 'http' | 'timeout' | 'network' | 'refused';
+  status?: number;
+}
+
 interface InstallationRow {
   agentName?: string;
   instanceId?: string;
@@ -45,6 +69,7 @@ interface InstallationRow {
   installedBy?: unknown;
   config?: { runtime?: { runtimeType?: string; host?: string; adapter?: string; webhookUrl?: string } };
   runtimeTokens?: TokenRow[];
+  webhookDelivery?: WebhookDeliveryRow | null;
 }
 
 export interface AgentStateRow {
@@ -68,6 +93,8 @@ export interface AgentStateRow {
   connectPodId?: string;
   /** Made on the page, so no computer has its key and the bare command can't start it. */
   noSavedKey?: boolean;
+  /** A push webhook whose last delivery failed: what failed and when. No URL, no error text. */
+  deliveryError?: WebhookDeliveryError;
 }
 
 const latestListen = (tokenLists: TokenRow[][]): Date | null => {
@@ -112,8 +139,10 @@ export const WEBHOOK_RUN_INSTRUCTION = 'Run the program behind your webhook URL.
 // Null means there is no instruction to give.
 export function runInstructionFor(installation: InstallationRow): string | null {
   const { isByo, isPushWebhook } = classifyRuntime(installation);
-  if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
+  // A webhook URL wins over a host stamp: an install stamped host 'byo' that
+  // pushes to a URL has no wrapper for `commonly agent run` to start.
   if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
+  if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
   return null;
 }
 
@@ -143,6 +172,42 @@ export function keyOnlyOnPage(installation: InstallationRow, machineId?: unknown
     && !runtime?.webhookUrl;
 }
 
+const toDate = (value: Date | string | null | undefined): Date | null => {
+  if (!value) return null;
+  const date = new Date(value as string);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const FAILURE_KINDS = new Set(['http', 'timeout', 'network', 'refused']);
+
+// A push webhook's reach, from the last delivery to the URL registered now.
+// A record for another URL says nothing about this one.
+function webhookReach(installation: InstallationRow): {
+  state: AgentReachState; lastUsedAt: Date | null; deliveryError?: WebhookDeliveryError;
+} {
+  const url = String(installation.config?.runtime?.webhookUrl || '');
+  const record = installation.webhookDelivery;
+  if (!record || record.urlHash !== webhookUrlHash(url)) return { state: 'unknown', lastUsedAt: null };
+  const okAt = toDate(record.lastOkAt);
+  const failedAt = toDate(record.lastFailedAt);
+  if (failedAt && (!okAt || failedAt > okAt)) {
+    const kind = FAILURE_KINDS.has(String(record.lastFailure))
+      ? record.lastFailure as WebhookDeliveryError['kind'] : 'network';
+    return {
+      state: 'gone-dark',
+      lastUsedAt: okAt,
+      deliveryError: {
+        at: failedAt.toISOString(),
+        kind,
+        ...(kind === 'http' && typeof record.lastFailureStatus === 'number'
+          ? { status: record.lastFailureStatus } : {}),
+      },
+    };
+  }
+  if (okAt) return { state: 'reachable', lastUsedAt: okAt };
+  return { state: 'unknown', lastUsedAt: null };
+}
+
 export function deriveAgentState(
   installation: InstallationRow,
   userTokens: TokenRow[],
@@ -156,8 +221,11 @@ export function deriveAgentState(
 
   let state: AgentReachState;
   let lastUsedAt: Date | null = null;
-  if (isNative || isPushWebhook) {
+  let deliveryError: WebhookDeliveryError | undefined;
+  if (isNative) {
     state = 'reachable';
+  } else if (isPushWebhook) {
+    ({ state, lastUsedAt, deliveryError } = webhookReach(installation));
   } else if (!isByo) {
     state = 'unknown';
   } else {
@@ -180,6 +248,7 @@ export function deriveAgentState(
     hosted: runtimeType === 'hosted',
     ...(isOwner && needsFix && runInstructionFor(installation)
       ? { fixCommand: runInstructionFor(installation) as string } : {}),
+    ...(deliveryError ? { deliveryError } : {}),
   };
 }
 

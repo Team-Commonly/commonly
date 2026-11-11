@@ -646,7 +646,7 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     const { ownsRuntimeIdentity } = require('../services/runtimeIdentityOwnership');
 
     const installations = await AgentInstallation.find({ podId, status: 'active' })
-      .select('agentName instanceId displayName installedBy config runtimeTokens')
+      .select('agentName instanceId displayName installedBy config runtimeTokens webhookDelivery')
       .lean();
     if (!installations.length) return res.json({ agents: [] });
 
