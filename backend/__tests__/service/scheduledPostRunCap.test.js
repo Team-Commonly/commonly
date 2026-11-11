@@ -77,6 +77,21 @@ describe('a scheduled post and the run cap', () => {
     expect((await post('One past the limit.')).reason).toBe('consecutive_run_cap');
   });
 
+  // F447: Commonly's lines under the seat after the wake (kernel posts) are not
+  // the turn's posts, so they don't use up the wake's allowance.
+  it('keeps the wake\'s whole turn when kernel lines land after it', async () => {
+    await tick();
+    await firedAt(new Date());
+    await tick();
+    for (let n = 1; n <= AgentMessageService.OWED_POSTS_PER_WAKE; n += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await AgentMessageService.postMessage({
+        agentName: 'daily', instanceId: 'default', podId: pod._id, content: `Commonly line ${n}.`, authorKind: 'kernel',
+      })).success).toBe(true);
+    }
+    expect((await post('Count for today.')).success).toBe(true);
+  });
+
   it('finds the wake on a row from before instance ids were stored', async () => {
     await AgentInstallation.collection.updateOne({ agentName: 'daily' }, { $unset: { instanceId: '' } });
     await tick();

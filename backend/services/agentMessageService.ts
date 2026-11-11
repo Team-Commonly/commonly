@@ -940,6 +940,10 @@ class AgentMessageService {
       // (uiCardValidation), so no agent can mark its own post this way. A
       // system line skips; it neither counts nor ends the run.
       if (String((message as { messageType?: string })?.messageType || '').toLowerCase() === 'system') continue;
+      // Nor are Commonly's own posts under the seat (author_kind 'kernel': a
+      // stalled-connect nudge or resolution, a run-failed notice, the hosted
+      // intro). They skip the same way (F447).
+      if ((message as { author_kind?: string | null })?.author_kind === 'kernel') continue;
       run += 1;
     }
     return run;
@@ -1013,11 +1017,13 @@ class AgentMessageService {
       }>;
       if (!firedAt && !heartbeats.length) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-      // An approval receipt under the agent's identity is a system line: it
-      // neither speaks for the agent nor spends a turn (as countConsecutiveRun).
+      // An approval receipt under the agent's identity is a system line, and a
+      // kernel post is Commonly's: neither speaks for the agent nor spends a
+      // turn (as countConsecutiveRun, F447).
       const ownAt = recent
         .filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId))
         .filter((message) => String((message as { messageType?: string })?.messageType || '').toLowerCase() !== 'system')
+        .filter((message) => (message as { author_kind?: string | null })?.author_kind !== 'kernel')
         .map((message) => new Date(message?.createdAt || 0).valueOf());
       const now = Date.now();
       // The wake at `wakeAt` still owes its turn: nothing posted since, or
@@ -1895,7 +1901,10 @@ class AgentMessageService {
       const failureForPerson = failureNotice === true && personWaiting === true;
       // A long answer reaches the cap on its own, and then the cut-off line is
       // the one post the person still needs (F279).
-      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
+      // A kernel post is Commonly speaking under the seat, not the seat holding
+      // the floor either (F447). Only server code sets authorKind; the runtime
+      // route does not forward it, so an agent cannot claim this.
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine || authorKind === 'kernel')
         ? 0 : AgentMessageService.resolveConsecutiveRunCap((pod as { agentRunCap?: unknown } | null)?.agentRunCap);
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id, runCap);

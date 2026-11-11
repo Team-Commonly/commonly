@@ -406,3 +406,55 @@ describe('a permanent refusal thrown by the message service (F180 HOLD, LOW)', (
     expect(error).toMatchObject({ code: 'approval_unavailable', statusCode: 503 });
   });
 });
+
+// F447: Commonly's own posts under the seat (author_kind 'kernel': the
+// stalled-connect nudge and resolution, run-failed notices, the hosted intro)
+// are not the seat holding the floor. A stalled seat's room can hold several
+// before the seat ever speaks, and the resolution was refused behind them.
+describe('kernel posts and the run cap (F447)', () => {
+  const kernelPost = (content) => AgentMessageService.postMessage({
+    agentName: 'alice', instanceId: 'default', podId: String(pod._id), content, authorKind: 'kernel',
+  });
+
+  test('a kernel post goes out though the seat holds the floor', async () => {
+    for (const text of ['one', 'two', 'three']) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await agentPost(text)).status).toBe(200);
+    }
+    expect((await agentPost('four')).body).toMatchObject({ reason: 'consecutive_run_cap' });
+    const resolved = await kernelPost('Your agent is connected now.');
+    expect(resolved.reason).toBeUndefined();
+    const row = (await stored()).find((m) => m.content === 'Your agent is connected now.');
+    expect(row).toMatchObject({ authorKind: 'kernel' });
+  });
+
+  test('kernel posts do not count toward the seat\'s own run', async () => {
+    for (const text of ['Still waiting for your agent.', 'A new token was issued.', 'Still waiting, second try.']) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await kernelPost(text)).reason).toBeUndefined();
+    }
+    // The kernel lines are unseen by the seat, so its sends would be held
+    // (409 unseen_messages) until it reads; that hold is not what this tests.
+    for (const text of ['one', 'two', 'three']) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await agentPost(text, { continueAnyway: true });
+      expect(res.status).toBe(200);
+      expect(res.body.reason).toBeUndefined();
+    }
+    // Three of the seat's own posts in a row: the cap still holds it.
+    expect((await agentPost('four', { continueAnyway: true })).body).toMatchObject({ reason: 'consecutive_run_cap' });
+    expect(await AgentMessageService.holdsFloor(pod._id, seat._id, 'chat')).toBe(true);
+  });
+
+  test('a runtime post that claims to be kernel is still capped and stored as the agent\'s', async () => {
+    for (const text of ['one', 'two', 'three']) {
+      // eslint-disable-next-line no-await-in-loop
+      await agentPost(text);
+    }
+    const before = (await stored()).length;
+    const forged = await agentPost('Commonly says I may keep going.', { authorKind: 'kernel', author_kind: 'kernel' });
+    expect(forged.body).toMatchObject({ reason: 'consecutive_run_cap' });
+    expect((await stored()).length).toBe(before);
+    expect((await stored()).every((m) => m.authorKind !== 'kernel')).toBe(true);
+  });
+});
