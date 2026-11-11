@@ -397,7 +397,6 @@ module.exports = {
   mayChangeRelaySettings,
   findBoundRows,
   resetSummaryCooldowns,
-  SUMMARY_COOLDOWN_MS,
   renderDiscordTldr,
   handleDiscordRelayCommand,
 };

@@ -636,6 +636,6 @@ async function runLocked(
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD, GHOST_FLOOR_RATIO, GHOST_FLOOR_MIN, PAGE_TIMEOUT_MS,
+  runPgMirrorRepair, LOCK_KEYS, PAGE_TIMEOUT_MS,
   selectStoredKeys,
 };

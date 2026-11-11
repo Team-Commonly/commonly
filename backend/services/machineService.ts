@@ -372,7 +372,6 @@ export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTo
 module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
   MAX_MACHINES_PER_OWNER,
-  MAX_REPORTED_AGENT_STATES,
   normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,

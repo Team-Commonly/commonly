@@ -12,7 +12,7 @@ mkdir -p <dir> && git archive HEAD backend frontend package.json | tar -x -C <di
 
 Write the config into the copy, so the counts can be compared with the next run. These are the configs batch 2 used, with `npx -y knip@5 --include exports,types --reporter json` in a `node:22` container capped at 4 GB:
 
-```json
+```jsonc
 // backend/knip.json
 {
   "entry": ["server.ts", "scripts/**/*.{js,ts}", "migrations/**/*.{js,ts}", "seed/**/*.{js,ts}", "instrument.ts", "__tests__/**/*.{js,ts}"],
