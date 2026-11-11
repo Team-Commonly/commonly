@@ -32,6 +32,14 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Playwright's image ships Chromium and its system deps, so the job never
+    # runs apt. `playwright install --with-deps` did, and an Ubuntu mirror
+    # outage on 2026-11-11 failed every E2E run for hours (F431). The tag must
+    # match the @playwright/test version in package-lock.json; the first step
+    # below fails fast if they drift. Bump the tag and digest together.
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble@sha256:3bed4b1a12f2338642f3d8cba28e291deef3c66bd4a964bbeb3e57bbff511dbd
+      options: --ipc=host
 
     services:
       mongo:
@@ -59,8 +67,9 @@ jobs:
     env:
       JWT_SECRET: e2e-test-jwt-secret
       FRONTEND_URL: http://localhost:5173
-      MONGO_URI: mongodb://localhost:27017/commonly-e2e
-      PG_HOST: localhost
+      # Inside a job container, services are reached by name, not localhost.
+      MONGO_URI: mongodb://mongo:27017/commonly-e2e
+      PG_HOST: postgres
       PG_PORT: "5432"
       PG_DATABASE: commonly
       PG_USER: postgres
@@ -89,23 +98,26 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
 
-      # --with-deps runs apt-get update, and the Ubuntu index fetch fails
-      # transiently (exit 100) often enough to cost reruns (F431). Retry with
-      # backoff before failing the job.
-      - name: Install Playwright browsers
+      # The browsers come from the container image. If @playwright/test moves
+      # off the image's version, the tests would fail later with a missing
+      # browser, so stop here with the fix instead.
+      - name: Check Playwright matches the container image
         run: |
-          for attempt in 1 2 3 4; do
-            npx playwright install chromium --with-deps && exit 0
-            [ "$attempt" -eq 4 ] && exit 1
-            echo "::warning::playwright install failed (attempt $attempt/4); retrying in $((attempt * 20))s"
-            sleep $((attempt * 20))
-          done
+          want=$(node -p "require('./node_modules/@playwright/test/package.json').version")
+          if [ "$want" != "1.57.0" ]; then
+            echo "::error::@playwright/test is $want but the job container is v1.57.0; bump the container tag and digest in playwright.yml"
+            exit 1
+          fi
 
       - name: Start backend
         run: |
           cd backend
           npm run build
-          node dist/server.js &
+          # In a container job each step is its own `docker exec`, and a plain
+          # `&` child doesn't reliably outlive it: the backend passed wait-on,
+          # then refused connections by the time the tests ran (F431). Detach
+          # it into its own session and keep its log for the failure dump.
+          setsid nohup node dist/server.js > /tmp/backend.log 2>&1 < /dev/null &
           echo $! > /tmp/backend.pid
 
       - name: Wait for backend
@@ -117,7 +129,7 @@ jobs:
       - name: Start frontend preview
         run: |
           cd frontend
-          npx vite preview --port 5173 --host &
+          setsid nohup npx vite preview --port 5173 --host > /tmp/frontend.log 2>&1 < /dev/null &
           echo $! > /tmp/frontend.pid
 
       - name: Wait for frontend
@@ -126,9 +138,22 @@ jobs:
       - name: Run Playwright tests
         run: npx playwright test --project=chromium
 
+      - name: Server logs on failure
+        if: failure()
+        run: |
+          for f in /tmp/backend.log /tmp/frontend.log; do
+            echo "::group::$f"; tail -n 200 "$f" 2>/dev/null || echo "(missing)"; echo "::endgroup::"
+          done
+          for f in /tmp/backend.pid /tmp/frontend.pid; do
+            pid=$(cat "$f" 2>/dev/null) && { kill -0 "$pid" 2>/dev/null && echo "$f: $pid alive" || echo "$f: $pid gone"; }
+          done
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            /tmp/backend.log
+            /tmp/frontend.log
           retention-days: 7
