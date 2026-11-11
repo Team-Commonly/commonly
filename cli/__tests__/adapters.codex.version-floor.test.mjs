@@ -207,25 +207,60 @@ describe('a Windows launch that cannot be resolved', () => {
   });
 });
 
-describe('an internal seat keeps working on any version', () => {
+// F387: a private seat keeps its own execution policy only in a cloud-codex pod
+// or when its operator opted the run out (D245). Anywhere else it runs under
+// the private permission profile, whose keys need the same tested version.
+const podEnv = () => ({
+  PATH: '/nonexistent', HOME: root, CODEX_HOME: join(root, 'operator'), COMMONLY_CODEX_TRUSTED_PERIMETER: '1',
+});
+
+describe('a private seat that keeps its own policy works on any version', () => {
   test.each([
     ['0.100.0'],
     ['0.149.1'],
     [null],
     ['unknown'],
-  ])('%s runs the turn', async (version) => {
-    const { error, calls } = await runSeat({ sandbox: null, version });
+  ])('in a cloud-codex pod, %s runs the turn', async (version) => {
+    const { error, calls } = await runSeat({ sandbox: null, version, env: podEnv() });
+    expect(error).toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+
+  test('opted out by its operator, an old version runs the turn', async () => {
+    const { error, calls } = await runSeat({ sandbox: null, version: '0.149.1', hostUnconfined: true });
     expect(error).toBeUndefined();
     expect(calls).toHaveLength(1);
   });
 
   test('it never asks for the version, so a broken probe costs it nothing', async () => {
     const { path, probes } = await fakeCodex('exit 1');
-    const { error, calls } = await runSeat({ sandbox: null, path });
+    const { error, calls } = await runSeat({ sandbox: null, path, env: { ...podEnv(), PATH: path } });
     expect(error).toBeUndefined();
     expect(calls).toHaveLength(1);
     expect(await probes()).toBe(0);
   });
+});
+
+describe('a private seat under its permission profile needs a tested Codex version', () => {
+  test.each([
+    ['0.159.2'],
+    ['0.149.1'],
+    [null],
+  ])('%s refuses the turn before Codex runs', async (version) => {
+    const { error, calls } = await runSeat({ sandbox: null, version });
+    expect(error?.code).toBe(PUBLIC_CODEX_VERSION_CODE);
+    expect(error?.message).toMatch(/^private seat refused this turn/);
+    expect(calls).toEqual([]);
+  });
+
+  test('the floor version runs the turn', async () => {
+    const { error, calls } = await runSeat({ sandbox: null, version: PUBLIC_CODEX_MIN_VERSION });
+    expect(error).toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe('a legacy trust value', () => {
 
   test('a legacy trust value resolves to public, so it is held to the floor', async () => {
     const { error, calls } = await runSeat({ sandbox: { trust: 'internal' }, version: '0.149.1' });

@@ -187,7 +187,57 @@ describe('hostSandboxRefusal', () => {
       expect(seat('opencode', refused(true))).not.toContain(PROFILE);
     });
 
-    test('a Codex seat is checked only when public, and a missing bubblewrap stays Codex\'s to report', () => {
+    // F387: a private Codex seat outside a cloud-codex pod would run under the
+    // private permission profile, whose denies Codex can't start under on Linux
+    // yet (its helper runs from ~/.codex, and a denied ancestor wins there). So
+    // it is refused by default, whatever bubblewrap says, unless the person ran
+    // it unconfined by their own --unsandboxed, as on Windows.
+    describe('a private Codex seat on Linux', () => {
+      const privateSeat = (extra = {}) => hostSandboxRefusal({
+        environment: {}, adapterName: 'codex', platform: 'linux', detectBwrap: never, detectSeatbelt: never, env: {}, ...extra,
+      });
+
+      test('is refused by default, before the first poll, with the opt-in, a Mac and the hosted route', () => {
+        const message = privateSeat();
+        expect(message).toMatch(/^A private Codex agent runs inside a sandbox that keeps your other credentials out of its reach, and that sandbox is not ready on Linux yet,/);
+        expect(message).toContain('In invite-only pods, run it without a sandbox: commonly agent run <name> --unsandboxed.');
+        expect(message).toMatch(/Nothing confines it: it runs with your own access to files and commands, anyone in the pod,/);
+        expect(message).toContain('and it gets no connector grants.');
+        expect(message).toContain('Run it on a Mac');
+        expect(message).toContain(ROUTE);
+        // The daemon's marker stays Windows-only, so only `agent run` is named.
+        expect(message).not.toContain('daemon install');
+      });
+
+      test('a seat with no sandbox block is refused the same, and a working bubblewrap does not lift it', () => {
+        expect(hostSandboxRefusal({
+          environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: available, env: {},
+        })).toBe(privateSeat());
+      });
+
+      test('runs when the person opted it out of the sandbox with every pod confirmed private', () => {
+        expect(privateSeat({ hostUnconfined: true, optedIn: true })).toBeNull();
+      });
+
+      test('opted in but a pod rules it out: told why, and not offered the flag again', () => {
+        const message = privateSeat({ optedIn: true });
+        expect(message).toMatch(/^A pod this agent answers in is publicly readable or open to join, or did not report whether it is,/);
+        expect(message).not.toContain('--unsandboxed');
+        expect(message).toContain(ROUTE);
+      });
+
+      test('in a cloud-codex pod it is never checked: the pod keeps its own policy', () => {
+        expect(privateSeat({ env: { COMMONLY_CODEX_TRUSTED_PERIMETER: '1' } })).toBeNull();
+        // Only the exact value counts.
+        expect(privateSeat({ env: { COMMONLY_CODEX_TRUSTED_PERIMETER: 'yes' } })).toMatch(/not ready on Linux yet/);
+      });
+
+      test('a workspace seat stays Codex\'s own to refuse', () => {
+        expect(privateSeat({ environment: { sandbox: { trust: 'workspace' } } })).toBeNull();
+      });
+    });
+
+    test('a public Codex seat is checked for a refused namespace, and a missing bubblewrap stays Codex\'s to report', () => {
       expect(seat('codex', available)).toBeNull();
       expect(hostSandboxRefusal({
         environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'linux', detectBwrap: refused(false),
@@ -283,7 +333,12 @@ describe('hostSandboxRefusal', () => {
   test('Codex on a Mac, or on a Linux host that starts a sandbox, is left alone', () => {
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin', detectBwrap: never })).toBeNull();
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux', detectBwrap: available })).toBeNull();
-    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: never })).toBeNull();
+    // F387: a seat with no sandbox block is private, and on Linux that is
+    // refused by default (see 'a private Codex seat on Linux'), unless its
+    // person opted it out.
+    expect(hostSandboxRefusal({
+      environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: available, hostUnconfined: true, env: {},
+    })).toBeNull();
   });
 
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {
@@ -482,6 +537,121 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
     expect(exitSentinel.code).toBe(1);
     expect(printed(errorSpy)).toContain("could not read whether this agent's pods are private");
     expect(printed(warnSpy)).not.toContain('nothing confines this agent');
+  });
+});
+
+// F387: a private Codex agent on Linux has no sandbox ready yet, so it is
+// refused by default and runs only by its person's own --unsandboxed, under the
+// same rules as Windows: every pod confirmed private, the server told first.
+describe('agent run: a private Codex agent on Linux, refused unless opted in (F387)', () => {
+  const privatePod = {
+    type: 'installation', podId: 'pod-1', instanceId: 'default', status: 'active',
+    publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+  };
+  const exitSentinel = new Error('process.exit called');
+  const recordPath = (seat) => path.join(homeTmpDir, '.commonly', 'tokens', `${seat}.json`);
+  let platform; let exitSpy; let errorSpy; let warnSpy; let logSpy; let before;
+  const savedPerimeter = process.env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+  const saveSeat = (seat, adapter, environment) => saveAgentToken(seat, {
+    agentName: seat,
+    podId: 'pod-1',
+    instanceUrl: 'https://api.commonly.me',
+    runtimeToken: 'cm_agent_test',
+    adapter,
+    workspacePath: null,
+    environment,
+  });
+
+  beforeEach(() => {
+    delete process.env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    saveSeat('byo-codex-linux', 'codex', { model: 'gpt-5.1-codex' });
+    before = fs.readFileSync(recordPath('byo-codex-linux'));
+    platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation((code) => {
+      exitSentinel.code = code;
+      throw exitSentinel;
+    });
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    for (const spy of [exitSpy, errorSpy, warnSpy, logSpy]) spy.mockRestore();
+    createClientMock.mockReset();
+    fs.rmSync(recordPath('byo-codex-linux'), { force: true });
+    fs.rmSync(recordPath('byo-claude-linux'), { force: true });
+    if (savedPerimeter === undefined) delete process.env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    else process.env.COMMONLY_CODEX_TRUSTED_PERIMETER = savedPerimeter;
+  });
+
+  const run = async (seat, args, rejection) => {
+    const program = new Command();
+    program.exitOverride();
+    registerAgent(program);
+    const running = program.parseAsync(['agent', 'run', seat, ...args], { from: 'user' });
+    if (rejection === exitSentinel) await expect(running).rejects.toBe(exitSentinel);
+    else await expect(running).rejects.toThrow(rejection);
+  };
+  const printed = (spy) => spy.mock.calls.map((call) => call.join(' ')).join('\n');
+  const hostReport = jest.fn().mockResolvedValue({ hostUnconfined: true });
+  const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result, post: hostReport });
+  beforeEach(() => hostReport.mockClear());
+
+  test('no flag: refused before a poll, the pods are not read, and the line names the flag, a Mac and the hosted route', async () => {
+    await run('byo-codex-linux', [], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).not.toHaveBeenCalled();
+    const stderr = printed(errorSpy);
+    expect(stderr).toContain('that sandbox is not ready on Linux yet');
+    expect(stderr).toContain('commonly agent run <name> --unsandboxed');
+    expect(stderr).toContain('Run it on a Mac');
+    expect(stderr).toContain('choose "Run it here"');
+    expect(printed(warnSpy)).not.toContain('unsandboxed (opted in)');
+  });
+
+  test('the flag with every pod private: the server is told, the Linux notice prints, and the record is untouched', async () => {
+    podsRead(jest.fn().mockResolvedValue({ installations: [privatePod] }));
+    createClientMock.mockImplementation(() => { throw new Error('reached the poll loop'); });
+    await run('byo-codex-linux', ['--unsandboxed'], 'reached the poll loop');
+    expect(hostReport).toHaveBeenCalledWith('/api/agents/runtime/host-unconfined', {});
+    const warned = printed(warnSpy);
+    expect(warned).toContain('not ready on Linux yet, so nothing confines this agent');
+    expect(warned).toContain('no connector grants');
+    expect(warned).not.toContain('Windows');
+    expect(fs.readFileSync(recordPath('byo-codex-linux')).equals(before)).toBe(true);
+  });
+
+  test.each([
+    ['open to join', [{ ...privatePod, joinPolicy: 'open' }]],
+    ['publicly readable', [{ ...privatePod, publicRead: true }]],
+    ['no pods', []],
+  ])('the flag with a pod that is %s: refused without naming the flag again', async (_label, installations) => {
+    podsRead(jest.fn().mockResolvedValue({ installations }));
+    await run('byo-codex-linux', ['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain('publicly readable or open to join');
+    expect(printed(errorSpy)).not.toContain('--unsandboxed');
+    expect(hostReport).not.toHaveBeenCalled();
+  });
+
+  test('the flag when the pods cannot be read: it does not start', async () => {
+    podsRead(jest.fn().mockRejectedValue(new Error('offline')));
+    await run('byo-codex-linux', ['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain("could not read whether this agent's pods are private");
+  });
+
+  test('the flag is refused for any other agent on Linux, before its pods are read', async () => {
+    saveSeat('byo-claude-linux', 'claude', { model: 'claude-haiku-5-5', sandbox: { trust: 'public' } });
+    await run('byo-claude-linux', ['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).not.toHaveBeenCalled();
+    expect(printed(errorSpy)).toContain('is only for native Windows');
+    expect(printed(errorSpy)).toContain('of a private Codex agent on Linux');
   });
 });
 

@@ -285,6 +285,15 @@ spec:
           echo "[cloud-codex] config.toml seeded for LiteLLM provider; starting commonly agent run ${COMMONLY_AGENT_NAME}"
           exec /tools/bin/commonly agent run "${COMMONLY_AGENT_NAME}"
         env:
+        # F387 (TASK-280): this pod is the boundary. Agent identity is
+        # isolated, the workspace is PVC-scoped, there are no host mounts, and
+        # bwrap cannot run in a standard k8s container, so the codex adapter
+        # keeps the pod's execution policy here. A private codex seat anywhere
+        # else leaves this unset and gets a deny-by-default permission profile.
+        # Scale-up gate: the next time any cloud-codex deployment scales above
+        # 0 replicas, run the pod smoke first (a shell tool call succeeds).
+        - name: COMMONLY_CODEX_TRUSTED_PERIMETER
+          value: "1"
         - name: COMMONLY_AGENT_NAME
           value: {{ $name | quote }}
         - name: COMMONLY_REGISTRY_AGENT_NAME

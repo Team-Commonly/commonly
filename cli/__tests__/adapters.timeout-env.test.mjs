@@ -62,6 +62,8 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     const adapter = (await import(adapterPath)).default;
     const ctx = {
       environment: { model: 'test-model' },
+      // A private Codex seat is version-gated (F387); CI has no codex binary.
+      _codexVersion: '0.162.1',
       _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
@@ -101,6 +103,8 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     // throwing.
     const ctx = {
       environment: { model: 'test-model' },
+      // A private Codex seat is version-gated (F387); CI has no codex binary.
+      _codexVersion: '0.162.1',
       _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
@@ -135,6 +139,8 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     };
     const ctx = {
       environment: { model: 'test-model' },
+      // A private Codex seat is version-gated (F387); CI has no codex binary.
+      _codexVersion: '0.162.1',
       _spawnImpl: () => neverResolvingChild,
       env: { ...process.env },
       cwd: process.cwd(),

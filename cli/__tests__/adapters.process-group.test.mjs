@@ -39,7 +39,7 @@ const POSIX = process.platform !== 'win32';
 describe.each(ADAPTERS)('%s adapter — process group', (name, adapter) => {
   test('unsupervised: spawns with exactly cwd, env and stdio, no detached, no marker', async () => {
     const { impl, calls } = makeSpawnImpl();
-    await adapter.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+    await adapter.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, _codexVersion: '0.162.1' });
     expect(calls).toHaveLength(1);
     expect(Object.keys(calls[0].opts).sort()).toEqual(['cwd', 'env', 'stdio']);
     expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
@@ -49,7 +49,7 @@ describe.each(ADAPTERS)('%s adapter — process group', (name, adapter) => {
   (POSIX ? test : test.skip)('supervised: spawns detached and marks the child as leading its group', async () => {
     const { impl, calls } = makeSpawnImpl();
     await adapter.spawn('hi', {
-      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, [OWN_PROCESS_GROUP]: true,
+      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, _codexVersion: '0.162.1', [OWN_PROCESS_GROUP]: true,
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].opts.detached).toBe(true);
@@ -60,7 +60,7 @@ describe.each(ADAPTERS)('%s adapter — process group', (name, adapter) => {
   test('a truthy non-true value does not opt in', async () => {
     const { impl, calls } = makeSpawnImpl();
     await adapter.spawn('hi', {
-      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, [OWN_PROCESS_GROUP]: 'yes',
+      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, _codexVersion: '0.162.1', [OWN_PROCESS_GROUP]: 'yes',
     });
     expect(calls[0].opts).not.toHaveProperty('detached');
   });

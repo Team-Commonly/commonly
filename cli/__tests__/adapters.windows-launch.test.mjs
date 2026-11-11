@@ -186,8 +186,10 @@ describe('codex adapter on Windows', () => {
 
   test('spawn() launches codex.exe directly, no shell, prompt verbatim as the last element', async () => {
     const { impl, calls } = recorder({ stdout: '{"type":"turn.completed"}\n', codexOutput: 'ok' });
+    // A private Codex seat runs on native Windows only by its operator's D245
+    // opt-in (F387), which the run hands the adapter as hostUnconfined.
     await codex.spawn(INJECTION, {
-      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl,
+      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, hostUnconfined: true,
       _commandResolution: windows(),
     });
     const { cmd, args, opts } = calls[0];
@@ -202,7 +204,7 @@ describe('codex adapter on Windows', () => {
     const codexJs = `${NPM}\\node_modules\\@openai\\codex\\bin\\codex.js`;
     const { impl, calls } = recorder({ stdout: '{"type":"turn.completed"}\n', codexOutput: 'ok' });
     await codex.spawn('hi', {
-      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl,
+      environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, hostUnconfined: true,
       _commandResolution: {
         ...windows(),
         ...fakeFs({ ...WIN_FILES, [`${NPM}\\codex.cmd`]: currentJsShim('node_modules\\@openai\\codex\\bin\\codex.js'), [codexJs]: '' }),
@@ -219,7 +221,7 @@ describe('codex adapter on Windows', () => {
     await codex.spawn('hi', {
       environment: { model: 'test-model', mcp: [COMMONLY_MCP()] },
       sessionId: null, _spawnImpl: impl, runtimeToken: 'cm_agent_test', instanceUrl: 'https://api.example.test',
-      _commandResolution: windows(),
+      hostUnconfined: true, _commandResolution: windows(),
     });
     const flags = mcpFlags(calls[0].args);
     expect(flags).toContain(`mcp_servers.commonly.command=${JSON.stringify(NODE)}`);
@@ -231,6 +233,7 @@ describe('codex adapter on Windows', () => {
     await codex.spawn('hi', {
       environment: { model: 'test-model', mcp: [COMMONLY_MCP()] },
       sessionId: null, _spawnImpl: impl, runtimeToken: 'cm_agent_test', instanceUrl: 'https://api.example.test',
+      _codexVersion: '0.162.1',
       _commandResolution: { platform: 'linux' },
     });
     expect(calls[0].cmd).toBe('codex');
