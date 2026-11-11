@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
-import { validateEnvironmentSpec } from '../src/lib/environment.js';
+import { providerRefusal, validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -715,13 +715,13 @@ describe('opencode external provider config', () => {
         models: { 'claude-haiku-5-5': { name: 'claude-haiku-5-5' } },
       },
     });
-    expect(opencode.providerApis).toEqual(['openai-chat', 'anthropic-messages']);
+    expect(opencode.providerApis).toEqual(['openai-chat', 'anthropic-messages', 'google']);
     expect(validateEnvironmentSpec({ provider: {
       id: 'a', baseURL: 'https://api.anthropic.com', keyFile: '/k', api: 'anthropic-messages',
     }, model: 'claude-haiku-5-5' }).ok).toBe(true);
     expect(validateEnvironmentSpec({ provider: {
       id: 'a', baseURL: 'https://api.anthropic.com', keyFile: '/k', api: 'responses',
-    } }).errors).toContain('provider.api must be one of openai-chat, anthropic-messages');
+    } }).errors).toContain('provider.api must be one of openai-chat, anthropic-messages, google');
 
     await withTemp(async (root) => {
       const keyFile = join(root, 'provider-key');
@@ -860,9 +860,31 @@ describe('opencode external provider config', () => {
     });
   });
 
-  // OpenCode 1.18.35 and 1.19.0 replay Gemini thought signatures natively.
-  // Private seats can use the same direct provider path as other private seats.
-  test('a private Gemini seat uses its provider directly', async () => {
+  // provider.api "google": Gemini's own API through OpenCode's @ai-sdk/google,
+  // which carries Gemini 3's thought signatures from one tool call to the next.
+  test('google: @ai-sdk/google at the configured API root, key by file', () => {
+    expect(buildProviderConfig({
+      id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta', api: 'google',
+    }, 'gemini-3.6-flash', '/private/keys/gemini')).toEqual({
+      gemini: {
+        npm: '@ai-sdk/google',
+        options: { baseURL: 'https://generativelanguage.googleapis.com/v1beta', apiKey: '{file:/private/keys/gemini}' },
+        models: { 'gemini-3.6-flash': { name: 'gemini-3.6-flash' } },
+      },
+    });
+    // The default is unchanged.
+    expect(buildProviderConfig({ id: 'x', baseURL: 'https://api.example.com/v1' }, 'm', '/k').x.npm)
+      .toBe('@ai-sdk/openai-compatible');
+  });
+
+  const geminiEnvironment = (keyFile, extra = {}) => ({
+    model: 'gemini-3.6-flash',
+    provider: {
+      id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta', keyFile, api: 'google', ...extra,
+    },
+  });
+
+  test('a private Gemini seat on provider.api google writes @ai-sdk/google and never inlines the key', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'gemini-key');
@@ -871,22 +893,23 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'gemini-secret-never-inline');
       await chmod(keyFile, 0o600);
       const spawn = makeSpawnImpl({
-        onCall: (_cmd, _args, options) => {
-          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
-          const { baseURL, apiKey } = config.provider.google.options;
-          expect(baseURL).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
-          expect(apiKey).toBe(`{file:${realpathSync(keyFile)}}`);
+        onCall: (_cmd, args, options) => {
+          const configText = readFileSync(options.env.OPENCODE_CONFIG, 'utf8');
+          const config = JSON.parse(configText);
+          expect(config.provider.gemini.npm).toBe('@ai-sdk/google');
+          expect(config.provider.gemini.options).toEqual({
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+            apiKey: `{file:${realpathSync(keyFile)}}`,
+          });
+          expect(args).toContain('gemini/gemini-3.6-flash');
+          expect(configText).not.toContain('gemini-secret-never-inline');
+          expect(Object.values(options.env)).not.toContain('gemini-secret-never-inline');
         },
       });
       await opencode.spawn('gemini turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
-        environment: {
-          model: 'gemini-3-flash-preview',
-          provider: {
-            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
-          },
-        },
+        environment: geminiEnvironment(keyFile),
         _binaryPath: '/usr/local/bin/opencode',
         _spawnImpl: spawn.impl,
       });
@@ -895,35 +918,56 @@ describe('opencode external provider config', () => {
   });
 
   test.each([
-    ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
-    ['boundary prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
-    ['later patch prerelease', { status: 0, stdout: 'OpenCode 1.18.36-rc.1\n' }, '1.18.36-rc.1'],
-    ['later minor prerelease', { status: 0, stdout: 'OpenCode 1.19.0-rc.1\n' }, '1.19.0-rc.1'],
-    ['unknown', { status: 1, stdout: '' }, 'unknown'],
-  ])('a private Gemini seat refuses %s OpenCode before spawning', async (_label, result, version) => {
+    ['public', { trust: 'public', mode: 'workspace' }],
+    ['legacy internal (resolves to public)', { trust: 'internal', mode: 'workspace' }],
+  ])('a %s seat refuses provider.api google at attach and before spawning', async (_label, sandbox) => {
+    const environment = { ...geminiEnvironment('/keys/gemini'), sandbox };
+    expect(providerRefusal(environment, opencode)).toMatch(/provider\.api "google" is for private OpenCode seats/);
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
-      const keyFile = join(root, 'secrets', 'gemini-key');
       await mkdir(workspace, { recursive: true });
-      await mkdir(join(root, 'secrets'), { recursive: true });
-      await writeFile(keyFile, 'gemini-test-key');
-      await chmod(keyFile, 0o600);
-      spawnSyncMock.mockReturnValue(result);
       const spawn = makeSpawnImpl();
       await expect(opencode.spawn('gemini turn', {
-        cwd: workspace,
-        env: { PATH: process.env.PATH },
-        environment: {
-          model: 'gemini-3-flash-preview',
-          provider: {
-            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
-          },
-        },
-        _binaryPath: '/usr/local/bin/opencode',
-        _spawnImpl: spawn.impl,
-      })).rejects.toThrow(`Gemini requires stable OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
+        cwd: workspace, env: { PATH: process.env.PATH }, environment,
+        _binaryPath: '/usr/local/bin/opencode', _spawnImpl: spawn.impl,
+      })).rejects.toThrow(/is for private OpenCode seats/);
       expect(spawn.calls).toHaveLength(0);
     });
+  });
+
+  test('a private seat on provider.api google passes the shared provider check', () => {
+    expect(providerRefusal(geminiEnvironment('/keys/gemini'), opencode)).toBeNull();
+  });
+
+  // Gemini's OpenAI-compatible endpoint loses the signature, so the second
+  // tool call of a turn is refused upstream. Refuse it here, with the fix.
+  test.each([
+    ['no api', {}],
+    ['api openai-chat', { api: 'openai-chat' }],
+  ])('Gemini\'s OpenAI-compatible endpoint is refused (%s) at attach and before spawning', async (_label, extra) => {
+    const environment = {
+      model: 'gemini-3.6-flash',
+      provider: { id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyFile: '/keys/gemini', ...extra },
+    };
+    expect(providerRefusal(environment, opencode)).toMatch(/drops the thought signatures.*set provider\.api to "google"/);
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace, { recursive: true });
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('gemini turn', {
+        cwd: workspace, env: { PATH: process.env.PATH }, environment,
+        _binaryPath: '/usr/local/bin/opencode', _spawnImpl: spawn.impl,
+      })).rejects.toThrow(/drops the thought signatures/);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
+  test('other adapters refuse provider.api google', async () => {
+    const environment = geminiEnvironment('/keys/gemini');
+    for (const name of ['pi', 'qwen', 'dsh', 'goose']) {
+      const { default: adapter } = await import(`../src/lib/adapters/${name}.js`);
+      expect(providerRefusal(environment, adapter)).toMatch(/cannot use provider\.api "google"/);
+    }
   });
 
   test('refuses provider keys with unsafe paths before spawning', async () => {

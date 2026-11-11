@@ -3240,6 +3240,52 @@ describe('performRun', () => {
     expect(seenSessionIds).toEqual([null, null, 'session-2']);
   });
 
+  test('OpenCode starts a fresh session when only provider.api changes; the default api keeps the old binding', async () => {
+    let eventNumber = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
+      eventNumber += 1;
+      return { events: [makeEvent({ _id: `api-turn-${eventNumber}` })] };
+    });
+    createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: jest.fn().mockResolvedValue({}) }));
+    const seenSessionIds = [];
+    const adapter = {
+      name: 'opencode',
+      supportsProvider: true,
+      providerApis: ['openai-chat', 'google'],
+      detect: stubAdapter.detect,
+      spawn: jest.fn(async (_prompt, ctx) => {
+        seenSessionIds.push(ctx.sessionId);
+        return { text: 'ok', newSessionId: `api-session-${seenSessionIds.length}` };
+      }),
+    };
+    const runWithApi = async (api) => {
+      const run = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter,
+        agentName: 'my-stub',
+        environment: { provider: {
+          id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta', keyFile: '/keys/gemini',
+          ...(api ? { api } : {}),
+        } },
+        setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      run.stop();
+    };
+
+    await runWithApi(undefined);
+    await runWithApi('openai-chat');
+    await runWithApi('google');
+    await runWithApi('google');
+    // No api and openai-chat bind the same session; google starts its own.
+    expect(seenSessionIds).toEqual([null, 'api-session-1', null, 'api-session-3']);
+  });
+
   test('clearSessions removes persisted session ids for an agent', async () => {
     setSession('my-stub', 'pod-a', 'sid-a');
     setSession('my-stub', 'pod-b', 'sid-b');

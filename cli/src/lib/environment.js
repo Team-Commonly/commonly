@@ -193,7 +193,9 @@ export const environmentForServer = (environment) => {
 
 // ── validateEnvironmentSpec ─────────────────────────────────────────────────
 
-export const PROVIDER_APIS = Object.freeze(['openai-chat', 'anthropic-messages']);
+// `google` is Gemini's own API (generateContent), which carries Gemini 3's
+// thought signatures; its OpenAI-compatible endpoint loses them (docs/cli/opencode.md).
+export const PROVIDER_APIS = Object.freeze(['openai-chat', 'anthropic-messages', 'google']);
 
 // One provider check for config, attach, run and the daemon's adapter swap: the adapter must take a
 // provider block at all, and speak its `provider.api` (default openai-chat). An adapter's
