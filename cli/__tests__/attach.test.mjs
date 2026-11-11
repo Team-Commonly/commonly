@@ -545,8 +545,20 @@ describe('performAttach', () => {
     client.get.mockResolvedValueOnce({});
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
       .rejects.toThrow(/confirmed private pod visibility/);
+    // Confined dsh needs only a pod that is not public.
+    const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
     client.get.mockResolvedValueOnce({ publicRead: false, communityListed: false });
-    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-private', adapterName: 'dsh' }))
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'pod-private', adapterName: 'dsh', environment: confined,
+    })).resolves.toBeUndefined();
+  });
+
+  test('an unconfined dsh runs as its owner, so it also needs the pod invite-only', async () => {
+    const client = { get: jest.fn(async () => ({ name: 'Team', publicRead: false, communityListed: false, joinPolicy: 'open' })) };
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-team', adapterName: 'dsh' }))
+      .rejects.toThrow(/"Team" is open to join/);
+    client.get.mockResolvedValue({ publicRead: false, communityListed: false, joinPolicy: 'invite-only' });
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-team', adapterName: 'dsh' }))
       .resolves.toBeUndefined();
   });
 

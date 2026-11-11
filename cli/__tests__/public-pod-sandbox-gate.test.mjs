@@ -104,13 +104,19 @@ describe('public-pod sandbox gate', () => {
     expect(client.get).not.toHaveBeenCalled();
   });
 
-  test('allows bwrap without a trust field — that IS confinement', async () => {
+  test('allows claude bwrap without a trust field — that IS confinement', async () => {
     // The old predicate required trust AND mode, so a genuinely confined
-    // `mode: 'bwrap'` seat was refused on a public pod. bwrap wraps the spawn
-    // whatever the trust says, and attach separately checks it is installed.
+    // `mode: 'bwrap'` seat was refused on a public pod. claude wraps the spawn
+    // in bwrap whatever the trust says, and attach separately checks it is installed.
     await expect(assertSandboxDeclaredForPublicPod({
-      client: clientFor(PUBLIC_POD), podId: 'p1', environment: { sandbox: { mode: 'bwrap' } },
+      client: clientFor(PUBLIC_POD), podId: 'p1', adapterName: 'claude', environment: { sandbox: { mode: 'bwrap' } },
     })).resolves.toBeUndefined();
+  });
+
+  test('refuses codex bwrap without a trust field: codex applies a mode only under a public trust', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(PUBLIC_POD), podId: 'p1', adapterName: 'codex', environment: { sandbox: { mode: 'bwrap' } },
+    })).rejects.toThrow(/publicly readable/);
   });
 
   test('leaves private pods alone — this gate is only about public exposure', async () => {
@@ -145,6 +151,15 @@ describe('public-pod sandbox gate', () => {
       .rejects.toThrow(message);
     await expect(assertSandboxDeclaredForPublicPod({ client: clientFor(pod), podId: 'p3', environment: null }))
       .rejects.toThrow(/anyone who joins could direct it with your own access/);
+  });
+
+  // A mode with no trust is spawned bare by claude and codex, so it is no
+  // sandbox here either.
+  test.each(['claude', 'codex'])('a %s seat with a sandbox mode but no trust needs a private pod', async (adapterName) => {
+    const pod = { name: 'Open pod', publicRead: false, communityListed: false, joinPolicy: 'open' };
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(pod), podId: 'p3', adapterName, environment: { sandbox: { mode: 'read-only' } },
+    })).rejects.toThrow(/"Open pod" is open to join/);
   });
 
   test('the same pod admits the agent once it declares a sandbox', async () => {

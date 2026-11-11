@@ -29,6 +29,7 @@ const {
   UNCONFINED_TURN_REFUSAL, seatRunsUnconfined, unconfinedPodRefusalReason,
 } = await import('../src/lib/unconfined-seat-guard.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
+const { isConfinedDsh } = await import('../src/lib/adapters/dsh.js');
 
 afterAll(() => fs.rmSync(sessionsTmpDir, { recursive: true, force: true }));
 
@@ -37,12 +38,39 @@ const OPEN = { ...PRIVATE, joinPolicy: 'open' };
 const LISTED = { ...PRIVATE, communityListed: true };
 
 describe('the rule', () => {
-  test('no sandbox, mode none and an empty block run unconfined; a declared trust or mode does not', () => {
-    for (const environment of [null, undefined, {}, { sandbox: {} }, { sandbox: { mode: 'none' } }]) {
-      expect(seatRunsUnconfined({ environment, adapterName: 'claude' })).toBe(true);
+  test('a public or workspace trust confines; a mode with no trust does not, and mode none never does', () => {
+    for (const adapterName of ['claude', 'codex', 'opencode']) {
+      for (const sandbox of [undefined, {}, { mode: 'none' }, { mode: 'read-only' }, { mode: 'workspace' },
+        { trust: 'public', mode: 'none' }, { trust: 'internal', mode: 'none' }]) {
+        expect(seatRunsUnconfined({ environment: sandbox ? { sandbox } : null, adapterName })).toBe(true);
+      }
+      for (const sandbox of [{ trust: 'public' }, { trust: 'workspace' }, { trust: 'internal' }, { trust: 'public', mode: 'read-only' }]) {
+        expect(seatRunsUnconfined({ environment: { sandbox }, adapterName })).toBe(false);
+      }
     }
-    for (const sandbox of [{ trust: 'public' }, { trust: 'workspace' }, { trust: 'internal' }, { mode: 'read-only' }]) {
-      expect(seatRunsUnconfined({ environment: { sandbox }, adapterName: 'claude' })).toBe(false);
+  });
+
+  test('claude wraps a trust-less bwrap mode; codex and opencode do not', () => {
+    const environment = { sandbox: { mode: 'bwrap' } };
+    expect(seatRunsUnconfined({ environment, adapterName: 'claude' })).toBe(false);
+    expect(seatRunsUnconfined({ environment, adapterName: 'codex' })).toBe(true);
+    expect(seatRunsUnconfined({ environment, adapterName: 'opencode' })).toBe(true);
+  });
+
+  test('dsh\'s confined shape is confined, and agrees with the adapter on every shape', () => {
+    const shapes = [
+      undefined,
+      { mode: 'workspace', network: { policy: 'restricted' } },
+      { mode: 'workspace' },
+      { mode: 'read-only', network: { policy: 'restricted' } },
+      { mode: 'workspace', network: { policy: 'restricted', allow: [] } },
+      { mode: 'workspace', network: { policy: 'restricted' }, extra: 1 },
+    ];
+    for (const sandbox of shapes) {
+      const environment = sandbox ? { sandbox } : {};
+      let confined;
+      try { confined = isConfinedDsh(environment); } catch { confined = false; }
+      expect(seatRunsUnconfined({ environment, adapterName: 'dsh' })).toBe(!confined);
     }
   });
 
@@ -56,9 +84,27 @@ describe('the rule', () => {
   test('only a list of confirmed-private pods runs; an empty, open, listed or unreadable one does not', () => {
     expect(unconfinedPodRefusalReason([PRIVATE])).toBeNull();
     expect(unconfinedPodRefusalReason(null)).toMatch(/could not be read/);
-    for (const pods of [[], [PRIVATE, OPEN], [LISTED], [{ podId: 'legacy', publicRead: false, communityListed: false }]]) {
-      expect(unconfinedPodRefusalReason(pods)).toMatch(/not confirmed private/);
+    expect(unconfinedPodRefusalReason([])).toMatch(/listed no pods/);
+    for (const pods of [[PRIVATE, OPEN], [LISTED], [{ podId: 'legacy', publicRead: false, communityListed: false }]]) {
+      expect(unconfinedPodRefusalReason(pods)).not.toBeNull();
     }
+  });
+
+  test('the reason names each pod that is not private, and why, so its owner knows which to change', () => {
+    expect(unconfinedPodRefusalReason([PRIVATE, { ...OPEN, podId: 'p-team', podName: 'Team' }]))
+      .toBe('"Team" (p-team) is open to join');
+    expect(unconfinedPodRefusalReason([{ ...LISTED, podId: 'p-hq', podName: 'HQ' }]))
+      .toBe('"HQ" (p-hq) is public or listed in Community');
+    expect(unconfinedPodRefusalReason([{ podId: 'p-old', joinPolicy: 'invite-only' }]))
+      .toBe('pod p-old did not report whether it is private');
+    const many = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ ...OPEN, podId: id, podName: id.toUpperCase() }));
+    expect(unconfinedPodRefusalReason([...many, many[0]])).toBe(
+      '"A" (a) is open to join; "B" (b) is open to join; "C" (c) is open to join; and 2 more',
+    );
+  });
+
+  test('the refusal says where the fix is', () => {
+    expect(UNCONFINED_TURN_REFUSAL).toMatch(/sets "Who can join" to Invite-only in its side panel/);
   });
 });
 
@@ -169,6 +215,14 @@ describe('before each turn of a seat with no sandbox', () => {
     expect(run.logs.join('\n')).toContain(UNCONFINED_TURN_REFUSAL);
     const reads = run.get.mock.calls.filter(([url]) => url === '/api/agents/runtime/installations');
     expect(reads.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the log names the pod; a mode with no trust is refused like no sandbox at all', async () => {
+    const run = setup({ environment: { sandbox: { mode: 'read-only' } }, podsPerTurn: [[{ ...OPEN, podName: 'Team' }]] });
+    await drain();
+    run.handle.stop?.();
+    expect(run.spawn).not.toHaveBeenCalled();
+    expect(run.logs.join('\n')).toContain('"Team" (pod-abc) is open to join');
   });
 
   test('a seat that declares a sandbox is not refused by this check', async () => {

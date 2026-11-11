@@ -313,7 +313,7 @@ describe('performRun: a Windows Codex run opted in on private pods (F187)', () =
       eventPayload: { requestId: 'ask-1', from: 'other-seat', question: 'can you check this?', prompt: 'can you check this?' },
     });
     expect(post).toHaveBeenCalledWith('/api/agents/runtime/asks/ask-1/respond', {
-      content: expect.stringContaining('this pod isn’t private'),
+      content: expect.stringContaining('isn’t private and invite-only'),
     });
   });
 
