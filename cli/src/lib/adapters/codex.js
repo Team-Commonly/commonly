@@ -784,8 +784,10 @@ const realOrSelf = (path) => {
 // databases write a `-wal` file during the turn that holds their newest rows,
 // other sessions' included, and SQLite removes it when the last connection
 // closes; so every database name, listed or known, takes its `-wal`, `-shm`
-// and `-journal` too, and globs cover a database or journal under a name
-// nobody listed (a glob is matched when each command's sandbox is built).
+// and `-journal` too. A database under a new name is listed, with those, from
+// the next turn. No globs: Codex's `*` crosses `/`, and a glob that matched a
+// file inside a folder already denied stopped every turn at start ("bwrap:
+// Can't create file at …: Read-only file system", run 43103991434).
 // `~/.codex` is denied whole when it isn't that home.
 const CODEX_HOME_SECRET_NAMES = Object.freeze([
   'auth.json', 'config.toml', 'sessions', 'archived_sessions', 'history.jsonl', 'log',
@@ -793,7 +795,6 @@ const CODEX_HOME_SECRET_NAMES = Object.freeze([
   'logs_2.sqlite', 'state_5.sqlite', 'goals_1.sqlite', 'queue_1.sqlite',
 ]);
 const SQLITE_SIDECARS = Object.freeze(['-wal', '-shm', '-journal']);
-const CODEX_HOME_GLOBS = Object.freeze(['*.sqlite*', '*.db*', '*.jsonl', '*.json']);
 const CODEX_HELPER_PATH = Object.freeze(['tmp', 'arg0-linux']);
 
 const entriesOf = (dir) => {
@@ -823,7 +824,6 @@ export const privateCodexHomeDenies = ({ codexHome = null, platform = process.pl
     }
     names.delete(keep);
     denies.push(...[...names].sort().map((name) => join(dir, name)));
-    if (depth === 0) denies.push(...CODEX_HOME_GLOBS.map((glob) => join(dir, glob)));
     dir = join(dir, keep);
   }
   return denies;

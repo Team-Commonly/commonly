@@ -66,11 +66,16 @@ present when the turn starts, plus the names Codex writes (`auth.json`,
 `config.toml`, `sessions`, `history.jsonl`, its SQLite databases and more) even
 while they are absent. A database's `-wal` file holds its newest rows, other
 sessions' included, and exists only while a connection is open, so it usually
-appears during the turn: every database name takes its `-wal`, `-shm` and
-`-journal` too, and globs (`*.sqlite*`, `*.db*`, `*.jsonl`, `*.json`) cover one
-under a name nobody listed. The walk writes both kinds after the keys are
-built and checks the shell can't read them. A folder Codex adds later under a
-new name stays readable until the next turn reads the home again. Public
+appears during the turn: every database name, present or known, takes its
+`-wal`, `-shm` and `-journal` too, and one under a new name is listed with
+them from the next turn. The walk writes those files after the keys are built
+and checks the shell can't read them. There are no glob keys: Codex's `*`
+crosses `/`, and a glob that matched a file inside a folder already denied
+stopped every turn at start. bubblewrap fixes what it hides when
+each command starts, so a file that first appears while a command is already
+running (another session's Codex opening its database, say) stays readable to
+that command until it ends. A folder Codex adds later under a new name stays
+readable until the next turn reads the home again. Public
 seats' Codex homes (`~/.local/state/commonly/codex-homes` on Linux) are denied
 whole. Everything else is the macOS key set: on Linux a write
 key inside a denied folder works, so the workspace under `~/.commonly` and the

@@ -58,8 +58,10 @@ const makeHome = async () => {
     '.codex/auth.json': JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: MARK('AUTH') }),
     '.codex/sessions/old.jsonl': MARK('SESSIONS'),
     '.codex/config.toml': '',
-    // A database Codex keeps in its home; its -wal appears during the turn.
+    // Databases Codex keeps in its home: one it is known to keep, and one
+    // under a name the adapter doesn't know. Their -wal appears during the turn.
     '.codex/logs_2.sqlite': MARK('DB'),
+    '.codex/other_7.sqlite': MARK('DB'),
     // A public seat's Codex home, where the adapter keeps them on Linux.
     '.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl': MARK('PUBHOME'),
     '.ssh/id_probe': MARK('SSH'),
@@ -83,10 +85,12 @@ const makeHome = async () => {
 };
 
 // What Codex writes into its home after the turn's keys were built: the -wal
-// of a database the keys name, and one under a name only a glob covers.
+// of a known database, of one under an unknown name that was there at start,
+// and of a known one that wasn't there at all.
 const writeLateFiles = ({ home }) => {
   writeFileSync(join(home, '.codex', 'logs_2.sqlite-wal'), MARK('WAL'));
-  writeFileSync(join(home, '.codex', 'logs_9.sqlite-wal'), MARK('LATEWAL'));
+  writeFileSync(join(home, '.codex', 'other_7.sqlite-wal'), MARK('LATEWAL'));
+  writeFileSync(join(home, '.codex', 'state_5.sqlite-wal'), MARK('KNOWNWAL'));
 };
 
 // Each line: R <name> <exit> <output>. Reads are judged on the marker, writes
@@ -106,7 +110,8 @@ const checkScript = ({ home, otherTurn }) => [
   `r read_ssh cat ${home}/.ssh/id_probe`,
   `r read_codex_db cat ${home}/.codex/logs_2.sqlite`,
   `r read_codex_wal cat ${home}/.codex/logs_2.sqlite-wal`,
-  `r read_codex_late_wal cat ${home}/.codex/logs_9.sqlite-wal`,
+  `r read_codex_late_wal cat ${home}/.codex/other_7.sqlite-wal`,
+  `r read_codex_known_wal cat ${home}/.codex/state_5.sqlite-wal`,
   `r read_public_home cat ${home}/.local/state/commonly/codex-homes/probe-public/sessions/s.jsonl`,
   `r read_other_turn cat ${otherTurn}/token`,
   `r write_other_turn sh -c 'echo pwned > ${otherTurn}/last-message.txt'`,
@@ -128,7 +133,7 @@ const judge = (label, results, ctx) => {
   const markers = {
     read_token: 'TOKEN', read_state: 'STATE', read_other_ws: 'OTHERWS', read_codex_auth: 'AUTH',
     read_codex_sessions: 'SESSIONS', read_ssh: 'SSH', read_other_turn: 'TURN',
-    read_codex_db: 'DB', read_codex_wal: 'WAL', read_codex_late_wal: 'LATEWAL',
+    read_codex_db: 'DB', read_codex_wal: 'WAL', read_codex_late_wal: 'LATEWAL', read_codex_known_wal: 'KNOWNWAL',
     // macOS keeps public homes under ~/.commonly; this path is Linux's.
     ...(process.platform === 'linux' ? { read_public_home: 'PUBHOME' } : {}),
   };

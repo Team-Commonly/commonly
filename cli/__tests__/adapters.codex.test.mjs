@@ -2453,7 +2453,7 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(denies.some((path) => path.startsWith(join(codexHome, 'tmp', 'arg0-linux')))).toBe(false);
   });
 
-  test('on Linux, a database takes its -wal, -shm and -journal, listed or known, and globs cover the unnamed', async () => {
+  test('on Linux, a database takes its -wal, -shm and -journal, listed or known, and no key is a glob', async () => {
     const codexHome = join(home, '.codex');
     await writeFile(join(codexHome, 'other_7.sqlite'), '');
     const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
@@ -2463,9 +2463,9 @@ describe('the Codex home a private seat runs with (F444)', () => {
       for (const suffix of ['', '-wal', '-shm', '-journal']) expect(denies).toContain(join(codexHome, `${db}${suffix}`));
     }
     for (const name of ['session_index.jsonl', 'shell_snapshots', 'memories']) expect(denies).toContain(join(codexHome, name));
-    for (const glob of ['*.sqlite*', '*.db*', '*.jsonl', '*.json']) expect(denies).toContain(join(codexHome, glob));
-    // Only at the home's own level: nothing under tmp is globbed.
-    expect(denies.filter((path) => path.includes('*')).every((path) => path.startsWith(`${codexHome}/*`))).toBe(true);
+    // Codex's `*` crosses `/`: a glob matching a file inside a denied folder
+    // stops every turn at start on Linux (run 43103991434).
+    expect(denies.some((path) => /[*?[]/.test(path))).toBe(false);
   });
 
   test('on Linux, from another CODEX_HOME: that home is treated the same, and ~/.codex is denied whole', async () => {
