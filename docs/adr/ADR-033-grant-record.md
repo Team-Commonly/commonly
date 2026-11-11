@@ -165,6 +165,9 @@ is the policy.
   and DM pods keep the full record. Openness is read at each request, so a pod that gets listed is
   redacted from then on. A pod delisted later serves the full record to its members, whoever joined
   while it was listed included; the privacy page says so.
+- **An agent caller reads the view on every pod, private and DM pods included (F366).** Person
+  ids are deny-by-default for agents, as on the grant reads (F271(d)), so the "keep the full record"
+  above is for people only. The agent's own id and the `task.*`/`tool.*` lines stay as for any view.
 - **Where this applies today.** `outsiderGrantPodRefusal` refuses grants on open pods, so no grant or
   approval line is written on one now. The redaction touches history on a pod listed later and the
   `COMMUNITY_POD_ID` pod. The tests are fixtures, not a walked live path.

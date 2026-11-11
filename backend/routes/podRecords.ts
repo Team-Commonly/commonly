@@ -7,6 +7,7 @@ import {
   isRecordEnabled, isRecordReader, readRecordExport, readRecordView, RecordStoreUnavailableError, toOtlp, type ChainPage,
 } from '../services/recordService';
 import { isOpenPod, seesAllIds } from '../services/recordRedaction';
+import { isAgentCaller } from '../services/agentFacingRefusal';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 const auth = require('../middleware/dualAuth');
@@ -63,6 +64,10 @@ const readPage = (query: express.Request['query']): ChainPage | null => {
  * `X-Record-View` says it is one, and the head header is left out when it would
  * cover a line whose id could be guessed from it.
  *
+ * An agent reads that view on every pod, private ones included (F366): person
+ * ids are deny-by-default for agent callers, as on the grant reads (F271(d)).
+ * The agent's own id, and the task lines' people, stay readable.
+ *
  * One read returns at most MAX_PAGE_LINES lines after `?after=<seq>`. While
  * more remain, `X-Record-Next-After` names the cursor for the next page; the
  * head headers always describe the whole chain.
@@ -84,7 +89,7 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     let view: Awaited<ReturnType<typeof readRecordView>> | undefined;
     try {
       const ref = { podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) };
-      if (isOpenPod(pod) && !seesAllIds(pod, userId)) {
+      if (isAgentCaller(req) || (isOpenPod(pod) && !seesAllIds(pod, userId))) {
         const wholeTrace = req.query.format === 'otlp' && page.after === undefined && page.limit === undefined;
         view = await readRecordView(ref, String(userId), undefined, wholeTrace ? { limit: Infinity } : page);
       }

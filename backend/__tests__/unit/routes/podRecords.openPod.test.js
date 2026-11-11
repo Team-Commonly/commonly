@@ -191,3 +191,35 @@ describe('who reads at all stays as it was', () => {
     expect((await read('', { 'x-user': ADMIN })).status).toBe(404);
   });
 });
+
+// F366: person ids are deny-by-default for agent callers on every pod type,
+// as on the grant reads (F271(d)). A person on a private pod still reads it all.
+describe.each([['the pod chain', ''], ['a task chain', '/tasks/TASK-7']])('%s on a private pod', (_name, suffix) => {
+  const PRIVATE = {
+    _id: POD, type: 'team', publicRead: false, communityListed: false, joinPolicy: 'invite', createdBy: CREATOR, members: [OWNER, JOINER, AGENT, CREATOR],
+  };
+  beforeEach(() => { mockChain.pod = PRIVATE; });
+
+  test('a person who is a member reads every id, verbatim', async () => {
+    const res = await read(suffix);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(OWNER);
+    expect(res.headers['x-record-view']).toBeUndefined();
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true });
+  });
+
+  test('an agent member reads the redacted view: no approver id, its own id kept', async () => {
+    const res = await read(suffix, { 'x-agent': AGENT });
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(OWNER);
+    expect(res.text).toContain(AGENT);
+    expect(res.headers['x-record-view']).toBe('redacted');
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true, partial: true });
+  });
+
+  test('?format=otlp gives an agent no approver id either', async () => {
+    const res = await read(`${suffix}?format=otlp`, { 'x-agent': AGENT });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(OWNER);
+  });
+});
