@@ -40,9 +40,12 @@ const renderPage = () => render(
   </AuthContext.Provider>,
 );
 
-const mockServer = () => {
+const MACBOOK = { machineId: 'm1', name: 'Sams-MacBook', status: 'online', lastSeenAt: new Date().toISOString() };
+
+const mockServer = ({ machines = [] } = {}) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'abc1', name: 'Workspace', type: 'chat' }] });
+    if (url === '/api/machines') return Promise.resolve({ data: { machines, offlineAfterMs: 90000 } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
@@ -168,5 +171,127 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(installBodies()[0].instanceId).toBeUndefined();
     expect(tokenBodies()[0].instanceId).toBeUndefined();
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --adapter claude/)).toBeInTheDocument());
+  });
+
+  // The daemon keeps one local key per agent name, so a computer running the
+  // default instance refuses a second one (F427). Until then nothing on the
+  // page points a second instance at "On my computer".
+  test('a second instance is not offered "On my computer", before or after the key', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
+    expect(screen.queryByTestId('byo-result-on-my-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+  });
+
+  test('a computer link for a second instance opens on Bring your own instead', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&mode=machine');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(tokenBodies()).toHaveLength(1));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+  });
+
+  test('the default instance still gets "On my computer"', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');
+    renderPage();
+    expect(await screen.findByTestId('byo-mode-machine')).toBeInTheDocument();
+  });
+
+  // A wrapper's Reconnect link (Your Team, Settings) restarts the seat on its
+  // own computer; it isn't a new placement, so it keeps the computer mode.
+  test.each([['claude'], ['opencode']])('a second instance\'s wrapper Reconnect still reconnects (%s), with no computer listed', async (adapter) => {
+    mockServer({ machines: [] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter }, connection: { state: 'revoked', lastSeenAt: null } }] } })
+      : plain(url)));
+    axios.post.mockResolvedValue({ data: { requestedAt: '2026-11-11T14:00:00Z' } });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect', { agentName: 'sam-claude', instanceId: 'nova' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+  });
+
+  test('a Reconnect link for a second instance that is not on a computer offers no computer to place it on', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-machine-select')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(tokenBodies()).toHaveLength(1));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+  });
+
+  test('a computer link to a connected second-instance wrapper, without reconnect, offers no computer to place it on', async () => {
+    mockServer({ machines: [MACBOOK] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter: 'claude' }, connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }] } })
+      : plain(url)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&mode=machine');
+    renderPage();
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => /\/api\/registry\/pods\/abc1\/agents/.test(url))).toBe(true));
+    await new Promise((r) => { setTimeout(r, 400); });
+    expect(screen.queryByTestId('byo-machine-select')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^assign/i })).toBeNull();
+  });
+
+  // With no computer on file, the add-a-computer block and the quick-try hint
+  // lead the form; neither is offered to a second instance.
+  test('with no computer on file, a second instance gets no add-a-computer block or quick-try hint', async () => {
+    mockServer({ machines: [] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-quick-try')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+  });
+
+  test('with no computer on file, the default instance still gets the add-a-computer block', async () => {
+    mockServer({ machines: [] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');
+    renderPage();
+    expect(await screen.findByTestId('byo-add-computer')).toBeInTheDocument();
+  });
+
+  // reconnect=1 alone keeps a connected wrapper on its computer: Settings'
+  // regenerate-key link is that case.
+  test('a connected second-instance wrapper\'s explicit Reconnect link reconnects it, with no placement or new key', async () => {
+    mockServer({ machines: [] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' }, connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }] } })
+      : plain(url)));
+    axios.post.mockResolvedValue({ data: { requestedAt: '2026-11-11T14:00:00Z' } });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect', { agentName: 'sam-claude', instanceId: 'nova' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+    expect(tokenBodies()).toHaveLength(0);
   });
 });
