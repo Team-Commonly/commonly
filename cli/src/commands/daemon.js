@@ -114,19 +114,22 @@ const watchDaemonStatus = async () => {
       const seats = (loadDaemonState()?.seats || []).map((seat) => ({
         ...seat,
         // The supervisor stamps spawn time; the session store holds real turns.
-        lastTurnAt: readSessionLastTurn(seat.agentName),
+        lastTurnAt: readSessionLastTurn(seat.recordKey || seat.agentName),
       }));
+      // Keyed by the local record, so two instances of one agent never read
+      // each other's log, last turn or pod (F427).
       const logTails = {};
       for (const seat of seats) {
-        const tail = readLogTail(daemonSeatLogPath(seat.agentName), 3);
-        logTails[seat.agentName] = tail ? tail.split('\n') : [];
+        const key = seat.recordKey || seat.agentName;
+        const tail = readLogTail(daemonSeatLogPath(key), 3);
+        logTails[key] = tail ? tail.split('\n') : [];
       }
       let states = null;
       let stateNote = '';
       if (!getToken(record.instanceUrl)) {
         stateNote = `Not logged in: showing local process state only. Run: commonly login --instance ${record.instanceUrl}`;
       } else {
-        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.agentName)?.podId).filter(Boolean))];
+        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.recordKey || seat.agentName)?.podId).filter(Boolean))];
         try {
           states = await reachFor(podIds);
         } catch (error) {
@@ -746,12 +749,14 @@ Examples:
           // One child per agent, logging to its own file. The child is the
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
-          spawnChild: (agentName) => {
-            warnMissingSeatKey(agentName);
-            const seatLog = daemonSeatLogPath(agentName);
+          // `recordKey` is the local record: `<name>`, or `<name>@<id>` for
+          // another instance, which `agent run` resolves the same way (F427).
+          spawnChild: (recordKey) => {
+            warnMissingSeatKey(recordKey);
+            const seatLog = daemonSeatLogPath(recordKey);
             const out = openSync(seatLog, 'a', 0o600);
             chmodSync(seatLog, 0o600);
-            return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
+            return spawn(process.execPath, [process.argv[1], 'agent', 'run', recordKey], {
               stdio: ['ignore', out, out],
               // Windows: never flash a console window per seat (no-op elsewhere).
               windowsHide: true,
@@ -776,7 +781,7 @@ Examples:
             updatedAt: new Date().toISOString(),
             seats: seats.map((seat) => ({
               ...seat,
-              lastTurnAt: getLastTurn(seat.agentName) || seat.lastTurnAt,
+              lastTurnAt: getLastTurn(seat.recordKey || seat.agentName) || seat.lastTurnAt,
             })),
           }),
         });

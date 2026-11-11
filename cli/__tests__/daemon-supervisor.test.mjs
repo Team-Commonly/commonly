@@ -11,10 +11,12 @@ import {
   BACKOFF_BASE_MS,
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
+  recordKeyFor,
   reconnectDelayMs,
   MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
 import { assertSandboxSupported } from '../src/lib/adapters/pi.js';
+import { parseRunInstanceId, runInstanceRefusal, seatKey } from '../src/commands/agent.js';
 import claude from '../src/lib/adapters/claude.js';
 
 const record = {
@@ -153,19 +155,135 @@ describe('tick', () => {
     await supervisor.tick();
     expect(client.post.mock.calls.filter(([path]) => path === '/api/agent-binding/runtime-token')).toHaveLength(1);
   });
-  test('a same-name local record never rotates another instance key', async () => {
+  // F427: a second instance on a computer that already runs the default gets
+  // its own local record, <name>@<id>, the one `agent run <name>@<id>` reads.
+  test('a second instance gets its own record and child; the default record is untouched', async () => {
     const tokens = { 'wren-test': {
       agentName: 'wren-test', instanceId: 'default', runtimeToken: 'cm_agent_default', adapter: 'claude',
     } };
     const { supervisor, client, children } = makeHarness({
+      rows: () => [boundRow(), boundRow({ instanceId: 'alpha' })],
+      tokens,
+    });
+    await supervisor.tick();
+    const mints = client.post.mock.calls.filter(([path]) => path === '/api/agent-binding/runtime-token');
+    expect(mints.map(([, body]) => body)).toEqual([{ agentName: 'wren-test', instanceId: 'alpha' }]);
+    expect(tokens['wren-test'].runtimeToken).toBe('cm_agent_default');
+    expect(tokens['wren-test@alpha']).toEqual(expect.objectContaining({
+      agentName: 'wren-test', instanceId: 'alpha', runtimeToken: 'cm_agent_minted',
+    }));
+    expect(children.map(({ name }) => name).sort()).toEqual(['wren-test', 'wren-test@alpha']);
+    // A second tick reuses the instance's record: no new mint.
+    await supervisor.tick();
+    expect(client.post.mock.calls.filter(([path]) => path === '/api/agent-binding/runtime-token')).toHaveLength(1);
+    supervisor.stop();
+  });
+
+  test('an owner-requested rotation for a second instance rotates only that instance\'s record', async () => {
+    const tokens = {
+      'wren-test': { agentName: 'wren-test', instanceId: 'default', runtimeToken: 'cm_agent_default', adapter: 'claude' },
+      'wren-test@alpha': { agentName: 'wren-test', instanceId: 'alpha', runtimeToken: 'cm_agent_alpha', adapter: 'claude' },
+    };
+    const { supervisor, client } = makeHarness({
       rows: () => [boundRow({ instanceId: 'alpha', reconnectRequestedAt: '2026-10-23T16:30:00.000Z' })],
+      tokens,
+      mintResponses: [{ token: 'cm_agent_alpha_fresh' }],
+    });
+    await supervisor.tick();
+    expect(client.post).toHaveBeenCalledWith('/api/agent-binding/runtime-token', {
+      agentName: 'wren-test', instanceId: 'alpha', rotate: true,
+    });
+    expect(tokens['wren-test@alpha'].runtimeToken).toBe('cm_agent_alpha_fresh');
+    expect(tokens['wren-test'].runtimeToken).toBe('cm_agent_default');
+    supervisor.stop();
+  });
+
+  // An older CLI saved an instance's key under the bare name; `agent run`
+  // uses it where it is, and so does the daemon.
+  test('a legacy bare-name record for that instance is used where it is', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', instanceId: 'alpha', runtimeToken: 'cm_agent_alpha', adapter: 'claude',
+    } };
+    const { supervisor, client, children } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })], tokens });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(tokens['wren-test@alpha']).toBeUndefined();
+    expect(children.map(({ name }) => name)).toEqual(['wren-test']);
+    supervisor.stop();
+  });
+
+  // The bare name is the default's record. One holding another instance is
+  // never rotated or run as the default.
+  test('the default instance never runs through a bare record that holds another instance', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', instanceId: 'alpha', runtimeToken: 'cm_agent_alpha', adapter: 'claude',
+    } };
+    const { supervisor, client, children } = makeHarness({
+      rows: () => [boundRow({ reconnectRequestedAt: '2026-10-23T16:30:00.000Z' })],
       tokens,
     });
     await supervisor.tick();
     expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
-    expect(tokens['wren-test'].runtimeToken).toBe('cm_agent_default');
+    expect(tokens['wren-test'].runtimeToken).toBe('cm_agent_alpha');
     expect(children).toHaveLength(0);
   });
+
+  test('an instance id that cannot be a file name is not started', async () => {
+    const logs = [];
+    const { supervisor, client, children, tokens } = makeHarness({
+      rows: () => [boundRow({ instanceId: '../x' })],
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(Object.keys(tokens)).toEqual([]);
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/is not a plain id/);
+  });
+
+  // Instance ids compare case-insensitively, as `agent run` and the server do.
+  test('a legacy bare-name record matches its instance whatever the case', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', instanceId: 'Alpha', runtimeToken: 'cm_agent_alpha', adapter: 'claude',
+    } };
+    const { supervisor, client, children } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })], tokens });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(children.map(({ name }) => name)).toEqual(['wren-test']);
+    supervisor.stop();
+  });
+
+  // The daemon and `agent run` must name the same record: what the daemon
+  // writes for an instance is what `agent run <key>` loads and accepts.
+  test('agent run accepts the record the daemon wrote for a second instance', async () => {
+    const { supervisor, children, tokens } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })] });
+    await supervisor.tick();
+    const [{ name }] = children;
+    const instanceId = parseRunInstanceId(undefined, name);
+    expect(seatKey(name.split('@')[0], instanceId)).toBe(name);
+    expect(runInstanceRefusal({ record: tokens[name], instanceId })).toBeNull();
+    supervisor.stop();
+  });
+
+  test('recordKeyFor names the record agent run reads', () => {
+    const none = () => null;
+    expect(recordKeyFor({ agentName: 'w', instanceId: 'default' }, none)).toBe('w');
+    expect(recordKeyFor({ agentName: 'w' }, none)).toBe('w');
+    expect(recordKeyFor({ agentName: 'w', instanceId: 'nova' }, none)).toBe('w@nova');
+    expect(recordKeyFor({ agentName: 'w', instanceId: 'nova' }, (k) => (k === 'w' ? { instanceId: 'nova' } : null))).toBe('w');
+    expect(recordKeyFor({ agentName: 'w', instanceId: 'nova' }, (k) => (k === 'w' ? { instanceId: 'default' } : null))).toBe('w@nova');
+    expect(recordKeyFor({ agentName: 'w', instanceId: 'a/b' }, none)).toBeNull();
+  });
+
+  test('the persisted state names each seat\'s record; the heartbeat states do not', async () => {
+    const persistState = jest.fn();
+    const { supervisor } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })], persistState });
+    await supervisor.tick();
+    expect(persistState.mock.calls.at(-1)[0]).toEqual([expect.objectContaining({ instanceId: 'alpha', recordKey: 'wren-test@alpha' })]);
+    expect(supervisor.agentStates()[0].recordKey).toBeUndefined();
+    supervisor.stop();
+  });
+
   test('adopts a requested row, mints its token, writes the record, and spawns', async () => {
     const { supervisor, client, children, saveToken } = makeHarness({
       rows: () => [boundRow({ state: 'requested' })],
