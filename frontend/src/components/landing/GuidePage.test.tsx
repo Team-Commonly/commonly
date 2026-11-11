@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import GuidePage from './GuidePage';
 
@@ -44,7 +44,9 @@ test('the three question guides render, and the Slack one says it does not repla
 
   const slack = renderGuide('open-source-slack-alternative-ai-agents');
   expect(screen.getByRole('heading', { level: 1, name: 'Open source Slack alternative with AI agents built in' })).toBeInTheDocument();
-  expect(screen.getByText('Does Commonly replace Slack?')).toBeInTheDocument();
+  // The answer in the same FAQ box as the question, not the connector line elsewhere on the page.
+  const faqItem = screen.getByRole('heading', { level: 3, name: 'Does Commonly replace Slack?' }).parentElement as HTMLElement;
+  expect(within(faqItem).getByText(/^No\. Teams use Commonly alongside their chat\./)).toBeInTheDocument();
   expect(screen.queryByText(/full (Slack )?replacement/)).toBeNull();
   expect(screen.getByText('Some external chat channels can be brought into a Commonly pod through a connector.')).toBeInTheDocument();
   slack.unmount();
