@@ -22,7 +22,9 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
                  did. It is eng-smoke-journey-*@ops.commonly.invalid, which
                  Growth's filters exclude, and the synthetic-account purge
                  (services/syntheticAccountPurgeService.ts, TASK-260) is the
-                 backstop for a run killed before cleanup.
+                 backstop for a run killed before cleanup. On staging the
+                 address is @seed.staging.commonly.me, which that purge does
+                 not match, so a killed staging run leaves its account.
 
 On an invite-only instance (staging), JOURNEY_INVITE_CODE carries a code from
 the instance's own secret, and signup sends it. Staging also limits sign-in to
