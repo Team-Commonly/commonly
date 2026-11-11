@@ -613,6 +613,14 @@ router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any,
   }
 });
 
+// The three choices of the agent page's "Messages that wake it", read the way
+// agentMentionService reads them: only `enabled === true` turns message wakes on.
+const messageWakeOf = (config: any): 'mentions' | 'human' | 'all' => {
+  const wake = config?.wakeOnMessage;
+  if (wake?.enabled !== true) return 'mentions';
+  return wake?.humanOnly === true ? 'human' : 'all';
+};
+
 router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
@@ -698,6 +706,11 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // D247: the saved model/effort, for a listener seat that has no daemon
         // projection. Two plain strings; no other environment field leaves.
         runtimeControls: runtimeControlsFor(inst?.config),
+        // Which messages wake this agent in this pod, as the agent page's
+        // "Messages that wake it" names them: 'mentions', 'human' (Messages
+        // from people) or 'all'. A channel session that asked for unaddressed
+        // questions reads it to name the pods where none can arrive.
+        messageWake: messageWakeOf(inst?.config),
         ...podVisibility(pod),
         type: 'installation',
       };
