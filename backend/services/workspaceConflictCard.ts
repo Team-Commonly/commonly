@@ -220,6 +220,12 @@ export const mergeConflictToDecisionRequest = (detail: WorkspaceMergeRefusal): W
     ? clip(head, TITLE_MAX - TITLE_PREFIX.length - line.length - more.length) + line
     : `${clip(theirs, 60)} into ${clip(ours, 60)}`;
   const deleter = only ? deletedBy(only.kind) : null;
+  // A truncated refusal lists only some paths, and a side picked here lands for
+  // the ones it left out too, so the question says so up front.
+  const truncated = Boolean(detail.conflictsTruncated) && files.length > 0;
+  const scope = truncated
+    ? 'The merge listed only some conflicting paths, and this choice covers all of them. '
+    : '';
 
   let question: string;
   if (deleter) {
@@ -229,7 +235,8 @@ export const mergeConflictToDecisionRequest = (detail: WorkspaceMergeRefusal): W
     // The path list gives way first, so the question itself is never clipped off.
     const ask = ' Which version should land?';
     const lead = `${theirs} and ${ours} both changed the same ${files.length} files: `;
-    const paths = clip(files.map((c) => c.path).join(', '), QUESTION_MAX - lead.length - ask.length - 1);
+    const room = QUESTION_MAX - scope.length - lead.length - ask.length - 1;
+    const paths = clip(files.map((c) => c.path).join(', '), room);
     question = `${lead}${paths}.${ask}`;
   } else if (!files.length) {
     question = `${theirs} and ${ours} conflict, but the merge listed no paths. Which version should land?`;
@@ -252,18 +259,25 @@ export const mergeConflictToDecisionRequest = (detail: WorkspaceMergeRefusal): W
     if (files.length < 2) return {};
     const deleted = files.filter((c) => deletedBy(c.kind) === side).length;
     const tail = deleted ? ` It deleted ${deleted} of them.` : '';
-    return { description: clip(`Take ${sides[side]}'s version of all ${files.length} files.${tail}`, DESCRIPTION_MAX) };
+    // The branch name gives way, so a long one can't clip the delete warning off.
+    const suffix = `'s version of ${truncated ? 'every conflicting file' : `all ${files.length} files`}.${tail}`;
+    return { description: `Take ${clip(sides[side], DESCRIPTION_MAX - 'Take '.length - suffix.length)}${suffix}` };
   };
 
   return {
     title: head ? `${TITLE_PREFIX}${location}${more}` : `Merge conflict: ${location}`,
-    question: clip(question, QUESTION_MAX),
+    question: clip(scope + question, QUESTION_MAX),
     context: contextFor(files, gitLine, sides, merge, Boolean(detail.conflictsTruncated)),
     decisionClass: 'implementation',
     options: [
       { label: `Keep ours (${ours})`, ...describe('ours') },
       { label: `Keep theirs (${theirs})`, ...describe('theirs') },
-      { label: 'Write the merged text', description: 'Reply with the text to land, and the merge runs again.' },
+      {
+        label: 'Write the merged text',
+        description: files.length > 1
+          ? "Reply with each file's merged text under its path, and the merge runs again."
+          : 'Reply with the text to land, and the merge runs again.',
+      },
     ],
     merge,
   };

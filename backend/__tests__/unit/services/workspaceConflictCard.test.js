@@ -138,6 +138,40 @@ describe('one request per merge', () => {
     accepted(req);
   });
 
+  test('a truncated refusal says the choice covers the paths it left out', () => {
+    const req = mergeConflictToDecisionRequest(refusal([readme], { extra: { conflictsTruncated: true } }));
+    expect(req.question).toBe('The merge listed only some conflicting paths, and this choice covers all of them. '
+      + 'agent-b and main both changed /README.md:111. Which version should land?');
+    const untruncated = mergeConflictToDecisionRequest(refusal([readme]));
+    expect(untruncated.question).toBe('agent-b and main both changed /README.md:111. Which version should land?');
+    accepted(req);
+  });
+
+  test('a truncated multi-file refusal keeps its question and speaks of every conflicting file', () => {
+    const files = Array.from({ length: 50 }, (_, i) => ({
+      path: `/packages/some-long-package-name-${i}/src/index.ts`, kind: 'content', hunks: [{ line: 1, ours: ['a'], theirs: ['b'] }],
+    }));
+    const req = mergeConflictToDecisionRequest(refusal(files, { extra: { conflictsTruncated: true } }));
+    expect(req.question).toMatch(/^The merge listed only some conflicting paths/);
+    expect(req.question).toMatch(/Which version should land\?$/);
+    expect(req.options[0].description).toBe("Take main's version of every conflicting file.");
+    accepted(req);
+  });
+
+  test('a long deleting branch name never clips the delete warning off', () => {
+    const deleted = { path: '/old.txt', kind: 'modify/delete', hunks: [{ line: 1, ours: ['kept'], theirs: [] }] };
+    const req = mergeConflictToDecisionRequest(refusal([readme, deleted], { theirs: 'z'.repeat(400) }));
+    expect(req.options[1].description).toMatch(/'s version of all 2 files\. It deleted 1 of them\.$/);
+    accepted(req);
+  });
+
+  test('with several files, writing the merged text asks for each path\'s text', () => {
+    const second = { ...readme, path: '/b.md' };
+    const req = mergeConflictToDecisionRequest(refusal([readme, second]));
+    expect(req.options[2].description).toBe("Reply with each file's merged text under its path, and the merge runs again.");
+    expect(one(readme).options[2].description).toBe('Reply with the text to land, and the merge runs again.');
+  });
+
   test('a merge that listed only some paths says so', () => {
     const req = mergeConflictToDecisionRequest(refusal([readme], { extra: { conflictsTruncated: true } }));
     expect(req.context).toContain('Conflicting files: 1 listed; the merge listed only some.');
