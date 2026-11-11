@@ -33,6 +33,7 @@ export const UI_EVENTS: Record<string, PropSchema> = {
   'decision-answer': { how: ['option', 'other'] },
   'empty-state-shown': {},
   'stuck-help-click': {},
+  'get-started-click': { step: ['connect', 'first-task'] },
   'teammate-card-shown': { where: ['workspace', 'pod'] },
   'teammate-card-click': { where: ['workspace', 'pod'] },
   'teammate-card-dismiss': { where: ['workspace', 'pod'] },
