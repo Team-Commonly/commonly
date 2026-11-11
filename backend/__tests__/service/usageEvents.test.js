@@ -80,6 +80,19 @@ describe('usage events (D286)', () => {
     expect(row.props).toBeUndefined();
   });
 
+  it('keeps the teammate card\'s where prop only for workspace or pod (D288)', async () => {
+    const user = await makeUser();
+    await post(user, { name: 'teammate-card-shown', screen: '/', props: { where: 'workspace' } }).expect(204);
+    await post(user, { name: 'teammate-card-click', screen: '/', props: { where: 'https://x.test/?q=1' } }).expect(204);
+    await post(user, { name: 'teammate-card-dismiss', screen: '/', props: { where: 'pod' } }).expect(204);
+    const stored = await rows().find().sort({ _id: 1 }).toArray();
+    expect(stored.map((row) => [row.name, row.props])).toEqual([
+      ['teammate-card-shown', { where: 'workspace' }],
+      ['teammate-card-click', undefined],
+      ['teammate-card-dismiss', { where: 'pod' }],
+    ]);
+  });
+
   it('answers an unknown name with a 400 that never echoes it, and stores nothing', async () => {
     const user = await makeUser();
     const res = await post(user, { name: 'cm_agent_leaked-token', screen: '/' });

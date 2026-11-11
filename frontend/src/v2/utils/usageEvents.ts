@@ -11,7 +11,8 @@ export type UsageEventName =
   | 'composer-focus' | 'first-message-sent' | 'hosted-install-click' | 'hosted-install-result'
   | 'agent-settings-open' | 'runtime-model-save' | 'agent-reply-seen' | 'reaction-add' | 'retry-click'
   | 'invite-open' | 'invite-copy' | 'invite-accept-click' | 'invite-accept-result'
-  | 'board-open' | 'task-open' | 'decision-answer' | 'empty-state-shown' | 'stuck-help-click';
+  | 'board-open' | 'task-open' | 'decision-answer' | 'empty-state-shown' | 'stuck-help-click'
+  | 'teammate-card-shown' | 'teammate-card-click' | 'teammate-card-dismiss';
 
 export type PublicEventName =
   | 'page-view' | 'cta-click' | 'register-view' | 'auth-choice' | 'register-error' | 'invite-page-view';

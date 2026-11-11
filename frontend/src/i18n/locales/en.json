@@ -3594,7 +3594,13 @@
     "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
     "error": "couldn't create a link · nothing was shared",
     "live": "Invite link copied",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "newPod": {
+      "title": "Bring a teammate in to work with {{agentName}}",
+      "body": "This starts a new pod with {{agentName}} in it and copies an invite link to that pod. Your workspace stays private.",
+      "name": "Working with {{agentName}}",
+      "open": "Open the new pod"
+    }
   },
   "profile": {
     "follow": "Follow",

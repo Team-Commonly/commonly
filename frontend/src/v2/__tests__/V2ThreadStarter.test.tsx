@@ -661,7 +661,8 @@ describe('second-person prompt placements', () => {
   test('the empty state offers the card without minting or taking composer focus', async () => {
     renderChat(makeDetail());
     expect(await screen.findByRole('region', { name: 'Invite a teammate to My Workspace' })).toBeInTheDocument();
-    expect(axios.post).not.toHaveBeenCalled();
+    // The shown mark posts once per page load, so only a mint counts here.
+    expect(axios.post.mock.calls.filter(([url]) => url.endsWith('/invites'))).toHaveLength(0);
     expect(screen.getByRole('textbox')).toHaveFocus();
   });
   test('the group reply offers one prompt and joining a second human removes it', async () => {
@@ -695,6 +696,38 @@ describe('second-person prompt placements', () => {
     expect(axios.get.mock.calls.filter(([url]) => url.endsWith('/invites'))).toHaveLength(0);
     expect(axios.post).not.toHaveBeenCalled();
   });
+  // D288: the person's own agent answering in the workspace offers the card,
+  // and its press opens a new pod with that agent, never the workspace.
+  test('the person\'s own agent answering in the workspace offers a card that invites into a new pod', async () => {
+    const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
+    const own = { _id: 'own', username: 'claude-code-laptop', isBot: true };
+    detail.agents = [
+      { agentName: 'scout', instanceId: 'default', status: 'active', displayName: 'Scout' },
+      { agentName: 'claude-code', instanceId: 'laptop', status: 'active', displayName: 'Laptop Claude' },
+    ];
+    detail.members = [member, agent, own];
+    detail.messages = [
+      messages[0], messages[1],
+      { id: '12', pod_id: 'p1', user_id: 'own', content: 'Done, PR is up', message_type: 'text', created_at: '2026-10-25T10:02:00Z', user: { username: 'claude-code-laptop', isBot: true } },
+    ];
+    const newPodId = 'c'.repeat(24);
+    axios.post.mockImplementation((url) => Promise.resolve({ data: url === '/api/pods' ? { _id: newPodId } : { token: 'a'.repeat(32), success: true } }));
+    renderChat(detail);
+    expect(await screen.findByText(/Your workspace stays private/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(`/api/pods/${newPodId}/invites`, expect.anything(), expect.anything()));
+    const urls = axios.post.mock.calls.map(([url]) => url);
+    expect(urls).toContain(`/api/registry/agents/claude-code/pods/${newPodId}?instanceId=laptop`);
+    expect(urls.some((url) => url.startsWith('/api/pods/p1/'))).toBe(false);
+  });
+
+  test('a server-side dismissal keeps the card away in every pod', async () => {
+    const dismissedAuth = { ...authValue, currentUser: { ...authValue.currentUser, onboarding: { inviteCardDismissedAt: '2026-11-01T00:00:00Z' } } };
+    render(<AuthContext.Provider value={dismissedAuth}><MemoryRouter><V2Thread detail={withReply()} /></MemoryRouter></AuthContext.Provider>);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+  });
+
   test('a pending invite press completes once across expanding and collapsing its thread', async () => {
     let finish;
     axios.post.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
