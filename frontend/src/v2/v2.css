@@ -1724,6 +1724,11 @@ body.modern-ui.v2-canvas {
   margin-top: 4px;
 }
 
+/* An empty notice takes no room but stays in the accessibility tree. */
+.v2-invite-add__msg:empty {
+  margin-top: 0;
+}
+
 .v2-invite-manage {
   display: flex;
   flex-direction: column;

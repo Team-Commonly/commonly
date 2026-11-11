@@ -96,6 +96,25 @@ describe('V2InviteModal', () => {
   describe('adding someone by username', () => {
     const refusal = (code) => Object.assign(new Error('refused'), { response: { status: 404, data: { code } } });
 
+    test('keeps both notice regions exposed, and empty, before anything is submitted', () => {
+      renderModal('people', { canAddMember: true });
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+      expect(screen.getByRole('alert')).toBeEmptyDOMElement();
+    });
+
+    test('drops a reply that lands after the dialog unmounted', async () => {
+      let resolve;
+      mockApi.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+      const onMemberAdded = jest.fn();
+      const view = renderModal('people', { canAddMember: true, onMemberAdded });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      view.unmount();
+      resolve({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(onMemberAdded).not.toHaveBeenCalled();
+    });
+
     test('is offered only to the pod creator', async () => {
       const { unmount } = renderModal();
       await waitFor(() => expect(mockApi.get).toHaveBeenCalled());
@@ -111,7 +130,7 @@ describe('V2InviteModal', () => {
       renderModal('people', { canAddMember: true, onMemberAdded });
       fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: ' @teammate ' } });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(await screen.findByRole('status')).toHaveTextContent('Added @teammate.');
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Added @teammate.'));
       expect(mockApi.post).toHaveBeenCalledWith('/api/pods/pod-1/members', { username: 'teammate' });
       expect(onMemberAdded).toHaveBeenCalledTimes(1);
       expect(screen.getByLabelText('Username to add')).toHaveValue('');
@@ -123,7 +142,7 @@ describe('V2InviteModal', () => {
       renderModal('people', { canAddMember: true, onMemberAdded });
       fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(await screen.findByRole('status')).toHaveTextContent('@teammate is already in this pod.');
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('@teammate is already in this pod.'));
       expect(onMemberAdded).not.toHaveBeenCalled();
     });
 
@@ -136,7 +155,7 @@ describe('V2InviteModal', () => {
       renderModal('people', { canAddMember: true });
       fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'someone' } });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent(text);
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(text));
       expect(screen.getByLabelText('Username to add')).toHaveValue('someone');
     });
 
@@ -157,7 +176,7 @@ describe('V2InviteModal', () => {
       resolve({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
       await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/pods/pod-2/invites'));
       await new Promise((r) => setTimeout(r, 0));
-      expect(screen.getByRole('status', { hidden: true })).toHaveTextContent('');
+      expect(screen.getByRole('status')).toHaveTextContent('');
       expect(onMemberAdded).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled();
     });
