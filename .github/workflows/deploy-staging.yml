@@ -315,8 +315,11 @@ jobs:
       # card against api-staging.commonly.me. Its pass/fail IS the staging-smoke
       # gate the prod promote path reads, so — unlike the dev journey, which is a
       # non-failing notice — this sets a commit status that must be truthful, and
-      # a failed smoke fails the staging deploy. A reachability probe is the
-      # fallback until the stranger-journey CronJob exists in the staging release.
+      # a failed smoke fails the staging deploy. A missing stranger-journey
+      # CronJob fails it too: the reachability-only fallback was removed once a
+      # full staging journey passed (F375, run 42961093417), because a health
+      # probe posting the same staging-smoke=success made the gate's name a claim
+      # it no longer earned (AX audit entry 127).
       # `!cancelled()` rather than `always()`: a run superseded by cancel-in-progress
       # reaches this step with job.status=cancelled, skips the smoke block below, and
       # posts the default STATE=failure — a staging-smoke=failure on a SHA that was
@@ -354,11 +357,8 @@ jobs:
           STATE=failure
           DESC="staging deploy + stranger smoke ($TAG)"
           if [ "$JOB_STATUS" = "success" ]; then
-            # Distinguish a confirmed NotFound (the stranger-journey CronJob is not in the
-            # staging release yet — expected) from any other kubectl failure (auth/API).
-            # Only NotFound drops to the reachability fallback; any other error FAILS
-            # CLOSED, so a transient lookup error + a healthy probe cannot post a false
-            # staging-smoke=success.
+            # The stranger journey is the gate. Without its CronJob there is no
+            # smoke to run, so a NotFound fails closed like any other lookup error.
             if ERR=$(kubectl get cronjob stranger-journey -n "$NAMESPACE" -o name 2>&1); then
               # CronJob exists — run the real stranger smoke against STAGING. The CronJob
               # defaults JOURNEY_API to production, so build the Job from it suspended,
@@ -384,17 +384,11 @@ jobs:
               kubectl logs "job/$JOB" -n "$NAMESPACE" --tail=12 || true
               [ "$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')" = "1" ] && STATE=success
             elif printf '%s' "$ERR" | grep -qE 'NotFound.*cronjobs.*stranger-journey'; then
-              # Confirmed the stranger-journey CronJob specifically is absent — reachability-
-              # only fallback, LABELLED as such so a green status is not mistaken for a full
-              # stranger smoke. A missing namespace or any other "not found" does NOT match
-              # and falls through to the fail-closed branch below.
-              CODE=$(curl -s -o /dev/null -w '%{http_code}' https://api-staging.commonly.me/api/health || true)
-              echo "no stranger-journey CronJob in staging (NotFound); reachability-only probe api-staging/api/health = $CODE"
-              DESC="staging deploy + reachability-only, no stranger CronJob ($TAG)"
-              [ "$CODE" = "200" ] && STATE=success
+              echo "::error title=staging-smoke::no stranger-journey CronJob in the staging release, so the stranger smoke cannot run. Check strangerJourney.enabled in values-staging.yaml."
+              DESC="staging deploy, no stranger-journey CronJob ($TAG)"
             else
               # Any other kubectl error (auth/API) — fail closed.
-              echo "::error title=staging-smoke::stranger-journey lookup failed and was not a NotFound: $ERR"
+              echo "::error title=staging-smoke::stranger-journey lookup failed: $ERR"
             fi
           fi
           echo "staging-smoke = $STATE for $SHA ($TAG)"

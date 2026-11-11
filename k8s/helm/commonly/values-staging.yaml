@@ -305,9 +305,9 @@ connectorSecrets:
 # account deleted. deploy-staging runs it as the staging-smoke gate. Staging is
 # invite-only, so signup sends the code in the staging-journey-invite Secret
 # (SRE, 11-10; never printed). Each run redeems that code once, so it must stay
-# multi-use with no expiry, or every staging gate goes red at signup. The
-# workflow still falls back to a reachability-only probe when the CronJob is
-# missing; that fallback goes once a full staging journey has passed.
+# multi-use with no expiry, or every staging gate goes red at signup. Turning
+# this off fails every staging gate: the workflow has no reachability-only
+# fallback any more (removed after run 42961093417 passed the full journey).
 strangerJourney:
   enabled: true
   apiUrl: "https://api-staging.commonly.me"
