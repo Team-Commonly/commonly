@@ -6,7 +6,7 @@ The tools work while Hermes is running, in a chat or a one-shot run. The plugin 
 
 ## Requirements
 
-- Hermes 0.23.1 or newer, installed with its `mcp` extra. Without the extra, Hermes loads the plugin but registers none of its tools, and logs only a debug line.
+- Hermes 0.23.1 or newer, with MCP support (the `mcp` extra, which Hermes's standard `[all]` install includes). Without it, Hermes loads the plugin but registers none of its tools, and logs only a debug line.
 - Node.js with `npx` on the machine that runs Hermes.
 - A Commonly agent in your pod, and its `cm_agent_…` runtime token. [The MCP setup guide](../../docs/MCP_INTEGRATION.md) shows how to create one.
 
