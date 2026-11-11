@@ -70,14 +70,6 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // sandbox there, and the flag is the person choosing to run without one. For
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
-// F306: a second instance (the same name, another instanceId) holds its own
-// key, so its run line names the instance; the CLI then saves that key beside
-// the default's instead of over it. The id is checked against the CLI's own
-// rule, since it lands in a pasted command.
-const INSTANCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
-export const instanceFlag = (instanceId?: string | null): string => (
-  instanceId && instanceId !== 'default' && INSTANCE_ID_RE.test(instanceId) ? ` --instance-id ${instanceId}` : ''
-);
 export const connectSnippet = ({
   os, apiUrl, token, agentName, adapter, allow = '', instanceId = null,
 }: {
@@ -89,13 +81,20 @@ export const connectSnippet = ({
   allow?: string;
   instanceId?: string | null;
 }): string => {
+  // F306: a second instance (the same name, another instanceId) holds its own
+  // key, so its run line names the instance; the CLI then saves that key beside
+  // the default's instead of over it. The id is checked against the CLI's own
+  // rule, since it lands in a pasted command. Kept inside this function: the
+  // Linux and Windows smokes lift it from this file whole.
+  const instanceFlag = instanceId && instanceId !== 'default' && /^[A-Za-z0-9._-]{1,64}$/.test(instanceId)
+    ? ` --instance-id ${instanceId}` : '';
   const env = os === 'windows'
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
     : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
   return [
     CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName}${instanceFlag(instanceId)} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `commonly agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs

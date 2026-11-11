@@ -2,7 +2,7 @@
 // (D245, #2141 part 1). PowerShell has no `export`, and its double-quoted
 // strings treat ` as the escape and expand $, so the key is escaped without
 // assuming anything about its alphabet.
-import { connectSnippet, instanceFlag, powerShellQuote } from '../components/V2AgentBYO';
+import { connectSnippet, powerShellQuote } from '../components/V2AgentBYO';
 
 jest.mock('axios', () => {
   const mock = {
@@ -89,10 +89,9 @@ describe('connectSnippet for a second instance (F306 part 2)', () => {
   });
 
   test('the default instance, no instance, or an id the CLI would refuse adds nothing', () => {
-    for (const id of [undefined, null, 'default', 'has space', 'a;rm -rf', 'x'.repeat(65)]) {
-      expect(instanceFlag(id)).toBe('');
+    for (const instanceId of [undefined, null, 'default', 'has space', 'a;rm -rf', 'x'.repeat(65)]) {
+      expect(connectSnippet({ ...base, os: 'unix', instanceId }).split('\n').at(-1))
+        .toBe('commonly agent run my-claude --adapter claude');
     }
-    expect(connectSnippet({ ...base, os: 'unix', instanceId: 'a;b' }).split('\n').at(-1))
-      .toBe('commonly agent run my-claude --adapter claude');
   });
 });
