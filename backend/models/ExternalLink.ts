@@ -51,10 +51,20 @@ const ExternalLinkSchema = new Schema<IExternalLink>(
     },
     url: { type: String, trim: true },
     qrCodePath: { type: String },
+    // Server-side only: never in a response, so a leaked key cannot be tried
+    // against another route (F406).
     qrCodeKey: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc: unknown, ret: Record<string, unknown>) => {
+        delete ret.qrCodeKey;
+        return ret;
+      },
+    },
+  },
 );
 
 ExternalLinkSchema.pre<IExternalLink>('save', function (next) {

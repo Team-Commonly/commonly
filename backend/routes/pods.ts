@@ -108,9 +108,11 @@ const QR_CODE_SERVED: Record<string, string> = {
 
 // F406: the image is held in memory and written to the ObjectStore only after
 // the membership check, so a refused request stores nothing, and every replica
-// can serve it (local disk lost it on a reschedule). The key carries a slash,
-// which `GET /api/uploads/:fileName` cannot match, so the image is reachable
-// only through the membership-checked route below.
+// can serve it (local disk lost it on a reschedule). The key carries a slash.
+// Express decodes `%2F` in a param, so `GET /api/uploads/:fileName` CAN be
+// handed `qr/…`; it refuses any name with a separator for that reason, and
+// that check must stay. The image is reachable only through the
+// membership-checked route below, and the key is never sent to clients.
 const qrCodeObjectKey = (podId: string, mimetype: string): string => (
   `qr/${podId}/${randomBytes(16).toString('hex')}${QR_CODE_TYPES[mimetype]}`
 );
@@ -374,7 +376,11 @@ router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res)
     if (link.qrCodeKey) {
       const obj = await getObjectStore().get(link.qrCodeKey);
       if (!obj) return res.status(404).json({ message: 'QR code not found' });
-      (obj.stream as unknown as { pipe: (dst: unknown) => void }).pipe(res);
+      const stream = obj.stream as unknown as {
+        on: (event: string, fn: () => void) => void; pipe: (dst: unknown) => void;
+      };
+      stream.on('error', () => (res as unknown as { destroy: () => void }).destroy());
+      stream.pipe(res);
       return undefined;
     }
     // A link saved before F406 still reads from the disk it was written to.

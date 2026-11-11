@@ -403,15 +403,19 @@ describe('pods routes - external link QR code in the object store', () => {
 
   it('stores the image under a qr/<pod>/<random>.png key and records the key', async () => {
     Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }], externalLinks: [], save: jest.fn() });
-    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l1', save: jest.fn() }));
-    const res = await postQr().expect(201);
+    let created;
+    ExternalLink.mockImplementation((data) => {
+      created = { ...data, _id: 'l1', save: jest.fn() };
+      return created;
+    });
+    await postQr().expect(201);
     expect(mockStore.put).toHaveBeenCalledTimes(1);
     const [key, body, mime] = mockStore.put.mock.calls[0];
     expect(key).toMatch(new RegExp(`^qr/${POD}/[0-9a-f]{32}\\.png$`));
     expect(body.toString()).toBe('png-bytes');
     expect(mime).toBe('image/png');
-    expect(res.body.qrCodeKey).toBe(key);
-    expect(res.body.qrCodePath).toBeUndefined();
+    expect(created.qrCodeKey).toBe(key);
+    expect(created.qrCodePath).toBeUndefined();
     expect(fs.createWriteStream).not.toHaveBeenCalled();
   });
 

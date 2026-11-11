@@ -74,6 +74,9 @@ describe('ExternalLink Model Tests', () => {
     });
     const saved = await link.save();
     expect(saved.qrCodeKey).toBe(`qr/${pod._id}/abc.png`);
+    // Never sent to a client: responses serialize through toJSON.
+    expect(saved.toJSON().qrCodeKey).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(saved)).qrCodeKey).toBeUndefined();
   });
 
   it('refuses a WeChat link with no QR code and no URL', async () => {
