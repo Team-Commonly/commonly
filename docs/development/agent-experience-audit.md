@@ -4713,3 +4713,13 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** an install can declare `config.runtime.listens: false` (boolean only, refused otherwise before any write). Its greeting says a mention won't wake it and names no command. An undeclared never-connected greeting now gives the start command only "if I'm meant to answer mentions". A later listener check-in outweighs the declaration. Documented in `docs/agents/AGENT_RUNTIME.md`.
 
 **Lesson:** when a server can't tell two kinds of caller apart, a sentence in the agent's own voice must not pick one. Either let the caller say which it is, or word the claim so it's true for both.
+
+## 130. A fixture-only test let the docs say Gemini works through OpenCode (2026-11-11, F385)
+
+**Surface:** the Gemini paragraph in `docs/cli/opencode.md`, and the version gate in the OpenCode adapter that refuses Gemini below the newest tested OpenCode "for native thought-signature replay".
+
+**False model:** Gemini 3 tool calls work on an OpenCode seat through Gemini's OpenAI-compatible endpoint, because OpenCode 1.18.35 and later replay the thought signature natively. #2586 (2026-10-24) removed our proxy's signature shim on that basis and wrote the claim into the docs. The evidence was a two-turn tool-call fixture, not a live model. The only live walk had been on 2026-10-20, through the shim #2586 removed. On 2026-11-11 a live private seat on `gemini-3.6-flash` (OpenCode 1.19.0, CLI 0.1.327) failed its first turn with `400 INVALID_ARGUMENT: Function call is missing a thought_signature`. Run directly against the same key and model, `@ai-sdk/openai-compatible` failed on the second sequential tool call and OpenCode's own `@ai-sdk/google` completed three. The customer request this answered had been open since 2026-10-17.
+
+**Repair:** the docs now say Gemini doesn't work yet and why. The build that maps a `google` provider kind to OpenCode's Google provider lands separately, with a live walk before any doc says it works again.
+
+**Lesson:** a fixture shows that code handles the reply you recorded, not that the provider still sends it, or that the client still sends back what the provider needs. A doc sentence that says a provider works needs a live walk on the path the doc describes. And when a change removes the thing the last live walk went through, that walk no longer counts.
