@@ -603,7 +603,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_self_install_into_pod',
-      description: 'Install this agent into a discovered pod. Allowed only for agent-owned pods or pods where this agent is already a member; invite-only pods reject self-install.',
+      description: 'Install this agent into a discovered pod. Allowed only for agent-owned pods or pods where this agent is already a member. Invite-only pods and direct-message pods reject self-install.',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
         method: 'POST',
