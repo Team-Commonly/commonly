@@ -2792,8 +2792,8 @@ const compareFixture = () => ({
   faq: [{ q: 'Is it open source?', a: 'Yes. [1]' }],
   sourcesIntro: 'Example facts read on 2026-11-11:',
   sources: [
-    { label: 'Example homepage', url: 'https://example.com/', read: '2026-11-11' },
-    { label: 'Commonly README', url: 'https://github.com/Team-Commonly/commonly', read: '2026-11-11' },
+    { n: 1, label: 'Example homepage', url: 'https://example.com/', read: '2026-11-11' },
+    { n: 2, label: 'Commonly README', url: 'https://github.com/Team-Commonly/commonly', read: '2026-11-11' },
   ],
   closing: 'Commonly facts come from the Commonly README.',
 });
@@ -2814,6 +2814,14 @@ test('every compare data file builds through the one template, in listOrder, wit
   assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-09\./);
   assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
   assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
+  // A malformed file names itself.
+  const broken = await mkdtemp(join(tmpdir(), 'seo-compare-broken-'));
+  try {
+    await writeFile(join(broken, 'bad.json'), '{ nope }');
+    assert.throws(() => loadCompareSources(broken), /^Error: compare\/bad\.json: /);
+  } finally {
+    await rm(broken, { recursive: true, force: true });
+  }
   // The one fact this change added carries its source.
   assert.match(loaded['github-agent-hq'].markdown, /\| \*\*License \/ self-host\*\* \| Hosted GitHub service\. .*self-hosted runners.*\[4\] \|/);
 });
@@ -2841,7 +2849,27 @@ test('a compare page with an unsourced competitor fact, an undated source or a d
   badDate.dateModified = '11/11/2026';
   assert.throws(() => assertCompareSourced('example', badDate), /dateModified is not YYYY-MM-DD/);
 
-  // A markdown link is not a citation.
+  const linkOnly = compareFixture();
+  linkOnly.table.rows[0].them = 'MIT. [1](https://example.com/)';
+  assert.throws(() => assertCompareSourced('example', linkOnly), /"License" states a Example fact with no source/);
+
+  const inserted = compareFixture();
+  inserted.sources.splice(1, 0, { n: 2, label: 'New', url: 'https://example.org/', read: '2026-11-11' });
+  assert.throws(() => assertCompareSourced('example', inserted), /source 3 is numbered 2/);
+
+  const backwards = compareFixture();
+  backwards.datePublished = '2026-11-12';
+  assert.throws(() => assertCompareSourced('example', backwards), /dateModified 2026-11-11 is before datePublished 2026-11-12/);
+
+  const elsewhere = compareFixture();
+  elsewhere.path = '/compare/other/';
+  assert.throws(() => assertCompareSourced('example', elsewhere), /path \/compare\/other\/ is not \/compare\/example\//);
+
+  const unordered = compareFixture();
+  delete unordered.listOrder;
+  assert.throws(() => assertCompareSourced('example', unordered), /listOrder is not a whole number/);
+
+  // A markdown link elsewhere on the page is not a citation either, and doesn't need a source.
   const linked = compareFixture();
   linked.pickUs = ['See [the guide](/guides/x/).'];
   assert.doesNotThrow(() => assertCompareSourced('example', linked));

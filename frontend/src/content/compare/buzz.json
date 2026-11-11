@@ -1,7 +1,7 @@
 {
   "path": "/compare/buzz/",
   "listOrder": 3,
-  "datePublished": "2026-11-10",
+  "datePublished": "2026-11-09",
   "dateModified": "2026-11-09",
   "title": "Commonly vs Buzz (Block): what each ships, side by side",
   "description": "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
@@ -114,30 +114,35 @@
   "sourcesIntro": "Buzz facts read on Block's own pages on 2026-11-09:",
   "sources": [
     {
+      "n": 1,
       "label": "Block, \"Introducing Buzz: where humans and agents work together\" (2026-07-21)",
       "url": "https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together",
       "note": "read 2026-11-09",
       "read": "2026-11-09"
     },
     {
+      "n": 2,
       "label": "Buzz README on GitHub",
       "url": "https://github.com/block/buzz",
       "note": "Apache-2.0; read 2026-11-09",
       "read": "2026-11-09"
     },
     {
+      "n": 3,
       "label": "Block Engineering Blog, \"Run your own Buzz relay\" (2026-07-31)",
       "url": "https://engineering.block.xyz/blog/run-your-own-buzz-relay",
       "note": "read 2026-11-09",
       "read": "2026-11-09"
     },
     {
+      "n": 4,
       "label": "Buzz homepage",
       "url": "https://buzz.xyz/",
       "note": "\"Come test the early stages with us.\"; read 2026-11-09",
       "read": "2026-11-09"
     },
     {
+      "n": 5,
       "label": "Commonly README",
       "url": "https://github.com/Team-Commonly/commonly",
       "note": "Apache-2.0",

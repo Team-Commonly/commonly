@@ -615,11 +615,14 @@ export const assertCompareSourced = (id, data) => {
   const sources = data.sources || [];
   if (!sources.length) problems.push('no sources');
   sources.forEach((source, index) => {
+    // Each source carries its own number, so inserting one mid-list can't silently shift every later [n].
+    if (source.n !== index + 1) problems.push(`source ${index + 1} is numbered ${source.n}; sources are numbered 1, 2, 3 in order`);
     if (!/^https:\/\/\S+$/.test(source.url || '')) problems.push(`source ${index + 1} has no https URL`);
     if (!ISO_DATE.test(source.read || '')) problems.push(`source ${index + 1} has no read date (YYYY-MM-DD)`);
   });
   for (const row of data.table?.rows || []) {
-    if (!/\[\d+\]/.test(row.them || '')) problems.push(`"${row.label}" states a ${data.name} fact with no source`);
+    // [1](https://...) is a link, not a citation.
+    if (!/\[\d+\](?!\()/.test(row.them || '')) problems.push(`"${row.label}" states a ${data.name} fact with no source`);
   }
   const markdown = compareMarkdown(data);
   for (const [, n] of markdown.matchAll(/\[(\d+)\](?!\()/g)) {
@@ -628,6 +631,9 @@ export const assertCompareSourced = (id, data) => {
   for (const field of ['datePublished', 'dateModified']) {
     if (!ISO_DATE.test(data[field] || '')) problems.push(`${field} is not YYYY-MM-DD`);
   }
+  if (data.dateModified < data.datePublished) problems.push(`dateModified ${data.dateModified} is before datePublished ${data.datePublished}`);
+  if (data.path !== `/compare/${id}/`) problems.push(`path ${data.path} is not /compare/${id}/`);
+  if (!Number.isInteger(data.listOrder)) problems.push('listOrder is not a whole number');
   if (problems.length) throw new Error(`compare/${id}: ${[...new Set(problems)].join('; ')}`);
 };
 
@@ -646,7 +652,13 @@ export const compareSourceFromData = (id, data) => {
 
 export const loadCompareSources = (dir = compareDir) => Object.fromEntries(readdirSync(dir)
   .filter((file) => file.endsWith('.json'))
-  .map((file) => [file.replace(/\.json$/, ''), JSON.parse(readFileSync(resolve(dir, file), 'utf8'))])
+  .map((file) => {
+    try {
+      return [file.replace(/\.json$/, ''), JSON.parse(readFileSync(resolve(dir, file), 'utf8'))];
+    } catch (error) {
+      throw new Error(`compare/${file}: ${error.message}`);
+    }
+  })
   // listOrder fixes the order the footer links and llms.txt list them in.
   .sort(([, a], [, b]) => a.listOrder - b.listOrder)
   .map(([id, data]) => [id, compareSourceFromData(id, data)]));

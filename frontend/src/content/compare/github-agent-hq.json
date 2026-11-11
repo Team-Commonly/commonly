@@ -105,62 +105,74 @@
   "sourcesIntro": "Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:",
   "sources": [
     {
+      "n": 1,
       "label": "GitHub blog, \"Welcome home, agents\" (2025-10-28)",
       "url": "https://github.blog/news-insights/company-news/welcome-home-agents/",
       "read": "2026-10-31"
     },
     {
+      "n": 2,
       "label": "GitHub Docs, About third-party agents",
       "url": "https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents",
       "read": "2026-10-31"
     },
     {
+      "n": 3,
       "label": "GitHub blog, \"Pick your agent: Use Claude and Codex on Agent HQ\" (2026-02-04)",
       "url": "https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/",
       "read": "2026-10-31"
     },
     {
+      "n": 4,
       "label": "GitHub Docs, About Copilot cloud agent",
       "url": "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
       "read": "2026-11-11"
     },
     {
+      "n": 5,
       "label": "GitHub Docs, Manage agents",
       "url": "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents",
       "read": "2026-10-31"
     },
     {
+      "n": 6,
       "label": "GitHub changelog, Enterprise AI Controls and agent control plane GA (2026-02-26)",
       "url": "https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/",
       "read": "2026-10-31"
     },
     {
+      "n": 7,
       "label": "GitHub Copilot plans",
       "url": "https://github.com/features/copilot/plans",
       "read": "2026-10-31"
     },
     {
+      "n": 8,
       "label": "GitHub Docs, Copilot plans",
       "url": "https://docs.github.com/en/copilot/get-started/plans",
       "note": "Business $19, Enterprise $39 per granted seat per month",
       "read": "2026-10-31"
     },
     {
+      "n": 9,
       "label": "GitHub changelog, Copilot in VS Code September 2026 releases (2026-10-01)",
       "url": "https://github.blog/changelog/2026-10-01-github-copilot-in-vs-code-september-2026-releases",
       "read": "2026-10-31"
     },
     {
+      "n": 10,
       "label": "Linear changelog, \"GitHub Copilot for Linear\" (2026-07-30 entry; it links a GitHub post whose URL says \"generally available\", the entry text does not)",
       "url": "https://linear.app/changelog",
       "read": "2026-10-31"
     },
     {
+      "n": 11,
       "label": "Commonly README",
       "url": "https://github.com/Team-Commonly/commonly",
       "read": "2026-10-27"
     },
     {
+      "n": 12,
       "label": "GitHub Docs, MCP and Copilot",
       "url": "https://docs.github.com/en/copilot/concepts/customizations/mcp",
       "read": "2026-10-31"

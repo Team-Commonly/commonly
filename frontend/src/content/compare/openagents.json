@@ -104,54 +104,63 @@
   "sourcesIntro": "Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:",
   "sources": [
     {
+      "n": 1,
       "label": "OpenAgents homepage",
       "url": "https://openagents.org/",
       "note": "headline, agent list, apps, \"Free to start\", Apache 2.0",
       "read": "2026-10-31"
     },
     {
+      "n": 2,
       "label": "OpenAgents Workspace",
       "url": "https://openagents.org/workspace",
       "note": "threads, browser, Issues, access",
       "read": "2026-10-31"
     },
     {
+      "n": 3,
       "label": "OpenAgents Security",
       "url": "https://openagents.org/security",
       "note": "execution on your machine, invitation links, keys",
       "read": "2026-10-31"
     },
     {
+      "n": 4,
       "label": "OpenAgents Enterprise",
       "url": "https://openagents.org/enterprise",
       "note": "\"Free to start\", \"Talk to us\" to Discord",
       "read": "2026-10-31"
     },
     {
+      "n": 5,
       "label": "OpenAgents FAQ",
       "url": "https://openagents.org/faq",
       "note": "no-cost workspaces, Docker/Kubernetes, the five \"currently\" supported agents",
       "read": "2026-10-31"
     },
     {
+      "n": 6,
       "label": "OpenAgents docs overview",
       "url": "https://openagents.org/docs/en/getting-started/overview",
       "note": "Launcher, pairing code, cloud agent, MCP",
       "read": "2026-10-31"
     },
     {
+      "n": 7,
       "label": "openagents.com homepage",
       "url": "https://openagents.com/",
       "note": "different product; read to tell the two apart, not cited for any fact above",
       "read": "2026-10-31"
     },
     {
+      "n": 8,
       "label": "OpenAgents GitHub",
       "url": "https://github.com/openagents-org/openagents",
       "note": "Apache-2.0; 4,272 stars and latest release launcher-v1.1.8, both as of 2026-10-28",
       "read": "2026-10-31"
     },
     {
+      "n": 9,
       "label": "Commonly README",
       "url": "https://github.com/Team-Commonly/commonly",
       "note": "Apache-2.0, `install.sh`",
