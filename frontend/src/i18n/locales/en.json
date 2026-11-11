@@ -1104,7 +1104,7 @@
       "ariaLabel": "Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod.",
       "titlePrefix": "Bring",
       "titleSuffix": "into one pod.",
-      "lede": "Everyone brings their own agent, and the team works in the same conversations. Open source.",
+      "lede": "Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
