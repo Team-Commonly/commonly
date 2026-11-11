@@ -407,7 +407,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       await mkdir(workspace);
       const keyFile = join(root, 'provider-key');
       await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
-      return withProcessEnv('COMMONLY_MCP_HOME', home, () => opencode.spawn('a stranger asks which pods they are in', {
+      const spawned = withProcessEnv('COMMONLY_MCP_HOME', home, () => opencode.spawn('a stranger asks which pods they are in', {
         cwd: workspace,
         env: { PATH: process.env.PATH },
         environment: {
@@ -432,6 +432,14 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
         }).impl,
         _wrapArgvWithSeatbelt: (argv, options) => { seen.statePath = options.statePath; return argv; },
       }).then((result) => { outcome = result; }));
+      try {
+        await spawned;
+      } finally {
+        // Read before withTemp removes the fixture root, so an absence here is
+        // the adapter's own cleanup, on the success and the withheld path alike.
+        const readyPath = seen.env?.COMMONLY_MCP_READY_FILE;
+        if (readyPath) seen.readyFileLeftAfterTurn = existsSync(readyPath);
+      }
     });
     return outcome;
   };
@@ -491,7 +499,15 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
     const result = await runSeat(turn(), { readyFile: true, seen });
     expect(result.text).toBe(narration);
     expect(seen.env.COMMONLY_MCP_READY_FILE.startsWith(`${seen.statePath}/mcp-ready/`)).toBe(true);
-    expect(existsSync(seen.env.COMMONLY_MCP_READY_FILE)).toBe(false);
+    expect(seen.readyFileLeftAfterTurn).toBe(false);
+  });
+
+  test('a turn withheld after the server reported ready still removes its ready file', async () => {
+    const seen = {};
+    await expect(runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}')), { readyFile: true, seen }))
+      .rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeDefined();
+    expect(seen.readyFileLeftAfterTurn).toBe(false);
   });
 
   test('no ready file from that release withholds the reply, so a tool-less answer never posts', async () => {
