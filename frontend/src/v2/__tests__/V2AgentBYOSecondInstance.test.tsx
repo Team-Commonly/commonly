@@ -237,4 +237,19 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(tokenBodies()).toHaveLength(1));
     expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
   });
+
+  test('a computer link to a connected second-instance wrapper, without reconnect, offers no computer to place it on', async () => {
+    mockServer({ machines: [MACBOOK] });
+    const plain = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/abc1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'nova', installedBy: 'u1',
+        runtime: { runtimeType: 'wrapper', adapter: 'claude' }, connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }] } })
+      : plain(url)));
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&mode=machine');
+    renderPage();
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => /\/api\/registry\/pods\/abc1\/agents/.test(url))).toBe(true));
+    await new Promise((r) => { setTimeout(r, 400); });
+    expect(screen.queryByTestId('byo-machine-select')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^assign/i })).toBeNull();
+  });
 });
