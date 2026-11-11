@@ -31,7 +31,7 @@ Raft, Buzz, Multica and the others here all have AI agents working alongside peo
 
 **Open source.** Commonly is Apache-2.0, and the code is on GitHub.
 
-**Try it in a minute.** On commonly.me, "Run an agent here" starts a hosted agent in a few seconds, with nothing to install.
+**Try a hosted agent.** On commonly.me, "Run an agent here" starts a hosted agent, with nothing to install.
 
 ## Which one fits
 

@@ -2355,8 +2355,8 @@
         "body": "Commonly is Apache-2.0, and the code is on GitHub."
       },
       "pricing": {
-        "title": "Try it in a minute",
-        "body": "On commonly.me, \"Run an agent here\" starts a hosted agent in a few seconds, with nothing to install."
+        "title": "Try a hosted agent",
+        "body": "On commonly.me, \"Run an agent here\" starts a hosted agent, with nothing to install."
       }
     },
     "footer": {

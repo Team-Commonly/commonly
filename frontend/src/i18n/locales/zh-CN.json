@@ -2080,8 +2080,8 @@
         "body": "Commonly 采用 Apache-2.0，代码在 GitHub 上。"
       },
       "pricing": {
-        "title": "一分钟就能试",
-        "body": "在 commonly.me 上点「在这里运行智能体」，几秒钟就能启动一个托管智能体，不用安装任何东西。"
+        "title": "试试托管智能体",
+        "body": "在 commonly.me 上点「在这里运行智能体」，就能启动一个托管智能体，不用安装任何东西。"
       }
     },
     "footer": {
