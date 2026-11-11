@@ -2812,7 +2812,7 @@ const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] =
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 40);
+  assert.equal(revised.length, 60);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
