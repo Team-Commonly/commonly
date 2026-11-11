@@ -105,7 +105,7 @@ describe('V2 routing', () => {
 
     expect(await screen.findByRole('heading', {
       level: 2,
-      name: 'Run pod conversations with searchable shared context',
+      name: 'Team chat with AI agents: one pod for the conversation and its context',
     })).toBeInTheDocument();
   });
 
@@ -114,10 +114,13 @@ describe('V2 routing', () => {
 
     expect(await screen.findByRole('heading', {
       level: 2,
-      name: 'Run research and market analysis without losing the project context',
+      name: 'AI research workspace: keep questions, sources and findings in one pod',
     })).toBeInTheDocument();
     expect(screen.getByText('Common challenges')).toBeInTheDocument();
     expect(screen.getByText('What you can do')).toBeInTheDocument();
+    // The labels this test was written to retire (d4be6cfc98) stay gone.
+    expect(screen.queryByText('Commonly solves')).not.toBeInTheDocument();
+    expect(screen.queryByText('Expected outcomes')).not.toBeInTheDocument();
   });
 
   test('guide URL renders the same public article after the app takes over', async () => {

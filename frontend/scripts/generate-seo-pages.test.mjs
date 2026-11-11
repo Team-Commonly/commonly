@@ -178,9 +178,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
     const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
-    assert.equal(article.author['@type'], 'Organization');
+    // A guide whose D295 pass has landed names Sam; every other guide is as it was (F430).
+    const revised = guides[guide.path.split('/')[2]].revised;
+    assert.equal(article.author['@type'], revised ? 'Person' : 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
     assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    if (revised) {
+      assert.equal(article.dateModified, revised);
+      continue;
+    }
     assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
@@ -190,17 +196,18 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly AI');
   const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(taskManagementArticle.datePublished, '2026-08-25');
-  assert.equal(taskManagementArticle.dateModified, '2026-08-30');
+  // Revised in D295's first batch (F430).
+  assert.equal(taskManagementArticle.dateModified, '2026-11-11');
   const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const sharedWorkspaceGuide = guidePages.find((page) => page.path === '/guides/connect-claude-codex-shared-workspace/');
   assert.equal(sharedWorkspaceGuide.title, 'Connect Claude Code and Codex to a Shared Workspace');
   const sharedWorkspaceArticle = sharedWorkspaceGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(sharedWorkspaceArticle.datePublished, '2026-08-26');
-  assert.equal(sharedWorkspaceArticle.dateModified, '2026-08-30');
+  assert.equal(sharedWorkspaceArticle.dateModified, '2026-11-11');
   const taskManagementHtml = renderStaticPage(guideTemplate, taskManagementGuide);
-  assert.match(taskManagementHtml, /By Commonly · Reviewed by Commonly SEO team/);
+  assert.match(taskManagementHtml, /By <a href="https:\/\/x\.com\/sam_commonly" rel="author">Sam Xu<\/a> · Reviewed by Commonly SEO team/);
   assert.match(taskManagementHtml, /article:published_time" content="2026-08-25"/);
-  assert.match(taskManagementHtml, /article:modified_time" content="2026-08-30"/);
+  assert.match(taskManagementHtml, /article:modified_time" content="2026-11-11"/);
   assert.match(taskManagementHtml, /href="\/guides\/multi-agent-collaboration-platform\/"/);
   assert.match(taskManagementHtml, /href="\/guides\/ai-agent-workspace\/"/);
   assert.doesNotMatch(taskManagementHtml, /document\.documentElement/);
@@ -2649,7 +2656,7 @@ test('every sitemap URL carries the lastmod its page records (F369, F395)', asyn
     }
     assert.equal((sitemap.match(/<lastmod>/g) || []).length, entries.length);
     // The guides index changes when its newest guide does.
-    const newest = Object.values(guides).map((guide) => guide.provenance.dateModified).sort().pop();
+    const newest = Object.values(guides).map((guide) => guide.revised || guide.provenance.dateModified).sort().pop();
     assert.equal(pages.find((page) => page.path === '/guides/').dateModified, newest);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
@@ -2775,6 +2782,112 @@ test('every guide is linked from inside another guide, and every in-body guide l
   }
   const unlinked = [...inbound].filter(([, count]) => count === 0).map(([slug]) => slug);
   assert.deepEqual(unlinked, []);
+});
+
+// D295 pass (F430). One explicit field, `revised`, turns a guide's whole pass on at once; a guide
+// without it renders as before. Use-case pages lead with the search phrase and show their date.
+const loadSiteInputs = async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  return { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
+};
+const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] === 'Article');
+
+test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
+  const inputs = await loadSiteInputs();
+  const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
+  assert.equal(revised.length, 20);
+  const pages = buildPageDefinitions(inputs);
+  for (const [id, guide] of revised) {
+    const page = pages.find((item) => item.path === `/guides/${id}/`);
+    const article = articleOf(page);
+    assert.deepEqual(article.author, {
+      '@type': 'Person', name: 'Sam Xu', url: 'https://x.com/sam_commonly', sameAs: ['https://x.com/sam_commonly'],
+    }, id);
+    assert.equal(article.dateModified, guide.revised, id);
+    assert.equal(page.dateModified, guide.revised, id);
+    assert.ok(page.content.includes('By <a href="https://x.com/sam_commonly" rel="author">Sam Xu</a> · Reviewed by'), id);
+    assert.ok(page.content.includes(`<p><strong>Short answer.</strong> ${guide.answer.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')}</p>`), id);
+    assert.ok(page.content.includes(`<time datetime="${guide.revised}">`), id);
+  }
+  // Sam appears only as that author node: no bio, job title or other claims anywhere in the graph.
+  const graphText = JSON.stringify(pages.find((item) => item.path === `/guides/${revised[0][0]}/`).schema);
+  assert.equal(graphText.match(/Sam Xu/g).length, 1);
+  assert.doesNotMatch(graphText, /jobTitle|description":"Sam|worksFor|alumniOf/);
+});
+
+test('an unrevised guide renders exactly as it did before the pass', async () => {
+  const inputs = await loadSiteInputs();
+  const [id, guide] = Object.entries(inputs.guides).find(([, item]) => !item.revised);
+  const pages = buildPageDefinitions(inputs);
+  const page = pages.find((item) => item.path === `/guides/${id}/`);
+  assert.equal(articleOf(page).author['@type'], 'Organization');
+  assert.equal(page.dateModified, guide.provenance.dateModified);
+  assert.ok(page.content.includes(`By ${guide.provenance.author} · Reviewed by`));
+  assert.doesNotMatch(page.content, /Short answer\./);
+  assert.doesNotMatch(page.content, /sam_commonly/);
+  // Byte-identical: the same guide with a pass applied and then taken away renders the same page.
+  const withPass = { ...inputs, guides: { ...inputs.guides, [id]: { ...guide, revised: '2026-11-11', answer: 'A.' } } };
+  const passed = buildPageDefinitions(withPass).find((item) => item.path === `/guides/${id}/`);
+  assert.notEqual(passed.content, page.content);
+  const { revised: _r, answer: _a, ...unpassed } = withPass.guides[id];
+  const back = buildPageDefinitions({ ...inputs, guides: { ...inputs.guides, [id]: unpassed } }).find((item) => item.path === `/guides/${id}/`);
+  assert.equal(back.content, page.content);
+  assert.deepEqual(back.schema, page.schema);
+});
+
+test('an answer block without a revised date, or a revised date before dateModified, stops the build', async () => {
+  const inputs = await loadSiteInputs();
+  const [id, guide] = Object.entries(inputs.guides).find(([, item]) => !item.revised);
+  const build = (patch) => buildPageDefinitions({ ...inputs, guides: { ...inputs.guides, [id]: { ...guide, ...patch } } });
+  assert.throws(() => build({ answer: 'An answer.' }), /has an answer block but no revised date/);
+  assert.throws(() => build({ revised: '2026-01-01' }), /revised date that is not YYYY-MM-DD on or after its dateModified/);
+  assert.throws(() => build({ revised: '11/11/2026' }), /revised date that is not YYYY-MM-DD/);
+  // A pass with no answer block is allowed: the guide still gets its byline and date.
+  const page = build({ revised: '2026-11-11' }).find((item) => item.path === `/guides/${id}/`);
+  assert.equal(articleOf(page).author['@type'], 'Person');
+  assert.doesNotMatch(page.content, /Short answer\./);
+});
+
+test('use-case pages lead with the search phrase, show their Updated date, and carry both dates in structured data', async () => {
+  const inputs = await loadSiteInputs();
+  const pages = buildPageDefinitions(inputs);
+  for (const [id, useCase] of Object.entries(inputs.useCases)) {
+    const page = pages.find((item) => item.path === `/use-cases/${id}/`);
+    assert.equal(page.title, `${useCase.titleTag} | Commonly AI`, id);
+    assert.ok(page.title.length <= 60, `${id}: ${page.title.length}`);
+    assert.ok(page.content.includes(`<h1>${useCase.title.replaceAll('&', '&amp;').replaceAll("'", '&#39;')}</h1>`), id);
+    assert.ok(page.content.includes(`<p class="seo-byline">Updated <time datetime="${useCase.dateModified}">`), id);
+    const node = page.schema['@graph'].find((item) => item['@type'] === 'WebPage');
+    assert.equal(node.datePublished, useCase.datePublished, id);
+    assert.equal(node.dateModified, useCase.dateModified, id);
+    assert.ok(useCase.datePublished <= useCase.dateModified, id);
+  }
+  const index = pages.find((item) => item.path === '/use-cases/');
+  assert.equal(index.title, 'AI agent use cases for teams | Commonly AI');
+  assert.ok(index.content.includes('<h1>AI agent use cases: how teams work with agents in shared pods</h1>'));
+  // pod-browser's own page says "pod" now, all through.
+  const podBrowser = pages.find((item) => item.path === '/use-cases/pod-browser/');
+  const main = podBrowser.content.split('<footer')[0];
+  assert.doesNotMatch(main, /\broom\b/i);
+});
+
+test('a use-case title change leaves every other page\'s footer as it was (linkLabel), while llms.txt reads the new title', async () => {
+  const inputs = await loadSiteInputs();
+  const pages = buildPageDefinitions(inputs);
+  const guide = pages.find((item) => item.path === '/guides/agentic-workflows/');
+  for (const [id, useCase] of Object.entries(inputs.useCases)) {
+    assert.ok(useCase.linkLabel, id);
+    assert.ok(guide.content.includes(`<a href="/use-cases/${id}/">${useCase.linkLabel.replaceAll('&', '&amp;').replaceAll("'", '&#39;')}</a>`), id);
+  }
+  const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
+  const { renderLlmsTxt } = await import('./generate-seo-pages.mjs');
+  const llms = renderLlmsTxt({ base, guides: inputs.guides, useCases: inputs.useCases, pages });
+  for (const useCase of Object.values(inputs.useCases)) assert.ok(llms.includes(`[${useCase.title}]`), useCase.title);
 });
 
 // /compare as data (F429, D295): one file per competitor, one template, and no competitor fact

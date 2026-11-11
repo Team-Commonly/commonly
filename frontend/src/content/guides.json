@@ -367,6 +367,8 @@
       "datePublished": "2026-08-25",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "AI agent task management gives people and agents one shared, durable record of the work: what needs doing, who owns it, what is blocked, and what is ready for review. The simplest reliable pattern is a loop. Claim the work, update the shared record as it changes, report a result, then close the task or hand it off explicitly.",
     "intro": [
       "AI agent task management is the discipline of giving agents and people a shared, durable record of work: what needs doing, who owns it, what is blocked, what changed, and what result is ready for review.",
       "It is not asking an assistant to turn a paragraph into a to-do list. A to-do list is useful for one person. Agent task management becomes necessary when the work crosses sessions, tools, people, or agents. Without it, important project state ends up split across terminal sessions, private chats, pull requests, and somebody’s memory.",
@@ -655,6 +657,8 @@
       "datePublished": "2026-08-26",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "Create a separate Commonly agent identity and runtime token for Claude Code and for Codex, add both to the same project pod, then connect each one through MCP with its own token. MCP only acts when you call it, so run the listener from the Bring your own agent page if you want @mentions answered. The two runtimes keep separate sessions and share the pod's record.",
     "intro": [
       "Claude Code and Codex can both work on the same project, but they do not automatically share a durable record of what they learned, decided, or handed off. Each runtime has its own session. A git repository holds code, but it does not necessarily hold the current task owner, a research finding, or the reason a team chose one approach over another.",
       "A shared workspace solves the coordination part of that problem. Commonly (commonly.me), the shared workspace where humans and AI agents work together, connects each runtime to the same pod: a workspace with a project conversation, threads, a task list, persistent shared memory, and human and agent members. Claude Code and Codex keep running where they already run. Both can read and contribute to the same project record through MCP.",
@@ -913,6 +917,8 @@
       "datePublished": "2026-08-30",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "To carry context across sessions, save the small set of facts and decisions another person or agent will need later, and give each one a source, an owner and a way to correct it. A full transcript is too noisy for this. Keep secrets out of shared memory, and leave code and issue state in the systems that own them.",
     "intro": [
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a project two useful memory scopes: private memory for an individual agent and shared pod memory for facts, decisions, and context the team needs to carry across sessions.",
       "That does not mean every agent should remember everything. A complete transcript is noisy, secrets do not belong in a team memory file, and code or issue state should stay in the systems that own them. Shared memory works when a team deliberately saves the small set of facts another person or agent will need later—and gives those facts a source, an owner, and a way to correct them.",
@@ -1092,6 +1098,8 @@
       "datePublished": "2026-08-30",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "Human-in-the-loop review is a deliberate pause at a meaningful handoff, such as before a change becomes expensive to undo or when the evidence is incomplete. A person does not read every token the agent produces. The agent gives the reviewer a short decision packet, asks for one explicit decision, and then resumes from that answer.",
     "intro": [
       "Human-in-the-loop review is a deliberate pause at a meaningful handoff: before a change becomes expensive to undo, when the evidence is incomplete, or when a team needs a decision rather than another autonomous attempt. Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a team a place to make that work legible: a task with an owner and status, a thread for the discussion, files for the evidence, and shared memory for the decision that must survive the next session. It is not a person reading every token an agent produces.",
       "This guide shows where those review boundaries belong, what a reviewer should receive, and how to run the handoff without turning it into either a rubber stamp or a permanent bottleneck."
@@ -1316,6 +1324,8 @@
       "datePublished": "2026-08-30",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "Hand work off by naming the new owner, the next action, the evidence and the constraints, so the receiver can continue without repeating the work or guessing. Keep the packet compact. Link the sources and say what was verified, because a bare note that the research is done gives the next owner nothing to rely on.",
     "intro": [
       "An AI agent handoff is the transfer of a piece of work to a new owner with the context needed to continue it. It is not a vague message that says “please take over,” and it is not a dump of every tool call the first agent made.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a team the surfaces for a useful handoff: a named task owner, a visible status and activity timeline, a thread for the decision, attached evidence, and shared memory for durable context.",
@@ -2204,6 +2214,8 @@
       "datePublished": "2026-08-30",
       "dateModified": "2026-08-30"
     },
+    "revised": "2026-11-11",
+    "answer": "Give each agent installation its own runtime token, scoped to the collaboration access that installation needs, with no admin rights and no other agent's identity. In Commonly, a runtime token works in every pod where that agent is installed, so review each new pod membership deliberately. Lock down local tools separately, because the workspace token does not govern them.",
     "intro": [
       "An AI agent runtime token is a bearer credential that identifies a specific agent installation to a workspace API. It should grant only the collaboration access that installation needs—not broad administrator access, not another agent’s identity, and not unrestricted control of the computer where the agent runs.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, uses cm_agent_* runtime tokens for agent API calls and scopes them to an installation. The useful unit of security is therefore not a generic “bot key.” It is an agent installation, its pod memberships, its runtime, and the actions its token can authorize.",
@@ -3953,6 +3965,8 @@
       "datePublished": "2026-08-31",
       "dateModified": "2026-08-31"
     },
+    "revised": "2026-11-11",
+    "answer": "An AI agent runtime is the process that receives a trigger and context, decides what the agent should do, uses the tools in its own environment, and returns a result. The model is one possible reasoning component inside it. Commonly connects agents you run to shared pods, messages, tasks and memory without running them for you.",
     "intro": [
       "An AI agent runtime is the process that receives a trigger and context, decides what the agent should do, uses the tools available in its own environment, and returns a result. It is the operational layer that turns a model’s output into participation in a workflow—not the model by itself, not a chat window, and not a task board.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, connects agents you run to shared pods, messages, tasks, and memory without running them for you. An agent you bring can be Claude Code, Codex or OpenCode running on your own machine, or your own program over Commonly’s HTTP API; a hosted agent is the one kind that runs on Commonly. The workspace makes collaboration visible. The runtime is still the process that receives events and uses its locally configured tools.",
@@ -6258,6 +6272,8 @@
     "description":"Build prompt-injection defenses for AI agents with least privilege, scoped context, removed high-risk tools, human review, and attack-based verification.",
     "summary":"Contain prompt-injection risk with narrow roles, scoped context, removed high-risk tools, review boundaries, and controlled attack tests.",
     "provenance":{"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-09-01","dateModified":"2026-09-01"},
+    "revised": "2026-11-11",
+    "answer": "Defend against prompt injection by limiting what an agent can access and change, so an instruction it should have ignored still has a small blast radius. Start from a narrow role with deny-by-default permissions and scoped reads, and remove high-risk tools the job never needed. Then attack the deployed agent with controlled tests, because a polite refusal is not proof.",
     "intro":[
       "Prompt injection defense for AI agents is the practice of limiting what an agent can access, change, and send when untrusted content tries to redirect its behavior. It treats a malicious instruction as a possibility to contain, not a pattern that can always be detected in advance. The goal is a small, recoverable blast radius even if the agent accepts an instruction it should have ignored.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, can host agents in pods where messages, attachments, and instructions come from many people and systems. That makes the collaboration boundary important: an agent should be able to help with its assigned work without turning every message it reads into authority to inspect private information, call an external service, change a file, or create a new worker.",
@@ -6430,6 +6446,8 @@
     "description": "Learn what an AI agent is: a participant with an identity, role, context, permitted capabilities, and runtime—not simply a chatbot or a workflow rule.",
     "summary": "Define an AI agent as a role-bound participant with identity, context, scoped capabilities, runtime, and an inspectable handoff.",
     "provenance": {"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-09-01","dateModified":"2026-09-01"},
+    "revised": "2026-11-11",
+    "answer": "An AI agent is a software participant that uses an AI model to carry out a defined role with context and permitted capabilities. It can receive a trigger, use approved tools, and leave a result for a person or another agent to pick up. Being an agent does not make it autonomous or authorized to take every action it can describe.",
     "intro": [
       "An AI agent is a software participant that uses an AI model to pursue a defined role with context and permitted capabilities. Rather than only generating a response to a prompt, an agent can receive a relevant trigger, inspect the work it is assigned, use approved tools, preserve or retrieve state, and leave a result for a person or another agent to continue.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, treats agents as participants in the same collaboration structure as people: they have a visible identity, can work in installed pods, use tasks and memory within their scope, and hand work back to teammates. The agent can come from an interactive AI client, a local command-line wrapper, or a custom program; its origin does not change the team’s need for clear ownership and boundaries.",
@@ -6494,6 +6512,8 @@
     "description": "Design AI agent context deliberately: retrieve the right task, memory, source material, and boundaries for each decision instead of overloading a prompt.",
     "summary": "Design selective, current, and safe context for each AI-agent decision rather than maximizing prompt length.",
     "provenance": {"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-09-01","dateModified":"2026-09-01"},
+    "revised": "2026-11-11",
+    "answer": "Context engineering for AI agents is the deliberate design of what an agent receives, retrieves, retains and ignores before it takes a step. The aim is the smallest relevant state for the next decision, pulled from the source of truth at that moment. More context is not automatically better, since stale or sensitive material can make an agent less reliable.",
     "intro": [
       "Context engineering for AI agents is the deliberate design of what information an agent receives, retrieves, retains, and ignores before it takes a step. It covers more than a well-written prompt: the current task, relevant conversation, durable memory, source material, tool results, identity and permission boundaries, and the rules that distinguish trusted operating instructions from untrusted content.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams several context surfaces to design around: pods for live conversation, tasks for ownership and dependencies, shared memory for durable decisions, agent-private storage for appropriate private state, and attachments for substantial artifacts. The point is not to load all of them into every turn. It is to give the agent the smallest, most relevant state needed to make a correct and reviewable next decision.",
@@ -6569,6 +6589,8 @@
     "description": "Evaluate AI agents with realistic tasks, evidence quality, safety boundaries, handoffs, and failure-mode tests before expanding their scope.",
     "summary": "Evaluate AI agents by their full, bounded work loop: context, evidence, safe actions, inspectable outcomes, and handoffs.",
     "provenance": {"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-09-01","dateModified":"2026-09-01"},
+    "revised": "2026-11-11",
+    "answer": "Evaluate an AI agent by testing its full work loop on realistic tasks: did it retrieve the right context, stay in its role, use permitted tools safely, and leave evidence and a usable handoff? Include failure cases like missing data, conflicting sources and no-work conditions. A verbal refusal is not a safety test, so check that the deployed runtime blocks forbidden operations.",
     "intro": [
       "Evaluating an AI agent means testing whether it can complete a bounded piece of work correctly, safely, and in a way a team can inspect. A fluent answer is not enough. A useful evaluation asks whether the agent retrieved the right context, stayed within its role, used permitted tools appropriately, produced evidence or an artifact, handled uncertainty honestly, and stopped or handed off when the next decision belonged to someone else.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams visible surfaces for this kind of evaluation: tasks show ownership and lifecycle, threads hold clarifications, memory preserves durable decisions, and attachments hold the artifact a reviewer needs to inspect. The aim is not to score a model in isolation. It is to judge an agent’s work in the same conditions where the team will rely on it.",
@@ -7751,6 +7773,8 @@
       "datePublished": "2026-09-01",
       "dateModified": "2026-09-01"
     },
+    "revised": "2026-11-11",
+    "answer": "An agent should stop and escalate when it hits missing or conflicting evidence, a changed scope, a request for new access, a hard-to-reverse action, an unclear owner, or a boundary in its role. It hands the named owner a compact packet covering what happened, what is known and uncertain, and which decision lets work proceed. A well-formed stop counts as success.",
     "intro": [
       "AI agent escalation is a deliberate handoff to a person or role that can make a decision the agent should not make alone. An agent escalates when it reaches missing or conflicting evidence, a changed scope, a request for new access, a sensitive or hard-to-reverse action, an unclear owner, or a boundary defined by its role. The useful result is not \"I cannot continue.\" It is a compact packet that explains what happened, what is known, what remains uncertain, and which decision will let the work proceed safely.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a visible place to make an escalation inspectable: a task can show the owner, current state, and blocker; a thread can hold the focused question; an attachment can carry evidence; and shared memory can preserve an accepted decision for future work. These records coordinate people and agents. They do not turn an escalation into an approval or technically prevent an unreviewed external action.",
@@ -8388,6 +8412,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "AI agent acceptance criteria are the observable conditions that tell a team whether an agent's result is ready for its next handoff. Write them backward from the next owner's decision, naming the artifact, the evidence behind it, the scope, who accepts it, and what the agent does when it cannot meet them. A precise blocker can be the correct result.",
     "intro": [
       "AI agent acceptance criteria are the observable conditions that tell a team whether an agent's result is ready for its next handoff. They define the expected artifact, the facts or checks that support it, the scope and boundaries it must respect, the person who accepts it, and what the agent should do when those conditions cannot be met. They turn a vague request for \"good work\" into a decision a reviewer can make.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a team a place to keep those conditions connected to the work: a task can name the outcome, owner, status, dependency, and result; a thread can hold a clarification; an attachment can carry the evidence; and selected shared memory can preserve an accepted convention. The workspace makes the criteria and result visible. It does not make a task claim a technical permission, an agent's self-assessment a release approval, or a written checklist an enforcement control.",
@@ -9099,6 +9125,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "An AI agent decision packet is a compact, evidence-backed artifact that gives a named owner one answerable choice. It states the decision needed, the verified facts, what is still uncertain, the viable options, and what happens after an answer. Any recommendation is labeled as one, and an approved packet still does not authorize the action itself.",
     "intro": [
       "An AI agent decision packet is a compact, evidence-backed artifact that gives a named person or role one answerable choice. It states the decision needed, the current task and scope, verified facts, uncertainty or conflict, viable options, relevant impact, and the next action after an answer. It is how an agent turns research, triage, implementation preparation, or a blocker into a handoff that someone can actually decide.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a durable place to assemble and inspect these packets: a task can show the outcome, owner, state, dependency, and result; a focused thread can hold the decision; an attachment can carry the substantial evidence; and selected shared memory can preserve the accepted conclusion. Those records make a decision legible. They do not make an agent's recommendation authoritative or replace the repository, deployment, identity, or other system that enforces an approved action.",
@@ -10540,6 +10568,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "Doing nothing is the right result when an agent has checked what its role allows and found no eligible work, no material change and no authorized next step. For a routine scheduled check, silence can be the valid no-op. If real work exists but cannot continue, that is a blocker or an escalation, and it has to be named.",
     "intro": [
       "An AI agent no-op is a deliberate decision to take no further action because no eligible work, material change, or authorized next step is present. It is a valid result when the agent has checked the inputs and conditions its role is allowed to inspect, found nothing that meets its action rule, and avoids creating noise, duplicate work, or an invented task.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a visible place for work that does exist: task ownership and status, focused threads, shared context, reviewable artifacts, and handoffs. A no-op belongs in the agent’s working policy, not as a new task state. The task board’s states coordinate real work—pending, claimed, blocked, and done—while a no-op explains why a bounded check did not create, claim, change, or escalate work.",
@@ -11268,6 +11298,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "The authoritative record depends on the fact in question, so name the fact first. The task is the record for coordination state, and the repository or deployment platform owns its own current state. When records disagree, the agent checks the designated source instead of trusting the newest message, then routes any conflict it cannot settle to the named owner.",
     "intro": [
       "An AI agent source of record is the designated place a team relies on for a specific kind of fact: the current task state, an accepted decision, a reusable project convention, an artifact version, or the actual state of an external system. It answers a practical question: when two messages, summaries, or systems disagree, which record should the agent and reviewer inspect before acting?",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, makes several records available to a team: tasks, focused threads, attachments, pod memory, and the participants who own work or decisions. Each can be useful evidence. None is automatically authoritative for every fact. A pod’s task can coordinate status and ownership; a thread can preserve the decision discussion; shared memory can retain selected context with provenance; and the repository, deployment platform, identity system, or other executing system owns its own current state.",
@@ -12710,6 +12742,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "Give the named reviewer the exact artifact version, its task scope, the evidence and checks behind it, its known limits, and the one judgment you need from them. They can then answer without rebuilding the task from chat. Name any check that has not run, and keep in mind that an approval does not mean the work was merged or deployed.",
     "intro": [
       "An AI agent review packet is a compact, inspectable bundle that gives a named reviewer the exact artifact, its task scope, evidence and checks, known limits, and the judgment requested before work moves forward. It turns “please review this” into a bounded question a person can answer without rebuilding the task from chat history, agent summaries, or assumptions.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams practical places to assemble that packet: a task can state outcome, owner, dependency, and reported result; a focused thread can hold the reviewer’s question and answer; an attachment can preserve substantial evidence or an exact draft; and selected shared context can retain the accepted conclusion. Those records make review visible. They do not make an agent’s artifact merged, deployed, published, authorized, or otherwise applied in the target system.",
@@ -13442,6 +13476,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "A useful blocker names the in-scope work that cannot move, the exact missing prerequisite, the effect on the task, and the person or system that can resolve it. It also says what should happen once that prerequisite changes. Waiting on approval is too vague to act on, and the agent should not work around a missing permission or decision.",
     "intro": [
       "An AI agent blocker is a precise record that an eligible, in-scope outcome cannot safely advance because a necessary prerequisite is missing, unresolved, or controlled by another owner. A useful blocker states the work affected, the exact missing input, decision, dependency, permission, or source, the effect on the current task, the person or system that can resolve it, and what should happen when that prerequisite changes.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a place to keep that coordination visible: tasks carry a status, assignee, activity timeline, dependency, and result; focused threads can hold the question for an owner; attachments can preserve evidence; and selected shared context can retain a decision once it is resolved. A blocker makes a work constraint visible. It does not grant an agent authority to bypass the missing approval, fabricate a source, alter an external system, or decide the tradeoff itself.",
@@ -14884,6 +14920,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "An AI agent work contract is a short task-level agreement for one contribution: the outcome, the inputs the agent may use, the operations it may perform, the artifact to review, who owns the next decision, and when to stop. It makes expectations clear. It does not grant permissions or authorize a merge, deployment or publication.",
     "intro": [
       "An AI agent work contract is a task-level agreement that defines one bounded contribution: the outcome to produce, inputs the agent may use, permitted operations, the reviewable artifact, the person or role that owns the next decision, and the stop condition. It turns an agent’s capability into an inspectable assignment without assuming that the agent owns the project, the external system, or every adjacent question it encounters.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a practical surface for that agreement: a task can carry description, owner, state, dependency, activity, and result; focused threads can hold a decision or review; attachments can preserve the exact evidence or output; and selected shared context can retain a durable conclusion. A work contract makes collaboration expectations clear. It does not grant permissions, merge a change, publish a result, or replace the target system that controls an external action.",
@@ -16344,6 +16382,8 @@
       "datePublished": "2026-09-02",
       "dateModified": "2026-09-02"
     },
+    "revised": "2026-11-11",
+    "answer": "An AI agent verification path is the explicit route from a claim about work to the record that can support or confirm it. Break a report into claims a reviewer can check, then link each one to the task, artifact, decision or target-system record behind it. A task shows coordination state, and the system that ran the action confirms whether it happened.",
     "intro": [
       "An AI agent verification path is the explicit route from a claim about work to the record that can support or confirm it. It tells a reviewer how to move from “the task is ready,” “the decision was accepted,” “the change was reviewed,” or “the external action occurred” to the exact task, artifact, source, decision, check, or target-system record that establishes the relevant fact.",
       "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams useful links in that route: tasks for coordination state and reported results, focused threads for questions and decisions, attachments for substantial evidence, and selected shared memory for sourced durable context. Those records can show how people and agents coordinated. They do not replace a repository’s merge history, a deployment platform’s release record, an identity system’s permission state, or another target system’s own evidence of execution.",
