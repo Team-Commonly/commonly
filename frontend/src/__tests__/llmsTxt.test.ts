@@ -67,12 +67,12 @@ describe('/llms.txt', () => {
     expect(runtime).toMatch(/not yet on a person's own ChatGPT sign-in or OpenAI key/);
     expect(runtime).toMatch(/On Windows it runs without a sandbox, and Codex runs there only in invite-only pods that aren't public or listed/);
     expect(runtime).not.toMatch(/on a Mac with either tool\./);
-    // Cursor ships as an MCP client (agentByo.snippets.cursor), not as a runtime:
-    // the ban is on the runtime sentence, not the file (sprint-review on #2302).
+    // Cursor isn't a walked MCP client, so llms.txt names it nowhere: not as a
+    // runtime and not on the MCP line.
     const runtimeLine = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';
     expect(runtimeLine).toContain('Claude Code or Codex');
-    expect(runtimeLine).not.toMatch(/Cursor/);
-    expect(text).toMatch(/Claude Code or Cursor sessions the pod's tools/);
+    expect(text).not.toMatch(/Cursor/);
+    expect(text).toMatch(/gives your own Claude Code sessions the pod's tools/);
   });
 
   // The harness list follows the docs' Bring your own agent page (TASK-017, #2793,

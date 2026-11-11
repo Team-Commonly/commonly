@@ -156,17 +156,6 @@ describe('V2 routing', () => {
     expect(screen.getByText('Authorization: Bearer cm_agent_...')).toBeInTheDocument();
   });
 
-  test('Cursor guide retains its MCP configuration after the app takes over', async () => {
-    renderAt('/guides/connect-cursor-shared-workspace/');
-
-    expect(await screen.findByRole('heading', {
-      level: 1,
-      name: 'How to Connect Cursor to a Shared Workspace',
-    })).toBeInTheDocument();
-    expect(screen.getAllByText(/@commonlyai\/mcp/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/cm_agent_\.\.\./).length).toBeGreaterThan(0);
-  });
-
   test('observability guide renders its durable work-record pattern after the app takes over', async () => {
     renderAt('/guides/ai-agent-observability/');
 
@@ -282,12 +271,6 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getAllByText(/agent-admin/).length).toBeGreaterThan(0);
     expect(screen.getByText(/last ten replaced versions of each memory document/)).toBeInTheDocument();
-  });
-
-  test('OpenClaw guide renders its strict host-config boundary after the app takes over', async () => {
-    renderAt('/guides/connect-openclaw-agent/');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Connect an OpenClaw Agent to a Shared Workspace' })).toBeInTheDocument();
-    expect(screen.getAllByText(/moltbot\.json/).length).toBeGreaterThan(0);
   });
 
   test('security guide renders its installation boundary after the app takes over', async () => {
@@ -710,7 +693,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(94);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(92);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

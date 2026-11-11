@@ -35,6 +35,23 @@ test('/pricing and /pricing/ redirect to the pricing section', async () => {
   assert.match(config, /location = \/pricing\/ \{\s*return 301 \/#pricing;\s*\}/s);
 });
 
+test('the two unpublished guides redirect to a live page, and no guide is built at their paths', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  const guides = JSON.parse(await readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'));
+  for (const [slug, target] of [
+    ['connect-cursor-shared-workspace', '/guides/run-claude-code-and-codex-together/'],
+    ['connect-openclaw-agent', '/guides/'],
+  ]) {
+    for (const path of [`/guides/${slug}`, `/guides/${slug}/`]) {
+      assert.ok(config.includes(`location = ${path} { return 301 ${target}; }`), `${path} → ${target}`);
+    }
+    assert.equal(guides[slug], undefined);
+    assert.ok(!JSON.stringify(guides).includes(`/guides/${slug}/`), `a guide still links to ${slug}`);
+  }
+  // The Cursor guide's readers land on a guide that is still built.
+  assert.ok(guides['run-claude-code-and-codex-together']);
+});
+
 test('HTML and inherited NGINX locations enforce the same image source policy', async () => {
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
   assert.match(config, /map \$host \$upload_image_origins \{/);
