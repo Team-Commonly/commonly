@@ -33,7 +33,7 @@ function assertApprovedCardLink(raw: string, refusal: string): void {
 }
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
-export const UI_CARD_MAX_EXPANDED_NODES = 2048;
+const UI_CARD_MAX_EXPANDED_NODES = 2048;
 const bracketTokens = tokenize('()[]{}');
 const closingTokens = new Map([
   [bracketTokens[0].t, bracketTokens[1].t],

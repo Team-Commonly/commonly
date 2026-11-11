@@ -56,17 +56,17 @@ interface RecapLike {
 }
 
 /** Someone active this recently has seen it in the app; the email would repeat it. */
-export const DIGEST_AWAY_MS = 20 * 60 * 60 * 1000;
+const DIGEST_AWAY_MS = 20 * 60 * 60 * 1000;
 // Phase 2b (TASK-257): the scheduler runs every hour, and each run takes the
 // people for whom it is 08:00 now. A known zone (User.timezone) means 08:00
 // there; an unknown or unusable one means 06:00 UTC, the one send time before.
-export const DIGEST_LOCAL_HOUR = 8;
-export const DIGEST_DEFAULT_UTC_HOUR = 6;
+const DIGEST_LOCAL_HOUR = 8;
+const DIGEST_DEFAULT_UTC_HOUR = 6;
 // A person stays due for three hours from their digest hour, so a run the
 // scheduler missed (its worker restarting across the hour) is made up on the
 // next one. Kept under four, so the last catch-up and the next day's first run
 // stay more than the 20-hour repeat guard apart.
-export const DIGEST_DUE_HOURS = 3;
+const DIGEST_DUE_HOURS = 3;
 // Anyone with a digest from the last 20 hours is skipped, so a zone captured
 // mid-day, or a run repeated after a restart, never sends twice in a day.
 const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;

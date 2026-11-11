@@ -50,7 +50,7 @@ export interface LegacyMessageDoc {
   createdAt: Date;
 }
 
-export const LEGACY_ID_INDEX = 'messages_legacy_mongo_id_key';
+const LEGACY_ID_INDEX = 'messages_legacy_mongo_id_key';
 
 /**
  * Builds the unique index ON CONFLICT needs, without blocking writes.

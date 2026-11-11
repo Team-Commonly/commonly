@@ -17,7 +17,7 @@ interface FirstTaskOnboarding {
   locale: 'en' | 'zh-CN';
 }
 
-export const repoFromMessage = (content: string): ProjectRepo | null => {
+const repoFromMessage = (content: string): ProjectRepo | null => {
   const match = /(?:^|[\s(])(?:https?:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i.exec(content);
   if (!match) return null;
   const owner = match[1];

@@ -54,7 +54,7 @@ export interface FaceCell {
 // The full skin range, lightest to deepest. Every picker grid spans all eight.
 export const SKIN_TONES = ['ffe4c0', 'f5d7b1', 'efcc9f', 'e2ba87', 'c99c62', 'a47539', '8c5a2b', '643d19'] as const;
 // Natural browns and black plus two warm dyes; nothing that fights the tinted grounds.
-export const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
+const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
 export const HAIR_STYLES: readonly HairStyle[] = ['crop', 'side', 'bob', 'bun', 'long', 'curly', 'shaved'];
 const MOUTHS: readonly Mouth[] = ['smile', 'bar', 'small'];
 // Light only: a dark shirt is the agent cue, so no person may wear one.
@@ -206,7 +206,7 @@ const PAPER_SHOULDERS = 'M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z';
 const PAPER_VEE = 'M27.4 46.5L32 53.6L36.6 46.5Z';
 // Signal grey ramp (TASK-683 ruling, Lily 09:08): the head clears 2:1 on all four
 // warm grounds. The paper figure must not vanish on the artboard's cream tiles.
-export const PAPER_HEAD = '8f99aa';
+const PAPER_HEAD = '8f99aa';
 
 /** The unpicked human default: a paper figure with no facial or skin cues. */
 export const renderPaper = (t: PaperTraits): string => {

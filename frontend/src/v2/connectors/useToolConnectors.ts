@@ -43,7 +43,7 @@ import type { KeyAgent, OperatorKeyResult } from './OperatorKeyForm';
 // Seats matching `narrowed` across every pod roster, named by display name,
 // once each, never by the pods their grants reach.
 /** F179: how often the grant form re-reads an agent waiting on its computer. */
-export const BYO_AWAIT_POLL_MS = 5000;
+const BYO_AWAIT_POLL_MS = 5000;
 
 const seatNamesWhere = (
   seats: Record<string, PodSeat[]>,

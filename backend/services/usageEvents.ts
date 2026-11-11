@@ -59,7 +59,7 @@ export const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
 
 const PUBLISHED = new Set<string>(publicPages as string[]);
 const APP_PAGES = new Set(['/register', '/login', '/invite/:token']);
-export const REF_TAGS = new Set(['x', 'li', 'email', 'reddit', 'hn', 'gh', 'ph', 'docs']);
+const REF_TAGS = new Set(['x', 'li', 'email', 'reddit', 'hn', 'gh', 'ph', 'docs']);
 
 // Where usage events are opt-in (Cofounder ruling 11-10): the EU, the rest of
 // the EEA, and the UK. Cloudflare's XX (unknown) and T1 (Tor) get the same
@@ -71,7 +71,7 @@ const OPT_IN_COUNTRIES = new Set([
 ]);
 
 export const MAX_BATCH = 20;
-export const MAX_PROPS = 4;
+const MAX_PROPS = 4;
 export const DAILY_CAP = 2000;
 const EVENT_TTL_SECONDS = 90 * 24 * 3600;
 const COUNT_TTL_SECONDS = 396 * 24 * 3600; // 13 months
@@ -112,7 +112,7 @@ const configList = (value: string | undefined): string[] => String(value || '').
 // A slip like `a` in the prefix list would flag real people internal and drop
 // them from every read, so a prefix needs this many characters. The daily
 // report (scripts/usage-report.js) applies the same floor.
-export const MIN_INTERNAL_PREFIX = 4;
+const MIN_INTERNAL_PREFIX = 4;
 export const internalPrefixes = (value: string | undefined = process.env.USAGE_INTERNAL_PREFIXES): {
   prefixes: string[]; ignored: number;
 } => {

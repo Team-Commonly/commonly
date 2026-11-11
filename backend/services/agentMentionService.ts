@@ -1451,7 +1451,7 @@ const outsideCode = (content: unknown): string => String(content || '')
   .replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
 
 // A question mark outside code is a question; one inside backticks is not.
-export const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
+const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
 
 // An @handle outside code, at a word start: "mail me@x.com" names nobody.
 // A profile link (medium.com/@user) names nobody either.

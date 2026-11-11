@@ -534,7 +534,7 @@ const reuseOpenToolCall = async (
 };
 
 /** Later runs one approval remembers for its decision event (F184). */
-export const MAX_WAITING_RUNS = 20;
+const MAX_WAITING_RUNS = 20;
 
 /** How long a racing identical call waits for the winner's card (F184). */
 const TWIN_CARD_WAIT_MS = 2000;
@@ -2089,7 +2089,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
  * produces a server-composed task proposal with two actionable buttons.
  * Never fatal: the pod exists either way, and the proposer's reply still lands.
  */
-export const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with?';
+const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with?';
 
 const postNewPodNextSteps = async (
   row: IApprovalAction,

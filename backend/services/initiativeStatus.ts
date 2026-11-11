@@ -31,7 +31,7 @@
 /** The text `completeTaskForMergedPull` writes; the only Task update that is evidence. */
 export const MERGE_EVIDENCE_TEXT = 'Completed automatically — linked pull request merged';
 
-export const DEFAULT_WINDOW_HOURS = 24;
+const DEFAULT_WINDOW_HOURS = 24;
 
 export type InitiativeLinkKind = 'task' | 'pr' | 'pod' | 'decision';
 

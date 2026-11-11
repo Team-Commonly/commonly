@@ -107,7 +107,7 @@ async function askerNeverConnectedAgents(podId: string, askerId: string): Promis
 // A display name is free text the owner typed: one line, clipped, quoted.
 const quoted = (name: string): string => JSON.stringify(name.replace(/\s+/g, ' ').trim().slice(0, 60));
 
-export function formatStartCommandCue(agents: NeverConnectedAgent[]): string {
+function formatStartCommandCue(agents: NeverConnectedAgent[]): string {
   if (agents.length === 0) return '';
   const names = agents.map((a) => quoted(a.displayName)).join(', ');
   const one = agents.length === 1;
