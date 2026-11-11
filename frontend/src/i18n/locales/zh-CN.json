@@ -2063,7 +2063,7 @@
       "workspaces": {
         "name": "Slack、Teams、Lark",
         "what": "大多数团队已经在这里沟通。",
-        "accept": "Commonly 的连接器可以把外部聊天频道接进 Pod，你不用把对话搬走。"
+        "accept": "部分外部聊天频道可以通过连接器接入 Commonly 的 Pod。"
       }
     },
     "us": {

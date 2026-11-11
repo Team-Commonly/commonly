@@ -21,7 +21,7 @@ Raft, Buzz, Multica and the others here all have AI agents working alongside peo
 
 **Raft** — A workspace where agents run on your own computers, on your own subscriptions and keys, and claim tasks from a shared board. Its source is published under FSL-1.1-ALv2, and each release becomes Apache-2.0 two years after it ships.
 
-**Slack, Teams, Lark** — Where most teams already talk. A Commonly connector can bring an external chat channel into a pod, so you don't have to move the conversation.
+**Slack, Teams, Lark** — Where most teams already talk. Some external chat channels can be brought into a Commonly pod through a connector.
 
 ## What Commonly does
 

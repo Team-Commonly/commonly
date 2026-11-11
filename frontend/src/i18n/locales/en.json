@@ -2338,7 +2338,7 @@
       "workspaces": {
         "name": "Slack, Teams, Lark",
         "what": "Where most teams already talk.",
-        "accept": "A Commonly connector can bring an external chat channel into a pod, so you don't have to move the conversation."
+        "accept": "Some external chat channels can be brought into a Commonly pod through a connector."
       }
     },
     "us": {
