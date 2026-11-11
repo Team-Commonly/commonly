@@ -68,6 +68,9 @@ spec:
       # matchLabelKeys counts only this ReplicaSet's pods, so a roll can't stack
       # the new replicas on one node behind the old ones.
       topologySpreadConstraints:
+      {{- with .Values.frontend.extraTopologySpreadConstraints }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway

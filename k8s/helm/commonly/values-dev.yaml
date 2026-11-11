@@ -197,37 +197,55 @@ backend:
     # agentWorkSweepDisabled: "true"
 
 frontend:
-  # Two replicas on two spot nodes: a reclaim takes one, and the other keeps
-  # serving while the replacement waits for a node (2026-10-19: a single
-  # replica was down ~40 s at 15:19Z and ~5 s at 15:29Z).
+  # Two replicas, one on the on-demand dev pool and one on the spot pool, so
+  # neither a spot reclaim (ADR-015 failure mode 1, every spot node at once)
+  # nor a dev-node drain takes both. A single replica was down ~40 s at 15:19Z
+  # and ~5 s at 15:29Z on 2026-10-19. Placed like the edge (cloudflared below).
   replicaCount: 2
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
     tag: "20260412125218"
     pullPolicy: Always
-  # ADR-015: static asset server, completely fine to reschedule on spot.
-  nodeSelector:
-    workload-tier: spot
   tolerations:
+    - key: "pool"
+      operator: "Equal"
+      value: "dev"
+      effect: "NoSchedule"
     - key: "workload-tier"
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
-  # Never two replicas on one node, so the autoscaler keeps a second spot node.
-  # With the spot pool capped at 2 nodes a surge pod has nowhere to go, so a
-  # rollout replaces one replica at a time instead.
   affinity:
-    podAntiAffinity:
+    nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app: frontend
-          topologyKey: kubernetes.io/hostname
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: pool
+                operator: In
+                values: ["dev"]
+          - matchExpressions:
+              - key: workload-tier
+                operator: In
+                values: ["spot"]
+  extraTopologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: cloud.google.com/gke-nodepool
+      whenUnsatisfiable: DoNotSchedule
+      # A reclaimed spot node stays a domain while it shows NotReady, holding
+      # the replacement Pending; Honor drops tainted nodes, so it runs on dev.
+      nodeTaintsPolicy: Honor
+      labelSelector:
+        matchLabels:
+          app: frontend
+      matchLabelKeys:
+        - pod-template-hash
+  # The dev pool has room for a surge pod now, so a rollout adds the new
+  # replica before taking an old one away.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
 
 mongodb:
   enabled: false
