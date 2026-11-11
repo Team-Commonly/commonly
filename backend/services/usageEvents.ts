@@ -34,6 +34,9 @@ export const UI_EVENTS: Record<string, PropSchema> = {
   'empty-state-shown': {},
   'stuck-help-click': {},
   'get-started-click': { step: ['connect', 'first-task'] },
+  'teammate-card-shown': { where: ['workspace', 'pod'] },
+  'teammate-card-click': { where: ['workspace', 'pod'] },
+  'teammate-card-dismiss': { where: ['workspace', 'pod'] },
 };
 
 // Route templates from the V2App table, without the /v2 mount.

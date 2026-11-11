@@ -26,8 +26,24 @@ A value that isn't a positive number falls back to the default.
 
 ## Which adapters it covers
 
-Context size is read from the transcript the child CLI wrote, and only the
-claude adapter reports one today. codex (`codex exec resume`), pi (`--session`)
-and dsh (`--session-id`) also resume every wake but report no size, so neither
-rule ever fires for them. That's row F404. A seat with no measured context
+Context size is what the turn's last model request was sent. Four adapters
+report it (F404 added the last three):
+
+| Adapter | Source | Count |
+|---|---|---|
+| claude | the session transcript, `<config>/projects/<cwd>/<id>.jsonl` | the last assistant record's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` |
+| codex | the rollout under the child's `CODEX_HOME`, `sessions/YYYY/MM/DD/rollout-*-<id>.jsonl` | the last `token_count` record's `last_token_usage.input_tokens`, which already includes the cached part |
+| pi | its `--mode json` stream | the last assistant `message_end`'s `input + cacheRead + cacheWrite` |
+| dsh | its `--json` stream | the last `status`/`step_end` usage, `inputTokens + cacheReadTokens + cacheWriteTokens` |
+
+The last request, not the turn: codex's `turn.completed` usage and
+`total_token_usage` sum every request in a turn, so they overstate the context a
+turn with tool calls leaves behind.
+
+dsh sums a step's retried attempts into its `step_end` usage, so a retried last
+step overstates the size. The worst case is one early fresh start; the next
+turn's count is right again. A step dsh reports with no usage keeps the earlier
+step's count, which can only start fresh late, never early.
+
+Not checked: opencode, goose, hermes and qwen. A seat with no measured context
 always resumes; the module never recycles blind.

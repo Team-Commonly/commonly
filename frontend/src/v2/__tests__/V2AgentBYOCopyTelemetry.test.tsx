@@ -141,6 +141,9 @@ test('a Mac daemon copy posts its command type with the setup the page showed', 
   withUserAgent(MAC_UA);
   try {
     renderPage();
+    // The block's place follows the mode picker (F370), so it remounts once
+    // the page's reads settle; a click before that lands on a detached button.
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
     const block = await screen.findByTestId('byo-add-computer');
     await act(async () => {
       fireEvent.click(block.querySelector('button.v2-byo__copy'));

@@ -345,10 +345,16 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
   // without its queue being destroyed underneath it.
   const deletes = () => AgentEvent.deleteMany.mock.calls.map(([filter]) => filter);
 
-  test('pending events age out on the same horizon as delivered and acked', async () => {
+  // F381: a pending event past the window is marked 'expired' in place, never
+  // deleted, and a first_contact is never expired.
+  const expiries = () => AgentEvent.updateMany.mock.calls
+    .filter(([, update]) => update?.$set?.status === 'expired')
+    .map(([filter]) => filter);
+
+  test('pending events expire on the same horizon as delivered and acked age out', async () => {
     await AgentEventService.garbageCollect({});
 
-    const pending = deletes().find((f) => f.status === 'pending');
+    const pending = expiries().find((f) => f.status === 'pending');
     const settled = deletes().find((f) => f.status === 'acked');
 
     expect(pending).toBeDefined();
@@ -359,20 +365,43 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     expect(pending.deliveryMode).toEqual({ $ne: 'digest' });
   });
 
-  test('no delete predicate can destroy a pending event inside the retry window', async () => {
-    // The retry ceiling is 15 min x 1.2 jitter = 18 min (cli spawn-retry), and a
-    // seat restart is unbounded. Any pending horizon shorter than the retention
-    // one re-arms both. 24h is a deliberately loose floor — the real value is
-    // 168h — so this fails on a regression rather than on a retuning.
+  test('no pending event is ever deleted, and a first_contact is never expired', async () => {
     await AgentEventService.garbageCollect({});
 
-    const now = Date.now();
     for (const filter of deletes()) {
       const targetsPending = filter.status === 'pending'
         || (Array.isArray(filter.status?.$in) && filter.status.$in.includes('pending'));
-      if (!targetsPending) continue;
+      expect(targetsPending).toBe(false);
+    }
+    const pending = expiries().find((f) => f.status === 'pending');
+    expect(pending.type).toEqual({ $ne: 'first_contact' });
+  });
+
+  test('no expiry can touch a pending event inside the retry window', async () => {
+    // The retry ceiling is 15 min x 1.2 jitter = 18 min (cli spawn-retry), and a
+    // seat restart is unbounded. 24h is a deliberately loose floor — the real
+    // value is 168h — so this fails on a regression rather than on a retuning.
+    await AgentEventService.garbageCollect({});
+
+    const now = Date.now();
+    for (const filter of expiries()) {
       expect(now - filter.createdAt.$lt.getTime()).toBeGreaterThan(24 * 60 * 60 * 1000);
     }
+  });
+
+  test('counts the pending events it expired, and deletes none', async () => {
+    AgentEvent.updateMany.mockImplementation(async (filter, update) => (
+      update?.$set?.status === 'expired' && filter.status === 'pending' ? { modifiedCount: 4 } : { modifiedCount: 0 }
+    ));
+    AgentEvent.deleteMany.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await AgentEventService.garbageCollect({});
+
+    expect(result.expiredPending).toBe(4);
+    expect(result.deletedPending).toBe(0);
+    expect(result.totalDeleted).toBe(3);
+    AgentEvent.updateMany.mockReset();
+    AgentEvent.deleteMany.mockReset();
   });
 
   test('reports what it retired, so a poison-event backlog is visible in ops output', async () => {

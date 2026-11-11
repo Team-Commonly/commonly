@@ -231,9 +231,11 @@ class SchedulerService {
           if (result.totalDeleted > 0) {
             console.log(
               `Agent event GC removed ${result.totalDeleted} event(s) `
-              + `(pending=${result.deletedPending}, delivered=${result.deletedDelivered}, `
-              + `failed=${result.deletedFailed})`,
+              + `(delivered=${result.deletedDelivered}, failed=${result.deletedFailed})`,
             );
+          }
+          if (result.expiredPending > 0) {
+            console.log(`Agent event GC marked ${result.expiredPending} unclaimed pending event(s) expired`);
           }
         } catch (error) {
           console.error('Error in scheduled agent event GC:', error);

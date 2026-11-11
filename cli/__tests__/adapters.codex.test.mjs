@@ -187,6 +187,32 @@ describe('codex adapter — spawn()', () => {
     }
   });
 
+  // F404: the turn reports what its last request was sent, read from the
+  // rollout the child wrote under its own CODEX_HOME.
+  test('a turn reports its context size from the session rollout', async () => {
+    const threadId = '019dc1c4-c110-7373-bcf6-cdddd0c5f404';
+    const codexHome = await mkdtemp(join(tmpdir(), 'codex-home-f404-'));
+    try {
+      const day = join(codexHome, 'sessions', '2026', '11', '11');
+      await mkdir(day, { recursive: true });
+      const usage = (input) => JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: input, cached_input_tokens: input - 500 } } },
+      });
+      await writeFile(join(day, `rollout-2026-11-11T02-00-00-${threadId}.jsonl`), `${usage(32465)}\n${usage(33997)}\n`);
+      const { impl } = makeSpawnImpl({
+        stdoutChunks: [`{"type":"thread.started","thread_id":"${threadId}"}\n`, '{"type":"turn.completed"}\n'],
+        outputContents: 'ok',
+      });
+      const res = await codex.spawn('hi', {
+        environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, env: { ...process.env, CODEX_HOME: codexHome },
+      });
+      expect(res.contextTokens).toBe(33997);
+    } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+
   test('first turn (no persisted id): uses `codex exec` and captures thread_id from JSONL', async () => {
     const threadId = '019dc1c4-c110-7373-bcf6-cdddd0c51be7';
     const { impl, calls } = makeSpawnImpl({

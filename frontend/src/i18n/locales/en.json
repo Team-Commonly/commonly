@@ -2223,8 +2223,8 @@
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
     },
-    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
-    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
+    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the command above.",
+    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the command above.",
     "addComputer": {
       "title": "Add a computer",
       "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
@@ -3602,7 +3602,14 @@
     "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
     "error": "couldn't create a link · nothing was shared",
     "live": "Invite link copied",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "newPod": {
+      "title": "Bring a teammate in to work with {{agentName}}",
+      "body": "This starts a new pod with {{agentName}} in it and copies an invite link to that pod. Your workspace stays private.",
+      "name": "Working with {{agentName}}",
+      "open": "Open the new pod",
+      "addFailed": "Couldn't add {{agentName}} to the new pod. Open it to add them, or press again to retry."
+    }
   },
   "profile": {
     "follow": "Follow",

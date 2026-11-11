@@ -50,9 +50,9 @@ const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (K
 const realUserAgent = window.navigator.userAgent;
 const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
 
-const mockPage = ({ machines = [] } = {}) => {
+const mockPage = ({ machines = [], hosted = false } = {}) => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+    if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: hosted, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
     if (url === '/api/machines') return Promise.resolve({ data: { machines, offlineAfterMs: 90000 } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
@@ -90,7 +90,12 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     mockPage({ machines: [] });
     renderPage();
     expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/stops when that window closes/);
-    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/Other ways to connect/);
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/add this computer once with the command above/);
+    // F370: with no computer yet the daemon block leads the form, above the
+    // quick try, and is no longer folded into Other ways to connect.
+    const add = screen.getByTestId('byo-add-computer');
+    expect(screen.getByTestId('byo-more-ways')).not.toContainElement(add);
+    expect(add.compareDocumentPosition(screen.getByTestId('byo-quick-try')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await issueRun();
     const stops = screen.getByTestId('byo-listen-stops-on-close');
@@ -100,6 +105,32 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(stops).not.toHaveTextContent(/daemon install/);
     // The line points at a block that is actually on this page.
     expect(screen.getByTestId('byo-result-more-ways')).toContainElement(screen.getByTestId('byo-add-computer'));
+  });
+
+  test('with hosting offered and no computer: the block follows the mode picker for BYO, and folds into Other ways for hosted', async () => {
+    setUserAgent(MAC);
+    mockPage({ machines: [], hosted: true });
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    const add = await screen.findByTestId('byo-add-computer');
+    expect(screen.getByTestId('byo-more-ways')).not.toContainElement(add);
+    expect(screen.getByTestId('byo-mode-byo').compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    await waitFor(() => expect(screen.getByTestId('byo-more-ways')).toContainElement(screen.getByTestId('byo-add-computer')));
+  });
+
+  test('setting up a Windows computer from a Mac: choosing Windows in the block gives the Windows command and its note', async () => {
+    setUserAgent(MAC);
+    mockPage({ machines: [] });
+    renderPage();
+    const block = await screen.findByTestId('byo-add-computer');
+    expect(block).not.toHaveTextContent(/--unsandboxed/);
+    expect(screen.queryByTestId('byo-add-computer-windows')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('byo-add-computer-os-windows'));
+    expect(screen.getByTestId('byo-add-computer')).toHaveTextContent(/--unsandboxed/);
+    expect(screen.getByTestId('byo-add-computer-windows')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-add-computer-os-windows')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('result page with a computer on file: the add-computer block is not offered again', async () => {

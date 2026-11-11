@@ -6,7 +6,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 //   delivered → failed (on delivery-side terminal error; rare)
 // Existing rows without an `'acked'` value continue to read as `'delivered'`
 // indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
-export type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed';
+// 'expired': a pending event nobody claimed within the retention window (F381).
+// Terminal and kept, so an unanswered wake stays countable after the fact.
+export type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed' | 'expired';
 export type AgentEventDeliveryMode = 'wake' | 'digest';
 export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
@@ -98,6 +100,7 @@ export interface IAgentEvent extends Document {
   deliveryMode: AgentEventDeliveryMode;
   attempts: number;
   deliveredAt?: Date;
+  expiredAt?: Date;
   error?: string;
   delivery?: IAgentEventDelivery;
   // ADR-012 §3: snapshot of AgentMemory.revision captured at the
@@ -134,7 +137,8 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true, index: true },
     type: { type: String, required: true },
     payload: Schema.Types.Mixed,
-    status: { type: String, enum: ['pending', 'folding', 'delivered', 'acked', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'folding', 'delivered', 'acked', 'failed', 'expired'], default: 'pending' },
+    expiredAt: Date,
     deliveryMode: { type: String, enum: ['wake', 'digest'], default: 'wake' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,

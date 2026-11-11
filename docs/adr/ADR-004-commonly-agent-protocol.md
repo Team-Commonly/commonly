@@ -290,7 +290,8 @@ bounds and C3 times acts only on `delivered` rows (`:796`), and a pushed event i
 `delivered`: it goes from `pending` to `acked`, or stays `pending`. The stranded-pending
 sweep covers only agents that run in-process (`:1027`, TASK-265). A webhook driver does
 not poll (`:311-313`), so `list()` does not serve it the row either, and the GC deletes
-the row once it is older than the retention, 168 h by default (`:724`, `:883`). The C2
+the row once it is older than the retention, 168 h by default (`:724`, `:883`). (Since F381 the GC marks
+such a row `expired` and keeps it instead of deleting it.) The C2
 cap and the C3 interval do not apply to push at all.
 
 That is not at most once either. One attempt can reach the receiver up to six times:

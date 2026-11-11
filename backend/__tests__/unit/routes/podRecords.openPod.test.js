@@ -43,6 +43,8 @@ jest.mock('../../../services/recordService', () => ({
 jest.mock('../../../middleware/dualAuth', () => (req, res, next) => {
   if (req.get('x-agent')) req.agentUser = { _id: req.get('x-agent') };
   else req.userId = req.get('x-user');
+  // A bot row calling with a cm_ user token (middleware/auth botCaller).
+  if (req.get('x-bot')) req.botCaller = true;
   next();
 });
 jest.mock('../../../models/Pod', () => ({
@@ -190,4 +192,89 @@ describe('who reads at all stays as it was', () => {
     mockCanView.mockResolvedValue(false);
     expect((await read('', { 'x-user': ADMIN })).status).toBe(404);
   });
+});
+
+// F366: person ids are deny-by-default for agent callers on every pod type,
+// as on the grant reads (F271(d)). A person on a private pod still reads it all.
+describe.each([['the pod chain', ''], ['a task chain', '/tasks/TASK-7']])('%s on a private pod', (_name, suffix) => {
+  const PRIVATE = {
+    _id: POD, type: 'team', publicRead: false, communityListed: false, joinPolicy: 'invite', createdBy: CREATOR, members: [OWNER, JOINER, AGENT, CREATOR],
+  };
+  beforeEach(() => { mockChain.pod = PRIVATE; });
+
+  test('a person who is a member reads every id, verbatim', async () => {
+    const res = await read(suffix);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(OWNER);
+    expect(res.headers['x-record-view']).toBeUndefined();
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true });
+  });
+
+  test('an agent member reads the redacted view: no approver id, its own id kept', async () => {
+    const res = await read(suffix, { 'x-agent': AGENT });
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(OWNER);
+    expect(res.text).toContain(AGENT);
+    expect(res.headers['x-record-view']).toBe('redacted');
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true, partial: true });
+  });
+
+  test('?format=otlp gives an agent no approver id either', async () => {
+    const res = await read(`${suffix}?format=otlp`, { 'x-agent': AGENT });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(OWNER);
+  });
+});
+
+// F366: an agent's view holds back the people a person's view keeps: who acts
+// on a task line, doneBy, and an acting agent's owner. Its own id stays.
+describe.each([['an open pod', true], ['a private pod', false]])('task and tool lines on %s', (_name, open) => {
+  const OTHER_AGENT = 'cccccccccccccccccccccc02';
+  beforeEach(() => {
+    mockChain.pod = open ? OPEN : {
+      ...OPEN, publicRead: false, communityListed: false, joinPolicy: 'invite', members: [...OPEN.members, OTHER_AGENT],
+    };
+    const lines = [];
+    const add = (kind, data, actor) => lines.push(appendEntry(lines.at(-1) ?? null, {
+      runId: 'srv-pod-0123456789', podId: POD, ts: `2026-11-06T12:00:0${lines.length}.000Z`, kind, data,
+      ...(actor ? { actor } : {}), salt: salt(lines.length + 1), taskId: 'TASK-7',
+    }));
+    add('task.claimed', {}, { type: 'agent', id: OTHER_AGENT, owner: OWNER });
+    add('tool.call', { toolCallId: 'tc', name: 'sentry.read' }, { type: 'agent', id: OTHER_AGENT, owner: OWNER, onBehalfOf: { id: OWNER, role: 'requester' } });
+    add('task.claimed', {}, { type: 'human', id: OWNER, name: 'Owner Person' });
+    add('task.done', { doneBy: OWNER }, { type: 'system', id: 'board' });
+    add('permission.requested', { question: 'q', askedOf: { id: 'policy', role: 'policy' }, toolCallId: 'tc' }, { type: 'agent', id: OTHER_AGENT, owner: OWNER });
+    add('task.claimed', {}, { type: 'agent', id: AGENT, owner: JOINER });
+    mockChain.lines = lines;
+  });
+
+  test('an agent reads no person id, keeps agents\' ids, and its check passes', async () => {
+    const res = await read('/tasks/TASK-7', { 'x-agent': AGENT });
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(OWNER);
+    expect(res.text).not.toContain(JOINER);
+    expect(res.text).not.toContain('Owner Person');
+    expect(res.text).toContain(OTHER_AGENT);
+    expect(res.text).toContain(AGENT);
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true, partial: true });
+  });
+
+  test('a bot row with a user token is read as an agent', async () => {
+    const res = await read('/tasks/TASK-7', { 'x-user': AGENT, 'x-bot': '1' });
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(OWNER);
+    expect(res.headers['x-record-view']).toBe('redacted');
+  });
+
+  test('a person member keeps the task lines\' people, as before', async () => {
+    const res = await read('/tasks/TASK-7', { 'x-user': JOINER });
+    expect(res.text).toContain(OWNER);
+  });
+});
+
+test('an agent that created an open pod still reads the agent view', async () => {
+  mockChain.pod = { ...OPEN, createdBy: AGENT };
+  const res = await read('', { 'x-agent': AGENT });
+  expect(res.status).toBe(200);
+  expect(res.text).not.toContain(OWNER);
 });

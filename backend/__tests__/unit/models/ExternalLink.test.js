@@ -63,6 +63,29 @@ describe('ExternalLink Model Tests', () => {
     expect(saved.qrCodePath).toBe('/path/to/qr.png');
   });
 
+  // F406: a QR code stored in the object store carries its key instead.
+  it('allows WeChat link with a stored QR code key only', async () => {
+    const link = new ExternalLink({
+      podId: pod._id,
+      name: 'WeChat',
+      type: 'wechat',
+      qrCodeKey: `qr/${pod._id}/abc.png`,
+      createdBy: user._id,
+    });
+    const saved = await link.save();
+    expect(saved.qrCodeKey).toBe(`qr/${pod._id}/abc.png`);
+    // Never sent to a client: responses serialize through toJSON.
+    expect(saved.toJSON().qrCodeKey).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(saved)).qrCodeKey).toBeUndefined();
+  });
+
+  it('refuses a WeChat link with no QR code and no URL', async () => {
+    const link = new ExternalLink({
+      podId: pod._id, name: 'WeChat', type: 'wechat', createdBy: user._id,
+    });
+    await expect(link.save()).rejects.toThrow(/QR code or URL/);
+  });
+
   it.each([
     'notion',
     'google_doc',

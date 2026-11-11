@@ -8,6 +8,8 @@ const Post = require('../models/Post');
 const Summary = require('../models/Summary');
 const PodAsset = require('../models/PodAsset');
 const Integration = require('../models/Integration');
+const ExternalLink = require('../models/ExternalLink');
+import { getObjectStore } from './objectStore';
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const { retireHostedRoomRows } = require('./hostedRuntimeService');
@@ -61,6 +63,9 @@ export const deletePodCascade = async (podId: string): Promise<void> => {
     Integration.deleteMany({ podId }),
     AgentInstallation.deleteMany({ podId }),
     AgentProfile.deleteMany({ podId }),
+    // F406: a pod's links go with it, and so do the QR images they stored.
+    ExternalLink.deleteMany({ podId }),
+    ...(/^[0-9a-f]{24}$/i.test(String(podId)) ? [getObjectStore().deletePrefix(`qr/${podId}/`)] : []),
   ]);
 
   if (PGPod) {

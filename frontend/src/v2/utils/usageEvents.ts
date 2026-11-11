@@ -12,7 +12,8 @@ export type UsageEventName =
   | 'agent-settings-open' | 'runtime-model-save' | 'agent-reply-seen' | 'reaction-add' | 'retry-click'
   | 'invite-open' | 'invite-copy' | 'invite-accept-click' | 'invite-accept-result'
   | 'board-open' | 'task-open' | 'decision-answer' | 'empty-state-shown' | 'stuck-help-click'
-  | 'get-started-click';
+  | 'get-started-click'
+  | 'teammate-card-shown' | 'teammate-card-click' | 'teammate-card-dismiss';
 
 export type PublicEventName =
   | 'page-view' | 'cta-click' | 'register-view' | 'auth-choice' | 'register-error' | 'invite-page-view';

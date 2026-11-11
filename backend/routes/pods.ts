@@ -2,7 +2,8 @@ import { podMemberPopulate } from '../services/podMemberPopulate';
 import { closeAgentRoom, reopenAgentRoom } from '../services/agentRoomCloseService';
 import path from 'path';
 import fs from 'fs';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
+import { getObjectStore } from '../services/objectStore';
 import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
@@ -46,7 +47,7 @@ interface AuthReq {
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
-  file?: { path: string };
+  file?: { buffer: Buffer; mimetype: string };
   // Present on every express request; declared because the visibility route
   // records them on the AuditLog row that publishing a pod produces.
   ip?: string;
@@ -105,20 +106,19 @@ const QR_CODE_SERVED: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-const storage = multer.diskStorage({
-  destination: (req: unknown, file: unknown, cb: (err: Error | null, dir: string) => void) => {
-    const uploadDir = 'uploads/qrcodes';
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, name: string) => void) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `qrcode-${uniqueSuffix}${QR_CODE_TYPES[file.mimetype]}`);
-  },
-});
+// F406: the image is held in memory and written to the ObjectStore only after
+// the membership check, so a refused request stores nothing, and every replica
+// can serve it (local disk lost it on a reschedule). The key carries a slash.
+// Express decodes `%2F` in a param, so `GET /api/uploads/:fileName` CAN be
+// handed `qr/…`; it refuses any name with a separator for that reason, and
+// that check must stay. The image is reachable only through the
+// membership-checked route below, and the key is never sent to clients.
+const qrCodeObjectKey = (podId: string, mimetype: string): string => (
+  `qr/${podId}/${randomBytes(16).toString('hex')}${QR_CODE_TYPES[mimetype]}`
+);
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, accept?: boolean) => void) => {
     if (!Object.prototype.hasOwnProperty.call(QR_CODE_TYPES, file.mimetype)) {
@@ -307,10 +307,20 @@ router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('
     const isMember = pod.members?.some((m) => m.toString() === userId);
     if (!isOwner && !isMember) return res.status(403).json({ message: 'Only pod members can add links' });
     const externalLink = new ExternalLink({ podId, name, type, createdBy: userId });
-    if (type === 'wechat' && req.file) externalLink.qrCodePath = req.file.path;
-    else if (url) externalLink.url = url;
+    let storedKey: string | null = null;
+    if (type === 'wechat' && req.file) {
+      if (!/^[0-9a-f]{24}$/i.test(String(podId))) return res.status(400).json({ message: 'Invalid podId' });
+      storedKey = qrCodeObjectKey(String(podId), req.file.mimetype);
+      await getObjectStore().put(storedKey, req.file.buffer, req.file.mimetype);
+      externalLink.qrCodeKey = storedKey;
+    } else if (url) externalLink.url = url;
     else return res.status(400).json({ message: 'URL or QR code is required' });
-    await externalLink.save();
+    try {
+      await externalLink.save();
+    } catch (err) {
+      if (storedKey) await getObjectStore().delete(storedKey).catch(() => {});
+      throw err;
+    }
     pod.externalLinks?.push(externalLink._id);
     await pod.save();
     return res.status(201).json(externalLink);
@@ -323,13 +333,16 @@ router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('
 router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
   try {
     const linkId = req.params?.id;
-    const externalLink = await ExternalLink.findById(linkId) as { podId?: unknown; qrCodePath?: string } | null;
+    const externalLink = await ExternalLink.findById(linkId) as {
+      podId?: unknown; qrCodePath?: string; qrCodeKey?: string;
+    } | null;
     if (!externalLink) return res.status(404).json({ message: 'External link not found' });
     const pod = await Pod.findById(externalLink.podId) as { createdBy?: { toString: () => string }; externalLinks?: Array<{ toString: () => string }>; save: () => Promise<void> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
     if (pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Only pod owner can delete external links' });
     pod.externalLinks = pod.externalLinks?.filter((id) => id.toString() !== linkId);
     await pod.save();
+    if (externalLink.qrCodeKey) await getObjectStore().delete(externalLink.qrCodeKey);
     if (externalLink.qrCodePath && fs.existsSync(externalLink.qrCodePath)) fs.unlinkSync(externalLink.qrCodePath);
     await ExternalLink.findByIdAndDelete(linkId);
     return res.status(200).json({ message: 'External link deleted successfully' });
@@ -342,22 +355,37 @@ router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
 router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res) => {
   try {
     const { linkId } = req.params || {};
-    const link = await ExternalLink.findById(linkId) as { type?: string; qrCodePath?: string; podId?: unknown } | null;
-    if (!link || link.type !== 'wechat' || !link.qrCodePath) return res.status(404).json({ message: 'QR code not found' });
+    const link = await ExternalLink.findById(linkId) as {
+      type?: string; qrCodePath?: string; qrCodeKey?: string; podId?: unknown;
+    } | null;
+    if (!link || link.type !== 'wechat' || !(link.qrCodeKey || link.qrCodePath)) {
+      return res.status(404).json({ message: 'QR code not found' });
+    }
     const pod = await Pod.findById(link.podId) as { members?: Array<{ toString: () => string }> } | null;
     if (!pod || !pod.members?.some((m) => m.toString() === req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     // Set explicitly: send() defaults to public, max-age=0 when no header is set.
     res.set('Cache-Control', 'private, no-store');
     // Typed by the stored extension, and a file saved before the image list
     // (which kept the client's extension) downloads as bytes rather than render.
-    const ext = path.extname(link.qrCodePath).toLowerCase();
+    const ext = path.extname(link.qrCodeKey || link.qrCodePath || '').toLowerCase();
     const type = Object.prototype.hasOwnProperty.call(QR_CODE_SERVED, ext) ? QR_CODE_SERVED[ext] : null;
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Content-Security-Policy', "default-src 'none'; sandbox");
     res.set('Content-Type', type || 'application/octet-stream');
     res.set('Content-Disposition', type ? 'inline' : 'attachment');
+    if (link.qrCodeKey) {
+      const obj = await getObjectStore().get(link.qrCodeKey);
+      if (!obj) return res.status(404).json({ message: 'QR code not found' });
+      const stream = obj.stream as unknown as {
+        on: (event: string, fn: () => void) => void; pipe: (dst: unknown) => void;
+      };
+      stream.on('error', () => (res as unknown as { destroy: () => void }).destroy());
+      stream.pipe(res);
+      return undefined;
+    }
+    // A link saved before F406 still reads from the disk it was written to.
     // sendFile keeps a Content-Type that is already set rather than guess one.
-    return res.sendFile(path.resolve(link.qrCodePath));
+    return res.sendFile(path.resolve(link.qrCodePath as string));
   } catch (error) {
     console.error('Error fetching QR code:', error);
     return res.status(500).json({ message: 'Server error' });

@@ -187,7 +187,7 @@ test('developerToolsDir refuses any other directory, so DEVELOPER_DIR cannot wid
 test('a confined turn runs through the pinned proxy, the relay and the egress fence', async () => {
   await withSeat(async ({ ctx, wraps, provider, instanceSeen, pkg, mcpDir, home, report }) => {
     const result = await dsh.spawn('[[reply:confined-ok]]', ctx);
-    expect(result).toEqual({ text: 'confined-ok', newSessionId: 'session-11111111-1111-1111-1111-111111111111' });
+    expect(result).toEqual({ text: 'confined-ok', newSessionId: 'session-11111111-1111-1111-1111-111111111111', contextTokens: null });
 
     const seen = report();
     expect(seen.status).toBe(200);

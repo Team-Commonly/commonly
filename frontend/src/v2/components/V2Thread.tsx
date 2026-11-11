@@ -1618,14 +1618,33 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const noAgentsInPodLive = !(agents || []).some((agent) => agent.status === 'active');
 
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
-  // Do not offer the automatic first-reply invite in the private Scout workspace
-  // (the placement-B privacy ruling). Group replies and empty pods qualify separately.
+  // The private workspace is never shared (the placement-B privacy ruling).
+  // D288: there the card waits for the person's own agent, not Scout, and its
+  // press makes a new pod with that agent in it and invites into that one.
   const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
+  // Scout's chat messages carry its display name, not its per-user username,
+  // so both identify it.
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
-    .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
-  const teammateMoment = soloHuman && !scoutWorkspace && detail.initialMessagesLoaded === true
+    .flatMap((agent) => [
+      buildAgentUsername(agent.agentName, agent.instanceId || 'default'),
+      agent.displayName || '', agent.profile?.displayName || '',
+    ]).filter(Boolean).map((key) => key.toLowerCase()));
+  const rawTeammateMoment = soloHuman && detail.initialMessagesLoaded === true
     && !hasMore && !loading && !firstRunVisible
     ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
+  const momentAuthor = rawTeammateMoment?.username.toLowerCase() || '';
+  const momentAgent = momentAuthor ? (agents || []).find((agent) => agent.agentName !== 'scout' && (
+    buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase() === momentAuthor
+    || (agent.displayName || agent.profile?.displayName || '').toLowerCase() === momentAuthor
+  )) : undefined;
+  const teammateNewPod = scoutWorkspace && momentAgent
+    ? { agentName: momentAgent.agentName, instanceId: momentAgent.instanceId || 'default' } : undefined;
+  // In the workspace the card only ever invites into a new pod: with no agent
+  // row to put there, it doesn't show.
+  const teammateMoment = scoutWorkspace && !teammateNewPod ? null : rawTeammateMoment;
+  const teammateDismissedEverywhere = Boolean(
+    (currentUser as { onboarding?: { inviteCardDismissedAt?: string } } | null)?.onboarding?.inviteCardDismissedAt,
+  );
 
   const teammateSource = teammateMoment?.source || (scoutWorkspace ? 'scout-first-session' : 'first-agent-post');
 
@@ -2192,6 +2211,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             source={teammateSource}
             agentName={teammateMoment ? agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username : undefined}
             enabled={Boolean(teammateMoment)}
+            newPod={teammateNewPod}
+            dismissedEverywhere={teammateDismissedEverywhere}
+            onPodCreated={refreshPodList}
             onShown={followCardIfAtBottom}>
             {(teammateCard) => <V2ThreadMessages
             messages={messages}

@@ -15,6 +15,13 @@ jest.mock('../../../models/Pod');
 jest.mock('../../../models/ExternalLink');
 jest.mock('fs');
 
+const mockStore = {
+  put: jest.fn().mockResolvedValue(undefined),
+  get: jest.fn(),
+  delete: jest.fn().mockResolvedValue(undefined),
+};
+jest.mock('../../../services/objectStore', () => ({ getObjectStore: () => mockStore }));
+
 const routes = require('../../../routes/pods');
 
 describe('pods routes - external links', () => {
@@ -366,5 +373,92 @@ describe('pods routes - external link QR code type', () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.text).toMatch(/Only PNG, JPEG, GIF or WebP images are allowed/);
     expect(ExternalLink).not.toHaveBeenCalled();
+  });
+});
+
+// F406: a QR image goes to the ObjectStore under a key with a slash (out of
+// reach of GET /api/uploads/:fileName), only after the membership check (F407).
+describe('pods routes - external link QR code in the object store', () => {
+  const POD = 'a'.repeat(24);
+  let app;
+  let sent;
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use((req, res, next) => {
+      res.sendFile = jest.fn(() => res.status(200).end());
+      next();
+    });
+    app.use('/api/pods', routes);
+    jest.clearAllMocks();
+    sent = null;
+  });
+
+  const postQr = () => request(app)
+    .post('/api/pods/external-link')
+    .field('podId', POD)
+    .field('type', 'wechat')
+    .field('name', 'qr')
+    .attach('qrCode', Buffer.from('png-bytes'), { filename: 'qr.html', contentType: 'image/png' });
+
+  it('stores the image under a qr/<pod>/<random>.png key and records the key', async () => {
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }], externalLinks: [], save: jest.fn() });
+    let created;
+    ExternalLink.mockImplementation((data) => {
+      created = { ...data, _id: 'l1', save: jest.fn() };
+      return created;
+    });
+    await postQr().expect(201);
+    expect(mockStore.put).toHaveBeenCalledTimes(1);
+    const [key, body, mime] = mockStore.put.mock.calls[0];
+    expect(key).toMatch(new RegExp(`^qr/${POD}/[0-9a-f]{32}\\.png$`));
+    expect(body.toString()).toBe('png-bytes');
+    expect(mime).toBe('image/png');
+    expect(created.qrCodeKey).toBe(key);
+    expect(created.qrCodePath).toBeUndefined();
+    expect(fs.createWriteStream).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing for a caller outside the pod', async () => {
+    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' }, members: [], save: jest.fn() });
+    await postQr().expect(403);
+    expect(mockStore.put).not.toHaveBeenCalled();
+  });
+
+  it('removes the stored image when the link fails to save', async () => {
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }], externalLinks: [], save: jest.fn() });
+    ExternalLink.mockImplementation((data) => ({ ...data, save: jest.fn().mockRejectedValue(new Error('db')) }));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await postQr().expect(500);
+    expect(mockStore.delete).toHaveBeenCalledWith(mockStore.put.mock.calls[0][0]);
+    console.error.mockRestore();
+  });
+
+  it('serves a stored image from the object store with the served-file headers', async () => {
+    const { Readable } = require('stream');
+    ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodeKey: `qr/${POD}/abc.png`, podId: POD });
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
+    mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('png-bytes')), mime: 'image/png', size: 9 });
+    const res = await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    expect(mockStore.get).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toMatch(/sandbox/);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(Buffer.from(res.body).toString()).toBe('png-bytes');
+  });
+
+  it('answers 404 when the stored image is gone', async () => {
+    ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodeKey: `qr/${POD}/abc.png`, podId: POD });
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
+    mockStore.get.mockResolvedValue(null);
+    await request(app).get('/api/pods/external-link/l1/qrcode').expect(404);
+  });
+
+  it('deletes the stored image with the link', async () => {
+    ExternalLink.findById.mockResolvedValue({ podId: POD, qrCodeKey: `qr/${POD}/abc.png` });
+    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: ['l1'], save: jest.fn() });
+    await request(app).delete('/api/pods/external-link/l1').expect(200);
+    expect(mockStore.delete).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
   });
 });

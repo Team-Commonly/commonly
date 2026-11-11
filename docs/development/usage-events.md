@@ -74,6 +74,10 @@ When a published page is added or removed, regenerate `backend/config/publicPage
 
 `get-started-click` carries `step: connect | first-task`, one per click on the Get started bar's current step. Read it beside the starter tasks' done times to see whether the bar moved anyone.
 
+## Sent by the teammate card (D288)
+
+`teammate-card-shown` (once per pod and placement per page load), `teammate-card-click` and `teammate-card-dismiss`, each with `where: workspace | pod`. `workspace` is the card in the person's own workspace, whose press makes a new pod with their agent in it; `pod` is every other placement.
+
 ## Allowlisted, not yet sent
 
 `welcome-dismiss`, `hosted-install-click`, `hosted-install-result`, `agent-settings-open`, `runtime-model-save`, `agent-reply-seen`, `reaction-add`, `retry-click`, `board-open`, `task-open`, `decision-answer`, `empty-state-shown` and `stuck-help-click` are accepted but no surface sends them yet. `error-shown` isn't accepted, because the spec requires its code to be checked against the real error-code enum, which doesn't exist yet.
