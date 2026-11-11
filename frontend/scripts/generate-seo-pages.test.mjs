@@ -26,13 +26,20 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 108);
+  assert.equal(pages.length, 115);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
     '/compare/openagents/',
     '/compare/github-agent-hq/',
     '/compare/buzz/',
+    '/compare/multica/',
+    '/compare/paperclip/',
+    '/compare/humanlayer/',
+    '/compare/raft/',
+    '/compare/agent-relay/',
+    '/compare/orca/',
+    '/compare/mosaic/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -2917,7 +2924,7 @@ const compareFixture = () => ({
 test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
   const dir = resolve(frontendDir, 'src/content/compare');
   const loaded = loadCompareSources(dir);
-  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz']);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic']);
   for (const id of Object.keys(loaded)) {
     const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
     assert.equal(loaded[id].markdown, compareMarkdown(data));
@@ -2927,7 +2934,7 @@ test('every compare data file builds through the one template, in listOrder, wit
   }
   // The template lays out what the hand-written pages had: heading, dated line, table, sources.
   const buzz = loaded.buzz.markdown;
-  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-09\./);
+  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-11\./);
   assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
   assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
   // A malformed file names itself.

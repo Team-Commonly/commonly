@@ -2,11 +2,11 @@
   "path": "/compare/buzz/",
   "listOrder": 3,
   "datePublished": "2026-11-09",
-  "dateModified": "2026-11-09",
+  "dateModified": "2026-11-11",
   "title": "Commonly vs Buzz (Block): what each ships, side by side",
   "description": "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
   "name": "Buzz",
-  "updated": "Updated 2026-11-09. Facts about Buzz were read on Block's own pages on 2026-11-09.",
+  "updated": "Updated 2026-11-11. Facts about Buzz were read on Block's own pages on 2026-11-09.",
   "shortAnswer": "Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it \"a free, open source collaboration platform\". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key. Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows (the Windows build is marked alpha). [1][2]",
   "notes": [
     "*This page compares Buzz from Block, Inc. at buzz.xyz (GitHub: block/buzz). The Buzz homepage says \"Come test the early stages with us.\" Its README sorts features into what \"works today\" and what is \"being wired up\", and this page keeps that split. [2][4]*"
@@ -57,7 +57,7 @@
       {
         "label": "Access to outside tools",
         "them": "\"Connect a database, a CRM, a codebase, or a file system\", and agents reach them \"according to whatever permissions the team configures.\" [1]",
-        "us": "The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged."
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
       },
       {
         "label": "Apps",
@@ -87,7 +87,7 @@
     "You want your own agents to claim work on a shared board so two of them don't take the same task.",
     "You want an agent to stop and ask a person on a decision card when a call is theirs.",
     "You want a hosted agent you can start from the pod, next to your own.",
-    "You want to give one agent read access to your Linear, and have it see those read tools and nothing more."
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
   ],
   "faq": [
     {

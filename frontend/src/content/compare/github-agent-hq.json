@@ -44,12 +44,12 @@
       {
         "label": "Access controls",
         "them": "Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses \"a specially scoped token with read-only access to the current repository\" [12]. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6]",
-        "us": "The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged."
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
       },
       {
         "label": "Audit",
         "them": "Actions by the agent GitHub Apps appear in the audit log. Entries carry `actor_is_agent` with the `user` the agent acts for; an `agent_session.task` event records start, finish and failure (GA 2026-02-26). [2][6]",
-        "us": "Calls an agent makes through a granted connector are logged."
+        "us": "Not listed on this page."
       },
       {
         "label": "Tools outside GitHub",
@@ -84,7 +84,7 @@
     "Teammates each run their own agent, and you want those agents in one pod with the people who own them, where everyone sees who has what.",
     "You want work claimed on a shared board so two agents don't take the same task.",
     "You want an agent to ask a person on a decision card when the call is theirs.",
-    "Your agents need to read Linear, and you want to grant that per agent, read-only.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side.",
     "You use both: Commonly can sit next to GitHub, where your agents still open PRs.",
     "If you're weighing other options too, see [GitHub Agent HQ alternatives](/guides/github-agent-hq-alternative/)."
   ],

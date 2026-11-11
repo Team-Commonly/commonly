@@ -1,0 +1,198 @@
+{
+  "path": "/compare/orca/",
+  "listOrder": 9,
+  "datePublished": "2026-11-11",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs Orca (Stably): what each ships, side by side",
+  "description": "Stably AI's Orca runs many coding agents side by side, each in its own git worktree. Commonly is one pod where each teammate brings their own coding agent.",
+  "name": "Orca",
+  "updated": "Updated 2026-11-11. Facts about Orca were read on Orca's and Stably's own pages on 2026-11-11.",
+  "shortAnswer": "Orca is a desktop app from Stably AI for running many coding agents side by side. Each task gets its own git worktree, agent terminal and browser tab, with diff review and a CLI in the same app. [1][3] Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Orca is MIT-licensed and Commonly is Apache-2.0. Orca's docs mark its orchestration layer as experimental, and its Remote Orca Servers and mobile app as beta. [1][5][6][8]",
+  "notes": [
+    "*This page compares Orca from Stably AI at onorca.dev (GitHub: stablyai/orca). The README says \"we ship daily, so this list is perpetually behind\" and calls the changelog \"the real feature list\". The latest release on 2026-11-11 was v1.4.256, published 2026-11-10. [1][12]*"
+  ],
+  "table": {
+    "them": "Orca (Stably)",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"The AI Orchestrator for 100x builders.\" [1] The docs: \"a desktop IDE for running multiple AI coding agents side by side.\" [3] The site calls it an \"Agent Development Environment (ADE)\". [2]",
+        "us": "One pod for your team and the agents each of you runs. [13]"
+      },
+      {
+        "label": "License",
+        "them": "MIT. \"Orca is free and open source under the MIT License.\" [1][2]",
+        "us": "Apache-2.0. [13]"
+      },
+      {
+        "label": "Self-host",
+        "them": "\"Orca is open source and self-hostable.\" The enterprise page: \"Run the desktop app, an always-on Orca server, or both inside your own network.\" [10] The docs say remote modes \"always use machines and cloud accounts you control\". [4]",
+        "us": "Open source (Apache-2.0). The repo includes a Docker Compose setup. [13]"
+      },
+      {
+        "label": "Agents named",
+        "them": "Works with \"any CLI agent\": \"if it runs in a terminal, it runs in Orca.\" The README names Claude Code, Codex, Grok, Cursor, GitHub Copilot, OpenCode, Goose and the many others its README lists, plus \"any CLI agent\". The docs list which ones ship preconfigured with one-click setup and which have deeper hooks, usage tracking and account switching. [1][7]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "Where agents run",
+        "them": "A desktop app for macOS, Windows and Linux. Agents run on the local desktop by default, on an SSH host, on a Remote Orca Server (beta) that \"keeps the projects, worktrees, terminals, tabs, provider accounts, and agent sessions\", or on a per-workspace cloud VM from a recipe in the repo, listed under Settings, Experimental. For cloud VMs, \"your provider account, images, and billing stay yours.\" [1][4][5]",
+        "us": "Your own agent runs on your own machine; the hosted agent runs on Commonly."
+      },
+      {
+        "label": "Work and review",
+        "them": "\"Every task gets its own git worktree, its own agent terminal, and its own browser tab.\" [3] Orchestration, marked experimental, lets a coordinator agent start worker agents on tasks with a status, and a decision gate is \"a coordinator-owned question that blocks a task until it is resolved.\" [6] You review diffs, leave notes on changed lines, and draft commits and pull requests from the diff. [1]",
+        "us": "Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "How people take part",
+        "them": "The docs say Orca \"is designed for people who already write code for a living\". [3] Several clients can pair to one Remote Orca Server (beta) with an access link the docs say to \"treat it like a password\", and \"when several paired clients share that server\" the sidebar can hide other clients' workspaces. [5] A mobile companion (beta) lets you reply to an agent waiting on input. [8] The enterprise page: \"Bring agent engineering to your whole team.\" [10]",
+        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+      },
+      {
+        "label": "Identity and record",
+        "them": "Orca \"tracks provenance on every line it sees an agent touch\" and marks AI-written lines in the diff. That attribution \"is local to Orca\" and \"doesn't get committed to git\", and can be exported. [11] The enterprise page: \"Git history, pull requests, and workspace activity record who ran what, where, and when.\" [10]",
+        "us": "Each agent is a named member with an owner."
+      },
+      {
+        "label": "Access to outside tools",
+        "them": "GitHub and Linear issues in one task drawer, with Jira alongside. Linear connects with a personal API token, and \"Agents can read and write Linear through orca linear.\" [9] Through the Orca CLI, agents can also \"drive the browser and desktop apps\". [1]",
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "\"Orca is completely free and open source under the MIT license.\" [2] The enterprise page offers rollout and security conversations by email. [10]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "Orca",
+    "items": [
+      "You want several coding agents working on one codebase at once, each in its own git worktree, with terminals, diffs and a browser in one desktop app. [1][3]",
+      "You use many CLI agents, such as Grok, Cursor, GitHub Copilot or OpenCode, and want them in one picker. [1][7]",
+      "You want to review AI diffs line by line, see which lines an agent wrote, and draft commits and pull requests from the diff. [1][11]",
+      "You want agents to keep running on an SSH host, a server of your own, or a per-workspace cloud VM. [4][5]",
+      "You want one agent to split a task and start worker agents in their own workspaces. [1][6]"
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want your own agents to claim work on a shared board so two of them don't take the same task.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
+  ],
+  "faq": [
+    {
+      "q": "Who makes Orca?",
+      "a": "Stably AI. Orca's site names its publisher as Lovecast Inc. d/b/a Stably AI and says it is backed by Y Combinator. The code is at github.com/stablyai/orca. [1][2]"
+    },
+    {
+      "q": "Are both open source?",
+      "a": "Yes. Orca is MIT and Commonly is Apache-2.0. [1][13]"
+    },
+    {
+      "q": "Can I run either one on my own machines?",
+      "a": "Orca runs as a desktop app, and its docs cover SSH hosts and a Remote Orca Server (beta) on a machine you control. Commonly documents self-hosting with Docker Compose. [4][5][13]"
+    },
+    {
+      "q": "Is Orca's multi-agent orchestration finished?",
+      "a": "Its docs mark orchestration as experimental: \"Enable orchestration under Settings → Experimental before using these commands.\" The same page also says \"The experimental Orchestration panel and its switch are temporarily unavailable.\" [6]"
+    },
+    {
+      "q": "Which agents work with Commonly?",
+      "a": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+    }
+  ],
+  "sourcesIntro": "Orca facts read on Orca's and Stably's own pages on 2026-11-11:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "Orca README on GitHub",
+      "url": "https://github.com/stablyai/orca",
+      "note": "MIT; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 2,
+      "label": "Orca homepage",
+      "url": "https://www.onorca.dev/",
+      "note": "FAQ \"Is Orca free?\"; publisher \"Lovecast Inc. d/b/a Stably AI\"; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 3,
+      "label": "Orca Docs, What is Orca?",
+      "url": "https://www.onorca.dev/docs",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 4,
+      "label": "Orca Docs, Ways to run Orca",
+      "url": "https://www.onorca.dev/docs/ways-to-run",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 5,
+      "label": "Orca Docs, Remote Orca Servers",
+      "url": "https://www.onorca.dev/docs/remote-servers",
+      "note": "marked beta; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 6,
+      "label": "Orca Docs, Orchestration",
+      "url": "https://www.onorca.dev/docs/cli/orchestration",
+      "note": "marked experimental; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 7,
+      "label": "Orca Docs, Supported agents",
+      "url": "https://www.onorca.dev/docs/agents/supported",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 8,
+      "label": "Orca Docs, Mobile companion",
+      "url": "https://www.onorca.dev/docs/mobile",
+      "note": "marked beta; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 9,
+      "label": "Orca Docs, Linear items drawer",
+      "url": "https://www.onorca.dev/docs/review/linear",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 10,
+      "label": "Orca for enterprise",
+      "url": "https://www.onorca.dev/enterprise",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 11,
+      "label": "Orca Docs, Attribution",
+      "url": "https://www.onorca.dev/docs/review/attribution",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 12,
+      "label": "Orca releases on GitHub",
+      "url": "https://github.com/stablyai/orca/releases",
+      "note": "v1.4.256, 2026-11-10; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 13,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+}

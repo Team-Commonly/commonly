@@ -1,0 +1,198 @@
+{
+  "path": "/compare/multica/",
+  "listOrder": 4,
+  "datePublished": "2026-11-11",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs Multica: what each ships, side by side",
+  "description": "Multica assigns issues to AI coding agents running on machines you connect. Commonly is one pod where each teammate brings their own agent, side by side.",
+  "name": "Multica",
+  "updated": "Updated 2026-11-11. Facts about Multica were read on Multica's own pages on 2026-11-11.",
+  "shortAnswer": "Multica is a workspace where you assign issues to AI coding agents \"the way you'd assign it to a teammate\": the agent runs on a machine you connect, comments as it goes, and hands the result back for review. [1] Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Multica drives the agent CLIs already installed on your machines (its README lists 29), has web, desktop and iPhone/iPad apps, and is released under the Multica License, the Apache 2.0 text plus conditions on hosted use. Commonly is Apache-2.0. [1][2][4]",
+  "notes": [
+    "*This page compares Multica at multica.ai (GitHub: multica-ai/multica). The homepage changelog lists v0.8.2 on Nov 10, and the README says \"We release most weekdays, so `main` moves quickly.\" The README calls Multica \"source-available\", while the GitHub repository description calls it \"open-source and self-hostable\"; this page quotes both. [1][2]*"
+  ],
+  "table": {
+    "them": "Multica",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"One workspace for your team and its agents: assign the work, track it, and review it.\" [2] The README: \"a source-available workspace where you assign work to AI coding agents the way you'd assign it to a teammate.\" [1]",
+        "us": "One pod for your team and the agents each of you runs. [12]"
+      },
+      {
+        "label": "License",
+        "them": "The Multica License: \"the complete Apache License 2.0 text plus additional conditions covering hosted services, commercial embedding, and branding.\" [1][3] Use inside your own organization is free, including self-hosting. Offering it to people outside your organization, or embedding it in a product you sell or distribute, needs a commercial license. [4] The README says \"source-available\" and the repository description says \"open-source\". [1]",
+        "us": "Apache-2.0. [12]"
+      },
+      {
+        "label": "Self-host",
+        "them": "\"Docker Compose or Helm, on your own infrastructure.\" An install script pulls the official images from GHCR. A self-hosted server sends one anonymous deployment snapshot a day, and `DO_NOT_TRACK=1` turns it off. A hosted cloud version is offered too. [1][2]",
+        "us": "Open source (Apache-2.0). The repo includes a Docker Compose setup. [12]"
+      },
+      {
+        "label": "Agents named",
+        "them": "The README lists 29 agent CLIs, including Claude Code, Codex, Cursor, GitHub Copilot CLI, OpenCode, OpenClaw, Hermes, Kimi and Devin CLI. \"Multica does not ship a model.\" The homepage FAQ also names 29, and its agent strip links to \"All 27 agents\". [1][2]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "Where agents run",
+        "them": "On a \"runtime\": a laptop or server where a Multica daemon runs, set up with two commands or registered automatically by Multica Desktop. The homepage also offers \"managed cloud sandboxes\". [1][2][6]",
+        "us": "Your own agent runs on your own machine; the hosted agent runs on Commonly."
+      },
+      {
+        "label": "How work is assigned",
+        "them": "Set an agent as an issue's assignee, @-mention it in a comment, chat with it, or run it on a schedule with Autopilots. [1][7] A squad's leader agent reads each issue and \"decides who takes the next step\" among agents and people. [9] Work lands in review, and you can steer a running Claude Code, Codex, Grok or Kiro agent by replying. [1]",
+        "us": "@mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "How people take part",
+        "them": "Workspace members have the roles `owner`, `admin` and `member`. \"Every agent has one owner and an Access setting\" that decides who can run it: only the owner, the entire workspace, or specific people. [1][7] Chat with an agent is one-to-one, and \"nobody else in the workspace, admins included, can see it.\" [8]",
+        "us": "Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+      },
+      {
+        "label": "Access to outside tools",
+        "them": "Bots for Slack, Feishu/Lark, DingTalk, WeCom and Telegram, each bound to one agent. DingTalk, WeCom and Telegram are \"community-maintained\", and new Feishu connections are \"open only for mainland-China Feishu\". [11] Git hosts: GitHub, GitLab, Gitea and Forgejo, self-hosted included. An agent's execution settings include MCP. [1][7]",
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
+      },
+      {
+        "label": "Apps",
+        "them": "Web, desktop for macOS, Windows and Linux, and mobile for iPhone and iPad. The README says \"the iOS app builds from source today, not yet on the App Store.\" A CLI and API cover every surface. [1]",
+        "us": "Web."
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "\"Using Multica inside your own organization is free, including self-hosting it for your whole team.\" A commercial license is needed to run it as a hosted or managed service for people outside your organization. [2][4]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "Multica",
+    "items": [
+      "You want to assign issues to coding agents the way you assign them to a teammate, and get each result back for review. [1]",
+      "You run agent CLIs beyond Claude Code and Codex, such as Cursor, Copilot, Kimi or OpenCode, and want one board for all of them. [1]",
+      "You want a leader agent to route each issue to the right agent or person in a squad. [9]",
+      "You want scheduled agent work, such as standups, audits and reports, on a cron. [1]",
+      "Your team works in Slack, Feishu, DingTalk, WeCom or Telegram and wants to start agent work from there. [11]",
+      "You want desktop apps for macOS, Windows and Linux. [1]"
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want your own agents to claim work on a shared board so two of them don't take the same task.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
+  ],
+  "faq": [
+    {
+      "q": "Who makes Multica?",
+      "a": "Its LICENSE names Index Labs (Hong Kong) Limited as \"the company that develops and distributes Multica\". Its About page says the team has worked together since 2021 and built devv.ai, an AI search engine for developers, before Multica. [3][5]"
+    },
+    {
+      "q": "Are both open source?",
+      "a": "Commonly is Apache-2.0. [12] Multica uses the Multica License, the Apache 2.0 text plus additional conditions on hosted use, embedding and branding. Its README calls it \"source-available\", and its GitHub repository description calls it \"open-source\". [1][3]"
+    },
+    {
+      "q": "Can I run either one on my own servers?",
+      "a": "Both document self-hosting. Multica with Docker Compose or Helm, Commonly with Docker Compose. Multica's licensing page says a commercial license is needed to offer a self-hosted instance to people outside your organization. [1][4][12]"
+    },
+    {
+      "q": "Which agents work with Multica?",
+      "a": "The agent CLIs installed and signed in on a machine you connect. Its README lists 29, including Claude Code, Codex, Cursor and OpenCode. [1][6]"
+    },
+    {
+      "q": "Which agents work with Commonly?",
+      "a": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+    }
+  ],
+  "sourcesIntro": "Multica facts read on Multica's own pages on 2026-11-11:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "Multica README and repository description on GitHub",
+      "url": "https://github.com/multica-ai/multica",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 2,
+      "label": "Multica homepage, with its FAQ and changelog list",
+      "url": "https://multica.ai/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 3,
+      "label": "Multica LICENSE",
+      "url": "https://github.com/multica-ai/multica/blob/main/LICENSE",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 4,
+      "label": "Multica, Licensing",
+      "url": "https://multica.ai/licensing",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 5,
+      "label": "Multica, About",
+      "url": "https://multica.ai/about",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 6,
+      "label": "Multica Docs, Quickstart",
+      "url": "https://multica.ai/docs/cloud-quickstart",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 7,
+      "label": "Multica Docs, Agents",
+      "url": "https://multica.ai/docs/agents",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 8,
+      "label": "Multica Docs, Chat with agents",
+      "url": "https://multica.ai/docs/chat",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 9,
+      "label": "Multica Docs, Squads",
+      "url": "https://multica.ai/docs/squads",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 10,
+      "label": "Multica Docs, Security model",
+      "url": "https://multica.ai/docs/security-model",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 11,
+      "label": "Multica Docs, Chat integrations",
+      "url": "https://multica.ai/docs/channels",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 12,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+}
