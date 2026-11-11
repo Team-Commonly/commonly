@@ -187,6 +187,11 @@ test('emits a canonical crawlable page for every public route', async () => {
       assert.equal(article.dateModified, revised);
       continue;
     }
+    // F433 removed a held claim from one guide without a D295 pass; its date moves with the text.
+    if (guide.path === '/guides/control-what-coding-agents-can-access/') {
+      assert.equal(article.dateModified, '2026-11-11');
+      continue;
+    }
     assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
@@ -3106,4 +3111,14 @@ test('the deploy step never throws: a dead network, a missing key file and a rej
   const refused = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: rejected, log });
   assert.equal(refused.ok, false);
   assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
+});
+
+// F433: "calls through a grant are logged" is held until the scope walk passes on prod. No guide,
+// llms.txt base or page string may say it, in any wording that pairs a grant with logging.
+test('no public text claims grant calls are logged while that claim is held', async () => {
+  const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b/i;
+  for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json']) {
+    const text = await readFile(resolve(frontendDir, file), 'utf8');
+    assert.doesNotMatch(text, held, file);
+  }
 });
