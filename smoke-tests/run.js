@@ -27,6 +27,35 @@ async function run(name, fn) {
   }
 }
 
+// Same escaping as frontend/scripts/generate-seo-pages.mjs, for comparing a <title>.
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// The page definitions the frontend build pre-renders, from this checkout's content files.
+async function expectedSeoPages() {
+  const { readFile } = require('node:fs/promises');
+  const { resolve } = require('node:path');
+  const { pathToFileURL } = require('node:url');
+  const frontend = resolve(__dirname, '../frontend');
+  const { buildPageDefinitions } = await import(pathToFileURL(resolve(frontend, 'scripts/generate-seo-pages.mjs')).href);
+  const read = async (file) => JSON.parse(await readFile(resolve(frontend, file), 'utf8'));
+  const translations = await read('src/i18n/locales/en.json');
+  return buildPageDefinitions({
+    landing: translations.landing,
+    compare: translations.compare,
+    useCases: await read('src/content/use-cases.json'),
+    guides: await read('src/content/guides.json'),
+    landingFaq: await read('src/content/landing-faq.json'),
+    legal: await read('src/content/legal.json'),
+  });
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -100,21 +129,23 @@ async function main() {
   });
 
   // 7. Pre-rendered public routes must win over the SPA fallback in nginx.
+  // The expected title and H1 come from the generator that built the pages, reading the same
+  // content files, so a copy change can't break this check (it did three times on 2026-11-11).
   await run('GET public SEO routes → their pre-rendered canonical pages', async () => {
-    const routes = [
-      ['/compare/', 'Commonly vs the alternatives | Commonly AI', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
-      // F397 drops the " | Commonly AI" suffix where it would push a title past 60 characters.
-      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
-      ['/guides/multi-agent-collaboration-platform/', 'Multi-Agent Collaboration Platform | Commonly AI', 'https://commonly.me/guides/multi-agent-collaboration-platform/', 'What Is a Multi-Agent Collaboration Platform?'],
-    ];
+    const pages = await expectedSeoPages();
+    const routes = ['/compare/', '/use-cases/agent-collab/', '/guides/multi-agent-collaboration-platform/'];
 
-    for (const [path, title, canonical, heading] of routes) {
+    for (const path of routes) {
+      const page = pages.find((item) => item.path === path);
+      assert(page, `${path}: the generator no longer builds this route`);
+      const heading = page.content.match(/<h1>([\s\S]*?)<\/h1>/);
+      assert(heading, `${path}: the generator's page has no <h1>`);
       const res = await fetch(`${BASE_URL}${path}`);
       assert(res.status === 200, `${path}: expected 200, got ${res.status}`);
       const html = await res.text();
-      assert(html.includes(`<title>${title}</title>`), `${path}: missing page-specific title`);
-      assert(html.includes(`rel="canonical" href="${canonical}"`), `${path}: missing canonical URL`);
-      assert(html.includes(`<h1>${heading}</h1>`), `${path}: missing pre-rendered heading`);
+      assert(html.includes(`<title>${escapeHtml(page.title)}</title>`), `${path}: missing page-specific title`);
+      assert(html.includes(`rel="canonical" href="https://commonly.me${path}"`), `${path}: missing canonical URL`);
+      assert(html.includes(`<h1>${heading[1]}</h1>`), `${path}: missing pre-rendered heading`);
       if (path.startsWith('/guides/')) {
         assert(html.includes('<meta property="og:type" content="article"'), `${path}: missing article Open Graph type`);
         assert(html.includes('"@type":"Article"'), `${path}: missing Article structured data`);
