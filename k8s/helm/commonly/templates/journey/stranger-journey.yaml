@@ -66,6 +66,10 @@ spec:
               value: "1"
             - name: JOURNEY_API
               value: {{ .Values.strangerJourney.apiUrl | quote }}
+            {{- with .Values.strangerJourney.emailDomain }}
+            - name: JOURNEY_EMAIL_DOMAIN
+              value: {{ . | quote }}
+            {{- end }}
             - name: JOURNEY_TRIGGER
               valueFrom:
                 fieldRef:

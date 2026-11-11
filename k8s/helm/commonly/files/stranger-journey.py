@@ -387,7 +387,11 @@ def main():
     except StepFailed as err:
         failure = {'failed_step': name, 'error': str(err)}
     finally:
-        account_gone = journey.cleanup()
+        try:
+            account_gone = journey.cleanup()
+        except Exception as err:  # noqa: BLE001 - the verdict line must still print
+            emit(step='cleanup', ok=False, error=type(err).__name__)
+            account_gone = False
     if failure is None and not account_gone:
         failure = {'failed_step': 'cleanup', 'error': 'the account survived cleanup'}
     ms = int((time.monotonic() - started) * 1000)

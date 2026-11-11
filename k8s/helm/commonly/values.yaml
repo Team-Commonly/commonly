@@ -742,6 +742,10 @@ strangerJourney:
   # windows at 23.5 h) then fires only after two consecutive missed runs.
   schedule: "17 2,14 * * *"
   apiUrl: "https://api.commonly.me"
+  # The signup address's domain. Empty: the script's ops.commonly.invalid,
+  # which Growth's funnel filters drop. An instance that verifies through the
+  # email sink needs a domain emailService sends to (not .invalid/.test).
+  emailDomain: ""
   # An invite-only instance (staging) sets a Secret holding one invitation
   # code; signup sends it as JOURNEY_INVITE_CODE. Empty name: no code is sent.
   inviteCodeSecret:

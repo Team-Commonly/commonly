@@ -125,6 +125,20 @@ class Cleanup(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(len(rec.bodies('/api/users/me')), 1)
 
+    def test_a_cleanup_that_raises_still_prints_a_failing_verdict(self):
+        journey = load('')
+        verdicts = []
+        journey.emit = lambda **fields: verdicts.append(fields)
+        journey.call = Recorder()
+
+        def boom(self):
+            raise OSError('network')
+        for name in ('signup', 'workspace', 'welcome', 'answer', 'card_step', 'approve', 'byo'):
+            setattr(journey.Journey, name, lambda self: None)
+        journey.Journey.cleanup = boom
+        self.assertEqual(journey.main(), 1)
+        self.assertEqual(verdicts[-1]['result'], 'fail')
+
     def test_no_login_means_no_delete_attempt(self):
         journey = load('')
         rec = journey.call = Recorder()

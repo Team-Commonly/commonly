@@ -299,16 +299,19 @@ connectorSecrets:
   enabled: true
 
 # The stranger journey against staging (F375): a fresh signup on
-# @ops.commonly.invalid (in authAllowedDomains above), verified through the
-# email sink, Scout's welcome and reply, the connect card, then the account
-# deleted. deploy-staging runs it as the staging-smoke gate. Staging is
+# @seed.staging.commonly.me (in authAllowedDomains above; emailService never
+# sends to .invalid, so the script's default could not be verified), verified
+# through the email sink, Scout's welcome and reply, the connect card, then the
+# account deleted. deploy-staging runs it as the staging-smoke gate. Staging is
 # invite-only, so signup sends the code in the staging-journey-invite Secret
-# (SRE, 11-10; never printed). The workflow still falls back to a
-# reachability-only probe when the CronJob is missing; that fallback goes once a
-# full staging journey has passed.
+# (SRE, 11-10; never printed). Each run redeems that code once, so it must stay
+# multi-use with no expiry, or every staging gate goes red at signup. The
+# workflow still falls back to a reachability-only probe when the CronJob is
+# missing; that fallback goes once a full staging journey has passed.
 strangerJourney:
   enabled: true
   apiUrl: "https://api-staging.commonly.me"
+  emailDomain: "seed.staging.commonly.me"
   inviteCodeSecret:
     name: staging-journey-invite
     key: INVITE_CODE

@@ -44,11 +44,16 @@ describe('stranger journey', () => {
       expect(staging.strangerJourney.inviteCodeSecret.name).toBeTruthy();
       expect(staging.strangerJourney.inviteCodeSecret.key).toBeTruthy();
       const script = read('files/stranger-journey.py');
-      const domain = script.match(/JOURNEY_EMAIL_DOMAIN', '([^']+)'/)[1];
+      const domain = staging.strangerJourney.emailDomain
+        || script.match(/JOURNEY_EMAIL_DOMAIN', '([^']+)'/)[1];
       expect(staging.backend.env.authAllowedDomains.split(',')).toContain(domain);
       // Restricted staging signs in verified accounts only; the sink is how the
-      // journey verifies.
+      // journey verifies, and emailService never sends to a reserved TLD
+      // (utils/reservedEmailDomain), so the mail would never reach it.
       expect(staging.email.sink.enabled).toBe(true);
+      expect(domain).not.toMatch(/\.(invalid|test|example|localhost)$/);
+      const template = read('templates/journey/stranger-journey.yaml');
+      expect(template).toMatch(/- name: JOURNEY_EMAIL_DOMAIN\s*\n\s*value: \{\{ \. \| quote \}\}/);
     }
   });
 

@@ -301,8 +301,14 @@ staging CronJob after every staging rollout, and its pass or fail is the `stagin
 Deploy Dev requires. Staging is invite-only and signs in verified accounts only, so the staging
 values give it `inviteCodeSecret` (the `staging-journey-invite` Secret, key `INVITE_CODE`) and the
 chart wires the email sink's read token (`email-sink` / `read-token`); the journey reads only its
-own address's mail. It signs up on `@ops.commonly.invalid`, which is in staging's
-`authAllowedDomains`. Read a staging run with the commands below in `commonly-staging`.
+own address's mail. It signs up on `@seed.staging.commonly.me` (`strangerJourney.emailDomain`):
+`emailService` never sends to `.invalid`, so the default domain could never be verified there. Each
+run redeems the invite code once, so the code must stay multi-use with no expiry. Read a staging
+run with the commands below, with `-n commonly-staging` in place of `-n commonly-dev`.
+
+A `cleanup` failure (the account survived `DELETE /api/users/me`) also fails the run, so the prod
+alert can fire for a broken self-delete, not only for a broken signup-to-connect path. The failed
+step in the verdict line says which.
 
 Read the run:
 
