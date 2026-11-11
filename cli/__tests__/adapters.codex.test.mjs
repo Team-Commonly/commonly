@@ -23,6 +23,7 @@ import {
   readFile,
   readlink,
   realpath,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -43,8 +44,12 @@ const codex = {
   ...codexAdapter,
   // child_process is mocked here, so the workspace git check can't run git; it
   // is tested with real git in workspace-git-config.test.mjs.
+  // A turn runs as on macOS unless the test names a platform: on Linux a
+  // private seat gets a Codex home of its own (F445), which the tests that
+  // aren't about it don't expect, and which would be made under the real home
+  // of whoever runs the suite. CI runs it on Linux.
   spawn: (prompt, ctx) => codexAdapter.spawn(prompt, {
-    _codexVersion: '0.162.1', _refuseCodeRunningGitSetup: () => {}, ...ctx,
+    _codexVersion: '0.162.1', _refuseCodeRunningGitSetup: () => {}, _platform: 'darwin', ...ctx,
   }),
 };
 const {
@@ -2576,6 +2581,21 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(workspace, 'rel-codex', 'auth.json'));
   });
 
+  test('a shared home that is a link to another folder is denied by that folder\'s path too', async () => {
+    const real = join(root, 'codex-data');
+    await rename(join(home, '.codex'), real);
+    await symlink(real, join(home, '.codex'));
+    const { fsFlag, codexHome } = await linuxSpawn();
+    expect(fsFlag).toContain('"~/.codex"="deny"');
+    expect(fsFlag).toContain(`"${realpathSync(real)}"="deny"`);
+    expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(home, '.codex', 'auth.json'));
+  });
+
+  test('an XDG_STATE_HOME under ~/.commonly is refused for a private seat, in its own words', async () => {
+    await expect(linuxSpawn({ env: { XDG_STATE_HOME: join(home, '.commonly', 'state') } }))
+      .rejects.toThrow(/puts the private Codex home under .*which the private sandbox denies on Linux/);
+  });
+
   test('on macOS a private seat keeps running from the shared home, denied whole', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, HOME: home };
@@ -2607,6 +2627,7 @@ describe('a repository set up to run programs', () => {
         environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}) },
         env,
         agentName: 'refuse-test-agent',
+        _platform: 'darwin',
         _codexVersion: '0.162.1',
         _publicCodexHome: join(root, 'public'),
         _refuseCodeRunningGitSetup: refuser,

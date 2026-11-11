@@ -73,7 +73,10 @@ seat runs with **a Codex home of its own** (F445), under
 - **Your own setup is carried over** as links Codex follows outside the sandbox:
   `auth.json` (your login), `config.toml` (a private seat keeps your config) and
   `AGENTS.md`. A file the seat's Codex writes in its own home is its own and is
-  kept; a link to a login you removed is dropped.
+  kept; a link to a login you removed is dropped. Not walked: whether Codex
+  refreshes a ChatGPT login by writing through the link or by replacing the
+  file. If it replaces it, the seat keeps that copy as its own, stops following
+  your login, and your `~/.codex` keeps the token the refresh replaced.
 - **What it can't read:** the shared home, the public seats' homes and every other
   private seat's home, denied whole, so another session writing there, under
   any name and at any moment, stays out of reach. In its own home everything is
@@ -84,8 +87,11 @@ seat runs with **a Codex home of its own** (F445), under
   crosses `/`, and a glob that matched a file inside a folder already denied
   stopped every turn at start. What the own home holds that a key misses is the
   seat's own.
-- **What's left:** another private seat's home created during the turn is
-  denied from the next one; until then it holds only its links.
+- **What's left:** another private seat's home that is created during the turn
+  is denied from the next one. Until then, what that seat's first turn writes
+  there (its new thread, its logs) is readable to this turn's commands. Two
+  instances of one agent (`name` and `name@instance`) share one home, as
+  they share a public one.
 
 Everything else is the macOS key set: on Linux a write key inside a denied
 folder works, so the workspace under `~/.commonly` and the shell's temp folder

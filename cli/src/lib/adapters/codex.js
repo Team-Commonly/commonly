@@ -370,10 +370,10 @@ const statOrNull = async (path) => {
 // refused. macOS has no arg0 helper and keeps its homes where they were.
 const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
 
-const stateHomeUnderCommonly = (ctx, home) => new Error(
-  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the public Codex home under ${join(home, '.commonly')}, `
-  + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.',
-);
+const stateHomeUnderCommonly = (ctx, home, seat = 'public') => Object.assign(new Error(
+  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the ${seat} Codex home under ${join(home, '.commonly')}, `
+  + `which the ${seat} sandbox denies on Linux. Point it elsewhere or unset it.`,
+), { code: 'state_home_under_commonly' });
 
 const publicCodexHomesRoot = (ctx) => {
   const home = ctx._homeDir || homedir();
@@ -427,7 +427,14 @@ export const privateCodexHomePath = (ctx) => {
   if (ctx._privateCodexHome) return ctx._privateCodexHome;
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const hash = createHash('sha256').update(`private:${identity}`).digest('hex').slice(0, 20);
-  return join(dirname(publicCodexHomesRoot(ctx)), PRIVATE_CODEX_HOMES, hash);
+  let publicRoot;
+  try {
+    publicRoot = publicCodexHomesRoot(ctx);
+  } catch (error) {
+    if (error?.code !== 'state_home_under_commonly') throw error;
+    throw stateHomeUnderCommonly(ctx, ctx._homeDir || homedir(), 'private');
+  }
+  return join(dirname(publicRoot), PRIVATE_CODEX_HOMES, hash);
 };
 
 const preparePrivateCodexHome = async (ctx, childEnv) => {
@@ -435,13 +442,27 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
   const home = privateCodexHomePath(ctx);
   if (pathResolve(home) === source) throw new Error('a private Codex home must be apart from the shared CODEX_HOME');
   const workspacePath = pathResolve(ctx.cwd || process.cwd());
-  const [workspace, realHome] = await Promise.all([
-    realpath(workspacePath).catch(() => workspacePath),
+  const userHome = ctx._homeDir || homedir();
+  const [workspace, realHome, realSource, realCommonly] = await Promise.all([
+    // As in realpathOfNearest: only a missing workspace falls back to its own path.
+    realpath(workspacePath).catch((error) => {
+      if (error?.code === 'ENOENT') return workspacePath;
+      throw error;
+    }),
     realpathOfNearest(home),
+    realpathOfNearest(source),
+    realpathOfNearest(join(userHome, '.commonly')),
   ]);
   if (contains(workspace, realHome)) {
     throw new Error(`private codex agents cannot run in ${ctx.cwd}: it contains the agent's own Codex home `
       + `(${home}), which the sandbox would then expose. Run it in a project folder.`);
+  }
+  // Both are denied whole, and a home inside either would hide Codex's own
+  // sandbox helper, so every turn would stop at start.
+  if (contains(realSource, realHome) || contains(realCommonly, realHome)) {
+    throw new Error(`a private Codex agent's own home (${home}) resolves inside `
+      + `${contains(realSource, realHome) ? `the shared Codex home (${source})` : join(userHome, '.commonly')}, `
+      + 'which its sandbox denies on Linux. Point XDG_STATE_HOME elsewhere or unset it.');
   }
   await mkdir(home, { recursive: true, mode: 0o700 });
   await chmod(home, 0o700);
@@ -459,12 +480,14 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
     const current = toStat ? pathResolve(dirname(to), await readlink(to)) : null;
     if (current !== from) {
       if (toStat) await unlink(to);
-      await symlink(from, to);
+      // Another turn of the same seat may have just made it.
+      await symlink(from, to).catch((error) => { if (error?.code !== 'EEXIST') throw error; });
     }
   }
   await mkdir(join(home, 'tmp', 'arg0-linux'), { recursive: true, mode: 0o700 });
-  // Every other private seat's home, as it stands now; one created during the
-  // turn starts empty but for its links.
+  // Every other private seat's home, as it stands now. One created during this
+  // turn is denied from the next turn on: until then, what that seat's first
+  // turn writes there stays readable to this turn's commands.
   const others = entriesOf(dirname(home)).filter((name) => name !== basename(home)).sort()
     .map((name) => join(dirname(home), name));
   // The links into the shared home, which is denied whole with their targets.
@@ -473,7 +496,7 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
     const stat = await statOrNull(join(home, name));
     if (stat?.isSymbolicLink() && pathResolve(home, await readlink(join(home, name))) === join(source, name)) links.push(name);
   }
-  return { home, source, others, links };
+  return { home, source, realSource, others, links };
 };
 
 // `login: false` is the proxy route (D250): codex authenticates with the
@@ -1645,7 +1668,10 @@ export default {
         privateOtherCodexHomes: privateProfile
           ? [...new Set([
             ...privatePublicHomesDeny(ctx),
-            ...(privateCodexHome ? [privateCodexHome.source, ...privateCodexHome.others] : []),
+            // By its real path too, when it is a link to another folder.
+            ...(privateCodexHome
+              ? [privateCodexHome.source, privateCodexHome.realSource, ...privateCodexHome.others]
+              : []),
           ])]
           : [],
         privateCodexHomeLinks: privateCodexHome?.links || [],

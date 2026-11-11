@@ -15,6 +15,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   rm,
   stat,
   writeFile,
@@ -98,6 +99,9 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     env: { ...process.env, CODEX_HOME: operatorHome },
     _publicCodexHome: publicHome,
     _spawnImpl: impl,
+    // As on macOS unless a test names Linux, where a private seat runs from a
+    // Codex home of its own (F445).
+    _platform: 'darwin',
     ...extra,
   });
 
@@ -228,6 +232,17 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     await spawnSeat(impl, { skills: { claude: [skillSrc] } });
 
     expect(calls[0].opts.env.CODEX_HOME).toBe(operatorHome);
+    expect(await readFile(join(operatorHome, 'AGENTS.md'), 'utf8')).toBe('# The operator\'s private instructions\n');
+    await expect(stat(join(publicHome, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  test('on Linux a private seat runs from its own home, whose AGENTS.md is the operator\'s, linked and never written', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    const privateHome = join(root, 'private-codex');
+    await spawnSeat(impl, { skills: { claude: [skillSrc] } }, { _platform: 'linux', _homeDir: root, _privateCodexHome: privateHome });
+
+    expect(calls[0].opts.env.CODEX_HOME).toBe(privateHome);
+    expect(await readlink(join(privateHome, 'AGENTS.md'))).toBe(join(operatorHome, 'AGENTS.md'));
     expect(await readFile(join(operatorHome, 'AGENTS.md'), 'utf8')).toBe('# The operator\'s private instructions\n');
     await expect(stat(join(publicHome, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
