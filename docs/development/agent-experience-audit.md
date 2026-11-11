@@ -4716,6 +4716,8 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 ## 130. A fixture-only test let the docs say Gemini works through OpenCode (2026-11-11, F385)
 
+*Origin: a live walk for F385. A private OpenCode seat on `gemini-3.6-flash` answered mention msg 132965 and failed its first turn; the A/B run against the same key and model followed. Walked and verified by the Launch session.*
+
 **Surface:** the Gemini paragraph in `docs/cli/opencode.md`, and the version gate in the OpenCode adapter that refuses Gemini below the newest tested OpenCode "for native thought-signature replay".
 
 **False model:** Gemini 3 tool calls work on an OpenCode seat through Gemini's OpenAI-compatible endpoint, because OpenCode 1.18.35 and later replay the thought signature natively. #2586 (2026-10-24) removed our proxy's signature shim on that basis and wrote the claim into the docs. The evidence was a two-turn tool-call fixture, not a live model. The only live walk had been on 2026-10-20, through the shim #2586 removed. On 2026-11-11 a live private seat on `gemini-3.6-flash` (OpenCode 1.19.0, CLI 0.1.327) failed its first turn with `400 INVALID_ARGUMENT: Function call is missing a thought_signature`. Run directly against the same key and model, `@ai-sdk/openai-compatible` failed on the second sequential tool call and OpenCode's own `@ai-sdk/google` completed three. The customer request this answered had been open since 2026-10-17.
