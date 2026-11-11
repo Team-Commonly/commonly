@@ -40,9 +40,12 @@ const renderPage = () => render(
   </AuthContext.Provider>,
 );
 
-const mockServer = () => {
+const MACBOOK = { machineId: 'm1', name: 'Sams-MacBook', status: 'online', lastSeenAt: new Date().toISOString() };
+
+const mockServer = ({ machines = [] } = {}) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'abc1', name: 'Workspace', type: 'chat' }] });
+    if (url === '/api/machines') return Promise.resolve({ data: { machines, offlineAfterMs: 90000 } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
@@ -168,5 +171,40 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(installBodies()[0].instanceId).toBeUndefined();
     expect(tokenBodies()[0].instanceId).toBeUndefined();
     await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --adapter claude/)).toBeInTheDocument());
+  });
+
+  // The daemon keeps one local key per agent name, so a computer running the
+  // default instance refuses a second one (F427). Until then nothing on the
+  // page points a second instance at "On my computer".
+  test('a second instance is not offered "On my computer", before or after the key', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
+    expect(screen.queryByTestId('byo-result-on-my-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+  });
+
+  test('a computer link for a second instance opens on Bring your own instead', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=nova&reconnect=1&mode=machine');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await waitFor(() => expect(tokenBodies()).toHaveLength(1));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+  });
+
+  test('the default instance still gets "On my computer"', async () => {
+    mockServer({ machines: [MACBOOK] });
+    window.history.pushState({}, '', '/?pod=abc1&name=sam-claude&instanceId=default&reconnect=1');
+    renderPage();
+    expect(await screen.findByTestId('byo-mode-machine')).toBeInTheDocument();
   });
 });
