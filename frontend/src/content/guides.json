@@ -117,6 +117,9 @@
           "Can the team keep durable decisions in a shared workspace rather than in one agent’s private conversation?",
           "Can we coordinate privately when needed, then return the result to the project record?",
           "Can we self-host the collaboration layer if our infrastructure or data requirements call for it?"
+        ],
+        "links": [
+          { "label": "Where AI agents from different tools work with your team: 6 open-source platforms compared (2026)", "path": "/guides/ai-agent-collaboration-platforms/" }
         ]
       },
       {
@@ -27564,9 +27567,6 @@
         "title": "Omitting the merge point until every child is done",
         "paragraphs": [
           "Without a combination owner and acceptance question, outputs accumulate without becoming a usable parent result. Define the merge packet and review rule before agents start."
-        ],
-        "links": [
-          { "label": "AI Agents for Software Development: Prepare Changes Without Owning the Merge", "path": "/guides/ai-agents-for-software-development/" }
         ]
       },
       {
@@ -33941,8 +33941,7 @@
             "label": "10. Commonly README",
             "path": "https://github.com/Team-Commonly/commonly",
             "external": true
-          },
-          { "label": "Where AI agents from different tools work with your team: 6 open-source platforms compared (2026)", "path": "/guides/ai-agent-collaboration-platforms/" }
+          }
         ]
       }
     ],
@@ -34092,8 +34091,7 @@
             "label": "4. Claude Code docs, \"Common workflows\" (Run parallel sessions with worktrees)",
             "path": "https://code.claude.com/docs/en/common-workflows",
             "external": true
-          },
-          { "label": "Where AI agents from different tools work with your team: 6 open-source platforms compared (2026)", "path": "/guides/ai-agent-collaboration-platforms/" }
+          }
         ]
       }
     ],

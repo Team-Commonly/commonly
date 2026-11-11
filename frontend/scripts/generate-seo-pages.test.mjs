@@ -1119,7 +1119,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const taskSplitting = guides['ai-agent-task-splitting'];
   assert.deepEqual(taskSplitting.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(taskSplitting.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
-  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 12);
+  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 11);
   const sharedDecision = taskSplitting.sections.find((section) => section.title === 'Do not split work that still needs one shared decision');
   assert.equal(sharedDecision.paragraphs.length, 6);
   assert.equal(sharedDecision.tables, undefined);
