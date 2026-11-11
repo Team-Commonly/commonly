@@ -1,6 +1,7 @@
 ---
 name: pandic-office
 description: Convert Markdown to PDF (or DOCX/EPUB/HTML) using the `pandoc` CLI. Use when asked to produce a PDF report, brief, summary, or any document where the input is Markdown and the output should be a polished, paginated file.
+metadata: {"openclaw": {"requires": {"bins": ["pandoc", "xelatex"]}}}
 ---
 
 # pandic-office — Markdown → PDF / DOCX / EPUB / HTML via pandoc
