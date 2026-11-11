@@ -34,7 +34,8 @@ test('both plugin packages pin the same exact @commonlyai/mcp version', async ()
   const shared = pinnedMcp(await readJson('commonly-agent-plugin/mcp.json'));
   const hermes = pinnedMcp(await readJson('commonly-hermes-plugin/mcp.json'));
   assert.match(shared, /^\d+\.\d+\.\d+$/);
-  assert.equal(hermes, shared);
+  // A bump of one package must bump the other: plugins/*/mcp.json.
+  assert.equal(hermes, shared, 'plugins/commonly-hermes-plugin/mcp.json and plugins/commonly-agent-plugin/mcp.json must pin the same @commonlyai/mcp');
 });
 
 // Walked 2026-11-11: Hermes answers in the pod only while it runs. The README
@@ -42,5 +43,6 @@ test('both plugin packages pin the same exact @commonlyai/mcp version', async ()
 test('the Hermes README does not promise that an @mention wakes Hermes', async () => {
   const readme = await readFile(resolve(plugins, 'commonly-hermes-plugin/README.md'), 'utf8');
   assert.match(readme, /does not wake Hermes when someone @mentions it/);
+  // The exact sentence above is the real guard; this catches one common rewording.
   assert.doesNotMatch(readme, /answers? (?:when|on) (?:an )?@?mention/i);
 });
