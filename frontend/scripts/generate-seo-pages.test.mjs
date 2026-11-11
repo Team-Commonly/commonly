@@ -3148,6 +3148,12 @@ test('the /compare hub links every comparison, so its "each page below" holds', 
   for (const source of Object.values(loadCompareSources())) {
     assert.ok(page.content.includes(`<li><a href="${source.path}">`), source.path);
   }
+  // With JS on, the app would hide this page and has no route for it, so it must ship without the bundle.
+  assert.equal(page.staticOnly, true);
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>x()</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const html = renderStaticPage(template, page);
+  assert.doesNotMatch(html, /type="module"/);
+  assert.doesNotMatch(html, /document\.documentElement/);
 });
 
 // F433: "calls through a grant are logged" is held until the scope walk passes on prod. No guide,

@@ -903,6 +903,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     title: 'Commonly vs the alternatives | Commonly AI',
     description: compare.lede,
     content: renderCompare(compare, compareSources, siteLinks),
+    // The SPA has no /compare/ route and hides #seo-page once JS runs, so the hub ships without
+    // the app bundle, like each comparison page (CodeRabbit on #3930).
+    staticOnly: true,
     schema: webPage(compare.title, compare.lede, '/compare/'),
     // Unlisted: noindex and kept out of the sitemap. It links out to every comparison.
     noindex: true,
