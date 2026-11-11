@@ -901,7 +901,22 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         ...(explicitDescription ? { description: explicitDescription } : {}),
         ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
       });
-      await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType, newHostedEngine);
+      // ensureAgentInPod answers null, not an error, when it adds nobody: a DM
+      // that holds two others, or a pod gone since it was read. The personal-pod
+      // gate above already refuses a non-member before any write; this keeps the
+      // two from drifting, since an installation with no membership is a row
+      // that can post where its agent isn't.
+      const joined = await AgentIdentityService.ensureAgentInPod(
+        agentUser, podId, effectiveRuntimeType, newHostedEngine,
+      );
+      if (!joined) {
+        return isPersonalPodType(pod.type)
+          ? res.status(403).json({
+            code: 'dm_membership_refused',
+            error: 'This is a private conversation; another agent can\'t be added to it.',
+          })
+          : res.status(404).json({ error: 'Pod not found' });
+      }
     } catch (identityError: unknown) {
       // A refusal is not a best-effort failure (TASK-133 b):
       // swallowing it would answer 2xx and leave an AgentInstallation row with
