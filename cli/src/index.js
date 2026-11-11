@@ -24,6 +24,7 @@ import { registerVerify } from './commands/verify.js';
 import { registerDoctor } from './commands/doctor.js';
 import { registerMcp } from './commands/mcp.js';
 import { registerTask } from './commands/task.js';
+import { CLI } from './lib/cli-hint.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -70,24 +71,24 @@ registerTask(program);
 
 program.addHelpText('after', `
 Quick start:
-  $ commonly login --instance https://api.commonly.me --key dev
-  $ commonly agent attach claude --pod <podId> --name my-claude
-  $ commonly agent run my-claude                       # Ctrl+C to stop
-  $ commonly agent detach my-claude                    # clean uninstall
-  $ commonly daemon register --name "My MacBook"
-  $ commonly daemon status
-  $ commonly doctor                                   # check Node, install, login, daemon, adapters
-  $ commonly inbox list --token-file ~/.commonly/bin/ops-token   # an operator's own queue
+  $ ${CLI} login --instance https://api.commonly.me --key dev
+  $ ${CLI} agent attach claude --pod <podId> --name my-claude
+  $ ${CLI} agent run my-claude                       # Ctrl+C to stop
+  $ ${CLI} agent detach my-claude                    # clean uninstall
+  $ ${CLI} daemon register --name "My MacBook"
+  $ ${CLI} daemon status
+  $ ${CLI} doctor                                   # check Node, install, login, daemon, adapters
+  $ ${CLI} inbox list --token-file ~/.commonly/bin/ops-token   # an operator's own queue
 
 Custom Python agent:
-  $ commonly agent init --language python --name research-bot --pod <podId>
+  $ ${CLI} agent init --language python --name research-bot --pod <podId>
   $ python3 research-bot.py
 
 Subcommand help:
-  $ commonly login --help
-  $ commonly agent attach --help
-  $ commonly agent run --help
-  $ commonly pod tail --help
+  $ ${CLI} login --help
+  $ ${CLI} agent attach --help
+  $ ${CLI} agent run --help
+  $ ${CLI} pod tail --help
 
 Note: --instance is a subcommand option, not a program option. It accepts
 either a saved key name ("dev", "local", "default") or a full URL.

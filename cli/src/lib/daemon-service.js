@@ -18,6 +18,7 @@ import { basename, join, dirname, resolve } from 'path';
 import {
   WINDOWS_TASK_NAME, installWindowsService, uninstallWindowsService, windowsServiceAction, windowsServicePaths,
 } from './daemon-service-windows.js';
+import { CLI } from './cli-hint.js';
 
 export const LAUNCHD_LABEL = 'me.commonly.daemon';
 export const SYSTEMD_UNIT = 'commonly-daemon.service';
@@ -310,7 +311,7 @@ export const foreignServiceRefusal = ({ target, loadedFile, platform = process.p
   const own = target.kind === 'schtasks' ? target.launcher : target.file;
   if (canonicalPath(loadedFile, platform) === canonicalPath(own, platform)) return null;
   const head = `This computer already runs a Commonly daemon for another account (its service file is ${loadedFile}), `
-    + 'and installing here would stop it. To see it, run `commonly daemon status` as that account. ';
+    + `and installing here would stop it. To see it, run \`${CLI} daemon status\` as that account. `;
   // The systemd user manager reads units only from its own account's folder,
   // so a unit written under another HOME is never loaded: --replace can't help,
   // and neither would uninstalling the other one first.
@@ -322,8 +323,8 @@ export const foreignServiceRefusal = ({ target, loadedFile, platform = process.p
 };
 
 export const installSummary = ({ startsAtBoot }) => (startsAtBoot
-  ? 'The daemon now starts at boot and is kept alive, so it survives reboots. Uninstall with: commonly daemon uninstall'
-  : 'The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
+  ? `The daemon now starts at boot and is kept alive, so it survives reboots. Uninstall with: ${CLI} daemon uninstall`
+  : `The daemon now starts at login and is kept alive. Uninstall with: ${CLI} daemon uninstall`);
 
 export const installDaemonService = async ({
   platform = process.platform,
@@ -419,7 +420,7 @@ export const installDaemonService = async ({
     if (lingerUser) startsAtBoot = await ensureLinger({ username: lingerUser, existsFile, execCmd, warn });
   }
   for (const name of missing) {
-    warn(`${name} is not set in this shell, so it is NOT in the service file. A seat that relies on it will fail to start (one with its own provider.keyFile won't); export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+    warn(`${name} is not set in this shell, so it is NOT in the service file. A seat that relies on it will fail to start (one with its own provider.keyFile won't); export it and re-run: ${CLI} daemon install (docs/agents/daemon-service-environment.md)`);
   }
   log(`Installed ${target.kind} service (${target.file}). Logs: ${daemonLogPath(home)}`);
   return { ...target, startsAtBoot };

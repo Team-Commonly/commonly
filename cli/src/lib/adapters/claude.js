@@ -108,6 +108,7 @@ import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 import { startProviderProxy } from '../provider-proxy.js';
+import { CLI } from '../cli-hint.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -1411,7 +1412,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       throw new Error(
         `${sandboxTrust} Claude agents run inside a sandbox, and Commonly has no sandbox it can enforce on Windows `
         + `(got sandbox.mode=${JSON.stringify(sandboxMode)}). To run this agent without one, which is your choice, `
-        + `run commonly agent run <name> ${UNSANDBOXED_FLAG} (or commonly daemon install ${UNSANDBOXED_FLAG} for the agents `
+        + `run ${CLI} agent run <name> ${UNSANDBOXED_FLAG} (or ${CLI} daemon install ${UNSANDBOXED_FLAG} for the agents `
         + 'this computer\'s daemon runs), or choose "Run it here" on the Connect page for a hosted agent.',
       );
     }

@@ -15,6 +15,7 @@ import {
   DeviceLoginExpiredError,
   waitForDeviceAuthorization,
 } from '../lib/device-login.js';
+import { CLI } from '../lib/cli-hint.js';
 
 const prompt = (rl, question) => new Promise((resolve) => rl.question(question, resolve));
 
@@ -75,9 +76,9 @@ export const registerLogin = (program) => {
     .option('--password', 'Use the legacy email/password prompt instead of device authorization')
     .addHelpText('after', `
 Examples:
-  $ commonly login                                                   # active profile (production on first run)
-  $ commonly login --instance https://api.commonly.me --key dev  # named profile
-  $ commonly login --instance http://localhost:5000                  # saved as "local"
+  $ ${CLI} login                                                   # active profile (production on first run)
+  $ ${CLI} login --instance https://api.commonly.me --key dev  # named profile
+  $ ${CLI} login --instance http://localhost:5000                  # saved as "local"
 
 Tokens are stored in ~/.commonly/config.json. Other commands take
 --instance <url-or-key> to target the right profile.
@@ -141,7 +142,7 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
         console.log(`Token saved to ~/.commonly/config.json`);
       } catch (err) {
         const message = err instanceof DeviceLoginExpiredError
-          ? `Code expired after 10 minutes. Run commonly login --instance ${configKey} for a new code.`
+          ? `Code expired after 10 minutes. Run ${CLI} login --instance ${configKey} for a new code.`
           : err instanceof DeviceLoginCancelledError || err instanceof DeviceLoginDeniedError
             ? err.message
             : `Login failed: ${err.message}`;
@@ -161,7 +162,7 @@ export const registerWhoami = (program) => {
       const instances = listInstances();
 
       if (instances.length === 0) {
-        console.log('Not logged in. Run: commonly login');
+        console.log(`Not logged in. Run: ${CLI} login`);
         return;
       }
 
@@ -187,7 +188,7 @@ export const formatTokenStatus = (token, tokenType, now = Date.now(), instanceKe
   const expiresAt = decodeJwtExpiry(token);
   if (!expiresAt) return 'session token · expiry unknown';
   const diff = expiresAt - now;
-  if (diff <= 0) return `expired — commonly login --instance ${instanceKey}`;
+  if (diff <= 0) return `expired — ${CLI} login --instance ${instanceKey}`;
   const hours = Math.max(1, Math.ceil(diff / (60 * 60 * 1000)));
   return `expires in ${hours}h`;
 };

@@ -9,18 +9,19 @@
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { createTailPoller } from '../lib/pod-tail.js';
+import { CLI } from '../lib/cli-hint.js';
 
 export const registerPod = (program) => {
   const pod = program.command('pod').description('Manage pods');
 
   pod.addHelpText('after', `
 Examples:
-  $ commonly pod list
-  $ commonly pod send <podId> "hello from the CLI"
-  $ commonly pod tail <podId>
+  $ ${CLI} pod list
+  $ ${CLI} pod send <podId> "hello from the CLI"
+  $ ${CLI} pod tail <podId>
 
 Each command accepts --instance <url-or-key> to target a non-default
-Commonly instance (see: commonly login --help).
+Commonly instance (see: ${CLI} login --help).
 `);
 
   // ── list ──────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ Commonly instance (see: commonly login --help).
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
@@ -60,7 +61,7 @@ Commonly instance (see: commonly login --help).
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (podId, message, opts) => {
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
@@ -93,7 +94,7 @@ Commonly instance (see: commonly login --help).
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (podId, opts) => {
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 

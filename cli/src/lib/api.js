@@ -6,6 +6,7 @@
  */
 
 import { resolveInstanceUrl, getToken, resolveInstance } from './config.js';
+import { CLI } from './cli-hint.js';
 
 const headers = (token, extra = {}) => ({
   'Content-Type': 'application/json',
@@ -17,7 +18,7 @@ const knownSessionFailure = (body) => [body?.msg, body?.error, body?.message]
   .some((value) => ['Token is not valid', 'Invalid API token', 'Account no longer exists'].includes(value));
 
 export const sessionExpiredMessage = ({ instanceKey, baseUrl }) => (
-  `Session for ${instanceKey} (${baseUrl}) has expired.\nRun: commonly login --instance ${instanceKey}`
+  `Session for ${instanceKey} (${baseUrl}) has expired.\nRun: ${CLI} login --instance ${instanceKey}`
 );
 
 // A non-JSON error body is usually an edge proxy's HTML page; a Cloudflare
