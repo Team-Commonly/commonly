@@ -22,6 +22,31 @@ export const pasteScript = (lines) => [lines[0], INSTALL_GUARD, ...lines.slice(1
 export const unconfinedNoticeFrom = (out) => String(out).split(/\r?\n/)
   .find((line) => line.includes('unsandboxed (opted in)')) || null;
 
+// F435: on Windows every command the CLI prints for a person to type names the
+// .cmd shim (commonly.cmd, npm.cmd, npx.cmd), because a Restricted script policy
+// refuses the bare name's .ps1 shim, and dependent steps print one per line,
+// because Windows PowerShell 5.1 has no `&&`. Reads the CLI's own output only.
+const SHIM_HINT = /(?:^|[\s`'"(:])(?:commonly|npm|npx)\.cmd\s+[a-z@-]/;
+// The subcommands the CLI prints hints for (cli/src, `${CLI} <subcommand>`), so prose like
+// "the commonly agent is idle" is not read as a command.
+const BARE_HINT = new RegExp("(?:^|[\\s`'\"(:])(?:commonly\\s+(?:login|doctor|dev\\s+up|mcp\\s+config"
+  + "|agent\\s+(?:attach|run|detach|config|list|init)|daemon\\s+(?:install|register|status|uninstall|restart|logs|heartbeat|start|stop)"
+  + "|inbox\\s+(?:list|choose|ack)|task\\s+(?:list|claim|close|update|create)|pod\\s+(?:tail|send|list))\\b"
+  + "|npm\\s+(?:i|install|uninstall|update)\\s|npx\\s+(?:-y\\s|@))");
+export const cliHintsFrom = (out) => {
+  // npm's own notices ("npm notice Run `npm install -g npm@11`") are npm talking, not this CLI.
+  const lines = String(out || '').split(/\r?\n/).filter((line) => !/^\s*npm (notice|warn|error)\b/i.test(line));
+  const shim = lines.filter((line) => SHIM_HINT.test(line));
+  const bare = lines.filter((line) => BARE_HINT.test(line));
+  const joined = shim.filter((line) => /\s&&\s/.test(line));
+  const problems = [
+    ...bare.map((line) => `the CLI printed a bare command a Restricted policy refuses: ${line.trim()}`),
+    ...joined.map((line) => `the CLI joined steps with &&, which Windows PowerShell 5.1 lacks: ${line.trim()}`),
+  ];
+  if (!shim.length) problems.push('the CLI printed no commonly.cmd/npm.cmd/npx.cmd hint, so there was nothing to check');
+  return { shim, problems };
+};
+
 export const installExitFrom = (out) => {
   const m = /windows-byo-smoke: the install line exited (-?\d+)/.exec(String(out || ''));
   return m ? Number(m[1]) : null;

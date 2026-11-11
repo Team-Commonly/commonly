@@ -5,7 +5,7 @@
 // a package npm cannot install must fail the PR, not warn.
 
 import {
-  describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
+  cliHintsFrom, describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
   pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, unconfinedNoticeFrom,
 } from '../scripts/windows-byo-verdict.mjs';
 
@@ -366,3 +366,53 @@ describe('the prod verdict names whose failure it was', () => {
 });
 
 // D250: each walk runs one harness, named by the dispatch.
+
+// F435: what the CLI printed on a real Windows runner (byo-windows run 43085380141).
+const WINDOWS_CLI_OUT = [
+  '2026-11-11T19:18:43.596Z [win-byo] foreground mode; this stops when the terminal closes. To keep it running, add this computer by running these two commands, one after the other:',
+  '    commonly.cmd daemon register',
+  '    commonly.cmd daemon install',
+  '  then add the agent to it in the web app: Agents → Bring your own → On my computer',
+  '2026-11-11T19:18:43.890Z [win-byo] your CLI is 164 versions behind (installed 0.1.168, latest 0.1.332). Update: npm.cmd install -g @commonlyai/cli@latest (silence with COMMONLY_NO_UPDATE_CHECK=1)',
+  "2026-11-11T19:17:43.267Z [win-byo] preparing Commonly's tools on this machine (first run only)...",
+].join('\r\n');
+
+describe('the commands the CLI prints on Windows (F435)', () => {
+  test('the .cmd hints a real Windows run printed pass, and are listed', () => {
+    const { shim, problems } = cliHintsFrom(WINDOWS_CLI_OUT);
+    expect(problems).toEqual([]);
+    expect(shim).toHaveLength(3);
+  });
+
+  test('a bare commonly, npm or npx command fails, in any of the shapes a hint takes', () => {
+    for (const line of [
+      'To keep it running, add this computer with: commonly daemon register',
+      'Update: npm install -g @commonlyai/cli@latest',
+      'run `npx -y @commonlyai/mcp` again',
+      "then run 'commonly agent attach claude'",
+    ]) {
+      const { problems } = cliHintsFrom(`${WINDOWS_CLI_OUT}\n${line}`);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toMatch(/bare command a Restricted policy refuses/);
+    }
+  });
+
+  test('steps joined with && fail, since Windows PowerShell 5.1 has no &&', () => {
+    const { problems } = cliHintsFrom(`${WINDOWS_CLI_OUT}\nadd this computer with: commonly.cmd daemon register && commonly.cmd daemon install`);
+    expect(problems).toEqual([expect.stringMatching(/joined steps with &&/)]);
+  });
+
+  test('output with no .cmd hint at all fails, so a silent CLI cannot pass', () => {
+    expect(cliHintsFrom("[win-byo] preparing Commonly's tools\n@commonlyai/cli installed").problems)
+      .toEqual([expect.stringMatching(/printed no commonly\.cmd/)]);
+  });
+
+  test("npm's own notice is npm talking, not the CLI", () => {
+    expect(cliHintsFrom(`${WINDOWS_CLI_OUT}\nnpm notice Run \`npm install -g npm@11.6.2\` to update!`).problems).toEqual([]);
+  });
+
+  test('prose and package names are not commands', () => {
+    const { problems } = cliHintsFrom(`${WINDOWS_CLI_OUT}\nCommonly agents run here\nthe commonly agent is idle\ninstalled @commonlyai/cli`);
+    expect(problems).toEqual([]);
+  });
+});
