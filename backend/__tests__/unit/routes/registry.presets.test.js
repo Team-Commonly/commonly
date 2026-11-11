@@ -72,6 +72,14 @@ describe('registry presets', () => {
     const offenders = PRESET_DEFINITIONS.flatMap((preset) => (preset.defaultSkills || [])
       .filter((skill) => needsBinary.includes(skill.id))
       .map((skill) => `${preset.id}:${skill.id}`));
+  it('no openclaw preset tells its agent to reach for the gh skill', () => {
+    // The gateway that carried gh is retired and the github skill left the
+    // presets (F413), so an "Or `gh` ..." line points at a tool that is gone
+    // (F416). Presets that delegate gh to a coding runtime say so explicitly.
+    const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const offenders = PRESET_DEFINITIONS
+      .filter((preset) => /Or `gh`/.test(`${preset.heartbeatTemplate || ''}\n${preset.soulTemplate || ''}`))
+      .map((preset) => preset.id);
     expect(offenders).toEqual([]);
   });
 
