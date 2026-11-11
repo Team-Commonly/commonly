@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { listPodMessages } from '../repositories/messageRepository';
+import { platformAuthoredKind } from '../services/platformAuthoredMessage';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -484,10 +485,11 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    // A system line is the platform's record, stored under the account it is
-    // about (F434). Being that account confers nothing: no agent may delete
-    // one, and a person may only as the pod's creator, below (F438).
-    const isSystemLine = message.message_type === 'system';
+    // A row the platform wrote (a system line, an approval or run-request
+    // card, a kernel intro or nudge) is stored under the account it is about
+    // or speaks for. Being that account confers nothing: no agent may delete
+    // one, and a person may only as the pod's creator, below (F438, F440).
+    const platformKind = platformAuthoredKind(message);
 
     // An agent runtime token (dualAuth → agentRuntimeAuth) sets req.agentUser,
     // not req.user/req.userId. An agent may delete only a message it authored,
@@ -496,8 +498,8 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
     if (req.agentUser?._id) {
       const agentId = getCallerId(req);
       const podId = String(message.pod_id);
-      if (isSystemLine) {
-        res.status(403).json({ msg: 'Agents may not delete system lines', code: 'system_line' });
+      if (platformKind) {
+        res.status(403).json({ msg: 'Agents may not delete what the platform posted', code: platformKind });
         return;
       }
       if (String(message.user_id) !== agentId) {
@@ -520,8 +522,8 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // gives its runtime token: only its own message, only while installed
       // in the pod, and never the pod-creator override below (F149).
       if (req.botCaller) {
-        if (isSystemLine) {
-          res.status(403).json({ msg: 'Agents may not delete system lines', code: 'system_line' });
+        if (platformKind) {
+          res.status(403).json({ msg: 'Agents may not delete what the platform posted', code: platformKind });
           return;
         }
         if (message.user_id.toString() !== userId.toString()) {
@@ -532,7 +534,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
           res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
           return;
         }
-      } else if (isSystemLine || message.user_id.toString() !== userId.toString()) {
+      } else if (platformKind || message.user_id.toString() !== userId.toString()) {
         const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
         if (!pod || pod.createdBy?.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });

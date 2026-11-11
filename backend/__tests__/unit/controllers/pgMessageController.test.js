@@ -375,4 +375,82 @@ describe('pgMessageController', () => {
       expect(PGMessage.delete).toHaveBeenCalledWith('42');
     });
   });
+
+  // F440: an approval card and a kernel post are the platform's, though
+  // stored under the agent. Its fallback text is not the agent's to rewrite,
+  // and the agent's bearer may not delete either.
+  describe('platform posts (F440)', () => {
+    const card = {
+      id: 43, user_id: 'agent-1', pod_id: 'p1', message_type: 'card', payload: { kind: 'approval' },
+    };
+    beforeEach(() => {
+      PGMessage.delete.mockResolvedValue({ id: 43 });
+      PGMessage.update.mockResolvedValue({ id: 43 });
+      MongoPod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ createdBy: 'owner-1' }) }),
+      });
+    });
+
+    it('refuses the agent rewriting an approval card\'s fallback text', async () => {
+      PGMessage.findById.mockResolvedValue(card);
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '43' }, body: { content: 'approved already' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'platform_post' }));
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the agent rewriting its kernel intro', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 44, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', author_kind: 'kernel',
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '44' }, body: { content: 'x' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the agent rewriting a "starts" prompt the platform wrote as text', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 45, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', payload: { kind: 'starts', starts: [] },
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '45' }, body: { content: 'x' }, user: { id: 'agent-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.update).not.toHaveBeenCalled();
+    });
+
+    it('still lets the agent edit its own reply a native run stamped', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 46, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', payload: { runId: 'r1', runPodId: 'p1' },
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '46' }, body: { content: 'fixed' }, user: { id: 'agent-1' } }, res);
+      expect(PGMessage.update).toHaveBeenCalledWith('46', 'fixed');
+    });
+
+    it('still lets the agent edit a ui card it posted itself', async () => {
+      PGMessage.findById.mockResolvedValue({ ...card, payload: { kind: 'ui', v: 1, lang: 'openui@1' } });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '43' }, body: { content: 'new' }, user: { id: 'agent-1' } }, res);
+      expect(PGMessage.update).toHaveBeenCalledWith('43', 'new');
+    });
+
+    it('refuses the agent bearer deleting an approval card', async () => {
+      PGMessage.findById.mockResolvedValue(card);
+      const res = jsonRes();
+      await controller.deleteMessage({
+        params: { id: '43' }, userId: 'agent-1', user: { id: 'agent-1' }, botCaller: { username: 'builder' },
+      }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets the pod owner delete an approval card', async () => {
+      PGMessage.findById.mockResolvedValue(card);
+      const res = jsonRes();
+      await controller.deleteMessage({ params: { id: '43' }, userId: 'owner-1', user: { id: 'owner-1' } }, res);
+      expect(PGMessage.delete).toHaveBeenCalledWith('43');
+    });
+  });
 });
