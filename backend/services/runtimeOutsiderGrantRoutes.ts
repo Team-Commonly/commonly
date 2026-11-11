@@ -101,7 +101,7 @@ add('/api/messages', 'pod_write', [
 // F141: an agent deleting its own message writes into the message's stored pod.
 add('/api/messages', 'pod_write', ['DELETE /:id'], messageIdPod);
 add('/api/artifacts', 'read', ['GET /']);
-add('/api/uploads', 'read', ['GET /:fileName', 'GET /:fileName/preview-pptx-html']);
+add('/api/uploads', 'read', ['GET /:fileName']);
 add('/api/github', 'read', ['GET /issues']);
 add('/api/github', 'outward', ['POST /issues', 'POST /issues/:number/comment', 'POST /issues/:number/close']);
 add('/api/v1/tasks', 'read', ['GET /:podId']);

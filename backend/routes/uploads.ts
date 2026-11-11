@@ -218,13 +218,13 @@ const mintRateLimit = rateLimit({
     res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
 });
 
-// IP-keyed limiter for the UNAUTHENTICATED artifact GETs below
-// (`/:fileName` + `/:fileName/preview-pptx-html`). These have public read by
+// IP-keyed limiter for the UNAUTHENTICATED artifact GET below
+// (`/:fileName`). It has public read by
 // design today (the showcase renders artifacts through them, ADR-002 Phase 1);
 // this blunts mass scraping without changing their auth. The full signed-URL
 // flip that removes public-read is the documented follow-up. ~240/min/IP is
 // generous for a showcase page loading dozens of artifacts but caps a scraper.
-// Applied as the FIRST middleware on each GET so CodeQL's js/missing-rate-limiting
+// Applied as the FIRST middleware on the GET so CodeQL's js/missing-rate-limiting
 // query recognises it.
 const artifactReadRateLimit = rateLimit({
   windowMs: 60_000,
@@ -557,196 +557,10 @@ router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (re
   }
 });
 
-// PPTX → HTML preview rendering via the bundled OfficeCLI binary in the
-// backend image. Used by the v2 inspector's PptxPreview component to render
-// uploaded .pptx files inline. The output HTML is self-contained (embedded
-// CSS, three.js loaded from a CDN inside the iframe sandbox) so we just pass
-// it through to the browser as text/html.
-//
-// Auth — preview shares the raw-file route's pod-scoped authorization below.
-// A private deck must not become readable merely because it is rendered.
-const OFFICECLI_OUTPUT_MAX = 64 * 1024;
-const OFFICECLI_KILL_GRACE_MS = 3_000;
-type PptxRender = { html: string } | { error: string; code?: number };
-const officecliPreview = (() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { spawn } = require('child_process');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } = require('fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fsPath = require('path');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const osMod = require('os');
-
-  // The deck is someone else's file, so the render is bounded: the process is
-  // killed at the deadline (a timed-out render used to keep running, and the
-  // route is public for decks outside a pod), and its output is capped.
-  type OfficeCliResult = { stdout: string; stderr: string; code: number };
-  const runOfficeCli = (args: string[], cwd: string, timeoutMs: number): Promise<OfficeCliResult> =>
-    new Promise((resolve) => {
-      // TMPDIR points officecli's own temp output into cwd, so the render is
-      // read from, and removed with, this request's directory.
-      // .NET's single-file extraction cache stays in the shared tmp, so each
-      // render does not unpack it again.
-      const child = spawn('officecli', args, {
-        cwd,
-        env: { ...process.env, TMPDIR: cwd, DOTNET_BUNDLE_EXTRACT_BASE_DIR: osMod.tmpdir() },
-      });
-      let stdout = '';
-      let stderr = '';
-      let timedOut = false;
-      let grace: ReturnType<typeof setTimeout> | null = null;
-      const timedOutResult = { stdout: '', stderr: 'render timeout', code: -1 };
-      // At the deadline the process is killed, and the result waits for it to
-      // exit, so the directory is not removed while it can still write there.
-      // A helper holding its pipes open would keep `close` from ever coming,
-      // so a short grace period resolves the render as timed out regardless.
-      const timer = setTimeout(() => {
-        timedOut = true;
-        grace = setTimeout(() => resolve(timedOutResult), OFFICECLI_KILL_GRACE_MS);
-        try { child.kill('SIGKILL'); } catch { /* the grace timer still resolves */ }
-      }, timeoutMs);
-      child.stdout.on('data', (chunk: Buffer) => {
-        if (stdout.length < OFFICECLI_OUTPUT_MAX) stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk: Buffer) => {
-        if (stderr.length < OFFICECLI_OUTPUT_MAX) stderr += chunk.toString();
-      });
-      child.on('error', (err: Error) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr: err.message, code: -1 });
-      });
-      child.on('close', (code: number | null) => {
-        clearTimeout(timer);
-        if (grace) clearTimeout(grace);
-        resolve(timedOut ? timedOutResult : { stdout, stderr, code: code ?? -1 });
-      });
-    });
-
-  return {
-    renderPptx: async (binary: Buffer, timeoutMs: number): Promise<PptxRender> => {
-      const tmpDir = mkdtempSync(fsPath.join(osMod.tmpdir(), 'pptx-preview-'));
-      try {
-        const inputPath = fsPath.join(tmpDir, 'input.pptx');
-        writeFileSync(inputPath, binary);
-
-        // officecli writes the rendered HTML to a temp file and prints the
-        // path on stdout. Capture the path, then read the file content.
-        const result = await runOfficeCli(['view', inputPath, 'html'], tmpDir, timeoutMs);
-        if (result.code !== 0) {
-          return { error: (result.stderr || result.stdout).trim() || 'render failed', code: result.code };
-        }
-        // Path may be on the last line; pick the line that looks like a path
-        const lines = result.stdout.trim().split('\n');
-        const pathLine = lines.reverse().find((l) => l.trim().endsWith('.html'));
-        if (!pathLine) {
-          // Fallback: scan tmpDir for any .html file
-          const found = readdirSync(tmpDir).find((f: string) => f.endsWith('.html'));
-          if (!found) return { error: 'no html output produced' };
-          const html = readFileSync(fsPath.join(tmpDir, found), 'utf8');
-          return { html };
-        }
-        // Only a file officecli wrote under this request's directory is read
-        // back, never a path the deck's own text could have put on stdout.
-        const htmlPath = fsPath.resolve(tmpDir, pathLine.trim());
-        if (!htmlPath.startsWith(`${fsPath.resolve(tmpDir)}${fsPath.sep}`)) return { error: 'unexpected output path' };
-        const html = readFileSync(htmlPath, 'utf8');
-        return { html };
-      } catch (e) {
-        const err = e as Error;
-        return { error: err.message || 'unknown error' };
-      } finally {
-        try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-      }
-    },
-  };
-})();
-
-// 30s ceiling per render — guards against a malformed pptx hanging the
-// officecli process. Plenty for normal decks (sub-second to a few seconds).
-const PPTX_RENDER_TIMEOUT_MS = 30_000;
-// A few renders at once per backend; more answer 503 instead of queueing
-// processes behind a slow deck.
-const PPTX_RENDER_CONCURRENCY = 2;
-let pptxRendersInFlight = 0;
-// The rendered page runs scripts (three.js from a CDN) in a sandbox with no
-// origin of its own, so the deck's content cannot act as this origin.
-// Its viewer script and fonts may come from any https CDN, so a deck could
-// still learn that it was opened; it cannot fetch, post a form, change its
-// base URL or load an image from anywhere but the page itself.
-const PPTX_PREVIEW_CSP = [
-  'sandbox allow-scripts',
-  "default-src 'none'",
-  "script-src https: 'unsafe-inline'",
-  "style-src https: 'unsafe-inline'",
-  'img-src data: blob:',
-  'font-src https: data:',
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-].join('; ');
-
-router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRuntimeAuth, async (req: AuthReq, res: Res) => {
-  try {
-    const fileName = req.params?.fileName;
-    if (!fileName) return res.status(400).json({ msg: 'fileName required' });
-    if (!/\.pptx$/i.test(String(fileName))) {
-      return res.status(400).json({ msg: 'fileName must end in .pptx' });
-    }
-
-    // Same pod-scoped authorization as the raw file fetch — a private deck
-    // must not be renderable by anyone who knows its filename.
-    if (!(await authorizePodFile(req, fileName))) {
-      return res.status(403).json({ msg: 'Not authorized to read this file' });
-    }
-
-    // The slot is taken before the deck is read, so the cap bounds memory too.
-    if (pptxRendersInFlight >= PPTX_RENDER_CONCURRENCY) {
-      return res.status(503).json({ msg: 'Preview busy, try again shortly' });
-    }
-    pptxRendersInFlight += 1;
-    let result: PptxRender;
-    try {
-      // Fetch the binary from object storage (or legacy MongoDB inline bytes).
-      const store = getObjectStore();
-      const obj = await store.get(String(fileName));
-      let buffer: Buffer | null = null;
-      if (obj) {
-        const chunks: Buffer[] = [];
-        const stream = obj.stream as unknown as NodeJS.ReadableStream;
-        await new Promise<void>((resolve, reject) => {
-          stream.on('data', (c: Buffer) => chunks.push(c));
-          stream.on('end', () => resolve());
-          stream.on('error', reject);
-        });
-        buffer = Buffer.concat(chunks);
-      } else {
-        const legacy = await File.findByFileName(fileName);
-        if (legacy?.data?.length > 0) buffer = Buffer.from(legacy.data);
-      }
-      if (!buffer) return res.status(404).json({ msg: 'File not found' });
-      result = await officecliPreview.renderPptx(buffer, PPTX_RENDER_TIMEOUT_MS);
-    } finally {
-      pptxRendersInFlight -= 1;
-    }
-
-    if ('error' in result) {
-      // The detail is officecli's own output, server paths included, so it is
-      // logged rather than returned.
-      console.warn('[uploads] PPTX preview render failed:', result.error);
-      return res.status(500).json({ msg: 'Could not render preview' });
-    }
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('X-Content-Type-Options', 'nosniff');
-    res.set('Content-Security-Policy', PPTX_PREVIEW_CSP);
-    res.set('Cache-Control', 'private, max-age=300');
-    return res.send(result.html);
-  } catch (err) {
-    const e = err as { message?: string };
-    console.error('PPTX preview error:', e.message);
-    return res.status(500).json({ msg: 'Server Error' });
-  }
-});
+// F405: the PPTX → HTML preview (`GET /:fileName/preview-pptx-html`) is gone.
+// It had no consumer after the inspector rebuild (#1555), and rendering a
+// stranger's deck into a page on this origin was a risk with no user. A deck
+// downloads like any other office file.
 
 // Exported so the agent-runtime upload route can reuse the shared helpers
 // without going through HTTP. The route file mounts `handleUpload` behind

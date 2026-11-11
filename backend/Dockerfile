@@ -21,8 +21,9 @@ FROM node:22
 
 WORKDIR /app
 
-# OfficeCLI binary — used by the PPTX preview route to render .pptx → HTML
-# server-side. Pinned by version and by the SHA-256 recorded below, so a
+# OfficeCLI binary. Its one backend caller, the PPTX preview route, was
+# retired (F405); whether anything else in this image runs it is checked
+# before the binary is removed, which is a separate change. Pinned by version and by the SHA-256 recorded below, so a
 # future upstream artifact swap fails the build instead of silently shipping.
 # The hashes are the release's SHA256SUMS entries, cross-checked against the
 # downloaded assets on 2026-11-09. They are recorded here rather than fetched
