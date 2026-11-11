@@ -40,5 +40,10 @@ The last request, not the turn: codex's `turn.completed` usage and
 `total_token_usage` sum every request in a turn, so they overstate the context a
 turn with tool calls leaves behind.
 
+dsh sums a step's retried attempts into its `step_end` usage, so a retried last
+step overstates the size. The worst case is one early fresh start; the next
+turn's count is right again. A step dsh reports with no usage keeps the earlier
+step's count, which can only start fresh late, never early.
+
 Not checked: opencode, goose, hermes and qwen. A seat with no measured context
 always resumes; the module never recycles blind.
