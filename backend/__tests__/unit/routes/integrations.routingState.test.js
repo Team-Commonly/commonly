@@ -232,6 +232,117 @@ describe('integration routing state', () => {
     expect(stored.config).toMatchObject({ botId: 'b1c2d3e4f5a6', groupId: '12345678', groupName: 'Renamed group' });
   });
 
+  it('keeps a stored GroupMe token when the creator saves with the token field blank', async () => {
+    const own = await Integration.create({
+      podId: pod._id,
+      scope: 'pod',
+      type: 'groupme',
+      status: 'connected',
+      createdBy: creator._id,
+      isActive: true,
+      config: { ...groupmeConfig(), accessTokenRef: 'ref-sentinel', agentAccessEnabled: true },
+    });
+    const listed = (await get(creator._id)).body.find((row) => row.type === 'groupme');
+    expect(listed.config.accessTokenSaved).toBe(true);
+    expect(JSON.stringify(listed)).not.toContain('ref-sentinel');
+
+    const res = await request(app)
+      .patch(`/api/integrations/${own._id}`)
+      .set('x-test-user', String(creator._id))
+      .send({ config: { botId: 'b1c2d3e4f5a6', groupId: '12345678', agentAccessEnabled: true }, status: 'connected' });
+    expect(res.status).toBe(200);
+    expect(res.body.config.accessTokenSaved).toBe(true);
+    const stored = await Integration.findById(own._id).lean();
+    expect(stored.config.accessTokenRef).toBe('ref-sentinel');
+  });
+
+  it('refuses to let anyone but the connector creator turn agent access on with the saved token', async () => {
+    const foreign = await Integration.create({
+      podId: memberPod._id,
+      scope: 'pod',
+      type: 'groupme',
+      status: 'connected',
+      createdBy: creator._id,
+      isActive: true,
+      config: { ...groupmeConfig(), accessTokenRef: 'ref-sentinel', agentAccessEnabled: false },
+    });
+    const turnOn = (userId, extra = {}) => request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(userId))
+      .send({ config: { agentAccessEnabled: true, ...extra }, status: 'connected' });
+
+    const refused = await turnOn(member._id);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('groupme_saved_token_not_yours');
+    expect((await Integration.findById(foreign._id).lean()).config.agentAccessEnabled).toBe(false);
+
+    const blankToken = await turnOn(member._id, { accessToken: '   ' });
+    expect(blankToken.status).toBe(403);
+
+    // A value Mongoose would also store as true is refused at the edge, not cast.
+    for (const value of ['true', 1, 'yes']) {
+      // eslint-disable-next-line no-await-in-loop
+      const cast = await request(app)
+        .patch(`/api/integrations/${foreign._id}`)
+        .set('x-test-user', String(member._id))
+        .send({ config: { agentAccessEnabled: value }, status: 'connected' });
+      expect([400, 403]).toContain(cast.status);
+      // eslint-disable-next-line no-await-in-loop
+      expect((await Integration.findById(foreign._id).lean()).config.agentAccessEnabled).toBe(false);
+    }
+    const yes = await request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(member._id))
+      .send({ config: { agentAccessEnabled: 'yes' }, status: 'connected' });
+    expect(yes.status).toBe(400);
+    expect(yes.body.message).toBe('agentAccessEnabled must be true or false');
+
+    const own = await turnOn(creator._id);
+    expect(own.status).toBe(200);
+    const stored = await Integration.findById(foreign._id).lean();
+    expect(stored.config.agentAccessEnabled).toBe(true);
+    expect(stored.config.accessTokenRef).toBe('ref-sentinel');
+  });
+
+  it('lets a pod creator keep agent access on, or turn it on with their own token', async () => {
+    const foreign = await Integration.create({
+      podId: memberPod._id,
+      scope: 'pod',
+      type: 'groupme',
+      status: 'connected',
+      createdBy: creator._id,
+      isActive: true,
+      config: { ...groupmeConfig(), accessTokenRef: 'ref-sentinel', agentAccessEnabled: true },
+    });
+    const keep = await request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(member._id))
+      .send({ config: { groupName: 'Renamed', agentAccessEnabled: true }, status: 'connected' });
+    expect(keep.status).toBe(200);
+
+    await Integration.updateOne({ _id: foreign._id }, { $set: { 'config.agentAccessEnabled': false } });
+    // A supplied token is encrypted into connector secrets, which needs a key.
+    const saved = [process.env.CONNECTOR_SECRET_KEYS, process.env.CONNECTOR_SECRET_ACTIVE_KEY];
+    process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 5).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+    try {
+      const withOwn = await request(app)
+        .patch(`/api/integrations/${foreign._id}`)
+        .set('x-test-user', String(member._id))
+        .send({ config: { agentAccessEnabled: true, accessToken: 'members-own-token' }, status: 'connected' });
+      expect(withOwn.status).toBe(200);
+      const stored = await Integration.findById(foreign._id).lean();
+      expect(stored.config.agentAccessEnabled).toBe(true);
+      expect(stored.config.accessTokenRef).toEqual(expect.any(String));
+      expect(stored.config.accessTokenRef).not.toBe('ref-sentinel');
+      expect(JSON.stringify(stored)).not.toContain('members-own-token');
+    } finally {
+      [process.env.CONNECTOR_SECRET_KEYS, process.env.CONNECTOR_SECRET_ACTIVE_KEY] = saved;
+      if (saved[0] === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+      if (saved[1] === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    }
+  });
+
   it('strips relayMap, messageBuffer and webhookListenerEnabled from a client write', async () => {
     const res = await request(app)
       .post('/api/integrations')

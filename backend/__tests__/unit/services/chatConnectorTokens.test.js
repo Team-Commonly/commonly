@@ -141,8 +141,11 @@ describe('GroupMe and Slack token copies', () => {
     expect(await ConnectorSecret.countDocuments()).toBe(0);
   });
 
-  it('withholds the GroupMe ref from every JSON projection', () => {
-    expect(toPublicIntegrationConfig({ accessTokenRef: 'ref-1', groupId: 'g' })).toEqual({ groupId: 'g' });
+  it('withholds the GroupMe ref from every JSON projection, saying only that a token is saved', () => {
+    const out = toPublicIntegrationConfig({ accessTokenRef: 'ref-1', groupId: 'g' });
+    expect(out).toEqual({ groupId: 'g', accessTokenSaved: true });
+    expect(JSON.stringify(out)).not.toContain('ref-1');
+    expect(toPublicIntegrationConfig({ groupId: 'g' })).toEqual({ groupId: 'g' });
   });
 
   it('splits the token fields out of a supplied config, keeping only GroupMe\'s access token', () => {

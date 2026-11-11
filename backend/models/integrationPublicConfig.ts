@@ -53,6 +53,9 @@ export const toPublicIntegrationConfig = (
   config: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | null | undefined => {
   if (!config || typeof config !== 'object') return config;
+  // The GroupMe form needs to know a token is stored, so a save that leaves the
+  // field blank doesn't ask for it again. A flag, never the ref or the token.
+  if (config.accessTokenRef) config.accessTokenSaved = true;
   INTEGRATION_SECRET_CONFIG_KEYS.forEach((key) => { delete config[key]; });
   const pending = config.pendingBind;
   if (pending && typeof pending === 'object') {
