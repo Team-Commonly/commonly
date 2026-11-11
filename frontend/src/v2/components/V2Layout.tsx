@@ -10,6 +10,7 @@ import V2FirstRunHero from './V2FirstRunHero';
 import V2MobileTabs from './V2MobileTabs';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
+import { useRefreshIfSelected } from '../hooks/useRefreshIfSelected';
 import { useV2PodAttention, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
@@ -183,6 +184,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
+  const refreshMembersIfSelected = useRefreshIfSelected(selectedPodId, detail.refresh);
   // The sidebar's list knows the type before the detail loads. A room that isn't in the list yet
   // (a cold deep link, a just-opened "Talk to") reads as a team pod until its detail arrives.
   const selectedPodType = pods.find((pod) => pod._id === selectedPodId)?.type ?? detail.pod?.type;
@@ -293,7 +295,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           initialTab={inviteInitialTab}
           canAddMember={Boolean(currentUser && detail.pod.createdBy?._id
             && detail.pod.createdBy._id === (currentUser._id || currentUser.id))}
-          onMemberAdded={() => { void detail.refresh(); }}
+          onMemberAdded={refreshMembersIfSelected}
           onClose={closeInvite}
         />
       )}
