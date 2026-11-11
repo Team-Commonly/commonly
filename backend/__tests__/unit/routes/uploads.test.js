@@ -38,9 +38,8 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (...args) => mockAgentRu
 
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
-// The PPTX preview shells out to officecli; a stand-in writes the HTML file
-// officecli would and prints its path, so the success path is reachable.
-const mockSpawn = jest.fn();
+// Nothing in these routes shells out any more (F405); a spawn would fail here.
+const mockSpawn = jest.fn(() => { throw new Error('no process should be spawned'); });
 jest.mock('child_process', () => ({
   ...jest.requireActual('child_process'),
   spawn: (...args) => mockSpawn(...args),
@@ -254,158 +253,16 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     expect(mockStore.get).not.toHaveBeenCalled();
   });
 
-  it('uses the same runtime-agent authorization for a private PPTX preview', async () => {
-    File.findByFileName.mockResolvedValue({ podId: 'private-pod' });
+  // F405: the deck preview route is retired. Nothing answers it: no storage
+  // read and no process, for a private deck or a public one.
+  it.each([
+    ['a public deck', null],
+    ['a private deck', 'private-pod'],
+  ])('the PPTX preview path is not routed for %s', async (_label, podId) => {
+    File.findByFileName.mockResolvedValue({ podId });
     mockCanReadAttachment.mockResolvedValue(true);
-    mockStore.get.mockResolvedValue(null);
-
-    // No PPTX bytes are needed: the 404 proves the agent cleared the shared
-    // authorization helper and reached storage instead of being denied 403.
-    await request(app)
-      .get('/api/uploads/private.pptx/preview-pptx-html')
-      .set('Authorization', 'Bearer cm_agent_runtime-token')
-      .expect(404);
-
-    expect(mockAgentRuntimeAuth).toHaveBeenCalledTimes(1);
-    expect(mockCanReadAttachment).toHaveBeenCalledWith('private.pptx', 'agent-user');
-  });
-
-  it('serves a rendered PPTX preview as html with nosniff', async () => {
-    const { EventEmitter } = require('events');
-    const fs = require('fs');
-    const path = require('path');
-    mockSpawn.mockImplementation((_cmd, _args, { cwd, env }) => {
-      expect(env.TMPDIR).toBe(cwd);
-      const child = new EventEmitter();
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      setImmediate(() => {
-        const out = path.join(cwd, 'deck.html');
-        fs.writeFileSync(out, '<html>deck</html>');
-        child.stdout.emit('data', Buffer.from(`${out}\n`));
-        child.emit('close', 0);
-      });
-      return child;
-    });
-    mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('pptx')), mime: 'x', size: 4 });
-
-    const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(200);
-    expect(res.text).toBe('<html>deck</html>');
-    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
-    // The page is built from the deck's content, so it runs with no origin of
-    // its own: scripts for the viewer, never this origin's.
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toMatch(/^sandbox allow-scripts; /);
-    expect(csp).not.toMatch(/allow-same-origin/);
-    expect(csp).toMatch(/connect-src 'none'/);
-    expect(csp).toMatch(/form-action 'none'/);
-  });
-
-  describe('a render is bounded', () => {
-    const { EventEmitter } = require('events');
-    const hungChild = () => {
-      const child = new EventEmitter();
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      child.kill = jest.fn(() => setImmediate(() => child.emit('close', null)));
-      return child;
-    };
-    const deck = () => mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('pptx')), mime: 'x', size: 4 });
-    const until = async (check) => {
-      for (let i = 0; i < 200 && !check(); i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setImmediate(r));
-      }
-    };
-
-    it('kills officecli at the deadline instead of leaving it running', async () => {
-      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
-      try {
-        const child = hungChild();
-        mockSpawn.mockImplementation(() => child);
-        deck();
-        const pending = request(app).get('/api/uploads/deck.pptx/preview-pptx-html');
-        const done = pending.then((res) => res);
-        await until(() => mockSpawn.mock.calls.length > 0);
-        jest.advanceTimersByTime(30_000);
-        const res = await done;
-        expect(res.status).toBe(500);
-        expect(child.kill).toHaveBeenCalledWith('SIGKILL');
-      } finally {
-        jest.useRealTimers();
-      }
-    });
-
-    it('resolves after a short grace when the killed process never closes its pipes', async () => {
-      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
-      try {
-        const child = hungChild();
-        child.kill = jest.fn(() => setImmediate(() => child.emit('exit', null, 'SIGKILL')));
-        mockSpawn.mockImplementation(() => child);
-        deck();
-        const done = request(app).get('/api/uploads/deck.pptx/preview-pptx-html').then((res) => res);
-        await until(() => mockSpawn.mock.calls.length > 0);
-        jest.advanceTimersByTime(30_000);
-        await until(() => child.kill.mock.calls.length > 0);
-        jest.advanceTimersByTime(3_000);
-        const res = await done;
-        expect(res.status).toBe(500);
-        // The slot came back: the next render spawns rather than answering 503.
-        jest.useRealTimers();
-        const next = hungChild();
-        mockSpawn.mockImplementation(() => {
-          setImmediate(() => next.emit('close', 1));
-          return next;
-        });
-        deck();
-        expect((await request(app).get('/api/uploads/deck.pptx/preview-pptx-html')).status).toBe(500);
-        expect(mockSpawn).toHaveBeenCalledTimes(2);
-      } finally {
-        jest.useRealTimers();
-      }
-    });
-
-    it('answers 503 past the concurrent render cap instead of spawning more', async () => {
-      const children = [];
-      mockSpawn.mockImplementation(() => {
-        const child = hungChild();
-        children.push(child);
-        return child;
-      });
-      deck();
-      const first = request(app).get('/api/uploads/a.pptx/preview-pptx-html').then((r) => r);
-      await until(() => children.length === 1);
-      deck();
-      const second = request(app).get('/api/uploads/b.pptx/preview-pptx-html').then((r) => r);
-      await until(() => children.length === 2);
-      mockStore.get.mockClear();
-      const third = await request(app).get('/api/uploads/c.pptx/preview-pptx-html');
-      expect(third.status).toBe(503);
-      // Refused before the deck was read into memory.
-      expect(mockStore.get).not.toHaveBeenCalled();
-      expect(mockSpawn).toHaveBeenCalledTimes(2);
-      children.forEach((child) => child.emit('close', 1));
-      await Promise.all([first, second]);
-    });
-
-    it('does not read back a path outside the temp dir', async () => {
-      mockSpawn.mockImplementation(() => {
-        const child = hungChild();
-        setImmediate(() => {
-          child.stdout.emit('data', Buffer.from(`${require('os').tmpdir()}/other-render.html\n`));
-          child.emit('close', 0);
-        });
-        return child;
-      });
-      deck();
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(500);
-      // A render outside this request's own directory is never read, and the
-      // reason is logged, not returned.
-      expect(res.body).toEqual({ msg: 'Could not render preview' });
-      expect(warn).toHaveBeenCalledWith(expect.any(String), 'unexpected output path');
-      warn.mockRestore();
-    });
+    await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(404);
+    expect(mockStore.get).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 });
