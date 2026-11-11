@@ -21,6 +21,7 @@ import { normalizeSandboxTrust } from '../environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
+import { codexTrustedPerimeter } from './codex-perimeter.js';
 import { CLI } from '../cli-hint.js';
 
 // D245: the Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
@@ -121,6 +122,20 @@ export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted, u
   ].join('\n');
 };
 
+/**
+ * F387: a private Codex seat on Linux runs under a permission profile, which
+ * Codex enforces with bubblewrap. Without it every turn fails at session start,
+ * so it is refused before the first poll. It never falls back to running
+ * unconfined.
+ */
+export const codexPrivateNoBwrapMessage = (error) => [
+  'A connected Codex runs inside its own sandbox here, and Codex needs bubblewrap for it.',
+  `This machine can't provide it: ${error}`,
+  'So this agent cannot listen for @mentions here yet. You can:',
+  '  - Install bubblewrap (`sudo apt install bubblewrap` on Debian or Ubuntu), then run the same command again.',
+  HOSTED_LINE,
+].join('\n');
+
 /** What a person on native Windows can do instead. */
 export const windowsSandboxMessage = (adapterName) => {
   if (adapterName === 'codex') return CODEX_WINDOWS_MESSAGE;
@@ -158,6 +173,8 @@ export const hostSandboxRefusal = ({
   optedIn = false,
   detectBwrap = defaultDetectBwrap,
   detectSeatbelt = defaultDetectSeatbelt,
+  // F387: a cloud-codex pod declares itself here (codex-perimeter.js).
+  env = process.env,
 } = {}) => {
   if (adapterName === 'codex') {
     // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of its
@@ -171,6 +188,16 @@ export const hostSandboxRefusal = ({
       // A missing bwrap stays Codex's own to report.
       const bwrap = detectBwrap();
       return bwrap.namespaceRefused === true ? bwrapRefusedMessage(adapterName, bwrap) : null;
+    }
+    // F387: a private seat outside a cloud-codex pod runs under the private
+    // permission profile, which needs bubblewrap here too. Missing or refused,
+    // it is refused now, with the way to fix it, never run unconfined.
+    if (platform === 'linux' && trust !== 'workspace' && !codexTrustedPerimeter(env)) {
+      const bwrap = detectBwrap();
+      if (bwrap.available) return null;
+      return bwrap.namespaceRefused === true
+        ? bwrapRefusedMessage(adapterName, bwrap)
+        : codexPrivateNoBwrapMessage(bwrap.error);
     }
     if (platform !== 'win32') return null;
     if (trust === 'workspace') return null;

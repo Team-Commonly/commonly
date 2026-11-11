@@ -41,11 +41,13 @@ export const PUBLIC_CODEX_VERSION_CODE = 'public_codex_version';
 
 // `found` stays in this message, which only the seat's log shows. The line a pod
 // sees is built from `requiredVersion` (turn-failure-notice.js).
-export const publicCodexVersionError = ({ found, required }) => {
+// `seat` names which seat refused: a private seat under its permission profile
+// (F387) needs the same tested version as a public one.
+export const publicCodexVersionError = ({ found, required, seat = 'public seat' }) => {
   const error = new Error(found
-    ? `public seat refused this turn: Codex ${found} is older than this seat needs. `
+    ? `${seat} refused this turn: Codex ${found} is older than this seat needs. `
       + `Upgrade Codex to at least ${required} and start the agent again.`
-    : 'public seat refused this turn: could not read the Codex version. '
+    : `${seat} refused this turn: could not read the Codex version. `
       + `Check that \`codex --version\` works for this agent, upgrade Codex to at least ${required} `
       + 'if it is older, and start the agent again.');
   error.code = PUBLIC_CODEX_VERSION_CODE;

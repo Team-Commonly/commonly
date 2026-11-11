@@ -292,16 +292,18 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     await codex.spawn('hello', {
       environment: { model: 'gpt-test' },
       env: { PATH: process.env.PATH, CODEX_API_KEY: REAL_KEY, OPENAI_BASE_URL: 'https://gateway.example/v1' },
+      _codexVersion: '0.162.1',
       _startProviderProxy: fakeProxy(started),
       _spawnImpl: impl,
     });
     expect(started).toEqual([]);
     // F387: a private seat on the host (no trusted perimeter) now runs under the
-    // deny-by-default permission profile, not the sandbox bypass. The route is
-    // still untouched: no proxy starts and codex reads its own config.
+    // private permission profile, not the sandbox bypass. The route is still
+    // untouched: no proxy starts and codex reads its own config.
     expect(calls[0].args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(calls[0].args).not.toContain('--ignore-user-config');
     const cFlags = calls[0].args.map((a, i) => (a === '-c' ? calls[0].args[i + 1] : null)).filter(Boolean);
-    expect(cFlags).toContain('default_permissions="commonly_public"');
+    expect(cFlags).toContain('default_permissions="commonly_private"');
     expect(providerEntry(calls[0].args)).toBeUndefined();
   });
 

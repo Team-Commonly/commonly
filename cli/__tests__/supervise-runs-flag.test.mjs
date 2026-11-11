@@ -257,6 +257,8 @@ const STUB_CODEX = `#!/usr/bin/env node
 // provider, exit 0. Writes only the reply file codex would.
 import { writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
+// A private seat's profile needs a tested Codex (F387); answer the probe.
+if (args[0] === '--version') { process.stdout.write('codex-cli 0.162.1\\n'); process.exit(0); }
 let out = null;
 for (let i = 0; i < args.length; i += 1) if (args[i] === '-o') out = args[i + 1];
 const prompt = args.at(-1);

@@ -187,7 +187,40 @@ describe('hostSandboxRefusal', () => {
       expect(seat('opencode', refused(true))).not.toContain(PROFILE);
     });
 
-    test('a Codex seat is checked only when public, and a missing bubblewrap stays Codex\'s to report', () => {
+    // F387: a private Codex seat outside a cloud-codex pod runs under the
+    // private permission profile, which Codex enforces with bubblewrap here.
+    describe('a private Codex seat on Linux', () => {
+      const privateSeat = (detectBwrap, env = {}) => hostSandboxRefusal({
+        environment: {}, adapterName: 'codex', platform: 'linux', detectBwrap, detectSeatbelt: never, env,
+      });
+
+      test('runs where bubblewrap starts', () => {
+        expect(privateSeat(available)).toBeNull();
+      });
+
+      test('is refused before the first poll when bubblewrap is missing, with the install step and the hosted route', () => {
+        const message = privateSeat(missing('bwrap not found on PATH. Install bubblewrap: `sudo apt install bubblewrap`'));
+        expect(message).toMatch(/^A connected Codex runs inside its own sandbox here, and Codex needs bubblewrap for it\./);
+        expect(message).toContain('bwrap not found on PATH.');
+        expect(message).toContain('`sudo apt install bubblewrap`');
+        expect(message).toContain(ROUTE);
+        // Never a way to run it unconfined: the opt-in is native Windows only.
+        expect(message).not.toContain('--unsandboxed');
+      });
+
+      test('gets the namespace advice when bubblewrap is installed but refused', () => {
+        expect(privateSeat(refused(true))).toMatch(/^A connected Codex runs inside a bubblewrap sandbox/);
+      });
+
+      test('in a cloud-codex pod it is never checked: the pod keeps its own policy', () => {
+        expect(privateSeat(never, { COMMONLY_CODEX_TRUSTED_PERIMETER: '1' })).toBeNull();
+        // Only the exact value counts.
+        expect(privateSeat(missing('bwrap not found on PATH.'), { COMMONLY_CODEX_TRUSTED_PERIMETER: 'yes' }))
+          .toMatch(/needs bubblewrap/);
+      });
+    });
+
+    test('a public Codex seat is checked for a refused namespace, and a missing bubblewrap stays Codex\'s to report', () => {
       expect(seat('codex', available)).toBeNull();
       expect(hostSandboxRefusal({
         environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'linux', detectBwrap: refused(false),
@@ -283,7 +316,9 @@ describe('hostSandboxRefusal', () => {
   test('Codex on a Mac, or on a Linux host that starts a sandbox, is left alone', () => {
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin', detectBwrap: never })).toBeNull();
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux', detectBwrap: available })).toBeNull();
-    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: never })).toBeNull();
+    // F387: a seat with no sandbox block is private, and on Linux its profile
+    // needs bubblewrap, so it is checked too (left alone when it starts).
+    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: available })).toBeNull();
   });
 
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {

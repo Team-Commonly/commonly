@@ -230,8 +230,10 @@ describe('codex adapter — spawn()', () => {
     expect(res.newSessionId).toBe(threadId);
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('codex');
-    // `exec` subcommand, no `resume`, --json + --skip-git-repo-check + -o + prompt
-    expect(calls[0].args[0]).toBe('exec');
+    // `exec` subcommand, no `resume`, --json + --skip-git-repo-check + -o + prompt.
+    // F387: a private seat under its profile never waits on an approval, so the
+    // global approval option comes before `exec`.
+    expect(calls[0].args.slice(0, 3)).toEqual(['--ask-for-approval', 'never', 'exec']);
     expect(calls[0].args).not.toContain('resume');
     expect(calls[0].args).toContain('--json');
     expect(calls[0].args).toContain('--skip-git-repo-check');
@@ -262,7 +264,9 @@ describe('codex adapter — spawn()', () => {
       environment: { model: 'gpt-5.4', effort: 'xhigh' },
       _spawnImpl: resumed.impl,
     });
-    expect(resumed.calls[0].args.slice(0, 5)).toEqual(['exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check']);
+    expect(resumed.calls[0].args.slice(0, 7)).toEqual([
+      '--ask-for-approval', 'never', 'exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check',
+    ]);
     expect(resumed.calls[0].args).toContain('model_reasoning_effort="xhigh"');
     expect(resumed.calls[0].args[resumed.calls[0].args.indexOf('--model') + 1]).toBe('gpt-5.4');
   });
@@ -489,12 +493,67 @@ describe('codex adapter — spawn()', () => {
     expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
     // The pod does NOT also get a permission profile — they don't compose.
     const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
-    expect(cFlags).not.toContain('default_permissions="commonly_public"');
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual([]);
+    expect(args[0]).toBe('exec');
   });
 
-  test('F387: a private seat on the host (no perimeter flag) gets the deny-by-default profile, never the bypass', async () => {
+  // F387 finding 1: on native Windows Codex can't enforce a profile's read
+  // denies, so a private Codex seat runs there only by its operator's own D245
+  // opt-in, which the run hands the adapter as hostUnconfined.
+  test('F387: a run its operator opted out of the OS sandbox keeps its own policy, with no profile', async () => {
     const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
     await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work on windows', {
+      sessionId: null,
+      cwd: 'C:\\Users\\me\\project',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'windows-opted-out',
+      hostUnconfined: true,
+      _platform: 'win32',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual([]);
+  });
+
+  test('F387: a native Windows private seat without the opt-out gets no POSIX-only keys', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work', {
+      sessionId: null,
+      cwd: 'C:\\Users\\me\\project',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'windows-private',
+      _platform: 'win32',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain('":minimal"="read"');
+    expect(fsFlag).not.toContain('"/"="read"');
+    expect(fsFlag).not.toContain('/private/tmp');
+  });
+
+  test('F387: a private seat on the host (no perimeter flag) gets the private profile, never the bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const seatTemp = await mkdtemp(join(tmpdir(), 'commonly-codex-seat-temp-'));
     const { impl, calls } = makeSpawnImpl({
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-host"}\n'],
       outputContents: 'ok',
@@ -502,7 +561,7 @@ describe('codex adapter — spawn()', () => {
 
     // Explicitly clear the perimeter flag so a runner that happens to export it
     // cannot mask the host-private default.
-    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome, TMPDIR: seatTemp };
     delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
 
     await codex.spawn('work on the host', {
@@ -511,18 +570,123 @@ describe('codex adapter — spawn()', () => {
       environment: { model: 'test-model' },
       env: hostEnv,
       agentName: 'host-private-agent',
+      _platform: 'darwin',
       _spawnImpl: impl,
     });
 
     const args = calls[0].args;
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(args).not.toContain('--sandbox');
+    // A private seat keeps its own config.toml; the -c profile wins over it.
+    expect(args).not.toContain('--ignore-user-config');
+    expect(args.slice(0, 2)).toEqual(['--ask-for-approval', 'never']);
     const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
-    expect(cFlags).toContain('default_permissions="commonly_public"');
-    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_public.filesystem='));
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual(['default_permissions="commonly_private"']);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
     expect(fsFlag).toBeTruthy();
-    expect(fsFlag).toContain('"~/.ssh"="deny"');
-    expect(fsFlag).toContain('"~/.commonly"="deny"');
+    // The disk stays readable; every host secret the seat doesn't use is denied.
+    expect(fsFlag).toContain('"/"="read"');
+    for (const dir of ['~/.commonly', '~/.claude', '~/.codex', '~/.ssh', '~/.aws', '~/.gnupg',
+      '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud', '/private/tmp']) {
+      expect(fsFlag).toContain(`"${dir}"="deny"`);
+    }
+    expect(fsFlag).toContain(`"${realpathSync(seatTemp)}"="write"`);
+    expect(fsFlag).toContain('":workspace_roots"={"."="write"');
+    expect(cFlags).toContain('permissions.commonly_private.network.enabled=true');
+    expect(cFlags).toContain('shell_environment_policy.inherit="all"');
+    expect(cFlags).toContain('shell_environment_policy.ignore_default_excludes=false');
+    expect(cFlags.find((f) => f.startsWith('shell_environment_policy.include_only'))).toBeUndefined();
+    // No public-only flags leak onto a private seat.
+    expect(cFlags).not.toContain('web_search="disabled"');
+    await rm(seatTemp, { recursive: true, force: true });
+  });
+
+  test('F387: a resumed private turn carries the profile exactly once', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('again', {
+      sessionId: 'sid-private',
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', 'resume', 'sid-private']);
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual(['default_permissions="commonly_private"']);
+    expect(cFlags.filter((f) => f.startsWith('permissions.commonly_private.filesystem='))).toHaveLength(1);
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
+
+  // A worktree's `.git` is a file naming its admin folder, outside the
+  // workspace; a commit writes there and in the repository it belongs to.
+  test('F387: a private seat in a git worktree can write its admin folders', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const repo = await mkdtemp(join(tmpdir(), 'commonly-codex-worktree-'));
+    const commonDir = join(repo, 'main', '.git');
+    const gitDir = join(commonDir, 'worktrees', 'seat');
+    const workspace = join(repo, 'seat');
+    await mkdir(gitDir, { recursive: true });
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, '.git'), `gitdir: ${gitDir}\n`);
+    await writeFile(join(gitDir, 'commondir'), '../..\n');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('commit', {
+      sessionId: null,
+      cwd: workspace,
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'worktree-seat',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain(`"${realpathSync(gitDir)}"="write"`);
+    expect(fsFlag).toContain(`"${realpathSync(commonDir)}"="write"`);
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  // Measured on codex-cli 0.162.1: Codex keeps `.git` read-only inside a
+  // writable workspace, so a commit fails without this explicit key.
+  test('F387: a private seat in a plain repository can write its .git folder', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const workspace = await mkdtemp(join(tmpdir(), 'commonly-codex-repo-'));
+    await mkdir(join(workspace, '.git'));
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('commit', {
+      sessionId: null,
+      cwd: workspace,
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'repo-seat',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain(`"${realpathSync(join(workspace, '.git'))}"="write"`);
+    await rm(workspace, { recursive: true, force: true });
   });
 
   // TASK-273: a public seat whose MCP did not start used to run with a notice,
@@ -1033,8 +1197,9 @@ describe('codex adapter — spawn()', () => {
     expect(calls).toHaveLength(1);
     // <sessionId> sits between `exec resume` and the option flags so a future
     // codex parser change can't consume it as the value of a preceding flag
-    // (e.g. -o). Pin the exact position, not just relative ordering.
-    expect(calls[0].args.slice(0, 3)).toEqual(['exec', 'resume', sid]);
+    // (e.g. -o). Pin the exact position, not just relative ordering. F387: the
+    // global approval option precedes `exec` on a private seat's profile.
+    expect(calls[0].args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', 'resume', sid]);
     // Prompt is still the final argument.
     expect(calls[0].args[calls[0].args.length - 1]).toMatch(/keep going$/);
     // -o appears AFTER <sid> — explicit guard against the regression the
