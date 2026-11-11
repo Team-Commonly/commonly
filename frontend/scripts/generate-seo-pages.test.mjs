@@ -26,7 +26,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 118);
+  assert.equal(pages.length, 116);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -63,7 +63,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/agent-to-agent-messaging/',
     '/guides/self-hosted-ai-agent-platform/',
     '/guides/ai-agent-permissions-and-tokens/',
-    '/guides/connect-cursor-shared-workspace/',
     '/guides/ai-agent-observability/',
     '/guides/ai-agent-events/',
     '/guides/multi-agent-vs-single-agent/',
@@ -75,7 +74,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-marketplace-roles/',
     '/guides/connect-a-custom-agent-http-api/',
     '/guides/what-is-an-agent-pod/',
-    '/guides/connect-openclaw-agent/',
     '/guides/ai-agent-security-best-practices/',
     '/guides/ai-agent-cli/',
     '/guides/ai-agent-orchestration/',
@@ -183,7 +181,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 94);
+  assert.equal(guidePages.length, 92);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -324,18 +322,6 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(permissionsHtml, /<h2>Assuming token scope governs local tools<\/h2>/);
   assert.match(permissionsHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(permissionsHtml, /href="\/guides\/ai-agent-task-management\//);
-  const cursorGuide = guidePages.find((page) => page.path === '/guides/connect-cursor-shared-workspace/');
-  assert.equal(cursorGuide.title, 'How to Connect Cursor to a Shared Workspace | Commonly AI');
-  const cursorHtml = renderStaticPage(guideTemplate, cursorGuide);
-  assert.match(cursorHtml, /Connecting Cursor to a shared workspace gives the agent you use in Cursor/);
-  assert.match(cursorHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
-  assert.match(cursorHtml, /~\/\.cursor\/mcp\.json/);
-  assert.match(cursorHtml, /@commonlyai\/mcp/);
-  assert.match(cursorHtml, /cm_agent_\.\.\./);
-  assert.match(cursorHtml, /It is not a bundled development environment\.<\/p>\s*<div class="seo-table-wrap">/);
-  assert.match(cursorHtml, /In Cursor, invoke the agent with a request like this:<\/p>\s*<pre class="seo-code">/);
-  assert.match(cursorHtml, /<h2>Verify both sides of the access boundary<\/h2>\s*<p>[^<]*<\/p>\s*<p>Confirm all four:<\/p>\s*<ol>/);
-  assert.match(cursorHtml, /<h2>Give the first task a boundary<\/h2>/);
   const observabilityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-observability/');
   assert.equal(observabilityGuide.title, 'AI Agent Observability | Commonly AI');
   const observabilityHtml = renderStaticPage(guideTemplate, observabilityGuide);
@@ -448,15 +434,6 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(agentPodHtml, /AgentInstallation/);
   assert.match(agentPodHtml, /last ten replaced versions of each memory document/);
   assert.doesNotMatch(agentPodHtml, /cm_agent_[A-Za-z0-9]{8,}/);
-  const openClawGuide = guidePages.find((page) => page.path === '/guides/connect-openclaw-agent/');
-  const openClawHtml = renderStaticPage(guideTemplate, openClawGuide);
-  assert.match(openClawHtml, /Connecting an OpenClaw agent means/);
-  assert.match(openClawHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
-  assert.match(openClawHtml, /moltbot\.json/);
-  assert.match(openClawHtml, /heartbeat\.global/);
-  assert.match(openClawHtml, /HEARTBEAT\.md/);
-  assert.match(openClawHtml, /AgentsHub/);
-  assert.doesNotMatch(openClawHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const securityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-security-best-practices/');
   const securityHtml = renderStaticPage(guideTemplate, securityGuide);
   assert.match(securityHtml, /AI agent security is the practice of/);
@@ -1972,19 +1949,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-orchestration\//);
   }
   for (const guidePath of [
-    '/guides/ai-agent-heartbeats-and-scheduled-work/',
-    '/guides/connect-a-custom-agent-http-api/',
-    '/guides/what-is-an-ai-agent-runtime/',
-    '/guides/connect-claude-codex-shared-workspace/',
-  ]) {
-    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
-    assert.match(html, /href="\/guides\/connect-openclaw-agent\//);
-  }
-  for (const guidePath of [
     '/guides/ai-agent-permissions-and-tokens/',
     '/guides/ai-agent-memory/',
     '/guides/ai-agent-handoffs/',
-    '/guides/connect-openclaw-agent/',
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-security-best-practices\//);
@@ -2026,14 +1993,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-permissions-and-tokens\//);
   }
   for (const guidePath of [
-    '/guides/ai-agent-workspace/',
-    '/guides/connect-claude-codex-shared-workspace/',
-    '/guides/ai-agent-permissions-and-tokens/',
-  ]) {
-    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
-    assert.match(html, /href="\/guides\/connect-cursor-shared-workspace\//);
-  }
-  for (const guidePath of [
     '/guides/ai-agent-task-management/',
     '/guides/ai-agent-memory/',
     '/guides/how-to-build-an-ai-agent-team/',
@@ -2046,7 +2005,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/agent-to-agent-messaging/',
     '/guides/ai-agent-observability/',
     '/guides/connect-claude-codex-shared-workspace/',
-    '/guides/connect-cursor-shared-workspace/',
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-events\//);
@@ -2454,7 +2412,7 @@ test('every page but home names its place in a BreadcrumbList, ending at itself 
 
 test('every guide Article carries an image (F397)', async () => {
   const articles = (await realPages()).flatMap((page) => page.schema['@graph'].filter((node) => node['@type'] === 'Article'));
-  assert.ok(articles.length >= 90);
+  assert.ok(articles.length >= 89);
   for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=7', article['@id']);
 });
 
@@ -2815,7 +2773,7 @@ const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] =
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 63);
+  assert.equal(revised.length, 80);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
