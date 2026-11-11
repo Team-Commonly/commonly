@@ -114,6 +114,8 @@ const spawnedEnvironment = async (environment, installations = []) => {
     sleepImpl: async () => {},
     log: () => {},
     setTimeoutImpl: () => 0,
+    // A turn placed public on Linux runs in bubblewrap; CI has none.
+    detectBwrapImpl: () => ({ available: true, path: 'bwrap' }),
   });
   for (let i = 0; i < 400 && spawn.mock.calls.length === 0; i += 1) {
     // eslint-disable-next-line no-await-in-loop
