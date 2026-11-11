@@ -351,6 +351,30 @@ export const selectedMcpVersionDir = (command, home = mcpHomeDir()) => {
 };
 
 /**
+ * Whether the warm build this spawn runs writes the ready file (F421).
+ *
+ * A public OpenCode seat's stream reports nothing about its MCP servers, so the
+ * adapter names a file the Commonly server creates once its host reaches it
+ * (commonly-mcp/src/ready-file.js) and withholds a turn that ends without it.
+ * Only a release that says so in its package.json (`commonly.readyFile`) is
+ * asked: a build from before the file existed would leave every turn withheld.
+ * Anything this cannot read or verify answers false, which keeps the turn as it
+ * was before F421.
+ */
+export const selectedMcpWritesReadyFile = (command, home = mcpHomeDir(), { readFile = defaultRead } = {}) => {
+  if (!selectedMcpVersionDir(command, home)) return false;
+  const version = relative(home, command[1]).split(sep)[0];
+  const raw = readFile(join(packageDirFor(home, version), 'package.json'));
+  if (typeof raw !== 'string') return false;
+  try {
+    const pkg = JSON.parse(raw);
+    return pkg?.name === MCP_PACKAGE && pkg?.commonly?.readyFile === true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * The bin of an npm PREFIX dir, which is the shape the warm installs into:
  * `npm install --prefix <dir>` leaves `<dir>/node_modules/...`, with no version
  * component in the path. Reading the two shapes with one function would mean

@@ -3,7 +3,9 @@ import { jest } from '@jest/globals';
 import { spawnSync as realSpawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { createServer, request as httpRequest } from 'http';
-import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
+import {
+  existsSync, readFileSync, realpathSync, statSync, writeFileSync,
+} from 'fs';
 import {
   chmod,
   mkdir,
@@ -15,6 +17,7 @@ import {
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { PUBLIC_MCP_NOT_READY_CODE } from '../src/lib/public-tool-error.js';
 import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const spawnSyncMock = jest.fn();
@@ -32,6 +35,7 @@ const {
   buildProviderConfig,
   makeEventParser,
   PUBLIC_TOOL_FAILED_CODE,
+  missingReadyFile,
   publicToolFailure,
   publicPermissions,
   qualifiedProviderModel,
@@ -379,7 +383,9 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
   ];
   const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
 
-  const runSeat = async (chunks, { trust = 'public', mcp = COMMONLY_MCP } = {}) => {
+  const runSeat = async (chunks, {
+    trust = 'public', mcp = COMMONLY_MCP, readyFile = false, serverWrites = true, seen = {},
+  } = {}) => {
     let outcome;
     await withTemp(async (root) => {
       const home = join(root, 'mcp-home');
@@ -387,7 +393,10 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
       await mkdir(join(pkgDir, 'src'), { recursive: true });
       await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
-        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+        name: '@commonlyai/mcp',
+        version: '0.3.13',
+        ...(readyFile ? { commonly: { readyFile: true } } : {}),
+        bin: { 'commonly-mcp': 'src/index.js' },
       }));
       await writeFile(join(pkgDir, 'src', 'index.js'), '');
       await writeFile(join(home, 'current'), '0.3.13\n');
@@ -411,8 +420,17 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
         _opencodeHomeRoot: join(root, 'opencode-state'),
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
-        _spawnImpl: makeSpawnImpl({ chunks }).impl,
-        _wrapArgvWithSeatbelt: (argv) => argv,
+        // Stands in for the Commonly server: it creates the file its config names.
+        _spawnImpl: makeSpawnImpl({
+          chunks,
+          onCall: (_cmd, _args, options) => {
+            const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+            seen.env = config.mcp?.commonly?.environment || {};
+            const path = seen.env.COMMONLY_MCP_READY_FILE;
+            if (path && serverWrites) writeFileSync(path, 'ready\n', { flag: 'wx', mode: 0o600 });
+          },
+        }).impl,
+        _wrapArgvWithSeatbelt: (argv, options) => { seen.statePath = options.statePath; return argv; },
       }).then((result) => { outcome = result; }));
     });
     return outcome;
@@ -463,6 +481,45 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       toolError('commonly_commonly_get_context', http(404, 'Pod not found')),
       toolError('commonly_commonly_list_pods', http(503, 'HTTP 503', null)),
     ))).rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+  });
+
+  // F421: OpenCode runs the model without the Commonly tools when their server
+  // fails to start, and says so only in its log. The server's ready file is the
+  // witness, asked for only from a release that writes it.
+  test('a release that writes the ready file is given one inside the seat\'s writable state folder', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { readyFile: true, seen });
+    expect(result.text).toBe(narration);
+    expect(seen.env.COMMONLY_MCP_READY_FILE.startsWith(`${seen.statePath}/mcp-ready/`)).toBe(true);
+    expect(existsSync(seen.env.COMMONLY_MCP_READY_FILE)).toBe(false);
+  });
+
+  test('no ready file from that release withholds the reply, so a tool-less answer never posts', async () => {
+    const outcome = runSeat(turn(), { readyFile: true, serverWrites: false });
+    await expect(outcome).rejects.toMatchObject({ code: PUBLIC_MCP_NOT_READY_CODE });
+    await expect(runSeat(turn(), { readyFile: true, serverWrites: false }))
+      .rejects.toThrow(/^(?!.*backend is unreachable).*Commonly MCP server commonly never reported ready/);
+  });
+
+  test('a release from before the ready file is not asked for one, and the turn posts as before', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { readyFile: false, serverWrites: false, seen });
+    expect(result.text).toBe(narration);
+    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeUndefined();
+  });
+
+  test('a private seat is never asked for one', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { trust: 'private', readyFile: true, serverWrites: false, seen });
+    expect(result.text).toBe(narration);
+    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeUndefined();
+  });
+
+  test('missingReadyFile names the first server whose file is absent', () => {
+    const files = [{ name: 'a', path: '/x/a' }, { name: 'b', path: '/x/b' }];
+    expect(missingReadyFile(files, (p) => p === '/x/a')).toEqual({ name: 'b', path: '/x/b' });
+    expect(missingReadyFile(files, () => true)).toBeNull();
+    expect(missingReadyFile([], () => false)).toBeNull();
   });
 
   test('a connection failure in a tool that is not Commonly\'s is still answered', async () => {

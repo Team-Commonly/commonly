@@ -23,7 +23,7 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { existsSync, readdirSync, realpathSync, rmSync } from 'fs';
 import {
   chmod,
@@ -43,7 +43,9 @@ import {
 } from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
+import {
+  prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir, selectedMcpWritesReadyFile,
+} from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
@@ -57,7 +59,7 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
-import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
+import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 
@@ -567,6 +569,14 @@ const buildMcpConfig = (servers, ctx = {}) => {
         console.warn(`[opencode] skipping MCP server ${server.name}: its credential declaration has no file-backed delivery`);
         continue;
       }
+      // F421: the shipped Commonly server of a public seat names its ready file,
+      // when the warm build it runs writes one (selectedMcpWritesReadyFile).
+      if (ctx.readyFileDir && isShippedCommonlyMcpCommand(server.command)
+        && (ctx.mcpWritesReadyFile || selectedMcpWritesReadyFile)(command)) {
+        const readyPath = join(ctx.readyFileDir, randomUUID());
+        env[MCP_READY_FILE_ENV] = readyPath;
+        ctx.readyFiles?.push({ name: server.name, path: readyPath });
+      }
       mcp[server.name] = {
         type: 'local',
         command: command.map((part) => substitutePublicPlaceholders(part, ctx)),
@@ -806,6 +816,31 @@ const makeEventParser = () => {
 // runtime's own view of each call, and the witness sees a server that never
 // started, so each catches what the other cannot.
 export { PUBLIC_TOOL_FAILED_CODE };
+
+// F421. OpenCode's stream says nothing about its MCP servers. When the Commonly
+// server fails to start, OpenCode 1.19.0 logs one WARN line ("server
+// unavailable … status=failed"), runs the model without the Commonly tools, and
+// exits 0, so the reply would be an answer written without reading the pod
+// (measured with a stub provider on 2026-11-11). The server creates the file
+// this adapter names in COMMONLY_MCP_READY_FILE once OpenCode asks for its
+// tools (tools/list, sent only after initialize succeeded), inside the folder the sandbox lets the seat write (OpenCode's own
+// data home: Seatbelt's statePath, bwrap's write-outside). A turn whose file is
+// missing never had the server, so its reply is withheld and the run loop tells
+// the waiting pod why (turn-failure-notice.js) and retries.
+export const MCP_READY_FILE_ENV = 'COMMONLY_MCP_READY_FILE';
+
+export const missingReadyFile = (readyFiles, exists = existsSync) => (
+  (readyFiles || []).find(({ path }) => !exists(path)) || null
+);
+
+const publicMcpNotReadyError = (name) => {
+  const failure = new Error(
+    `public seat withheld this turn's reply: Commonly MCP server ${name} never reported ready (no ready file), `
+    + 'so the model ran without its Commonly tools; the CLI posted no reply for it and does not ack the event',
+  );
+  failure.code = PUBLIC_MCP_NOT_READY_CODE;
+  return failure;
+};
 
 export const publicToolFailure = (toolErrors, mcpServers) => {
   const prefixes = (Array.isArray(mcpServers) ? mcpServers : [])
@@ -1217,6 +1252,8 @@ export default {
       root: tempDir,
     });
     let openCodeHome = null;
+    let readyFileDir = null;
+    const readyFiles = [];
     let providerProxy = null;
     let instanceProxy = null;
     try {
@@ -1242,6 +1279,7 @@ export default {
         });
       }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
+      readyFileDir = isPublic ? join(openCodeHome.root, 'mcp-ready') : null;
       const cacheHome = isPublic ? join(openCodeHome.root, 'cache') : null;
       const tempWork = isPublic ? join(openCodeHome.root, 'tmp') : join(tempDir, 'tmp');
       await Promise.all([
@@ -1252,7 +1290,11 @@ export default {
       const unavailableMcp = [];
       const mcpReadDirectories = [];
       const bearerFileServers = [];
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
+        readyFileDir,
+        readyFiles,
+        mcpWritesReadyFile: ctx._mcpWritesReadyFile,
         runtimeToken: ctx.runtimeToken,
         instanceUrl: instanceProxy
           ? `http://127.0.0.1:${ISOLATED_INSTANCE_PORT}` : ctx.instanceUrl,
@@ -1419,6 +1461,8 @@ export default {
           : undefined,
       });
       if (isPublic) {
+        const notReady = missingReadyFile(readyFiles, ctx._existsSync);
+        if (notReady) throw publicMcpNotReadyError(notReady.name);
         const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);
         if (failure) throw publicToolFailedError(failure);
       }
@@ -1431,6 +1475,9 @@ export default {
       try { await instanceProxy?.close(); } catch { /* ignore */ }
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      for (const { path } of readyFiles) {
+        try { await rm(path, { force: true }); } catch { /* ignore */ }
+      }
     }
   },
 };

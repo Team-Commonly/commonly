@@ -6,6 +6,7 @@ import { claudeFailureTail } from '../src/lib/adapters/claude.js';
 import {
   LOGIN_NOTICE,
   OUT_OF_ALLOWANCE_NOTICE,
+  TOOLS_UNAVAILABLE_NOTICE,
   WONT_START_NOTICE,
   cantAnswerNotice,
   codexVersionNotice,
@@ -293,13 +294,19 @@ describe('cantAnswerNotice', () => {
 
   // The login wordings have no class gate, so the code check is all that stands
   // between a tool's quoted refusal and a statement about this seat's key.
-  test.each([
-    ['failed', PUBLIC_TOOL_FAILED_CODE],
-    ['not ready', PUBLIC_MCP_NOT_READY_CODE],
-  ])('a public seat quoting a tool\'s error, MCP %s, is not reporting its own key', (_name, code) => {
+  test('a public seat quoting a tool\'s error is not reporting its own key', () => {
     const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
     expect(cantAnswerNotice(new Error(message))?.cause).toBe('login');
-    expect(cantAnswerNotice(Object.assign(new Error(message), { code }))).toBeNull();
+    expect(cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBeNull();
+  });
+
+  // F421: tools that never started leave a stranger waiting on an API that
+  // still answers, so the pod hears why, whatever the error text quotes.
+  test('a public seat whose Commonly tools never started says so, and only that', () => {
+    const message = 'public seat withheld this turn\'s reply: Commonly MCP server commonly never reported ready (x: Not logged in · Please run /login)';
+    const notice = cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_MCP_NOT_READY_CODE }));
+    expect(notice).toEqual({ cause: 'tools-unavailable', text: TOOLS_UNAVAILABLE_NOTICE });
+    expect(notice.text).not.toMatch(/login|key|commonly/i);
   });
 
   test('the line never quotes the error, which can carry key material', () => {
@@ -336,7 +343,7 @@ describe('cantAnswerNotice', () => {
   });
 
   test('every line fits one chat message and says what to do', () => {
-    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
+    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, TOOLS_UNAVAILABLE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
       expect(line.length).toBeLessThanOrEqual(400);
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');
