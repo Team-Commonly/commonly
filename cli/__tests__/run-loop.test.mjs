@@ -4850,7 +4850,11 @@ describe('performRun — the grant broker is withheld where no daemon will judge
       _id: `evt-broker-${delivery}`,
       payload: { content: 'hello', deliveryId: `delivery-broker-${delivery}` },
     })];
-    const mockGet = jest.fn().mockResolvedValue({ events });
+    // These entries are shorthand, not the shipped shapes, so the outsider
+    // grant check (outsider-grant-mcp.js) would refuse a confined seat that
+    // might be narrowed. The answer says no grant reaches it; that check has
+    // its own suite.
+    const mockGet = jest.fn().mockResolvedValue({ events, outsiderGrantNarrowed: false });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
     const spawn = jest.fn(async () => ({ text: 'hello back' }));
