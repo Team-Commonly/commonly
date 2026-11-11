@@ -16,6 +16,7 @@ import {
   MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
 import { assertSandboxSupported } from '../src/lib/adapters/pi.js';
+import { parseRunInstanceId, runInstanceRefusal, seatKey } from '../src/commands/agent.js';
 import claude from '../src/lib/adapters/claude.js';
 
 const record = {
@@ -238,6 +239,30 @@ describe('tick', () => {
     expect(Object.keys(tokens)).toEqual([]);
     expect(children).toHaveLength(0);
     expect(logs.join('\n')).toMatch(/is not a plain id/);
+  });
+
+  // Instance ids compare case-insensitively, as `agent run` and the server do.
+  test('a legacy bare-name record matches its instance whatever the case', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', instanceId: 'Alpha', runtimeToken: 'cm_agent_alpha', adapter: 'claude',
+    } };
+    const { supervisor, client, children } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })], tokens });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(children.map(({ name }) => name)).toEqual(['wren-test']);
+    supervisor.stop();
+  });
+
+  // The daemon and `agent run` must name the same record: what the daemon
+  // writes for an instance is what `agent run <key>` loads and accepts.
+  test('agent run accepts the record the daemon wrote for a second instance', async () => {
+    const { supervisor, children, tokens } = makeHarness({ rows: () => [boundRow({ instanceId: 'alpha' })] });
+    await supervisor.tick();
+    const [{ name }] = children;
+    const instanceId = parseRunInstanceId(undefined, name);
+    expect(seatKey(name.split('@')[0], instanceId)).toBe(name);
+    expect(runInstanceRefusal({ record: tokens[name], instanceId })).toBeNull();
+    supervisor.stop();
   });
 
   test('recordKeyFor names the record agent run reads', () => {

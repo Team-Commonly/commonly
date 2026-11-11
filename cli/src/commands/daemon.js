@@ -114,19 +114,22 @@ const watchDaemonStatus = async () => {
       const seats = (loadDaemonState()?.seats || []).map((seat) => ({
         ...seat,
         // The supervisor stamps spawn time; the session store holds real turns.
-        lastTurnAt: readSessionLastTurn(seat.agentName),
+        lastTurnAt: readSessionLastTurn(seat.recordKey || seat.agentName),
       }));
+      // Keyed by the local record, so two instances of one agent never read
+      // each other's log, last turn or pod (F427).
       const logTails = {};
       for (const seat of seats) {
-        const tail = readLogTail(daemonSeatLogPath(seat.agentName), 3);
-        logTails[seat.agentName] = tail ? tail.split('\n') : [];
+        const key = seat.recordKey || seat.agentName;
+        const tail = readLogTail(daemonSeatLogPath(key), 3);
+        logTails[key] = tail ? tail.split('\n') : [];
       }
       let states = null;
       let stateNote = '';
       if (!getToken(record.instanceUrl)) {
         stateNote = `Not logged in: showing local process state only. Run: commonly login --instance ${record.instanceUrl}`;
       } else {
-        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.agentName)?.podId).filter(Boolean))];
+        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.recordKey || seat.agentName)?.podId).filter(Boolean))];
         try {
           states = await reachFor(podIds);
         } catch (error) {

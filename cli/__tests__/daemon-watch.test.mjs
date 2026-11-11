@@ -119,3 +119,20 @@ describe('watch constants', () => {
     expect(CLEAR_SCREEN.startsWith('\x1b[H')).toBe(true);
   });
 });
+
+// F427: two instances of one agent each show their own log, keyed by record.
+test('a second instance shows its own record name and log tail', () => {
+  const text = renderDaemonWatch({
+    machine,
+    seats: [
+      { agentName: 'dart', instanceId: 'default', recordKey: 'dart', state: 'running' },
+      { agentName: 'dart', instanceId: 'alpha', recordKey: 'dart@alpha', state: 'running' },
+    ],
+    logTails: { dart: ['default line'], 'dart@alpha': ['alpha line'] },
+    now: NOW,
+    width: 80,
+  });
+  const alphaBlock = text.slice(text.indexOf('dart@alpha'));
+  expect(alphaBlock).toContain('alpha line');
+  expect(alphaBlock).not.toContain('default line');
+});

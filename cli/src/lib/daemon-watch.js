@@ -82,7 +82,7 @@ const agentBlock = (seat, { now, width, color, logTail, states }) => {
   const dim = (text) => (color ? `${ANSI.dim}${text}${ANSI.reset}` : text);
   const bold = (text) => (color ? `${ANSI.bold}${text}${ANSI.reset}` : text);
   const lines = [
-    `${bold(clip(seat.agentName || 'unknown', width))}  ${agentStateLabel(seat, states)}  last turn ${relative(seat.lastTurnAt, now)}`,
+    `${bold(clip(seat.recordKey || seat.agentName || 'unknown', width))}  ${agentStateLabel(seat, states)}  last turn ${relative(seat.lastTurnAt, now)}`,
   ];
   if (seat.lastError) lines.push(clip(`  error: ${seat.lastError}`, width));
   for (const line of logTail || []) lines.push(dim(`  ${safeLogLine(line, Math.max(10, width - 2))}`));
@@ -90,7 +90,7 @@ const agentBlock = (seat, { now, width, color, logTail, states }) => {
 };
 
 // Inputs: `machine` { name, status, lastSeenAt }, `seats` (from the daemon state
-// file), `logTails` { [agentName]: string[] }, `states` (Map from
+// file), `logTails` { [recordKey || agentName]: string[] }, `states` (Map from
 // loadReachByAgent, or null), `stateNote` (why states is null), `now` (ms),
 // `width` (columns).
 export const renderDaemonWatch = ({
@@ -108,7 +108,7 @@ export const renderDaemonWatch = ({
     return out.join('\n');
   }
   for (const seat of seats) {
-    out.push(...agentBlock(seat, { now, width, color, logTail: logTails[seat.agentName] || [], states }));
+    out.push(...agentBlock(seat, { now, width, color, logTail: logTails[seat.recordKey || seat.agentName] || [], states }));
     out.push('');
   }
   return out.join('\n').replace(/\n+$/, '');
