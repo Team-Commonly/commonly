@@ -331,7 +331,16 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
 // Fresh-PC legs (F342) change the runner user's script policy for their run.
 // CurrentUser outranks the image's LocalMachine setting; a Group Policy would
 // outrank both, so the effective policy is logged and checked before trusting a leg.
-const powershell = (command) => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' });
+// stdin ignored, as the legs do: run 43069712462 read an empty policy with a stdin pipe.
+const powershell = (command) => {
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 60_000,
+  });
+  if (!String(result.stdout || '').trim() && /Get-/.test(command)) {
+    log(`powershell ${JSON.stringify(command)}: exit ${result.status}, signal ${result.signal}, error ${result.error?.message || 'none'}, stderr ${String(result.stderr || '').slice(0, 500)}`);
+  }
+  return result;
+};
 const setUserPolicy = (policy) => powershell(`Set-ExecutionPolicy -Scope CurrentUser ${policy} -Force`);
 const effectivePolicy = () => String(powershell('Get-ExecutionPolicy').stdout || '').trim();
 const stepTable = (label, result) => {
