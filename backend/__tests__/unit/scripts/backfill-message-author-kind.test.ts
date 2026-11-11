@@ -5,7 +5,13 @@ import {
   episodeMessageReferences,
   episodeReferenceQuery,
   MessageAuthorKindBackfillDeps,
+  productionDeps,
 } from '../../../scripts/backfill-message-author-kind';
+
+const mockEpisodeFind = jest.fn();
+jest.mock('../../../models/StalledConnectEpisode', () => ({
+  find: (...args) => mockEpisodeFind(...args),
+}));
 
 const makeDeps = (overrides: Partial<MessageAuthorKindBackfillDeps> = {}): MessageAuthorKindBackfillDeps => ({
   getEpisodeReferences: async () => ['101', '507f1f77bcf86cd799439011', 'not-a-message'],
@@ -90,6 +96,17 @@ describe('backfill-message-author-kind', () => {
           { resolutionMessageId: { $type: 'string', $ne: '' } },
         ],
       });
+    });
+
+    it('the production reader queries both fields and returns both ids', async () => {
+      const select = jest.fn(() => ({
+        lean: async () => [{ nudgeMessageId: '101', resolutionMessageId: '102' }, { resolutionMessageId: '103' }],
+      }));
+      mockEpisodeFind.mockReturnValue({ select });
+      const ids = await productionDeps(null).getEpisodeReferences();
+      expect(mockEpisodeFind).toHaveBeenCalledWith(episodeReferenceQuery());
+      expect(select).toHaveBeenCalledWith('nudgeMessageId resolutionMessageId');
+      expect(ids).toEqual(['101', '102', '103']);
     });
 
     it('marks a resolution-only episode\'s message like a nudge', async () => {

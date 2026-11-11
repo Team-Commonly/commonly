@@ -132,7 +132,7 @@ export async function backfillMessageAuthorKind(
   return report;
 }
 
-const productionDeps = (pool: PgPool | null): MessageAuthorKindBackfillDeps => ({
+export const productionDeps = (pool: PgPool | null): MessageAuthorKindBackfillDeps => ({
   getEpisodeReferences: async () => {
     const rows = await StalledConnectEpisode.find(episodeReferenceQuery())
       .select(EPISODE_MESSAGE_FIELDS.join(' ')).lean();
