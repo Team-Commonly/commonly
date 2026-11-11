@@ -140,6 +140,28 @@ describe('V2InviteModal', () => {
       expect(screen.getByLabelText('Username to add')).toHaveValue('someone');
     });
 
+    test('drops a reply that lands after the dialog moved to another pod', async () => {
+      let resolve;
+      mockApi.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+      const onMemberAdded = jest.fn();
+      const view = renderModal('people', { canAddMember: true, onMemberAdded });
+      fireEvent.change(screen.getByLabelText('Username to add'), { target: { value: 'teammate' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      view.rerender(
+        <MemoryRouter>
+          <div className="v2-root">
+            <V2InviteModal open podId="pod-2" podName="Other" initialTab="people" onClose={jest.fn()} canAddMember onMemberAdded={onMemberAdded} />
+          </div>
+        </MemoryRouter>,
+      );
+      resolve({ ok: true, alreadyMember: false, member: { _id: 'u2', username: 'teammate' } });
+      await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/pods/pod-2/invites'));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getByRole('status', { hidden: true })).toHaveTextContent('');
+      expect(onMemberAdded).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled();
+    });
+
     test('asks for a username before calling the server', async () => {
       renderModal('people', { canAddMember: true });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));

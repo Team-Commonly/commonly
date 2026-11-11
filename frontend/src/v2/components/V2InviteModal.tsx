@@ -2,7 +2,7 @@
 // thread starter invite action (V2Thread) and the inspector "+ Invite" button
 // can open the same modal. Two tabs: shareable links (people) and an agent
 // install shortcut (browse → install).
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
@@ -97,6 +97,9 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
   const [addName, setAddName] = useState('');
   const [adding, setAdding] = useState(false);
   const [addNotice, setAddNotice] = useState<AddNotice | null>(null);
+  // Which open dialog an add belongs to: a reply that lands after the dialog
+  // closed or moved to another pod is dropped, not shown there.
+  const addScopeRef = useRef(0);
 
   const loadInvites = useCallback(async () => {
     if (!podId) return;
@@ -125,6 +128,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
     setCopiedToken(null);
     setBusy(false);
     setRevokingToken(null);
+    addScopeRef.current += 1;
     setAddName('');
     setAdding(false);
     setAddNotice(null);
@@ -170,6 +174,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
       setAddNotice({ tone: 'error', text: t('inviteModal.addMember.required') });
       return;
     }
+    const scope = addScopeRef.current;
     setAdding(true);
     setAddNotice(null);
     try {
@@ -177,6 +182,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
         `/api/pods/${podId}/members`,
         { username },
       );
+      if (scope !== addScopeRef.current) return;
       const name = data?.member?.username || username;
       if (data?.alreadyMember) {
         setAddNotice({ tone: 'ok', text: t('inviteModal.addMember.alreadyMember', { username: name }) });
@@ -186,10 +192,11 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
         onMemberAdded?.();
       }
     } catch (err) {
+      if (scope !== addScopeRef.current) return;
       const code = (err as { response?: { data?: { code?: string } } }).response?.data?.code || '';
       setAddNotice({ tone: 'error', text: t(addRefusalKey[code] || 'inviteModal.addMember.failed') });
     } finally {
-      setAdding(false);
+      if (scope === addScopeRef.current) setAdding(false);
     }
   }, [addName, api, onMemberAdded, podId, t]);
 
@@ -280,14 +287,14 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
                       {adding ? t('inviteModal.addMember.adding') : t('inviteModal.addMember.add')}
                     </button>
                   </form>
-                  {addNotice && (
-                    <div
-                      className={addNotice.tone === 'error' ? 'v2-modal__error' : 'v2-invite-add__ok'}
-                      role={addNotice.tone === 'error' ? 'alert' : 'status'}
-                    >
-                      {addNotice.text}
-                    </div>
-                  )}
+                  {/* Both regions stay mounted so a screen reader announces the
+                      text when it arrives, not a region that appeared full. */}
+                  <div className="v2-modal__error" role="alert" hidden={addNotice?.tone !== 'error'}>
+                    {addNotice?.tone === 'error' ? addNotice.text : ''}
+                  </div>
+                  <div className="v2-invite-add__ok" role="status" hidden={addNotice?.tone !== 'ok'}>
+                    {addNotice?.tone === 'ok' ? addNotice.text : ''}
+                  </div>
                 </section>
               )}
               <p className="v2-modal__hint">
