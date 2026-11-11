@@ -182,7 +182,7 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   }
   expect(deny && Object.keys(deny.spec.podSelector || {}).length === 0 && !deny.spec.ingress,
     `${lane}: no default-deny-ingress over every pod`);
-  const workloads = docs.filter((d) => ['Deployment', 'StatefulSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d));
+  const workloads = docs.filter((d) => ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d));
   const ns = deny?.metadata.namespace;
   for (const p of policies) expect(p.metadata.namespace === ns, `${lane}: ${p.metadata.name} renders outside ${ns}`);
   const podsOf = (app) => workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === app);
@@ -203,6 +203,8 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   // Every Service's pods are admitted on the port the Service sends to.
   for (const svc of docs.filter((d) => d.kind === 'Service' && d.metadata.namespace === ns && d.spec.selector)) {
     const backends = workloads.filter((w) => w.metadata.namespace === ns && selects({ matchLabels: svc.spec.selector }, podTemplate(w).metadata?.labels));
+    // A Service with no rendered backend would pass the loop below unchecked.
+    expect(backends.length > 0, `${lane}: Service ${svc.metadata.name} selects no rendered workload, so its allow can't be checked`);
     for (const w of backends) {
       const containers = podTemplate(w).spec.containers || [];
       for (const sp of svc.spec.ports || []) {
@@ -215,6 +217,20 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
       }
     }
   }
+}
+
+// A policy that admits the edge must refuse to render without one: an empty
+// from-list admits every source.
+for (const key of ['frontend', 'backend']) {
+  let rendered = true;
+  try {
+    execFileSync('helm', ['template', 'commonly-verify', chart, '-f', lanes.dev.files[0], '-f', lanes.dev.files[1],
+      '--set', `networkPolicy.ingress.${key}.enabled=true`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    rendered = false;
+    expect(/needs networkPolicy\.ingress\.edge/.test(String(e.stderr)), `${key} with no edge failed for another reason: ${String(e.stderr).trim().split('\n')[0]}`);
+  }
+  expect(!rendered, `networkPolicy.ingress.${key} renders with an empty edge, which admits every source`);
 }
 
 if (failures.length) {

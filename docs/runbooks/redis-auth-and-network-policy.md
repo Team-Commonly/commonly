@@ -56,8 +56,11 @@ port, and `default-deny-ingress` turns away everything else in the namespace:
 
 The edge is `networkPolicy.ingress.edge`: staging's in-namespace tunnel, and
 in prod the ingress-nginx controller. Every switch is its own value, so each
-rollout step is one values flip. Turn the allows on before `defaultDeny`; an
-allow does nothing until the deny exists.
+rollout step is one values flip. **An allow takes effect alone:** a policy
+that selects a pod closes it at once to every client the policy doesn't list,
+deny or no deny. So each allow is a cutover for its pod, and `defaultDeny`
+closes only the pods no allow names. A policy that admits the edge refuses to
+render while `edge` is empty, because an empty `from` admits every source.
 
 - **Rollout:** staging first, all allows plus the deny, soaked 48 h across
   stranger-journey runs and staging smokes. Then prod one pod at a time

@@ -783,7 +783,8 @@ backup:
 networkPolicy:
   # Each listening pod admits only its known clients on its own port
   # (templates/network/ingress-allow.yaml), and defaultDeny turns away the
-  # rest. An allow does nothing until defaultDeny is on, so turn allows on first.
+  # rest. Each allow fences its own pod as soon as it's on, refusing every
+  # client it doesn't list; defaultDeny closes only the pods no allow names.
   ingress:
     # NetworkPolicy peers where outside traffic enters: the tunnel or the
     # ingress controller. frontend, backend and a public litellm admit them.

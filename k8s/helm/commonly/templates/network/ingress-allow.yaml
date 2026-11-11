@@ -1,7 +1,11 @@
 {{- /*
 Ingress policies: each listening pod admits only its known clients on its own
 port, and default-deny-ingress turns away everything else in the namespace.
-An allow is a no-op until the deny exists, so turn the allows on first.
+An allow is not a no-op before the deny: a policy that selects a pod closes
+that pod to every client it doesn't list, at once. So each switch fences its
+own pod, and the deny closes only the pods no allow names. A policy that
+admits the edge refuses to render while the edge is empty, since an empty
+`from` admits everyone.
 Clients are named by pod label, never by node: pods move between pools.
 `edge` is where outside traffic enters (prod: the ingress-nginx controller;
 staging: its in-namespace tunnel). One switch per policy under
@@ -25,6 +29,9 @@ docs/runbooks/redis-auth-and-network-policy.md.
 -}}
 {{- range $p := $policies }}
 {{- if (index $cfg $p.key).enabled }}
+{{- if and $p.edge (not $cfg.edge) }}
+{{- fail (printf "networkPolicy.ingress.%s needs networkPolicy.ingress.edge: with no edge peer its from-list is empty, which admits every source" $p.key) }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
