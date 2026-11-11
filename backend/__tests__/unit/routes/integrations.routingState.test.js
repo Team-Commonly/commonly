@@ -400,6 +400,56 @@ describe('integration routing state', () => {
       expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(1);
     });
 
+    // A save writes the secret, then the row, and a re-save keeps the ref. The
+    // remove must notice a re-save by the secret's own write, not by the ref.
+    it('leaves a token re-saved between its read and its delete, and answers 409', async () => {
+      const connectorSecrets = require('../../../services/connectorSecrets');
+      const { readGroupmeAccessToken } = require('../../../services/chatConnectorTokens');
+      const { row, ref } = await withToken();
+      const realMark = connectorSecrets.writeMarkOf;
+      const spy = jest.spyOn(connectorSecrets, 'writeMarkOf').mockImplementationOnce(async (r) => {
+        const mark = await realMark(r);
+        await storeGroupmeAccessToken(String(row._id), 'newer-token');
+        return mark;
+      });
+      const res = await remove(row._id, creator._id);
+      spy.mockRestore();
+      expect(res.status).toBe(409);
+      const stored = await Integration.findById(row._id).lean();
+      expect(stored.config.accessTokenRef).toBe(ref);
+      expect(stored.config.agentAccessEnabled).toBe(true);
+      expect(await readGroupmeAccessToken(stored.config)).toBe('newer-token');
+    });
+
+    it('leaves a token saved onto a row that had none, and answers 409', async () => {
+      const bare = await Integration.create({
+        podId: pod._id, scope: 'pod', type: 'groupme', status: 'connected', createdBy: creator._id, isActive: true,
+        config: { ...groupmeConfig(), agentAccessEnabled: true },
+      });
+      const realUpdate = Integration.findOneAndUpdate.bind(Integration);
+      let ref;
+      const spy = jest.spyOn(Integration, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+        ({ accessTokenRef: ref } = await storeGroupmeAccessToken(String(bare._id), 'first-token'));
+        await Integration.updateOne({ _id: bare._id }, { $set: { 'config.accessTokenRef': ref } });
+        return realUpdate(...args);
+      });
+      const res = await remove(bare._id, creator._id);
+      spy.mockRestore();
+      expect(res.status).toBe(409);
+      const stored = await Integration.findById(bare._id).lean();
+      expect(stored.config.accessTokenRef).toBe(ref);
+      expect(stored.config.agentAccessEnabled).toBe(true);
+      expect(await ConnectorSecret.countDocuments({ _id: ref })).toBe(1);
+    });
+
+    it('drops a ref whose secret is already gone', async () => {
+      const { row, ref } = await withToken();
+      await ConnectorSecret.deleteOne({ _id: ref });
+      const res = await remove(row._id, creator._id);
+      expect(res.status).toBe(200);
+      expect((await Integration.findById(row._id).lean()).config).not.toHaveProperty('accessTokenRef');
+    });
+
     it('is GroupMe only, and a row with no token just turns agent access off', async () => {
       const telegram = await Integration.findOne({ type: 'telegram' });
       expect((await remove(telegram._id, creator._id)).status).toBe(400);
