@@ -2218,6 +2218,23 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     expect(await within(form).findByText('Only a Claude Code, Codex or OpenCode agent can be named on a grant.')).toBeInTheDocument();
   });
 
+  // D252: a private pi, Qwen or Goose seat holds a grant only as a public agent.
+  // It is told that, not that its harness can't hold one.
+  it('an agent on a public-only harness that is not public is offered disabled, saying it must run as a public agent', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'public_only', sandbox: 'unknown' })]);
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText('Can use connectors only when it runs as a public agent.')).toBeInTheDocument();
+    expect(within(form).queryByText(/only Claude Code, Codex or OpenCode/)).not.toBeInTheDocument();
+  });
+
+  it('a mint refused because the seat is not public says so in the page\'s words', async () => {
+    const form = await openAdd([candidate()]);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'byo_public_only', message: 'raw' } } });
+    fireEvent.click(consentBox(form));
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByText('This agent can use connectors only when it runs as a public agent.')).toBeInTheDocument();
+  });
+
   it('an agent the roster hides still appears so it can be named', async () => {
     const form = await openAdd([candidate()], { p1: [scout], p2: [] });
     expect(within(form).getByRole('checkbox', { name: 'claude-code' })).toBeInTheDocument();

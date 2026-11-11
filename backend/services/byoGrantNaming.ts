@@ -41,7 +41,7 @@ export const grantHarnessNames = (): string => {
 
 export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
   | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_unreported_host' | 'byo_adapter_unsupported'
-  | 'byo_consent_required';
+  | 'byo_public_only' | 'byo_consent_required';
 
 export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_read_only: 'An agent that runs on your computer can be named only on a read-only grant, '
@@ -54,6 +54,10 @@ export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_unreported_host: "This agent's computer hasn't reported its sandbox yet, so no grant can be used from it. "
     + 'Try again in a minute, or update the Commonly CLI on that computer.',
   byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
+  // D252 walk: a private pi seat was told only Claude Code, Codex or OpenCode
+  // qualify, though a public pi seat had just been named. No platform here:
+  // where a public seat is confined differs by harness.
+  byo_public_only: 'This agent can use connectors only when it runs as a public agent.',
   byo_consent_required: 'Confirm that what this agent reads can leave through it.',
 }[reason]);
 
@@ -134,6 +138,11 @@ export const namingLiftsRefusal = (refusal: { reason?: unknown } | null | undefi
   Boolean(refusal) && refusal?.reason !== 'adapter_cannot_confine' && refusal?.reason !== PUBLIC_ONLY_REASON
 );
 
+/** A seat on a harness that holds a grant only as a public agent, and isn't one. */
+const isPublicOnlyRefusal = (refusal: { reason?: unknown } | null | undefined): boolean => (
+  refusal?.reason === PUBLIC_ONLY_REASON
+);
+
 type SandboxState = IRoomGrantByoConsent['agents'][number]['sandbox'];
 
 /**
@@ -203,6 +212,9 @@ export const checkByoNaming = async (input: {
     const judgement = await judgeSeatConfinement({ agentUserId: String(user._id), agentName, instanceId });
     if (judgement.hostUnreported) return { refusal: 'byo_unreported_host' };
     if (judgement.hostUnconfined) return { refusal: 'byo_unconfined_host' };
+    // pi, Qwen and Goose hold a grant only on a public seat: say that, not that
+    // the harness can't hold one at all.
+    if (isPublicOnlyRefusal(judgement.refusal)) return { refusal: 'byo_public_only' };
     if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) return { refusal: 'byo_adapter_unsupported' };
     // eslint-disable-next-line no-await-in-loop
     const installation = await AgentInstallation.findOne({
@@ -228,7 +240,7 @@ export interface ByoCandidate {
   instanceId: string;
   /** Can this grant name it at all; when not, `reason` says why. */
   nameable: boolean;
-  reason?: 'unconfined_host' | 'unreported_host' | 'adapter_unsupported';
+  reason?: 'unconfined_host' | 'unreported_host' | 'adapter_unsupported' | 'public_only';
   sandbox: IRoomGrantByoConsent['agents'][number]['sandbox'];
   /**
    * F179: the seat was placed on a machine whose daemon hasn't adopted it yet.
@@ -284,6 +296,8 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
       out.push({ ...base, nameable: false, reason: 'unreported_host', sandbox: 'unknown' });
     } else if (judgement.hostUnconfined) {
       out.push({ ...base, nameable: false, reason: 'unconfined_host', sandbox: 'unconfined' });
+    } else if (isPublicOnlyRefusal(judgement.refusal)) {
+      out.push({ ...base, nameable: false, reason: 'public_only', sandbox: 'unknown', ...awaiting });
     } else if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) {
       out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown', ...awaiting });
     } else {

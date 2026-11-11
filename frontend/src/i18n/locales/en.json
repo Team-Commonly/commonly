@@ -3257,6 +3257,7 @@
       "reasonUnconfinedHost": "Ran without a sandbox Commonly can enforce, so no grant can be used.",
       "reasonUnreportedHost": "Its computer hasn't reported its sandbox yet, so no grant can be used.",
       "reasonAdapterUnsupported": "Connectors need a sandboxed harness: only {{harnesses}} agents can be named.",
+      "reasonPublicOnly": "Can use connectors only when it runs as a public agent.",
       "namedHeading": "on your computer",
       "named": "{{agent}} runs outside Commonly",
       "namedNoSandbox": "{{agent}} runs outside Commonly, with no sandbox",
@@ -3273,7 +3274,8 @@
         "notOwned": "You can name only an agent you installed, and that no one else installed.",
         "unconfinedHost": "This agent ran without a sandbox Commonly can enforce, so no grant can be used from it.",
         "unreportedHost": "This agent's computer hasn't reported its sandbox yet, so no grant can be used from it. Try again in a minute, or update the Commonly CLI on that computer.",
-        "adapterUnsupported": "Only a {{harnesses}} agent can be named on a grant."
+        "adapterUnsupported": "Only a {{harnesses}} agent can be named on a grant.",
+        "publicOnly": "This agent can use connectors only when it runs as a public agent."
       }
     }
   },
