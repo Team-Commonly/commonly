@@ -288,12 +288,13 @@ export async function readRecordView(
   viewerId: string,
   db?: Store,
   page: ChainPage = {},
+  { agent = false }: { agent?: boolean } = {},
 ): Promise<RecordViewExport> {
   const probe = await readChain(ref, db, { limit: 1 });
   if (!probe) {
     return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null, redacted: 0, unlinked: 0, unopened: 0 };
   }
-  const key = [ref.podId, ref.taskId || '', probe.headSeq, probe.headHash, probe.openingsTotal, viewerId].join('|');
+  const key = [ref.podId, ref.taskId || '', probe.headSeq, probe.headHash, probe.openingsTotal, viewerId, agent ? 'agent' : 'person'].join('|');
   const hit = cachedView(key);
   let chain: CachedView['chain'] = hit?.chain ?? probe;
   let view = hit?.view;
@@ -308,7 +309,7 @@ export async function readRecordView(
       // eslint-disable-next-line no-await-in-loop -- one chain, read in order
       next = next.nextAfter === null ? null : await readChain(ref, db, { after: next.nextAfter });
     }
-    view = buildRecordView(stored, String(viewerId), openings);
+    view = buildRecordView(stored, String(viewerId), openings, { agent });
     rememberView(key, { view, chain });
   }
   const after = pageAfter(page);

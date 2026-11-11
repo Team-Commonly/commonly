@@ -263,6 +263,36 @@ describe('a joiner on an open pod', () => {
   });
 });
 
+// F366: an agent reads no person's id on committed lines either: no opening
+// for a task's people or an agent's owner, only its own and the audience.
+describe('an agent reader', () => {
+  test('gets no opening for a task\'s people or an acting agent\'s owner, and the view still verifies', async () => {
+    await appendRecord(REF, 'e', [
+      taskTransitionLine({ from: 'pending', to: 'claimed', actor: { type: 'human', id: ANA }, at: new Date() }),
+      taskTransitionLine({ from: 'pending', to: 'claimed', actor: agent, at: new Date() }),
+      taskTransitionLine({ from: 'claimed', to: 'done', doneBy: ANA, at: new Date() }),
+      ...lines.parkedCallLines(call, BEN, 'card-1'),
+    ]);
+    const view = await readRecordView(REF, 'f'.repeat(24), undefined, {}, { agent: true });
+    expect(view.jsonl).not.toContain(ANA);
+    expect(view.jsonl).not.toContain(BEN);
+    expect(view.jsonl).toContain(AGENT);
+    mockStore.openings.forEach((row) => expect(view.jsonl).not.toContain(row.salt));
+    expect(verifyRecord(view.jsonl).errors).toEqual([]);
+  });
+
+  test('opens its own id, and the audience, as the grant read gives it', async () => {
+    await appendRecord(REF, 'e0', [lines.grantIssuedLine({ ...grant, audience: [AGENT, BEN] }, { type: 'human', id: BEN })]);
+    await appendRecord(REF, 'e', [taskTransitionLine({ from: 'claimed', to: 'done', doneBy: AGENT, at: new Date() })]);
+    const view = await readRecordView(REF, AGENT, undefined, {}, { agent: true });
+    const [issued, done] = readRecord(view.jsonl);
+    expect(issued.data.scope.audience).toEqual([AGENT, BEN]);
+    expect(issued.data.issuedBy).not.toBe(BEN);
+    expect(done.data.doneBy).toBe(AGENT);
+    expect(verifyRecord(view.jsonl).errors).toEqual([]);
+  });
+});
+
 describe('a reader paging through a view', () => {
   const { readChain } = require('../../../repositories/recordChainRepository');
   const rebuilds = () => readChain.mock.calls.filter(([, , page]) => !page).length;

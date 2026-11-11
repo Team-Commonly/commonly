@@ -135,8 +135,16 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(new Set(lines.map((l) => `${l.podId}/${l.taskId}/${l.runId}`)).size).toBe(1);
     expect(lines[0].podId).toBe(String(pod._id));
 
-    // An agent member reads the same bytes; OTLP puts the task in one trace.
-    expect((await read(AGENT_TOKEN)).text).toBe(res.text);
+    // An agent member reads the agent view (F366): the same four lines, with
+    // the owner and doneBy held back, and a check that still passes. OTLP puts
+    // the task in one trace.
+    const agentRead = await read(AGENT_TOKEN);
+    expect(agentRead.status).toBe(200);
+    expect(agentRead.headers['x-record-view']).toBe('redacted');
+    expect(agentRead.text).not.toContain(String(owner._id));
+    expect(agentRead.text).toContain(String(agent._id));
+    expect(verifyRecord(agentRead.text)).toMatchObject({ ok: true, entries: 4 });
+    expect(readRecord(agentRead.text).map((l) => l.kind)).toEqual(lines.map((l) => l.kind));
     const otlp = await read(AGENT_TOKEN, pod._id, 'TASK-1', '?format=otlp');
     expect(otlp.status).toBe(200);
     expect(otlp.body.resourceSpans[0].scopeSpans[0].spans[0]).toMatchObject({ name: 'seats.run' });

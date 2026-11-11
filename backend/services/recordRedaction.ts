@@ -53,8 +53,16 @@ type Entry = Record<string, unknown> & { kind?: string; actor?: Actor | null; da
 const NO_DECIDER_KINDS = new Set(['task.claimed', 'task.released', 'task.done', 'tool.call', 'tool.update']);
 const NOT_A_PERSON = new Set(['policy']);
 
+/**
+ * Who reads the view. An agent reads no person's id but its own, on any kind
+ * (F366, F271(d)): the task and tool lines' people and an acting agent's owner
+ * are held back from it too.
+ */
+export type RecordViewer = { id: string; agent?: boolean };
+
 /** The entry as this viewer may read it, and the paths that changed. */
-const redactEntry = (stored: Entry, viewerId: string): { entry: Entry; fields: string[] } => {
+const redactEntry = (stored: Entry, viewer: RecordViewer): { entry: Entry; fields: string[] } => {
+  const viewerId = viewer.id;
   const entry = JSON.parse(JSON.stringify(stored)) as Entry;
   const data = entry.data || {};
   const fields: string[] = [];
@@ -72,9 +80,27 @@ const redactEntry = (stored: Entry, viewerId: string): { entry: Entry; fields: s
     if (actor.onBehalfOf) actor.onBehalfOf.id = hide(actor.onBehalfOf.id, 'actor.onBehalfOf.id') as string;
     if (actor.name && actor.id === REDACTED_ID) { delete actor.name; fields.push('actor.name'); }
   };
+  // An agent's own id isn't a person's: an agent actor keeps it.
+  const hidePeopleFromAgent = () => {
+    const { actor } = entry;
+    if (!actor) return;
+    if (actor.type === 'human') {
+      actor.id = hide(actor.id, 'actor.id') as string;
+      if (actor.name && actor.id === REDACTED_ID) { delete actor.name; fields.push('actor.name'); }
+    }
+    if (actor.owner) actor.owner = hide(actor.owner, 'actor.owner') as string;
+    if (actor.onBehalfOf) actor.onBehalfOf.id = hide(actor.onBehalfOf.id, 'actor.onBehalfOf.id') as string;
+  };
   const { kind = '' } = entry;
-  if (NO_DECIDER_KINDS.has(kind)) return { entry, fields };
+  if (NO_DECIDER_KINDS.has(kind)) {
+    if (viewer.agent) {
+      hidePeopleFromAgent();
+      if ('doneBy' in data) data.doneBy = hide(data.doneBy, 'data.doneBy');
+    }
+    return { entry, fields };
+  }
   if (kind === 'permission.requested') {
+    if (viewer.agent) hidePeopleFromAgent();
     const askedOf = data.askedOf as { id?: string; role?: string } | undefined;
     if (askedOf && askedOf.role !== 'policy') askedOf.id = hide(askedOf.id, 'data.askedOf.id') as string;
   } else if (kind === 'permission.decided' || kind === 'decision.ruled') {
@@ -113,13 +139,16 @@ export const attachOpenings = (line: string, rows: Array<Pick<ChainOpening, 'com
 /**
  * Whether an open pod's reader gets a committed id. The task lines' people and
  * the agent asking stay readable, as on a plain line; the rest go to the
- * person they name.
+ * person they name. An agent gets only its own, and the audience, which the
+ * grant read gives it as effectiveAudience.
  */
-const opensTo = (row: ChainOpening, kind: string, viewerId: string): boolean => (
-  NO_DECIDER_KINDS.has(kind)
-  || (kind === 'permission.requested' && row.field.startsWith('actor.'))
+const opensTo = (row: ChainOpening, kind: string, viewer: RecordViewer): boolean => (
+  (!viewer.agent && (
+    NO_DECIDER_KINDS.has(kind)
+    || (kind === 'permission.requested' && row.field.startsWith('actor.'))
+  ))
   || row.field.startsWith('data.scope.audience.')
-  || row.value === viewerId || row.subject === viewerId
+  || row.value === viewer.id || row.subject === viewer.id
 );
 
 export type RecordView = {
@@ -142,7 +171,13 @@ export type RecordView = {
  * every earlier hash shown; everything else is served with `hash: null`.
  * A stored line that isn't JSON can't be redacted, so this throws.
  */
-export const buildRecordView = (stored: string[], viewerId: string, openings: ChainOpening[] = []): RecordView => {
+export const buildRecordView = (
+  stored: string[],
+  viewerId: string,
+  openings: ChainOpening[] = [],
+  { agent = false }: { agent?: boolean } = {},
+): RecordView => {
+  const viewer: RecordViewer = { id: viewerId, agent };
   const lines: string[] = [];
   let hashShown = true;
   let redacted = 0;
@@ -152,11 +187,11 @@ export const buildRecordView = (stored: string[], viewerId: string, openings: Ch
   openings.forEach((row) => bySeq.set(row.seq, [...(bySeq.get(row.seq) || []), row]));
   for (const [index, line] of stored.entries()) {
     const { salt, ...parsed } = JSON.parse(line) as Entry & { salt?: string };
-    const { entry, fields } = redactEntry(parsed, viewerId);
+    const { entry, fields } = redactEntry(parsed, viewer);
     const rows = bySeq.get(index + 1) || [];
     // A commitment that left with held-back data takes its opening with it.
     const served = JSON.stringify(entry);
-    const opened = rows.filter((row) => opensTo(row, entry.kind || '', viewerId) && served.includes(row.commitment.trim()));
+    const opened = rows.filter((row) => opensTo(row, entry.kind || '', viewer) && served.includes(row.commitment.trim()));
     unopened += rows.length - opened.length;
     if (fields.length === 0 && hashShown) {
       lines.push(attachOpenings(line, opened));
