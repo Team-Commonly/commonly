@@ -15,8 +15,9 @@ jest.mock('../utils/usageEvents', () => ({ trackUsage: (...args: unknown[]) => m
 const renderBar = (steps: { connect: boolean; firstTask: boolean }) => {
   const onConnect = jest.fn();
   const onFirstTask = jest.fn();
-  const view = render(<V2GetStarted steps={steps} podId="pod-1" onConnect={onConnect} onFirstTask={onFirstTask} />);
-  return { onConnect, onFirstTask, ...view };
+  const onOpenBoard = jest.fn();
+  const view = render(<V2GetStarted steps={steps} podId="pod-1" onConnect={onConnect} onFirstTask={onFirstTask} onOpenBoard={onOpenBoard} />);
+  return { onConnect, onFirstTask, onOpenBoard, ...view };
 };
 
 beforeEach(() => mockTrack.mockReset());

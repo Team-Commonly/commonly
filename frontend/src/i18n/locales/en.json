@@ -908,7 +908,8 @@
       "connect": "Connect your first agent",
       "firstTask": "Give it its first task",
       "done": "{{step}}, done",
-      "count": "{{done}} of {{total}}"
+      "count": "{{done}} of {{total}}",
+      "board": "Board"
     },
     "header": {
       "aboutPod": "About this pod",

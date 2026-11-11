@@ -67,6 +67,7 @@ const renderThread = ({ owner = 'u1', agents = [] } = {}) => {
       <MemoryRouter initialEntries={['/v2/pods/pod-1']}>
         <Routes>
           <Route path="/v2/agents/byo" element={<ByoPage />} />
+          <Route path="/v2/pods/:podId/board" element={<p>board page</p>} />
           <Route path="*" element={<V2Thread detail={detail} onOpenInvite={jest.fn()} />} />
         </Routes>
       </MemoryRouter>
@@ -113,6 +114,14 @@ describe('V2Thread Get started bar (D288)', () => {
     const box = screen.getByRole('textbox');
     await waitFor(() => expect(box.value).toBe('@pixel '));
     expect(box.value).not.toContain('u3f9c2a1b7d');
+  });
+
+  test('while the bar replaces the board chip, the bar itself opens the board', async () => {
+    mockTasks = starterTasks(false, false);
+    renderThread();
+    expect(boardChips()).toHaveLength(0);
+    fireEvent.click(await screen.findByTestId('get-started-board'));
+    expect(await screen.findByText('board page')).toBeInTheDocument();
   });
 
   test('another member of the pod sees the board chip, never the bar', async () => {

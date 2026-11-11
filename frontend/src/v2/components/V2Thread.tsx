@@ -2180,6 +2180,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             podId={pod._id}
             onConnect={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
             onFirstTask={startFirstTask}
+            onOpenBoard={() => navigate(`/v2/pods/${pod._id}/board`)}
           />
         )}
 

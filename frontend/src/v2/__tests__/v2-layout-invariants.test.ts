@@ -459,6 +459,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toContain('flex-wrap: wrap');
     expect(phone).toContain('flex: 1 1 100%');
     expect(ruleBody(pane, '.v2-root button.v2-get-started__step--now:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+    // The bar stands in for the board chip, so its board button is never hidden on a phone.
+    expect(ruleBody(pane, '.v2-root button.v2-get-started__board:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+    expect(phone).not.toMatch(/__board[^{]*\{[^}]*display:\s*none/);
   });
 
   test('agent Control reconnect remains an ink action with a focus edge', () => {

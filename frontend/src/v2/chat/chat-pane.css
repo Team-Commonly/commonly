@@ -528,13 +528,19 @@
 .v2-root button.v2-get-started__step--done { text-decoration: line-through; text-decoration-color: var(--v2-border); }
 .v2-get-started__step--done .v2-get-started__n { background: var(--v2-accent-soft); color: var(--v2-accent-text); }
 .v2-get-started__count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+/* The bar stands in for the board chip, so it keeps the way to the board. */
+.v2-root button.v2-get-started__board { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; margin-left: 4px; background: transparent; border: 1px solid var(--v2-border-soft); border-radius: 6px; color: var(--v2-text-muted); font: 500 12px/1 var(--v2-font); cursor: pointer; white-space: nowrap; }
+.v2-root button.v2-get-started__board:hover { color: var(--v2-text-primary); border-color: var(--v2-border); }
+.v2-root button.v2-get-started__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
 /* Phone (artboard 390): the title on its own line, then each step full width
    at 36px; the count is dropped. */
 @media (max-width: 760px) {
   .v2-get-started { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
-  .v2-get-started__title { width: 100%; margin: 0 0 2px; }
-  .v2-root button.v2-get-started__step { height: 36px; flex: 1 1 100%; }
+  .v2-get-started__title { flex: 1 1 auto; margin: 0 0 2px; }
+  /* The board button shares the title's line; the steps wrap below at full width. */
+  .v2-root button.v2-get-started__board { order: 1; margin-left: 0; }
+  .v2-root button.v2-get-started__step { order: 2; height: 36px; flex: 1 1 100%; }
   .v2-root button.v2-get-started__step > svg:last-child { margin-left: auto; }
   .v2-get-started__sp, .v2-get-started__count { display: none; }
 }

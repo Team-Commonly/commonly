@@ -17,9 +17,11 @@ interface Props {
   podId: string;
   onConnect: () => void;
   onFirstTask: () => void;
+  /** The bar takes the board chip's place, so it carries the way to the board. */
+  onOpenBoard: () => void;
 }
 
-const V2GetStarted: React.FC<Props> = ({ steps, podId, onConnect, onFirstTask }) => {
+const V2GetStarted: React.FC<Props> = ({ steps, podId, onConnect, onFirstTask, onOpenBoard }) => {
   const { t } = useTranslation();
   if (steps.connect && steps.firstTask) return null;
   const current: Step = steps.connect ? 'first-task' : 'connect';
@@ -58,6 +60,10 @@ const V2GetStarted: React.FC<Props> = ({ steps, podId, onConnect, onFirstTask })
       })}
       <span className="v2-get-started__sp" />
       <span className="v2-get-started__count">{t('podChat.getStarted.count', { done, total: 2 })}</span>
+      <button type="button" className="v2-get-started__board" onClick={onOpenBoard} data-testid="get-started-board">
+        <ShellGlyph name="board" size={13} />
+        {t('podChat.getStarted.board')}
+      </button>
     </div>
   );
 };
