@@ -389,7 +389,8 @@ router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle(
 export const BATCH_MINT_MAX = 50;
 const BATCH_MINT_CONCURRENCY = 8;
 // A plain upload file name: no path separator, no `..`, no control characters,
-// at most 200 characters. Uploads are named `<user>-<time>-<rand>.<ext>`.
+// at most 200 characters. Uploads are named `<user>-<time>-<rand>.<ext>`. The
+// single mint and the read check names the same way.
 const isBatchMintName = (name: string): boolean => name.length > 0
   && name.length <= 200
   && !/[/\\]/.test(name) && !name.includes('..')
@@ -456,6 +457,7 @@ router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res)
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
     if (!req.userId) return res.status(401).json({ msg: 'auth required' });
+    if (!isBatchMintName(fileName)) return res.status(403).json({ msg: 'no access to this attachment' });
 
     const allowed = await canReadAttachment(fileName, req.userId);
     if (!allowed) return res.status(403).json({ msg: 'no access to this attachment' });
@@ -526,6 +528,10 @@ router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (re
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
+    // Express decodes %2F inside a param, so `qr%2F…` arrives here as `qr/…`.
+    // Keys with a slash belong to other routes' own checks (pod QR codes), and
+    // with no File row behind them this route would serve them as public.
+    if (!isBatchMintName(fileName)) return res.status(404).json({ msg: 'File not found' });
 
     // ADR-002 Phase 1b "flip" — authorize POD-SCOPED files (see
     // authorizePodFile). Un-scoped files (avatars) stay publicly readable.

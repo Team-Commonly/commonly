@@ -98,6 +98,19 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
 
   // TASK-315: the served type comes from the allowlisted extension, never the
   // type the uploading client declared, and the browser may not sniff past it.
+  // F406: pod QR codes live in the same store under `qr/<pod>/<rand>.<ext>`.
+  // Express decodes %2F in the param, so a slash name must stop here instead of
+  // being served as an un-scoped (public) file.
+  it.each([
+    ['qr%2Faaaaaaaaaaaaaaaaaaaaaaaa%2Fabc.png'],
+    ['..%2Fsecret.png'],
+    ['a%5Cb.png'],
+  ])('a name with a path separator is not served: %s', async (name) => {
+    File.findByFileName.mockResolvedValue(null);
+    await request(app).get(`/api/uploads/${name}`).expect(404);
+    expect(mockStore.get).not.toHaveBeenCalled();
+  });
+
   describe('served headers', () => {
     const fromDriver = (mime) => mockStore.get.mockResolvedValue({
       // '{}' parses as JSON, which supertest does for the json row.
