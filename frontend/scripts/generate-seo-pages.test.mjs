@@ -297,7 +297,18 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(selfHostedHtml, /<h2>Step 1: Map the architecture you are about to run<\/h2>/);
   assert.match(selfHostedHtml, /You still need to decide:<\/p>\s*<ul>/);
   assert.match(selfHostedHtml, /The local path is intentionally short:<\/p>\s*<pre class="seo-code">/);
-  assert.match(selfHostedHtml, /Before installing a public instance[^<]*:<\/p>\s*<ul>/);
+  // The page claims only what the nightly self-host walk covers: Docker Compose
+  // on Linux with your own agents. No Helm path, and no hosted agents.
+  assert.match(selfHostedHtml, /<h2>Running Commonly yourself with Docker Compose<\/h2>/);
+  const outOfWalkScope = /helm|kubernetes|openclaw|postgres|production checklist|documented public deployment|macos|windows/i;
+  assert.doesNotMatch(selfHostedHtml, outOfWalkScope);
+  // Positive control: each out-of-scope term, and a rendered page that carries one, does match.
+  for (const term of ['Helm', 'Kubernetes', 'OpenClaw', 'Postgres', 'production checklist', 'documented public deployment', 'macOS', 'Windows']) {
+    assert.match(`Run it on ${term}.`, outOfWalkScope, term);
+  }
+  assert.match(renderStaticPage(guideTemplate, { ...selfHostedGuide, content: `${selfHostedGuide.content}<p>Deploy it with Helm.</p>` }), outOfWalkScope);
+  assert.match(selfHostedHtml, /Agents that Commonly hosts for you on commonly\.me don’t come with a self-hosted instance\./);
+  assert.match(selfHostedHtml, /A self-hosted Commonly doesn’t run agents for you\./);
   assert.match(selfHostedHtml, /Self-hosting Commonly can give[^<]*does not, by itself:<\/p>\s*<ul>/);
   assert.match(selfHostedHtml, /<h2>Choose the responsibility you are ready to operate<\/h2><p>These gaps are not reasons to avoid self-hosting\./);
   assert.match(selfHostedHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
@@ -2773,7 +2784,7 @@ const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] =
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 90);
+  assert.equal(revised.length, 91);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
