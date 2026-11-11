@@ -56,6 +56,17 @@ describe('registry presets', () => {
     process.env.GEMINI_API_KEY = originalGemini;
   });
 
+  it('no openclaw preset tells its agent to reach for the gh skill', () => {
+    // The gateway that carried gh is retired and the github skill left the
+    // presets (F413), so an "Or `gh` ..." line points at a tool that is gone
+    // (F416). Presets that delegate gh to a coding runtime say so explicitly.
+    const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const offenders = PRESET_DEFINITIONS
+      .filter((preset) => /Or `gh`/.test(`${preset.heartbeatTemplate || ''}\n${preset.soulTemplate || ''}`))
+      .map((preset) => preset.id);
+    expect(offenders).toEqual([]);
+  });
+
   it('no preset PATCHes a task to claimed, because a seat cannot PATCH a claim', () => {
     const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
     const serialized = JSON.stringify(PRESET_DEFINITIONS);
