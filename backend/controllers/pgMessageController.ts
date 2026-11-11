@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { platformAuthoredKind } from '../services/platformAuthoredMessage';
 
 // eslint-disable-next-line global-require
 const PGPod = require('../models/pg/Pod');
@@ -190,15 +191,18 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 exports.updateMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { content } = req.body as { content?: string };
-    const message = await PGMessage.findById(req.params.id) as { user_id?: string; message_type?: string } | null;
+    const message = await PGMessage.findById(req.params.id) as
+      { user_id?: string; message_type?: string; author_kind?: string | null; payload?: unknown } | null;
     if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
     }
-    // A system line's text is the platform's, though it is stored under the
-    // account it is about (F434), so no one may rewrite it (F438).
-    if (message.message_type === 'system') {
-      res.status(403).json({ msg: 'System lines cannot be edited', code: 'system_line' });
+    // Text the platform wrote is stored under the account it is about or
+    // speaks for, so no one may rewrite it: not a system line (F438), and not
+    // an approval card's fallback or a kernel post (F440).
+    const platformKind = platformAuthoredKind(message);
+    if (platformKind) {
+      res.status(403).json({ msg: 'What the platform posted cannot be edited', code: platformKind });
       return;
     }
     if (message.user_id !== req.user?.id) {
@@ -227,7 +231,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const message = await PGMessage.findById(id) as
-      { user_id?: string; pod_id?: string; message_type?: string } | null;
+      { user_id?: string; pod_id?: string; message_type?: string; author_kind?: string | null; payload?: unknown } | null;
     if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
@@ -239,16 +243,16 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    // Same rule as DELETE /api/messages/:id (F438): a system line confers
-    // nothing on the account it is stored under. An agent never deletes one;
-    // a person does only as the pod's owner.
-    const isSystemLine = message.message_type === 'system';
-    if (isSystemLine && req.botCaller) {
-      res.status(403).json({ msg: 'Agents may not delete system lines', code: 'system_line' });
+    // Same rule as DELETE /api/messages/:id (F438, F440): what the platform
+    // posted confers nothing on the account it is stored under. An agent never
+    // deletes it; a person does only as the pod's owner.
+    const platformKind = platformAuthoredKind(message);
+    if (platformKind && req.botCaller) {
+      res.status(403).json({ msg: 'Agents may not delete what the platform posted', code: platformKind });
       return;
     }
 
-    if (isSystemLine || message.user_id !== userId) {
+    if (platformKind || message.user_id !== userId) {
       // F183: the owner is Mongo's `createdBy`, never PG `pods.created_by`.
       // The PG column is a mirror and drifts (39 production pods disagreed on
       // 2026-11-05), so trusting it let a wrong owner delete other people's
