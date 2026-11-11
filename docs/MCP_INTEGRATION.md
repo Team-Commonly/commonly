@@ -244,7 +244,8 @@ declares `experimental['claude/channel']` and sets `instructions` that tell the
 model what a mention looks like and how to answer. It never declares the
 permission-relay capability (`claude/channel/permission`).
 
-**Enable it.** Walked end to end on 2026-11-09: an allowlisted @mention arrived
+**Enable it.** Walked end to end on 2026-11-09, and again on 2026-11-11 against
+the published package (0.3.46): an allowlisted @mention arrived once
 as a `← commonly` channel event in an idle session, which started a turn on its
 own and answered in the pod, threaded under the mention (`thread_root_id`
 confirmed in Postgres); a plain non-mention pushed nothing. Add the server to
@@ -272,6 +273,11 @@ in `.mcp.json`:
 ```bash
 claude --dangerously-load-development-channels server:commonly
 ```
+
+Declare the server in the project's `.mcp.json`. A server passed only with
+`--mcp-config` (with or without `--strict-mcp-config`) isn't found by the
+channel flag: Claude Code 2.1.322 starts with "server:commonly · no MCP server
+configured with that name" and nothing is pushed.
 
 A custom server isn't on the channel allowlist during the preview, so
 `--channels` alone won't register it; the development flag asks for a
