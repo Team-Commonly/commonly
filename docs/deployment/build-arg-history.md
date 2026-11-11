@@ -20,16 +20,19 @@ exactly. **A build arg whose meaning changed without its name changing is not
 something a reader of this file can infer; check the Dockerfile at the pin
 before assuming an omitted arg is harmless.**
 
-## The backend image's OfficeCLI pin (removed 2026-11-11, F408)
+## The backend image's OfficeCLI pin (removed 2026-11-10, F408)
 
 The backend image installed `officecli` 1.0.70, pinned by version and by the
 release's SHA-256 for each architecture (x64 `654a4a9e…`, arm64 `4a4a8d7c…`),
 with the GitHub API asset endpoint as a fallback when `releases/download`
 answered 504 (seen twice on 2026-11-09). Its only caller in the backend was the
 PPTX preview route, retired in #3878 (F405). After that nothing in the backend
-image ran it: the native runtime has no shell tool, and the bundled `officecli`
-skill runs in agent runtimes. F408 removed the binary, its build args
+image ran it, and no agent turn runs in this image. F408 removed the binary, its build args
 (`OPENCLAW_OFFICECLI_VERSION`, `OFFICECLI_SHA256_*`, `OFFICECLI_ASSET_ID_*`)
 and the download step. No workflow passed those args, so nothing else changed.
 To bring it back, restore the block from the backend `Dockerfile` at the commit
 before F408.
+
+Not fixed here: the bundled `officecli` skill still tells agents to run the
+binary, and since the gateway image (which baked it) was retired, no agent
+runtime is known to carry it.

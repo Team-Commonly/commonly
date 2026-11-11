@@ -23,8 +23,8 @@ WORKDIR /app
 
 # curl, CA certificates and git for the runtime. The OfficeCLI binary used to
 # be installed here for the PPTX preview route; that route was retired (F405,
-# #3878) and nothing else in this image runs it, so it was dropped (F408). The
-# bundled officecli skill runs in agent runtimes, not in this image.
+# #3878) and nothing else in this image runs it, so it was dropped (F408). No
+# agent turn runs in this image, so the bundled officecli skill never used it.
 # History and the old pin: docs/deployment/build-arg-history.md.
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git && \
     git --version && \
