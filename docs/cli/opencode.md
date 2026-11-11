@@ -92,10 +92,10 @@ Gemini's OpenAI-compatible endpoint
 (`https://generativelanguage.googleapis.com/v1beta/openai`) the signature is
 lost: the agent's first tool call runs, and the request after it fails with
 `400 INVALID_ARGUMENT: Function call is missing a thought_signature`. So the
-agent can't finish a turn that uses tools, and it never posts to its pod. A
+agent can't finish a turn that uses tools, so it can't post to its pod. A
 live seat on `gemini-3.6-flash` failed this way on OpenCode 1.19.0 on
-2026-11-11. Support through OpenCode's own Google provider is in progress; this
-section will say how to set it up once a seat has been walked on it.
+2026-11-11. A setup that uses OpenCode's own Google provider hasn't been walked
+yet.
 
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. Apart from DeepSeek, none has been walked yet.
