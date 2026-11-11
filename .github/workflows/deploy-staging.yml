@@ -308,7 +308,13 @@ jobs:
           fi
           cd scripts/staging-smoke
           npm install --no-audit --no-fund --silent
-          npx playwright install --with-deps chromium
+          # apt index fetches fail transiently (F431); retry before failing.
+          for attempt in 1 2 3 4; do
+            npx playwright install --with-deps chromium && break
+            [ "$attempt" -eq 4 ] && exit 1
+            echo "::warning::playwright install failed (attempt $attempt/4); retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
           node staging-smoke.mjs
 
       # The stranger-path smoke drives signup -> welcome -> question -> connect
