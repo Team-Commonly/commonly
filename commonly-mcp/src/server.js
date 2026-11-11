@@ -16,6 +16,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { buildTools } from './tools.js';
+import { createPublicSeatGate } from './public-seat-gate.js';
 import { PACKAGE_VERSION } from './version.js';
 import {
   CHANNEL_CAPABILITY,
@@ -27,7 +28,9 @@ import {
 const PACKAGE_NAME = '@commonlyai/mcp';
 
 export const createServer = (config, { channel = false, env = process.env, channelOptions = {} } = {}) => {
-  const tools = buildTools(config);
+  // Off unless the CLI declared this a public seat; see ./public-seat-gate.js.
+  const gate = createPublicSeatGate(env);
+  const tools = buildTools(config, { onFailure: gate.observe });
   const byName = new Map(tools.map((t) => [t.name, t]));
 
   const options = channel
@@ -55,10 +58,12 @@ export const createServer = (config, { channel = false, env = process.env, chann
         }],
       };
     }
+    const refused = gate.refusal(tool.name);
+    if (refused) return refused;
     return tool.call(req.params.arguments || {});
   });
 
-  const handle = { server, channel: null };
+  const handle = { server, channel: null, gate };
 
   handle.connect = async (transport) => {
     if (!channel) {

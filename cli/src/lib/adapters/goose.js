@@ -189,7 +189,9 @@ export const extensionArgs = (servers, ctx) => {
     }
     const env = Object.entries(delivery.env).map(([name, value]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error('goose adapter: invalid MCP environment key');
-      if (!['COMMONLY_TOKEN_FILE', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'].includes(name)) {
+      // COMMONLY_MCP_PUBLIC_SEAT is the constant '1' (public-seat-mcp-flag.js),
+      // never a secret, so it may ride either path.
+      if (!['COMMONLY_TOKEN_FILE', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL', 'COMMONLY_MCP_PUBLIC_SEAT'].includes(name)) {
         throw new Error(`goose adapter: MCP server ${server.name} has ${name}, which cannot safely ride a CLI flag`);
       }
       const resolved = substitute(value, ctx);

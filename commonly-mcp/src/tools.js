@@ -173,12 +173,14 @@ const UI_CARD_CATALOGUE = JSON.parse(readFileSync(new URL('./ui-card-catalogue.j
  * Each entry: { name, description, inputSchema, call(args, config) }
  * `call` returns an MCP-shaped `{ content }` or `{ isError, content }`.
  */
-export const buildTools = (config) => {
+export const buildTools = (config, { onFailure } = {}) => {
   const wrap = (fn) => async (args = {}) => {
     try {
       const result = await fn(args);
       return ok(result);
     } catch (e) {
+      // The public-seat gate reads every failure (public-seat-gate.js).
+      onFailure?.(e);
       return err(e);
     }
   };

@@ -18,6 +18,27 @@ import { PACKAGE_VERSION } from './version.js';
 
 const USER_AGENT = `commonly-mcp/${PACKAGE_VERSION}`;
 
+/**
+ * The request never got an answer: the connection failed, timed out or broke
+ * mid-reply. The message is the underlying one, so what a tool reports is
+ * unchanged; the class lets the public-seat gate tell "Commonly is
+ * unreachable" from a mistake in the call itself.
+ */
+export class TransportError extends Error {
+  constructor(cause) {
+    super(cause?.message || String(cause), { cause });
+    this.name = 'TransportError';
+  }
+}
+
+const transported = async (exchange) => {
+  try {
+    return await exchange();
+  } catch (error) {
+    throw new TransportError(error);
+  }
+};
+
 export class HttpError extends Error {
   constructor(status, body, message) {
     super(message || `HTTP ${status}`);
@@ -152,16 +173,16 @@ export const request = async (config, {
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await _fetchImpl(url, {
+  const res = await transported(() => _fetchImpl(url, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
-  });
+  }));
 
   // Read body once. Prefer JSON; fall back to text for non-JSON error pages
   // (Cloudflare 1010, gateway 502, etc.) so the agent sees the real signal.
-  const raw = await res.text();
+  const raw = await transported(() => res.text());
   let parsed;
   try {
     parsed = raw ? JSON.parse(raw) : null;
@@ -196,7 +217,7 @@ export const requestUpload = async (config, {
     if (v !== undefined && v !== null) form.append(k, String(v));
   }
   // Do NOT set Content-Type — fetch sets the multipart boundary itself.
-  const res = await _fetchImpl(url, {
+  const res = await transported(() => _fetchImpl(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.token}`,
@@ -204,8 +225,8 @@ export const requestUpload = async (config, {
       Accept: 'application/json',
     },
     body: form,
-  });
-  const raw = await res.text();
+  }));
+  const raw = await transported(() => res.text());
   let parsed;
   try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = raw; }
   if (!res.ok) {
