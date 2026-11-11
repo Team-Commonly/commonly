@@ -1449,8 +1449,9 @@ const V2AgentBYO: React.FC = () => {
     }
     setIssued(null);
   };
-  // The daemon block lives in Other ways to connect on both the start form and
-  // the result page, so the stop-on-close line can point to it from the result.
+  // The daemon block leads the start form in BYO mode (F370) and otherwise sits
+  // in Other ways to connect, on the start form and the result page, so the
+  // stop-on-close line can point to it from the result.
   // On Windows `daemon install` registers a logon task (D245).
   const addComputerBlock = machines.length === 0 ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
@@ -1750,9 +1751,6 @@ const V2AgentBYO: React.FC = () => {
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
           {hostedHeldLine}
-          {/* F370: with no computer yet, the daemon line leads. It is the path
-              that keeps an agent running; the run command below is the quick try. */}
-          {mode === 'byo' && addComputerBlock}
           {(hostedOffered || machines.length > 0) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
@@ -1806,6 +1804,10 @@ const V2AgentBYO: React.FC = () => {
             </div>
             </>
           )}
+          {/* F370: with no computer yet, the daemon line leads the BYO form, after
+              the mode picker when there is one. It is the path that keeps an agent
+              running; the run command below is the quick try. */}
+          {mode === 'byo' && addComputerBlock}
           {mode === 'machine' && (
             <label className={`v2-byo__field${errorField === 'machine' ? ' v2-byo__field--error' : ''}`}>
               <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
