@@ -1068,6 +1068,49 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
   }
 });
 
+// A GroupMe token stays on the row when a save leaves the field blank, so this
+// is the one way to remove it short of deleting the connector. Removing it
+// turns agent access off, since nothing can read the group without it.
+//
+// A save writes the secret, then the row. So this deletes the secret first,
+// and only while it still holds the write read here (a re-save keeps the ref
+// but changes the mark), then drops the row's ref only while the row still
+// holds the ref read here. A save that lands first wins with 409. A remove that
+// runs entirely between a save's two writes can still leave the row naming a
+// deleted secret; that fails closed (the reader refuses), and a save mends it.
+router.delete('/:id/access-token', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { id } = req.params || {};
+    if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid integration id' });
+    }
+    const integrationId = new Types.ObjectId(id);
+    const integration = await Integration.findById(integrationId) as {
+      type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { accessTokenRef?: string };
+    } | null;
+    if (!integration) return res.status(404).json({ message: 'Integration not found' });
+    if (integration.type !== 'groupme') return res.status(400).json({ message: 'Only a GroupMe connector stores an access token' });
+    if (!(await canDeleteIntegration(integration, req.user?.id || ''))) return res.status(403).json({ message: 'Access denied' });
+    const changed = () => res.status(409).json({ message: 'The connector changed; reload and try again' });
+    const ref = String(integration.config?.accessTokenRef || '') || undefined;
+    if (ref) {
+      const mark = await connectorSecrets.writeMarkOf(ref);
+      // A missing secret has nothing to delete; the row still lets go of its ref.
+      if (mark && !(await connectorSecrets.revokeIfUnchanged(ref, mark))) return changed();
+    }
+    const updated = await Integration.findOneAndUpdate(
+      { _id: integrationId, 'config.accessTokenRef': ref ? ref : { $exists: false } },
+      { $unset: { 'config.accessTokenRef': 1 }, $set: { 'config.agentAccessEnabled': false } },
+      { new: true },
+    );
+    if (!updated) return changed();
+    return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
+  } catch (error) {
+    console.error('Error removing GroupMe access token:', (error as Error).message);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};

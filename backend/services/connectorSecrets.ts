@@ -237,6 +237,24 @@ export const revokeOwnWrite = async (ref: string | undefined, writeGeneration: n
   await ConnectorSecret.deleteOne({ _id: ref, writeGeneration });
 };
 
+/**
+ * A mark that changes on every write of `ref`, or null when nothing is stored.
+ * It is the IV, which `encrypt` draws fresh for each write. A key rewrap
+ * changes it too, which a caller treats as "changed, try again". Reads no
+ * material. For writers without a generation (a GroupMe token re-save
+ * overwrites the same record, so its ref never changes).
+ */
+export const writeMarkOf = async (ref: string): Promise<string | null> => {
+  const secret = await ConnectorSecret.findById(ref).select('iv').lean() as Pick<IConnectorSecret, 'iv'> | null;
+  return secret ? String(secret.iv) : null;
+};
+
+/** Delete `ref` only while it still holds the write `mark` names. True if it deleted. */
+export const revokeIfUnchanged = async (ref: string, mark: string): Promise<boolean> => {
+  const result = await ConnectorSecret.deleteOne({ _id: ref, iv: mark });
+  return result.deletedCount === 1;
+};
+
 export const rewrap = async (ref: string): Promise<string> => {
   const secret = await ConnectorSecret.findById(ref) as IConnectorSecret | null;
   if (!secret) throw new ConnectorSecretNotFoundError(ref);
@@ -263,6 +281,8 @@ module.exports = {
   writeGenerationOf,
   revoke,
   revokeOwnWrite,
+  writeMarkOf,
+  revokeIfUnchanged,
   rewrap,
   listWithUnavailableKey,
 };

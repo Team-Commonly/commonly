@@ -1407,7 +1407,34 @@ const ChatRoom = () => {
             await refreshPodIntegrations();
         } catch (err) {
             console.error('Error saving GroupMe integration:', err);
-            setGroupmeError('Failed to save GroupMe integration.');
+            // A refusal the server explains (a token it needs) says so; the rest stay generic.
+            const serverMessage = (err as { response?: { status?: number; data?: { message?: unknown } } })?.response;
+            setGroupmeError(serverMessage?.status === 403 && typeof serverMessage.data?.message === 'string'
+                ? serverMessage.data.message
+                : 'Failed to save GroupMe integration.');
+        } finally {
+            setGroupmeSaving(false);
+        }
+    };
+
+    // The saved token is kept on a blank save, so removing it is its own action.
+    // The server turns agent access off with it.
+    const handleRemoveGroupmeToken = async () => {
+        if (!groupmeIntegration?._id) return;
+        setGroupmeSaving(true);
+        setGroupmeError('');
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.delete(`/api/integrations/${groupmeIntegration._id}/access-token`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setGroupmeIntegration(res.data);
+            setGroupmeAccessToken('');
+            setGroupmeAgentAccessEnabled(false);
+            await refreshPodIntegrations();
+        } catch (err) {
+            console.error('Error removing GroupMe access token:', err);
+            setGroupmeError('Failed to remove the saved access token.');
         } finally {
             setGroupmeSaving(false);
         }
@@ -3851,6 +3878,18 @@ const ChatRoom = () => {
                                                 ? 'Saved. Leave blank to keep it.'
                                                 : 'Required only when enabling agent access.'}
                                         />
+                                        {groupmeIntegration?.config?.accessTokenSaved === true && (
+                                            <Box>
+                                                <Button
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={handleRemoveGroupmeToken}
+                                                    disabled={groupmeSaving}
+                                                >
+                                                    Remove saved token
+                                                </Button>
+                                            </Box>
+                                        )}
                                         <FormControlLabel
                                             control={(
                                                 <Switch
