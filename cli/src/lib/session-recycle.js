@@ -15,12 +15,15 @@
  * COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS and
  * COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS override the defaults below.
  *
- * Context size is read from the transcript the child CLI wrote, under the env
- * the child ran with. Only the claude adapter reports one today; an adapter
- * that reports nothing keeps resuming, as before this module existed.
+ * Context size is what the last model request of the turn was sent: claude and
+ * codex from the transcript the child CLI wrote, under the env it ran with; pi
+ * and dsh from the usage on their own JSON stream (F404). An adapter that
+ * reports nothing keeps resuming, as before this module existed.
  */
 
-import { closeSync, existsSync, fstatSync, openSync, readSync } from 'fs';
+import {
+  closeSync, existsSync, fstatSync, openSync, readdirSync, readSync,
+} from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -134,6 +137,75 @@ export const contextTokensFromTranscript = (text) => {
     }
   }
   return null;
+};
+
+/**
+ * The prompt one request was sent, from a usage block that counts cached tokens
+ * apart from `input` (pi's message usage, dsh's step usage). Null when `input`
+ * is missing, so a stream without usage reads as unknown, not as zero.
+ */
+export const promptTokens = ({ input, cacheRead, cacheWrite } = {}) => {
+  if (!Number.isFinite(input)) return null;
+  return input + (Number.isFinite(cacheRead) ? cacheRead : 0) + (Number.isFinite(cacheWrite) ? cacheWrite : 0);
+};
+
+// F404. codex keeps a session as <home>/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl,
+// dated by when it began; `exec resume` appends to that same file. Newest day
+// first, so a live session is found after a few directory reads.
+const newestFirst = (dir) => {
+  try {
+    return readdirSync(dir).sort().reverse();
+  } catch {
+    return [];
+  }
+};
+
+export const codexHomeFor = (env = process.env) => env?.CODEX_HOME || join(env?.HOME || homedir(), '.codex');
+
+export const codexRolloutPath = ({ codexHome = codexHomeFor(), sessionId }) => {
+  if (!sessionId) return null;
+  const root = join(codexHome, 'sessions');
+  const suffix = `-${sessionId}.jsonl`;
+  for (const year of newestFirst(root)) {
+    for (const month of newestFirst(join(root, year))) {
+      for (const day of newestFirst(join(root, year, month))) {
+        const name = newestFirst(join(root, year, month, day)).find((file) => file.endsWith(suffix));
+        if (name) return join(root, year, month, day, name);
+      }
+    }
+  }
+  return null;
+};
+
+// The last request's prompt from codex's own `token_count` record. Its
+// `input_tokens` already includes the cached part (`cached_input_tokens` is a
+// subset), and `last_token_usage` is one request, where `total_token_usage` and
+// the stream's `turn.completed` sum every request in the turn.
+export const contextTokensFromCodexRollout = (text) => {
+  const lines = text.split('\n');
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line || !line.includes('token_count')) continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const input = record?.payload?.type === 'token_count'
+      ? record.payload.info?.last_token_usage?.input_tokens : undefined;
+    if (Number.isFinite(input)) return input;
+  }
+  return null;
+};
+
+export const codexContextTokens = ({ codexHome = codexHomeFor(), sessionId }) => {
+  try {
+    const file = codexRolloutPath({ codexHome, sessionId });
+    return file ? contextTokensFromCodexRollout(readTail(file)) : null;
+  } catch {
+    return null;
+  }
 };
 
 export const claudeContextTokens = ({ cwd, sessionId, configDir = claudeConfigDirFor() }) => {

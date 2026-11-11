@@ -72,6 +72,7 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
+import { promptTokens } from '../session-recycle.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -544,6 +545,7 @@ export const buildArgs = ({
  */
 export const extractReply = (stdout) => {
   let text = '';
+  let usage = null;
   let sawAssistant = false;
   let finished = false;
   let lastStop = null;
@@ -556,6 +558,8 @@ export const extractReply = (stdout) => {
     if (event?.type === 'message_end' && event.message?.role === 'assistant') {
       const parts = (event.message.content || []).filter((c) => c?.type === 'text').map((c) => c.text || '');
       if (parts.length) { text = parts.join('\n').trim(); sawAssistant = true; }
+      // F404: the last request's prompt, input counted apart from the cache.
+      if (event.message.usage && typeof event.message.usage === 'object') usage = event.message.usage;
       lastStop = event.message.stopReason;
       lastError = typeof event.message.errorMessage === 'string' ? event.message.errorMessage : undefined;
       finished = false;
@@ -564,7 +568,7 @@ export const extractReply = (stdout) => {
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
   return {
-    text, sawAssistant, finished, lastStop, lastError, errors,
+    text, sawAssistant, finished, lastStop, lastError, errors, contextTokens: usage ? promptTokens(usage) : null,
   };
 };
 
@@ -976,6 +980,8 @@ export default {
       return {
         text: reply.text,
         newSessionId: sessionId,
+        // F404: the F392 ceiling and cold rule read this; null keeps resuming.
+        contextTokens: reply.contextTokens ?? null,
         upstream: reply.upstream ?? null,
         ...(reply.failure ? { failure: reply.failure } : {}),
       };

@@ -32,6 +32,7 @@ import { describeMcpCommand } from '../mcp-server-version.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { promptTokens } from '../session-recycle.js';
 
 export const TESTED_DSH_VERSIONS = Object.freeze(['0.2.1-rc.2']);
 const PROXY_KEY_ENV = 'COMMONLY_DSH_PROXY_KEY';
@@ -269,6 +270,13 @@ const parseEvent = (line, state) => {
   try { event = JSON.parse(line); } catch { throw new Error('dsh emitted invalid JSON event'); }
   if (event.type === 'session' && typeof event.sessionId === 'string') state.sessionId = event.sessionId;
   if (event.type === 'final' && typeof event.text === 'string') state.final = event.text;
+  // F404: each step_end carries that request's usage, input apart from the cache.
+  if (event.type === 'status' && event.phase === 'step_end' && event.usage && typeof event.usage === 'object') {
+    const tokens = promptTokens({
+      input: event.usage.inputTokens, cacheRead: event.usage.cacheReadTokens, cacheWrite: event.usage.cacheWriteTokens,
+    });
+    if (tokens !== null) state.contextTokens = tokens;
+  }
   if (event.type === 'error') state.error = String(event.message || event.error || 'dsh error');
   if (event.type === 'tool_result'
     && /SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(JSON.stringify(event))) {
@@ -281,7 +289,9 @@ export const runDsh = ({
 }) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
-  const state = { sessionId: null, final: null, error: null, buffer: '' };
+  const state = {
+    sessionId: null, final: null, error: null, buffer: '', contextTokens: null,
+  };
   let stderr = '';
   let timedOut = false;
   let parseFailure = null;
@@ -326,7 +336,7 @@ export const runDsh = ({
       || (code !== 0 ? stderr.trim() || `exit ${code}` : null)
       || (state.final === null ? 'no final event' : null);
     if (failure) return finish(adapterFailure('dsh', failure, { credentials, exitCode: code, limit: 500 }));
-    return finish(null, { text: state.final.trim(), newSessionId: state.sessionId });
+    return finish(null, { text: state.final.trim(), newSessionId: state.sessionId, contextTokens: state.contextTokens });
   });
 });
 

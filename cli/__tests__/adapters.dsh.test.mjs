@@ -89,7 +89,9 @@ test('one patch selects proxy pi-ai, disables native routes and upload, and moun
       });
       return fakeChild();
     } });
-    expect(result).toEqual({ text: 'reply', newSessionId: 'session-11111111-1111-1111-1111-111111111111' });
+    expect(result).toEqual({
+      text: 'reply', newSessionId: 'session-11111111-1111-1111-1111-111111111111', contextTokens: null,
+    });
     const call = calls[0];
     const rows = JSON.parse(call.patchText);
     expect(call.args.filter((arg) => arg === '--patch')).toHaveLength(1);
@@ -207,4 +209,25 @@ test('a confined seat in a workspace that holds the temp folder is refused befor
     })).rejects.toThrow(/confined dsh agents cannot run in .*set TMPDIR outside it/);
     expect(spawn).not.toHaveBeenCalled();
   });
+});
+
+// F404: dsh reports each step's usage on its step_end status, input apart from
+// the cache. The last step is what the turn's last request was sent.
+test('the last step\'s usage is the turn\'s context size', async () => {
+  const stdout = event({ type: 'session', sessionId: 'session-11111111-1111-1111-1111-111111111111' })
+    + event({ type: 'status', phase: 'step_end', usage: { inputTokens: 900, outputTokens: 40, cacheReadTokens: 8000 } })
+    + event({ type: 'status', phase: 'step_end', usage: { inputTokens: 300, outputTokens: 20, cacheReadTokens: 9100, cacheWriteTokens: 5 } })
+    + event({ type: 'final', text: 'reply' });
+  const result = await runDsh({
+    binary: 'dsh', args: [], cwd: '/tmp', env: {}, timeoutMs: 5000, credentials: [], spawnImpl: () => fakeChild({ stdout }),
+  });
+  expect(result.contextTokens).toBe(9405);
+});
+
+test('a step with no usage leaves the size unknown', async () => {
+  const stdout = event({ type: 'status', phase: 'step_end' }) + event({ type: 'final', text: 'reply' });
+  const result = await runDsh({
+    binary: 'dsh', args: [], cwd: '/tmp', env: {}, timeoutMs: 5000, credentials: [], spawnImpl: () => fakeChild({ stdout }),
+  });
+  expect(result.contextTokens).toBeNull();
 });
