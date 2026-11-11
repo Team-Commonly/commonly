@@ -123,6 +123,10 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       expect(res.headers['content-type']).toBe(type);
       expect(res.headers['content-disposition']).toBe(disposition);
       expect(res.headers['x-content-type-options']).toBe('nosniff');
+      // Opened straight from this origin, a file runs with no origin and loads
+      // nothing. PDF keeps its viewer, which Chrome refuses under a sandbox.
+      if (name === 'paper.pdf') expect(res.headers['content-security-policy']).toBeUndefined();
+      else expect(res.headers['content-security-policy']).toMatch(/(^|; )sandbox$/);
     });
 
     it('a legacy inline record is served by its extension, not its stored type', async () => {
@@ -288,5 +292,79 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     expect(res.text).toBe('<html>deck</html>');
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // The page is built from the deck's content, so it runs with no origin of
+    // its own: scripts for the viewer, never this origin's.
+    expect(res.headers['content-security-policy']).toBe('sandbox allow-scripts');
+  });
+
+  describe('a render is bounded', () => {
+    const { EventEmitter } = require('events');
+    const hungChild = () => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = jest.fn(() => setImmediate(() => child.emit('close', null)));
+      return child;
+    };
+    const deck = () => mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('pptx')), mime: 'x', size: 4 });
+    const until = async (check) => {
+      for (let i = 0; i < 200 && !check(); i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    it('kills officecli at the deadline instead of leaving it running', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+      try {
+        const child = hungChild();
+        mockSpawn.mockImplementation(() => child);
+        deck();
+        const pending = request(app).get('/api/uploads/deck.pptx/preview-pptx-html');
+        const done = pending.then((res) => res);
+        await until(() => mockSpawn.mock.calls.length > 0);
+        jest.advanceTimersByTime(30_000);
+        const res = await done;
+        expect(res.status).toBe(500);
+        expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('answers 503 past the concurrent render cap instead of spawning more', async () => {
+      const children = [];
+      mockSpawn.mockImplementation(() => {
+        const child = hungChild();
+        children.push(child);
+        return child;
+      });
+      deck();
+      const first = request(app).get('/api/uploads/a.pptx/preview-pptx-html').then((r) => r);
+      await until(() => children.length === 1);
+      deck();
+      const second = request(app).get('/api/uploads/b.pptx/preview-pptx-html').then((r) => r);
+      await until(() => children.length === 2);
+      deck();
+      const third = await request(app).get('/api/uploads/c.pptx/preview-pptx-html');
+      expect(third.status).toBe(503);
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
+      children.forEach((child) => child.emit('close', 1));
+      await Promise.all([first, second]);
+    });
+
+    it('does not read back a path outside the temp dir', async () => {
+      mockSpawn.mockImplementation(() => {
+        const child = hungChild();
+        setImmediate(() => {
+          child.stdout.emit('data', Buffer.from('/etc/passwd.html\n'));
+          child.emit('close', 0);
+        });
+        return child;
+      });
+      deck();
+      const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(500);
+      expect(res.body.detail).toBe('unexpected output path');
+    });
   });
 });

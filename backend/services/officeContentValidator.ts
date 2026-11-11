@@ -30,6 +30,8 @@ interface OfficeValidationResult {
   reason?: string;
 }
 
+export const OFFICE_ENTRY_INFLATE_MAX = 32 * 1024 * 1024;
+
 const isOfficeFilename = (originalName: string): boolean =>
   /\.(docx|xlsx|pptx)$/i.test(originalName);
 
@@ -112,6 +114,13 @@ export const validateOfficeContent = (
     return { ok: true, format: 'unknown' };
   }
 
+  // A 10 MiB upload can declare entries far larger, and reading one inflates
+  // it into memory. adm-zip never inflates past an entry's declared size, so a
+  // declared size over the cap is refused unread. Too big to inflate is not
+  // empty, so it passes like any file this check cannot judge.
+  if (entries.some((e: any) => Number(e?.header?.size) > OFFICE_ENTRY_INFLATE_MAX)) {
+    return { ok: true, format: 'unknown' };
+  }
   if (/\.docx$/i.test(originalName)) return validateDocx(entries);
   if (/\.xlsx$/i.test(originalName)) return validateXlsx(entries);
   if (/\.pptx$/i.test(originalName)) return validatePptx(entries);
@@ -119,5 +128,5 @@ export const validateOfficeContent = (
 };
 
 // CommonJS interop
-module.exports = { validateOfficeContent };
+module.exports = { validateOfficeContent, OFFICE_ENTRY_INFLATE_MAX };
 module.exports.validateOfficeContent = validateOfficeContent;

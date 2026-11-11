@@ -88,16 +88,32 @@ const podFocusReadRateLimit = rateLimit({
   keyGenerator: podJoinRateLimitKey,
 });
 
+// A QR code is a raster image. The stored name takes its extension from this
+// list, never from the client's file name, so a file declared as an image is
+// always served as one (an "image" named page.html was served as HTML).
+const QR_CODE_TYPES: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+const QR_CODE_SERVED: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+
 const storage = multer.diskStorage({
   destination: (req: unknown, file: unknown, cb: (err: Error | null, dir: string) => void) => {
     const uploadDir = 'uploads/qrcodes';
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
-  filename: (req: unknown, file: { originalname: string }, cb: (err: Error | null, name: string) => void) => {
+  filename: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, name: string) => void) => {
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `qrcode-${uniqueSuffix}${ext}`);
+    cb(null, `qrcode-${uniqueSuffix}${QR_CODE_TYPES[file.mimetype]}`);
   },
 });
 
@@ -105,7 +121,9 @@ const upload = multer({
   storage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, accept?: boolean) => void) => {
-    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
+    if (!Object.prototype.hasOwnProperty.call(QR_CODE_TYPES, file.mimetype)) {
+      return cb(new Error('Only PNG, JPEG, GIF or WebP images are allowed'));
+    }
     cb(null, true);
   },
 });
@@ -330,6 +348,15 @@ router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res)
     if (!pod || !pod.members?.some((m) => m.toString() === req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     // Set explicitly: send() defaults to public, max-age=0 when no header is set.
     res.set('Cache-Control', 'private, no-store');
+    // Typed by the stored extension, and a file saved before the image list
+    // (which kept the client's extension) downloads as bytes rather than render.
+    const ext = path.extname(link.qrCodePath).toLowerCase();
+    const type = Object.prototype.hasOwnProperty.call(QR_CODE_SERVED, ext) ? QR_CODE_SERVED[ext] : null;
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.set('Content-Type', type || 'application/octet-stream');
+    res.set('Content-Disposition', type ? 'inline' : 'attachment');
+    // sendFile keeps a Content-Type that is already set rather than guess one.
     return res.sendFile(path.resolve(link.qrCodePath));
   } catch (error) {
     console.error('Error fetching QR code:', error);
