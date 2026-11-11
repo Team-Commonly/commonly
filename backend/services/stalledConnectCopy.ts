@@ -279,7 +279,7 @@ export const composeStalledConnectResolution = ({
  * would take, by the same OS rule the nudge uses.
  */
 export const composeStalledConnectMcpResolution = ({
-  displayName, handle, seenAt, fixCommand, openedOs,
+  displayName, handle, seenAt, fixCommand, openedOs, noListener,
 }: {
   displayName: string;
   handle: string;
@@ -287,6 +287,8 @@ export const composeStalledConnectMcpResolution = ({
   seenAt: Date;
   fixCommand: string;
   openedOs?: StalledConnectCopyEvidence['openedOs'];
+  /** The install declared `listens: false`: no listener is meant to run, so none is offered. */
+  noListener?: boolean;
   locale?: NudgeLocale;
 }): string => {
   // Dated: this can close days late, and a bare time would read as today.
@@ -294,6 +296,7 @@ export const composeStalledConnectMcpResolution = ({
   const head = `${displayName} connected from your MCP client (seen ${seen}). `
     + 'I can read and post here whenever you ask me from that client. '
     + 'Try: “read my Commonly pod and post a hello there”. ';
+  if (noListener) return `${head}I won't answer @${handle} on my own.`;
   if (openedOs === 'windows') {
     return `${head}I won't answer @${handle} on my own: that takes the listener. ${WINDOWS_LISTENER_NOTE} `
       + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
