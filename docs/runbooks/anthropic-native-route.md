@@ -86,9 +86,9 @@ and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`). Its
 `/v1/models`, 11-05), so it cannot move yet. To move it: put a working staging
 Claude key (never the dev key) in that secret, then set `aiProviders.anthropic`
 on, `aiProviders.deepseek` off and `litellm.agentDefaultModel: claude-haiku-5-5`
-in `values-staging.yaml`. `staging-smoke` does not exercise the hosted reply:
-staging runs no stranger-journey CronJob, so the gate is a health probe plus
-the Tier-1 UI smoke.
+in `values-staging.yaml`. `staging-smoke` runs the full stranger journey (a
+missing CronJob fails it), so it exercises Scout's reply path, but on staging's
+own model route, not this Anthropic one.
 
 `LITELLM_DISABLED` does not apply to the pinned path: with `LLM_SERVICE_MODEL`
 set, llmService calls LiteLLM, or throws when no LiteLLM URL is configured,

@@ -40,7 +40,9 @@ describe('stranger journey', () => {
     // refuses, fails at signup and blocks every prod deploy.
     const staging = yaml.load(read('values-staging.yaml'));
     expect(staging.strangerJourney.apiUrl).toBe('https://api-staging.commonly.me');
-    if (staging.strangerJourney.enabled) {
+    // With no reachability fallback, turning the journey off fails every staging gate.
+    expect(staging.strangerJourney.enabled).toBe(true);
+    {
       expect(staging.strangerJourney.inviteCodeSecret.name).toBeTruthy();
       expect(staging.strangerJourney.inviteCodeSecret.key).toBeTruthy();
       const script = read('files/stranger-journey.py');
