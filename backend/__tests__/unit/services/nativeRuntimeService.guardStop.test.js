@@ -359,6 +359,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
       // D245: the runtime composed this line, so it sets its kind.
       expect(AgentMessageService.postMessage.mock.calls[0][0].kind).toBe('error');
+      // F442: it is our line, stored under the agent, so it is marked kernel
+      // and the agent may not delete or rewrite it.
+      expect(AgentMessageService.postMessage.mock.calls[0][0].authorKind).toBe('kernel');
       expect(savedRun.metered).toBe(false);
     });
 
@@ -622,7 +625,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     await runAgent(hostedInstall(), mention);
     expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
     const notice = AgentMessageService.postMessage.mock.calls[0][0];
-    expect(notice).toMatchObject({ failureNotice: true, kind: 'error' });
+    // F442: the platform's line, marked kernel like any other it writes.
+    expect(notice).toMatchObject({ failureNotice: true, kind: 'error', authorKind: 'kernel' });
     // It isn't an answer, so it can't close the first-task card.
     expect(notice).not.toHaveProperty('answeringMessageId');
     expect(axios.post).not.toHaveBeenCalled();

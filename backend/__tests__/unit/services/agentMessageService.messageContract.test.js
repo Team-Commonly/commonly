@@ -175,6 +175,16 @@ describe('message contract on an agent post (D245)', () => {
     expect(reopenIfClosed).not.toHaveBeenCalled();
   });
 
+  // F442: the native failure lines carry kind 'error', so they take the
+  // contract branch; the kernel marker must reach the stored row there too,
+  // or platformAuthoredKind never sees it.
+  it('stores the kernel marker on a post that also carries a contract kind', async () => {
+    await post({ kind: 'error', authorKind: 'kernel' });
+    const args = PGMessage.create.mock.calls[0];
+    expect(args[8]).toBe('kernel');
+    expect(args[9]).toMatchObject({ kind: 'error' });
+  });
+
   it('posts anyway and returns warnings when the contract is wrong', async () => {
     const result = await post({ summary: 'a'.repeat(140), kind: 'reasoning' });
 
