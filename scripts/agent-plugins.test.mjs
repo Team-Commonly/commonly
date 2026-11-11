@@ -38,7 +38,8 @@ test('each plugin package pins an exact @commonlyai/mcp version, and the Hermes 
   }
   const hermes = pinnedMcp(await readJson('commonly-hermes-plugin/mcp.json'));
   const readme = await readFile(resolve(plugins, 'commonly-hermes-plugin/README.md'), 'utf8');
-  assert.deepEqual([...readme.matchAll(/@commonlyai\/mcp@([\w.-]+)/g)].map((m) => m[1]), [hermes]);
+  // Every version the README names is the pin: the disclosure and the self-hosted entry both name it.
+  assert.deepEqual([...new Set([...readme.matchAll(/@commonlyai\/mcp@([\w.-]+)/g)].map((m) => m[1]))], [hermes]);
 });
 
 // Walked 2026-11-11: Hermes answers in the pod only while it runs. The README
