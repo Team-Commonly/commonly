@@ -1718,8 +1718,13 @@ body.modern-ui.v2-canvas {
   margin: 0;
 }
 
+/* Both notices sit at the sans floor, beside the 12px hint above them. */
+.v2-invite-add__ok,
+.v2-invite-add .v2-modal__error {
+  font-size: 12px;
+}
+
 .v2-invite-add__ok {
-  font-size: 11px;
   color: var(--v2-success-text);
   margin-top: 4px;
 }
