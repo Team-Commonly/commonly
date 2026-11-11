@@ -66,6 +66,7 @@ const expectEdgePlacement = (who, spec, spreads, labels) => {
   expect(byPool && byPool.whenUnsatisfiable === 'DoNotSchedule' && byPool.maxSkew === 1,
     `${who}: no hard maxSkew-1 spread across node pools over its own pods`);
   expect(byPool && (byPool.matchLabelKeys || []).includes('pod-template-hash'), `${who}: its pool spread counts old ReplicaSets mid-roll`);
+  expect(byPool && byPool.nodeTaintsPolicy === 'Honor', `${who}: its pool spread counts a reclaimed (tainted) spot node, holding the replacement Pending`);
 };
 
 for (const lane of Object.keys(lanes)) {

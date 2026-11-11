@@ -384,6 +384,9 @@ cloudflared:
     - maxSkew: 1
       topologyKey: cloud.google.com/gke-nodepool
       whenUnsatisfiable: DoNotSchedule
+      # A reclaimed spot node stays a domain while it shows NotReady, holding
+      # the replacement Pending; Honor drops tainted nodes, so it runs on dev.
+      nodeTaintsPolicy: Honor
       labelSelector:
         matchLabels:
           app: cloudflared-commonly-k8s
