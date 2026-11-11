@@ -111,6 +111,22 @@ describe('projectIntegrationForViewer', () => {
       .toBe('345678901234567890');
   });
 
+  it('keeps a GroupMe connector’s bot and group from every viewer but the creator and an admin', () => {
+    const groupme = () => connector({
+      type: 'groupme',
+      config: { botId: 'b1c2d3e4f5', groupId: '12345678', groupUrl: 'https://groupme.com/join_group/12345678/AbCd', groupName: 'Study group' },
+    });
+    const other = projectIntegrationForViewer(groupme(), { requesterId: '64b000000000000000000099', isAdmin: false });
+    expect(other.config).not.toHaveProperty('botId');
+    expect(other.config).not.toHaveProperty('groupId');
+    expect(other.config).not.toHaveProperty('groupUrl');
+    expect(other.config.groupName).toBe('Study group');
+    for (const viewer of [{ requesterId: CREATOR, isAdmin: false }, { requesterId: 'x', isAdmin: true }]) {
+      const out = projectIntegrationForViewer(groupme(), viewer);
+      expect(out.config).toMatchObject({ botId: 'b1c2d3e4f5', groupId: '12345678', groupUrl: 'https://groupme.com/join_group/12345678/AbCd' });
+    }
+  });
+
   it('gives the connector creator and an admin the row whole, `linked` included', () => {
     for (const viewer of [{ requesterId: CREATOR, isAdmin: false }, { requesterId: 'someone-else', isAdmin: true }]) {
       const out = projectIntegrationForViewer(connector(), viewer);

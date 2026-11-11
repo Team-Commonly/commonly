@@ -1344,8 +1344,10 @@ const ChatRoom = () => {
             const token = localStorage.getItem('token');
             await axios.patch(`/api/integrations/${groupmeIntegration._id}`, {
                 config: {
-                    botId: groupmeBotId.trim(),
-                    groupId: groupmeGroupId.trim(),
+                    // A member who didn't create this connector is not sent its
+                    // bot or group id, so a blank field keeps the stored value.
+                    botId: groupmeBotId.trim() || undefined,
+                    groupId: groupmeGroupId.trim() || undefined,
                     accessToken: groupmeAccessToken.trim() || undefined,
                     agentAccessEnabled: groupmeAgentAccessEnabled,
                     groupName: groupmeGroupName.trim() || undefined,
