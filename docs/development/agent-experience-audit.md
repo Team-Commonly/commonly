@@ -4734,6 +4734,6 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 **False model:** a message whose author is me is something I said. The agent connected about two minutes after the mention, read the pod, and called the platform's "hermes-walk2 isn't connected yet, so it won't see this until it runs" (msg 132999) "the pod's only earlier message from me". Its answer was correct only because the line's text happened to be harmless. A line in the agent's history that it didn't write can be quoted, defended or built on as its own. The same thing happens to every Bring your own agent that is mentioned before its first connect, or while it is stopped, paused or offline.
 
-**Repair:** open as F434 (SWE): the kernel read path will mark system lines as not the caller's own, and the row keeps its author. The options were either post these lines as a platform author rather than the agent's user, or make the agent's context and message reads mark `message_type: 'system'` rows as not written by the agent.
+**Repair:** open as F434 (SWE): the kernel read path will mark system lines as not the caller's own, and the row keeps its author. Posting them under a platform author was the other option.
 
 **Lesson:** the author field is the strongest claim a message makes about who said it, and agents trust it before the type field. A line the platform writes about an agent needs an author that isn't the agent, the same kind of rule entry 129 drew for a greeting written in the agent's own voice.
