@@ -211,12 +211,28 @@ const guideProvenance = (guide) => {
     throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
   }
 
+  if (guide.revised !== undefined) {
+    if (!isIsoDate(guide.revised) || guide.revised < provenance.dateModified) {
+      throw new Error(`Guide ${guide.title} has a revised date that is not YYYY-MM-DD on or after its dateModified.`);
+    }
+  } else if (guide.answer !== undefined) {
+    throw new Error(`Guide ${guide.title} has an answer block but no revised date; the two land in one pass.`);
+  }
+
   if (provenance.dateModified < provenance.datePublished) {
     throw new Error(`Guide ${guide.title} has a modified date before its published date.`);
   }
 
-  return provenance;
+  return guide.revised ? { ...provenance, dateModified: guide.revised } : provenance;
 };
+
+// D295 (F430). A guide whose batch has landed carries `revised`, and that one field turns on the
+// whole pass together: the answer block, Sam as the named author, and the new Updated date. A guide
+// without it renders exactly as before. Nothing about the author beyond his name and his X link.
+export const GUIDE_AUTHOR = { name: 'Sam Xu', url: 'https://x.com/sam_commonly' };
+export const guideAuthorPerson = () => ({
+  '@type': 'Person', name: GUIDE_AUTHOR.name, url: GUIDE_AUTHOR.url, sameAs: [GUIDE_AUTHOR.url],
+});
 
 const renderGuideProvenance = (guide) => {
   const provenance = guideProvenance(guide);
@@ -226,7 +242,10 @@ const renderGuideProvenance = (guide) => {
     ? `Published and updated <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time>`
     : `Published <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time> · Updated <time datetime="${escapeHtml(provenance.dateModified)}">${escapeHtml(modified)}</time>`;
 
-  return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
+  const author = guide.revised
+    ? `<a href="${escapeHtml(GUIDE_AUTHOR.url)}" rel="author">${escapeHtml(GUIDE_AUTHOR.name)}</a>`
+    : escapeHtml(provenance.author);
+  return `<p class="seo-byline">By ${author} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
 const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
@@ -335,7 +354,9 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
 // crawlers already index, not only from the sitemap (D139: most of the sitemap sits "Discovered – not indexed").
 export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
   const compareLinks = Object.values(compareSources).map((source) => `<a href="${escapeHtml(source.path)}">${escapeHtml(source.title.split(':')[0])}</a>`);
-  const useCaseLinks = Object.entries(useCases).map(([id, useCase]) => `<a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a>`);
+  // The footer on every page links the use cases. linkLabel pins that text, so a use-case title
+  // change touches only its own page, not every page's footer (D295's one-pass rule, F430).
+  const useCaseLinks = Object.entries(useCases).map(([id, useCase]) => `<a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.linkLabel || useCase.title)}</a>`);
   return `<nav class="seo-site-links" aria-label="More from Commonly">
         <p><a href="/guides/">Guides</a></p>
         ${compareLinks.length ? `<p>Compare: ${compareLinks.join(' · ')}</p>` : ''}
@@ -394,6 +415,7 @@ const renderUseCase = (useCase, siteLinks = '') => `
         <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
         <h1>${escapeHtml(useCase.title)}</h1>
         <p class="seo-lede">${escapeHtml(useCase.summary)}</p>
+        ${useCase.dateModified ? `<p class="seo-byline">Updated <time datetime="${escapeHtml(useCase.dateModified)}">${escapeHtml(formatDate(useCase.dateModified))}</time></p>` : ''}
         ${(useCase.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
         <p class="seo-actions"><a class="seo-primary" href="/v2/register">Start with this use case</a><a href="/v2/agents">Explore Agent Hub</a></p>
       </section>
@@ -444,7 +466,8 @@ const renderGuide = (guide, siteLinks = '') => {
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
         <h1>${escapeHtml(guide.title)}</h1>
         <p class="seo-lede">${escapeHtml(guide.description)}</p>
-        ${renderGuideProvenance(guide)}
+        ${renderGuideProvenance(guide)}${guide.answer ? `
+        <p><strong>Short answer.</strong> ${escapeHtml(guide.answer)}</p>` : ''}
         ${(guide.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       </section>
       ${sections}
@@ -471,7 +494,8 @@ const renderLegal = (title, sections, siteLinks = '') => `
     </div>`;
 
 const USE_CASES_INDEX = {
-  title: 'Use cases',
+  titleTag: 'AI agent use cases for teams',
+  title: 'AI agent use cases: how teams work with agents in shared pods',
   lede: 'How teams use Commonly: pods where people and their agents share the same conversations, tasks and context.',
 };
 
@@ -961,9 +985,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     url: pageUrl(path),
     isPartOf: { '@id': websiteId },
   });
-  const webPage = (title, description, path) => ({
+  const webPage = (title, description, path, dates = {}) => ({
     '@context': 'https://schema.org',
-    '@graph': [organization, website, webPageNode(title, description, path)],
+    '@graph': [organization, website, { ...webPageNode(title, description, path), ...dates }],
   });
 
   const landingPage = {
@@ -1028,6 +1052,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
 
   const useCasePages = Object.entries(useCases).map(([id, useCase]) => {
     const path = `/use-cases/${id}/`;
+    // Checked before the page renders, since the page now shows the date (F430).
+    recordedDate(path, useCase.dateModified);
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
@@ -1037,7 +1063,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       // Static like the guides: the page a reader gets is the one crawlers read.
       staticOnly: true,
       dateModified: recordedDate(path, useCase.dateModified),
-      schema: webPage(useCase.title, useCase.summary, path),
+      schema: webPage(useCase.title, useCase.summary, path, {
+        ...(useCase.datePublished ? { datePublished: recordedDate(path, useCase.datePublished) } : {}),
+        ...(useCase.dateModified ? { dateModified: useCase.dateModified } : {}),
+      }),
       // Its own id: the landing's React effect reuses the landing-faq-jsonld tag.
       ...(useCase.faq?.length ? { faqSchema: faqPageJsonLd(useCase.faq), faqSchemaId: 'use-case-faq-jsonld' } : {}),
     };
@@ -1046,7 +1075,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const guidePages = Object.entries(guides).map(([id, guide]) => {
     const path = `/guides/${id}/`;
     const provenance = guideProvenance(guide);
-    const author = { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
+    const author = guide.revised
+      ? guideAuthorPerson()
+      : { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
     const reviewer = { '@type': 'Organization', name: provenance.reviewer, url: `${siteUrl}/` };
     return {
       path,
@@ -1088,7 +1119,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const useCasesIndexPage = {
     path: '/use-cases/',
     outputPath: 'use-cases/index.html',
-    title: `${USE_CASES_INDEX.title} | Commonly AI`,
+    title: `${USE_CASES_INDEX.titleTag} | Commonly AI`,
     description: USE_CASES_INDEX.lede,
     content: renderUseCasesIndex(useCases, siteLinks),
     // No app route serves /use-cases/, so the page stays static.
