@@ -2,12 +2,13 @@
 // The egress policies (templates/network/egress-restrict.yaml): pods may reach
 // any address except exceptCidrs; pods whose component is in exemptComponents
 // keep full egress (backup uses Workload Identity). With
-// networkPolicy.egress.restrict on (the staging lane), both policies render in
-// the release namespace: egress-restrict cuts exactly 169.254.169.254/32 for
-// every pod but backup's (169.254.20.10 stays reachable), and
-// egress-restrict-exempt gives the backup pods full egress. With it off (the
-// default and dev lanes), neither renders. Staging runs no backups, so a
-// staging+backup lane turns them on to check the selectors against real pods.
+// networkPolicy.egress.restrict on (the dev and staging lanes), both policies
+// render in the release namespace: egress-restrict cuts exactly
+// 169.254.169.254/32 for every pod but backup's (169.254.20.10 stays
+// reachable), and egress-restrict-exempt gives the backup pods full egress.
+// With it off (the default lane), neither renders. The dev lane renders both
+// backup CronJobs; staging runs none, so a staging+backup lane turns them on.
+// Both check the selectors against real pods.
 // Renders the chart itself:
 //   node scripts/verify-network-policy-chart.js
 const { execFileSync } = require('child_process');
@@ -16,7 +17,7 @@ const yaml = require('js-yaml');
 const chart = 'k8s/helm/commonly';
 const lanes = {
   default: { files: [`${chart}/values.yaml`], on: false },
-  dev: { files: [`${chart}/values.yaml`, `${chart}/values-dev.yaml`], on: false },
+  dev: { files: [`${chart}/values.yaml`, `${chart}/values-dev.yaml`], on: true, backups: 2 },
   staging: { files: [`${chart}/values.yaml`, `${chart}/values-staging.yaml`], on: true, backups: 0 },
   'staging+backup': {
     files: [`${chart}/values.yaml`, `${chart}/values-staging.yaml`],
