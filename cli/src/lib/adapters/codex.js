@@ -422,10 +422,22 @@ const privateSourceCodexHome = (ctx, env) => pathResolve(
   env?.CODEX_HOME || join(env?.HOME || homedir(), '.codex'),
 );
 
+/**
+ * Who a seat's own Codex home belongs to (F450). Seats are keyed on agent and
+ * instance (seatKey in commands/agent.js), so `name` and `name@instance` get
+ * homes of their own. The default instance keeps the name alone, so every
+ * home made before this keeps its seat.
+ */
+export const codexHomeIdentity = (ctx) => {
+  const instance = ctx.instanceId == null ? 'default' : String(ctx.instanceId);
+  if (ctx.agentName && instance.toLowerCase() !== 'default') return `${ctx.agentName}@${instance}`;
+  return ctx.agentName || ctx.cwd || 'anonymous';
+};
+
 /** Where this private seat's own Codex home is, or null where it has none. */
 export const privateCodexHomePath = (ctx) => {
   if (ctx._privateCodexHome) return ctx._privateCodexHome;
-  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identity = codexHomeIdentity(ctx);
   const hash = createHash('sha256').update(`private:${identity}`).digest('hex').slice(0, 20);
   let publicRoot;
   try {
@@ -435,6 +447,23 @@ export const privateCodexHomePath = (ctx) => {
     throw stateHomeUnderCommonly(ctx, ctx._homeDir || homedir(), 'private');
   }
   return join(dirname(publicRoot), PRIVATE_CODEX_HOMES, hash);
+};
+
+// F450: a login Codex keeps in the keyring is filed under the Codex home's own
+// path and leaves no auth.json, so a seat in a home of its own can't reach it.
+// Said once per process per home, at the first turn.
+const keyringLoginNoted = new Set();
+const KEYRING_STORE = /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m;
+const noteKeyringLogin = async (source, home) => {
+  if (keyringLoginNoted.has(home)) return;
+  keyringLoginNoted.add(home);
+  if (await statOrNull(join(source, 'auth.json'))) return;
+  const config = await readFile(join(source, 'config.toml'), 'utf8').catch(() => '');
+  const store = config.match(KEYRING_STORE)?.[1];
+  if (!store) return;
+  process.stderr.write(`[codex] this agent runs from a Codex home of its own (${home}), and your Codex `
+    + `login is kept in the keyring (cli_auth_credentials_store = "${store}"), which it can't reach there. `
+    + 'To fix it, set cli_auth_credentials_store = "file" in your config.toml and run `codex login`.\n');
 };
 
 const preparePrivateCodexHome = async (ctx, childEnv) => {
@@ -484,6 +513,7 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
       await symlink(from, to).catch((error) => { if (error?.code !== 'EEXIST') throw error; });
     }
   }
+  await noteKeyringLogin(source, home);
   await mkdir(join(home, 'tmp', 'arg0-linux'), { recursive: true, mode: 0o700 });
   // Every other private seat's home, as it stands now. One created during this
   // turn is denied from the next turn on: until then, what that seat's first
@@ -504,7 +534,7 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
 // and a link an earlier turn left is removed.
 const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
   const operatorHome = operatorCodexHome(ctx);
-  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identity = codexHomeIdentity(ctx);
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
   const homesRoot = publicCodexHomesRoot(ctx);
   const publicHome = ctx._publicCodexHome || join(homesRoot, identityHash);
@@ -1176,6 +1206,7 @@ const buildArgs = ({
   privateHome = homedir(),
   privateOtherCodexHomes = [],
   privateCodexHomeLinks = [],
+  loginFileStore = false,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1246,6 +1277,7 @@ const buildArgs = ({
     ...(publicSandbox && modelBaseUrl ? ['-c', `openai_base_url=${toml(modelBaseUrl)}`] : []),
     ...(model ? ['--model', String(model)] : []),
     ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
+    ...(loginFileStore ? ['-c', 'cli_auth_credentials_store="file"'] : []),
     ...mcpFlags,
     '-o',
     outputFile,
@@ -1675,6 +1707,16 @@ export default {
           ])]
           : [],
         privateCodexHomeLinks: privateCodexHome?.links || [],
+        // F450: a seat with a home of its own keeps the person's login in
+        // auth.json, linked to theirs. Codex's file store writes a refreshed
+        // login through that link (open + truncate, codex-rs login
+        // auth/storage.rs at rust-v0.164.0), so the person's file gets the new
+        // tokens. Its keyring and auto stores save to the keyring under the
+        // seat home's own path and delete the seat's auth.json, which would
+        // leave the person's file holding the refresh token the refresh just
+        // rotated. config.toml is linked in, so the seat would inherit those
+        // modes; this keeps it on the file store.
+        loginFileStore: Boolean(privateCodexHome),
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

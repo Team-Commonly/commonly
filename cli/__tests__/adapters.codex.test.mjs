@@ -12,6 +12,7 @@
  */
 
 import { jest } from '@jest/globals';
+import { createHash } from 'crypto';
 import { EventEmitter } from 'events';
 import {
   existsSync, readdirSync, readFileSync, realpathSync, statSync,
@@ -2492,14 +2493,16 @@ describe('the Codex home a private seat runs with (F444)', () => {
   });
 
   // F445: on Linux a private seat runs with a Codex home of its own.
-  const linuxSpawn = async ({ sessionId = null, env: extraEnv = {}, cwd = join(root, 'workspace'), agentName = 'linux-private-agent' } = {}) => {
+  const linuxSpawn = async ({
+    sessionId = null, env: extraEnv = {}, cwd = join(root, 'workspace'), agentName = 'linux-private-agent', ctx: extraCtx = {},
+  } = {}) => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, HOME: home, ...extraEnv };
     if (!extraEnv.CODEX_HOME) delete env.CODEX_HOME;
     delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
     await codex.spawn('hi', {
       sessionId, cwd, environment: { model: 'test-model' }, env, agentName,
-      _platform: 'linux', _homeDir: home, _spawnImpl: impl,
+      _platform: 'linux', _homeDir: home, _spawnImpl: impl, ...extraCtx,
     });
     const { args, opts } = calls[0];
     const fsFlag = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean)
@@ -2596,6 +2599,56 @@ describe('the Codex home a private seat runs with (F444)', () => {
       .rejects.toThrow(/puts the private Codex home under .*which the private sandbox denies on Linux/);
   });
 
+  // F450: Codex's file store writes a refreshed login through the link; its
+  // keyring and auto stores would detach it and leave the person's file stale.
+  test('a seat in its own home keeps the login on the file store, whatever the linked config.toml says', async () => {
+    await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "auto"\n');
+    const { args, codexHome } = await linuxSpawn();
+    const at = args.indexOf('cli_auth_credentials_store="file"');
+    expect(at).toBeGreaterThan(0);
+    expect(args[at - 1]).toBe('-c');
+    // After the subcommand, where codex reads -c for exec.
+    expect(at).toBeGreaterThan(args.indexOf('exec'));
+    expect(await readlink(join(codexHome, 'config.toml'))).toBe(join(home, '.codex', 'config.toml'));
+  });
+
+  test('a login kept in the keyring is named at the first turn, with the fix, and nothing else is', async () => {
+    const stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const said = () => stderr.mock.calls.map(([text]) => String(text)).filter((text) => text.includes('kept in the keyring'));
+    try {
+      // A login in auth.json: nothing to say, whatever the store.
+      await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "auto"\n');
+      await linuxSpawn({ agentName: 'keyring-a' });
+      expect(said()).toEqual([]);
+      // No auth.json and the default store: nothing either.
+      await rm(join(home, '.codex', 'auth.json'));
+      await writeFile(join(home, '.codex', 'config.toml'), 'model = "x"\n');
+      await linuxSpawn({ agentName: 'keyring-b' });
+      expect(said()).toEqual([]);
+      // No auth.json and a keyring store: said once, with the one fix.
+      await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
+      await linuxSpawn({ agentName: 'keyring-c' });
+      await linuxSpawn({ agentName: 'keyring-c' });
+      expect(said()).toHaveLength(1);
+      expect(said()[0]).toMatch(/cli_auth_credentials_store = "keyring"/);
+      expect(said()[0]).toMatch(/set cli_auth_credentials_store = "file" in your config\.toml and run `codex login`/);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  test('each instance of an agent gets its own home; the default instance keeps the one it had', async () => {
+    const plain = await linuxSpawn({ agentName: 'twin' });
+    const byDefault = await linuxSpawn({ agentName: 'twin', ctx: { instanceId: 'default' } });
+    const other = await linuxSpawn({ agentName: 'twin', ctx: { instanceId: 'reviewer' } });
+    expect(byDefault.codexHome).toBe(plain.codexHome);
+    expect(other.codexHome).not.toBe(plain.codexHome);
+    // Each is denied to the other once it exists.
+    const again = await linuxSpawn({ agentName: 'twin' });
+    expect(again.fsFlag).toContain(`"${other.codexHome}"="deny"`);
+    expect(other.fsFlag).toContain(`"${plain.codexHome}"="deny"`);
+  });
+
   test('on macOS a private seat keeps running from the shared home, denied whole', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, HOME: home };
@@ -2607,6 +2660,31 @@ describe('the Codex home a private seat runs with (F444)', () => {
     });
     expect(calls[0].opts.env.CODEX_HOME).toBeUndefined();
     expect(existsSync(privateHomes())).toBe(false);
+    // The shared home's own login store is left as the person set it.
+    expect(calls[0].args).not.toContain('cli_auth_credentials_store="file"');
+  });
+
+  test('a public seat\'s home is per instance too, and the default instance\'s is unchanged', async () => {
+    const homeFor = async (instanceId) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const env = { ...process.env, HOME: home };
+      delete env.CODEX_HOME;
+      delete env.XDG_STATE_HOME;
+      delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+      await codex.spawn('hi', {
+        sessionId: null, cwd: join(root, 'workspace'), env, agentName: 'twin-public',
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+        _platform: 'linux', _homeDir: home, _spawnImpl: impl,
+        ...(instanceId ? { instanceId } : {}),
+      });
+      return calls[0].opts.env.CODEX_HOME;
+    };
+    const publicRoot = join(home, '.local', 'state', 'commonly', 'codex-homes');
+    const plain = await homeFor(null);
+    // The hash a default seat's public home has always had.
+    expect(plain).toBe(join(publicRoot, createHash('sha256').update('twin-public').digest('hex').slice(0, 20)));
+    expect(await homeFor('default')).toBe(plain);
+    expect(await homeFor('reviewer')).not.toBe(plain);
   });
 });
 
