@@ -420,6 +420,15 @@ describe('pgMessageController', () => {
       expect(PGMessage.update).not.toHaveBeenCalled();
     });
 
+    it('still lets the agent edit its own reply a native run stamped', async () => {
+      PGMessage.findById.mockResolvedValue({
+        id: 46, user_id: 'agent-1', pod_id: 'p1', message_type: 'text', payload: { runId: 'r1', runPodId: 'p1' },
+      });
+      const res = jsonRes();
+      await controller.updateMessage({ params: { id: '46' }, body: { content: 'fixed' }, user: { id: 'agent-1' } }, res);
+      expect(PGMessage.update).toHaveBeenCalledWith('46', 'fixed');
+    });
+
     it('still lets the agent edit a ui card it posted itself', async () => {
       PGMessage.findById.mockResolvedValue({ ...card, payload: { kind: 'ui', v: 1, lang: 'openui@1' } });
       const res = jsonRes();

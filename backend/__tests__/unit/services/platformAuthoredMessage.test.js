@@ -31,6 +31,16 @@ describe('platformAuthoredKind', () => {
       .toBe('platform_post');
   });
 
+  test('an agent reply a native run stamped with its run is the agent\'s', () => {
+    expect(platformAuthoredKind({ message_type: 'text', payload: { runId: 'r1', runPodId: 'p1' } })).toBeNull();
+  });
+
+  test('the same stamp on a starts prompt still marks the platform\'s', () => {
+    expect(platformAuthoredKind({
+      message_type: 'text', payload: { kind: 'starts', starts: [], runId: 'r1', runPodId: 'p1' },
+    })).toBe('platform_post');
+  });
+
   test('a text row with no payload is its author\'s', () => {
     expect(platformAuthoredKind({ message_type: 'text', payload: null })).toBeNull();
   });

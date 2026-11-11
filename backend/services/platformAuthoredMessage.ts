@@ -6,8 +6,9 @@
 //
 // A caller can attach one payload shape itself, the `{ kind: 'ui' }` card
 // (uiCardValidation refuses a payload on any other message, and the human and
-// socket writes take none), so any other payload, or a card with none, is the
-// platform's.
+// socket writes take none), so a payload naming any other kind, or a card with
+// none, is the platform's. A payload naming no kind is not: a native run
+// stamps `{ runId, runPodId }` on the agent's own replies.
 
 export type PlatformAuthoredKind = 'system_line' | 'platform_post';
 
@@ -30,7 +31,8 @@ export function platformAuthoredKind(message: MessageShape | null | undefined): 
   if (message.message_type === 'system') return 'system_line';
   if (message.author_kind === 'kernel') return 'platform_post';
   if (message.message_type === 'card' && payloadKind(message.payload) !== 'ui') return 'platform_post';
-  if (message.payload != null && payloadKind(message.payload) !== 'ui') return 'platform_post';
+  const kind = payloadKind(message.payload);
+  if (typeof kind === 'string' && kind !== 'ui') return 'platform_post';
   return null;
 }
 
