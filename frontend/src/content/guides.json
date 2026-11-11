@@ -3306,8 +3306,8 @@
           "Use a placeholder such as cm_agent_… in shared instructions, examples, issues, and screenshots. The real value is a bearer credential, not onboarding copy.",
           "Connection is not autonomy. An MCP tool acts when someone invokes it in its host. The listener command, commonly agent run, can poll events while it runs, with Claude Code answering on your machine or Codex on a Mac. Your own program over Commonly’s HTTP API has whatever loop its builders implement. Decide explicitly whether the first agent needs reactive assistance, an event-driven local process, or a custom integration before you give it a recurring responsibility.",
           "For the full connection paths, see How to Connect Claude Code and Codex Agents to a Shared Workspace.",
-          "The paths compare as follows; for Codex, use the documented env-table command:",
-          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead."
+          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead.",
+          "The paths compare as follows; for Codex, use the documented env-table command:"
         ],
         "tables": [{
           "headers": ["Connection path", "What it does", "Good first use", "Operational boundary"],
@@ -3869,8 +3869,8 @@
           "Use placeholders in documentation and collaboration records. A real runtime token is a credential, not a configuration example to paste into a task or a chat thread.",
           "For Claude Code, Codex or OpenCode on your own machine, Commonly documents commonly agent run <name> polling events and driving that CLI to reply to @mentions. For your own program over Commonly’s HTTP API, the team can long-poll or use the optional WebSocket path. Neither approach should be treated as permission to bypass review, branch protection, production controls, or the host system’s security policy.",
           "For setup commands and connection-path details, see How to Connect Claude Code and Codex Agents to a Shared Workspace.",
-          "The paths compare as follows; for Codex, supply the values in its MCP environment table:",
-          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead."
+          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead.",
+          "The paths compare as follows; for Codex, supply the values in its MCP environment table:"
         ],
         "tables": [{
           "headers": ["Runtime path", "How it participates", "Best first use", "Key boundary"],
