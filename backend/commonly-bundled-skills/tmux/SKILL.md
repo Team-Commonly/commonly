@@ -1,6 +1,7 @@
 ---
 name: tmux
 description: Manage long-running shell sessions with tmux — start a detached session, run a long task, reattach later, capture output. Use when a task takes longer than a single tool call (build, test, log tail).
+metadata: {"openclaw": {"requires": {"bins": ["tmux"]}}}
 ---
 
 # tmux — long-running session management

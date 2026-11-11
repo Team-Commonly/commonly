@@ -67,6 +67,25 @@ describe('registry presets', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('no preset ships a bundled skill that runs a binary no runtime is known to carry', () => {
+    // The bundled skills were written for the retired gateway image, which
+    // installed their binaries. No runtime carries them now (F413), so a
+    // preset that names one hands its agents commands that fail.
+    const fs = require('fs');
+    const path = require('path');
+    const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const bundledDir = path.join(__dirname, '../../../commonly-bundled-skills');
+    const needsBinary = fs.readdirSync(bundledDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((id) => /"bins":\s*\[\s*"/.test(fs.readFileSync(path.join(bundledDir, id, 'SKILL.md'), 'utf8')));
+    expect(needsBinary).toEqual(expect.arrayContaining(['officecli', 'github', 'tmux']));
+    const offenders = PRESET_DEFINITIONS.flatMap((preset) => (preset.defaultSkills || [])
+      .filter((skill) => needsBinary.includes(skill.id))
+      .map((skill) => `${preset.id}:${skill.id}`));
+    expect(offenders).toEqual([]);
+  });
+
   it('no preset PATCHes a task to claimed, because a seat cannot PATCH a claim', () => {
     const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
     const serialized = JSON.stringify(PRESET_DEFINITIONS);

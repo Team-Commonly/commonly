@@ -5,6 +5,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { ShellGlyph } from '../icons/glyphs';
+import V2GetStarted from './V2GetStarted';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
@@ -2049,7 +2050,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   if (isDirectPod) {
     metaParts.push(...directChips);
   }
-  if (!isDirectPod && headerMeta.boardOpen !== null) {
+  // D288: the owner's first run shows the starter steps under the header in
+  // place of the board chip, until both are done.
+  const starter = headerMeta.starter;
+  const showGetStarted = Boolean(viewerOwnsPod && !isDirectPod && !isReadOnly && starter
+    && !(starter.connect && starter.firstTask));
+  // Step 2 opens the composer on the person's own agent; with none in the
+  // pod yet it only focuses the field.
+  const ownAgent = (agents || []).find((agent) => agent.agentName !== 'scout' && agent.status === 'active');
+  const startFirstTask = () => {
+    if (ownAgent) {
+      // The typeahead's handle rule: a chosen instanceId stays, an opaque
+      // per-user token never goes in a mention (display-name slug, then name).
+      const handle = ownAgent.instanceId && ownAgent.instanceId.toLowerCase() !== 'default'
+        && !isOpaqueInstanceToken(ownAgent.instanceId)
+        ? ownAgent.instanceId
+        : (slugifyAgentHandle(ownAgent.displayName || ownAgent.profile?.displayName) || ownAgent.agentName);
+      handleStarterPrompt(`@${normalizeAgentSegment(handle)} `);
+    } else {
+      composerInputRef.current?.focus();
+    }
+  };
+  if (!isDirectPod && headerMeta.boardOpen !== null && !showGetStarted) {
     metaParts.push(boardChip(false));
   }
   if (!isDirectPod && faceMembers.length > 0) {
@@ -2148,7 +2170,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
                 {dmChip}
               </span>
-            ) : headerMeta.boardOpen !== null && (
+            ) : headerMeta.boardOpen !== null && !showGetStarted && (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
                 {boardChip(true)}
               </span>
@@ -2187,6 +2209,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             )}
           </div>
         </header>
+        {showGetStarted && starter && (
+          <V2GetStarted
+            steps={starter}
+            podId={pod._id}
+            onConnect={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
+            onFirstTask={startFirstTask}
+            onOpenBoard={() => navigate(`/v2/pods/${pod._id}/board`)}
+          />
+        )}
 
         <V2CatchUpStrip podId={pod._id} />
 

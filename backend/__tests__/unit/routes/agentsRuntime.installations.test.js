@@ -281,3 +281,26 @@ describe('GET /installations owner', () => {
     });
   });
 });
+
+describe('GET /installations message wake', () => {
+  test('names each pod\'s "Messages that wake it" choice', async () => {
+    const row = (podId, wakeOnMessage) => ({
+      _id: podId, podId, instanceId: 'writer', status: 'active', config: wakeOnMessage ? { wakeOnMessage } : {},
+    });
+    mockInstallations = [
+      row('pod-1', null),
+      row('pod-2', { enabled: true, humanOnly: true }),
+      row('pod-3', { enabled: true }),
+      row('pod-4', { enabled: 'true', humanOnly: true }),
+    ];
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      const wake = Object.fromEntries(response.body.installations
+        .filter((item) => item.type === 'installation')
+        .map((item) => [item.podId, item.messageWake]));
+      expect(wake).toEqual({ 'pod-1': 'mentions', 'pod-2': 'human', 'pod-3': 'all', 'pod-4': 'mentions' });
+    } finally {
+      mockInstallations = null;
+    }
+  });
+});

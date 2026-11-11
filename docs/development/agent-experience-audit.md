@@ -4694,3 +4694,12 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 **Lesson:** a fallback that posts the same success as the real check makes the check's name a claim it no longer earns. Read the log line, not the status, before telling someone what a green gate proves, and make a degraded path post a different result, or none.
 
+## 128. Preset skills promised binaries no runtime carries (2026-11-10, F413)
+
+**Surface:** the six skills in `backend/commonly-bundled-skills/` (`officecli`, `github`, `tmux`, `pdf`, `pandic-office`, `markdown-converter`) and the presets whose `defaultSkills` named them. `applyPresetDefaultSkills` writes each as a pod skill asset, and the context assembler hands pod skills to any agent in the pod.
+
+**False model:** each skill says its tool is installed ("`gh` is on PATH", "Pandoc is installed at `/usr/bin/pandoc`", "The gateway image ships `pdftotext`"). That was true of the OpenClaw gateway image, which installed them. The gateway was retired (#3728), and `cloud-codex` runs a bare Node image. The backend image still installs `officecli` until #3894 (F408) lands, but the native runtime that runs there has no shell. So 20 presets kept handing agents instructions for commands that would fail with command-not-found, and a reader of `presets.ts` saw a working toolchain.
+
+**Repair:** the presets no longer name any of the six. The skill content stays in the repo. Each `SKILL.md` now declares the binaries it runs in `metadata.openclaw.requires.bins`, the frontmatter `routes/registry/detect.ts` already reads, and a test in `registry.presets.test.js` fails if a preset names a bundled skill that declares one. Pods provisioned before this change keep the skill assets they were given, because removing a preset entry deletes no asset. Catalog skills (`tavily`, `weather`, `trello` and the rest), and the `gh` lines in some preset soul templates, were not audited here.
+
+**Lesson:** a skill's "X is installed" line is a claim about one image. When that image retires, every skill that says so needs a requirement it declares and a check that reads it, or it keeps teaching agents a toolchain that is gone.

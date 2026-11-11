@@ -51,6 +51,25 @@ describe('useV2PodHeaderMeta', () => {
     expect(result.current.channels).toEqual(['telegram']);
   });
 
+  test('reads the two seeded starter tasks as done flags; a pod without them has none (D288)', async () => {
+    mockGet.mockImplementation((url: string) => (url.startsWith('/api/v1/tasks/')
+      ? Promise.resolve({ tasks: [
+        { status: 'done', sourceRef: 'onboarding:connect-agent' },
+        { status: 'pending', sourceRef: 'onboarding:first-task' },
+        { status: 'pending', sourceRef: 'onboarding:invite-teammate' },
+      ] })
+      : Promise.resolve([])));
+    const { result, rerender } = renderHook(({ id }) => useV2PodHeaderMeta(id), { initialProps: { id: 'workspace' } });
+    await waitFor(() => expect(result.current.starter).toEqual({ connect: true, firstTask: false }));
+
+    mockGet.mockImplementation((url: string) => (url.startsWith('/api/v1/tasks/')
+      ? Promise.resolve({ tasks: [{ status: 'pending', sourceRef: 'scout-first-task:m1' }] })
+      : Promise.resolve([])));
+    rerender({ id: 'project' });
+    await waitFor(() => expect(result.current.boardOpen).toBe(1));
+    expect(result.current.starter).toBeNull();
+  });
+
   test('a failed read leaves that fragment empty rather than blank-ing the header', async () => {
     mockGet.mockImplementation((url: string) => (url.startsWith('/api/v1/tasks/') ? Promise.reject(new Error('503')) : Promise.resolve('nope')));
     const { result } = renderHook(() => useV2PodHeaderMeta('sharpen'));
@@ -62,7 +81,7 @@ describe('useV2PodHeaderMeta', () => {
   test('no pod, no reads', () => {
     const { result } = renderHook(() => useV2PodHeaderMeta(null));
     expect(mockGet).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ boardOpen: null, channels: [] });
+    expect(result.current).toEqual({ boardOpen: null, channels: [], starter: null });
   });
 
   test('a task_updated for this pod re-reads the open count without a reload', async () => {

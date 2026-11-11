@@ -70,6 +70,10 @@ growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
 
 When a published page is added or removed, regenerate `backend/config/publicPages.json` from `buildPageDefinitions`. The test `the backend knows every published page path` fails until you do.
 
+## Sent by the first-run bar (D288)
+
+`get-started-click` carries `step: connect | first-task`, one per click on the Get started bar's current step. Read it beside the starter tasks' done times to see whether the bar moved anyone.
+
 ## Sent by the teammate card (D288)
 
 `teammate-card-shown` (once per pod and placement per page load), `teammate-card-click` and `teammate-card-dismiss`, each with `where: workspace | pod`. `workspace` is the card in the person's own workspace, whose press makes a new pod with their agent in it; `pod` is every other placement.
