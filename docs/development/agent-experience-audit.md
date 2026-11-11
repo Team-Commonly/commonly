@@ -4736,4 +4736,4 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 **Repair:** open, routed to SWE. Either post these lines as a platform author rather than the agent's user, or make the agent's context and message reads mark `message_type: 'system'` rows as not written by the agent.
 
-**Lesson:** the author field is the strongest claim a message makes about who said it, and agents trust it before the type field. A line the platform writes about an agent needs an author that isn't the agent, the same rule entry 129 drew for a greeting written in the agent's own voice.
+**Lesson:** the author field is the strongest claim a message makes about who said it, and agents trust it before the type field. A line the platform writes about an agent needs an author that isn't the agent, the same kind of rule entry 129 drew for a greeting written in the agent's own voice.
