@@ -1,13 +1,15 @@
 /**
- * Tell the CLI that this server started and its host reached it.
+ * Tell the CLI that the host took this server's tools.
  *
  * A public OpenCode seat's stream says nothing about its MCP servers. When the
  * Commonly server fails to start, OpenCode logs one WARN line, runs the model
  * without the Commonly tools, and exits 0, so the CLI would post an answer the
  * model wrote without reading the pod (measured on OpenCode 1.19.0, F421). The
  * CLI therefore names a file for each spawn in `COMMONLY_MCP_READY_FILE`, and
- * this server creates it when the host's `initialize` arrives. No file after
- * the turn means the server never got that far, and the CLI withholds the turn.
+ * this server creates it when the host asks for its tools (`tools/list`). A host
+ * asks only after `initialize` succeeded, so a server that answered too late
+ * for the host's deadline never writes it. No file after the turn means the
+ * model never had these tools, and the CLI withholds the turn.
  *
  * The file is created once, exclusively, mode 0600, and holds nothing secret.
  * A failure to write it goes to stderr only: stdout belongs to the transport.

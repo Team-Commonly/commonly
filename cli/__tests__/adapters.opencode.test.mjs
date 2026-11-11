@@ -491,6 +491,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
     const result = await runSeat(turn(), { readyFile: true, seen });
     expect(result.text).toBe(narration);
     expect(seen.env.COMMONLY_MCP_READY_FILE.startsWith(`${seen.statePath}/mcp-ready/`)).toBe(true);
+    expect(existsSync(seen.env.COMMONLY_MCP_READY_FILE)).toBe(false);
   });
 
   test('no ready file from that release withholds the reply, so a tool-less answer never posts', async () => {

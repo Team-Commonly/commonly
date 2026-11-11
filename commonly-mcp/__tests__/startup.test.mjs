@@ -192,7 +192,7 @@ describe('startup', () => {
   });
   // F421: a public OpenCode seat's stream says nothing about this server, so
   // the CLI names a file and reads it after the turn (src/ready-file.js).
-  it('creates the named ready file when initialize arrives, and not before', async () => {
+  it('creates the named ready file when the host asks for the tools, and not on initialize alone', async () => {
     const api = await startApi(200);
     const dir = mkdtempSync(path.join(os.tmpdir(), 'mcp-ready-'));
     const file = path.join(dir, 'ready');
@@ -202,6 +202,10 @@ describe('startup', () => {
       expect(() => statSync(file)).toThrow();
       initialize(child);
       expect(await waitFor(() => /"id":1/.test(out.stdout))).toBe(true);
+      expect(() => statSync(file)).toThrow();
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+      expect(await waitFor(() => /"id":2/.test(out.stdout))).toBe(true);
       expect(readFileSync(file, 'utf8')).toBe('ready\n');
       expect(statSync(file).mode & 0o777).toBe(0o600);
     } finally {
@@ -217,7 +221,9 @@ describe('startup', () => {
     try {
       initialize(child);
       expect(await waitFor(() => /"id":1/.test(out.stdout))).toBe(true);
-      expect(out.stderr).toMatch(/could not write the ready file: ENOENT/);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+      expect(await waitFor(() => /"id":2/.test(out.stdout))).toBe(true);
+      expect(await waitFor(() => /could not write the ready file: ENOENT/.test(out.stderr))).toBe(true);
       expect(child.exitCode).toBeNull();
     } finally {
       child.kill();
