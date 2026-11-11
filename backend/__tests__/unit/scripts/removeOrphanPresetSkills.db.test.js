@@ -1,10 +1,13 @@
 // The script deletes production rows, so these arms pin what it leaves alone:
 // a hand-imported skill of the same name, a preset skill outside the eight, a
 // non-skill asset, and every row when ACTION is unset.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const {
-  removeOrphanPresetSkills, exitCodeFor, tally, DEFAULT_BACKUP_COLLECTION,
+  removeOrphanPresetSkills, exitCodeFor, tally, main, DEFAULT_BACKUP_COLLECTION,
 } = require('../../../scripts/remove-orphan-preset-skills');
 
 let mongod;
@@ -42,6 +45,7 @@ afterAll(async () => {
 });
 
 const all = () => db.collection('podassets').find({}).toArray();
+const sortById = (docs) => [...docs].sort((a, b) => String(a._id).localeCompare(String(b._id)));
 
 describe('removeOrphanPresetSkills', () => {
   it.each([[undefined], [''], ['apply'], ['DELETE']])('ACTION=%p refuses and touches nothing', async (action) => {
@@ -92,11 +96,56 @@ describe('removeOrphanPresetSkills', () => {
     expect(tally({ ...r, matched: 4 }).reconciles).toBe(false);
   });
 
-  it('a restore from the backup is one insertMany', async () => {
+  it('a restore from the backup is one insertMany and gives back the same documents', async () => {
+    const original = await all();
     await removeOrphanPresetSkills(db, { action: 'delete' });
     const backup = await db.collection(DEFAULT_BACKUP_COLLECTION).find({}).toArray();
     await db.collection('podassets').insertMany(backup);
-    expect(await all()).toHaveLength(6);
+    expect(sortById(await all())).toEqual(sortById(original));
+  });
+
+  it('BACKUP_FILE is Extended JSON that restores ObjectIds and Dates typed', async () => {
+    await db.collection('podassets').updateMany({}, { $set: { createdAt: new Date('2026-05-01T00:00:00Z') } });
+    const original = await all();
+    const file = path.join(os.tmpdir(), `f415-backup-${process.pid}.json`);
+    const r = await removeOrphanPresetSkills(db, { action: 'delete', backupFile: file });
+    expect(r.backupFile).toBe(file);
+    const docs = mongoose.mongo.BSON.EJSON.parse(fs.readFileSync(file, 'utf8'), { relaxed: false });
+    fs.unlinkSync(file);
+    expect(docs).toHaveLength(3);
+    expect(docs[0]._id).toBeInstanceOf(mongoose.mongo.ObjectId);
+    expect(docs[0].createdAt).toBeInstanceOf(Date);
+    await db.collection('podassets').insertMany(docs);
+    expect(sortById(await all())).toEqual(sortById(original));
+  });
+
+  it('a row a person re-imports between the find and the delete survives', async () => {
+    const target = await db.collection('podassets').findOne({ 'metadata.skillName': 'tavily' });
+    const assets = db.collection('podassets');
+    const racing = {
+      collection: (name) => {
+        if (name !== 'podassets') return db.collection(name);
+        return {
+          ...assets,
+          countDocuments: (q) => assets.countDocuments(q),
+          insertMany: (d, o) => assets.insertMany(d, o),
+          find: (q) => ({
+            toArray: async () => {
+              const docs = await assets.find(q).toArray();
+              // the upsert rewrites metadata whole, so autoImportedBy goes
+              await assets.updateOne({ _id: target._id }, { $set: { metadata: { skillName: 'tavily', scope: 'pod' } } });
+              return docs;
+            },
+          }),
+          deleteMany: (q) => assets.deleteMany(q),
+        };
+      },
+    };
+    const r = await removeOrphanPresetSkills(racing, { action: 'delete' });
+    expect(r).toMatchObject({ matched: 3, backedUp: 3, deleted: 2 });
+    expect(r.problem).toMatch(/deleted 2 of 3/);
+    expect(exitCodeFor(r)).toBe(3);
+    expect(await assets.findOne({ _id: target._id })).not.toBeNull();
   });
 
   it('a second delete finds nothing and does not touch the backup', async () => {
@@ -108,10 +157,27 @@ describe('removeOrphanPresetSkills', () => {
     expect(await db.collection(DEFAULT_BACKUP_COLLECTION).countDocuments({})).toBe(3);
   });
 
-  it('refuses to delete when the backup already holds a matched row', async () => {
+  it('refuses before writing when the backup already holds a matched row', async () => {
     const [first] = await db.collection('podassets').find({ 'metadata.skillName': 'tavily' }).toArray();
     await db.collection(DEFAULT_BACKUP_COLLECTION).insertOne(first);
-    await expect(removeOrphanPresetSkills(db, { action: 'delete' })).rejects.toThrow(/duplicate key/);
+    const r = await removeOrphanPresetSkills(db, { action: 'delete' });
+    expect(r.problem).toMatch(/already holds 1 of the 3/);
+    expect(exitCodeFor(r)).toBe(3);
     expect(await all()).toHaveLength(6);
+    expect(await db.collection(DEFAULT_BACKUP_COLLECTION).countDocuments({})).toBe(1);
+  });
+});
+
+describe('main', () => {
+  it.each([[undefined], ['apply']])('ACTION=%p refuses with exit 2 before connecting', async (action) => {
+    const connect = jest.spyOn(mongoose, 'connect');
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const before = process.exitCode;
+    await main({ ACTION: action, MONGO_URI: 'mongodb://unused' });
+    expect(process.exitCode).toBe(2);
+    expect(connect).not.toHaveBeenCalled();
+    process.exitCode = before;
+    connect.mockRestore();
+    err.mockRestore();
   });
 });

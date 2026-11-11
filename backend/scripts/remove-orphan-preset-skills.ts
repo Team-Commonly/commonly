@@ -17,11 +17,13 @@
  * collection and checks the copy before deleting; a restore is one insertMany from
  * that collection. It deletes by the backed-up ids, not by re-running the filter.
  *
- * Self-contained (mongoose only) so it can run on ops-runner before it ships:
+ * Self-contained (mongoose only) so it can run on ops-runner before it ships, as
+ * compiled JS piped to `node -` with ACTION in the env, or from the built image:
  *   ACTION=dry-run node dist/scripts/remove-orphan-preset-skills.js
  *   ACTION=delete  node dist/scripts/remove-orphan-preset-skills.js
  * Optional: BACKUP_COLLECTION (default podassets_backup_f415), BACKUP_FILE (also
- * write the matched documents as JSON to this path).
+ * write the matched documents as canonical Extended JSON to this path; restore with
+ * EJSON.parse then insertMany).
  */
 
 import fs from 'fs';
@@ -114,21 +116,30 @@ export async function removeOrphanPresetSkills(
   const backupName = opts.backupCollection || DEFAULT_BACKUP_COLLECTION;
   const backup = db.collection(backupName);
   const ids = docs.map((d) => d._id);
-  if (opts.backupFile) {
-    fs.writeFileSync(opts.backupFile, JSON.stringify(docs, null, 2));
-    report.backupFile = opts.backupFile;
-  }
-  // Same _ids, so a rerun that would back up a row twice fails here, before any delete.
-  await backup.insertMany(docs, { ordered: true });
+  report.action = 'delete';
   report.backupCollection = backupName;
+  // A backup that already holds one of these ids would make insertMany write part of
+  // the batch and then throw; refuse before writing anything instead.
+  const already = await backup.countDocuments({ _id: { $in: ids } });
+  if (already !== 0) {
+    report.problem = `backup ${backupName} already holds ${already} of the ${docs.length} matched rows; nothing written or deleted`;
+    return report;
+  }
+  await backup.insertMany(docs, { ordered: true });
   report.backedUp = await backup.countDocuments({ _id: { $in: ids } });
   if (report.backedUp !== docs.length) {
     report.problem = `backup holds ${report.backedUp} of ${docs.length} matched rows; nothing deleted`;
     return report;
   }
+  if (opts.backupFile) {
+    // Extended JSON keeps ObjectIds and Dates typed: restore with EJSON.parse, then insertMany.
+    fs.writeFileSync(opts.backupFile, mongoose.mongo.BSON.EJSON.stringify(docs, { relaxed: false }));
+    report.backupFile = opts.backupFile;
+  }
 
-  report.action = 'delete';
-  const res = await assets.deleteMany({ _id: { $in: ids } });
+  // Re-apply the filter with the ids: a row a person re-imported since the find
+  // (same _id, no autoImportedBy) is skipped and shows up as a short delete count.
+  const res = await assets.deleteMany({ $and: [{ _id: { $in: ids } }, orphanFilter()] });
   report.deleted = res.deletedCount || 0;
   report.remaining = await assets.countDocuments(orphanFilter());
   if (report.deleted !== docs.length || report.remaining !== 0) {
@@ -160,13 +171,19 @@ export function exitCodeFor(report: RemovalReport): number {
 }
 
 export async function main(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const tag = '[orphan-preset-skills]';
+  if (env.ACTION !== 'dry-run' && env.ACTION !== 'delete') {
+    // Refuse before connecting, so a bad ACTION never depends on the database.
+    console.error(`${tag} REFUSED: ACTION must be 'dry-run' or 'delete'; nothing done`);
+    process.exitCode = 2;
+    return;
+  }
   await mongoose.connect(env.MONGO_URI ?? '');
   const r = await removeOrphanPresetSkills(mongoose.connection.db as unknown as Db, {
     action: env.ACTION,
     backupCollection: env.BACKUP_COLLECTION,
     backupFile: env.BACKUP_FILE,
   });
-  const tag = '[orphan-preset-skills]';
   console.log(`${tag} action  : ${r.action}`);
   console.log(`${tag} matched : ${r.matched}`);
   console.log(`${tag} per skill: ${JSON.stringify(r.perSkill)}`);
@@ -182,7 +199,8 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<void> 
   process.exitCode = exitCodeFor(r);
 }
 
-if (require.main === module) {
+// Piped to `node -` (how ops-runner runs it) there is no require.main at all.
+if (require.main === module || !require.main) {
   main()
     .catch((err) => {
       console.error('[orphan-preset-skills] failed:', err);
