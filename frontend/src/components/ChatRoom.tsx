@@ -77,6 +77,14 @@ export const groupmeIdsWithheld = (integration: { status?: string; config?: Reco
     integration?.status === 'connected' && !integration?.config?.botId && !integration?.config?.groupId
 );
 
+// The saved token turns agent access on only for the person who connected the
+// group (the server refuses anyone else). A viewer the ids were withheld from
+// isn't that person, so while agent access is off they bring their own token.
+export const groupmeSavedTokenUsable = (integration: { status?: string; config?: Record<string, unknown> } | null | undefined): boolean => (
+    integration?.config?.accessTokenSaved === true
+    && (integration?.config?.agentAccessEnabled === true || !groupmeIdsWithheld(integration))
+);
+
 // A stored access token stays when the field is left blank (the server keeps
 // its ref), so the form asks for one only when agent access is on and none is
 // saved. The row says so with `accessTokenSaved`, never with the token.
@@ -92,7 +100,7 @@ export const groupmeSaveRefusal = ({
     if (!groupmeIdsWithheld(integration) && (!botId.trim() || !groupId.trim())) {
         return 'Please provide both Bot ID and Group ID.';
     }
-    if (agentAccessEnabled && !accessToken.trim() && !integration?.config?.accessTokenSaved) {
+    if (agentAccessEnabled && !accessToken.trim() && !groupmeSavedTokenUsable(integration)) {
         return 'Access Token is required when agent access is enabled.';
     }
     return null;
@@ -3839,7 +3847,7 @@ const ChatRoom = () => {
                                             type="password"
                                             value={groupmeAccessToken}
                                             onChange={(event) => setGroupmeAccessToken(event.target.value)}
-                                            helperText={groupmeIntegration?.config?.accessTokenSaved
+                                            helperText={groupmeSavedTokenUsable(groupmeIntegration)
                                                 ? 'Saved. Leave blank to keep it.'
                                                 : 'Required only when enabling agent access.'}
                                         />

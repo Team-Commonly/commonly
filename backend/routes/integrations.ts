@@ -1220,6 +1220,19 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       return res.status(400).json({ message: 'config keys must be field names, not update paths' });
     }
     const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
+    // A GroupMe token stays on the row when a save leaves the field blank, so
+    // turning agent access on would otherwise let pod agents read the group
+    // with the token of whoever connected it. Only that person may turn it on
+    // with the saved token; anyone else brings their own.
+    if (integration.type === 'groupme' && incoming?.agentAccessEnabled === true
+      && currentConfig.agentAccessEnabled !== true
+      && String(integration.createdBy || '') !== requesterId
+      && !(typeof incoming.accessToken === 'string' && incoming.accessToken.trim())) {
+      return res.status(403).json({
+        code: 'groupme_saved_token_not_yours',
+        message: 'Only the person who connected this GroupMe group can turn on agent access with the saved token. Enter your own access token to turn it on.',
+      });
+    }
     // F143: a write that changes which chat a row points at is a bind, judged
     // against the pod the row will serve (the new one when podId moves too).
     // Fields that do not select the surface (relay flags, lead, gates) are not.
