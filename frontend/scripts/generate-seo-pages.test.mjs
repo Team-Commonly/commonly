@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  assertNoOpenHolds, buildPageDefinitions, fitDescription, fitTitle, generateSeoPages, publicHitScript, renderMarkdown, renderStaticPage,
+  assertCompareSourced, assertNoOpenHolds, buildPageDefinitions, compareMarkdown, fitDescription, fitTitle, generateSeoPages,
+  loadCompareSources, publicHitScript, renderMarkdown, renderStaticPage,
 } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -2771,4 +2772,99 @@ test('every guide is linked from inside another guide, and every in-body guide l
   }
   const unlinked = [...inbound].filter(([, count]) => count === 0).map(([slug]) => slug);
   assert.deepEqual(unlinked, []);
+});
+
+// /compare as data (F429, D295): one file per competitor, one template, and no competitor fact
+// without a source that says where and when it was read.
+const compareFixture = () => ({
+  path: '/compare/example/',
+  listOrder: 9,
+  datePublished: '2026-11-11',
+  dateModified: '2026-11-11',
+  title: 'Commonly vs Example: what each ships',
+  description: 'A factual comparison.',
+  name: 'Example',
+  updated: 'Updated 2026-11-11. Facts about Example were read on its own pages on 2026-11-11.',
+  shortAnswer: 'Example is a thing. [1]',
+  table: { them: 'Example', rows: [{ label: 'License', them: 'MIT. [1]', us: 'Apache-2.0. [2]' }] },
+  pickThem: { name: 'Example', items: ['You want MIT. [1]'] },
+  pickUs: ['You want a pod.'],
+  faq: [{ q: 'Is it open source?', a: 'Yes. [1]' }],
+  sourcesIntro: 'Example facts read on 2026-11-11:',
+  sources: [
+    { label: 'Example homepage', url: 'https://example.com/', read: '2026-11-11' },
+    { label: 'Commonly README', url: 'https://github.com/Team-Commonly/commonly', read: '2026-11-11' },
+  ],
+  closing: 'Commonly facts come from the Commonly README.',
+});
+
+test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
+  const dir = resolve(frontendDir, 'src/content/compare');
+  const loaded = loadCompareSources(dir);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz']);
+  for (const id of Object.keys(loaded)) {
+    const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
+    assert.equal(loaded[id].markdown, compareMarkdown(data));
+    assert.equal(loaded[id].path, `/compare/${id}/`);
+    assert.ok(data.sources.every((source) => /^https:\/\//.test(source.url) && /^\d{4}-\d{2}-\d{2}$/.test(source.read)), id);
+    assert.ok(data.table.rows.every((row) => /\[\d+\]/.test(row.them)), id);
+  }
+  // The template lays out what the hand-written pages had: heading, dated line, table, sources.
+  const buzz = loaded.buzz.markdown;
+  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-09\./);
+  assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
+  assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
+  // The one fact this change added carries its source.
+  assert.match(loaded['github-agent-hq'].markdown, /\| \*\*License \/ self-host\*\* \| Hosted GitHub service\. .*self-hosted runners.*\[4\] \|/);
+});
+
+test('a compare page with an unsourced competitor fact, an undated source or a dangling citation fails the build', () => {
+  assert.doesNotThrow(() => assertCompareSourced('example', compareFixture()));
+
+  const unsourced = compareFixture();
+  unsourced.table.rows[0].them = 'MIT.';
+  assert.throws(() => assertCompareSourced('example', unsourced), /compare\/example: "License" states a Example fact with no source/);
+
+  const undated = compareFixture();
+  delete undated.sources[0].read;
+  assert.throws(() => assertCompareSourced('example', undated), /source 1 has no read date/);
+
+  const noUrl = compareFixture();
+  noUrl.sources[0].url = 'example.com';
+  assert.throws(() => assertCompareSourced('example', noUrl), /source 1 has no https URL/);
+
+  const dangling = compareFixture();
+  dangling.faq[0].a = 'Yes. [3]';
+  assert.throws(() => assertCompareSourced('example', dangling), /\[3\] cites no listed source/);
+
+  const badDate = compareFixture();
+  badDate.dateModified = '11/11/2026';
+  assert.throws(() => assertCompareSourced('example', badDate), /dateModified is not YYYY-MM-DD/);
+
+  // A markdown link is not a citation.
+  const linked = compareFixture();
+  linked.pickUs = ['See [the guide](/guides/x/).'];
+  assert.doesNotThrow(() => assertCompareSourced('example', linked));
+});
+
+test('a compare page carries its dates in the WebPage structured data and the sitemap, matching its data file', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-compare-dates-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const sitemap = await readFile(join(outputDir, 'sitemap.xml'), 'utf8');
+    for (const id of ['openagents', 'github-agent-hq', 'buzz']) {
+      const data = JSON.parse(await readFile(resolve(frontendDir, `src/content/compare/${id}.json`), 'utf8'));
+      const html = await readFile(join(outputDir, `compare/${id}/index.html`), 'utf8');
+      const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/)[1])['@graph'];
+      const page = graph.find((node) => node['@type'] === 'WebPage');
+      assert.equal(page.datePublished, data.datePublished, id);
+      assert.equal(page.dateModified, data.dateModified, id);
+      assert.ok(html.includes(`Updated ${data.dateModified}.`), id);
+      assert.ok(sitemap.includes(`<loc>https://commonly.me/compare/${id}/</loc><lastmod>${data.dateModified}</lastmod>`), id);
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });

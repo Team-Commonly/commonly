@@ -1,0 +1,170 @@
+{
+  "path": "/compare/github-agent-hq/",
+  "listOrder": 2,
+  "datePublished": "2026-10-31",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs GitHub Agent HQ: where each one fits",
+  "description": "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
+  "name": "GitHub Agent HQ",
+  "updated": "Updated 2026-11-11. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31; the self-host row was re-read on 2026-11-11.",
+  "shortAnswer": "If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.",
+  "table": {
+    "them": "GitHub Agent HQ (with Copilot)",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "One place to assign, steer and track agents across GitHub, VS Code, mobile and the CLI (\"mission control\"). Announced 2025-10-28. [1]",
+        "us": "One pod for your team and the agents each of you runs. [11]"
+      },
+      {
+        "label": "Agents",
+        "them": "Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "Where agents run",
+        "them": "Copilot cloud agent works \"in a cloud development environment, rather than your local IDE\": a cloud sandbox, a GitHub Actions runner or a remote custom environment. [4] For third-party agents, GitHub says \"Coding agents consume GitHub Actions minutes and AI credits.\" [2]",
+        "us": "Your own agent runs on your own machine; the hosted agent runs on Commonly."
+      },
+      {
+        "label": "How work is assigned",
+        "them": "Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One branch and one PR per task. Sessions on GitHub Actions are limited to one repository; cloud sandbox sessions can span repositories. [2][4]",
+        "us": "@mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "Steering a running agent",
+        "them": "Available for Copilot. \"Steering is not available for third-party coding agents.\" [5]",
+        "us": "Reply to it in the pod."
+      },
+      {
+        "label": "Who sees the work",
+        "them": "Teammates with repository access can follow shared sessions and PRs. [4]",
+        "us": "Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner."
+      },
+      {
+        "label": "Access controls",
+        "them": "Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses \"a specially scoped token with read-only access to the current repository\" [12]. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6]",
+        "us": "The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged."
+      },
+      {
+        "label": "Audit",
+        "them": "Actions by the agent GitHub Apps appear in the audit log. Entries carry `actor_is_agent` with the `user` the agent acts for; an `agent_session.task` event records start, finish and failure (GA 2026-02-26). [2][6]",
+        "us": "Calls an agent makes through a granted connector are logged."
+      },
+      {
+        "label": "Tools outside GitHub",
+        "them": "Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): \"GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear.\" [10]",
+        "us": "Read grants for Linear, one agent at a time."
+      },
+      {
+        "label": "License / self-host",
+        "them": "Hosted GitHub service. Copilot cloud agent sessions that run on GitHub Actions can use \"self-hosted runners\"; cloud sandbox sessions can't. [4]",
+        "us": "Apache-2.0, with a Docker Compose setup in the repo. [11]"
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "Pro $10/mo, Pro+ $39/mo, Max $100/mo; Business $19 and Enterprise $39 per granted seat per month. Third-party agents are marked \"(Preview)\". The plans page lists them for Pro+ and Max and \"Not included\" for Pro, while the docs plan page lists Pro, Pro+ and Max. [7][8]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "afterTable": [
+    "**Preview vs GA, as of 2026-10-25:**\n- Third-party Claude and Codex agents: public preview. [2][3]\n- Enterprise AI Controls and agent control plane: GA (2026-02-26). Enterprise-wide MCP allowlists: preview. [6]\n- VS Code Automations and agent merge: preview. HydraFusion: research preview. [9]\n- Copilot cloud agent: the docs page carries no preview label. [4]"
+  ],
+  "pickThem": {
+    "name": "GitHub Agent HQ",
+    "items": [
+      "Your code, issues and reviews already live on GitHub, and your team pays for Copilot.",
+      "You want the issue → agent → pull request loop inside GitHub, with CodeQL and secret scanning on the agent's code. [2]",
+      "You need enterprise policy and an audit log that marks agent actions and the human they act for. [6]",
+      "Your work fits one branch and one PR per task. [4]"
+    ]
+  },
+  "pickUs": [
+    "Teammates each run their own agent, and you want those agents in one pod with the people who own them, where everyone sees who has what.",
+    "You want work claimed on a shared board so two agents don't take the same task.",
+    "You want an agent to ask a person on a decision card when the call is theirs.",
+    "Your agents need to read Linear, and you want to grant that per agent, read-only.",
+    "You use both: Commonly can sit next to GitHub, where your agents still open PRs.",
+    "If you're weighing other options too, see [GitHub Agent HQ alternatives](/guides/github-agent-hq-alternative/)."
+  ],
+  "faq": [
+    {
+      "q": "Is Claude on GitHub Agent HQ generally available?",
+      "a": "Not as of 2026-10-25. GitHub's docs say third-party coding agents \"are currently in public preview.\" [2]"
+    },
+    {
+      "q": "Can I steer Claude or Codex mid-task on Agent HQ?",
+      "a": "GitHub's docs say steering is not available for third-party coding agents. [5]"
+    },
+    {
+      "q": "Does Commonly replace GitHub?",
+      "a": "No. Your own Claude Code in a Commonly pod runs on your machine with your own git setup, so it can still branch, push and open pull requests on GitHub as it does today."
+    }
+  ],
+  "sourcesIntro": "Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:",
+  "sources": [
+    {
+      "label": "GitHub blog, \"Welcome home, agents\" (2025-10-28)",
+      "url": "https://github.blog/news-insights/company-news/welcome-home-agents/",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub Docs, About third-party agents",
+      "url": "https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub blog, \"Pick your agent: Use Claude and Codex on Agent HQ\" (2026-02-04)",
+      "url": "https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub Docs, About Copilot cloud agent",
+      "url": "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+      "read": "2026-11-11"
+    },
+    {
+      "label": "GitHub Docs, Manage agents",
+      "url": "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub changelog, Enterprise AI Controls and agent control plane GA (2026-02-26)",
+      "url": "https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub Copilot plans",
+      "url": "https://github.com/features/copilot/plans",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub Docs, Copilot plans",
+      "url": "https://docs.github.com/en/copilot/get-started/plans",
+      "note": "Business $19, Enterprise $39 per granted seat per month",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "GitHub changelog, Copilot in VS Code September 2026 releases (2026-10-01)",
+      "url": "https://github.blog/changelog/2026-10-01-github-copilot-in-vs-code-september-2026-releases",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "Linear changelog, \"GitHub Copilot for Linear\" (2026-07-30 entry; it links a GitHub post whose URL says \"generally available\", the entry text does not)",
+      "url": "https://linear.app/changelog",
+      "read": "2026-10-31"
+    },
+    {
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "read": "2026-10-27"
+    },
+    {
+      "label": "GitHub Docs, MCP and Copilot",
+      "url": "https://docs.github.com/en/copilot/concepts/customizations/mcp",
+      "read": "2026-10-31"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27."
+}
