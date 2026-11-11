@@ -606,6 +606,8 @@ describe('BYO listener: Work in my repo', () => {
   ])('not offered in a pod %s', async (_label, pod) => {
     await issueToken(undefined, pod);
     expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
+    expect(screen.queryByTestId('byo-repo-limits')).toBeNull();
+    expect(screen.queryByTestId('byo-repo-issue-to-pr')).toBeNull();
     expect(runLine()).not.toMatch(/--allow/);
   });
 
