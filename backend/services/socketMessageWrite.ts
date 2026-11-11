@@ -35,6 +35,27 @@ export interface MessageSendFailure {
   code: string;
 }
 
+// What a person's socket send may be. The only socket composer is the legacy
+// ChatRoom, which sends `text` and `image`; v2 posts over HTTP. The other
+// types are written by the platform, not by a chat client.
+export const SOCKET_MESSAGE_TYPES: readonly string[] = ['text', 'image'];
+
+export const MESSAGE_TYPE_NOT_ALLOWED = {
+  message: 'This message type cannot be sent.',
+  code: 'MESSAGE_TYPE_NOT_ALLOWED',
+} as const;
+
+// Refuses, never coerces: a send of another type is answered on the
+// refused-send event, so the client drops its optimistic copy.
+export function refuseSocketMessageType(
+  { podId, content, messageType }: { podId: string; content: string; messageType: unknown },
+): MessageSendFailure | null {
+  if (typeof messageType === 'string' && SOCKET_MESSAGE_TYPES.includes(messageType)) return null;
+  return {
+    ...MESSAGE_TYPE_NOT_ALLOWED, podId, content, messageType: String(messageType),
+  };
+}
+
 export interface SocketMessageWriteInput {
   pgReady: boolean;
   podId: string;
@@ -83,4 +104,11 @@ export async function writeSocketMessage({
   return { ok: true, message: joined || created };
 }
 
-export default { writeSocketMessage, MESSAGE_STORE_UNAVAILABLE, MESSAGE_SEND_FAILED_EVENT };
+export default {
+  writeSocketMessage,
+  refuseSocketMessageType,
+  SOCKET_MESSAGE_TYPES,
+  MESSAGE_STORE_UNAVAILABLE,
+  MESSAGE_TYPE_NOT_ALLOWED,
+  MESSAGE_SEND_FAILED_EVENT,
+};
