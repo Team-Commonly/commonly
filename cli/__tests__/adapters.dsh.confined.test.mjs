@@ -440,6 +440,22 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
     });
   });
 
+  test('a sessions symlink is removed, not kept, and the native-addon cache in tmp/ is cleared', async () => {
+    await withSeat(async ({ ctx, root, home }) => {
+      const elsewhere = join(root, 'elsewhere');
+      await mkdir(elsewhere, { recursive: true });
+      await writeFile(join(elsewhere, 'planted'), 'planted');
+      await mkdir(join(home, 'tmp', 'cache'), { recursive: true });
+      await writeFile(join(home, 'tmp', 'cache', 'addon.node'), 'planted');
+      await symlink(elsewhere, join(home, 'sessions'));
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      expect(existsSync(join(home, 'sessions'))).toBe(false);
+      expect(existsSync(join(home, 'tmp', 'cache'))).toBe(false);
+      // The link went, its target stayed.
+      expect(readFileSync(join(elsewhere, 'planted'), 'utf8')).toBe('planted');
+    });
+  });
+
   test('a public seat never shares a home with a private turn of the same agent', () => {
     const seat = { instanceUrl: 'https://api.example', agentName: 'deep' };
     const privateHome = seatHome({ ...seat, environment: { sandbox: CONFINED } });
