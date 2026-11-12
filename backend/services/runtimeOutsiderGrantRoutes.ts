@@ -67,6 +67,8 @@ add(runtime, 'own_state', [
   'POST /events/renew', 'POST /events/release', 'PATCH /configuration', 'POST /pods/:podId/catch-up',
   // Marks only the calling seat and only tightens it: confined can't be restored here.
   'POST /host-unconfined',
+  // F457: records which harness the calling seat's own run couldn't find.
+  'POST /harness-missing',
 ]);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',

@@ -358,7 +358,10 @@ export default {
     if (!TESTED_DSH_VERSIONS.includes(detected?.version)) {
       throw new Error(`dsh adapter: installed version ${detected?.version || 'unknown'} is not smoke-tested (${TESTED_DSH_VERSIONS.join(', ')})`);
     }
-    return resolveProviderKeyFile(environment.provider, workspacePath, 'dsh');
+    // A confined dsh is a private seat under Seatbelt, so it is checked too.
+    return resolveProviderKeyFile(environment.provider, workspacePath, 'dsh', {
+      environment, sandboxed: isConfinedDsh(environment),
+    });
   },
 
   async detect() {
@@ -396,7 +399,10 @@ export default {
     if (!TESTED_DSH_VERSIONS.includes(version)) {
       throw new Error(`dsh adapter: installed version ${version || 'unknown'} is not smoke-tested (${TESTED_DSH_VERSIONS.join(', ')})`);
     }
-    const keyFile = await resolveProviderKeyFile(ctx.environment.provider, ctx.cwd, 'dsh');
+    // The seat home is the confined run's statePath: stable and writable in the jail.
+    const keyFile = await resolveProviderKeyFile(ctx.environment.provider, ctx.cwd, 'dsh', {
+      environment: ctx.environment, platform: ctx._platform, sandboxed: confined, seatDirectories: [home],
+    });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-dsh-'));
     await chmod(tempDir, 0o700);
     let proxy;

@@ -111,8 +111,9 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
     file under a system tree the Seatbelt baseline lets the jail read, such as
     `/etc`, `/opt/homebrew/lib` or `/usr/local/lib` (F114). Those roots are
     read from the profile itself (`seatbeltSystemReadRoots`), so the check
-    follows the profile. The proxy also redacts the key from what the provider
-    sends back.
+    follows the profile. Paths are compared by file identity too, so another
+    spelling of the same place is refused ([provider-keyfile-sandbox.md](provider-keyfile-sandbox.md),
+    F453). The proxy also redacts the key from what the provider sends back.
   - *Reaching `baseURL`:* the proxy, not the jail, connects to it, so a public
     seat's `baseURL` can be any host this machine reaches, `localhost` included.
   - *Limits of a public turn:* `anthropic-messages` is refused at attach, at

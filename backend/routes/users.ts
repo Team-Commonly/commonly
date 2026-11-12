@@ -181,7 +181,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     })
       .select(
         'botMetadata.agentName botMetadata.instanceId '
-        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt',
+        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt botMetadata.harnessMissing',
       )
       .lean();
 
@@ -198,14 +198,29 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     };
     let latestConnection: { at: Date; identity: any } | null = null;
     let latestToolUse: { at: Date; identity: any } | null = null;
+    // F457: a quick-try run that found no harness exits before it checks in.
+    // Its report stands until this agent listens again after it.
+    const harnessMissing: { agentName: string; instanceId: string; harness: string | null; at: string }[] = [];
     for (const agentUser of agentUsers || []) {
       const agentName = String(agentUser.botMetadata?.agentName || '').trim().toLowerCase();
       const instanceId = String(agentUser.botMetadata?.instanceId || 'default').trim().toLowerCase();
       const identity = installationsByIdentity.get(`${agentName}:${instanceId}`);
       if (!identity) continue;
+      let ownListen: { at: Date; identity: any } | null = null;
       for (const token of agentUser.agentRuntimeTokens || []) {
         latestConnection = latestOf(latestConnection, token?.lastListenedAt, identity);
         latestToolUse = latestOf(latestToolUse, token?.lastUsedAt, identity);
+        ownListen = latestOf(ownListen, token?.lastListenedAt, identity);
+      }
+      const missing = (agentUser.botMetadata as any)?.harnessMissing;
+      const missingAt = missing?.at ? new Date(missing.at) : null;
+      if (missingAt && !Number.isNaN(missingAt.getTime()) && (!ownListen || missingAt > ownListen.at)) {
+        harnessMissing.push({
+          agentName: (identity as any).agentName,
+          instanceId: (identity as any).instanceId,
+          harness: typeof missing.harness === 'string' ? missing.harness : null,
+          at: missingAt.toISOString(),
+        });
       }
     }
 
@@ -223,6 +238,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         instanceId: latestConnection.identity.instanceId,
         podId: latestConnection.identity.podId,
       } : null,
+      ...(harnessMissing.length ? { harnessMissing } : {}),
     });
   } catch (error) {
     console.error('Error reading agent connection status:', error);

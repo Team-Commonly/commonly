@@ -85,6 +85,49 @@ afterEach(() => {
 });
 
 describe('V2AgentBYO listening verification', () => {
+
+  // F457: the quick-try run found no harness and exited before checking in.
+  // It reported that first, so the page says so instead of waiting forever,
+  // keeps polling, and still turns green once the person installs it and reruns.
+  test('says the harness is missing when this agent\'s run reported it, then still flips to verified', async () => {
+    jest.useFakeTimers();
+    await issueToken();
+    const missingRead = (rows) => ({ data: { issued: true, connected: false, lastUsedAt: null, connectedAgent: null, harnessMissing: rows } });
+
+    // Another agent's report, and an old one for this agent, change nothing.
+    axios.get.mockResolvedValueOnce(missingRead([
+      { agentName: 'old-agent', instanceId: 'default', harness: 'codex', at: new Date().toISOString() },
+      { agentName: 'sam-claude', instanceId: 'default', harness: 'claude', at: '2020-01-01T00:00:00.000Z' },
+      { agentName: 'sam-claude', instanceId: 'second', harness: 'claude', at: new Date().toISOString() },
+    ]));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
+    expect(screen.getByTestId('byo-listen-waiting')).toHaveTextContent(/Waiting for sam-claude to check in/);
+
+    axios.get.mockResolvedValueOnce(missingRead([
+      { agentName: 'sam-claude', instanceId: 'default', harness: 'claude', at: new Date().toISOString() },
+    ]));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: Claude Code isn’t installed on that computer.',
+    );
+
+    axios.get.mockResolvedValueOnce(missingRead([
+      { agentName: 'sam-claude', instanceId: 'default', harness: null, at: new Date().toISOString() },
+    ]));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(/found no Claude Code, Codex or pi/);
+
+    axios.get.mockResolvedValueOnce({
+      data: {
+        issued: true, connected: true, lastUsedAt: new Date().toISOString(),
+        connectedAgent: { agentName: 'sam-claude', instanceId: 'default', podId: 'p1' },
+      },
+    });
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
+  });
   test('waits, then flips to verified when THIS agent checks in after issuance', async () => {
     jest.useFakeTimers();
     await issueToken();

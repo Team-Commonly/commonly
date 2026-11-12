@@ -53,7 +53,7 @@ import {
 } from 'fs/promises';
 import { homedir } from 'os';
 import {
-  dirname, isAbsolute, join, relative, sep,
+  dirname, isAbsolute, join,
 } from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -72,7 +72,7 @@ import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } fro
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { seatbeltSystemReadRoots, wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
-import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
+import { keyFileReadableRoot, resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { promptTokens } from '../session-recycle.js';
 
@@ -335,11 +335,11 @@ const SHARED_PROVIDER_KEYS = ['id', 'baseURL', 'keyFile', 'models'];
 const isSharedProvider = (spec) => Boolean(spec) && SHARED_PROVIDER_KEYS.some((key) => spec[key] !== undefined);
 
 /** The real key file of a shared provider, validated without reading it; null for any other seat. */
-const sharedProviderKeyFile = async (environment, workspacePath) => {
+const sharedProviderKeyFile = async (environment, workspacePath, platform) => {
   if (!isSharedProvider(environment?.provider)) return null;
   const validation = validateEnvironmentSpec(environment);
   if (!validation.ok) throw new Error(validation.errors.join('; '));
-  return resolveProviderKeyFile(environment.provider, workspacePath, 'pi');
+  return resolveProviderKeyFile(environment.provider, workspacePath, 'pi', { environment, platform });
 };
 
 /**
@@ -348,25 +348,19 @@ const sharedProviderKeyFile = async (environment, workspacePath) => {
  * own directories (the seat home is a stable path a key file could be put in),
  * and the Seatbelt baseline admits system trees such as /etc, /opt/homebrew/lib
  * and /usr/local/lib (seatbeltSystemReadRoots, read from the profile itself).
- * A key under any of them would be readable from inside, so it is refused.
- * Each root is compared as written and through its real path (/etc is
- * /private/etc on macOS); a root that does not exist is compared as written.
+ * A key under any of them would be readable from inside, so it is refused. The
+ * comparison is the shared keyFileReadableRoot (F453): as written, real-pathed
+ * and by identity, so another spelling of the same path is caught too. The
+ * system roots are also checked when the key file is first resolved; this is
+ * where the per-turn directories join them.
  */
-const realOrSelf = (path) => { try { return realpathSync(path); } catch { return path; } };
-const within = (root, path) => {
-  const fromRoot = relative(root, path);
-  return fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
-};
 export const refuseKeyFileInJail = (keyFile, readableDirectories, systemRoots = seatbeltSystemReadRoots()) => {
-  const refuse = (root) => {
+  const root = keyFileReadableRoot(keyFile, {
+    subpaths: [...readableDirectories, ...systemRoots.subpaths],
+    literals: systemRoots.literals,
+  });
+  if (root) {
     throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${root}`);
-  };
-  const forms = (root) => [...new Set([root, realOrSelf(root)])];
-  for (const directory of [...readableDirectories, ...systemRoots.subpaths]) {
-    if (forms(directory).some((root) => within(root, keyFile))) refuse(directory);
-  }
-  for (const literal of systemRoots.literals) {
-    if (forms(literal).includes(keyFile)) refuse(literal);
   }
 };
 
@@ -788,7 +782,7 @@ export default {
     assertSandboxSupported(ctx.environment, platform);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
     const isPublic = effectiveSandboxTrust(sandbox?.trust) === 'public';
-    const keyFile = await sharedProviderKeyFile(ctx.environment, ctx.cwd);
+    const keyFile = await sharedProviderKeyFile(ctx.environment, ctx.cwd, platform);
     const provider = resolveProvider(ctx.environment);
     const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
@@ -874,6 +868,24 @@ export default {
     });
     let proxy = null;
     try {
+      const unavailableMcp = [];
+      const mcpReadDirectories = [];
+      const grantBrokers = [];
+      const servers = resolveMcpServers(ctx.environment?.mcp, {
+        ...ctx,
+        credentialFile: credential?.path || null,
+        credentialDir: credential?.dir || null,
+        publicSeat: isPublic,
+        unavailableMcp,
+        mcpReadDirectories,
+        grantBrokers,
+      });
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
+      // Every refusal comes before the proxy opens the key file (F453): nothing
+      // touches a refused key file, this process included.
+      if (keyFile && isPublic) {
+        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
+      }
       // A public pi never holds the provider key: it talks to a loopback proxy
       // with a per-turn token, and the proxy, in this process, adds the key and
       // pins the model (the same shape as Goose and Qwen).
@@ -888,23 +900,6 @@ export default {
       await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(
         proxy ? { ...provider, baseUrl: proxy.baseURL } : provider, model,
       ), null, 2)}\n`, { mode: 0o600 });
-
-      const unavailableMcp = [];
-      const mcpReadDirectories = [];
-      const grantBrokers = [];
-      const servers = resolveMcpServers(ctx.environment?.mcp, {
-        ...ctx,
-        credentialFile: credential?.path || null,
-        credentialDir: credential?.dir || null,
-        publicSeat: isPublic,
-        unavailableMcp,
-        mcpReadDirectories,
-        grantBrokers,
-      });
-      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
-      if (keyFile && isPublic) {
-        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
-      }
       const childEnv = isPublic ? {
         // A scrubbed environment: nothing of the operator's crosses into the
         // jail, and the provider variable holds the proxy's token, not the key.
