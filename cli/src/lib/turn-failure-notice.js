@@ -18,6 +18,7 @@
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
 import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
 import { classifySpawnFailure, GATEWAY_BUDGET_RE, SPAWN_FAILURE_CLASS } from './spawn-retry.js';
+import { modelUnavailableFailure } from './model-unavailable.js';
 
 /** How long one cause stays posted in a pod before the seat may post it again. */
 export const CANT_ANSWER_NOTICE_WINDOW_MS = 60 * 60 * 1000;
@@ -137,6 +138,24 @@ export const cantAnswerNotice = (error) => {
     return { cause: 'out-of-allowance', text: OUT_OF_ALLOWANCE_NOTICE };
   }
   return null;
+};
+
+// F370 rough spot #11: Settings said "spawn failed" and nothing more; the cause
+// was only in the seat's log. The runner reports one of these fixed codes with
+// a failed outcome, never the error text. The server stores the code alone.
+export const SPAWN_FAILURE_REASONS = [
+  'claude-signed-out', 'login', 'wont-start', 'out-of-allowance', 'tools-unavailable', 'codex-version', 'model-unavailable',
+];
+// A shell's "found but can't run it" exit, on the adapter's own exit line.
+const NOT_EXECUTABLE_EXIT = /^\w+ exited(?: with code)? 126\b/;
+
+/** The failed spawn's reason code, or null when no known cause matches. */
+export const spawnFailureReason = (error) => {
+  if (!error) return null;
+  if (modelUnavailableFailure(error)) return 'model-unavailable';
+  const cause = cantAnswerNotice(error)?.cause;
+  if (SPAWN_FAILURE_REASONS.includes(cause)) return cause;
+  return NOT_EXECUTABLE_EXIT.test(String(error.message ?? '')) ? 'wont-start' : null;
 };
 
 /**

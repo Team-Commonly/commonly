@@ -2,6 +2,10 @@ import mongoose, { Schema } from 'mongoose';
 
 // Runner observations are separate from desired installation configuration.
 // No raw argv, environment, error text, prompt or provider response belongs here.
+// A failed spawn's reason is a fixed code the runner picks (F370 #11), never its text.
+export const SPAWN_FAILURE_REASONS = [
+  'claude-signed-out', 'login', 'wont-start', 'out-of-allowance', 'tools-unavailable', 'codex-version', 'model-unavailable',
+] as const;
 const receipt = new Schema({
   harness: { type: String, required: true },
   version: { type: String, default: null },
@@ -17,6 +21,7 @@ const schema = new Schema({
   turnRunning: { type: Boolean, default: false },
   lastTurnAt: { type: Date, default: null },
   lastSpawnOutcome: { type: String, enum: ['completed', 'failed', null], default: null },
+  lastSpawnFailure: { type: String, enum: [...SPAWN_FAILURE_REASONS, null], default: null },
   lastSpawn: { type: receipt, default: null },
 }, { timestamps: true });
 export default mongoose.model('AgentRuntimeObservation', schema);
