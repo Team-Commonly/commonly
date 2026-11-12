@@ -637,6 +637,10 @@ describe('github.create_pull_request: what a PR body may carry (F168)', () => {
     '\u200BCo-authored-by: hidden <h@example.com>',
     '\u202ESigned-off-by: x',
     'Co-\u200Dauthored-by: split',
+    '\u00A0Co-authored-by: nbsp',
+    '\u3000\u000BSigned-off-by: wide space and vertical tab',
+    'Co-authored\u034F-by: combining grapheme joiner',
+    'Reviewed-by\u00A0: nbsp before the colon',
   ])('a body trailer that attributes anyone refuses before parking: %s', async (line) => {
     await expect(hosted('github.create_pull_request', prArgs({ body: `Closes #12\n\n${line}` })))
       .rejects.toMatchObject({ code: 'pr_attribution_trailer' });
