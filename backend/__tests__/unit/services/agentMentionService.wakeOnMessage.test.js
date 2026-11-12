@@ -205,6 +205,8 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
   // F232: postController sends a comment on a post with no pod with
   // onlyExplicitMentions, because its podId is only a pod the commenter is in.
+  // These pin what that flag does to such a comment; the controller tests in
+  // service/agentThreadComment.test.js are the ones that fail without the fix.
   describe('a comment with no @ on a post with no pod', () => {
     const podlessComment = {
       content: 'nice post',

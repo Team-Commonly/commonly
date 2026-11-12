@@ -203,7 +203,7 @@ describe('addComment says which pod the post belongs to', () => {
     userId: user._id, content: 'x', comments: [], ...(podId ? { podId } : {}),
   });
 
-  test('a comment with no @ on a post with no pod wakes nobody in the borrowed pod', async () => {
+  test('a comment with no @ on a post with no pod is sent with onlyExplicitMentions', async () => {
     const user = await makeUser();
     await podOf(user);
     const mention = await commentOn(await postIn(user), user, 'nice post');
