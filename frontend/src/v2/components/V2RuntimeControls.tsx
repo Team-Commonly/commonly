@@ -164,7 +164,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
     {runtime.observation?.lastSpawnOutcome === 'failed' && alertRow(k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
     {runtime.observation?.lastSpawnOutcome === 'failed' && <div className="lrow v2-agent-settings-page__stack" data-testid="runtime-spawn-failure">
       <span className="lb" />
-      <span className="vl mo">{k(`spawnFailure.${SPAWN_FAILURE_REASONS.has(runtime.observation.lastSpawnFailure || '')
+      <span className="vl">{k(`spawnFailure.${SPAWN_FAILURE_REASONS.has(runtime.observation.lastSpawnFailure || '')
         ? runtime.observation.lastSpawnFailure : 'unknown'}`)}</span>
       <span className="ac" />
     </div>}
