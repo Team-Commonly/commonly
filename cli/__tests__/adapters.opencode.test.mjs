@@ -2262,12 +2262,16 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       await symlink(tempRoot, join(ctx.cwd, 'src', 'deep', 'cache'));
       await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*credential/i);
       expect(spawn.calls).toHaveLength(0);
-      // Reverse: a link elsewhere runs on a seat with no grant (a grant seat
-      // refuses any link out of the workspace; see the chain tests below).
+      // F185: a seat with no grant is walked the same way, so a link to a
+      // folder elsewhere is refused too; a link to a regular file elsewhere runs.
       await rm(join(ctx.cwd, 'src', 'deep', 'cache'));
       await mkdir(join(root, 'elsewhere'), { recursive: true });
       await symlink(join(root, 'elsewhere'), join(ctx.cwd, 'src', 'other'));
       ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*src.*other.*outside the workspace/i);
+      await rm(join(ctx.cwd, 'src', 'other'));
+      await writeFile(join(root, 'elsewhere', 'notes.txt'), 'x');
+      await symlink(join(root, 'elsewhere', 'notes.txt'), join(ctx.cwd, 'src', 'other'));
       await opencode.spawn('plain turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2331,9 +2335,9 @@ describe('opencode public seat — the grant broker (F175a)', () => {
   });
 
   // CodeRabbit round 2 (#3487): a walk that stops at its bound has not proven
-  // the workspace clean. A seat carrying the grant broker refuses; a seat with
-  // no broker entry has no grant to protect and runs.
-  test('a walk that reaches its entry bound refuses a broker seat and lets a seat without one run', async () => {
+  // the workspace clean. F185: every public spawn holds a live token in its
+  // spawn folder, so a seat with no broker entry refuses too.
+  test('a walk that reaches its entry bound refuses a broker seat and a seat without one alike', async () => {
     await withTemp(async (root) => {
       const spawn = makeSpawnImpl();
       const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: join(root, 'temp-root'),
@@ -2341,11 +2345,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
       await mkdir(join(root, 'temp-root'), { recursive: true });
       await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
-      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
       expect(spawn.calls).toHaveLength(0);
 
-      // Reverse: the same workspace, no broker entry, runs.
-      ctx.environment = { ...ctx.environment, mcp: [] };
+      // Reverse: a workspace inside the bound runs.
+      await Promise.all([1, 2, 3, 4].map((n) => rm(join(ctx.cwd, `f${n}.txt`))));
       await opencode.spawn('plain turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2362,7 +2368,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       await opencode.spawn('broker turn', ctx);
       expect(spawn.calls).toHaveLength(1);
       await mkdir(join(ctx.cwd, 'a', 'b', 'c', 'd'), { recursive: true });
-      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*depth bound/i);
       expect(spawn.calls).toHaveLength(1);
     });
   });
@@ -2465,11 +2471,15 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       ctx.environment = { ...ctx.environment, mcp: [OFF_ORIGIN_BEARER] };
       await mkdir(join(root, 'temp-root'), { recursive: true });
       await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
-      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
       expect(spawn.calls).toHaveLength(0);
 
-      // Reverse: the same entry with no credential header gets no file and runs.
+      // F185: the same entry with no credential header is held to the same
+      // bound (the spawn folder still holds the seat's own token); a workspace
+      // inside the bound runs.
       ctx.environment = { ...ctx.environment, mcp: [{ ...OFF_ORIGIN_BEARER, headers: {} }] };
+      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
+      await Promise.all([1, 2, 3, 4].map((n) => rm(join(ctx.cwd, `f${n}.txt`))));
       await opencode.spawn('side turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2521,9 +2531,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         // the walk cannot vouch for a tree it never read.
         await rm(join(outside, 'y'));
         await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
-        expect(spawn.calls).toHaveLength(0);
-        // Reverse: a seat with no remote bearer is not held to it.
+        // F185: a seat with no remote bearer is held to it too.
         ctx.environment = { ...ctx.environment, mcp: [] };
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the deep link pointing inside the workspace runs.
+        await rm(join(modules, 'x', 'y'));
+        await symlink(ctx.cwd, join(modules, 'x', 'y'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2607,9 +2621,10 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(workspace, 'node_modules', 'real-pkg', 'dist'), { recursive: true });
         await symlink(join(spawnRoot, 'agent-1'), join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'));
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual({
-          link: join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'), reason: 'reaches_spawn_root',
+          link: join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'), reason: 'reaches_spawn_root', secret: spawnRoot,
         });
-        // Reverse: without the deep walk (a no-grant spawn) it is not looked at.
+        // Reverse: a direct caller that turns the deep walk off does not look
+        // there (every public spawn turns it on since F185).
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toBeNull();
       });
     });
@@ -2632,14 +2647,18 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       });
     });
 
-    test('a spawn with no remote bearer skips the dependency walk, bad link and all', async () => {
+    // F185: a spawn with no remote bearer still holds its own token in the
+    // spawn folder, so it gets the same dependency walk.
+    test('a spawn with no remote bearer walks the dependency tree too', async () => {
       await withTemp(async (root) => {
-        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root, {
-          _dependencyWalkBounds: { maxDepth: 1, maxEntries: 1 },
-        });
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root);
         ctx.environment = { ...ctx.environment, mcp: [] };
         await mkdir(join(modules, 'real-pkg', 'dist'), { recursive: true });
         await symlink(tempRoot, join(modules, 'real-pkg', 'dist', 'x'));
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*real-pkg.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: without the link it runs.
+        await rm(join(modules, 'real-pkg', 'dist', 'x'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2698,9 +2717,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
           await symlink(tempRoot, join(locked, 'y'));
           await chmod(locked, 0o111);
           await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not list.*src.*locked.*EACCES/i);
-          expect(spawn.calls).toHaveLength(0);
-          // Reverse: a seat with no grant is not held to it.
+          // F185: a seat with no grant is held to it too.
           noGrant(ctx);
+          await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not list.*src.*locked.*EACCES/i);
+          expect(spawn.calls).toHaveLength(0);
+          // Reverse: a listable directory runs.
+          await chmod(locked, 0o755);
+          await rm(join(locked, 'y'));
           await opencode.spawn('plain turn', ctx);
           expect(spawn.calls).toHaveLength(1);
         } finally {
@@ -2721,9 +2744,12 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(repo, 'other', 'node_modules', 'evil', 'dist'), { recursive: true });
         await symlink(tempRoot, join(repo, 'other', 'node_modules', 'evil', 'dist', 'x'));
         await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*other.*node_modules.*evil.*dist.*x.*credential/i);
-        expect(spawn.calls).toHaveLength(0);
-        // Reverse: a seat with no grant walks only its workspace.
+        // F185: a seat with no grant walks the whole worktree too.
         noGrant(ctx);
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*other.*node_modules.*evil.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: without the link it runs.
+        await rm(join(repo, 'other', 'node_modules', 'evil', 'dist', 'x'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2782,7 +2808,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(workspace, 'src'), { recursive: true });
         await symlink(upper, join(workspace, 'src', 'up'));
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toEqual({
-          link: join(workspace, 'src', 'up'), reason: 'reaches_spawn_root',
+          link: join(workspace, 'src', 'up'), reason: 'reaches_spawn_root', secret: spawnRoot,
         });
         // Reverse: an unrelated directory in another case is not a hit.
         await rm(join(workspace, 'src', 'up'));
