@@ -23,7 +23,9 @@ import { byoPodExemptAgentIds, namingLiftsFor, namingLiftsRefusal } from './byoG
 import { recordBrokerCall } from './brokerRecordService';
 import { APPROVAL_OUTCOME_UNKNOWN, isWriteUnknown } from './brokerWriteOutcome';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
-import { assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles } from './seatGithubCommit';
+import {
+  ATTRIBUTION_TRAILER, assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles,
+} from './seatGithubCommit';
 import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 
 // Typed, so tsc refuses a call that names an installation without its App (F172).
@@ -381,6 +383,20 @@ const getPullRequest: GithubToolDefinition = {
   },
 };
 
+// F168: a squash merge writes the PR body into the commit, so the body answers
+// to the commit message's rule (seatGithubCommit.ATTRIBUTION_TRAILER): a seat's
+// work is attributed to the App, and it does not get to name people.
+const assertNoAttributionTrailer = (body: unknown): void => {
+  if (typeof body === 'string' && ATTRIBUTION_TRAILER.test(body)) {
+    throw new RoomGrantError(
+      'pr_attribution_trailer',
+      'a pull request body may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...): '
+        + 'a squash merge puts the body in the commit',
+      400,
+    );
+  }
+};
+
 const createPullRequest: GithubToolDefinition = {
   name: 'github.create_pull_request',
   description: 'Open a pull request in the connected GitHub repository from your own seat/<your user id>/ '
@@ -405,6 +421,7 @@ const createPullRequest: GithubToolDefinition = {
   async prepareApproval(rawArgs, connection, agentUserId) {
     assertNoUnknown(rawArgs, ['title', 'head', 'base', 'body', 'draft']);
     assertOwnedSeatBranch(rawArgs.head, agentUserId);
+    assertNoAttributionTrailer(rawArgs.body);
     return pinConnectionRepository(rawArgs, connection);
   },
   async call(rawArgs, connection, agentUserId) {
@@ -423,6 +440,7 @@ const createPullRequest: GithubToolDefinition = {
     if (rawArgs.draft !== undefined && typeof rawArgs.draft !== 'boolean') {
       throw new RoomGrantError('invalid_tool_args', 'draft must be boolean', 400);
     }
+    assertNoAttributionTrailer(rawArgs.body);
     const pull = await GitHubAppService.createPullRequest({
       owner: connection.owner,
       repo: connection.repo,

@@ -623,6 +623,60 @@ describe('the owner card for a parked commit (HOLD round 3)', () => {
   });
 });
 
+// F168 (#3475 follow-up Lows). A squash merge carries the PR body into the
+// commit, so the body answers to the commit message's trailer rule; the owner
+// reads bidi controls on the card as marks, not as reordered text; and the
+// card's byte cap never splits a character.
+describe('github.create_pull_request: what a PR body may carry (F168)', () => {
+  test.each([
+    'Co-authored-by: Sam <sam@example.com>',
+    'Signed-off-by: Owner <o@example.com>',
+    '  Reviewed-by: a reviewer',
+  ])('a body trailer that attributes anyone refuses before parking: %s', async (line) => {
+    await expect(hosted('github.create_pull_request', prArgs({ body: `Closes #12\n\n${line}` })))
+      .rejects.toMatchObject({ code: 'pr_attribution_trailer' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    nothingReachedGithub();
+  });
+
+  test('a body that only mentions a trailer mid-line still parks', async () => {
+    await expect(hosted('github.create_pull_request', prArgs({ body: 'Fixes the Co-authored-by: parser' })))
+      .rejects.toMatchObject({ code: 'approval_required' });
+  });
+});
+
+describe('the owner card: bidi controls and the byte cap (F168)', () => {
+  const { prWriteApprovalSummary, CARD_CONTENTS_MAX } = jest.requireActual('../../../services/prWriteScope');
+  const envelope = (over = {}) => ({
+    owner: 'Team-Commonly', repo: 'commonly', ...commitArgs(), parentSha: PARENT, branchExists: false, ...over,
+  });
+
+  test('a bidi control in file text shows as a visible mark', () => {
+    const content = 'if (isAdmin) {‮ } ⁦// check later⁩\n';
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files: [{ path: 'src/a.js', content }] }));
+    expect(summary.files[0].content).toBe('if (isAdmin) {⟦U+202E⟧ } ⟦U+2066⟧// check later⟦U+2069⟧\n');
+    expect(summary.files[0].bytes).toBe(Buffer.byteLength(content, 'utf8'));
+  });
+
+  test('the commit message marks them too', () => {
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ message: 'Fix‮daolnwod' }));
+    expect(summary.message.text).toBe('Fix⟦U+202E⟧daolnwod');
+  });
+
+  test('a file with no bidi control keeps its card shape', () => {
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files: [{ path: 'a', content: 'ok' }] }));
+    expect(summary.files[0]).toEqual({ path: 'a', bytes: 2, content: 'ok', truncated: false });
+  });
+
+  test('a cap that falls inside a character backs off to the character before it', () => {
+    const content = `${'a'.repeat(CARD_CONTENTS_MAX - 1)}é`;
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files: [{ path: 'a', content }] }));
+    expect(summary.files[0].content).not.toContain('�');
+    expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 1}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 1} of ${CARD_CONTENTS_MAX + 1} bytes\\]$`));
+    expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX - 1, totalBytes: CARD_CONTENTS_MAX + 1 });
+  });
+});
+
 describe('the hosted projection', () => {
   const RoomGrantModel = require('../../../models/RoomGrant');
   test('offers the hosted PR writes only on a prWrite grant, and never push_branch', async () => {

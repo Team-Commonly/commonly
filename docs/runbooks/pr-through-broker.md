@@ -225,7 +225,9 @@ shipped git remote helper prints.
   path the owner reads is the path that lands. Content with a NUL byte refuses
   `invalid_content`. A message line that attributes anyone (`Co-authored-by:`,
   `Signed-off-by:`, any `<Word>-by:`, any case) refuses
-  `commit_attribution_trailer`. If the branch moved after the call parked, it
+  `commit_attribution_trailer`. A pull request body is held to the same rule
+  and refuses `pr_attribution_trailer`, because a squash merge puts the body in
+  the commit. If the branch moved after the call parked, it
   refuses `stale_branch`, and a ref update is never forced.
 - **The parent carries the default branch's protected files.** At execution,
   before any object is written, the parent's `.github/workflows`,
@@ -257,7 +259,11 @@ shipped git remote helper prints.
   - A commit: repo, head, where it lands (`new branch <head> from <base> at
     <sha>`, or `adds to existing branch <head> at <sha>` with no base), the full
     commit message (labelled, cut with a marker past 4,096 characters), and each
-    file's text, up to 64 KiB across the commit, with a truncation marker.
+    file's text, up to 64 KiB across the commit, with a truncation marker. The
+    cap backs off to a whole UTF-8 character. A bidirectional control in the
+    message or a file shows as a visible mark such as `⟦U+202E⟧`, so the owner
+    reads the characters that will land, not their reordered rendering; the
+    call that runs is unchanged.
   - A pull request: repo, base, head, title, and a 2,000-character preview of
     the body.
 
