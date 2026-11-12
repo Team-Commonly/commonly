@@ -202,10 +202,11 @@ refused, and only Commonly tools may be listed. CI runs it on macOS
 
 The proof keeps its seat home under the home folder, where a real seat's is.
 Under the temp folder, which resolves through `/private`, the seat home's own
-grant covered `/private`'s metadata and hid a guard that couldn't load: on
-0.1.354 dsh refused to stat `/private` while it checked the guard file in the
-turn's temp folder, disabled it, and the seat got no tools (F115 prod walk,
-2026-11-12). The profile now grants that folder's ancestors metadata only, and
-`seatbelt.mcp-config-ancestors.smoke.test.mjs` checks that a file directly in
-an ancestor still can't be read, listed or written.
+grant covered `/private`'s metadata and hid a guard that couldn't load. On
+0.1.354 the profile refused dsh's stat of `/private` while dsh checked the
+guard file in the turn's temp folder, so dsh disabled the guard and the seat
+got no tools (F115 prod walk, 2026-11-12). The profile now grants that
+folder's ancestors metadata only. `seatbelt.mcp-config-ancestors.smoke.test.mjs`
+checks that a file directly in an ancestor can't be read, an ancestor can't be
+listed, and nothing can be written there.
 

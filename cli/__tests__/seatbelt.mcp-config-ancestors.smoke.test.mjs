@@ -45,11 +45,8 @@ describe('the MCP config folder\'s ancestors, under Seatbelt', () => {
   });
 
   afterAll(() => {
-    if (process.platform !== 'darwin') return;
-    rmSync(home, { recursive: true, force: true });
-    rmSync(config, { recursive: true, force: true });
-    rmSync(beside, { force: true });
-    rmSync(written, { force: true });
+    // Each is set in turn by beforeAll, so a throw there leaves the later ones unset.
+    for (const path of [home, config, beside, written]) if (path) rmSync(path, { recursive: true, force: true });
   });
 
   const probe = (code) => {
