@@ -55,7 +55,9 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { claudeRunStats } from '../reply-receipt.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash, randomUUID } from 'crypto';
+import {
+  createHash, randomBytes, randomUUID, timingSafeEqual,
+} from 'crypto';
 import { accessSync, constants, realpathSync } from 'fs';
 import {
   chmod,
@@ -141,16 +143,17 @@ const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
-// The helper takes the token from one of two places. With a socket path as its
-// second argument (a public seat, F461), it asks the adapter, which holds the
-// token in memory for the turn; the credential file can then go once the
-// stdio servers have read it. Otherwise it reads the per-spawn file.
+// The helper takes the token from one of two places. With a socket path and a
+// key file as its second and third arguments (a public seat, F461), it sends
+// the key and the adapter, which holds the token in memory for the turn,
+// answers with the token; the credential file can then go once the stdio
+// servers have read it. Otherwise it reads the per-spawn file.
 const HEADER_TOKEN_HELPER_SOURCE = `import { readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 
-const fromChannel = (path) => new Promise((resolve, reject) => {
+const fromChannel = (path, key) => new Promise((resolve, reject) => {
   const chunks = [];
-  const socket = createConnection({ path });
+  const socket = createConnection({ path }, () => socket.write(key + '\\n'));
   socket.setTimeout(10000, () => socket.destroy(new Error('the header credential channel did not answer')));
   socket.on('data', (chunk) => chunks.push(chunk));
   socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -159,7 +162,7 @@ const fromChannel = (path) => new Promise((resolve, reject) => {
 const channel = process.argv[3];
 let token;
 if (channel) {
-  token = (await fromChannel(channel)).trim();
+  token = (await fromChannel(channel, readFileSync(process.argv[4], 'utf8').trim())).trim();
   if (!token) throw new Error('the header credential channel sent nothing');
 } else {
   const credentialFile = process.env.${CREDENTIAL_FILE_VAR};
@@ -1128,38 +1131,72 @@ const MAX_SOCKET_PATH = 103;
 // F461. A public seat's header helper asks this process for the token over a
 // Unix socket in the spawn's own folder (0700, the socket 0600), so the
 // credential file no longer has to outlive the stdio servers' first read. The
-// token stays in this process's memory; the socket hands it to whoever connects
-// for the rest of the turn, which is no wider than the file it replaces, and
-// Claude's Read tool cannot open a socket. Windows keeps the file: a named
-// pipe's default ACL grants read to Everyone. A path too long for a socket
-// keeps the file too, with a warning.
-const startHeaderCredentialChannel = async (dir, token, { platform = process.platform, warn } = {}) => {
+// token stays in this process's memory.
+//
+// The socket answers only a client that first sends this turn's key, a 256-bit
+// random value in a 0600 file beside it. A Unix connect is not a file read: on
+// macOS another seat's Seatbelt jail, denied this folder, can still connect to
+// a socket whose path it learns (measured), because a seat's network is open.
+// The key keeps the boundary where the file had it, at who can read this
+// folder. Claude's Read tool cannot open a socket, so reading the key alone
+// gets it nothing.
+//
+// Windows keeps the file: a named pipe's default ACL grants read to Everyone. A
+// path too long for a socket, or a socket that cannot be set up, keeps the file
+// too, with a warning.
+const CHANNEL_IDLE_MS = 10_000;
+export const startHeaderCredentialChannel = async (dir, token, { platform = process.platform, warn } = {}) => {
   const value = typeof token === 'string' ? token.trim() : '';
   if (!value || platform === 'win32') return null;
   const path = join(dir, 'headers.sock');
+  const keyPath = join(dir, 'headers.key');
   if (Buffer.byteLength(path) > MAX_SOCKET_PATH) {
     warn?.(`the header credential socket path is too long (${path}), so this turn keeps its credential file for its HTTP servers`);
     return null;
   }
+  const key = randomBytes(32).toString('hex');
+  const expected = Buffer.from(key);
+  const sockets = new Set();
   const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
-    socket.end(value);
+    socket.setTimeout(CHANNEL_IDLE_MS, () => socket.destroy());
+    socket.setEncoding('utf8');
+    let received = '';
+    socket.on('data', (chunk) => {
+      received += chunk;
+      const newline = received.indexOf('\n');
+      if (newline === -1) {
+        if (received.length > key.length) socket.destroy();
+        return;
+      }
+      const sent = Buffer.from(received.slice(0, newline));
+      socket.removeAllListeners('data');
+      if (sent.length === expected.length && timingSafeEqual(sent, expected)) socket.end(value);
+      else socket.destroy();
+    });
   });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(path, () => { server.off('error', reject); resolve(); });
+  // Ends every open connection too: server.close() alone waits for them.
+  const close = () => new Promise((resolve) => {
+    for (const socket of sockets) socket.destroy();
+    server.close(() => resolve());
   });
-  server.unref();
   try {
+    await writePrivateFile(keyPath, key);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(path, () => { server.off('error', reject); resolve(); });
+    });
+    server.unref();
     await chmod(path, 0o600);
   } catch (err) {
-    server.close();
-    throw err;
+    if (server.listening) await close();
+    await rm(keyPath, { force: true }).catch(() => {});
+    warn?.(`the header credential socket could not be set up (${err?.code || err?.message || err}), so this turn keeps its credential file for its HTTP servers`);
+    return null;
   }
-  return {
-    path,
-    close: () => new Promise((resolve) => { server.close(() => resolve()); }),
-  };
+  return { path, keyPath, close };
 };
 
 // Claude's headersHelper is invoked when an HTTP connection is established and
@@ -1183,7 +1220,7 @@ const createTokenHeaderHelpers = async (mcpServers, dir, channel = null) => {
         QUOTE_SHELL_ARGUMENT(process.execPath),
         QUOTE_SHELL_ARGUMENT(scriptPath),
         QUOTE_SHELL_ARGUMENT(templatesPath),
-        ...(channel ? [QUOTE_SHELL_ARGUMENT(channel.path)] : []),
+        ...(channel ? [QUOTE_SHELL_ARGUMENT(channel.path), QUOTE_SHELL_ARGUMENT(channel.keyPath)] : []),
       ].join(' '),
       headerNames: Object.keys(templates),
     });

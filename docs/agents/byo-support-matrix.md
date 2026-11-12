@@ -242,17 +242,23 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     token in memory and closes the socket when the turn ends. A turn whose only
     MCP server is the broker has no stdio reader, so its file goes before
     Claude starts.
-    - Opening the socket as a file fails (macOS, and ENXIO on Linux), so a
-      Read tool gets nothing from it.
-    - Any process in the turn that knows the path can still connect, as it
-      could read the file before. On macOS the connect goes through the seat's
-      open network rule, not its folder rules (checked under real
-      `sandbox-exec`). On Linux it works through bwrap's read-only bind of the
-      folder (checked with a read-only bind mount in a container).
+    - The socket answers only a client that first sends the turn's key, a
+      256-bit random value in `headers.key` (0600) beside it. The key matters
+      because connecting isn't reading a file. On macOS the connect goes
+      through the seat's open network rule, not its folder rules, so another
+      seat's jail that learned the path could connect. That jail can't read
+      the key, so it gets nothing (checked under real `sandbox-exec` with two
+      seat profiles). Who can get the token is again whoever can read this
+      folder, as with the file.
+    - Opening the socket as a file fails (macOS, and ENXIO on Linux), so a Read
+      tool gets nothing from it. A Read of the key alone gets no token, because
+      a Read can't connect.
+    - On Linux the connect works through bwrap's read-only bind of the folder
+      (checked with a read-only bind mount in a container).
     - Windows keeps the file for the turn. A named pipe's default ACL lets
       Everyone read it, which is wider than a 0600 file.
-    - A temp folder whose socket path would pass 103 bytes also keeps the file,
-      with a warning.
+    - A temp folder whose socket path would pass 103 bytes, or a socket that
+      can't be set up, also keeps the file, with a warning.
     - A private seat's helper still reads the file.
   - Measured with stub servers that write their ready files, per adapter
     (`adapters.*.credential-release-f460.test.mjs`), with the release
