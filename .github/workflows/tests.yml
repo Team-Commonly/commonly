@@ -63,8 +63,12 @@ permissions:
 #
 # Per-SHA grouping lets every commit finish; PR runs still supersede correctly
 # because pull_request.number short-circuits before the fallback is read.
+#
+# The event name is in the non-PR fallback (D227): Deploy Dev gates on the push run's
+# Service Tests, so a schedule or workflow_dispatch run on the same SHA must not cancel
+# that push run and leave the roll blocked on a "cancelled" result.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: true
 
 jobs:

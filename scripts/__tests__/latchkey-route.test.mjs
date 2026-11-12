@@ -382,6 +382,10 @@ test('D227: Backend tests in the merge queue run only when the entry touches bac
   assert.match(cond, /\(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) && needs\.changes\.outputs\.backend == 'true'/);
 });
 
+test('D227: a schedule or dispatch run cannot cancel the push run the deploy gate reads', () => {
+  assert.match(yml, /^  group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| format\('\{0\}-\{1\}', github\.event_name, github\.sha\) \}\}$/m);
+});
+
 test('D227: the changes filter diffs a merge_group entry against the queue base', () => {
   assert.match(jobBlock('changes'), /elif \[ "\$event" = "merge_group" \]; then\n\s+base="\$\{\{ github\.event\.merge_group\.base_sha \}\}"/);
 });
