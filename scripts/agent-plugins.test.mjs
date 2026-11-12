@@ -61,3 +61,20 @@ test('the Hermes package marks its server untrusted, and the README says writes 
   assert.doesNotMatch(readme, /without asking/i);
   assert.match(readme, /asks before/i);
 });
+
+// Codex reads .codex-plugin/plugin.json, and so does the HOL scanner that
+// gates catalog listings (it skips a plugin without one). The root plugin.json
+// stays for Agent Plugins 1.0 readers. Both must say the same thing, and the
+// Codex one must point at the MCP config and skills that ship (walked 11-12:
+// with only .codex-plugin/plugin.json and no mcpServers pointer, Codex
+// installed the plugin with no MCP server).
+test('the Codex manifest matches the Agent Plugins manifest and points at what ships', async () => {
+  const { $schema, ...root } = await readJson('commonly-agent-plugin/plugin.json');
+  const { skills, mcpServers, ...codex } = await readJson('commonly-agent-plugin/.codex-plugin/plugin.json');
+  assert.ok($schema);
+  assert.deepEqual(codex, root);
+  assert.equal(mcpServers, './mcp.json');
+  assert.equal(skills, './skills/');
+  await readJson(`commonly-agent-plugin/${mcpServers}`);
+  await readFile(resolve(plugins, 'commonly-agent-plugin/skills/commonly/SKILL.md'), 'utf8');
+});
