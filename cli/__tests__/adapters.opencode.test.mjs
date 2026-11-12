@@ -2857,6 +2857,32 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       });
     });
 
+    // F462: a `..` after a missing component is folded as text. The kernel
+    // can't follow that link today; the fold is where it lands once the
+    // missing piece exists as a directory, the only thing a public seat's
+    // tools can create there. Pinned, so a change to it is a decision.
+    test('a `..` after a missing component is judged where it lands once that component is a directory', async () => {
+      await withTemp(async (root) => {
+        const real = realpathSync(root);
+        const workspace = join(real, 'workspace');
+        const spawnRoot = join(real, 'temp-root', 'commonly-opencode-abc');
+        await mkdir(spawnRoot, { recursive: true });
+        await mkdir(join(workspace, 'src'), { recursive: true });
+        await symlink(join(real, 'missing', '..', 'temp-root', 'commonly-opencode-abc'), join(workspace, 'src', 'odd'));
+        const refused = { link: join(workspace, 'src', 'odd'), reason: 'reaches_spawn_root', secret: spawnRoot };
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual(refused);
+        // Once the missing piece is a real directory, the kernel lands there too.
+        await mkdir(join(real, 'missing'));
+        expect(realpathSync(join(workspace, 'src', 'odd'))).toBe(spawnRoot);
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual(refused);
+        // Reverse: the same shape landing on nothing secret runs.
+        await rm(join(real, 'missing'), { recursive: true });
+        await rm(join(workspace, 'src', 'odd'));
+        await symlink(join(real, 'missing', '..', 'elsewhere'), join(workspace, 'src', 'odd'));
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toBeNull();
+      });
+    });
+
     // LOW: a link realpath cannot resolve for a reason other than a missing
     // target (a loop) is not proof of no route; a grant seat refuses.
     test('an unresolvable link (a loop) refuses a grant seat; a dangling one does not', async () => {

@@ -288,6 +288,13 @@ const secretMatcher = (secretRoots) => {
  * target is not proof of no route: the seat's data home gets files during the
  * turn. Throws ELOOP past MAX_LINK_HOPS, and any lstat or readlink error other
  * than a missing component.
+ *
+ * A `..` after the missing component is folded as text (F462). The kernel
+ * can't follow such a link at all today. The fold is where it lands once the
+ * missing piece exists as a directory, which is all a public seat's tools can
+ * create (they have no shell, so no symlink). Only someone with access to the
+ * host could make it a link instead, and that person can read the credential
+ * directly.
  */
 const linkLanding = (path) => {
   let special = false;
@@ -367,6 +374,15 @@ const linkLanding = (path) => {
  * public seat, since OpenCode's tools reach the whole worktree. A link to a
  * regular file outside `boundary` and every secret folder passes: a file holds
  * no further link.
+ *
+ * Hard links are not looked for (F462). A readdir gives no inode, so finding
+ * them means a stat per file in the worktree, and only the host's owner can
+ * make one: a public seat's tools have no shell. The runtime token and the
+ * proxy token are new files in a new temp folder each spawn, so no link made
+ * before the spawn names them, and a public seat's data home never gets the
+ * operator's login. The one lasting secret is the operator's provider.keyFile:
+ * a hard link to it in the worktree would pass the jail-path check, but making
+ * one is the owner putting their own key in the workspace, the same as a copy.
  */
 const scanWorkspaceLinks = (workspace, spawnRoot, {
   boundary = workspace,

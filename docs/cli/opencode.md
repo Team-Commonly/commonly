@@ -168,3 +168,13 @@ A link to a single file outside the repository is fine. A virtualenv's
 links only. The check also refuses when the repository is
 too large to finish checking. The message names the link or the limit; remove
 the link, or move the agent to a smaller workspace.
+
+Two things the check deliberately leaves alone:
+
+- **A link like `missing/../somewhere`.** It's judged as if `missing` were a
+  folder. The system can't follow it until `missing` exists, and a public
+  agent can only create folders, not links.
+- **Hard links.** A public agent has no shell to make one. The tokens a turn
+  holds are new files each turn, so a hard link made before the turn can't
+  point at them. Your provider key file does last between turns, so don't
+  hard-link it into the workspace. That's the same as copying the key there.
