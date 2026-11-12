@@ -27,10 +27,22 @@ import {
 
 const PACKAGE_NAME = '@commonlyai/mcp';
 
+/**
+ * F468: tools this process never lists and answers as unknown. The CLI sets it
+ * for a public seat whose runtime cannot filter one MCP server's tools
+ * (DeepSeek Harness), so a withheld tool isn't offered to the model at all.
+ * A comma-separated list of tool names; absent or empty withholds nothing.
+ */
+export const WITHHELD_TOOLS_ENV = 'COMMONLY_MCP_WITHHELD_TOOLS';
+
+export const parseWithheldTools = (raw) => new Set(String(raw ?? '')
+  .split(',').map((name) => name.trim()).filter(Boolean));
+
 export const createServer = (config, { channel = false, env = process.env, channelOptions = {} } = {}) => {
   // Off unless the CLI declared this a public seat; see ./public-seat-gate.js.
   const gate = createPublicSeatGate(env);
-  const tools = buildTools(config, { onFailure: gate.observe });
+  const withheld = parseWithheldTools(env?.[WITHHELD_TOOLS_ENV]);
+  const tools = buildTools(config, { onFailure: gate.observe }).filter((tool) => !withheld.has(tool.name));
   const byName = new Map(tools.map((t) => [t.name, t]));
 
   const options = channel
