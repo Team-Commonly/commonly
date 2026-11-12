@@ -292,6 +292,31 @@ describe('a hosted run in a granted pod', () => {
     });
   });
 
+  // F317: a broker call that is not `ok` has not happened yet, so a post later
+  // in the same response waits for the next step. `pending_approval` counts.
+  test('a broker call waiting on approval holds a post in the same response', async () => {
+    mockCallTool.mockResolvedValue({ callId: 'tool_call_pending', result: { pending: true }, outcome: 'pending_approval' });
+    const brokerThenPost = toolCallTurn();
+    brokerThenPost.data.choices[0].message.tool_calls.push({
+      id: 'call_2',
+      type: 'function',
+      function: { name: 'commonly_post_message', arguments: JSON.stringify({ content: 'Done, the issue list is posted.' }) },
+    });
+    mockAxiosPost.mockResolvedValueOnce(brokerThenPost).mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'what is open?' } });
+
+    const AgentMessageService = require('../../../services/agentMessageService');
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Done, the issue list is posted.' }),
+    );
+    const held = mockAxiosPost.mock.calls[1][1].messages.filter((message) => message.role === 'tool')[1];
+    expect(JSON.parse(held.content).error).toMatch(/^Not posted: github_list_issues, .*\(pending_approval\)/);
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls.map((call) => call.outcome)).toEqual(['pending_approval', 'failed']);
+    expect(savedRun.turns[0].toolCalls[1].error).toBe('post_held_after_failed_call');
+  });
+
   test('a hosted provider transport error is failed in the run, matching the grant trail', async () => {
     mockCallTool.mockRejectedValue(new RoomGrantError(
       'provider_unreachable',
