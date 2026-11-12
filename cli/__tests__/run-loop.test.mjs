@@ -1456,6 +1456,69 @@ describe('performRun', () => {
     );
   });
 
+  // F192: a seat with the commonly MCP posts for itself, so a heartbeat's final
+  // text is its narration ("Checked the board, nothing new"), not a message. A
+  // bare CLI with no posting tool (the stub above) still speaks through output.
+  const seatWithPostTool = { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+
+  test('a heartbeat on a seat with the post tool keeps its narration out of chat', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-narration',
+      type: 'heartbeat',
+      payload: { content: 'Check for a decision that needs a human.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'Checked the board and the pod. Nothing new since the last heartbeat.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      environment: seatWithPostTool,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-narration/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('a heartbeat batched with a mention still posts the reply on a seat with the post tool', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-hb-with-mention', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }),
+      makeEvent({ _id: 'evt-mention', type: 'chat.mention', payload: { content: '@my-stub when is the release?' } }),
+    ];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'The release is on Friday.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      environment: seatWithPostTool,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(replyPosts(mockPost)).toHaveLength(1);
+  });
+
   test('manual heartbeat without content still runs with a safe fallback prompt', async () => {
     const events = [makeEvent({
       _id: 'evt-hb-manual',

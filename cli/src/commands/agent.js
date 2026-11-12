@@ -90,6 +90,7 @@ import {
   ADAPTERS_WITH_PUBLIC_ONLY_GRANT,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
+  COMMONLY_MCP_SERVER_NAME,
   defaultMcpServers,
   seatBaseline,
   withDefaultMcpServer,
@@ -3296,7 +3297,16 @@ export const performRun = ({
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const declinedInText = event.type !== 'agent.ask' && !someoneIsWaiting(event)
       && CLOSES_ON_BARE_SENTINEL.test(replyText);
-    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText;
+    // F192: a heartbeat turn on a seat that has the commonly MCP. Nobody asked
+    // it anything, and it can post with commonly_post_message, so its final
+    // text is narration ("Checked the board, nothing new"), not a message. A
+    // bare CLI with no posting tool still speaks through its output.
+    const seatPostsForItself = (placement.environment?.mcp || [])
+      .some((server) => server?.name === COMMONLY_MCP_SERVER_NAME);
+    const heartbeatNarration = Boolean(replyText) && seatPostsForItself && !someoneIsWaiting(event)
+      && (event.type === 'heartbeat' || event.payload?.onlyHeartbeat === true);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText
+      || heartbeatNarration;
     // A refused model route is not a silent turn. pi reports the refusal on its
     // own JSON stream and exits 0 with no text, so before this the seat log read
     // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
@@ -3342,7 +3352,9 @@ export const performRun = ({
       }
     } else if (silentReply) {
       const reason = heartbeatControlReply ? replyText
-        : declinedInText ? 'NO_REPLY' : (replyText || 'empty output');
+        : declinedInText ? 'NO_REPLY'
+          : heartbeatNarration ? 'heartbeat narration; this seat posts with commonly_post_message'
+            : (replyText || 'empty output');
       // A turn that posted via tool and THEN ended with the sentinel is not the
       // same event as a turn that produced nothing — but this branch reported
       // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
@@ -4223,6 +4235,8 @@ export const performRun = ({
         ...actionEntries[0].event.payload,
         batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
         hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
+        onlyHeartbeat: entries.filter((entry) => !entry.pastCap)
+          .every((entry) => entry.event.type === 'heartbeat'),
         someoneWaiting: entries.some((entry) => !entry.pastCap && someoneIsWaiting(entry.event)),
       },
     };
@@ -4240,6 +4254,7 @@ export const performRun = ({
             ...entry.event.payload,
             batchEventIds: [String(entry.event._id)],
             hasHeartbeat: entry.event.type === 'heartbeat',
+            onlyHeartbeat: entry.event.type === 'heartbeat',
             someoneWaiting: someoneIsWaiting(entry.event),
           },
         },
