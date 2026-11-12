@@ -394,6 +394,9 @@ const V2AgentBYO: React.FC = () => {
   // finish the page, mention the agent, and get silence with no way to know
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
+  // F457: the issued agent's run stopped before checking in because its
+  // harness wasn't on that computer. Keyed to the issue, like stallReport.
+  const [harnessMissingReport, setHarnessMissingReport] = useState<{ key: object; harness: string | null } | null>(null);
   // Which command the person copied for THIS issue, and whether they have been
   // waiting long enough to say so. A stranger copied the MCP snippet three
   // times and never the Terminal command (walk 2026-10-31, TASK-721): the page
@@ -1317,7 +1320,17 @@ const V2AgentBYO: React.FC = () => {
       }
       try {
         const { data } = await axios.get('/api/users/me/agent-connection');
-        if (cancelled || !data?.connected) return;
+        if (cancelled) return;
+        // F457: a run that found no harness reports it before exiting. Only a
+        // report for this agent, made after this issue, counts; polling goes
+        // on, so installing it and running the line again turns this green.
+        const missing = (Array.isArray(data?.harnessMissing) ? data.harnessMissing : []).find(
+          (row: { agentName?: string; instanceId?: string; at?: string }) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+            && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
+            && row.at && new Date(row.at).getTime() >= issued.issuedAt - 60_000,
+        );
+        setHarnessMissingReport(missing ? { key: issued, harness: typeof missing.harness === 'string' ? missing.harness : null } : null);
+        if (!data?.connected) return;
         const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
           === issued.agentName.toLowerCase();
         const afterIssue = data.lastUsedAt
@@ -2340,7 +2353,17 @@ const V2AgentBYO: React.FC = () => {
               </p>
             ) : (
               <p className="v2-byo__listen-note" data-testid="byo-listen-waiting">
-                {missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
+                {harnessMissingReport?.key === issued
+                  ? (
+                    <span data-testid="byo-listen-harness-missing">
+                      {harnessMissingReport.harness
+                        ? t('agentByo.listen.harnessMissing', {
+                          name: issued.agentName, tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
+                        })
+                        : t('agentByo.listen.harnessMissingNone', { name: issued.agentName })}
+                    </span>
+                  )
+                  : missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
                   ? t('agentByo.listen.missedCommand', { name: issued.agentName })
                   : listenState === 'timeout'
                     ? t('agentByo.listen.stillWaiting', { name: issued.agentName })

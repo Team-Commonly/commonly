@@ -153,6 +153,8 @@ export interface IUser extends Document {
     machineId?: string | null;
     // Set once by a foreground run with no sandbox; only ever adds a grant refusal.
     hostUnconfined?: boolean;
+    // F457: set by a quick-try run that found no harness.
+    harnessMissing?: { harness: string | null; at: Date };
     // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
@@ -379,6 +381,12 @@ const userSchema = new Schema<IUser>({
     // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
     machineId: { type: String, default: null },
     hostUnconfined: { type: Boolean },
+    // F457: what a quick-try run looked for and couldn't find (null: none it
+    // probes), and when. Declared or stripped, as above.
+    harnessMissing: {
+      type: new Schema({ harness: { type: String, default: null }, at: { type: Date, required: true } }, { _id: false }),
+      default: undefined,
+    },
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
     reconnectRequestedAt: { type: Date, default: null },
