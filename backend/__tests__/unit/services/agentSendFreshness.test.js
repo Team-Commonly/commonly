@@ -39,7 +39,11 @@ describe('agent send-time freshness', () => {
     expect(hold.message).toContain('continueAnyway:true');
     expect(Message.countDocuments).toHaveBeenCalledWith({
       podId: 'pod-id',
-      $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
+      // F140: the agent's own install intro is not something it has to read.
+      $nor: [
+        { messageType: 'system', 'payload.kind': 'system-action' },
+        { userId: 'agent-id', authorKind: 'kernel', 'payload.kind': 'install-intro' },
+      ],
       $and: [
         { $or: [{ userId: { $ne: 'agent-id' } }, { authorKind: 'kernel' }] },
         { $or: [
@@ -148,6 +152,18 @@ describe('agent send-time freshness', () => {
     expect(Cursor.advanceReadWatermark).toHaveBeenCalledTimes(1);
   });
 
+  it('excludes the agent\'s own install intro from both Mongo send holds and omitted-read checks', async () => {
+    jest.clearAllMocks();
+    Message.countDocuments.mockResolvedValue(0);
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+    Message.exists.mockResolvedValue(null);
+    await Freshness.unseenMessages('agent-id', 'pod-id');
+    await Freshness.recordRead('agent-id', 'pod-id', { at: new Date() }, []);
+    const ownIntro = { userId: 'agent-id', authorKind: 'kernel', 'payload.kind': 'install-intro' };
+    expect(Message.countDocuments.mock.calls[0][0].$nor).toContainEqual(ownIntro);
+    expect(Message.exists.mock.calls[0][0].$nor).toContainEqual(ownIntro);
+  });
+
   it('excludes system actions from both PostgreSQL send holds and omitted-read checks', async () => {
   jest.clearAllMocks();
   process.env.PG_HOST = 'configured';
@@ -157,6 +173,7 @@ describe('agent send-time freshness', () => {
   expect(pool.query.mock.calls).toHaveLength(2);
   for (const [sql] of pool.query.mock.calls) {
     expect(sql).toContain("NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')");
+    expect(sql).toContain("AND m.author_kind = 'kernel' AND COALESCE(m.payload->>'kind', '') = 'install-intro')");
     expect(sql.indexOf("= 'system-action'")).toBeLessThan(sql.indexOf('LIMIT'));
   }
 });

@@ -11,6 +11,15 @@ type Hold = { code: 'unseen_messages'; unseenCount: number; messages: Preview[];
 
 type ReadStart = { at: Date; revision?: number };
 
+// A kernel row under the agent's own id is a notice the platform posted for it,
+// so it counts as unseen. The one exception is its install intro: that is the
+// agent introducing itself, and counting it refused every fresh agent's first
+// claim (F140). The marker is server-set at install; an agent cannot set it.
+const OWN_INTRO = 'install-intro';
+const notOwnIntroSql = (ownParam: string): string => `AND NOT (m.user_id = ${ownParam}
+          AND m.author_kind = 'kernel' AND COALESCE(m.payload->>'kind', '') = '${OWN_INTRO}')`;
+const ownIntroMongo = (ownId: string) => ({ userId: ownId, authorKind: 'kernel', 'payload.kind': OWN_INTRO });
+
 async function readStart(podId: unknown): Promise<ReadStart> {
   const at = new Date(Date.now() - 1);
   if (pool && process.env.PG_HOST) {
@@ -65,6 +74,7 @@ async function omittedMessages(
       SELECT ${count ? 'COUNT(*)::integer AS skipped_count' : '1'} FROM messages m
       WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
         AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
+        ${notOwnIntroSql('$4')}
         AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         AND NOT (m.id = ANY($5::int[]))
       ${count ? '' : 'LIMIT 1'}
@@ -74,7 +84,7 @@ async function omittedMessages(
   const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
   const query = {
     podId,
-    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }, ownIntroMongo(ownId)],
     _id: { $nin: observed },
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -125,6 +135,7 @@ async function unseenMessages(
         FROM messages m LEFT JOIN users u ON u._id = m.user_id
         WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
+          ${notOwnIntroSql('$3')}
           AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           AND ($4::integer IS NULL OR m.id > $4)
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
@@ -159,7 +170,7 @@ async function unseenFromMongo(
   const query = {
     podId,
     ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
-    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }, ownIntroMongo(ownId)],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
       { $or: [
