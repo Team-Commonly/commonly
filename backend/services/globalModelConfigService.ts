@@ -190,7 +190,7 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
       provider: normalizeProvider(llm?.provider),
       model: normalizeModel(
         (llm as Record<string, unknown>)?.model || (llm as Record<string, unknown>)?.defaultModel,
-        DEFAULT_CONFIG.llmService.model,
+        defaultLlmServiceModel(normalizeProvider(llm?.provider)),
       ),
       contextLimit: normalizeContextLimit(llm?.contextLimit),
       openrouter: {
@@ -320,6 +320,12 @@ class GlobalModelConfigService {
     const rowHeldAPick = Boolean(savedPrimary) && savedPrimary !== RETIRED_COMMUNITY_PRIMARY;
     if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
       delete stored.openclaw.communityAgentModel;
+    }
+    // The OpenClaw model follows AGENT_DEFAULT_MODEL the same way (F105): the
+    // default carried in by the merge is stored only over a model the row held.
+    if (!String(storedBefore.openclaw?.model || '').trim()
+      && sanitized.openclaw.model === DEFAULT_CONFIG.openclaw.model) {
+      delete stored.openclaw.model;
     }
 
     await SystemSetting.findOneAndUpdate(

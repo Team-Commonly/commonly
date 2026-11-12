@@ -118,9 +118,11 @@ only (D243), and DeepSeek had no calls in the window before deletion (see
 a platform call (llmService, the dev chat route, the admin policy's llmService
 model) asks LiteLLM for `LITELLM_CHAT_MODEL`, else `AGENT_DEFAULT_MODEL`
 (`backend/config/agentDefaultModel.ts`: `defaultChatModel`). The admin policy's
-OpenClaw model is `openrouter/<AGENT_DEFAULT_MODEL>` with no fallbacks, and the
-commonly-bot and newshound clients default to `deepseek-v4-flash` behind the
-chart's `AGENT_MODEL`. Before F105 every one of these said `gemini-2.5-flash` or
+OpenClaw model is `openrouter/<AGENT_DEFAULT_MODEL>` with no fallbacks, and an
+admin save stores it only over a model the row already held, so it keeps
+following the chart. The shared bot client and newshound default to
+`deepseek-v4-flash` when `AGENT_MODEL` is unset; the chart sets commonly-bot's
+`AGENT_MODEL`, and `docker-compose.dev.yml` sets newshound's. Before F105 every one of these said `gemini-2.5-flash` or
 `google/gemini-*`, which LiteLLM served with DeepSeek wherever Gemini was off
 (`litellm.legacyAliases`). A call that goes straight to Google's own API (the
 Gemini SDK in llmService, the bots' Gemini REST fallback) still sends a Gemini
@@ -665,7 +667,7 @@ Set these env vars for local backend to route through it:
 |-----|-------|
 | `LITELLM_BASE_URL` | `http://localhost:4000` |
 | `LITELLM_MASTER_KEY` | `dev-litellm-key` |
-| `LITELLM_CHAT_MODEL` | optional; unset, calls ask for `AGENT_DEFAULT_MODEL` (built-in `deepseek-v4-flash`). `docker-compose.dev.yml` sets both to `gemini-2.5-flash`, which this LiteLLM serves (F105) |
+| `LITELLM_CHAT_MODEL` | `gemini-2.5-flash`, a model this LiteLLM serves. Unset, calls ask for `AGENT_DEFAULT_MODEL` (built-in `deepseek-v4-flash`), which it doesn't serve. `docker-compose.dev.yml` sets both to `gemini-2.5-flash` (F105) |
 | `LITELLM_DISABLED` | `true` to bypass and call Gemini directly |
 
 For embeddings:
