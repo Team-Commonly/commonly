@@ -91,6 +91,75 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
     expect(AgentEvent.find).not.toHaveBeenCalled();
   });
 
+  describe('threads (F263): only a post in the ask\'s own place answers it', () => {
+    const inThread = (message, root) => ({ ...message, thread_root_id: root });
+
+    it('a post in another thread leaves the ask open', async () => {
+      eventRows([{ status: 'delivered', payload: { messageId: '12' } }]);
+      User.exists.mockResolvedValue({ _id: PERSON });
+      await expect(check([
+        row(11, SEAT, 'Blue', 3),
+        inThread(row(12, PERSON, '@seat again?', 2), 5),
+        inThread(row(13, SEAT, 'Hello!', 1), 7),
+      ])).resolves.toBeNull();
+      expect(JSON.stringify(AgentEvent.find.mock.calls[0][0].$or)).toContain('"$in":["12"]');
+    });
+
+    it('a main-channel post leaves a thread\'s ask open', async () => {
+      eventRows([{ status: 'delivered', payload: { messageId: '12' } }]);
+      User.exists.mockResolvedValue({ _id: PERSON });
+      await expect(check([
+        inThread(row(11, SEAT, 'Blue', 3), null),
+        inThread(row(12, PERSON, '@seat again?', 2), 5),
+        inThread(row(13, SEAT, 'Hello!', 1), null),
+      ])).resolves.toBeNull();
+    });
+
+    it('a post in the same thread closes the ask, with no event read', async () => {
+      const duplicate = await check([
+        row(11, SEAT, 'Blue', 3),
+        inThread(row(12, PERSON, '@seat again?', 2), 5),
+        inThread(row(13, SEAT, 'Hello!', 1), 5),
+      ]);
+      expect(duplicate).toMatchObject({ id: 11 });
+      expect(AgentEvent.find).not.toHaveBeenCalled();
+    });
+
+    it('a reply in the thread under the ask closes it', async () => {
+      const duplicate = await check([
+        inThread(row(11, SEAT, 'Blue', 3), null),
+        inThread(row(12, PERSON, '@seat again?', 2), null),
+        inThread(row(13, SEAT, 'Hello!', 1), 12),
+      ]);
+      expect(duplicate).toMatchObject({ id: 11 });
+      expect(AgentEvent.find).not.toHaveBeenCalled();
+    });
+
+    it('a repeat in another place spends the ask: the next copy is held', async () => {
+      eventRows([{ status: 'delivered', payload: { messageId: '12' } }]);
+      User.exists.mockResolvedValue({ _id: PERSON });
+      const duplicate = await check([
+        inThread(row(11, SEAT, 'Blue', 3), null),
+        inThread(row(12, PERSON, '@seat again?', 2), 5),
+        inThread(row(13, SEAT, 'Blue', 1), null),
+      ]);
+      expect(duplicate).toMatchObject({ id: 13 });
+      expect(AgentEvent.find).not.toHaveBeenCalled();
+    });
+
+    it('reads rows back to the oldest ask it still counts', async () => {
+      await check([
+        row(11, SEAT, 'Blue', 25),
+        inThread(row(12, PERSON, '@seat again?', 20), 5),
+        inThread(row(13, SEAT, 'Hello!', 1), 7),
+      ]);
+      const [filter] = AgentEvent.find.mock.calls[0];
+      const askAt = new Date(at(20)).valueOf();
+      expect(filter.createdAt.$gte.valueOf()).toBeLessThanOrEqual(askAt - 10 * 60 * 1000 + 1000);
+      expect(filter.createdAt.$gte.valueOf()).toBeGreaterThanOrEqual(askAt - 10 * 60 * 1000 - 1000);
+    });
+  });
+
   it('a system line under the agent\'s name is not a post of its own', async () => {
     eventRows([{ status: 'delivered', payload: { messageId: '12' } }]);
     User.exists.mockResolvedValue({ _id: PERSON });

@@ -1091,7 +1091,8 @@ class AgentMessageService {
    * someone else also earns. A reply under the agent's message counts unless it
    * @'d someone, and so does a person's message joined to a row that wouldn't.
    *
-   * Not answered: nothing the agent posted comes after the ask. That is what
+   * Not answered: nothing the agent posted in the ask's place comes after it
+   * (a post in another thread answers someone else). That is what
    * makes one ask buy one repeat, and it stops a person's "hi" reopening every
    * older text once the agent has said hello. A post in the same turn ahead of
    * the answer closes it too; the agent is told so and can reword.
@@ -1101,7 +1102,7 @@ class AgentMessageService {
    * and can reach us before the post it covers, so that ack stays open while its
    * turn could still be running. No later row status can stand in for this.
    *
-   * An ask older than the agent's newest post stays closed, even one that post
+   * An ask older than the agent's newest post in its place stays closed, even one that post
    * did not answer. A turn replaying its own post and a later turn answering an
    * ask that arrived mid-turn look the same here: no message records which ask
    * it answered, and `deliveredAt` is not a claim time, because the minute renew,
@@ -1123,22 +1124,35 @@ class AgentMessageService {
     instanceId?: string;
     userId: unknown;
     recent: Array<MessageNormalized & { user_id?: string }>;
+    /** The normalized text being posted: a copy of it closes an ask wherever it landed. */
+    target?: string;
   }): Promise<boolean> {
     const {
-      podId, agentName, instanceId, userId, recent,
+      podId, agentName, instanceId, userId, recent, target,
     } = options;
     if (!agentName) return false;
     const authorOf = (message: MessageNormalized & { user_id?: string }) => String(message?.userId?._id || message?.user_id || '');
     const isOwnPost = (message: MessageNormalized & { user_id?: string }) => (
       authorOf(message) === String(userId) && message.messageType !== 'system'
     );
-    const newestOwn = recent.map(isOwnPost).lastIndexOf(true);
-    if (newestOwn < 0) return false;
-    const since = recent.slice(newestOwn + 1)
-      .filter((message) => authorOf(message) && authorOf(message) !== String(userId));
+    if (!recent.some(isOwnPost)) return false;
+    const idOf = (message: MessageNormalized) => String(message.id ?? message._id);
+    // A post answers an ask in its own place: the same thread, the main
+    // channel, or a thread opened under the ask. A Mongo read carries no thread
+    // keys, so there any later post closes it, as before threads (F263).
+    // A copy of this text closes it anywhere, so one ask buys one repeat even
+    // when the repeat lands in another place.
+    const answers = (post: MessageNormalized, ask: MessageNormalized) => (
+      post.thread_root_id === undefined || ask.thread_root_id === undefined
+      || (target !== undefined && AgentMessageService.normalizeForDedupe(post.content || '') === target)
+      || String(post.thread_root_id ?? '') === String(ask.thread_root_id ?? '')
+      || String(post.thread_root_id) === idOf(ask)
+    );
+    const since = recent.filter((message, index) => authorOf(message) && authorOf(message) !== String(userId)
+      && !recent.slice(index + 1).some((later) => isOwnPost(later) && answers(later, message)));
     if (since.length === 0) return false;
-    const ids = since.map((message) => String(message.id ?? message._id));
-    const newestOwnAt = new Date(recent[newestOwn].createdAt as string | Date).valueOf();
+    const ids = since.map(idOf);
+    const oldestAskAt = Math.min(...since.map((message) => new Date(message.createdAt as string | Date).valueOf()));
     try {
       const rows = await AgentEvent.find({
         agentName: { $eq: String(agentName).toLowerCase() },
@@ -1146,7 +1160,7 @@ class AgentMessageService {
         podId: { $eq: String(podId) },
         type: { $in: ADDRESSING_MENTION_TYPES },
         // A joined message is newer than its row, by at most this much.
-        createdAt: { $gte: new Date(newestOwnAt - JOINABLE_ROW_AGE_MS) },
+        createdAt: { $gte: new Date(oldestAskAt - JOINABLE_ROW_AGE_MS) },
         $or: [{ 'payload.messageId': { $in: ids } }, { 'payload.coalesced.messageId': { $in: ids } }],
       }).select('status deliveredAt delivery.outcome payload').lean() as AskRow[];
       const asked = new Set(rows.filter(askRowIsOpen).flatMap((row) => [
@@ -1199,7 +1213,7 @@ class AgentMessageService {
 
     if (!hit) return null;
     if (await AgentMessageService.personAskStillOpen({
-      podId, agentName, instanceId, userId, recent: recent as MessageEntry[],
+      podId, agentName, instanceId, userId, recent: recent as MessageEntry[], target,
     })) return null;
     return {
       id: hit.id || hit._id || null,
