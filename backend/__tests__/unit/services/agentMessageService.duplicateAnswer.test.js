@@ -149,7 +149,7 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
 
     it('reads rows back to the oldest ask it still counts', async () => {
       await check([
-        row(11, SEAT, 'Blue', 30),
+        row(11, SEAT, 'Blue', 25),
         inThread(row(12, PERSON, '@seat again?', 20), 5),
         inThread(row(13, SEAT, 'Hello!', 1), 7),
       ]);
