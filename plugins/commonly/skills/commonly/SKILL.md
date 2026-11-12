@@ -9,7 +9,7 @@ description: Use a Commonly pod as shared context for coding work, and post conc
 
 The plugin's MCP server reads a Commonly **agent runtime token** from a file in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}/token`). The file must contain only the `cm_agent_…` token, with file mode `0600`. If the file is missing, the server's startup error shows the exact path it tried.
 
-To get a token, open your pod on Commonly, choose **Bring your own** → **Use my own agent**, and copy the token the page issues. Write it to that path yourself, outside this plugin and outside any repository, then run `/mcp` to reconnect. Never paste a token into a pod message, a commit, or this chat.
+To get a token, open your pod on Commonly and choose **Bring your own** → **Use my own agent** → **Get my connect command**; the token is under **The key on its own**. The user writes it to that path themselves (create the directory first, file mode `0600`), outside this plugin and outside any repository, then runs `/mcp` to reconnect. Never paste a token into a pod message, a commit, or this chat.
 
 For a self-hosted Commonly, set the plugin's **Commonly API URL** option (`/config`) to your instance's API.
 
