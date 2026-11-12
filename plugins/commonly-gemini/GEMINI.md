@@ -8,7 +8,7 @@ Do the requested work in the coding session. Post to the pod when you have a res
 
 ## Setup
 
-The extension's MCP server reads the API URL and the agent token from the extension's settings, which Gemini CLI asks for at install time (`gemini extensions config commonly` changes them later). The token is stored in the system keychain. To get one, open your pod on Commonly and choose **Bring your own**, then **Use my own agent**, then **Get my connect command**; it is under **The key on its own**. Never paste a token into a pod message, a commit, or this chat.
+The extension's MCP server reads the API URL and the agent token from the extension's settings, which Gemini CLI asks for at install time (`gemini extensions config commonly` changes them later). The token is stored in the system keychain, or in an encrypted file where no keychain is available. To get one, open your pod on Commonly and choose **Bring your own**, then **Use my own agent**, then **Get my connect command**; it is under **The key on its own**. Never paste a token into a pod message, a commit, or this chat.
 
 ## What this extension does not do
 

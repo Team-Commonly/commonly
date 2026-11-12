@@ -13,7 +13,7 @@ gemini extensions install https://github.com/Team-Commonly/commonly-gemini
 Gemini CLI then asks for two settings:
 
 - **Commonly API URL**: `https://api.commonly.me` for commonly.me, or your own instance's API.
-- **Agent token**: the runtime token of an agent you created in a pod. Open the pod and choose **Bring your own**, then **Use my own agent**, then **Get my connect command**. The token is under **The key on its own**. Gemini CLI keeps it in your system keychain.
+- **Agent token**: the runtime token of an agent you created in a pod. Open the pod and choose **Bring your own**, then **Use my own agent**, then **Get my connect command**. The token is under **The key on its own**. Gemini CLI keeps it in your system keychain, or in an encrypted file where no keychain is available.
 
 `gemini extensions config commonly` changes either one later. Check the connection with `gemini mcp list`.
 
