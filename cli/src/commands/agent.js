@@ -90,6 +90,7 @@ import {
   ADAPTERS_WITH_PUBLIC_ONLY_GRANT,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
+  COMMONLY_MCP_SERVER_NAME,
   defaultMcpServers,
   seatBaseline,
   withDefaultMcpServer,
@@ -1823,6 +1824,19 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
   + FAILURE_IN_PLAIN_WORDS;
 
+// F192: the one place the wrapper does drop final text by kind. On a heartbeat
+// nobody asked anything, and a seat with the commonly MCP posts for itself, so
+// its final text is narration of the checklist; two of three narration cases in
+// a 7-day count were such seats, with no sentinel to catch. TASK-293's rule still
+// holds: the turn is told, in its own closing line, that its final text goes
+// nowhere and the tool is how it speaks. runTurn and the prompt read the same
+// predicate, so the line and the drop can't disagree.
+const seatPostsForItself = (environment) => (environment?.mcp || [])
+  .some((server) => server?.name === COMMONLY_MCP_SERVER_NAME);
+const HEARTBEAT_TEXT_IS_NOT_POSTED = 'This turn is only a heartbeat: nobody asked you anything, and your final text is not posted. '
+  + 'If something needs saying, post it with commonly_post_message, then end with NO_REPLY. '
+  + 'Otherwise end with NO_REPLY alone, with no summary.';
+
 // Who owes an open question an answer depends on who else is here. Walked 11-06:
 // "can anyone…" drew an "I can't" from a seat nobody addressed. With another
 // agent here, that seat should step aside, and a person's message it declines
@@ -3296,7 +3310,14 @@ export const performRun = ({
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const declinedInText = event.type !== 'agent.ask' && !someoneIsWaiting(event)
       && CLOSES_ON_BARE_SENTINEL.test(replyText);
-    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText;
+    // F192: a heartbeat turn on a seat that has the commonly MCP. Its prompt
+    // said the final text is not posted (HEARTBEAT_TEXT_IS_NOT_POSTED), so that
+    // text is narration ("Checked the board, nothing new"), not a message. A
+    // bare CLI with no posting tool still speaks through its output.
+    const heartbeatNarration = Boolean(replyText) && seatPostsForItself(placement.environment) && !someoneIsWaiting(event)
+      && (event.type === 'heartbeat' || event.payload?.onlyHeartbeat === true);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText
+      || heartbeatNarration;
     // A refused model route is not a silent turn. pi reports the refusal on its
     // own JSON stream and exits 0 with no text, so before this the seat log read
     // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
@@ -3342,7 +3363,9 @@ export const performRun = ({
       }
     } else if (silentReply) {
       const reason = heartbeatControlReply ? replyText
-        : declinedInText ? 'NO_REPLY' : (replyText || 'empty output');
+        : declinedInText ? 'NO_REPLY'
+          : heartbeatNarration ? 'heartbeat narration; this seat posts with commonly_post_message'
+            : (replyText || 'empty output');
       // A turn that posted via tool and THEN ended with the sentinel is not the
       // same event as a turn that produced nothing — but this branch reported
       // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
@@ -3578,6 +3601,9 @@ export const performRun = ({
     const contextShown = new Set(context.slice(0, Math.max(0, BODY_LIMIT - wakeEntries.length + context.length)));
     const shownEntries = wakeEntries.filter((entry) => !entry.result || contextShown.has(entry));
     const heldBack = entries.filter((entry) => entry.pastCap).length;
+    // The same set the batch's onlyHeartbeat reads, so the closing line matches the drop.
+    const inTurn = entries.filter((entry) => !entry.pastCap);
+    const heartbeatOnly = inTurn.length > 0 && inTurn.every((entry) => entry.event.type === 'heartbeat');
     const answersPerson = shownEntries.some(answersAPerson);
     const bodies = shownEntries.map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
@@ -3644,9 +3670,11 @@ export const performRun = ({
           ? 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
             + 'For anything else here, post only an action or a materially useful response. '
             + FINAL_TEXT_ANSWERS_A_PERSON
-          : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
-            + FINAL_TEXT_IS_POSTED
-            + roomQuestionLine(pod, shownEntries)),
+          : heartbeatOnly && seatPostsForItself(seatEnvironment)
+            ? `Do not narrate the inbox. ${HEARTBEAT_TEXT_IS_NOT_POSTED}`
+            : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
+              + FINAL_TEXT_IS_POSTED
+              + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
 
@@ -4223,6 +4251,8 @@ export const performRun = ({
         ...actionEntries[0].event.payload,
         batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
         hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
+        onlyHeartbeat: entries.filter((entry) => !entry.pastCap)
+          .every((entry) => entry.event.type === 'heartbeat'),
         someoneWaiting: entries.some((entry) => !entry.pastCap && someoneIsWaiting(entry.event)),
       },
     };
@@ -4240,6 +4270,7 @@ export const performRun = ({
             ...entry.event.payload,
             batchEventIds: [String(entry.event._id)],
             hasHeartbeat: entry.event.type === 'heartbeat',
+            onlyHeartbeat: entry.event.type === 'heartbeat',
             someoneWaiting: someoneIsWaiting(entry.event),
           },
         },
