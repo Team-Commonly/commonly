@@ -18,6 +18,7 @@ on:
       - 'cli/src/lib/memory-bridge.js'
       - 'packages/seats/**'
       - 'cli/__tests__/dsh.public-smoke.test.mjs'
+      - 'cli/__tests__/seatbelt.mcp-config-ancestors.smoke.test.mjs'
       - 'commonly-mcp/**'
       - '.github/workflows/dsh-public-proof.yml'
 
@@ -58,4 +59,6 @@ jobs:
         run: |
           export COMMONLY_DSH_SMOKE_BINARY="$PWD/.dev/dsh/node_modules/.bin/dsh"
           cd cli
-          node --experimental-vm-modules node_modules/.bin/jest __tests__/dsh.public-smoke.test.mjs --runInBand
+          # The guard plugin's folder grants its ancestors metadata only; this checks both halves.
+          node --experimental-vm-modules node_modules/.bin/jest __tests__/dsh.public-smoke.test.mjs \
+            __tests__/seatbelt.mcp-config-ancestors.smoke.test.mjs --runInBand

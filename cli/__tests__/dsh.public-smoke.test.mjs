@@ -6,9 +6,9 @@
  * 0.2.1-rc.2 launcher installed from npm (macOS only: Seatbelt).
  */
 import { createServer } from 'node:http';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, rmSync } from 'node:fs';
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dsh from '../src/lib/adapters/dsh.js';
@@ -17,9 +17,17 @@ import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js'
 const binary = process.env.COMMONLY_DSH_SMOKE_BINARY;
 const smoke = binary && process.platform === 'darwin' ? test : test.skip;
 const PREFIX = 'mcp__commonly__';
+// The root lives under the home folder, which nothing cleans up: removed even when setup
+// throws before the test's own try opens.
+const roots = [];
+afterAll(() => { for (const dir of roots) rmSync(dir, { recursive: true, force: true }); });
 
 smoke('real dsh on a public seat offers only Commonly tools and refuses its own and the withheld ones', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'commonly-dsh-public-proof-'));
+  // Under the home folder, where a real seat's home is: the temp folder resolves through
+  // /private, whose metadata the profile grants only as an ancestor of a granted path, so a
+  // root there hid a guard that could not load (F115 prod walk, 11-12).
+  const root = await mkdtemp(join(homedir(), '.commonly-dsh-public-proof-'));
+  roots.push(root);
   const workspace = join(root, 'workspace');
   await mkdir(workspace);
   // What a seat or a stranger could plant in the workspace: none of it may reach the turn.
