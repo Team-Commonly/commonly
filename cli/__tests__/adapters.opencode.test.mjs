@@ -326,7 +326,7 @@ describe('opencode MCP config', () => {
       const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
       await mkdir(join(pkgDir, 'src'), { recursive: true });
       await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
-        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
       }));
       await writeFile(join(pkgDir, 'src', 'index.js'), '');
       await writeFile(join(home, 'current'), '0.3.13\n');
@@ -337,7 +337,13 @@ describe('opencode MCP config', () => {
       await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
       await withProcessEnv('COMMONLY_MCP_HOME', home, async () => {
         let profileOptions;
-        const spawn = makeSpawnImpl();
+        // Stands in for the Commonly server: it writes the ready file its config names.
+        const spawn = makeSpawnImpl({
+          onCall: (_cmd, _args, options) => {
+            const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+            writeFileSync(config.mcp.commonly.environment.COMMONLY_MCP_READY_FILE, 'ready\n');
+          },
+        });
         await opencode.spawn('warm turn', {
           cwd: workspace,
           env: { PATH: process.env.PATH },
@@ -384,7 +390,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
   const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
 
   const runSeat = async (chunks, {
-    trust = 'public', mcp = COMMONLY_MCP, readyFile = false, serverWrites = true, seen = {},
+    trust = 'public', mcp = COMMONLY_MCP, readyFile = true, serverWrites = true, seen = {},
   } = {}) => {
     let outcome;
     await withTemp(async (root) => {
@@ -517,11 +523,13 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       .rejects.toThrow(/^(?!.*backend is unreachable).*Commonly MCP server commonly never reported ready/);
   });
 
-  test('a release from before the ready file is not asked for one, and the turn posts as before', async () => {
+  // F460: without the file its credential would stay readable to the deadline
+  // on every turn, so a public seat refuses that release before OpenCode runs.
+  test('a public seat on a release from before the ready file is refused, before OpenCode runs', async () => {
     const seen = {};
-    const result = await runSeat(turn(), { readyFile: false, serverWrites: false, seen });
-    expect(result.text).toBe(narration);
-    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeUndefined();
+    await expect(runSeat(turn(), { readyFile: false, serverWrites: false, seen }))
+      .rejects.toThrow(/update @commonlyai\/mcp/);
+    expect(seen.env).toBeUndefined();
   });
 
   test('a private seat is never asked for one', async () => {
@@ -2426,7 +2434,38 @@ describe('opencode public seat — the grant broker (F175a)', () => {
     });
   });
 
-  test('reverse: a public seat with no remote bearer keeps its credential for the whole turn', async () => {
+  // F460: a turn that never reaches its first step (an MCP server that hangs
+  // while OpenCode waits to connect it) loses the credential at the deadline.
+  test('no first step: the credential goes at the deadline, with a warning', async () => {
+    await withTemp(async (root) => {
+      const seen = {};
+      const warn = jest.fn();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key',
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv],
+        _credentialRelease: { deadlineMs: 50, warn },
+        _spawnImpl: (cmd, args, options) => {
+          const proc = new EventEmitter();
+          proc.stdout = new EventEmitter();
+          proc.stderr = new EventEmitter();
+          proc.kill = jest.fn();
+          const credential = options.env.COMMONLY_TOKEN_FILE;
+          seen.atSpawn = existsSync(credential);
+          setTimeout(() => {
+            seen.atDeadline = existsSync(credential);
+            proc.emit('close', 1);
+          }, 200);
+          return proc;
+        } });
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('stuck turn', ctx)).rejects.toThrow();
+      expect(seen).toEqual({ atSpawn: true, atDeadline: false });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/public OpenCode seat: MCP servers not ready .*deleted anyway/));
+    });
+  });
+
+  // F460: the same holds for a public seat with no remote bearer; only a
+  // private seat keeps its credential for the turn.
+  test('a public seat with no remote bearer loses its credential at the first step too', async () => {
     await withTemp(async (root) => {
       const stages = {};
       const spawn = stagedSpawn(stages);
@@ -2434,7 +2473,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
       ctx.environment = { ...ctx.environment, mcp: [] };
       await opencode.spawn('plain turn', ctx);
-      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: true });
+      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: false });
     });
   });
 

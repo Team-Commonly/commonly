@@ -257,7 +257,7 @@ test('a public goose seat runs from a per-spawn home and takes MCP only from its
     const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
     await mkdir(join(pkgDir, 'src'), { recursive: true });
     await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
-      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
     await writeFile(join(pkgDir, 'src', 'index.js'), '');
     await writeFile(join(home, 'current'), '0.3.13\n');

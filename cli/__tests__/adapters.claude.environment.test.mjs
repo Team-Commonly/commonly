@@ -664,7 +664,7 @@ describe('claude adapter — ctx.environment', () => {
     const pkgDir = path.join(versionDir, 'node_modules', '@commonlyai', 'mcp');
     fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
     fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
-      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
@@ -2351,7 +2351,7 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     const pkgDir = path.join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
     fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
     fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
-      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');

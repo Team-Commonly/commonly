@@ -9,7 +9,8 @@ import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { OWNER_WOKEN_MEMORY_TOOLS } from '../public-withheld-tools.js';
 import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
-import { writeCredentialFile } from '../credential-file.js';
+import { armCredentialRelease, writeCredentialFile } from '../credential-file.js';
+import { MCP_READY_FILE_ENV, bridgeReadyFile, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, selectedMcpVersionDir } from '../mcp-home.js';
 import { describeMcpCommand } from '../mcp-server-version.js';
@@ -130,7 +131,11 @@ export const bridgedGooseExtension = (server, ctx) => {
     console.warn(`[goose] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
     return null;
   }
-  return { type: 'stdio', name: server.name, cmd: entry.command, args: entry.args, envs: entry.env };
+  const readyPath = bridgeReadyFile(server, ctx);
+  return {
+    type: 'stdio', name: server.name, cmd: entry.command, args: entry.args,
+    envs: readyPath ? { ...entry.env, [MCP_READY_FILE_ENV]: readyPath } : entry.env,
+  };
 };
 
 /** The flag contains paths and URLs only. Literal MCP secrets cannot ride argv. */
@@ -202,9 +207,15 @@ export const extensionArgs = (servers, ctx) => {
     });
     const commandWords = command.map((part) => gooseWord(substitute(part, ctx)));
     if (ctx.publicSeat) {
+      // F460: our server names the file it writes once it has read the
+      // credential (a path, not a secret). An older warm build refuses.
+      const readyPath = commonlyMcpReadyFile(server, command, ctx, { env: delivery.env });
       ctx.publicExtensions.push({ type: 'stdio', name: server.name, cmd: command[0],
         args: command.slice(1).map((part) => substitute(part, ctx)),
-        envs: Object.fromEntries(Object.entries(delivery.env).map(([name, value]) => [name, substitute(value, ctx)])),
+        envs: {
+          ...Object.fromEntries(Object.entries(delivery.env).map(([name, value]) => [name, substitute(value, ctx)])),
+          ...(readyPath ? { [MCP_READY_FILE_ENV]: readyPath } : {}),
+        },
         available_tools: publicGooseTools(ctx),
       });
     } else {
@@ -359,10 +370,16 @@ export default {
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-goose-'));
     const home = await mkdtemp(join(tmpdir(), 'commonly-goose-home-'));
     let proxy;
+    let credentialRelease = null;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
         root: tempDir, agentName: ctx.agentName || 'agent',
       });
+      // F460: the jail writes only the seat's home, so a public seat's MCP
+      // servers write their ready files there.
+      const readyFileDir = isPublic && credential ? join(home, 'mcp-ready') : null;
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
+      const readyFiles = [];
       // No tokenFile: nothing here reads one, so the token is never on disk.
       if (isPublic) proxy = await startProviderProxy({
         provider: configured, keyFile, adapterLabel: 'Goose', pinnedModel: model,
@@ -387,6 +404,7 @@ export default {
           credentialFile: credential?.path || '', instanceUrl: ctx.instanceUrl || '',
           runtimeToken: ctx.runtimeToken || '',
           publicSeat: isPublic, ownerWoken: ctx.ownerWoken, mcpReadDirectories, publicExtensions, brokerExtensions,
+          readyFileDir, readyFiles,
         }),
         ...(!isPublic ? ['-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true })] : []),
       ];
@@ -446,14 +464,35 @@ export default {
           });
         }
       }
+      // F460: on a public seat the credential goes once every MCP reader has it
+      // (their ready files), or at the deadline. A delete that fails ends the turn.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnArgs) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnArgs);
+        return child;
+      };
+      if (readyFileDir) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          label: 'public Goose seat',
+          // eslint-disable-next-line no-console
+          warn: (text) => console.warn(`[goose] ${text}`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          ...ctx._credentialRelease,
+        });
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
       const text = await runGoose({
         binary: executable, args: spawnArgs, cwd: ctx.cwd, env, timeoutMs,
         credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key, env.OPENAI_API_KEY],
         optionalExtensions: brokerExtensions,
-        spawnImpl: ctx._spawnImpl,
-      });
+        spawnImpl,
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
       return { text, newSessionId: null };
     } finally {
+      credentialRelease?.stop();
       try { await proxy?.close(); } finally {
         await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
       }

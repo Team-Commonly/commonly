@@ -92,7 +92,10 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
-import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import {
+  CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, armCredentialRelease, restoreCredentialFile, writeCredentialFile,
+} from '../credential-file.js';
+import { MCP_READY_FILE_ENV, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { workspaceGitAttachment, workspaceGitEnabled } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
@@ -1164,6 +1167,10 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
         label: 'claude',
       }).env;
     }
+    // F460: on a public seat our server names the file it writes once it has
+    // read the credential (a path, not a secret). An older warm build refuses.
+    const readyPath = spawnCommand ? commonlyMcpReadyFile(server, spawnCommand, ctx, { env: entry.env }) : null;
+    if (readyPath) entry.env = { ...(entry.env || {}), [MCP_READY_FILE_ENV]: readyPath };
     const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
     if (server.headers) {
       const headers = { ...server.headers };
@@ -1228,7 +1235,12 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
         + `inherits it. Put the credential on the entry's env to get the file channel.`,
       );
     }
-    return { dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories };
+    return {
+      dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories,
+      // A headersHelper reads the credential on every HTTP (re)connect, so a
+      // turn that has one keeps the file (F460's named residual).
+      headerHelpers: dynamicHeaderHelpers.size,
+    };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -1720,6 +1732,30 @@ export default {
 
     let mcpConfig = null;
     let publicClaudeState = null;
+    // F460: a public seat's credential goes once every MCP reader has it.
+    let readyFileDir = null;
+    let ownReadyDir = null;
+    const readyFiles = [];
+    let credentialRelease = null;
+    let releaseFailure = null;
+    let claudeChild = null;
+    const spawnImpl = (...spawnCall) => {
+      claudeChild = (ctx._spawnImpl || childSpawn)(...spawnCall);
+      return claudeChild;
+    };
+    const armRelease = () => {
+      if (!readyFileDir || !mcpConfig?.credential || mcpConfig.headerHelpers > 0) return;
+      credentialRelease = armCredentialRelease(mcpConfig.credential, {
+        readyFiles: readyFiles.map(({ path }) => path),
+        label: 'public Claude seat',
+        // eslint-disable-next-line no-console
+        warn: (text) => console.warn(`[claude] ${text}`),
+        onFailure: (failure) => { releaseFailure = failure; claudeChild?.kill?.('SIGKILL'); },
+        ...ctx._credentialRelease,
+      });
+      // A delete that failed at arm time ends the turn before Claude starts.
+      if (credentialRelease.error) throw credentialRelease.error;
+    };
     let providerProxy = null;
     // A login seat's gateway, when the host names one: config, not a secret.
     let publicLoginBaseUrl = null;
@@ -1852,7 +1888,21 @@ export default {
       }
       if (ctx.environment && ctx.cwd) ctx.onSkillsLinked?.(skillMount);
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+        // F460: the jail writes the seat's state folder, so a public seat's MCP
+        // servers write their ready files there (named per spawn, removed after).
+        if (ctx.environment?.sandbox?.trust === 'public' && publicClaudeState?.statePath) {
+          readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
+          await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
+        } else if (ctx.environment?.sandbox?.trust === 'public') {
+          // A policy-only host (D245) prepares no state folder and runs the MCP
+          // children unjailed, so a folder of this turn's own serves.
+          ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
+          await chmod(ownReadyDir, 0o700);
+          readyFileDir = ownReadyDir;
+        }
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
+          readyFileDir,
+          readyFiles,
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
           agentName: ctx.agentName,
@@ -1885,6 +1935,7 @@ export default {
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
+      armRelease();
       const stdout = await runClaude({
         cmd,
         args,
@@ -1896,7 +1947,7 @@ export default {
         // and its provider key is not an env var here, so the seat credential is
         // the value a tail can echo back.
         credentials: turnCredentials(spawnCtx),
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
         ownGroup: wantsOwnProcessGroup(ctx),
         transcriptPath: claudeTranscriptPath({
           cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
@@ -1909,6 +1960,7 @@ export default {
         commandResolution: ctx._commandResolution, // test seam only
         confined: reapEverything,
       });
+      if (releaseFailure) throw releaseFailure;
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
@@ -1922,6 +1974,8 @@ export default {
         stats: claudeRunStats(stdout),
       };
     } catch (err) {
+      // F460: a credential that could not be deleted ends the turn; no retry.
+      if (releaseFailure) throw releaseFailure;
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
       // fresh-session retry below (#2247).
@@ -1963,7 +2017,16 @@ export default {
         if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
           Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
         }
+        // F460: the first run may have released the credential once its
+        // servers had it. The retry's servers read it from the same path, so it
+        // is written there again and released again once they are ready.
+        if (credentialRelease) {
+          credentialRelease.stop();
+          await Promise.all(readyFiles.map(({ path }) => rm(path, { force: true })));
+          restoreCredentialFile(mcpConfig.credential, ctx.runtimeToken);
+        }
         const retry = await prepareArgv(retryBase, retryCtx);
+        if (credentialRelease) armRelease();
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
@@ -1971,7 +2034,7 @@ export default {
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: turnCredentials(retryCtx),
-          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
           transcriptPath: claudeTranscriptPath({
             cwd: physicalPath(ctx.cwd), sessionId: freshId,
@@ -1984,7 +2047,8 @@ export default {
           turnReap: ctx._turnReap,
           commandResolution: ctx._commandResolution, // test seam only
           confined: reapEverything,
-        });
+        }).catch((retryErr) => { throw releaseFailure || retryErr; });
+        if (releaseFailure) throw releaseFailure;
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
@@ -2009,6 +2073,9 @@ export default {
       }
       throw err;
     } finally {
+      credentialRelease?.stop();
+      await Promise.all(readyFiles.map(({ path }) => rm(path, { force: true }).catch(() => {})));
+      if (ownReadyDir) await rm(ownReadyDir, { recursive: true, force: true }).catch(() => {});
       if (mcpConfig?.dir) {
         try { await rm(mcpConfig.dir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
