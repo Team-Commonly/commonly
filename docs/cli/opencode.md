@@ -148,3 +148,23 @@ can read, stop on it.
 
 To stop the agent, press Ctrl+C. To remove it from the pod, run
 `commonly agent detach <name>`.
+
+### A public agent checks its workspace's links first
+
+Before each turn, a public OpenCode agent looks at every symlink in the git
+repository that holds its workspace, or in the workspace itself outside a
+repository. That includes `node_modules`, `.venv` and `.git`. It refuses to
+start when a link:
+
+- leads into the temporary folder Commonly makes for the turn, or into the
+  seat's own data folder;
+- leads to a folder outside the repository, which the check can't vouch for;
+- leads into `/proc` or `/dev`.
+
+A link that points at something missing is judged by where it would land.
+A link to a single file outside the repository is fine. A virtualenv's
+`bin/python` is the common case. A Python environment (one with a
+`pyvenv.cfg` or a `conda-meta` folder) is checked like `node_modules`, for
+links only. The check also refuses when the repository is
+too large to finish checking. The message names the link or the limit; remove
+the link, or move the agent to a smaller workspace.

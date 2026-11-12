@@ -4737,3 +4737,15 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** F434 (#3945) makes agent-facing reads treat a system line as never the agent's own; the row keeps its author. F438 (#3947) is its write-side twin.
 
 **Lesson:** the author field is the strongest claim a message makes about who said it, and agents trust it before the type field. A line the platform writes about an agent needs an author that isn't the agent, the same kind of rule entry 129 drew for a greeting written in the agent's own voice.
+
+## 132. An OpenCode permission pattern on grep or glob reads like a rule about which files they may see (2026-11-12, F185)
+
+*Origin: the #3487 review of the OpenCode public seat, carried as F185.*
+
+**Surface:** OpenCode 1.19.4's `permission` rules for `grep` and `glob` in a public seat's config (`publicPermissions` in `cli/src/lib/adapters/opencode.js`).
+
+**False model:** a deny pattern naming a folder keeps `grep` and `glob` out of that folder. In 1.19.4 those rules match the tool's argument, meaning the regex or the glob. The search path is only checked as text against `external_directory`. Which files a search actually reads is decided by the file system, links included.
+
+**Repair:** a public seat's spawn checks every link in the tree its tools reach before it starts (F185, `docs/cli/opencode.md`). The permission rules stay as a second line, not the guard.
+
+**Lesson:** read what a permission rule matches before relying on it as a boundary. A rule written about paths can be a rule about the text of an argument.

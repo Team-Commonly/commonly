@@ -24,7 +24,9 @@ import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { existsSync, readdirSync, realpathSync, rmSync } from 'fs';
+import {
+  existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
+} from 'fs';
 import {
   chmod,
   lstat,
@@ -39,7 +41,7 @@ import {
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import {
-  dirname, isAbsolute, join, relative, resolve as pathResolve,
+  basename, dirname, isAbsolute, join, relative, resolve as pathResolve,
 } from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
@@ -193,17 +195,138 @@ const gitReportedWorktree = (holder, env) => {
 };
 
 // Bounds for the pre-spawn symlink walk. Reaching either one leaves the
-// workspace unproven, and a seat carrying the grant broker then refuses
+// workspace unproven, and a public seat then refuses
 // (`assertSpawnRootOutsideWorkspace`), so the depth sits well above real source
 // trees: it guards against a pathological tree, not an ordinary one.
 const SYMLINK_WALK_BOUNDS = Object.freeze({ maxDepth: 32, maxEntries: 20000 });
-// CodeRabbit round 4 (#3487): a grant-bearing spawn also walks every
-// node_modules tree, links only, under its own bound. Measured 2026-11-05 on
+// CodeRabbit round 4 (#3487): the walk also covers every dependency tree,
+// links only, under its own bound (every public spawn since F185). Measured 2026-11-05 on
 // this repo's backend/node_modules: 44,664 entries, 63 symlinks (none leaving
 // the workspace), 0.5-1.4 s on a host at load average ~90.
 const DEPENDENCY_WALK_BOUNDS = Object.freeze({ maxDepth: 64, maxEntries: 200000 });
 const SYMLINK_WALK_SKIP = new Set(['.git']);
-const DEPENDENCY_DIR = 'node_modules';
+// Package-manager trees: their contents are walked links-only under the
+// dependency budget, never as source. A Python environment is one too, by
+// name or by its marker (`pyvenv.cfg`, conda's `conda-meta`), whatever its
+// folder is called: its files would exhaust the source budget (F185).
+const DEPENDENCY_DIRS = new Set(['node_modules', '.venv']);
+const isPythonEnvironment = (entries) => entries.some((entry) => (
+  (entry.name === 'pyvenv.cfg' && entry.isFile()) || (entry.name === 'conda-meta' && entry.isDirectory())
+));
+// Pseudo-file systems: a path in them names something per process (an open
+// descriptor, a device), so where it leads in OpenCode is not where it leads
+// here. No link may go there.
+const SPECIAL_ROOTS = ['/proc', '/dev'];
+const underSpecial = (path) => SPECIAL_ROOTS.some((root) => isWithin(root, path));
+const MAX_LINK_HOPS = 40;
+
+const isRegularFile = (path) => {
+  try { return statSync(path).isFile(); } catch { return false; }
+};
+
+/**
+ * F185. Matches a resolved path against the folders holding this spawn's
+ * secrets: it lies inside one, or holds one. The same three tests as the
+ * provider key file check (keyFileReadableRoot, F453): the paths as written,
+ * real-pathed, and by file identity, so another spelling of the same place
+ * (case, a firmlink) is the same place. Each path's identity is looked up once
+ * per walk; a dependency tree shares most of its ancestors.
+ */
+const secretMatcher = (secretRoots) => {
+  const ids = new Map();
+  const idOf = (path) => {
+    if (!ids.has(path)) {
+      let id = null;
+      try {
+        const details = statSync(path, { bigint: true });
+        id = `${details.dev}:${details.ino}`;
+      } catch { /* absent: no identity */ }
+      ids.set(path, id);
+    }
+    return ids.get(path);
+  };
+  const chainIds = (path) => {
+    const out = new Set();
+    for (let current = path; ; current = dirname(current)) {
+      const id = idOf(current);
+      if (id) out.add(id);
+      if (dirname(current) === current) break;
+    }
+    return out;
+  };
+  const secrets = secretRoots.map((root) => ({
+    root,
+    spellings: [...new Set([pathResolve(root), realOrSelf(root)])],
+    id: idOf(root),
+    ancestorIds: chainIds(root),
+  }));
+  return (resolved) => {
+    const ancestors = chainIds(resolved);
+    const own = idOf(resolved);
+    const found = secrets.find((secret) => (
+      secret.spellings.some((spelling) => isWithin(spelling, resolved) || isWithin(resolved, spelling))
+      || (secret.id && ancestors.has(secret.id))
+      || (own && secret.ancestorIds.has(own))
+    ));
+    return found ? found.root : null;
+  };
+};
+
+/**
+ * Where a link lands, resolved one component at a time the way the kernel
+ * does it, so every step is seen: `special` is set when any step (a hop's
+ * target, or a folder passed through) is under /proc or /dev. There a path
+ * names something per process (an open descriptor, a process's root), so
+ * where it leads for OpenCode is not where it leads for this check, whether or
+ * not it resolves here. `..` applies to the real path reached so far, never
+ * to the text.
+ *
+ * `{ resolved, exists: true }` when every component exists (`resolved` is the
+ * canonical spelling). When one is missing, `{ resolved, exists: false }`
+ * gives where it would land: the real prefix with the rest appended. A missing
+ * target is not proof of no route: the seat's data home gets files during the
+ * turn. Throws ELOOP past MAX_LINK_HOPS, and any lstat or readlink error other
+ * than a missing component.
+ */
+const linkLanding = (path) => {
+  let special = false;
+  let hops = 0;
+  // The walk only reaches real directories, so the link's own folder is real.
+  let done = realOrSelf(dirname(pathResolve(path)));
+  special = special || underSpecial(done);
+  const pending = [basename(path)];
+  while (pending.length) {
+    const part = pending.shift();
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      done = dirname(done);
+      continue;
+    }
+    const next = join(done, part);
+    special = special || underSpecial(next);
+    let details;
+    try {
+      details = lstatSync(next);
+    } catch (err) {
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') throw err;
+      const rest = pending.filter((piece) => piece && piece !== '.');
+      const resolved = pathResolve(next, ...(rest.length ? [rest.join('/')] : []));
+      return { resolved, exists: false, special: special || underSpecial(resolved) };
+    }
+    if (details.isSymbolicLink()) {
+      hops += 1;
+      if (hops > MAX_LINK_HOPS) throw Object.assign(new Error(`too many symlink hops resolving ${path}`), { code: 'ELOOP' });
+      const text = readlinkSync(next);
+      if (isAbsolute(text)) done = '/';
+      special = special || underSpecial(pathResolve(done, text));
+      pending.unshift(...text.split('/'));
+      continue;
+    }
+    done = next;
+  }
+  // Case and firmlinks: the canonical spelling, for the boundary comparison.
+  return { resolved: realOrSelf(done), exists: true, special: special || underSpecial(done) };
+};
 
 /**
  * Scan `workspace` for a symlink OpenCode's tools could follow to the per-spawn
@@ -213,10 +336,12 @@ const DEPENDENCY_DIR = 'node_modules';
  * `path: <workspace link to the temp root>` searches the credential's contents
  * with nothing asked. This walk is what stops that, not a permission pattern.
  *
- * Returns `{ link, reason }` for the first offending link, `{ incomplete }` when
- * a bound stopped the walk before it saw the whole tree, or null.
- * - `reaches_spawn_root`: the link's target holds or lies inside `spawnRoot`.
- *   A dangling link (an old spawn root, since removed) can't, and is skipped.
+ * Returns `{ link, reason, secret? }` for the first offending link, `{ incomplete }`
+ * when a bound stopped the walk before it saw the whole tree, or null.
+ * - `reaches_spawn_root`: the link's landing holds or lies inside `spawnRoot`
+ *   or one of `secretRoots` (named in `secret`). A dangling link is judged by
+ *   where it would land (`linkLanding`).
+ * - `special_filesystem`: the link leads, at any hop, under /proc or /dev.
  * - `outside_workspace`: a link AT a node_modules top level (or under an
  *   @scope there) leading out of `boundary`. node_modules is not walked into,
  *   since a typical one exhausts the entry bound on every spawn; its packages'
@@ -224,8 +349,8 @@ const DEPENDENCY_DIR = 'node_modules';
  *   link out (`npm link`, a `file:` dependency) reaches a tree this walk never
  *   read.
  *
- * `deepDependencies` (a spawn that hands its credential to a remote server):
- * every workspace link is held to `boundary` as well, and every node_modules tree, nested ones and @scopes included, is walked too,
+ * `deepDependencies` (every public spawn since F185; the default stays off for
+ * direct callers): every workspace link is held to `boundary` as well, and every node_modules tree, nested ones and @scopes included, is walked too,
  * links only, under `dependencyBounds`, its own budget. A link anywhere in it
  * that reaches the spawn root, or that leaves `boundary`, is refused, since a
  * package tarball or postinstall script can plant `dist/x -> /tmp`, or a chain
@@ -238,16 +363,19 @@ const DEPENDENCY_DIR = 'node_modules';
  * OS) or a link realpath cannot resolve for a reason other than a missing
  * target (`incomplete: 'unresolvable'`, a loop say), each with `problem:
  * { path, code }`. `root` is where the walk starts: the git worktree root for a
- * grant seat, since OpenCode's tools reach the whole worktree.
+ * public seat, since OpenCode's tools reach the whole worktree. A link to a
+ * regular file outside `boundary` and every secret folder passes: a file holds
+ * no further link.
  */
 const scanWorkspaceLinks = (workspace, spawnRoot, {
   boundary = workspace,
   root = workspace,
+  secretRoots = [],
   bounds = SYMLINK_WALK_BOUNDS,
   deepDependencies = false,
   dependencyBounds = DEPENDENCY_WALK_BOUNDS,
 } = {}) => {
-  const target = realOrSelf(spawnRoot);
+  const matchSecret = secretMatcher([...new Set([spawnRoot, ...secretRoots].filter(Boolean))]);
   const inside = realOrSelf(boundary);
   let budget = bounds.maxEntries;
   let dependencyBudget = dependencyBounds.maxEntries;
@@ -261,15 +389,23 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
     problem = problem || { path, code: err?.code || String(err) };
   };
   const linkFinding = (path, { dependencyTop }) => {
-    let resolved;
+    let landing;
     try {
-      resolved = canonicalPath(path);
+      landing = linkLanding(path);
     } catch (err) {
       unproven('unresolvable', path, err);
       return null;
     }
-    if (isWithin(resolved, target) || isWithin(target, resolved)) return { link: path, reason: 'reaches_spawn_root' };
-    if (dependencyTop && !isWithin(inside, resolved)) return { link: path, reason: 'outside_workspace' };
+    const { resolved, exists, special } = landing;
+    if (special) return { link: path, reason: 'special_filesystem' };
+    const secret = matchSecret(resolved);
+    if (secret) return { link: path, reason: 'reaches_spawn_root', secret };
+    if (!exists) return null;
+    // A regular file outside every secret folder holds no further link, so a
+    // link to one leads nowhere else (a virtualenv's bin/python -> /usr/bin).
+    if (dependencyTop && !isWithin(inside, resolved) && !isRegularFile(resolved)) {
+      return { link: path, reason: 'outside_workspace' };
+    }
     return null;
   };
   const readEntries = (dir) => {
@@ -341,6 +477,8 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
     }
     const entries = readEntries(dir);
     if (incomplete) return null;
+    // A Python environment under any name: links only, on the dependency budget.
+    if (deepDependencies && isPythonEnvironment(entries)) return scanDependencyTree(dir);
     for (const entry of entries) {
       budget -= 1;
       if (budget < 0) {
@@ -349,17 +487,17 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
       }
       const path = join(dir, entry.name);
       if (entry.isSymbolicLink()) {
-        // A grant seat holds every workspace link to the boundary: a chain
-        // through a tree outside it (src/vendor -> /outside, a node_modules
-        // that is itself a link) is resolved by the OS, unread by this walk.
+        // Every workspace link is held to the boundary: a chain through a tree
+        // outside it (src/vendor -> /outside, a node_modules that is itself a
+        // link) is resolved by the OS, unread by this walk.
         const hit = linkFinding(path, { dependencyTop: deepDependencies });
         if (hit || incomplete) return hit;
-      } else if (entry.isDirectory() && entry.name === DEPENDENCY_DIR) {
+      } else if (entry.isDirectory() && DEPENDENCY_DIRS.has(entry.name)) {
         const hit = scanDependencyTop(path) || (!incomplete && deepDependencies ? scanDependencyTree(path) : null);
         if (hit || incomplete) return hit;
       } else if (deepDependencies && entry.isDirectory() && SYMLINK_WALK_SKIP.has(entry.name)) {
-        // `.git` on a grant seat: links only, under the dependency budget
-        // (8,243 entries in this repo's own checkout, no links).
+        // `.git`: links only, under the dependency budget (8,243 entries in
+        // this repo's own checkout, no links).
         const hit = scanDependencyTree(path);
         if (hit || incomplete) return hit;
       } else if (entry.isDirectory() && !SYMLINK_WALK_SKIP.has(entry.name)) {
@@ -377,13 +515,15 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
 
 /**
  * Refuse a public seat whose workspace lets OpenCode's tools reach the
- * per-spawn credential directory. `carriesGrant` says whether this spawn hands
- * its credential file to a remote MCP server (buildMcpConfig's report, the
- * grant broker among them): a walk stopped by its bound refuses only then,
- * since a huge monorepo should not be refused when there is no grant to protect.
+ * per-spawn credential directory, or another folder holding this spawn's
+ * secrets (`secretRoots`, the seat's data home). Every public spawn holds a
+ * live Commonly token and a provider-proxy token there, so every one gets the
+ * same walk (F185): from the worktree root, node_modules, .venv and .git
+ * links-only, every link held to the worktree, and a walk its bound stopped
+ * refuses.
  */
 const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
-  carriesGrant = false,
+  secretRoots = [],
   bounds = SYMLINK_WALK_BOUNDS,
   dependencyBounds = DEPENDENCY_WALK_BOUNDS,
   gitEnv = null,
@@ -441,14 +581,14 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
   // OpenCode counts the whole git worktree as inside the project, so a
   // node_modules link into it is not a link out.
   const boundary = toplevels[0]?.[0] || gitToplevel(pathResolve(workspace)) || workspace;
-  // A grant seat walks the whole worktree OpenCode's tools can reach, sibling
-  // packages and .git included (Opus review, #3487); a seat without one, its
-  // workspace.
+  // The whole worktree OpenCode's tools can reach, sibling packages and .git
+  // included (Opus review, #3487; every public spawn since F185).
   const finding = scanWorkspaceLinks(workspace, spawnRoot, {
     boundary,
-    root: carriesGrant ? realOrSelf(boundary) : workspace,
+    root: realOrSelf(boundary),
+    secretRoots,
     bounds,
-    deepDependencies: carriesGrant,
+    deepDependencies: true,
     dependencyBounds,
   });
   if (finding?.incomplete === 'unreadable' || finding?.incomplete === 'unresolvable') {
@@ -456,14 +596,22 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
     throw new Error(
       `public OpenCode agents could not ${finding.incomplete === 'unreadable' ? 'list the directory' : 'resolve the symlink'} `
       + `${path} (${code}) while checking the workspace (${workspace}) for symlinks to the per-spawn credential directory; `
-      + 'what the walk cannot see is not proven clean, and this seat carries a connector grant; fix its permissions, '
-      + 'remove it, or drop the grant broker from this seat',
+      + 'what the walk cannot see is not proven clean; fix its permissions, or remove it',
     );
   }
   if (finding?.reason === 'reaches_spawn_root') {
+    const folder = !finding.secret || finding.secret === spawnRoot
+      ? `the per-spawn credential directory (${spawnRoot})`
+      : `the seat's data folder (${finding.secret})`;
     throw new Error(
-      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that reaches the per-spawn `
-      + `credential directory (${spawnRoot}): OpenCode's tools could read the credential through it; remove the link`,
+      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that reaches `
+      + `${folder}: OpenCode's tools could read this spawn's credentials through it; remove the link`,
+    );
+  }
+  if (finding?.reason === 'special_filesystem') {
+    throw new Error(
+      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that leads into `
+      + '/proc or /dev, where a path names something per process and the check cannot follow it; remove the link',
     );
   }
   if (finding?.reason === 'outside_workspace') {
@@ -478,15 +626,15 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
       `public OpenCode agents could not finish checking the workspace's node_modules and .git trees (${workspace}) for symlinks `
       + `to the per-spawn credential directory: the link walk stopped at its ${finding.incomplete === 'dependency_depth'
         ? `depth bound (${dependencyBounds.maxDepth} levels)` : `entry bound (${dependencyBounds.maxEntries} entries)`}, `
-      + 'and this seat carries a connector grant; prune the dependency tree, or drop the grant broker from this seat',
+      + 'prune the dependency tree, or choose a smaller workspace',
     );
   }
-  if (finding?.incomplete && carriesGrant) {
+  if (finding?.incomplete) {
     throw new Error(
       `public OpenCode agents could not finish checking the workspace (${workspace}) for symlinks to the per-spawn `
       + `credential directory: the walk stopped at its ${finding.incomplete === 'depth'
-        ? `depth bound (${bounds.maxDepth} levels)` : `entry bound (${bounds.maxEntries} entries)`}, and this seat `
-      + 'carries a connector grant; choose a smaller workspace, or drop the grant broker from this seat',
+        ? `depth bound (${bounds.maxDepth} levels)` : `entry bound (${bounds.maxEntries} entries)`}; `
+      + 'choose a smaller workspace',
     );
   }
 };
@@ -1361,7 +1509,7 @@ export default {
         // After the child env exists: the git check runs under the very env
         // OpenCode gets (its HOME, its XDG config, no GIT_* from the launcher).
         assertSpawnRootOutsideWorkspace(ctx.cwd || process.cwd(), tempDir, {
-          carriesGrant,
+          secretRoots: [openCodeHome.root],
           bounds: ctx._symlinkWalkBounds || SYMLINK_WALK_BOUNDS,
           dependencyBounds: ctx._dependencyWalkBounds || DEPENDENCY_WALK_BOUNDS,
           gitEnv: childEnv,
@@ -1503,5 +1651,6 @@ export {
   qualifiedProviderModel,
   resolveProviderKeyFile,
   scanWorkspaceLinks,
+  assertSpawnRootOutsideWorkspace,
   startProviderProxy,
 };
