@@ -54,8 +54,34 @@ describe('agent connection verdict', () => {
 
   it('preserves pre-ledger embedded tokens', () => {
     expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [], embeddedTokens: [
-      { lastUsedAt: seen(2) },
+      { lastUsedAt: seen(2), lastListenedAt: seen(2) },
     ], now }).state).toBe('connected');
+  });
+
+  // F459 (first-timer walk): a quick-try run used its key, then stopped before
+  // it listened. It read "Not seen in 6 min" with Reconnect; it never connected.
+  it('calls an embedded key that was used but never listened never connected, fresh or old', () => {
+    for (const minutes of [1, 6, 600]) {
+      expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [
+        { tokenHash: 'h', status: 'active', lastUsedAt: seen(minutes) },
+      ], embeddedTokens: [{ tokenHash: 'h', lastUsedAt: seen(minutes) }], now }))
+        .toEqual({ state: 'never', lastSeenAt: null });
+    }
+  });
+
+  it('once an embedded key has listened, use decides connected or stale as before', () => {
+    const listened = (minutes) => deriveAgentConnection({ runtimeType: 'webhook', credentials: [
+      { tokenHash: 'h', status: 'active', lastUsedAt: seen(minutes) },
+    ], embeddedTokens: [{ tokenHash: 'h', lastUsedAt: seen(minutes), lastListenedAt: seen(minutes) }], now }).state;
+    expect(listened(2)).toBe('connected');
+    expect(listened(6)).toBe('stale');
+  });
+
+  it('a computer seat on ledger keys keeps the use-based verdict without a listen stamp', () => {
+    expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
+      { status: 'active', lastUsedAt: seen(1) },
+    ], embeddedTokens: [{ tokenHash: 'x', lastUsedAt: seen(1) }],
+    machineCredentials: [{ status: 'active' }], now }).state).toBe('connected');
   });
 
   it('does not trust an embedded copy after its ledger row is revoked', () => {

@@ -13,7 +13,7 @@ import {
   chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch,
 } from 'fs';
 import { createClient } from '../lib/api.js';
-import { getToken, resolveInstanceUrl } from '../lib/config.js';
+import { getToken, resolveInstance, resolveInstanceUrl } from '../lib/config.js';
 import {
   clearDaemonStop, loadDaemonRecord, loadDaemonStop, removeDaemonRecord,
   saveDaemonRecord, saveDaemonStop,
@@ -62,6 +62,24 @@ import { CLI } from '../lib/cli-hint.js';
 
 // Set on the steps `daemon setup` runs, so a step can leave a line to setup.
 const SETUP_CHILD_ENV = 'COMMONLY_DAEMON_SETUP_STEP';
+
+// F459: login and register take --instance, so the first-timer walk tried it
+// on run too and got "unknown option". Run serves the one registration this
+// computer has, so --instance only confirms it: the same instance runs, any
+// other (or an unknown saved key) is refused with the register line instead of
+// quietly serving the registered one.
+const instanceKey = (url) => String(url || '').replace(/\/+$/, '').toLowerCase();
+export const daemonRunInstanceRefusal = (record, instanceArg, resolve = resolveInstance) => {
+  if (!instanceArg) return null;
+  const wanted = resolve(instanceArg)?.url;
+  if (wanted && instanceKey(wanted) === instanceKey(record?.instanceUrl)) return null;
+  if (!wanted) {
+    return `This computer is registered with ${record?.instanceUrl}, and no saved instance is named ${instanceArg}. `
+      + `To use another instance, sign in to it first (${CLI} login --instance <url>), then ${CLI} daemon register --instance <url>`;
+  }
+  return `This computer is registered with ${record?.instanceUrl}, not ${instanceArg}. To run it for that instance instead: `
+    + `${CLI} daemon register --instance ${instanceArg}`;
+};
 
 // launchd, systemd and Task Scheduler hold one Commonly daemon per computer
 // account. Install refuses to stop another HOME's; this flag takes it over.
@@ -681,6 +699,7 @@ Examples:
     .option('--poll <ms>', 'Work-list poll interval in ms', String(DEFAULT_POLL_MS))
     .option('--heartbeat <ms>', 'Heartbeat interval in ms', String(DEFAULT_HEARTBEAT_MS))
     .option('--foreground', 'Keep the supervisor attached to this terminal (default for direct invocation)')
+    .option('--instance <url-or-key>', 'Confirm the instance this computer is registered with')
     .action(async (opts) => {
       let record;
       try {
@@ -691,6 +710,12 @@ Examples:
           return;
         }
         record = requireDaemonRecord();
+        const instanceRefusal = daemonRunInstanceRefusal(record, opts.instance);
+        if (instanceRefusal) {
+          console.error(instanceRefusal);
+          process.exitCode = 1;
+          return;
+        }
         const stopped = loadDaemonStop(record);
         if (stopped) {
           console.error(`Daemon stopped: this computer's key was revoked. Run: ${CLI} daemon register`);
