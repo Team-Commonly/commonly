@@ -227,7 +227,9 @@ shipped git remote helper prints.
   `Signed-off-by:`, any `<Word>-by:`, any case) refuses
   `commit_attribution_trailer`. A pull request body is held to the same rule
   and refuses `pr_attribution_trailer`, because a squash merge puts the body in
-  the commit. If the branch moved after the call parked, it
+  the commit. `github.merge_pull_request` holds its `commitTitle` and
+  `commitMessage` to it too (`merge_attribution_trailer`), at park and at run.
+  If the branch moved after the call parked, it
   refuses `stale_branch`, and a ref update is never forced.
 - **The parent carries the default branch's protected files.** At execution,
   before any object is written, the parent's `.github/workflows`,
@@ -265,7 +267,9 @@ shipped git remote helper prints.
     reads the characters that will land, not their reordered rendering; the
     call that runs is unchanged.
   - A pull request: repo, base, head, title, and a 2,000-character preview of
-    the body.
+    the body. The title and preview mark bidi controls the same way;
+    `bodyShown` counts the body characters the preview carries, so a cut body
+    still says so.
 
   The file text appears only in the connection owner's own pending read. The
   pod card, socket emits and every other member's read carry none of it. The

@@ -643,6 +643,16 @@ describe('github.create_pull_request: what a PR body may carry (F168)', () => {
     await expect(hosted('github.create_pull_request', prArgs({ body: 'Fixes the Co-authored-by: parser' })))
       .rejects.toMatchObject({ code: 'approval_required' });
   });
+
+  // F464: a row parked before the park-time check shipped still refuses at run.
+  test('an approved body with a trailer refuses at run, writing nothing', async () => {
+    await expect(hosted('github.create_pull_request', prArgs())).rejects.toMatchObject({ code: 'approval_required' });
+    const call = parked();
+    const canonicalArgs = { ...call.canonicalArgs, body: 'Closes #12\n\nSigned-off-by: Owner <o@example.com>' };
+    await expect(runParked({ ...call, canonicalArgs, argsDigest: mockToolCall.digestArgs(canonicalArgs) }))
+      .rejects.toMatchObject({ code: 'pr_attribution_trailer' });
+    nothingReachedGithub();
+  });
 });
 
 describe('the owner card: bidi controls and the byte cap (F168)', () => {
@@ -684,6 +694,28 @@ describe('the owner card: bidi controls and the byte cap (F168)', () => {
     expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 2}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 2} of ${CARD_CONTENTS_MAX + 2} bytes\\]$`));
     expect(summary.files[1]).toEqual({ path: 'b', bytes: 2, content: 'bc', truncated: false });
     expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX, totalBytes: CARD_CONTENTS_MAX + 4 });
+  });
+});
+
+describe('the owner card for a pull request: bidi controls (F464)', () => {
+  const { prWriteApprovalSummary } = jest.requireActual('../../../services/prWriteScope');
+  const envelope = (over = {}) => ({ owner: 'Team-Commonly', repo: 'commonly', ...prArgs(), ...over });
+
+  test('the title and the body preview mark each bidi control', () => {
+    const summary = prWriteApprovalSummary('github.create_pull_request', envelope({
+      title: 'Fix\u202Eexe.txt', body: 'Closes #12 \u2066x\u2069',
+    }));
+    expect(summary.title).toBe('Fix⟦U+202E⟧exe.txt');
+    expect(summary.bodyPreview).toBe('Closes #12 ⟦U+2066⟧x⟦U+2069⟧');
+    expect(summary.bodyShown).toBe(14);
+    expect(summary.bodyLength).toBe(14);
+  });
+
+  test('bodyShown counts body characters, not marks, so a cut body still reads as cut', () => {
+    const body = `${'\u202E'.repeat(10)}${'b'.repeat(2500)}`;
+    const summary = prWriteApprovalSummary('github.create_pull_request', envelope({ body }));
+    expect(summary.bodyShown).toBe(2000);
+    expect(summary.bodyLength).toBe(2510);
   });
 });
 

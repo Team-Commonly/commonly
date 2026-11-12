@@ -266,9 +266,12 @@ export const prWriteView = (tool: string, summary: Record<string, unknown>): Too
       if (raw.truncated === true) {
         notices.push({ key: 'approvalCard.toolCall.notice.messageCut', vars: { total: asText(raw.length) } });
       }
+    } else if (key === 'bodyShown') {
+      // Counted into the bodyPreview notice; not a row of its own.
     } else if (key === 'bodyPreview') {
       rows.push({ keys: [key], labelKey, label: key, value: asText(raw), kind: 'block' });
-      const shown = asText(raw).length;
+      // The preview marks bidi controls, so its length can exceed what it shows.
+      const shown = typeof summary.bodyShown === 'number' ? summary.bodyShown : asText(raw).length;
       if (typeof summary.bodyLength === 'number' && summary.bodyLength > shown) {
         notices.push({
           key: 'approvalCard.toolCall.notice.bodyCut',

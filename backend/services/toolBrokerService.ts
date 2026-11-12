@@ -383,19 +383,27 @@ const getPullRequest: GithubToolDefinition = {
   },
 };
 
-// F168: a squash merge writes the PR body into the commit, so the body answers
-// to the commit message's rule (seatGithubCommit.ATTRIBUTION_TRAILER): a seat's
-// work is attributed to the App, and it does not get to name people.
-const assertNoAttributionTrailer = (body: unknown): void => {
-  if (typeof body === 'string' && ATTRIBUTION_TRAILER.test(body)) {
+// F168/F464: text that ends up in a commit answers to the commit message's
+// rule (seatGithubCommit.ATTRIBUTION_TRAILER): an agent's work is attributed to
+// the App, and it does not get to name people. A squash merge puts a PR body in
+// the commit; a merge's commitTitle/commitMessage IS the commit.
+const assertNoAttributionTrailer = (
+  texts: unknown[],
+  refusal: { code: string; what: string },
+): void => {
+  if (texts.some((text) => typeof text === 'string' && ATTRIBUTION_TRAILER.test(text))) {
     throw new RoomGrantError(
-      'pr_attribution_trailer',
-      'a pull request body may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...): '
-        + 'a squash merge puts the body in the commit',
+      refusal.code,
+      `${refusal.what} may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...)`,
       400,
     );
   }
 };
+const PR_BODY_TRAILER = {
+  code: 'pr_attribution_trailer',
+  what: 'a pull request body (a squash merge puts it in the commit)',
+};
+const MERGE_MESSAGE_TRAILER = { code: 'merge_attribution_trailer', what: 'a merge commit title or message' };
 
 const createPullRequest: GithubToolDefinition = {
   name: 'github.create_pull_request',
@@ -421,7 +429,7 @@ const createPullRequest: GithubToolDefinition = {
   async prepareApproval(rawArgs, connection, agentUserId) {
     assertNoUnknown(rawArgs, ['title', 'head', 'base', 'body', 'draft']);
     assertOwnedSeatBranch(rawArgs.head, agentUserId);
-    assertNoAttributionTrailer(rawArgs.body);
+    assertNoAttributionTrailer([rawArgs.body], PR_BODY_TRAILER);
     return pinConnectionRepository(rawArgs, connection);
   },
   async call(rawArgs, connection, agentUserId) {
@@ -440,7 +448,7 @@ const createPullRequest: GithubToolDefinition = {
     if (rawArgs.draft !== undefined && typeof rawArgs.draft !== 'boolean') {
       throw new RoomGrantError('invalid_tool_args', 'draft must be boolean', 400);
     }
-    assertNoAttributionTrailer(rawArgs.body);
+    assertNoAttributionTrailer([rawArgs.body], PR_BODY_TRAILER);
     const pull = await GitHubAppService.createPullRequest({
       owner: connection.owner,
       repo: connection.repo,
@@ -785,6 +793,7 @@ const mergePullRequest: GithubToolDefinition = {
     additionalProperties: false,
   },
   async prepareApproval(rawArgs, connection) {
+    assertNoAttributionTrailer([rawArgs.commitTitle, rawArgs.commitMessage], MERGE_MESSAGE_TRAILER);
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
     const pull = await GitHubAppService.getPullRequest({
       owner: connection.owner,
@@ -815,6 +824,7 @@ const mergePullRequest: GithubToolDefinition = {
         throw new RoomGrantError('invalid_tool_args', `${field} must be a string`, 400);
       }
     }
+    assertNoAttributionTrailer([rawArgs.commitTitle, rawArgs.commitMessage], MERGE_MESSAGE_TRAILER);
     const headSha = nonEmptyString(rawArgs.headSha, 'headSha');
     let merged: unknown;
     try {
