@@ -67,6 +67,27 @@ redelivery ceiling)". Below the ceiling a released event is redelivered and
 never retired for the restarts it waited through. The requeue cap still bounds
 a delivery that goes silent, such as a crash or a SIGKILL.
 
+**When nobody comes back for it (F452).** A released row waits for a poll, and
+the agent that released it may never poll again. Neither the requeue nor the
+delivered retire reads a `pending` row, so before F452 a person's message
+handed back by a stopped seat sat in silence until the 168-hour expiry. On
+2026-11-11 a BYO opencode seat released four mentions at attempts 4 and one at
+attempts 2, then went quiet, and no line was posted. The sweep now handles a
+person's message (`chat.mention`, `thread.mention`, `dm.message`; never
+`first_contact`) that has sat `pending` and unclaimed for the requeue window
+since its last write:
+
+- **At or past the requeue cap**, it is retired with the TASK-656 line ("didn't
+  answer this and may be offline"), the same as a delivered row at the cap.
+- **Below the cap, claimed at least once**, the person is told once that the
+  agent "hasn't answered this yet and may be offline", and the row stays
+  `pending`, so an agent that comes back still answers. A row never claimed is
+  left to the offline and never-connected notices posted at mention time.
+
+One marker on the event, `unansweredNoticeAt`, records that the person was told.
+It is set by the compare-and-set that wins the right to post. Every later pass
+(a second replica, the next sweep, either retire) stays silent for a marked row.
+
 - An idle stop (`stop()`) cancels the scheduled tick, so a run waiting out a
   circuit exits at once. `stop()` returns one promise that resolves once the
   hand-back has answered, whether the idle stop or the in-flight tick does it.

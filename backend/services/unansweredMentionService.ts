@@ -81,7 +81,9 @@ export async function messagesFromPeople(
 
 /**
  * Posts the unanswered-mention line for an event the requeue cap just retired,
- * for each person waiting on it. Returns whether a line was posted.
+ * for each person waiting on it. Returns whether a line was posted. With
+ * `stillPending` (F452) the event stays in the queue, so the line says the
+ * agent hasn't answered yet, which stays true if it answers later.
  *
  * Silent for a message when:
  * - the wake came from the kernel (assigned work, a board change) or from an
@@ -93,7 +95,10 @@ export async function messagesFromPeople(
  *   have answered without acknowledging, and a line claiming silence would
  *   then be false. Missing a line is better than a wrong one.
  */
-export async function noteUnansweredMention(event: RetiredEvent): Promise<boolean> {
+export async function noteUnansweredMention(
+  event: RetiredEvent,
+  { stillPending = false }: { stillPending?: boolean } = {},
+): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
   // A comment on a post with no pod carries some pod of the commenter's.
   const comment = payload.thread as { postPodId?: unknown } | null | undefined;
@@ -136,6 +141,7 @@ export async function noteUnansweredMention(event: RetiredEvent): Promise<boolea
         actorIsBot: true,
         agentLabel: AgentIdentityService.resolveAgentDisplayLabel(agent, agentName),
         attempts: Number(event.attempts) || 0,
+        ...(stillPending ? { stillPending: true } : {}),
         messageId: (messageId as string | number | null | undefined) ?? null,
         threadRootId: (payload.threadRootId as string | number | null | undefined) ?? null,
       });

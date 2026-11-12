@@ -179,7 +179,9 @@ interface EventDoc {
   agentName?: string;
   instanceId?: string;
   createdAt?: Date;
+  updatedAt?: Date;
   deliveredAt?: Date | null;
+  unansweredNoticeAt?: Date | null;
   payload?: Record<string, unknown>;
   status?: string;
   deliveryMode?: 'wake' | 'digest';
@@ -1261,6 +1263,22 @@ class AgentEventService {
           console.warn('[agent-event] unanswered-mention retire pass failed:', waitErr.message);
           return 0;
         });
+      // F452: a stopping runner hands its deliveries back to pending (POST
+      // /events/release), up to twice the cap, so a person's message can sit
+      // pending with nobody left to claim it, where the pass above never looks.
+      // Past the cap it is retired with the same line; below it the person is
+      // told once and the row stays pending, so an agent that comes back still
+      // answers. Each its own catch, like the pass above.
+      expiredDelivered += await this.retireUnclaimedReleases(requeueThreshold, attemptCap, retireError)
+        .catch((waitErr: Error) => {
+          console.warn('[agent-event] unclaimed-release retire pass failed:', waitErr.message);
+          return 0;
+        });
+      await this.noticeUnclaimedReleases(requeueThreshold, attemptCap)
+        .catch((waitErr: Error) => {
+          console.warn('[agent-event] unclaimed-release notice pass failed:', waitErr.message);
+          return 0;
+        });
       // Everything else. A person's message past the batch waits for the next
       // pass rather than being retired here without its line.
       const expireResult = await AgentEvent.updateMany(
@@ -1392,13 +1410,96 @@ class AgentEventService {
       ).lean() as EventDoc | null;
       if (retired) {
         retiredCount += 1;
+        // F452: a person already told it hasn't answered gets no second line.
+        if (!retired.unansweredNoticeAt) {
+          // eslint-disable-next-line no-await-in-loop
+          await noteUnansweredMention(retired).catch((lineErr: Error) => {
+            console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
+          });
+        }
+      }
+    }
+    return retiredCount;
+  }
+
+  /**
+   * F452. Retires a person's message that a stopping runner handed back to
+   * pending past the requeue cap, once nobody has claimed it for the requeue
+   * window, with the TASK-656 line. The release ceiling is twice the cap, so
+   * such a row is neither requeued nor read by the delivered pass above, and
+   * with its agent gone it would wait out the retention window in silence.
+   * Compare-and-set on status and updatedAt: a claim or a second replica's
+   * pass moves one of them, and that pass then posts nothing. A row whose
+   * person was already told (noticeUnclaimedReleases) is retired silently.
+   */
+  static async retireUnclaimedReleases(threshold: Date, attemptCap: number, error: string): Promise<number> {
+    const waiting = await AgentEvent.find({
+      status: 'pending',
+      deliveryMode: { $ne: 'digest' },
+      inProcessQueued: { $ne: true },
+      updatedAt: { $lt: threshold },
+      attempts: { $gte: attemptCap },
+      type: { $in: PERSON_WAITING_EVENT_TYPES },
+    }).sort({ updatedAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let retiredCount = 0;
+    for (const event of waiting) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const retired = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'pending', updatedAt: event.updatedAt },
+        { $set: { status: 'failed', deliveryNonce: null, error } },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (retired) {
+        retiredCount += 1;
+        if (!retired.unansweredNoticeAt) {
+          // eslint-disable-next-line no-await-in-loop
+          await noteUnansweredMention(retired).catch((lineErr: Error) => {
+            console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
+          });
+        }
+      }
+    }
+    return retiredCount;
+  }
+
+  /**
+   * F452. A person's message an agent claimed and handed back below the cap,
+   * unclaimed for the requeue window since: the agent stopped and hasn't come
+   * back. The person is told once that it hasn't answered yet, and the row
+   * stays pending, so an agent that returns still answers. unansweredNoticeAt
+   * is set by the same compare-and-set that wins the right to post, so a
+   * second replica, a later sweep or a later retire posts nothing more. A row
+   * never claimed (attempts 0) is left to the notices posted at mention time.
+   */
+  static async noticeUnclaimedReleases(threshold: Date, attemptCap: number): Promise<number> {
+    const waiting = await AgentEvent.find({
+      status: 'pending',
+      deliveryMode: { $ne: 'digest' },
+      inProcessQueued: { $ne: true },
+      updatedAt: { $lt: threshold },
+      attempts: { $gte: 1, $lt: attemptCap },
+      unansweredNoticeAt: null,
+      ...PERSON_WAITING_FILTER,
+    }).sort({ updatedAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let noticed = 0;
+    for (const event of waiting) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const marked = await AgentEvent.findOneAndUpdate(
+        {
+          _id: event._id, status: 'pending', updatedAt: event.updatedAt, unansweredNoticeAt: null,
+        },
+        { $set: { unansweredNoticeAt: new Date() } },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (marked) {
+        noticed += 1;
         // eslint-disable-next-line no-await-in-loop
-        await noteUnansweredMention(retired).catch((lineErr: Error) => {
+        await noteUnansweredMention(marked, { stillPending: true }).catch((lineErr: Error) => {
           console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
         });
       }
     }
-    return retiredCount;
+    return noticed;
   }
 
   /**
@@ -1584,10 +1685,12 @@ class AgentEventService {
       ).lean() as EventDoc | null;
       if (retired) {
         closed += 1;
-        // eslint-disable-next-line no-await-in-loop
-        await noteUnansweredMention(retired).catch((lineErr: Error) => {
-          console.warn('[agent-event] unanswered-mention line not posted:', lineErr?.message);
-        });
+        if (!retired.unansweredNoticeAt) {
+          // eslint-disable-next-line no-await-in-loop
+          await noteUnansweredMention(retired).catch((lineErr: Error) => {
+            console.warn('[agent-event] unanswered-mention line not posted:', lineErr?.message);
+          });
+        }
       }
     }
     const closedResult = await AgentEvent.updateMany(
