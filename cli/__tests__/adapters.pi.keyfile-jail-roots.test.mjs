@@ -11,7 +11,7 @@
  */
 import { realpathSync } from 'fs';
 import { refuseKeyFileInJail } from '../src/lib/adapters/pi.js';
-import { seatbeltSystemReadRoots } from '../src/lib/sandbox/seatbelt.js';
+import { parseSeatbeltReadRoots, seatbeltSystemReadRoots } from '../src/lib/sandbox/seatbelt.js';
 
 describe('seatbeltSystemReadRoots reads what the baseline lets a jail read', () => {
   const roots = seatbeltSystemReadRoots();
@@ -38,6 +38,32 @@ describe('seatbeltSystemReadRoots reads what the baseline lets a jail read', () 
     expect(roots.literals).not.toContain('/tmp');
     expect(roots.subpaths).not.toContain('/tmp');
     expect(roots.subpaths).not.toContain('/private/tmp');
+  });
+});
+
+describe('parseSeatbeltReadRoots fails closed on a read it cannot check', () => {
+  test.each([
+    '(allow file-read* (path "/opt/keys/provider.key"))',
+    '(allow file-read* (prefix "/opt/keys"))',
+    '(allow file-read-data (regex #"^/opt/keys/.*"))',
+  ])('throws on %s', (rule) => {
+    expect(() => parseSeatbeltReadRoots(`(version 1)\n${rule}\n`)).toThrow(/filter it cannot check/);
+  });
+
+  test('a /dev regex is the known exception, and parentheses inside it do not split the rule', () => {
+    const roots = parseSeatbeltReadRoots(
+      '(allow file-read* (regex "^/dev/fd/(0|1|2") (subpath "/opt/after"))\n(allow file-read* (subpath "/opt/next"))\n',
+    );
+    expect(roots.subpaths).toEqual(['/opt/after', '/opt/next']);
+  });
+
+  test('a filter on a metadata-only or write rule is not a read, so it is not a refusal either', () => {
+    expect(() => parseSeatbeltReadRoots('(allow file-read-metadata (regex #"^/opt/.*$"))\n(allow file-write* (path "/x"))\n'))
+      .not.toThrow();
+  });
+
+  test('the shipped baseline parses: every read grant in it is a subpath, a literal or a /dev regex', () => {
+    expect(() => seatbeltSystemReadRoots()).not.toThrow();
   });
 });
 
