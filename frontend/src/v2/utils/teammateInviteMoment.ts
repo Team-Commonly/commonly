@@ -10,10 +10,21 @@ export function isSoloHumanPod(pod: V2Pod, members: V2PodMember[], viewerId: str
   return humans.length === 1 && humans[0]._id === viewerId;
 }
 
+export type TeammateInviteMomentResult = { messageId: string; username: string; source: TeammateInviteSource };
+
+/**
+ * Where the teammate card goes. With the whole history loaded, it follows the
+ * first agent answer after the person's first message. With only the latest
+ * page loaded (`latestInView`), that answer may be above the window, so the
+ * card follows the latest agent post in view instead: the pod has more than a
+ * page of history, which is use enough, and that's where the person lands.
+ */
 export function teammateInviteMoment(
   messages: V2Message[], viewerId: string, agentKeys: Set<string>, scoutKeys: Set<string>, workspace: boolean,
-): { messageId: string; username: string; source: TeammateInviteSource } | null {
-  let asked = false;
+  { latestInView = false }: { latestInView?: boolean } = {},
+): TeammateInviteMomentResult | null {
+  let asked = latestInView;
+  let latest: TeammateInviteMomentResult | null = null;
   for (const message of messages) {
     const authorId = message.user_id || (typeof message.userId === 'string' ? message.userId : message.userId?._id);
     if (authorId === viewerId) { asked = true; continue; }
@@ -26,10 +37,12 @@ export function teammateInviteMoment(
     // D288: in the person's own workspace only their own agent's answer counts.
     // Scout's doesn't, and the card there invites into a new pod, never this one.
     if (workspace && scoutKeys.has(username.toLowerCase())) continue;
-    return {
+    const moment: TeammateInviteMomentResult = {
       messageId: String(message.id), username,
       source: workspace ? 'workspace-own-agent' : 'first-agent-post',
     };
+    if (!latestInView) return moment;
+    latest = moment;
   }
-  return null;
+  return latest;
 }
