@@ -1,13 +1,13 @@
 import { EventEmitter } from 'node:events';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
-  PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, bridgedGooseExtension, extensionArgs, readGooseStream,
+  PUBLIC_GOOSE_TOOLS, SWITCHED_OFF_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, bridgedGooseExtension, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
 import {
   PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS,
@@ -293,9 +293,10 @@ test('a public Goose recipe shows the memory it read and names no save tool', as
   }
 });
 
-// F197: a public seat's writable workspace is the scratch folder the CLI made,
-// so the profile pins it. A link at that path refuses the turn before spawn.
-test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+// F197 pinned a public seat's writable workspace because the jail wrote it. Since
+// F113d a public Goose turn never hands the jail the seat workspace: a link there
+// reaches neither the profile nor its target, and the turn's own folder is pinned.
+test('a public Goose seat whose workspace is a link never gives the jail that link or its target', async () => {
   const root = mkdtempSync(join(tmpdir(), 'goose-f197-'));
   const cwd = join(root, 'workspace');
   const elsewhere = join(root, 'elsewhere');
@@ -317,9 +318,10 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
   const prior = process.env.COMMONLY_MCP_HOME;
   process.env.COMMONLY_MCP_HOME = home;
   const calls = [];
+  let profile = '';
   try {
     const ctx = baseCtx();
-    const error = await goose.spawn('hello', {
+    const result = await goose.spawn('hello', {
       ...ctx,
       cwd,
       environment: { ...ctx.environment,
@@ -328,13 +330,14 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
       },
       _binaryPath: '/usr/bin/true',
       _platform: 'darwin',
-      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+      _wrapArgvWithSeatbelt: (argv, options) => { profile = buildSeatbeltProfile(options); return argv; },
       _spawnImpl: (...args) => { calls.push(args); return childWith(reply('ok')); },
-    }).catch((err) => err);
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).toMatch(/its writable workspace/);
-    expect(error.message).toContain(cwd);
-    expect(calls).toHaveLength(0);
+    });
+    expect(result.text).toBe('ok');
+    expect(calls).toHaveLength(1);
+    expect(profile).not.toContain(cwd);
+    expect(profile).not.toContain(elsewhere);
+    expect(profile).not.toContain(realpathSync(elsewhere));
   } finally {
     if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
     else process.env.COMMONLY_MCP_HOME = prior;
@@ -412,6 +415,92 @@ test('a public bwrap seat gets its own files read-only, apart from the home it w
   expect(owned).toBeTruthy();
   expect(seen.recipe.startsWith(`${seatHome}/`)).toBe(false);
   expect(owned.startsWith(`${seatHome}/`)).toBe(false);
+});
+
+// F113d: Goose 1.56+ reads skills, plugin hooks and plugin settings from its
+// working directory, and always offers load_skill. A public turn runs in an
+// empty folder of its own, never the seat's workspace, and a hook the adapter
+// owns refuses every load_skill call.
+describe('F113d: a public Goose turn reads no skill and loads none', () => {
+  const runPublic = async ({ platform }) => {
+    const root = mkdtempSync(join(tmpdir(), 'goose-f113d-'));
+    const mcpHome = join(root, 'mcp-home');
+    const pkgDir = join(mcpHome, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
+    }));
+    writeFileSync(join(pkgDir, 'src', 'index.js'), '');
+    writeFileSync(join(mcpHome, 'current'), '0.3.13\n');
+    // A held warm lock keeps prepareMcpSpawn from starting a real warm.
+    writeFileSync(join(mcpHome, '.warm.lock'), 'warming\n');
+    const workspace = join(root, 'workspace');
+    mkdirSync(join(workspace, '.agents', 'skills', 'seat-secret'), { recursive: true });
+    const keyFile = join(root, 'provider-key');
+    writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
+    const prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = mcpHome;
+    const seen = {};
+    try {
+      const ctx = baseCtx();
+      await goose.spawn('hello', {
+        ...ctx,
+        cwd: workspace,
+        environment: { ...ctx.environment,
+          provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+          sandbox: { trust: 'public', mode: platform === 'linux' ? 'bwrap' : 'workspace' },
+        },
+        _binaryPath: '/usr/bin/true',
+        _platform: platform,
+        _detectBwrap: () => ({ available: true }),
+        _wrapArgvWithBwrap: (argv, _environment, options) => { seen.jailWorkspace = options.workspacePath; return argv; },
+        _wrapArgvWithSeatbelt: (argv, options) => { seen.jailWorkspace = options.workspacePath; return argv; },
+        _spawnImpl: (_cmd, _args, options) => {
+          seen.cwd = options.cwd;
+          seen.home = options.env.HOME;
+          seen.turnDirEntries = readdirSync(seen.jailWorkspace);
+          const plugin = join(options.env.GOOSE_PATH_ROOT, '.agents', 'plugins', 'commonly-public-seat');
+          seen.pluginReal = realpathSync(plugin);
+          seen.hooks = JSON.parse(readFileSync(join(plugin, 'hooks', 'hooks.json'), 'utf8'));
+          return childWith(reply('ok'));
+        },
+      });
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+      rmSync(root, { recursive: true, force: true });
+    }
+    return { ...seen, workspace };
+  };
+
+  test.each(['darwin', 'linux'])('on %s the jail and Goose start in an empty folder of the turn, not the seat workspace', async (platform) => {
+    const seen = await runPublic({ platform });
+    expect(seen.jailWorkspace).not.toBe(seen.workspace);
+    expect(seen.jailWorkspace.startsWith(`${seen.home}/`)).toBe(true);
+    expect(seen.cwd).toBe(seen.jailWorkspace);
+    expect(seen.turnDirEntries).toEqual([]);
+  });
+
+  test('every load_skill call meets a hook that refuses it, and the jail cannot rewrite that hook', async () => {
+    const seen = await runPublic({ platform: 'darwin' });
+    expect(SWITCHED_OFF_GOOSE_TOOLS).toEqual(['load_skill']);
+    const [rule] = seen.hooks.hooks.PreToolUse;
+    expect(seen.hooks.hooks.PreToolUse).toHaveLength(1);
+    const matcher = new RegExp(rule.matcher);
+    expect(matcher.test('load_skill')).toBe(true);
+    for (const other of ['commonly__commonly_post_message', 'commonly__load_skill', 'load_skill_x', 'unload_skill']) {
+      expect(matcher.test(other)).toBe(false);
+    }
+    expect(rule.hooks).toEqual([expect.objectContaining({ type: 'command', on_failure: 'block' })]);
+    expect(rule.hooks[0].command).toMatch(/exit 2$/);
+    // Adapter-owned: the plugin resolves outside the home the jail writes (F219).
+    expect(seen.pluginReal.startsWith(`${realpathSync(tmpdir())}/`)).toBe(true);
+    expect(seen.pluginReal.startsWith(`${seen.home}/`)).toBe(false);
+  });
+
+  test('1.59.0 is admitted for public seats beside 1.54.0', () => {
+    expect(TESTED_GOOSE_VERSIONS).toEqual(['1.54.0', '1.59.0']);
+  });
 });
 
 // F175d: Goose 1.54.0 fills a streamable_http header from its own environment

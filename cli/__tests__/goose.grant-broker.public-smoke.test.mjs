@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import goose, { PUBLIC_GOOSE_TOOLS } from '../src/lib/adapters/goose.js';
+import goose, { PUBLIC_GOOSE_TOOLS, SWITCHED_OFF_GOOSE_TOOLS } from '../src/lib/adapters/goose.js';
 import {
   BROKER_ANSWER, BROKER_TOOL, POD_ID, prepareCommonlyMcp, seatEnvironment, startSeatFixture, writeProviderKey,
 } from '../test-support/grant-broker-seat-fixture.mjs';
@@ -82,10 +82,11 @@ smoke('a jailed Goose seat reads through the grant, and every way to the token c
       expect(fixture.resultFor(0)).toContain(BROKER_ANSWER);
 
       // The seat offers the audited Commonly tools and the grant, nothing else.
-      const allowed = new Set([...PUBLIC_GOOSE_TOOLS.map((name) => `commonly__${name}`), BROKER]);
+      // A switched-off tool (load_skill, Goose 1.56+) is advertised but refused on every call (F113d).
+      const allowed = new Set([...PUBLIC_GOOSE_TOOLS.map((name) => `commonly__${name}`), BROKER, ...SWITCHED_OFF_GOOSE_TOOLS]);
       expect(state.advertised.flat().filter((name) => !allowed.has(name))).toEqual([]);
       for (let index = 1; index <= 4; index += 1) {
-        expect(fixture.resultFor(index)).toMatch(/not advertised/);
+        expect(fixture.resultFor(index)).toMatch(/not advertised|is not available/);
         expect(fixture.resultFor(index)).not.toContain('cm_agent');
       }
 
