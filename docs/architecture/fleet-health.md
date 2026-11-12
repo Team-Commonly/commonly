@@ -14,52 +14,89 @@ Today that answer comes from reading seat logs on one Mac and querying productio
 
 ## Data we already have
 
-Every number on the page comes from rows the kernel already writes. The page adds no new write path, and it reads metadata only.
+Every number on the page comes from rows the kernel already writes. The page adds no new write path.
 
-| Source | What it gives | Covers |
+| Source | Fields the page reads | Covers |
 |---|---|---|
-| `AgentRun` (`backend/models/AgentRun.ts`) | One row per native run: `trigger`, `status` (succeeded, failed, interrupted), `errorKind`, `totalTokens`, per-turn `model`/`servedModel`/`fallbacks`, tool names and `outcome`, `emptyCompletion`, `metered`, `sandboxSeconds`, timings | Hosted (native) agents |
-| `AgentEvent` (`backend/models/AgentEvent.ts`) | Every wake for every runtime: `type`, `status` (pending, delivered, acked, failed, expired), `attempts`, `deliveryMode` (wake or digest), and `delivery.outcome` (posted, no_action, skipped, error, acknowledged) with its `reason` | All agents, BYO included |
-| `AgentRuntimeObservation` (`backend/models/AgentRuntimeObservation.ts`) | What the runner on a person's machine last reported: `lastSeenAt`, `turnRunning`, `lastSpawnOutcome`, a fixed `lastSpawnFailure` code (signed out, out of allowance, won't start, …), harness and version | BYO agents |
-| `AgentInstallation` (`backend/models/AgentRegistry.ts`) | Which agent is installed where, its scope and status (active, paused, error, stale) | All agents |
+| `AgentEvent` (`backend/models/AgentEvent.ts`) | `type` (a free string), `status` (pending, folding, delivered, acked, failed, expired), `attempts`, `deliveryMode` (wake or digest), `delivery.outcome` (posted, no_action, skipped, error, acknowledged), `createdAt` | Every runtime, BYO included |
+| `AgentRun` (`backend/models/AgentRun.ts`) | `trigger`, `status` (queued, running, succeeded, failed, interrupted), `errorKind`, `totalTokens`, `sandboxSeconds`, `emptyCompletion`, `metered`, per-turn `model`/`servedModel`/`fallbacks`, timings | Hosted (native) agents only |
+| `AgentRuntimeObservation` (`backend/models/AgentRuntimeObservation.ts`) | `lastSeenAt`, `turnRunning`, `lastSpawnOutcome`, the fixed `lastSpawnFailure` code (signed out, login, won't start, out of allowance, tools unavailable, codex version, model unavailable), harness and version | BYO agents; keyed by the agent's User id, so it joins through the agent's User row |
+| `AgentInstallation` (`backend/models/AgentRegistry.ts`) | `{agentName, instanceId, podId}` and `status` (active, paused, uninstalled, error, stale) | Which agent is installed in which pod |
 
-These rows already carry no message text past their windows. `AgentRun` content is unset after 30 days (`agentRunContentWindow.ts`, F84), and its metadata stays. `AgentEvent` rows are deleted at 168 hours. The page needs nothing either removes.
+## Fields the page never reads
+
+Several of these rows hold text, so the read is an allowlist, not a projection that drops a few keys:
+- `AgentEvent.payload` carries message content until the event is deleted.
+- `delivery.reason` and `AgentRun.errorMessage` are free text.
+- `delivery.details` and tool-call `args`/`result` are mixed objects.
+
+The endpoint selects only the fields in the table above. A test asserts that the response never contains `payload`, `reason`, `errorMessage`, `details`, `error`, `args` or `result`. The existing `GET /api/agents/seat-activity` route (`backend/routes/agentSeatActivity.ts`) is the precedent: it is member-gated and selects only event type, status, time and outcome.
 
 ## What the page shows
 
-One row per agent, for a chosen window (24 hours by default, 7 days at most, bounded by event retention):
+One row per agent installation, for a chosen window (24 hours by default). The longest window is the event retention, read from `AGENT_EVENT_DELIVERED_RETENTION_HOURS` (168 hours by default), so the page never silently under-counts when ops shortens it.
 
-- **Wakes:** a count by kind (mention, heartbeat, task, join, digest), from `AgentEvent.type` and `deliveryMode`.
-- **Useful vs empty:**
-  - posted: `delivery.outcome = posted`;
-  - declined: `no_action`, `skipped`;
-  - failed: `error`, plus `status: failed`;
-  - never picked up: `expired`.
-  For native agents `AgentRun.emptyCompletion` adds the empty case. Useful means at least one post or tool result per wake. The page shows the split, not a score.
-- **Failures by kind:**
-  - native: `AgentRun.errorKind`;
-  - BYO: `lastSpawnFailure` and `delivery.reason`.
-  A kind that needs a person (signed out, out of allowance, config) is marked "needs you".
-- **Cost:**
-  - native: `totalTokens` and `sandboxSeconds`, priced through the existing metering;
-  - BYO: no cost row, because the person's own account pays and we don't see it. The page says so instead of showing zero.
-- **Liveness, BYO:** `lastSeenAt` and `turnRunning`. A runner silent for longer than its poll interval shows as offline.
+### Wakes, by display kind
+
+`AgentEvent.type` is a free string, so the page maps it to a kind:
+
+| Display kind | From |
+|---|---|
+| Mention | `chat.mention`, `thread.mention` |
+| Heartbeat | `heartbeat` |
+| Chat | `message.posted`, `user.message` |
+| Decision or approval | `approval.resolved`, `decision.ruled`, `agent.ask` |
+| Joined | `first_contact` |
+| Other | anything not mapped. It is listed by its raw type, so a new type is visible rather than lost. |
+
+Separately, a digest delivery (`deliveryMode: digest`) is shown as a count of its own. `AgentRun.trigger` exists only for native agents and isn't used for this column.
+
+### Outcomes
+
+- **Posted:** `delivery.outcome = posted`.
+- **Declined:** `no_action` or `skipped`.
+- **Failed:** outcome `error`, or `status: failed`.
+- **Never picked up:** `status: expired`.
+- **In flight:** pending, folding or delivered without an outcome. These are shown as in flight and are never counted as failed or empty.
+
+For native agents, `AgentRun.emptyCompletion` adds the empty case. Runs that are `queued` or `running` are in flight too. The page shows the split, not a score.
+
+### Failures by kind
+
+- **Native:** from `AgentRun.errorKind`.
+- **BYO:** from the fixed `lastSpawnFailure` code. The free-text `delivery.reason` is never shown.
+- **Needs you:** a kind a person has to fix (signed out, login, out of allowance, config) is marked "needs you".
+
+### Cost
+
+- **Native:** `totalTokens` and `sandboxSeconds`, priced through the existing metering.
+- **BYO:** none. The person's own account pays and we don't see it, so the page says so instead of showing zero.
+
+### Liveness (BYO)
+
+From `lastSeenAt` and `turnRunning`. A runner silent for longer than its poll interval shows as offline.
 
 Clicking a row opens the agent's existing activity view. The page adds no trace viewer of its own.
 
 ## Who sees what
 
-- **Scope follows install scope.** A pod admin sees agents installed in their pods. A user sees their own agents. An instance admin sees the instance. Every query is filtered by the caller's installations and pod membership (the `DMService.canViewPod` rule for any pod-scoped read). There is no admin bypass into private DMs: counts aggregate from event metadata and never read message content.
+- **The set of pods comes from membership, with no admin bypass.** It is built by `DMService.listPodIdsForListing` (the listing rule, which omits the global-admin bypass), never `DMService.canViewPod`, which admits any global admin to any pod.
+- **The installation filter comes before any aggregation.** Agents are the `AgentInstallation` rows in those pods. Every aggregation is filtered to that `{agentName, instanceId, podId}` set before it groups, so another pod's agent names, counts and costs never enter the result.
+- **DM pods.** A read-only agent-dm fan-out pod is not a pod where an agent is "installed", and it adds nothing to the page.
+- **A user's own agents.** A user always sees the agents whose User rows they own, in the pods they belong to.
+- **No instance-wide view in the first version.** An organisation-wide view, across pods the viewer isn't in, would be a deliberate exception to the member-gating rule. It is left to the enterprise ADR (D116) to decide, with its own role and its own audit line.
 - **Agents can't read it.** It's a human surface. An agent asking about its own health uses the CAP context read.
 
 ## How it's built
 
-- **One read endpoint:** `GET /api/agents/health?window=24h`. It runs aggregation pipelines over the indexed fields: `AgentEvent` on `{agentName, instanceId, status, createdAt}`, `AgentRun` on `{podId, agentName, instanceId, startedAt}`. Both indexes exist.
+- **One read endpoint:** `GET /api/agents/health?window=24h` (no such route exists today).
+- **Queries:** aggregation pipelines over existing indexes. `AgentEvent` uses `{agentName, instanceId, status, createdAt}`; `AgentRun` uses `{podId, agentName, instanceId, startedAt}`.
 - **Size:** at today's volume (hundreds of events per agent per day) a live aggregate is cheap. Add a rollup only if p95 passes 500 ms.
 - **The page:** the v2 shell as a table, with no new design primitives. The artboard comes first.
 - **Tests:**
   - a service test per outcome mapping against real Mongo;
-  - a membership test proving another pod's agents never appear.
+  - a membership test proving that another pod's agents never appear, including for a global admin;
+  - the field allowlist test above.
 
 ## Not in scope
 
@@ -67,8 +104,8 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 - Per-turn traces: the activity view has them.
 - BYO cost.
 - Editing an agent from this page.
+- An instance-wide admin view (see D116).
 
 ## Open questions
 
-- Should a heartbeat that legitimately says nothing count as empty? The proposal is that it doesn't: heartbeats get their own column so they don't drag the useful ratio down.
-- Does the instance-wide view need a role between admin and pod admin for an enterprise "fleet owner"? Decide in D116.
+- Should a heartbeat that legitimately says nothing count as declined? The proposal is that it doesn't: heartbeats keep a column of their own so they don't drag the posted share down.
