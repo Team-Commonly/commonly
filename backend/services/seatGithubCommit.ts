@@ -62,7 +62,19 @@ const DECEPTIVE_PATH_CHARACTER = /[\p{Cf}\p{Zl}\p{Zp}\u200B-\u200D\uFEFF\u202A-\
  * `Signed-off-by:`, `Reviewed-by:` and every other `<Word>-by:`, in any case.
  * A seat's commit is attributed to the App; it does not get to name people.
  */
-export const ATTRIBUTION_TRAILER = /^[ \t]*[A-Za-z][A-Za-z-]*-by[ \t]*:/im;
+// Any space, separator or control character may lead the line or sit before the colon.
+const ATTRIBUTION_TRAILER = /^[\s\p{Z}\p{Cc}]*[A-Za-z][A-Za-z-]*-by[\s\p{Z}]*:/imu;
+/**
+ * Format characters (Cf: bidi controls, zero-width joiners, BOM, tags) and
+ * combining marks (Mn, e.g. U+034F) draw nothing on their own, so one placed
+ * before or inside `Co-authored-by:` must not hide the line from the rule
+ * (F464). They are stripped for the match only; the text itself is never
+ * rewritten.
+ */
+const FORMAT_CHARACTER = /[\p{Cf}\p{Mn}]/gu;
+export const hasAttributionTrailer = (text: string): boolean => (
+  ATTRIBUTION_TRAILER.test(text.replace(FORMAT_CHARACTER, ''))
+);
 
 const validBranchName = (value: unknown): value is string => typeof value === 'string'
   && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value)
@@ -101,7 +113,7 @@ export const parseCommitFilesArgs = (
   if (typeof raw.message !== 'string' || !raw.message.trim() || raw.message.length > MESSAGE_MAX) {
     throw invalid(`message must be a non-empty string of at most ${MESSAGE_MAX} characters`);
   }
-  if (ATTRIBUTION_TRAILER.test(raw.message)) {
+  if (hasAttributionTrailer(raw.message)) {
     throw new RoomGrantError(
       'commit_attribution_trailer',
       'a commit message may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...)',
