@@ -100,7 +100,7 @@ jobs:
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
             printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/|e2e/|docs/adr/|docs/cli/|docs-site/|cli/src/commands/login\.js$|commonly-mcp/src/tools\.js$)' && frontend=true
-            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/verify-pg-roles-chart\.js$|scripts/verify-pdb-chart\.js$|scripts/verify-dev-provider-env\.js$|scripts/verify-agent-default-model\.(js|test\.mjs)$|scripts/monitoring/apply-alerting\.py$|scripts/litellm-guard-check\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
+            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/verify-pg-roles-chart\.js$|scripts/verify-pdb-chart\.js$|scripts/verify-network-policy-chart\.js$|scripts/verify-dev-provider-env\.js$|scripts/verify-agent-default-model\.(js|test\.mjs)$|scripts/monitoring/apply-alerting\.py$|scripts/litellm-guard-check\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
             if printf '%s\n' "$files" | grep -qE '^\.github/workflows/tests\.yml$'; then
@@ -125,6 +125,10 @@ jobs:
       # guard block (exit 3) into a green deploy, or dropped the rollback clause, fails CI.
       - name: Deploy-dev canary wiring regression test
         run: node --test scripts/guard-canary-wiring.test.mjs
+      # The agent plugin packages: the Hermes one takes its token through Hermes
+      # (the Hermes catalog's credential rule) and each pins an exact @commonlyai/mcp.
+      - name: Agent plugin packages regression test
+        run: node --test scripts/agent-plugins.test.mjs
 
   # One heavy job, Backend tests (1/3), routes to a Latchkey runner on a push to
   # main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy path (the
@@ -393,6 +397,7 @@ jobs:
           node --test \
             external/commonly-agent-services/shared/delivery-nonce.test.js \
             external/commonly-agent-services/shared/summary-text.test.js \
+            external/commonly-agent-services/shared/litellm-client.test.js \
             external/commonly-agent-services/commonly-bot/index.test.js
       - run: cd commonly-mcp && npm test
       - run: cd cli && npm run lint && npm test
@@ -599,6 +604,9 @@ jobs:
       - name: Verify disruption budgets render
         run: node scripts/verify-pdb-chart.js
 
+      - name: Verify network policies render
+        run: node scripts/verify-network-policy-chart.js
+
       - name: Verify agent computer render
         run: bash scripts/verify-agent-computer-chart.sh
 
@@ -738,13 +746,12 @@ jobs:
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "180"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
-          # Two frontend replicas never share a node, so a spot reclaim leaves one serving; with the spot
-          # pool capped at 2 nodes, a rollout must replace in place (maxSurge 0) or it deadlocks (2026-10-19).
+          # Two frontend replicas, one on the dev pool and one on the spot pool, so a spot reclaim leaves
+          # one serving (verify-pdb-chart.js checks the placement). The dev pool has room for a surge pod,
+          # so a rollout adds before it removes and never drops below two ready.
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.replicas' /tmp/dev-rendered.yaml)" = "2"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxSurge' /tmp/dev-rendered.yaml)" = "0"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxUnavailable' /tmp/dev-rendered.yaml)" = "1"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey' /tmp/dev-rendered.yaml)" = "kubernetes.io/hostname"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels.app' /tmp/dev-rendered.yaml)" = "frontend"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxSurge' /tmp/dev-rendered.yaml)" = "1"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.strategy.rollingUpdate.maxUnavailable' /tmp/dev-rendered.yaml)" = "0"
           # A frontend pod keeps serving until ingress-nginx has dropped it, or a request waits out the 5 s connect timeout.
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "frontend") | .spec.template.spec.containers[] | select(.name == "frontend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
           # LiteLLM is public for its /v1 API only; `/` exposed the master-key admin login (2026-10-07).

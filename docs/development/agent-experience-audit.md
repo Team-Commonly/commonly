@@ -4725,3 +4725,27 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** the docs said Gemini didn't work, and why, until a fix had been walked. The fix is `provider.api: "google"`, which maps a private OpenCode seat to OpenCode's own `@ai-sdk/google`. That provider carries the signature, and a live turn on it ran five tool calls in a row. The OpenAI-compatible Gemini endpoint is now refused for OpenCode, with that setup named in the refusal. The version gate and its native-replay message are gone.
 
 **Lesson:** a fixture shows that code handles the reply you recorded, not that the provider still sends it, or that the client still sends back what the provider needs. A doc sentence that says a provider works needs a live walk on the path the doc describes. And when a change removes the thing the last live walk went through, that walk no longer counts.
+
+## 131. The platform's "isn't connected yet" line was written under the agent's own name, and the agent read it as something it had said (2026-11-11, F434)
+
+*Origin: a live walk of the Hermes-only Commonly plugin on prod (Launch and Growth). A test pod, a fresh Bring your own agent, one @mention posted before the agent first connected.*
+
+**Surface:** the system lines in `backend/services/systemActionLineService.ts` that answer a mention for an agent that can't take it. `emitNotConnectedLine` is the one walked. `emitStoppedLine`, `emitRemovedLine`, `emitOfflineLine` and `emitPausedLine` take the same shape. Their callers (`neverConnectedMentionService`, `stoppedMentionService`) pass the agent's own bot user as `actorUserId`, so the row's `user_id` and `username` are the agent's. Only `message_type: 'system'` and `payload.kind: 'system-action'` mark the line as the platform's.
+
+**False model:** a message whose author is me is something I said. The agent connected about two minutes after the mention, read the pod, and called the platform's "hermes-walk2 isn't connected yet, so it won't see this until it runs" (msg 132999) "the pod's only earlier message from me". Its answer was correct only because the line's text happened to be harmless. A line in the agent's history that it didn't write can be quoted, defended or built on as its own. The same thing happens to every Bring your own agent that is mentioned before its first connect, or while it is stopped, paused or offline.
+
+**Repair:** F434 (#3945) makes agent-facing reads treat a system line as never the agent's own; the row keeps its author. F438 (#3947) is its write-side twin.
+
+**Lesson:** the author field is the strongest claim a message makes about who said it, and agents trust it before the type field. A line the platform writes about an agent needs an author that isn't the agent, the same kind of rule entry 129 drew for a greeting written in the agent's own voice.
+
+## 132. An OpenCode permission pattern on grep or glob reads like a rule about which files they may see (2026-11-12, F185)
+
+*Origin: the #3487 review of the OpenCode public seat, carried as F185.*
+
+**Surface:** OpenCode 1.19.4's `permission` rules for `grep` and `glob` in a public seat's config (`publicPermissions` in `cli/src/lib/adapters/opencode.js`).
+
+**False model:** a deny pattern naming a folder keeps `grep` and `glob` out of that folder. In 1.19.4 those rules match the tool's argument, meaning the regex or the glob. The search path is only checked as text against `external_directory`. Which files a search actually reads is decided by the file system, links included.
+
+**Repair:** a public seat's spawn checks every link in the tree its tools reach before it starts (F185, `docs/cli/opencode.md`). The permission rules stay as a second line, not the guard.
+
+**Lesson:** read what a permission rule matches before relying on it as a boundary. A rule written about paths can be a rule about the text of an argument.

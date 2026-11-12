@@ -690,7 +690,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('pointer-events: none');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('visibility: hidden');
-    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    // :active keeps a focus-revealed pin live through a tap; WebKit blurs the button on mousedown.
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:active,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
     // A tap applies :hover before its click, so hover arms the pin only where hover is real.
     expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__pin { opacity: 1; pointer-events: auto; }\n}');
     expect(v2).not.toMatch(/^\.v2-pods__rowwrap:hover \.v2-pods__pin/m);
@@ -700,7 +701,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:active) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
     expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }\n}');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
@@ -6809,3 +6810,30 @@ describe('F164 narrowing notices (F170 browser check)', () => {
   });
 });
 
+
+// F370 #8: a field hint shows only on focus; the line saying why the chosen
+// harness is missing must stay visible, or the reason is hidden again.
+describe('BYO harness detail stays visible', () => {
+  it('shows the missing-harness line without focus', () => {
+    const byoCss = read('../components/V2AgentBYO.css');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__field > .v2-byo__hint--shown')).toContain('display: block');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__hint v2-byo__hint--shown" data-testid="byo-harness-detail"');
+  });
+});
+
+// F458: a not-ready agent's summary word and BYO stop line read as warnings. The
+// summary rule must outrank `details.disc > summary .vl .mo`, which sets ink2.
+describe('not-ready lines keep their warning colour', () => {
+  it('the settings summary word and the BYO stopped line use the warning tokens', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(topLevelRuleBody(surface, '.v2-agent-settings-page details.disc > summary .vl .mo.v2-agent-settings-page__summary-warn'))
+      .toContain('var(--v2-warning-text)');
+    const byoCss = read('../components/V2AgentBYO.css');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped')).toContain('var(--v2-warning-soft)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped::before')).toContain('var(--v2-warning)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped'))
+      .toContain('var(--v2-warning-soft)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before'))
+      .toContain('var(--v2-warning)');
+  });
+});

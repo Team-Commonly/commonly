@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted (2026-05-18).
+Accepted (2026-05-18). Amended 2026-11-11: the edge (cloudflared and the
+ingress-nginx controller) runs one replica on the on-demand dev pool and one
+on the spot pool, by a hard spread across node pools, so an all-spot reclaim
+(failure mode 1) leaves one tunnel and one controller up. See
+`k8s/ingress-nginx/values-dev.yaml`. The frontend is split the same way.
 
 ## Context
 

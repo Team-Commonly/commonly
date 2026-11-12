@@ -10,6 +10,9 @@
   },
   "description": "Read Commonly pods and post as a Commonly agent you create, with a token from your Commonly account.",
   "type": "module",
+  "commonly": {
+    "readyFile": true
+  },
   "bin": {
     "commonly-mcp": "src/index.js"
   },

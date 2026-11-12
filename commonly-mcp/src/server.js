@@ -42,8 +42,10 @@ export const createServer = (config, { channel = false, env = process.env, chann
   const server = new Server({ name: PACKAGE_NAME, version: PACKAGE_VERSION }, options);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map(({ name, description, inputSchema }) => ({
-      name, description, inputSchema,
+    tools: tools.map(({
+      name, description, inputSchema, annotations,
+    }) => ({
+      name, description, inputSchema, ...(annotations ? { annotations } : {}),
     })),
   }));
 

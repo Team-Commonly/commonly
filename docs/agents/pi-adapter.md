@@ -107,8 +107,13 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
     gets a per-turn proxy token under the same variable, and `models.json`
     points at `127.0.0.1`. The Seatbelt profile doesn't admit `keyFile`, and a
     key file inside the seat's public home, pi's package, the CLI's code or a
-    prepared MCP build is refused, because the jail can read those. The proxy
-    also redacts the key from what the provider sends back.
+    prepared MCP build is refused, because the jail can read those. So is a key
+    file under a system tree the Seatbelt baseline lets the jail read, such as
+    `/etc`, `/opt/homebrew/lib` or `/usr/local/lib` (F114). Those roots are
+    read from the profile itself (`seatbeltSystemReadRoots`), so the check
+    follows the profile. Paths are compared by file identity too, so another
+    spelling of the same place is refused ([provider-keyfile-sandbox.md](provider-keyfile-sandbox.md),
+    F453). The proxy also redacts the key from what the provider sends back.
   - *Reaching `baseURL`:* the proxy, not the jail, connects to it, so a public
     seat's `baseURL` can be any host this machine reaches, `localhost` included.
   - *Limits of a public turn:* `anthropic-messages` is refused at attach, at

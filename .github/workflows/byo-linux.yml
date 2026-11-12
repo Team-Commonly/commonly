@@ -61,12 +61,26 @@ on:
         description: "load Ubuntu's own bwrap-userns-restrict AppArmor profile before the walk (24.04)"
         type: boolean
         default: false
+      walk:
+        description: "prod: the page's lines against the live API. private-codex: a private Codex seat's permission keys with this checkout's CLI (or the published cli_version), real Codex and a stub model (no prod, no secrets; the three ids above are not read)"
+        type: choice
+        options: [prod, private-codex]
+        default: prod
+      codex_version:
+        description: 'the Codex the private-codex walk installs'
+        type: string
+        default: '0.164.0'
+      cli_version:
+        description: 'private-codex: probe a published @commonlyai/cli (e.g. 0.1.334) instead of this checkout'
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   byo:
+    if: github.event_name != 'workflow_dispatch' || inputs.walk != 'private-codex'
     # 22.04 by default: Ubuntu 24.04's AppArmor refuses unprivileged user
     # namespaces, so bwrap is installed there and every sandbox it starts
     # fails. Dispatching 24.04 shows what a person on it sees.
@@ -128,6 +142,54 @@ jobs:
   # What this Ubuntu does to the sandbox, on its own runner because it loads
   # AppArmor profiles to measure them: the walk must see the host as it came.
   # No secrets.
+  # F444: a private Codex seat on Linux, with this checkout's CLI (or the
+  # published cli_version, for a live proof), real Codex and bubblewrap. A fake home holds a marker in
+  # every place the seat must not reach; the seat must still write its
+  # workspace, use its temp folder and commit. cli/scripts/
+  # codex-private-linux-probe.mjs says what each phase checks. No secrets.
+  private-codex:
+    if: github.event_name == 'workflow_dispatch' && inputs.walk == 'private-codex'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install bubblewrap, Codex and the CLI's dependencies
+        env:
+          CODEX_VERSION: ${{ inputs.codex_version }}
+          CLI_VERSION: ${{ inputs.cli_version }}
+        run: |
+          set -o pipefail
+          case "$CODEX_VERSION" in (*[!0-9.]*|'') echo "::error::codex_version must be a version number"; exit 1;; esac
+          # Exactly x.y.z: npm would read "0.1" as a range and install the newest match.
+          if [ -n "$CLI_VERSION" ] && ! [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::cli_version must be an exact version, like 0.1.334"; exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          npm i -g "@openai/codex@$CODEX_VERSION"
+          (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+          # A published CLI goes in a prefix of its own; the probe loads its adapter.
+          if [ -n "$CLI_VERSION" ]; then
+            npm i --prefix "$RUNNER_TEMP/published-cli" --ignore-scripts --no-audit --no-fund "@commonlyai/cli@$CLI_VERSION" >/dev/null
+            echo "PROBE_ADAPTER=$RUNNER_TEMP/published-cli/node_modules/@commonlyai/cli/src/lib/adapters/codex.js" >> "$GITHUB_ENV"
+          fi
+      - name: Load Ubuntu's bwrap profile
+        if: inputs.bwrap_profile
+        run: |
+          lines=$(node --input-type=module -e "
+            import { UBUNTU_BWRAP_PROFILE_COMMANDS as lines } from './cli/src/lib/sandbox/host-check.js';
+            console.log(lines.join('\n'));
+          ")
+          test -n "$lines"
+          bash -ec "$lines"
+      - name: Probe the private profile
+        run: node cli/scripts/codex-private-linux-probe.mjs
+
   sandbox-report:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ inputs.runner }}

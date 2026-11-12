@@ -203,6 +203,48 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakeCalls()[0].payload.content).toBe('nobody asked anyone anything');
   });
 
+  // F232: postController sends a comment on a post with no pod with
+  // onlyExplicitMentions, because its podId is only a pod the commenter is in.
+  // These pin what that flag does to such a comment; the controller tests in
+  // service/agentThreadComment.test.js are the ones that fail without the fix.
+  describe('a comment with no @ on a post with no pod', () => {
+    const podlessComment = {
+      content: 'nice post',
+      messageType: 'thread',
+      source: 'thread',
+      thread: {
+        postId: 'post-1', postPodId: null, commentId: 'c-1', commentText: 'nice post',
+      },
+    };
+
+    test('without the flag it would wake the borrowed pod\'s opt-in and digest the rest', async () => {
+      mockInstallations([install('seat-a', { optIn: true }), install('seat-b')]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: podlessComment, userId: 'user-1', username: 'alice',
+      });
+
+      expect(res.woken).toEqual(['seat-a']);
+      expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
+        .toEqual([['seat-a', 'wake'], ['seat-b', 'digest']]);
+    });
+
+    test('with onlyExplicitMentions it reaches nobody: no wake, no digest', async () => {
+      mockInstallations([install('seat-a', { optIn: true }), install('seat-b')]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: podlessComment,
+        userId: 'user-1',
+        username: 'alice',
+        onlyExplicitMentions: true,
+      });
+
+      expect(res.woken).toEqual([]);
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
   test('an addressed lookup outage keeps ambient receipt without waking default-off seats', async () => {
     mockInstallations([install('seat-a'), install('seat-b', { optIn: true })]);
     const lookup = jest.spyOn(messageDeliveryModeService, 'addressedMessageTargets')
@@ -704,5 +746,57 @@ describe('wake-on-message reply evidence (repliesToYourMessage)', () => {
     // excluded it: no double delivery, and the flag never fires for humans.
     expect(mentionCalls()).toHaveLength(1);
     expect(wakeCalls()).toHaveLength(0);
+  });
+
+  // F434: "sage isn't connected yet" is stored under sage's bot user, but sage
+  // didn't write it. A person answering that line has replied to the platform,
+  // so sage is neither addressed (implicit mention) nor told the reply is to
+  // its message (wake evidence). Sage still gets its ordinary ambient wake.
+  describe('a reply to a system line stored under the agent (F434)', () => {
+    beforeEach(() => {
+      User.findById.mockImplementation((id) => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(id === 'sage-bot-user-id'
+          ? { _id: 'sage-bot-user-id', isBot: true, botMetadata: { agentName: 'sage', instanceId: 'sage-seo-lead' } }
+          : { _id: 'user-1', isBot: false }),
+      }));
+      mockInstallations([install('sage', { optIn: true, instanceId: 'sage-seo-lead' })]);
+    });
+
+    const replyToSystemLine = (replyTo) => AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'how do I connect it?', id: 'm-80', ...(replyTo ? { replyTo } : {}) },
+      userId: 'user-1',
+      username: 'sam',
+      replyToMessageId: 'm-system-9',
+    });
+
+    test('the populated replyTo says system: no implicit mention to the agent', async () => {
+      await replyToSystemLine({ userId: 'sage-bot-user-id', messageType: 'system' });
+      expect(mentionCalls()).toHaveLength(0);
+    });
+
+    test('the PG fallback row says system: no implicit mention to the agent', async () => {
+      PGMessage.findById.mockResolvedValue({ user_id: 'sage-bot-user-id', message_type: 'system' });
+      await replyToSystemLine(null);
+      expect(mentionCalls()).toHaveLength(0);
+    });
+
+    test('the populated replyTo says system: the wake carries no reply evidence', async () => {
+      await replyToSystemLine({ userId: 'sage-bot-user-id', messageType: 'system' });
+      const sage = wakeCalls().find((w) => w.agentName === 'sage');
+      expect(sage).toBeDefined();
+      expect(sage.payload.repliesToYourMessage).toBeUndefined();
+      expect(sage.payload.content).not.toContain('replies to YOUR earlier message');
+    });
+
+    test('the PG fallback row says system: the wake carries no reply evidence', async () => {
+      PGMessage.findById.mockResolvedValue({ user_id: 'sage-bot-user-id', message_type: 'system' });
+      await replyToSystemLine(null);
+      const sage = wakeCalls().find((w) => w.agentName === 'sage');
+      expect(sage).toBeDefined();
+      expect(sage.payload.repliesToYourMessage).toBeUndefined();
+      expect(sage.payload.content).not.toContain('replies to YOUR earlier message');
+    });
   });
 });

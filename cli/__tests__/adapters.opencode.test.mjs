@@ -3,7 +3,9 @@ import { jest } from '@jest/globals';
 import { spawnSync as realSpawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { createServer, request as httpRequest } from 'http';
-import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
+import {
+  existsSync, readFileSync, realpathSync, statSync, writeFileSync,
+} from 'fs';
 import {
   chmod,
   mkdir,
@@ -15,6 +17,7 @@ import {
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { PUBLIC_MCP_NOT_READY_CODE } from '../src/lib/public-tool-error.js';
 import { providerRefusal, validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const spawnSyncMock = jest.fn();
@@ -32,6 +35,7 @@ const {
   buildProviderConfig,
   makeEventParser,
   PUBLIC_TOOL_FAILED_CODE,
+  missingReadyFile,
   publicToolFailure,
   publicPermissions,
   qualifiedProviderModel,
@@ -322,7 +326,7 @@ describe('opencode MCP config', () => {
       const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
       await mkdir(join(pkgDir, 'src'), { recursive: true });
       await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
-        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
       }));
       await writeFile(join(pkgDir, 'src', 'index.js'), '');
       await writeFile(join(home, 'current'), '0.3.13\n');
@@ -333,7 +337,13 @@ describe('opencode MCP config', () => {
       await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
       await withProcessEnv('COMMONLY_MCP_HOME', home, async () => {
         let profileOptions;
-        const spawn = makeSpawnImpl();
+        // Stands in for the Commonly server: it writes the ready file its config names.
+        const spawn = makeSpawnImpl({
+          onCall: (_cmd, _args, options) => {
+            const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+            writeFileSync(config.mcp.commonly.environment.COMMONLY_MCP_READY_FILE, 'ready\n');
+          },
+        });
         await opencode.spawn('warm turn', {
           cwd: workspace,
           env: { PATH: process.env.PATH },
@@ -379,7 +389,9 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
   ];
   const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
 
-  const runSeat = async (chunks, { trust = 'public', mcp = COMMONLY_MCP } = {}) => {
+  const runSeat = async (chunks, {
+    trust = 'public', mcp = COMMONLY_MCP, readyFile = true, serverWrites = true, seen = {},
+  } = {}) => {
     let outcome;
     await withTemp(async (root) => {
       const home = join(root, 'mcp-home');
@@ -387,7 +399,10 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
       await mkdir(join(pkgDir, 'src'), { recursive: true });
       await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
-        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+        name: '@commonlyai/mcp',
+        version: '0.3.13',
+        ...(readyFile ? { commonly: { readyFile: true } } : {}),
+        bin: { 'commonly-mcp': 'src/index.js' },
       }));
       await writeFile(join(pkgDir, 'src', 'index.js'), '');
       await writeFile(join(home, 'current'), '0.3.13\n');
@@ -398,7 +413,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       await mkdir(workspace);
       const keyFile = join(root, 'provider-key');
       await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
-      return withProcessEnv('COMMONLY_MCP_HOME', home, () => opencode.spawn('a stranger asks which pods they are in', {
+      const spawned = withProcessEnv('COMMONLY_MCP_HOME', home, () => opencode.spawn('a stranger asks which pods they are in', {
         cwd: workspace,
         env: { PATH: process.env.PATH },
         environment: {
@@ -411,9 +426,26 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
         _opencodeHomeRoot: join(root, 'opencode-state'),
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
-        _spawnImpl: makeSpawnImpl({ chunks }).impl,
-        _wrapArgvWithSeatbelt: (argv) => argv,
+        // Stands in for the Commonly server: it creates the file its config names.
+        _spawnImpl: makeSpawnImpl({
+          chunks,
+          onCall: (_cmd, _args, options) => {
+            const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+            seen.env = config.mcp?.commonly?.environment || {};
+            const path = seen.env.COMMONLY_MCP_READY_FILE;
+            if (path && serverWrites) writeFileSync(path, 'ready\n', { flag: 'wx', mode: 0o600 });
+          },
+        }).impl,
+        _wrapArgvWithSeatbelt: (argv, options) => { seen.statePath = options.statePath; return argv; },
       }).then((result) => { outcome = result; }));
+      try {
+        await spawned;
+      } finally {
+        // Read before withTemp removes the fixture root, so an absence here is
+        // the adapter's own cleanup, on the success and the withheld path alike.
+        const readyPath = seen.env?.COMMONLY_MCP_READY_FILE;
+        if (readyPath) seen.readyFileLeftAfterTurn = existsSync(readyPath);
+      }
     });
     return outcome;
   };
@@ -463,6 +495,55 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       toolError('commonly_commonly_get_context', http(404, 'Pod not found')),
       toolError('commonly_commonly_list_pods', http(503, 'HTTP 503', null)),
     ))).rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+  });
+
+  // F421: OpenCode runs the model without the Commonly tools when their server
+  // fails to start, and says so only in its log. The server's ready file is the
+  // witness, asked for only from a release that writes it.
+  test('a release that writes the ready file is given one inside the seat\'s writable state folder', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { readyFile: true, seen });
+    expect(result.text).toBe(narration);
+    expect(seen.env.COMMONLY_MCP_READY_FILE.startsWith(`${seen.statePath}/mcp-ready/`)).toBe(true);
+    expect(seen.readyFileLeftAfterTurn).toBe(false);
+  });
+
+  test('a turn withheld after the server reported ready still removes its ready file', async () => {
+    const seen = {};
+    await expect(runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}')), { readyFile: true, seen }))
+      .rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeDefined();
+    expect(seen.readyFileLeftAfterTurn).toBe(false);
+  });
+
+  test('no ready file from that release withholds the reply, so a tool-less answer never posts', async () => {
+    const outcome = runSeat(turn(), { readyFile: true, serverWrites: false });
+    await expect(outcome).rejects.toMatchObject({ code: PUBLIC_MCP_NOT_READY_CODE });
+    await expect(runSeat(turn(), { readyFile: true, serverWrites: false }))
+      .rejects.toThrow(/^(?!.*backend is unreachable).*Commonly MCP server commonly never reported ready/);
+  });
+
+  // F460: without the file its credential would stay readable to the deadline
+  // on every turn, so a public seat refuses that release before OpenCode runs.
+  test('a public seat on a release from before the ready file is refused, before OpenCode runs', async () => {
+    const seen = {};
+    await expect(runSeat(turn(), { readyFile: false, serverWrites: false, seen }))
+      .rejects.toThrow(/update @commonlyai\/mcp/);
+    expect(seen.env).toBeUndefined();
+  });
+
+  test('a private seat is never asked for one', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { trust: 'private', readyFile: true, serverWrites: false, seen });
+    expect(result.text).toBe(narration);
+    expect(seen.env.COMMONLY_MCP_READY_FILE).toBeUndefined();
+  });
+
+  test('missingReadyFile names the first server whose file is absent', () => {
+    const files = [{ name: 'a', path: '/x/a' }, { name: 'b', path: '/x/b' }];
+    expect(missingReadyFile(files, (p) => p === '/x/a')).toEqual({ name: 'b', path: '/x/b' });
+    expect(missingReadyFile(files, () => true)).toBeNull();
+    expect(missingReadyFile([], () => false)).toBeNull();
   });
 
   test('a connection failure in a tool that is not Commonly\'s is still answered', async () => {
@@ -2243,12 +2324,16 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       await symlink(tempRoot, join(ctx.cwd, 'src', 'deep', 'cache'));
       await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*credential/i);
       expect(spawn.calls).toHaveLength(0);
-      // Reverse: a link elsewhere runs on a seat with no grant (a grant seat
-      // refuses any link out of the workspace; see the chain tests below).
+      // F185: a seat with no grant is walked the same way, so a link to a
+      // folder elsewhere is refused too; a link to a regular file elsewhere runs.
       await rm(join(ctx.cwd, 'src', 'deep', 'cache'));
       await mkdir(join(root, 'elsewhere'), { recursive: true });
       await symlink(join(root, 'elsewhere'), join(ctx.cwd, 'src', 'other'));
       ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*src.*other.*outside the workspace/i);
+      await rm(join(ctx.cwd, 'src', 'other'));
+      await writeFile(join(root, 'elsewhere', 'notes.txt'), 'x');
+      await symlink(join(root, 'elsewhere', 'notes.txt'), join(ctx.cwd, 'src', 'other'));
       await opencode.spawn('plain turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2312,9 +2397,9 @@ describe('opencode public seat — the grant broker (F175a)', () => {
   });
 
   // CodeRabbit round 2 (#3487): a walk that stops at its bound has not proven
-  // the workspace clean. A seat carrying the grant broker refuses; a seat with
-  // no broker entry has no grant to protect and runs.
-  test('a walk that reaches its entry bound refuses a broker seat and lets a seat without one run', async () => {
+  // the workspace clean. F185: every public spawn holds a live token in its
+  // spawn folder, so a seat with no broker entry refuses too.
+  test('a walk that reaches its entry bound refuses a broker seat and a seat without one alike', async () => {
     await withTemp(async (root) => {
       const spawn = makeSpawnImpl();
       const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: join(root, 'temp-root'),
@@ -2322,11 +2407,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
       await mkdir(join(root, 'temp-root'), { recursive: true });
       await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
-      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
       expect(spawn.calls).toHaveLength(0);
 
-      // Reverse: the same workspace, no broker entry, runs.
-      ctx.environment = { ...ctx.environment, mcp: [] };
+      // Reverse: a workspace inside the bound runs.
+      await Promise.all([1, 2, 3, 4].map((n) => rm(join(ctx.cwd, `f${n}.txt`))));
       await opencode.spawn('plain turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2343,7 +2430,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       await opencode.spawn('broker turn', ctx);
       expect(spawn.calls).toHaveLength(1);
       await mkdir(join(ctx.cwd, 'a', 'b', 'c', 'd'), { recursive: true });
-      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*depth bound/i);
       expect(spawn.calls).toHaveLength(1);
     });
   });
@@ -2401,7 +2488,38 @@ describe('opencode public seat — the grant broker (F175a)', () => {
     });
   });
 
-  test('reverse: a public seat with no remote bearer keeps its credential for the whole turn', async () => {
+  // F460: a turn that never reaches its first step (an MCP server that hangs
+  // while OpenCode waits to connect it) loses the credential at the deadline.
+  test('no first step: the credential goes at the deadline, with a warning', async () => {
+    await withTemp(async (root) => {
+      const seen = {};
+      const warn = jest.fn();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key',
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv],
+        _credentialRelease: { deadlineMs: 50, warn },
+        _spawnImpl: (cmd, args, options) => {
+          const proc = new EventEmitter();
+          proc.stdout = new EventEmitter();
+          proc.stderr = new EventEmitter();
+          proc.kill = jest.fn();
+          const credential = options.env.COMMONLY_TOKEN_FILE;
+          seen.atSpawn = existsSync(credential);
+          setTimeout(() => {
+            seen.atDeadline = existsSync(credential);
+            proc.emit('close', 1);
+          }, 200);
+          return proc;
+        } });
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await expect(opencode.spawn('stuck turn', ctx)).rejects.toThrow();
+      expect(seen).toEqual({ atSpawn: true, atDeadline: false });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/public OpenCode seat: MCP servers not ready .*deleted anyway/));
+    });
+  });
+
+  // F460: the same holds for a public seat with no remote bearer; only a
+  // private seat keeps its credential for the turn.
+  test('a public seat with no remote bearer loses its credential at the first step too', async () => {
     await withTemp(async (root) => {
       const stages = {};
       const spawn = stagedSpawn(stages);
@@ -2409,7 +2527,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
       ctx.environment = { ...ctx.environment, mcp: [] };
       await opencode.spawn('plain turn', ctx);
-      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: true });
+      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: false });
     });
   });
 
@@ -2446,11 +2564,15 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       ctx.environment = { ...ctx.environment, mcp: [OFF_ORIGIN_BEARER] };
       await mkdir(join(root, 'temp-root'), { recursive: true });
       await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
-      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
       expect(spawn.calls).toHaveLength(0);
 
-      // Reverse: the same entry with no credential header gets no file and runs.
+      // F185: the same entry with no credential header is held to the same
+      // bound (the spawn folder still holds the seat's own token); a workspace
+      // inside the bound runs.
       ctx.environment = { ...ctx.environment, mcp: [{ ...OFF_ORIGIN_BEARER, headers: {} }] };
+      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*entry bound/i);
+      await Promise.all([1, 2, 3, 4].map((n) => rm(join(ctx.cwd, `f${n}.txt`))));
       await opencode.spawn('side turn', ctx);
       expect(spawn.calls).toHaveLength(1);
     });
@@ -2502,9 +2624,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         // the walk cannot vouch for a tree it never read.
         await rm(join(outside, 'y'));
         await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
-        expect(spawn.calls).toHaveLength(0);
-        // Reverse: a seat with no remote bearer is not held to it.
+        // F185: a seat with no remote bearer is held to it too.
         ctx.environment = { ...ctx.environment, mcp: [] };
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the deep link pointing inside the workspace runs.
+        await rm(join(modules, 'x', 'y'));
+        await symlink(ctx.cwd, join(modules, 'x', 'y'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2588,9 +2714,10 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(workspace, 'node_modules', 'real-pkg', 'dist'), { recursive: true });
         await symlink(join(spawnRoot, 'agent-1'), join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'));
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual({
-          link: join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'), reason: 'reaches_spawn_root',
+          link: join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'), reason: 'reaches_spawn_root', secret: spawnRoot,
         });
-        // Reverse: without the deep walk (a no-grant spawn) it is not looked at.
+        // Reverse: a direct caller that turns the deep walk off does not look
+        // there (every public spawn turns it on since F185).
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toBeNull();
       });
     });
@@ -2613,14 +2740,18 @@ describe('opencode public seat — the grant broker (F175a)', () => {
       });
     });
 
-    test('a spawn with no remote bearer skips the dependency walk, bad link and all', async () => {
+    // F185: a spawn with no remote bearer still holds its own token in the
+    // spawn folder, so it gets the same dependency walk.
+    test('a spawn with no remote bearer walks the dependency tree too', async () => {
       await withTemp(async (root) => {
-        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root, {
-          _dependencyWalkBounds: { maxDepth: 1, maxEntries: 1 },
-        });
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root);
         ctx.environment = { ...ctx.environment, mcp: [] };
         await mkdir(join(modules, 'real-pkg', 'dist'), { recursive: true });
         await symlink(tempRoot, join(modules, 'real-pkg', 'dist', 'x'));
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*real-pkg.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: without the link it runs.
+        await rm(join(modules, 'real-pkg', 'dist', 'x'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2679,9 +2810,13 @@ describe('opencode public seat — the grant broker (F175a)', () => {
           await symlink(tempRoot, join(locked, 'y'));
           await chmod(locked, 0o111);
           await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not list.*src.*locked.*EACCES/i);
-          expect(spawn.calls).toHaveLength(0);
-          // Reverse: a seat with no grant is not held to it.
+          // F185: a seat with no grant is held to it too.
           noGrant(ctx);
+          await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not list.*src.*locked.*EACCES/i);
+          expect(spawn.calls).toHaveLength(0);
+          // Reverse: a listable directory runs.
+          await chmod(locked, 0o755);
+          await rm(join(locked, 'y'));
           await opencode.spawn('plain turn', ctx);
           expect(spawn.calls).toHaveLength(1);
         } finally {
@@ -2702,9 +2837,12 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(repo, 'other', 'node_modules', 'evil', 'dist'), { recursive: true });
         await symlink(tempRoot, join(repo, 'other', 'node_modules', 'evil', 'dist', 'x'));
         await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*other.*node_modules.*evil.*dist.*x.*credential/i);
-        expect(spawn.calls).toHaveLength(0);
-        // Reverse: a seat with no grant walks only its workspace.
+        // F185: a seat with no grant walks the whole worktree too.
         noGrant(ctx);
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/symlink.*other.*node_modules.*evil.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: without the link it runs.
+        await rm(join(repo, 'other', 'node_modules', 'evil', 'dist', 'x'));
         await opencode.spawn('plain turn', ctx);
         expect(spawn.calls).toHaveLength(1);
       });
@@ -2763,13 +2901,39 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await mkdir(join(workspace, 'src'), { recursive: true });
         await symlink(upper, join(workspace, 'src', 'up'));
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toEqual({
-          link: join(workspace, 'src', 'up'), reason: 'reaches_spawn_root',
+          link: join(workspace, 'src', 'up'), reason: 'reaches_spawn_root', secret: spawnRoot,
         });
         // Reverse: an unrelated directory in another case is not a hit.
         await rm(join(workspace, 'src', 'up'));
         await mkdir(join(root, 'elsewhere'), { recursive: true });
         await symlink(realpathSync(join(root, 'elsewhere')).toUpperCase(), join(workspace, 'src', 'up'));
         expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toBeNull();
+      });
+    });
+
+    // F462: a `..` after a missing component is folded as text. The kernel
+    // can't follow that link today; the fold is where it lands once the
+    // missing piece exists as a directory, the only thing a public seat's
+    // tools can create there. Pinned, so a change to it is a decision.
+    test('a `..` after a missing component is judged where it lands once that component is a directory', async () => {
+      await withTemp(async (root) => {
+        const real = realpathSync(root);
+        const workspace = join(real, 'workspace');
+        const spawnRoot = join(real, 'temp-root', 'commonly-opencode-abc');
+        await mkdir(spawnRoot, { recursive: true });
+        await mkdir(join(workspace, 'src'), { recursive: true });
+        await symlink(join(real, 'missing', '..', 'temp-root', 'commonly-opencode-abc'), join(workspace, 'src', 'odd'));
+        const refused = { link: join(workspace, 'src', 'odd'), reason: 'reaches_spawn_root', secret: spawnRoot };
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual(refused);
+        // Once the missing piece is a real directory, the kernel lands there too.
+        await mkdir(join(real, 'missing'));
+        expect(realpathSync(join(workspace, 'src', 'odd'))).toBe(spawnRoot);
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual(refused);
+        // Reverse: the same shape landing on nothing secret runs.
+        await rm(join(real, 'missing'), { recursive: true });
+        await rm(join(workspace, 'src', 'odd'));
+        await symlink(join(real, 'missing', '..', 'elsewhere'), join(workspace, 'src', 'odd'));
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toBeNull();
       });
     });
 

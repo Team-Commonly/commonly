@@ -357,6 +357,11 @@ exports.addComment = async (req: any, res: any) => {
           },
           userId: req.userId,
           username,
+          // F232: a post with no pod borrows one of the commenter's pods only so
+          // an @mention has a podId. That pod's wake-on-message seats, its
+          // welcome and its digest never asked about this post, so only an
+          // explicit @mention is delivered from it.
+          ...(post.podId ? {} : { onlyExplicitMentions: true }),
         });
       }
     } catch (mentionError: any) {

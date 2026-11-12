@@ -251,7 +251,7 @@ test('a public Goose recipe shows the memory it read and names no save tool', as
   const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
   mkdirSync(join(pkgDir, 'src'), { recursive: true });
   writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
-    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
   }));
   writeFileSync(join(pkgDir, 'src', 'index.js'), '');
   writeFileSync(join(home, 'current'), '0.3.13\n');
@@ -307,7 +307,7 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
   const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
   mkdirSync(join(pkgDir, 'src'), { recursive: true });
   writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
-    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
   }));
   writeFileSync(join(pkgDir, 'src', 'index.js'), '');
   writeFileSync(join(home, 'current'), '0.3.13\n');
@@ -373,7 +373,7 @@ test('a public bwrap seat gets its own files read-only, apart from the home it w
   const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
   mkdirSync(join(pkgDir, 'src'), { recursive: true });
   writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
-    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
   }));
   writeFileSync(join(pkgDir, 'src', 'index.js'), '');
   writeFileSync(join(home, 'current'), '0.3.13\n');
@@ -436,7 +436,7 @@ describe('F175d: the grant broker reaches a public Goose seat through the stdio 
     const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
     mkdirSync(join(pkgDir, 'src'), { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
-      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
     writeFileSync(join(pkgDir, 'src', 'index.js'), '');
     writeFileSync(join(home, 'current'), '0.3.13\n');

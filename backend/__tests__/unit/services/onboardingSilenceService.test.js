@@ -378,6 +378,58 @@ describe('onboardingSilenceService.scan', () => {
     expect(NOW.getTime() - filter.firstTypedAt.$gte.getTime()).toBe(7 * DAY);
   });
 
+  // F434: "Scout isn't connected yet" is stored under Scout's bot user, but it
+  // is the platform talking, not Scout answering. The filter lives in the SQL,
+  // so the PG stand-in honours that filter (and only that one) when it is sent.
+  const SYSTEM_FILTER = /COALESCE\(message_type, ''\) <> 'system'/;
+  const pgHonouringSystemFilter = (rows) => (sql) => Promise.resolve({
+    rows: SYSTEM_FILTER.test(sql) ? rows.filter((r) => r.message_type !== 'system') : rows,
+  });
+
+  it("does not count an agent's system line after the newcomer as the agent answering (F434)", async () => {
+    setup();
+    mockPgQuery.mockReset();
+    mockPgQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 900, pod_id: POD, user_id: NEWCOMER, created_at: TYPED_AT,
+        }],
+      })
+      .mockImplementationOnce(pgHonouringSystemFilter([
+        {
+          id: 900, pod_id: POD, user_id: NEWCOMER, created_at: TYPED_AT,
+        },
+        {
+          id: 901, pod_id: POD, user_id: SCOUT, message_type: 'system', created_at: new Date(TYPED_AT.getTime() + MINUTE),
+        },
+      ]));
+
+    const result = await scan({ now: NOW });
+
+    expect(mockPgQuery.mock.calls[1][0]).toMatch(SYSTEM_FILTER);
+    expect(result.opened).toHaveLength(1);
+  });
+
+  it("does not resolve an open episode on an agent's system line (F434)", async () => {
+    setup({
+      openEpisodes: [{
+        _id: 'ep9', userId: NEWCOMER, podId: OTHER_POD, firstTypedAt: TYPED_AT, status: 'open',
+      }],
+      messages: [],
+    });
+    mockPgQuery.mockReset();
+    mockPgQuery
+      .mockImplementationOnce(pgHonouringSystemFilter([{
+        id: 950, pod_id: OTHER_POD, user_id: SCOUT, message_type: 'system', created_at: new Date(TYPED_AT.getTime() + 90 * 1000),
+      }]))
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await scan({ now: NOW });
+
+    expect(mockPgQuery.mock.calls[0][0]).toMatch(SYSTEM_FILTER);
+    expect(result.resolved).toEqual([]);
+  });
+
   it('classifies a human-only rescue separately from the platform answering', async () => {
     setup({
       openEpisodes: [{

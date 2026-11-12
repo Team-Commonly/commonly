@@ -74,6 +74,9 @@ const OPAQUE_PLACEHOLDERS = [
   // tools.byo.*adapterUnsupported names the grant harnesses as a list
   // ("Claude Code、Codex 或 OpenCode", grantHarnessNames): Latin at both ends.
   'harnesses',
+  // agentByo.machine.signedOut and controls.signedOutRow name the harness's own
+  // command ("claude", "codex") to run on that computer (F458).
+  'command',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

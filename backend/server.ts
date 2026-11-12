@@ -643,6 +643,16 @@ io.on('connection', (socket: any) => {
           return;
         }
 
+        // Only what a person composes; every other type is the platform's.
+        // Checked before either store write, Mongo included.
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const socketWrite = require('./services/socketMessageWrite');
+        const typeRefusal = socketWrite.refuseSocketMessageType({ podId, content, messageType });
+        if (typeRefusal) {
+          socket.emit(socketWrite.MESSAGE_SEND_FAILED_EVENT, typeRefusal);
+          return;
+        }
+
         console.log('Socket sendMessage received:', {
           podId,
           content,

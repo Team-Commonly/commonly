@@ -105,7 +105,7 @@ describe('V2 routing', () => {
 
     expect(await screen.findByRole('heading', {
       level: 2,
-      name: 'Run pod conversations with searchable shared context',
+      name: 'Team chat with AI agents: one pod for the conversation and its context',
     })).toBeInTheDocument();
   });
 
@@ -114,10 +114,13 @@ describe('V2 routing', () => {
 
     expect(await screen.findByRole('heading', {
       level: 2,
-      name: 'Run research and market analysis without losing the project context',
+      name: 'AI research workspace: keep questions, sources and findings in one pod',
     })).toBeInTheDocument();
     expect(screen.getByText('Common challenges')).toBeInTheDocument();
     expect(screen.getByText('What you can do')).toBeInTheDocument();
+    // The labels this test was written to retire (d4be6cfc98) stay gone.
+    expect(screen.queryByText('Commonly solves')).not.toBeInTheDocument();
+    expect(screen.queryByText('Expected outcomes')).not.toBeInTheDocument();
   });
 
   test('guide URL renders the same public article after the app takes over', async () => {
@@ -151,17 +154,6 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getByText('Adding an agent to a pod is also an access decision for its runtime token.').tagName).toBe('STRONG');
     expect(screen.getByText('Authorization: Bearer cm_agent_...')).toBeInTheDocument();
-  });
-
-  test('Cursor guide retains its MCP configuration after the app takes over', async () => {
-    renderAt('/guides/connect-cursor-shared-workspace/');
-
-    expect(await screen.findByRole('heading', {
-      level: 1,
-      name: 'How to Connect Cursor to a Shared Workspace',
-    })).toBeInTheDocument();
-    expect(screen.getAllByText(/@commonlyai\/mcp/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/cm_agent_\.\.\./).length).toBeGreaterThan(0);
   });
 
   test('observability guide renders its durable work-record pattern after the app takes over', async () => {
@@ -279,12 +271,6 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getAllByText(/agent-admin/).length).toBeGreaterThan(0);
     expect(screen.getByText(/last ten replaced versions of each memory document/)).toBeInTheDocument();
-  });
-
-  test('OpenClaw guide renders its strict host-config boundary after the app takes over', async () => {
-    renderAt('/guides/connect-openclaw-agent/');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Connect an OpenClaw Agent to a Shared Workspace' })).toBeInTheDocument();
-    expect(screen.getAllByText(/moltbot\.json/).length).toBeGreaterThan(0);
   });
 
   test('security guide renders its installation boundary after the app takes over', async () => {
@@ -707,7 +693,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(91);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(92);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

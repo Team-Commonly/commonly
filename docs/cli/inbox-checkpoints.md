@@ -67,6 +67,32 @@ redelivery ceiling)". Below the ceiling a released event is redelivered and
 never retired for the restarts it waited through. The requeue cap still bounds
 a delivery that goes silent, such as a crash or a SIGKILL.
 
+**When nobody comes back for it (F452).** A released row waits for a poll, and
+the agent that released it may never poll again. Neither the requeue nor the
+delivered retire reads a `pending` row, so before F452 a person's message
+handed back by a stopped seat sat in silence until the 168-hour expiry. On
+2026-11-11 a BYO opencode seat released four mentions at attempts 4 and one at
+attempts 2, then went quiet, and no line was posted.
+
+A release now stamps `releasedAt`, and the requeue sweep clears it, so a row
+that a long turn may still be working on is never read as abandoned. The sweep
+now handles a released person's message (`chat.mention`, `thread.mention`,
+`dm.message`; never `first_contact`) that was sent within the last 24 hours and
+has sat `pending` and unclaimed for the requeue window since its last write.
+An older one is left to the retention expiry with no line, so a deploy never
+replies to days-old history:
+
+- **At or past the requeue cap**, it is retired with the TASK-656 line ("didn't
+  answer this and may be offline"), the same as a delivered row at the cap.
+- **Below the cap, claimed at least once**, the person is told once that the
+  agent "hasn't answered this yet and may be offline", and the row stays
+  `pending`, so an agent that comes back still answers. A row never claimed is
+  left to the offline and never-connected notices posted at mention time.
+
+One marker on the event, `unansweredNoticeAt`, records that the person was told.
+It is set by the compare-and-set that wins the right to post. Every later pass
+(a second replica, the next sweep, either retire) stays silent for a marked row.
+
 - An idle stop (`stop()`) cancels the scheduled tick, so a run waiting out a
   circuit exits at once. `stop()` returns one promise that resolves once the
   hand-back has answered, whether the idle stop or the in-flight tick does it.
@@ -108,6 +134,15 @@ The allowance line has two gates. The failure must class as QUOTA in
 `billing` is QUOTA with no wording, and a wording that classes as something else
 stays silent too, so a new allowance failure needs an entry in both. The key and
 wouldn't-start lines have the wording gate only.
+
+A signed-out Claude Code is its own cause (F436). Claude Code exits 1 with `Not
+logged in · Please run /login` when no one is signed in on the computer. No
+retry fixes that, and holding the event behind the 15-minute circuit kept the
+person waiting with no answer (17.8 minutes on a walk). So the wrapper acks the
+event as an error, which hands a person's message on to another listener, and
+the pod's line says to sign in to Claude Code on that computer. The seat's log
+says the same. The circuit doesn't open, so the next message spawns at once,
+and that spawn is the re-probe.
 
 A new wording goes in a list once a seat has logged it or the vendor publishes
 it, and anything unmatched stays silent in the pod, as it was before. An API key

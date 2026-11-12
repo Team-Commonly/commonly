@@ -225,7 +225,13 @@ shipped git remote helper prints.
   path the owner reads is the path that lands. Content with a NUL byte refuses
   `invalid_content`. A message line that attributes anyone (`Co-authored-by:`,
   `Signed-off-by:`, any `<Word>-by:`, any case) refuses
-  `commit_attribution_trailer`. If the branch moved after the call parked, it
+  `commit_attribution_trailer`; format characters (Cf) are ignored for this
+  match, so a zero-width or bidi character before or inside the line doesn't
+  hide it. A pull request body is held to the same rule
+  and refuses `pr_attribution_trailer`, because a squash merge puts the body in
+  the commit. `github.merge_pull_request` holds its `commitTitle` and
+  `commitMessage` to it too (`merge_attribution_trailer`), at park and at run.
+  If the branch moved after the call parked, it
   refuses `stale_branch`, and a ref update is never forced.
 - **The parent carries the default branch's protected files.** At execution,
   before any object is written, the parent's `.github/workflows`,
@@ -257,9 +263,16 @@ shipped git remote helper prints.
   - A commit: repo, head, where it lands (`new branch <head> from <base> at
     <sha>`, or `adds to existing branch <head> at <sha>` with no base), the full
     commit message (labelled, cut with a marker past 4,096 characters), and each
-    file's text, up to 64 KiB across the commit, with a truncation marker.
+    file's text, up to 64 KiB across the commit, with a truncation marker. The
+    cap backs off to a whole UTF-8 character.
   - A pull request: repo, base, head, title, and a 2,000-character preview of
     the body.
+  - Every card, these and the generic one (a merge's commit title and message
+    included), shows each format character (bidi controls, zero-width
+    characters) as its code point, such as `\u{202E}`
+    (`toolCallView.showInvisibles`), so the owner reads the characters that
+    will land, not their reordered rendering. The summary carries the text
+    unchanged.
 
   The file text appears only in the connection owner's own pending read. The
   pod card, socket emits and every other member's read carry none of it. The

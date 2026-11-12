@@ -119,7 +119,11 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - LITELLM_BASE_URL=${LITELLM_BASE_URL}
       - LITELLM_API_KEY=${LITELLM_API_KEY}
-      - LITELLM_CHAT_MODEL=${LITELLM_CHAT_MODEL}
+      # Unset, the backend asks LiteLLM for AGENT_DEFAULT_MODEL (F103, F105),
+      # whose built-in value is the chart's DeepSeek route. The compose LiteLLM
+      # (external/litellm/config.yaml) serves Gemini by its own name instead.
+      - LITELLM_CHAT_MODEL=${LITELLM_CHAT_MODEL:-gemini-2.5-flash}
+      - AGENT_DEFAULT_MODEL=${AGENT_DEFAULT_MODEL:-gemini-2.5-flash}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL}
       - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS}

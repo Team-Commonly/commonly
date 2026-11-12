@@ -17,10 +17,11 @@ traffic, and has no readiness/liveness probe. It sits on the **spot pool**, off
 the on-demand `dev` pool where `backend` and `redis` live. So a heavy or runaway
 operator script runs **outside backend's cgroup/CPU limit and off the dev pool**
 — the exact mechanism behind the 11:42Z incident. It is **not** fully isolated
-from everything users touch: `frontend` is also pinned to the spot pool
-(ADR-015), `ops-runner`'s `50m` is a CPU *request* and not a limit, and it has no
-anti-affinity from the frontend replicas — so a runaway script can still contend
-for CPU with `frontend` on a shared spot node. (A CPU *limit* on `ops-runner`
+from everything users touch: one `frontend` replica runs on the spot pool
+(ADR-015; the other is on dev), `ops-runner`'s `50m` is a CPU *request* and not a
+limit, and it has no anti-affinity from the frontend replicas — so a runaway
+script can still contend for CPU with that `frontend` replica on a shared spot
+node. (A CPU *limit* on `ops-runner`
 would close that remaining gap.)
 
 ## Why — the mechanism

@@ -100,6 +100,9 @@ export interface V2Message {
     actorName?: string;
     /** `agentName:instanceId` on a system line about one agent (agent-not-connected, -stopped, …). */
     agentKey?: string;
+    /** On a run-request-declined line: who asked, and the agent's label (F449). */
+    requesterName?: string;
+    agentLabel?: string;
     taskId?: string;
     elements?: unknown[];
     v?: number;

@@ -349,6 +349,18 @@ describe('performRun — a failed turn is retried from the carry', () => {
 describe('performRun — a failure the seat can\'t retry its way out of tells the pod', () => {
   const expired = () => adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key sk-walk-abc');
   const noticesIn = (post) => turnPostsIn(post).filter(([, body]) => /I can’t answer right now/.test(body.content));
+  // An open circuit wakes once a minute to check the inbox (F236), so the
+  // retry is the first wake that runs a turn. Returns the waits it fired.
+  const fireUntilTurn = async (run, spawn) => {
+    const waited = [];
+    const turnsBefore = spawn.mock.calls.length;
+    for (let i = 0; i < 40 && spawn.mock.calls.length === turnsBefore; i += 1) {
+      waited.push(run.scheduled[0].delayMs);
+      // eslint-disable-next-line no-await-in-loop
+      await run.fireNext();
+    }
+    return waited;
+  };
 
   beforeEach(() => {
     fs.rmSync(path.join(sessionsTmpDir, '.commonly', 'sessions', 'my-stub.notices.json'), { force: true });
@@ -364,7 +376,7 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
     expect(noticesIn(server.post)[0][1].content).not.toContain('sk-walk');
     expect(server.acks).toEqual([]);
 
-    await run.fireNext();
+    await fireUntilTurn(run, spawn);
     expect(spawn.mock.calls.length).toBeGreaterThan(1);
     expect(noticesIn(server.post)).toHaveLength(1);
     run.handle.stop();
@@ -462,6 +474,113 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
       expect.stringContaining('pod-other'),
     ]);
     run.handle.stop();
+  });
+
+  // F236: a seat waiting out its circuit polled nothing until the probe, so a
+  // pod that first asked during the wait heard nothing for up to ~16 minutes
+  // (walked on 1d55c6611: no line in 47 s). It now checks once a minute, says
+  // why, carries what it claimed, and still runs no turn before the probe.
+  describe('a pod that first asks during a circuit wait', () => {
+    const outOfCredit = () => new Error('claude exited with code 1: Credit balance is too low');
+    const routesOf = (post) => noticesIn(post).map(([route]) => route);
+
+    test('is told within a minute, and the probe still comes when the circuit says', async () => {
+      const server = fakeServer({
+        pages: [[makeEvent('evt-a', 'are you there?')], [makeEvent('evt-b', 'hello?', { podId: 'pod-other' })]],
+      });
+      const spawn = jest.fn().mockRejectedValue(outOfCredit());
+      const run = startRun({ spawn });
+      try {
+        await drainMicrotasks();
+        expect(routesOf(server.post)).toEqual([expect.stringContaining('pod-abc')]);
+        const circuitMs = retryReports(run.errors)[0].retryAfterMs;
+        expect(circuitMs).toBeGreaterThan(60_000);
+
+        await run.fireNext(60_000);
+        expect(spawn).toHaveBeenCalledTimes(1);
+        expect(routesOf(server.post)).toEqual([expect.stringContaining('pod-abc'), expect.stringContaining('pod-other')]);
+        expect(server.acks).toEqual([]);
+
+        const waited = [60_000, ...await fireUntilTurn(run, spawn)];
+        expect(waited.reduce((sum, ms) => sum + ms, 0)).toBe(circuitMs);
+        expect(waited.every((ms) => ms <= 60_000)).toBe(true);
+        // The probe carried both pods' asks: one turn ran, it failed again,
+        // and both stay held for the next probe, unacked.
+        expect(spawn).toHaveBeenCalledTimes(2);
+        expect(spawn.mock.calls[1][0]).toContain('are you there?');
+        expect(retryReports(run.errors).at(-1).heldCount).toBe(2);
+        expect(server.acks).toEqual([]);
+        expect(routesOf(server.post)).toHaveLength(2);
+      } finally { run.handle.stop(); }
+    });
+
+    // A carried event comes back on a check only after the server requeued it,
+    // and only the fetched copy's deliveryId is still live. Acking the carried
+    // one would be a stale delivery, which stops the run.
+    test('a carried event the check gets again is answered with its new delivery', async () => {
+      const server = fakeServer({
+        pages: [
+          [makeEvent('evt-a', 'are you there?')],
+          [makeEvent('evt-a', 'are you there?', { payload: { content: 'are you there?', deliveryId: 'nonce-evt-a-2' } })],
+        ],
+      });
+      const spawn = jest.fn().mockRejectedValueOnce(outOfCredit()).mockResolvedValue({ text: 'Back now.' });
+      const run = startRun({ spawn });
+      try {
+        await drainMicrotasks();
+        await run.fireNext(60_000);
+        await fireUntilTurn(run, spawn);
+        expect(spawn).toHaveBeenCalledTimes(2);
+        expect(server.acks.map((ack) => [ack.id, ack.deliveryId])).toEqual([['evt-a', 'nonce-evt-a-2']]);
+        expect(routesOf(server.post)).toHaveLength(1);
+      } finally { run.handle.stop(); }
+    });
+
+    test('a pod already told this hour is not told again', async () => {
+      const server = fakeServer({
+        pages: [[makeEvent('evt-a', 'are you there?')], [makeEvent('evt-c', 'still there?')]],
+      });
+      const spawn = jest.fn().mockRejectedValue(outOfCredit());
+      const run = startRun({ spawn });
+      try {
+        await drainMicrotasks();
+        await run.fireNext(60_000);
+        expect(server.polls).toEqual([['evt-a'], ['evt-c']]);
+        expect(routesOf(server.post)).toHaveLength(1);
+      } finally { run.handle.stop(); }
+    });
+
+    test('a stop during the wait hands back what the check claimed', async () => {
+      const server = fakeServer({
+        pages: [[makeEvent('evt-a', 'are you there?')], [makeEvent('evt-b', 'hello?', { podId: 'pod-other' })]],
+      });
+      const spawn = jest.fn().mockRejectedValue(outOfCredit());
+      const run = startRun({ spawn });
+      await drainMicrotasks();
+      await run.fireNext(60_000);
+      run.handle.stop();
+      await drainMicrotasks();
+      const released = server.post.mock.calls
+        .filter(([route]) => String(route).endsWith('/events/release'))
+        .flatMap(([, body]) => body.events.map((entry) => entry.eventId));
+      expect(released.sort()).toEqual(['evt-a', 'evt-b']);
+    });
+
+    test('a circuit with no reason to give a person keeps its one long wait', async () => {
+      const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+      // A missing binary opens the long circuit, and the pod is given no line for it.
+      const spawn = jest.fn().mockRejectedValue(new Error('spawn ENOENT'));
+      const run = startRun({ spawn });
+      try {
+        await drainMicrotasks();
+        const report = retryReports(run.errors)[0];
+        expect(report).toMatchObject({ circuitOpen: true, retryAfterMs: 900_000 });
+        expect(noticesIn(server.post)).toHaveLength(0);
+        expect(run.scheduled.map((entry) => entry.delayMs)).toEqual([900_000]);
+        await run.fireNext(900_000);
+        expect(spawn).toHaveBeenCalledTimes(2);
+      } finally { run.handle.stop(); }
+    });
   });
 
   test('a person replying to the seat without an @ is told', async () => {
@@ -576,8 +695,115 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
     await drainMicrotasks();
     expect(retryReports(run.errors).length).toBeGreaterThan(0);
 
-    await run.fireNext();
+    await fireUntilTurn(run, spawn);
     expect(noticesIn(server.post).length).toBeGreaterThanOrEqual(2);
     run.handle.stop();
+  });
+});
+
+// F436: Claude Code exits 1 with "Not logged in · Please run /login" when no one
+// is signed in on the computer. That is a setup fault no retry can clear, and
+// holding the event behind the 15-minute circuit (17.8 min on a walk) left the
+// person waiting. The event is acked, the pod is told the real fix, and the
+// next poll keeps its usual cadence, so the next message is the re-probe.
+describe('performRun — a signed-out Claude Code is a setup fault, not an outage (F436)', () => {
+  const signedOut = () => new Error('claude exited with code 1: Not logged in · Please run /login');
+  const noticesIn = (post) => turnPostsIn(post).filter(([, body]) => /I can’t answer right now/.test(body.content));
+  let CLAUDE_SIGNED_OUT_NOTICE;
+
+  beforeAll(async () => {
+    ({ CLAUDE_SIGNED_OUT_NOTICE } = await import('../src/lib/turn-failure-notice.js'));
+  });
+  beforeEach(() => {
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly', 'sessions', 'my-stub.notices.json'), { force: true });
+  });
+
+  test('a lone mention gets the sign-in line and is acked, with no circuit hold', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(signedOut());
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(noticesIn(server.post).map(([, body]) => body.content)).toEqual([CLAUDE_SIGNED_OUT_NOTICE]);
+      expect(server.acks).toEqual([expect.objectContaining({
+        id: 'evt-a',
+        result: expect.objectContaining({ outcome: 'error', reason: 'claude-signed-out' }),
+      })]);
+      expect(retryReports(run.errors)).toEqual([]);
+      expect(run.logs.some((line) => line.includes('open Claude Code here and sign in'))).toBe(true);
+      expect(run.scheduled[0].delayMs).toBe(5000);
+    } finally { run.handle.stop(); }
+  });
+
+  test('once someone signs in, the next mention is answered on the next poll', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'are you there?')], [makeEvent('evt-b', 'how about now?')]],
+    });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(signedOut())
+      .mockResolvedValueOnce({ text: 'here now' });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await run.fireNext(5000);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(server.acks.map((ack) => ack.id)).toEqual(['evt-a', 'evt-b']);
+      expect(turnPostsIn(server.post).some(([, body]) => body.content === 'here now')).toBe(true);
+    } finally { run.handle.stop(); }
+  });
+
+  test('still signed out, a second mention within the hour is acked without a second line', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'are you there?')], [makeEvent('evt-b', 'hello?')]],
+    });
+    const spawn = jest.fn().mockRejectedValue(signedOut());
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await run.fireNext(5000);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(server.acks.map((ack) => ack.id)).toEqual(['evt-a', 'evt-b']);
+      expect(noticesIn(server.post)).toHaveLength(1);
+    } finally { run.handle.stop(); }
+  });
+
+  test('a private ask, which runs alone, is acked the same way and only logged', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'quick question', {
+        type: 'agent.ask',
+        payload: { requestId: 'ask/1', fromAgent: 'planner', fromInstanceId: 'default', question: 'quick question', deliveryId: 'nonce-a' },
+      })]],
+    });
+    const spawn = jest.fn().mockRejectedValue(signedOut());
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.acks).toEqual([expect.objectContaining({
+        id: 'evt-a',
+        result: expect.objectContaining({ outcome: 'error', reason: 'claude-signed-out' }),
+      })]);
+      expect(noticesIn(server.post)).toHaveLength(0);
+      expect(retryReports(run.errors)).toEqual([]);
+      expect(run.logs.some((line) => line.startsWith('[agent.ask]') && line.includes('sign in'))).toBe(true);
+    } finally { run.handle.stop(); }
+  });
+
+  test.each([
+    ['Claude Code signed out', () => new Error('claude exited with code 1: Not logged in · Please run /login')],
+    ['an expired key', () => adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key')],
+    ['an allowance used up', () => new Error("claude exited with code 1: You've hit your weekly limit · resets Nov 3 at 5pm")],
+    ['a CLI that is not installed', () => new Error('spawn claude ENOENT')],
+  ])('a lone mention whose turn fails on %s gets exactly one line in its pod', async (_name, failure) => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockImplementation(async () => { throw failure(); });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      const notices = noticesIn(server.post);
+      expect(notices).toHaveLength(1);
+      expect(notices[0][0]).toContain('pod-abc');
+    } finally { run.handle.stop(); }
   });
 });

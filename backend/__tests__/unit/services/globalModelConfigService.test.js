@@ -18,18 +18,15 @@ describe('globalModelConfigService', () => {
     });
     const result = await GlobalModelConfigService.getConfig();
     expect(result.llmService.provider).toBe('auto');
-    expect(result.llmService.model).toBe('gemini-2.5-flash');
+    // F105: no default names a Gemini name LiteLLM served with DeepSeek.
+    expect(result.llmService.model).toBe('deepseek-v4-flash');
     expect(result.llmService.openrouter).toEqual({
       baseUrl: 'https://openrouter.ai/api/v1',
       model: '',
     });
-    expect(result.openclaw.provider).toBe('google');
-    expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
-    expect(result.openclaw.fallbackModels).toEqual([
-      'google/gemini-2.5-flash',
-      'google/gemini-2.5-flash-lite',
-      'google/gemini-2.0-flash',
-    ]);
+    expect(result.openclaw.provider).toBe('openrouter');
+    expect(result.openclaw.model).toBe('openrouter/deepseek-v4-flash');
+    expect(result.openclaw.fallbackModels).toEqual([]);
   });
 
   it('drops stored OpenRouter key and keeps only routing fields', async () => {
@@ -151,6 +148,46 @@ describe('globalModelConfigService', () => {
       const result = await GlobalModelConfigService.getConfig();
       expect(result.llmService.model).toBe('gemini-2.5-flash');
     });
+
+    // F105: with no chat model set, the llmService and OpenClaw defaults follow
+    // the configured agent default, never a Gemini name.
+    it('follows AGENT_DEFAULT_MODEL when no chat model is set, for llmService and OpenClaw', async () => {
+      const savedAgent = process.env.AGENT_DEFAULT_MODEL;
+      delete process.env.LITELLM_CHAT_MODEL;
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      try {
+        stored(null);
+        const result = await GlobalModelConfigService.getConfig();
+        expect(result.llmService.model).toBe('claude-haiku-5-5');
+        expect(result.openclaw.model).toBe('openrouter/claude-haiku-5-5');
+        expect(result.openclaw.fallbackModels).toEqual([]);
+      } finally {
+        if (savedAgent === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+        else process.env.AGENT_DEFAULT_MODEL = savedAgent;
+      }
+    });
+
+    it('prefers the chat model over the agent default for llmService', async () => {
+      const savedAgent = process.env.AGENT_DEFAULT_MODEL;
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-flash-1017';
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      try {
+        stored(null);
+        const result = await GlobalModelConfigService.getConfig();
+        expect(result.llmService.model).toBe('deepseek-flash-1017');
+        expect(result.openclaw.model).toBe('openrouter/claude-haiku-5-5');
+      } finally {
+        if (savedAgent === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+        else process.env.AGENT_DEFAULT_MODEL = savedAgent;
+      }
+    });
+
+    it('keeps a stored Gemini OpenClaw model an admin saved', async () => {
+      stored({ openclaw: { provider: 'google', model: 'google/gemini-2.5-flash', fallbackModels: ['google/gemini-2.0-flash'] } });
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
+      expect(result.openclaw.fallbackModels).toEqual(['google/gemini-2.0-flash']);
+    });
   });
 
   // F103: the community default names the configured model by its own name,
@@ -255,6 +292,72 @@ describe('globalModelConfigService', () => {
       const result = await GlobalModelConfigService.getConfig();
 
       expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/claude-haiku-5-5');
+    });
+
+    // F105: the OpenClaw model follows AGENT_DEFAULT_MODEL too, so a save must
+    // not pin today's default into the row.
+    it('an admin save that leaves the OpenClaw model at its default stores none, so it keeps following the env', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored(null);
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto' } });
+
+      expect(savedValue().openclaw).not.toHaveProperty('model');
+      process.env.AGENT_DEFAULT_MODEL = 'deepseek-flash-1017';
+      stored(savedValue());
+      GlobalModelConfigService.resetCache();
+      const later = await GlobalModelConfigService.getConfig();
+      expect(later.openclaw.model).toBe('openrouter/deepseek-flash-1017');
+    });
+
+    it('an OpenClaw model the row already held stays stored', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { provider: 'google', model: 'google/gemini-2.5-flash' } });
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto' } });
+
+      expect(savedValue().openclaw.model).toBe('google/gemini-2.5-flash');
+    });
+
+    // CodeRabbit on #3972: the OpenClaw `google` provider calls Google directly,
+    // so with no model it keeps a Gemini name rather than the OpenRouter route.
+    it('a save that picks the google OpenClaw provider with no model gets a Gemini model', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored(null);
+
+      const result = await GlobalModelConfigService.setConfig({ openclaw: { provider: 'google', model: '' } });
+
+      expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
+      expect(savedValue().openclaw).not.toHaveProperty('model');
+    });
+
+    it('a saved google provider with no saved model reads as a Gemini model, also after a save that names no model', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { provider: 'google' } });
+      expect((await GlobalModelConfigService.getConfig()).openclaw.model).toBe('google/gemini-2.5-flash');
+
+      stored({ openclaw: { provider: 'google' } });
+      const result = await GlobalModelConfigService.setConfig({ openclaw: { provider: 'openrouter' } });
+      expect(result.openclaw.model).toBe('openrouter/claude-haiku-5-5');
+    });
+
+    it('the OpenRouter provider with no model takes OPENROUTER_MODEL', async () => {
+      const saved = process.env.OPENROUTER_MODEL;
+      process.env.OPENROUTER_MODEL = 'deepseek/deepseek-chat';
+      try {
+        stored({ llmService: { provider: 'openrouter' } });
+        expect((await GlobalModelConfigService.getConfig()).llmService.model).toBe('deepseek/deepseek-chat');
+      } finally {
+        if (saved === undefined) delete process.env.OPENROUTER_MODEL; else process.env.OPENROUTER_MODEL = saved;
+      }
+    });
+
+    it('a save under the Gemini-direct provider with no model stores a Gemini name', async () => {
+      stored(null);
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'gemini', model: '' } });
+
+      expect(savedValue().llmService.model).toBe('gemini-2.5-flash');
     });
   });
 });

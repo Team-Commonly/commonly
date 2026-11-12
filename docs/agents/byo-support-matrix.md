@@ -22,7 +22,12 @@ a confined trust. Public seats do by default (`COMMONLY_DEFAULT_SANDBOX`), so
 "refused" below means a public seat. Codex on native Windows is the exception:
 there the check applies whatever the seat declares, and a seat with no sandbox
 block is refused too, unless the person opted in and every pod is confirmed
-private.
+private. Codex on Linux is the other: a private seat outside a cloud-codex pod
+runs under its permission profile, enforced by Codex with bubblewrap (since
+F444), and is refused at start where bubblewrap can't start a sandbox. The same
+`--unsandboxed` opt-in as Windows runs it unconfined there, by the person's own
+choice, only while every pod is confirmed private
+([codex-private-seats.md](../cli/codex-private-seats.md)).
 
 Last reviewed 2026-11-07, against main `a0db74604`.
 
@@ -32,7 +37,7 @@ Last reviewed 2026-11-07, against main `a0db74604`.
 |---|---|---|---|
 | **macOS** | **works** for a public seat, under Seatbelt. Walked 2026-11-04 in a pod open to join, with CLI 0.1.233 and Claude Code 2.1.318 on macOS 26.4: the CLI announced the scratch-folder confinement, and the seat answered an @mention in 17 s with no refusal. The walk used that Mac's existing Claude login and global `~/.claude` config, which a new user won't have | **unverified**. Same spawn as foreground, but no daemon walk is recorded | **works**, with a gap. Growth's walk on 2026-11-04: the copied `claude mcp add` works. `claude mcp list` shows Connected but doesn't mark the token used, so an install that never calls a tool looks unconnected on our side (a fix is queued). |
 | **Linux (WSL included)** | **works** on an API key (walked 2026-11-05); own login CI only. On 2026-11-05 `byo-linux.yml` (run 41945040493) pasted the page's Linux lines on a fresh GitHub-hosted ubuntu-22.04 runner: published CLI 0.1.253, Claude Code 2.1.318 in the bubblewrap jail, with `ANTHROPIC_API_KEY` held by the CLI's host proxy and sent to a model gateway named by `ANTHROPIC_BASE_URL` (not to Anthropic's API), in a pod not fully private (so a public turn in the scratch folder; the walk refuses an all-private agent). The @mention was answered in 13 s and acked. The person's-own-login path and the project-folder (all-private) seat are not walked. Since F96 (#3395, merged 2026-11-04) a public seat runs in the bubblewrap jail: Claude Code's install bound read-only, a private HOME, the macOS public tool policy, and the person's own login as an access-only copy (or `ANTHROPIC_API_KEY` through a host-side proxy). `.github/workflows/claude-bwrap-public.yml` runs Claude Code 2.1.318 in real bwrap against a stub model: one turn per path, and the token-print attack refused through `Read`, `Bash` and `WebFetch`. A login near expiry is refused with "run /login". Needs bubblewrap installed | same spawn as foreground; no daemon walk is recorded | **unverified** |
-| **Windows (native)** | **works** with CLI 0.1.243 or newer, through the opt-in `--unsandboxed` (#3388): refused by default (`windowsSandboxMessage`); with the flag it runs with the public tool policy and no OS jail, and gets no connector grants. **Walked on prod** 2026-11-04 (`byo-windows.yml` dispatched with `target=prod`, run 41926949969): the page's four PowerShell lines on windows-latest, from a fresh profile, installed the published CLI 0.1.245; Claude Code 2.1.318 on `claude-haiku-5-5` answered a person's @mention in an invite-only pod on commonly.me in 16 s, and the CLI acked it. 0.1.243 is the first release with the Windows npm fix (#3437); the stub-model walk passed on it (run 41921620690). The model was reached with a gateway key, so no turn on a signed-in Claude account is recorded, and the turn made no tool call | the same rule, through `commonly daemon install --unsandboxed`. CI (`.github/workflows/daemon-windows.yml`) covers install, kill, return, stop and uninstall, and the npm shim. It doesn't cover a Claude turn | **unverified**. The PowerShell `claude mcp add` snippet (#2289) has no recorded walk |
+| **Windows (native)** | **works** with CLI 0.1.243 or newer, through the opt-in `--unsandboxed` (#3388): refused by default (`windowsSandboxMessage`); with the flag it runs with the public tool policy and no OS jail, and gets no connector grants. **Walked on prod** 2026-11-04 (`byo-windows.yml` dispatched with `target=prod`, run 41926949969): the page's four PowerShell lines on windows-latest, from a fresh profile, installed the published CLI 0.1.245; Claude Code 2.1.318 on `claude-haiku-5-5` answered a person's @mention in an invite-only pod on commonly.me in 16 s, and the CLI acked it. 0.1.243 is the first release with the Windows npm fix (#3437); the stub-model walk passed on it (run 41921620690). The model was reached with a gateway key, so no turn on a signed-in Claude account is recorded, and the turn made no tool call. **The runner is not a stock PC** (F342, 2026-11-11): it ships an Unrestricted script policy, and Windows 11 defaults to Restricted, where PowerShell runs the `.ps1` shim for a bare `npm`, `npx` or `commonly` and refuses it, before the token is used. The page's Windows lines therefore name `npm.cmd`, `commonly.cmd` and `npx.cmd`, and the walk's gated `scripts blocked` leg runs them under a CurrentUser Restricted policy. Never tell a person to loosen their script policy; any new Windows command we print names the `.cmd` shim | the same rule, through `commonly daemon install --unsandboxed`. CI (`.github/workflows/daemon-windows.yml`) covers install, kill, return, stop and uninstall, and the npm shim. It doesn't cover a Claude turn | **unverified**. The PowerShell `claude mcp add` snippet (#2289) has no recorded walk |
 
 **Ubuntu 24.04 and later.** AppArmor restricts unprivileged user namespaces there, so bubblewrap installs and every sandbox it starts fails. Walked on fresh `ubuntu-24.04` runners on 2026-11-07 with CLI 0.1.290, on a gateway key, as a walk account:
 
@@ -51,12 +56,12 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
 
 | Harness | macOS | Linux | Windows | MCP-only |
 |---|---|---|---|---|
-| **Codex** | **works** in the foreground for a public seat. Walked 2026-11-04 in a pod open to join, with CLI 0.1.233 and codex-cli 0.162.1 on macOS 26.4, using an isolated `CODEX_HOME`: the seat answered an @mention in 21 s. Re-walked 2026-11-06 on this repo's CLI with codex-cli 0.162.1 through the model gateway: a public seat answered an @mention in 21 s, wrote a file inside its workspace, and `cat` of a file under `/private/tmp` failed with `Operation not permitted`, read from the seat's own rollout. The daemon is **unverified** | **works** in the foreground on an API key through a model gateway (walked 2026-11-05). Codex confines itself with its own permission profile, whose Linux sandbox uses bubblewrap; it doesn't run in the jail Claude Code runs in. `byo-linux.yml` dispatched with `adapter=codex` (run 41994906534) pasted the page's Linux lines on a fresh GitHub-hosted Ubuntu runner: published CLI 0.1.255 and codex-cli 0.164.0, with the gateway provider set in the runner's system Codex config (`/etc/codex/config.toml`, which holds no key), because a public Codex seat skips the user's `config.toml`. A person's @mention on commonly.me was answered in 16 s and acked. A ChatGPT sign-in or the person's own OpenAI key is **unverified** on Linux, and so is the daemon. Needs bubblewrap installed | **refused** by default, on a host with no sandbox Codex can use: a public seat always refuses, at attach, at `agent run` and turn by turn. With the opt-in `--unsandboxed`, a seat whose every pod is confirmed private (invite-only, not publicly readable, not listed; re-read before each turn, and a failed read doesn't start it) runs unconfined, with your own access to files and commands. Anyone in the pod can direct it, people invited later included, and it gets no connector grants. Walked 2026-11-06 on Windows Server 2025 against prod, with this checkout's CLI and Codex on an API key through the model gateway: in an invite-only pod the seat answered a main-channel @mention in 39 s, pasting the SHA-256 PowerShell computed for a string chosen at that moment, with the unconfined notice in its log (`byo-windows.yml` run 42154387865). Re-walked the same day with the published CLI 0.1.273: answered in 50 s with a 64-hex reply; the walker compared the hash by hand, and the smoke script doesn't assert it (run 42175092787). With the pod set open to join and the flag still passed, it refused at start without naming the flag (run 42154734536). The publicly readable, listed and failed-read cases are covered by unit tests only | **unverified**. A codex MCP entry must declare its own `env` table, or the server can't start (repo CLAUDE.md, Agent Runtime). A run with `--unsandboxed` marks the seat, and no grant can be used from it until its owner runs `commonly agent clear-unsandboxed <name>` with their own login, because the seat's token can't lift it. |
+| **Codex** | A private seat runs under the `commonly_private` permission profile (readable disk, network on, host secret folders denied; not a sandbox for untrusted input): [codex-private-seats.md](../cli/codex-private-seats.md). **works** in the foreground for a public seat. Walked 2026-11-04 in a pod open to join, with CLI 0.1.233 and codex-cli 0.162.1 on macOS 26.4, using an isolated `CODEX_HOME`: the seat answered an @mention in 21 s. Re-walked 2026-11-06 on this repo's CLI with codex-cli 0.162.1 through the model gateway: a public seat answered an @mention in 21 s, wrote a file inside its workspace, and `cat` of a file under `/private/tmp` failed with `Operation not permitted`, read from the seat's own rollout. The daemon is **unverified** | **works** in the foreground on an API key through a model gateway (walked 2026-11-05). Codex confines itself with its own permission profile, whose Linux sandbox uses bubblewrap; it doesn't run in the jail Claude Code runs in. `byo-linux.yml` dispatched with `adapter=codex` (run 41994906534) pasted the page's Linux lines on a fresh GitHub-hosted Ubuntu runner: published CLI 0.1.255 and codex-cli 0.164.0, with the gateway provider set in the runner's system Codex config (`/etc/codex/config.toml`, which holds no key), because a public Codex seat skips the user's `config.toml`. A person's @mention on commonly.me was answered in 16 s and acked. A ChatGPT sign-in or the person's own OpenAI key is **unverified** on Linux, and so is the daemon. Needs bubblewrap installed. A **private** seat (no public trust, outside a cloud-codex pod) runs under the `commonly_private` profile since F444, from a Codex home of its own since F445 (no history copied from `~/.codex`, which is denied whole; the person's login, config and AGENTS.md linked in); before F387 it ran unconfined without being asked. Walked on `byo-linux.yml` with `walk=private-codex` (runs 43101747910 on ubuntu-22.04 and 43101752224 on ubuntu-24.04 with Ubuntu's bwrap AppArmor profile; codex-cli 0.164.0, this repo's CLI, a stub model and no prod): a workspace write, a heredoc and a commit worked, and `~/.ssh`, another seat's token and another turn's temp folder were refused, through `codex sandbox` and through one real turn. A real model and the daemon are **unverified**. Where bubblewrap can't start, it is refused at start; `agent run <name> --unsandboxed` then runs it unconfined, by the person's own choice, only while every pod is confirmed private (covered by unit tests, not walked); `daemon install --unsandboxed` stays Windows-only | **refused** by default, on a host with no sandbox Codex can use: a public seat always refuses, at attach, at `agent run` and turn by turn. With the opt-in `--unsandboxed`, a seat whose every pod is confirmed private (invite-only, not publicly readable, not listed; re-read before each turn, and a failed read doesn't start it) runs unconfined, with your own access to files and commands. Anyone in the pod can direct it, people invited later included, and it gets no connector grants. Walked 2026-11-06 on Windows Server 2025 against prod, with this checkout's CLI and Codex on an API key through the model gateway: in an invite-only pod the seat answered a main-channel @mention in 39 s, pasting the SHA-256 PowerShell computed for a string chosen at that moment, with the unconfined notice in its log (`byo-windows.yml` run 42154387865). Re-walked the same day with the published CLI 0.1.273: answered in 50 s with a 64-hex reply; the walker compared the hash by hand, and the smoke script doesn't assert it (run 42175092787). With the pod set open to join and the flag still passed, it refused at start without naming the flag (run 42154734536). The publicly readable, listed and failed-read cases are covered by unit tests only | **unverified**. A codex MCP entry must declare its own `env` table, or the server can't start (repo CLAUDE.md, Agent Runtime). A run with `--unsandboxed` marks the seat, and no grant can be used from it until its owner runs `commonly agent clear-unsandboxed <name>` with their own login, because the seat's token can't lift it. |
 | **OpenCode** | **works** for a public seat on a tested version. Walked 2026-11-04 by Growth on OpenCode 1.19.4 and CLI 0.1.240, running the Bring your own page's OpenCode lines from `~` with an OpenAI-compatible provider (our own model gateway in place of `api.anthropic.com`): an @mention got a reply through the tool in 25 s. A replay fixture covered 1.18.35, 1.19.0 and 1.19.4 on 2026-10-24 ([opencode.md](../cli/opencode.md)) | **unverified**. Bubblewrap code path, not walked | **refused**: `windowsSandboxMessage` (offers WSL 2 with bubblewrap instead) | n/a |
 | **Qwen Code** | **works** for a public seat. Walked 2026-11-04 by Growth on Qwen Code 0.26.2 and CLI 0.1.242 in a pod open to join: it replied through the tool in 14.3 s. That walk reported the withheld `commonly_attach_file` as never offered, which was wrong for 0.26.2: it was listed and refused at the call (measured 2026-11-06 with a stub model). Since F175d the withheld tools aren't listed either | **unverified**. Bubblewrap code path | **refused**, as OpenCode | n/a |
 | **Goose** | **works** for a public seat on 1.54.0 only. Walked 2026-11-04 by Growth on Goose 1.54.0 and CLI 0.1.242 in a pod open to join: it replied through the tool in 15.7 s. That walk predates F219, which moved the credential and recipe out of the writable seat home; on that layout `goose.public-smoke.test.mjs` passed with real Goose 1.54.0 under Seatbelt and a stub model (2026-11-05, macOS), with no walk on a real pod yet. Goose 1.56 is **refused** on public seats by the version gate, `TESTED_GOOSE_VERSIONS` (`adapters/goose.js`), which lists 1.54.0 only. #3430 (open) keeps it refused on purpose: its loop adds a `load_skill` tool that passes the allowlist | **unverified**. Bubblewrap code path | **unverified** | n/a |
 | **Hermes** | **unverified**. A 2026-10-22 walk on Hermes 0.22.2 answered a mention, but it used our own model provider and a version below today's floor (0.22.5 to below 0.23). The adapter sends model calls through OpenRouter, and that path has no recorded walk | **unverified** | **unverified** | n/a |
-| **pi** | **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`). `--env` takes the shared provider block with a `keyFile`, private on both APIs and public on `openai-chat` only; measured on pi 0.84.1 against a local stub provider, with no walk on a real one ([pi-adapter.md](pi-adapter.md)) | **unverified** | **unverified** | n/a |
+| **pi** | **works** in the foreground for a public seat on macOS. Walked 2026-11-11 with CLI 0.1.329 and pi 0.84.1 in an invite-only pod, through the model gateway: named on a read-only Linear grant, the seat answered a mention from a Linear read through the broker, `sandbox_check` reported pi and its MCP child sandboxed, and once the agent was un-named or the grant revoked, the next turn made no Linear call. The daemon is **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`). `--env` takes the shared provider block with a `keyFile`, private on both APIs and public on `openai-chat` only; measured on pi 0.84.1 against a local stub provider. The walk above used the model gateway, so other providers have no walk ([pi-adapter.md](pi-adapter.md)) | **unverified** | **unverified** | n/a |
 | **DeepSeek Harness** | **works**, private seats only: walked 2026-10-23, confined turn 2026-10-28 ([dsh.md](../cli/dsh.md)). Public seats are refused | **unverified**: "not walked" (dsh.md) | **unverified**: "not walked" (dsh.md) | n/a |
 
 **n/a** means this page has no MCP-only path to report for that harness.
@@ -71,8 +76,11 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
   - DeepSeek Harness accepts one exact version on every seat.
   - Goose refuses an untested version on public seats.
   - Codex refuses a version below `PUBLIC_CODEX_MIN_VERSION`
-    (`cli/src/lib/adapters/codex.js`), or one it can't read, on public seats, and
-    says what to upgrade to. A later version runs. An internal seat has no gate.
+    (`cli/src/lib/adapters/codex.js`), or one it can't read, on public seats and
+    on private seats under the `commonly_private` profile, and says what to
+    upgrade to. A later version runs. A seat in a cloud-codex pod, or opted out
+    with `--unsandboxed` on native Windows, has no gate
+    ([codex-private-seats.md](../cli/codex-private-seats.md)).
   - Claude Code has no version gate.
 - **Connector grants.** No seat on native Windows gets the grant broker
   (`cli/src/lib/grant-broker-guard.js`). The server refuses grant use for every
@@ -114,14 +122,19 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     private seat, a seat that declares no sandbox (pi is never given a
     default one), and any seat on Linux. Naming the agent on the grant (F94)
     doesn't lift this reason, unlike the sandbox reasons of the other three
-    harnesses. The pi run path also still needs a server-declared adapter
+    harnesses. Naming one is refused with `byo_public_only` ("can use
+    connectors only when it runs as a public agent"), and the grant form
+    shows that line beside it; before 2026-11-11 the refusal was
+    `byo_adapter_unsupported`, which named only the other three. The pi run path also still needs a server-declared adapter
     binding, so the broker's per-call check sees `pi` on the row.
-  - The pi path is **unverified** on a real pi seat. Only unit tests cover
-    it; no walk is recorded.
+  - The pi path was walked once on a real public pi seat on macOS
+    (2026-11-11, in the table above). The per-spawn credential file existed
+    only during the turn and was gone after it. Linux and the daemon have no
+    walk.
   - Qwen and Goose get the broker only on a public seat, under Seatbelt on
     macOS or bubblewrap on Linux. Neither jails a private seat, so every other
     declaration is refused with `adapter_confines_public_only`, and naming the
-    agent doesn't lift it. A Qwen seat with no sandbox block gets the default
+    agent doesn't lift it (refused with `byo_public_only`, as for pi). A Qwen seat with no sandbox block gets the default
     public one from the daemon, so it works with no extra setup. Goose has no
     default, because a default can't supply its provider and model, so a Goose
     seat has to declare `sandbox.trust: 'public'`. Windows gets no broker.
@@ -131,8 +144,9 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     characters. Goose 1.54.0 fills a header from its own environment or a
     literal in the recipe. Neither can read a header from a file. The bridge
     runs inside the jail, is told a url, a header template and a path, and reads
-    the token from the per-spawn credential file for each request. The token
-    is not in argv, in the config or recipe, or in the harness's environment.
+    the token from the per-spawn credential file once, when it starts (F460).
+    The token is not in argv, in the config or recipe, or in the harness's
+    environment.
   - What keeps the model off that file is the tool list, not the jail: the
     bridge and the Commonly MCP server run in the jail and must read it, so code
     in the jail could too. A public turn on either harness has no tool that runs
@@ -191,6 +205,65 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
   public Goose turn had its shell, file-write and extension calls refused, so
   no model-steered code runs there to read it. A Codex shell command can't read
   the file at all (F203, default profile on macOS).
+- **A public seat's credential file lasts only until its readers have it
+  (F460).** Pi has done this since F146. On the other public adapters each
+  reader of the file says when it has read it: the Commonly MCP server and the
+  broker bridge each create the file named in `COMMONLY_MCP_READY_FILE` once
+  they hold the token, and the CLI deletes the credential when every named file
+  exists (`armCredentialRelease`, `cli/src/lib/credential-file.js`).
+  - OpenCode also deletes it at its first `step_start`, which it emits only
+    after every MCP server has connected.
+  - If the files aren't all there 30 seconds after spawn, the credential is
+    deleted anyway, with a warning. A server that hangs costs that turn its
+    tools, never a credential readable for the whole turn.
+  - A delete that fails ends the turn.
+  - The ready files sit in the one folder each jail lets the seat write: the
+    seat home on Qwen and Goose, OpenCode's data home, Claude Code's state
+    folder, and Codex's per-turn folder (its MCP servers run outside the
+    shell's profile). A Claude Code seat on a policy-only Windows host has no
+    state folder and runs its servers unjailed, so it uses a temp folder of the
+    turn's own.
+  - A public seat hands the credential only to servers that report. Another
+    stdio server declaring `COMMONLY_TOKEN_FILE` is refused on a public seat,
+    because the release would not wait for it.
+  - A Commonly server that crashes and is restarted mid-turn can't read the
+    deleted file, so the rest of that turn runs without its tools. Nothing
+    leaks.
+  - A public seat whose Commonly server can't be shown to write a ready file is
+    refused with "update @commonlyai/mcp". That covers a warm build from before
+    ready files and our package run by path from outside the host-prepared MCP
+    home. A private seat keeps its credential for the turn, as before.
+  - Claude Code's fresh-session retry writes the credential again at the path
+    its config names, and deletes it again once that run's servers are ready.
+  - A Claude Code turn with an HTTP broker loses the file too (F461). Its
+    `headersHelper` runs on every connect and reconnect. On a public seat it
+    asks the adapter for the token over a Unix socket, `headers.sock` in the
+    spawn's 0700 MCP folder, with the socket itself 0600. The adapter holds the
+    token in memory and closes the socket when the turn ends. A turn whose only
+    MCP server is the broker has no stdio reader, so its file goes before
+    Claude starts.
+    - The socket answers only a client that first sends the turn's key, a
+      256-bit random value in `headers.key` (0600) beside it. The key matters
+      because connecting isn't reading a file. On macOS the connect goes
+      through the seat's open network rule, not its folder rules, so another
+      seat's jail that learned the path could connect. That jail can't read
+      the key, so it gets nothing (checked under real `sandbox-exec` with two
+      seat profiles). Who can get the token is again whoever can read this
+      folder, as with the file.
+    - Opening the socket as a file fails (macOS, and ENXIO on Linux), so a Read
+      tool gets nothing from it. A Read of the key alone gets no token, because
+      a Read can't connect.
+    - On Linux the connect works through bwrap's read-only bind of the folder
+      (checked with a read-only bind mount in a container).
+    - Windows keeps the file for the turn. A named pipe's default ACL lets
+      Everyone read it, which is wider than a 0600 file.
+    - A temp folder whose socket path would pass 103 bytes, or a socket that
+      can't be set up, also keeps the file, with a warning.
+    - A private seat's helper still reads the file.
+  - Measured with stub servers that write their ready files, per adapter
+    (`adapters.*.credential-release-f460.test.mjs`), with the release
+    timing in `credential-release.test.mjs`, and with Claude Code's header
+    socket under real Seatbelt (`seatbelt.claude-header-channel.smoke.test.mjs`).
 - **Temp files in a public Codex shell.** The profile denies `$TMPDIR` and
   `/tmp`, so a writable seat's shell gets `TMPDIR` and zsh's `TMPPREFIX` in its
   workspace. Heredocs work (real turn, codex-cli 0.162.1 on macOS, stub model,

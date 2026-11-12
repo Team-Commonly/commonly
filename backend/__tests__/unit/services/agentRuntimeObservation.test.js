@@ -70,3 +70,63 @@ it('normalizes only bounded walked inventory and excludes paths, raw output and 
   { harness: 'unwalked', installed: true, models: ['secret'] }]);
   expect(result).toEqual([{ harness: 'codex', installed: true, version: '1.2', models: ['m'], efforts: ['high'] }]);
 });
+// F370 #11: a failed spawn keeps a fixed reason code, so Settings can say why.
+// It never takes free text, never rides on a completed outcome, and a new spawn
+// or a success clears it.
+it('stores a failed spawn reason only as a known code, and clears it', async () => {
+  const req = request({ event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null });
+  await recordRuntimeObservation(req, response());
+  const settle = async (body) => {
+    req.body = { agentName: 'receipt-seat', event: 'settled', ...body };
+    const res = response();
+    await recordRuntimeObservation(req, res);
+    return res.statusCode;
+  };
+  const failure = async () => (await Observation.findOne({ agentUserId: agent }).lean()).lastSpawnFailure;
+  expect(await settle({ outcome: 'failed', reason: 'claude-signed-out' })).toBe(200);
+  expect(await failure()).toBe('claude-signed-out');
+  expect(await settle({ outcome: 'failed', reason: 'claude exited 1: Not logged in' })).toBe(400);
+  expect(await settle({ outcome: 'completed', reason: 'login' })).toBe(400);
+  expect(await settle({ reason: 'login' })).toBe(400);
+  expect(await failure()).toBe('claude-signed-out');
+  // An older runner reports a failure with no reason: the old one doesn't linger.
+  expect(await settle({ outcome: 'failed' })).toBe(200);
+  expect(await failure()).toBeNull();
+  expect(await settle({ outcome: 'failed', reason: 'wont-start' })).toBe(200);
+  req.body = { agentName: 'receipt-seat', event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null };
+  await recordRuntimeObservation(req, response());
+  expect(await failure()).toBeNull();
+  expect(await settle({ outcome: 'failed', reason: 'login' })).toBe(200);
+  expect(await settle({ outcome: 'completed' })).toBe(200);
+  expect(await failure()).toBeNull();
+});
+
+// The reason codes live in the CLI, the model and Settings. A code one side
+// lacks fails quietly (a 400 the runner swallows, or "see the log"), so the
+// three lists are pinned equal here.
+it('keeps the spawn failure reasons the same in the CLI, the model and Settings', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { SPAWN_FAILURE_REASONS } = require('../../../models/AgentRuntimeObservation');
+  const listIn = (file, pattern) => {
+    const match = fs.readFileSync(path.join(__dirname, '../../../..', file), 'utf8').match(pattern);
+    return [...match[1].matchAll(/'([^']+)'/g)].map((found) => found[1]);
+  };
+  const cli = listIn('cli/src/lib/turn-failure-notice.js', /export const SPAWN_FAILURE_REASONS = (\[[^\]]*\])/);
+  const settings = listIn('frontend/src/v2/components/V2RuntimeControls.tsx', /const SPAWN_FAILURE_REASONS = new Set\((\[[^\]]*\])\)/);
+  expect([...cli].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
+  expect([...settings].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
+});
+
+// F458: the daemon's login verdict rides the inventory so the page can say
+// "not signed in" before a message fails. Only a boolean is a verdict.
+it('keeps a boolean signedIn and drops anything else', () => {
+  const result = normalizeRuntimeInventory([
+    { harness: 'claude', installed: true, signedIn: false },
+    { harness: 'codex', installed: true, signedIn: true },
+    { harness: 'opencode', installed: true, signedIn: 'no' },
+  ]);
+  expect(result.find((row) => row.harness === 'claude').signedIn).toBe(false);
+  expect(result.find((row) => row.harness === 'codex').signedIn).toBe(true);
+  expect(result.find((row) => row.harness === 'opencode')).not.toHaveProperty('signedIn');
+});

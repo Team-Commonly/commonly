@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 
 // eslint-disable-next-line global-require
 const k8s = require('@kubernetes/client-node');
@@ -112,11 +113,13 @@ const buildGatewayConfig = async ({ backendUrl }: { backendUrl: string }): Promi
     modelConfig = null;
   }
   const openclaw = modelConfig?.openclaw as Record<string, unknown> | undefined;
+  // The policy's model; the name after `||` is used only when the policy can't
+  // be read, and is the policy's own default (F105; it was a Gemini name).
   const defaultPrimary = String(
     openclaw?.model
     || openclaw?.defaultModel
     || '',
-  ).trim() || 'google/gemini-2.5-flash';
+  ).trim() || `openrouter/${agentDefaultModel()}`;
 
   return {
     agents: {

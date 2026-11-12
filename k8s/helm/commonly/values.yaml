@@ -30,7 +30,8 @@ aiProviders:
   gemini:
     enabled: true
   # Gates LiteLLM's OpenAI upstreams (chat, embeddings, images). Off, gpt-4o is
-  # served by DeepSeek and embeddings/images are not routed (F85).
+  # not served (LiteLLM's unknown-model error, F105) and embeddings/images are
+  # not routed (F85).
   openai:
     enabled: true
   # Anthropic through LiteLLM (F91, D243). On, LiteLLM gets ANTHROPIC_API_KEY
@@ -43,7 +44,7 @@ aiProviders:
     nativeModel: claude-haiku-5-5
   # DeepSeek through LiteLLM: the deepseek-v4-flash and deepseek-flash-1017
   # routes, LiteLLM's DEEPSEEK_API_KEY (from commonly-deepseek-api-key), the
-  # Gemini/gpt-4o stand-ins and the Gemini fallbacks, and the backend's
+  # Gemini fallbacks, and the backend's
   # LITELLM_CHAT_MODEL default. On by default: DeepSeek is the base chart's
   # default model (litellm.agentDefaultModel) and stays a self-host option.
   # Off, LITELLM_CHAT_MODEL follows litellm.agentDefaultModel, which must then
@@ -678,16 +679,12 @@ litellm:
   # render in CI. Base: DeepSeek, which these defaults reached before through
   # other vendors' names. Dev: Claude (values-dev.yaml).
   agentDefaultModel: deepseek-v4-flash
-  # F98/F103: the Gemini/gpt-4o stand-ins only. With this on, the Gemini names
-  # (where aiProviders.gemini is off) and gpt-4o (where aiProviders.openai is
-  # off) are served by DeepSeek, as they were before F98. It exists only for the
-  # callers that still default to those names: llmService's DEFAULT_MODEL, the
-  # commonly-bot and newshound clients, gatewayProvisionerServiceK8s,
-  # agentProvisionerService, AgentProfile, routes/dev.ts and the admin policy
-  # defaults. It retires with them in F105. (F103 deleted the other legacy
-  # names: nemotron, gpt-5.4*, openai-codex/*, codex-mini-latest, o4-mini and
-  # codex-cli/gpt-5.4.) Dev sets it false.
-  legacyAliases: true
+  # F105 removed litellm.legacyAliases: no other vendor's name is served by
+  # DeepSeek. The Gemini names are served only where aiProviders.gemini is on,
+  # and gpt-4o only where aiProviders.openai is. A caller that pins one where
+  # its provider is off gets LiteLLM's unknown-model error; point it at
+  # agentDefaultModel (docs/development/LITELLM.md, "Upgrading past F105").
+  # A leftover legacyAliases key in an override file is ignored.
   # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
   # commonly-bot call LiteLLM with their own budgeted keys
   # (<keyPrefix>litellm-backend-key, <keyPrefix>litellm-commonly-bot-key) as
@@ -778,3 +775,43 @@ backup:
     gcs:
       bucket: ""
       path: postgresql
+
+# NetworkPolicies, one switch each: networkPolicy.{ingress,egress}.<name>.enabled.
+networkPolicy:
+  # Each listening pod admits only its known clients on its own port
+  # (templates/network/ingress-allow.yaml), and defaultDeny turns away the
+  # rest. Each allow fences its own pod as soon as it's on, refusing every
+  # client it doesn't list; defaultDeny closes only the pods no allow names.
+  ingress:
+    # NetworkPolicy peers where outside traffic enters: the tunnel or the
+    # ingress controller. frontend, backend and a public litellm admit them.
+    edge: []
+    frontend:
+      enabled: false
+    backend:
+      enabled: false
+    litellm:
+      enabled: false
+      # Admit the edge too, when litellm has a public hostname.
+      public: false
+    redis:
+      enabled: false
+    mongodb:
+      enabled: false
+    emailSink:
+      enabled: false
+    # The waker and every steel-<userId> gate.
+    agentComputer:
+      enabled: false
+    defaultDeny:
+      enabled: false
+  egress:
+    # Tighten pod egress (templates/network/egress-restrict.yaml): pods may
+    # reach any address except exceptCidrs; pods whose component is in
+    # exemptComponents keep full egress (backup uses Workload Identity).
+    restrict:
+      enabled: false
+      exceptCidrs:
+        - 169.254.169.254/32
+      exemptComponents:
+        - backup

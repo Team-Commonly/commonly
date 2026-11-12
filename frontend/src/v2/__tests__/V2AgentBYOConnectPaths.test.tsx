@@ -90,12 +90,17 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     mockPage({ machines: [] });
     renderPage();
     expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/stops when that window closes/);
-    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/add this computer once with the command above/);
-    // F370: with no computer yet the daemon block leads the form, above the
-    // quick try, and is no longer folded into Other ways to connect.
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/add this computer once with the command below/);
+    // F448: the form and its button lead; the daemon block follows the quick
+    // try as the next step. In 14 days nobody copied the daemon line from the
+    // top, and 4 of 9 openers left before copying anything. It stays out of
+    // Other ways to connect (F370).
     const add = screen.getByTestId('byo-add-computer');
     expect(screen.getByTestId('byo-more-ways')).not.toContainElement(add);
-    expect(add.compareDocumentPosition(screen.getByTestId('byo-quick-try')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const button = screen.getByRole('button', { name: /get my connect command/i });
+    expect(button.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('byo-quick-try').compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText(/agent name/i).compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await issueRun();
     const stops = screen.getByTestId('byo-listen-stops-on-close');
@@ -194,7 +199,7 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(command.textContent).not.toContain('&&');
     expect(command.textContent).not.toContain('\n');
     expect(command.textContent).not.toContain('npm i -g');
-    expect(command.textContent).toBe('npx -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed');
+    expect(command.textContent).toBe('npx.cmd -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed');
     // The flag is explained under the block it appears in.
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
       'On Windows there’s no sandbox. With --unsandboxed, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.',

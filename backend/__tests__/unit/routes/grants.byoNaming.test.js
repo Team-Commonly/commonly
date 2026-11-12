@@ -270,13 +270,15 @@ describe('POST /api/grants naming a BYO agent', () => {
   });
 
   // F175c, F175d: pi, Qwen and Goose hold a grant only on a public seat; naming
-  // never lifts that refusal, and the naming message does not offer them.
-  test('a seat on a public-only harness that is not public cannot be named', async () => {
+  // never lifts that refusal. D252: the refusal says so, rather than the general
+  // line, which still offers only the harnesses a private seat can use.
+  test('a seat on a public-only harness that is not public cannot be named, and is told why', async () => {
     mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });
     const res = await withCatalog([ENTRY], () => mint());
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe('byo_adapter_unsupported');
-    expect(res.body.message).toBe('Only a Claude Code, Codex or OpenCode agent can be named on a grant.');
+    expect(res.body.error).toBe('byo_public_only');
+    expect(res.body.message).toBe('This agent can use connectors only when it runs as a public agent.');
+    expect(res.body.message).not.toMatch(/Mac|Claude Code|Codex|OpenCode/);
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
@@ -433,7 +435,7 @@ describe('GET /api/grants/byo-candidates', () => {
     agentRows[0].botMetadata.requestedMachineId = 'machine-a';
     mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });
     const [agent] = (await candidates()).body.agents;
-    expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'adapter_unsupported', awaitingMachine: true }));
+    expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'public_only', awaitingMachine: true }));
   });
 
   test('a seat its machine refuses is not nameable and never awaited, even with a request pending', async () => {

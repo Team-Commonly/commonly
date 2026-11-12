@@ -24,7 +24,9 @@ import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, readdirSync, realpathSync, rmSync } from 'fs';
+import {
+  existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
+} from 'fs';
 import {
   chmod,
   lstat,
@@ -39,11 +41,13 @@ import {
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import {
-  dirname, isAbsolute, join, relative, resolve as pathResolve,
+  basename, dirname, isAbsolute, join, relative, resolve as pathResolve,
 } from 'path';
-import { writeCredentialFile } from '../credential-file.js';
+import { armCredentialRelease, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
+import {
+  prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir,
+} from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   effectiveSandboxTrust,
@@ -58,7 +62,8 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
-import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
+import { MCP_READY_FILE_ENV, commonlyMcpReadyFile } from '../mcp-ready.js';
+import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 
@@ -192,17 +197,145 @@ const gitReportedWorktree = (holder, env) => {
 };
 
 // Bounds for the pre-spawn symlink walk. Reaching either one leaves the
-// workspace unproven, and a seat carrying the grant broker then refuses
+// workspace unproven, and a public seat then refuses
 // (`assertSpawnRootOutsideWorkspace`), so the depth sits well above real source
 // trees: it guards against a pathological tree, not an ordinary one.
 const SYMLINK_WALK_BOUNDS = Object.freeze({ maxDepth: 32, maxEntries: 20000 });
-// CodeRabbit round 4 (#3487): a grant-bearing spawn also walks every
-// node_modules tree, links only, under its own bound. Measured 2026-11-05 on
+// CodeRabbit round 4 (#3487): the walk also covers every dependency tree,
+// links only, under its own bound (every public spawn since F185). Measured 2026-11-05 on
 // this repo's backend/node_modules: 44,664 entries, 63 symlinks (none leaving
 // the workspace), 0.5-1.4 s on a host at load average ~90.
 const DEPENDENCY_WALK_BOUNDS = Object.freeze({ maxDepth: 64, maxEntries: 200000 });
 const SYMLINK_WALK_SKIP = new Set(['.git']);
-const DEPENDENCY_DIR = 'node_modules';
+// Package-manager trees: their contents are walked links-only under the
+// dependency budget, never as source. A Python environment is one too, by
+// name or by its marker (`pyvenv.cfg`, conda's `conda-meta`), whatever its
+// folder is called: its files would exhaust the source budget (F185).
+const DEPENDENCY_DIRS = new Set(['node_modules', '.venv']);
+const isPythonEnvironment = (entries) => entries.some((entry) => (
+  (entry.name === 'pyvenv.cfg' && entry.isFile()) || (entry.name === 'conda-meta' && entry.isDirectory())
+));
+// Pseudo-file systems: a path in them names something per process (an open
+// descriptor, a device), so where it leads in OpenCode is not where it leads
+// here. No link may go there.
+const SPECIAL_ROOTS = ['/proc', '/dev'];
+const underSpecial = (path) => SPECIAL_ROOTS.some((root) => isWithin(root, path));
+const MAX_LINK_HOPS = 40;
+
+const isRegularFile = (path) => {
+  try { return statSync(path).isFile(); } catch { return false; }
+};
+
+/**
+ * F185. Matches a resolved path against the folders holding this spawn's
+ * secrets: it lies inside one, or holds one. The same three tests as the
+ * provider key file check (keyFileReadableRoot, F453): the paths as written,
+ * real-pathed, and by file identity, so another spelling of the same place
+ * (case, a firmlink) is the same place. Each path's identity is looked up once
+ * per walk; a dependency tree shares most of its ancestors.
+ */
+const secretMatcher = (secretRoots) => {
+  const ids = new Map();
+  const idOf = (path) => {
+    if (!ids.has(path)) {
+      let id = null;
+      try {
+        const details = statSync(path, { bigint: true });
+        id = `${details.dev}:${details.ino}`;
+      } catch { /* absent: no identity */ }
+      ids.set(path, id);
+    }
+    return ids.get(path);
+  };
+  const chainIds = (path) => {
+    const out = new Set();
+    for (let current = path; ; current = dirname(current)) {
+      const id = idOf(current);
+      if (id) out.add(id);
+      if (dirname(current) === current) break;
+    }
+    return out;
+  };
+  const secrets = secretRoots.map((root) => ({
+    root,
+    spellings: [...new Set([pathResolve(root), realOrSelf(root)])],
+    id: idOf(root),
+    ancestorIds: chainIds(root),
+  }));
+  return (resolved) => {
+    const ancestors = chainIds(resolved);
+    const own = idOf(resolved);
+    const found = secrets.find((secret) => (
+      secret.spellings.some((spelling) => isWithin(spelling, resolved) || isWithin(resolved, spelling))
+      || (secret.id && ancestors.has(secret.id))
+      || (own && secret.ancestorIds.has(own))
+    ));
+    return found ? found.root : null;
+  };
+};
+
+/**
+ * Where a link lands, resolved one component at a time the way the kernel
+ * does it, so every step is seen: `special` is set when any step (a hop's
+ * target, or a folder passed through) is under /proc or /dev. There a path
+ * names something per process (an open descriptor, a process's root), so
+ * where it leads for OpenCode is not where it leads for this check, whether or
+ * not it resolves here. `..` applies to the real path reached so far, never
+ * to the text.
+ *
+ * `{ resolved, exists: true }` when every component exists (`resolved` is the
+ * canonical spelling). When one is missing, `{ resolved, exists: false }`
+ * gives where it would land: the real prefix with the rest appended. A missing
+ * target is not proof of no route: the seat's data home gets files during the
+ * turn. Throws ELOOP past MAX_LINK_HOPS, and any lstat or readlink error other
+ * than a missing component.
+ *
+ * A `..` after the missing component is folded as text (F462). The kernel
+ * can't follow such a link at all today. The fold is where it lands once the
+ * missing piece exists as a directory, which is all a public seat's tools can
+ * create (they have no shell, so no symlink). Only someone with access to the
+ * host could make it a link instead, and that person can read the credential
+ * directly.
+ */
+const linkLanding = (path) => {
+  let special = false;
+  let hops = 0;
+  // The walk only reaches real directories, so the link's own folder is real.
+  let done = realOrSelf(dirname(pathResolve(path)));
+  special = special || underSpecial(done);
+  const pending = [basename(path)];
+  while (pending.length) {
+    const part = pending.shift();
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      done = dirname(done);
+      continue;
+    }
+    const next = join(done, part);
+    special = special || underSpecial(next);
+    let details;
+    try {
+      details = lstatSync(next);
+    } catch (err) {
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') throw err;
+      const rest = pending.filter((piece) => piece && piece !== '.');
+      const resolved = pathResolve(next, ...(rest.length ? [rest.join('/')] : []));
+      return { resolved, exists: false, special: special || underSpecial(resolved) };
+    }
+    if (details.isSymbolicLink()) {
+      hops += 1;
+      if (hops > MAX_LINK_HOPS) throw Object.assign(new Error(`too many symlink hops resolving ${path}`), { code: 'ELOOP' });
+      const text = readlinkSync(next);
+      if (isAbsolute(text)) done = '/';
+      special = special || underSpecial(pathResolve(done, text));
+      pending.unshift(...text.split('/'));
+      continue;
+    }
+    done = next;
+  }
+  // Case and firmlinks: the canonical spelling, for the boundary comparison.
+  return { resolved: realOrSelf(done), exists: true, special: special || underSpecial(done) };
+};
 
 /**
  * Scan `workspace` for a symlink OpenCode's tools could follow to the per-spawn
@@ -212,10 +345,12 @@ const DEPENDENCY_DIR = 'node_modules';
  * `path: <workspace link to the temp root>` searches the credential's contents
  * with nothing asked. This walk is what stops that, not a permission pattern.
  *
- * Returns `{ link, reason }` for the first offending link, `{ incomplete }` when
- * a bound stopped the walk before it saw the whole tree, or null.
- * - `reaches_spawn_root`: the link's target holds or lies inside `spawnRoot`.
- *   A dangling link (an old spawn root, since removed) can't, and is skipped.
+ * Returns `{ link, reason, secret? }` for the first offending link, `{ incomplete }`
+ * when a bound stopped the walk before it saw the whole tree, or null.
+ * - `reaches_spawn_root`: the link's landing holds or lies inside `spawnRoot`
+ *   or one of `secretRoots` (named in `secret`). A dangling link is judged by
+ *   where it would land (`linkLanding`).
+ * - `special_filesystem`: the link leads, at any hop, under /proc or /dev.
  * - `outside_workspace`: a link AT a node_modules top level (or under an
  *   @scope there) leading out of `boundary`. node_modules is not walked into,
  *   since a typical one exhausts the entry bound on every spawn; its packages'
@@ -223,8 +358,8 @@ const DEPENDENCY_DIR = 'node_modules';
  *   link out (`npm link`, a `file:` dependency) reaches a tree this walk never
  *   read.
  *
- * `deepDependencies` (a spawn that hands its credential to a remote server):
- * every workspace link is held to `boundary` as well, and every node_modules tree, nested ones and @scopes included, is walked too,
+ * `deepDependencies` (every public spawn since F185; the default stays off for
+ * direct callers): every workspace link is held to `boundary` as well, and every node_modules tree, nested ones and @scopes included, is walked too,
  * links only, under `dependencyBounds`, its own budget. A link anywhere in it
  * that reaches the spawn root, or that leaves `boundary`, is refused, since a
  * package tarball or postinstall script can plant `dist/x -> /tmp`, or a chain
@@ -237,16 +372,28 @@ const DEPENDENCY_DIR = 'node_modules';
  * OS) or a link realpath cannot resolve for a reason other than a missing
  * target (`incomplete: 'unresolvable'`, a loop say), each with `problem:
  * { path, code }`. `root` is where the walk starts: the git worktree root for a
- * grant seat, since OpenCode's tools reach the whole worktree.
+ * public seat, since OpenCode's tools reach the whole worktree. A link to a
+ * regular file outside `boundary` and every secret folder passes: a file holds
+ * no further link.
+ *
+ * Hard links are not looked for (F462). A readdir gives no inode, so finding
+ * them means a stat per file in the worktree, and only the host's owner can
+ * make one: a public seat's tools have no shell. The runtime token and the
+ * proxy token are new files in a new temp folder each spawn, so no link made
+ * before the spawn names them, and a public seat's data home never gets the
+ * operator's login. The one lasting secret is the operator's provider.keyFile:
+ * a hard link to it in the worktree would pass the jail-path check, but making
+ * one is the owner putting their own key in the workspace, the same as a copy.
  */
 const scanWorkspaceLinks = (workspace, spawnRoot, {
   boundary = workspace,
   root = workspace,
+  secretRoots = [],
   bounds = SYMLINK_WALK_BOUNDS,
   deepDependencies = false,
   dependencyBounds = DEPENDENCY_WALK_BOUNDS,
 } = {}) => {
-  const target = realOrSelf(spawnRoot);
+  const matchSecret = secretMatcher([...new Set([spawnRoot, ...secretRoots].filter(Boolean))]);
   const inside = realOrSelf(boundary);
   let budget = bounds.maxEntries;
   let dependencyBudget = dependencyBounds.maxEntries;
@@ -260,15 +407,23 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
     problem = problem || { path, code: err?.code || String(err) };
   };
   const linkFinding = (path, { dependencyTop }) => {
-    let resolved;
+    let landing;
     try {
-      resolved = canonicalPath(path);
+      landing = linkLanding(path);
     } catch (err) {
       unproven('unresolvable', path, err);
       return null;
     }
-    if (isWithin(resolved, target) || isWithin(target, resolved)) return { link: path, reason: 'reaches_spawn_root' };
-    if (dependencyTop && !isWithin(inside, resolved)) return { link: path, reason: 'outside_workspace' };
+    const { resolved, exists, special } = landing;
+    if (special) return { link: path, reason: 'special_filesystem' };
+    const secret = matchSecret(resolved);
+    if (secret) return { link: path, reason: 'reaches_spawn_root', secret };
+    if (!exists) return null;
+    // A regular file outside every secret folder holds no further link, so a
+    // link to one leads nowhere else (a virtualenv's bin/python -> /usr/bin).
+    if (dependencyTop && !isWithin(inside, resolved) && !isRegularFile(resolved)) {
+      return { link: path, reason: 'outside_workspace' };
+    }
     return null;
   };
   const readEntries = (dir) => {
@@ -340,6 +495,8 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
     }
     const entries = readEntries(dir);
     if (incomplete) return null;
+    // A Python environment under any name: links only, on the dependency budget.
+    if (deepDependencies && isPythonEnvironment(entries)) return scanDependencyTree(dir);
     for (const entry of entries) {
       budget -= 1;
       if (budget < 0) {
@@ -348,17 +505,17 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
       }
       const path = join(dir, entry.name);
       if (entry.isSymbolicLink()) {
-        // A grant seat holds every workspace link to the boundary: a chain
-        // through a tree outside it (src/vendor -> /outside, a node_modules
-        // that is itself a link) is resolved by the OS, unread by this walk.
+        // Every workspace link is held to the boundary: a chain through a tree
+        // outside it (src/vendor -> /outside, a node_modules that is itself a
+        // link) is resolved by the OS, unread by this walk.
         const hit = linkFinding(path, { dependencyTop: deepDependencies });
         if (hit || incomplete) return hit;
-      } else if (entry.isDirectory() && entry.name === DEPENDENCY_DIR) {
+      } else if (entry.isDirectory() && DEPENDENCY_DIRS.has(entry.name)) {
         const hit = scanDependencyTop(path) || (!incomplete && deepDependencies ? scanDependencyTree(path) : null);
         if (hit || incomplete) return hit;
       } else if (deepDependencies && entry.isDirectory() && SYMLINK_WALK_SKIP.has(entry.name)) {
-        // `.git` on a grant seat: links only, under the dependency budget
-        // (8,243 entries in this repo's own checkout, no links).
+        // `.git`: links only, under the dependency budget (8,243 entries in
+        // this repo's own checkout, no links).
         const hit = scanDependencyTree(path);
         if (hit || incomplete) return hit;
       } else if (entry.isDirectory() && !SYMLINK_WALK_SKIP.has(entry.name)) {
@@ -376,13 +533,15 @@ const scanWorkspaceLinks = (workspace, spawnRoot, {
 
 /**
  * Refuse a public seat whose workspace lets OpenCode's tools reach the
- * per-spawn credential directory. `carriesGrant` says whether this spawn hands
- * its credential file to a remote MCP server (buildMcpConfig's report, the
- * grant broker among them): a walk stopped by its bound refuses only then,
- * since a huge monorepo should not be refused when there is no grant to protect.
+ * per-spawn credential directory, or another folder holding this spawn's
+ * secrets (`secretRoots`, the seat's data home). Every public spawn holds a
+ * live Commonly token and a provider-proxy token there, so every one gets the
+ * same walk (F185): from the worktree root, node_modules, .venv and .git
+ * links-only, every link held to the worktree, and a walk its bound stopped
+ * refuses.
  */
 const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
-  carriesGrant = false,
+  secretRoots = [],
   bounds = SYMLINK_WALK_BOUNDS,
   dependencyBounds = DEPENDENCY_WALK_BOUNDS,
   gitEnv = null,
@@ -440,14 +599,14 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
   // OpenCode counts the whole git worktree as inside the project, so a
   // node_modules link into it is not a link out.
   const boundary = toplevels[0]?.[0] || gitToplevel(pathResolve(workspace)) || workspace;
-  // A grant seat walks the whole worktree OpenCode's tools can reach, sibling
-  // packages and .git included (Opus review, #3487); a seat without one, its
-  // workspace.
+  // The whole worktree OpenCode's tools can reach, sibling packages and .git
+  // included (Opus review, #3487; every public spawn since F185).
   const finding = scanWorkspaceLinks(workspace, spawnRoot, {
     boundary,
-    root: carriesGrant ? realOrSelf(boundary) : workspace,
+    root: realOrSelf(boundary),
+    secretRoots,
     bounds,
-    deepDependencies: carriesGrant,
+    deepDependencies: true,
     dependencyBounds,
   });
   if (finding?.incomplete === 'unreadable' || finding?.incomplete === 'unresolvable') {
@@ -455,14 +614,22 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
     throw new Error(
       `public OpenCode agents could not ${finding.incomplete === 'unreadable' ? 'list the directory' : 'resolve the symlink'} `
       + `${path} (${code}) while checking the workspace (${workspace}) for symlinks to the per-spawn credential directory; `
-      + 'what the walk cannot see is not proven clean, and this seat carries a connector grant; fix its permissions, '
-      + 'remove it, or drop the grant broker from this seat',
+      + 'what the walk cannot see is not proven clean; fix its permissions, or remove it',
     );
   }
   if (finding?.reason === 'reaches_spawn_root') {
+    const folder = !finding.secret || finding.secret === spawnRoot
+      ? `the per-spawn credential directory (${spawnRoot})`
+      : `the seat's data folder (${finding.secret})`;
     throw new Error(
-      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that reaches the per-spawn `
-      + `credential directory (${spawnRoot}): OpenCode's tools could read the credential through it; remove the link`,
+      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that reaches `
+      + `${folder}: OpenCode's tools could read this spawn's credentials through it; remove the link`,
+    );
+  }
+  if (finding?.reason === 'special_filesystem') {
+    throw new Error(
+      `public OpenCode agents refuse a workspace (${workspace}) holding a symlink (${finding.link}) that leads into `
+      + '/proc or /dev, where a path names something per process and the check cannot follow it; remove the link',
     );
   }
   if (finding?.reason === 'outside_workspace') {
@@ -477,15 +644,15 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
       `public OpenCode agents could not finish checking the workspace's node_modules and .git trees (${workspace}) for symlinks `
       + `to the per-spawn credential directory: the link walk stopped at its ${finding.incomplete === 'dependency_depth'
         ? `depth bound (${dependencyBounds.maxDepth} levels)` : `entry bound (${dependencyBounds.maxEntries} entries)`}, `
-      + 'and this seat carries a connector grant; prune the dependency tree, or drop the grant broker from this seat',
+      + 'prune the dependency tree, or choose a smaller workspace',
     );
   }
-  if (finding?.incomplete && carriesGrant) {
+  if (finding?.incomplete) {
     throw new Error(
       `public OpenCode agents could not finish checking the workspace (${workspace}) for symlinks to the per-spawn `
       + `credential directory: the walk stopped at its ${finding.incomplete === 'depth'
-        ? `depth bound (${bounds.maxDepth} levels)` : `entry bound (${bounds.maxEntries} entries)`}, and this seat `
-      + 'carries a connector grant; choose a smaller workspace, or drop the grant broker from this seat',
+        ? `depth bound (${bounds.maxDepth} levels)` : `entry bound (${bounds.maxEntries} entries)`}; `
+      + 'choose a smaller workspace',
     );
   }
 };
@@ -568,6 +735,12 @@ const buildMcpConfig = (servers, ctx = {}) => {
         console.warn(`[opencode] skipping MCP server ${server.name}: its credential declaration has no file-backed delivery`);
         continue;
       }
+      // F421: the shipped Commonly server of a public seat names its ready file.
+      // F460: a warm build that writes none is refused on a public seat.
+      const readyPath = ctx.readyFiles
+        ? commonlyMcpReadyFile(server, command, ctx, { writesReadyFile: ctx.mcpWritesReadyFile, env })
+        : null;
+      if (readyPath) env[MCP_READY_FILE_ENV] = readyPath;
       mcp[server.name] = {
         type: 'local',
         command: command.map((part) => substitutePublicPlaceholders(part, ctx)),
@@ -749,7 +922,7 @@ const openCodeProviderVerdict = (environment) => {
   return undefined;
 };
 
-const validateProviderEnvironment = async (environment, workspacePath) => {
+const validateProviderEnvironment = async (environment, workspacePath, options = {}) => {
   if (environment?.provider === undefined) return null;
   const validation = validateEnvironmentSpec({
     provider: environment.provider,
@@ -758,7 +931,7 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   if (!validation.ok) {
     throw new Error(`Invalid OpenCode provider configuration: ${validation.errors.join('; ')}`);
   }
-  return resolveProviderKeyFile(environment.provider, workspacePath);
+  return resolveProviderKeyFile(environment.provider, workspacePath, undefined, { environment, ...options });
 };
 
 const STALE_SESSION_PATTERN = /session not found/i;
@@ -849,6 +1022,31 @@ const makeEventParser = () => {
 // runtime's own view of each call, and the witness sees a server that never
 // started, so each catches what the other cannot.
 export { PUBLIC_TOOL_FAILED_CODE };
+
+// F421. OpenCode's stream says nothing about its MCP servers. When the Commonly
+// server fails to start, OpenCode 1.19.0 logs one WARN line ("server
+// unavailable … status=failed"), runs the model without the Commonly tools, and
+// exits 0, so the reply would be an answer written without reading the pod
+// (measured with a stub provider on 2026-11-11). The server creates the file
+// this adapter names in COMMONLY_MCP_READY_FILE once OpenCode asks for its
+// tools (tools/list, sent only after initialize succeeded), inside the folder the sandbox lets the seat write (OpenCode's own
+// data home: Seatbelt's statePath, bwrap's write-outside). A turn whose file is
+// missing never had the server, so its reply is withheld and the run loop tells
+// the waiting pod why (turn-failure-notice.js) and retries.
+export { MCP_READY_FILE_ENV };
+
+export const missingReadyFile = (readyFiles, exists = existsSync) => (
+  (readyFiles || []).find(({ path }) => !exists(path)) || null
+);
+
+const publicMcpNotReadyError = (name) => {
+  const failure = new Error(
+    `public seat withheld this turn's reply: Commonly MCP server ${name} never reported ready (no ready file), `
+    + 'so the model ran without its Commonly tools; the CLI posted no reply for it and does not ack the event',
+  );
+  failure.code = PUBLIC_MCP_NOT_READY_CODE;
+  return failure;
+};
 
 export const publicToolFailure = (toolErrors, mcpServers) => {
   const prefixes = (Array.isArray(mcpServers) ? mcpServers : [])
@@ -947,6 +1145,10 @@ const seatIdentity = (ctx) => [
   ctx.metadata?.event?.podId || 'default-pod',
 ].join('\0');
 
+/** A public seat's stable data home: Seatbelt's statePath, bwrap's write-outside. */
+const openCodeSeatRoot = (ctx) => ctx._opencodeHomeRoot
+  || join(homedir(), '.commonly', 'opencode-homes', createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24));
+
 const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
   const operatorDataHome = ctx.env?.XDG_DATA_HOME
     || process.env.XDG_DATA_HOME
@@ -959,8 +1161,7 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
       authPath: null,
     };
   }
-  const identity = createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24);
-  const root = ctx._opencodeHomeRoot || join(homedir(), '.commonly', 'opencode-homes', identity);
+  const root = openCodeSeatRoot(ctx);
   const operatorAppData = join(pathResolve(operatorDataHome), 'opencode');
   if (pathResolve(root) === pathResolve(operatorAppData)) {
     throw new Error('OpenCode seat data must be isolated from the operator OpenCode data directory');
@@ -1195,7 +1396,11 @@ export default {
     if (ctx.providerKey && (!isPublic || !['workspace', 'read-only', 'bwrap'].includes(sandboxMode))) {
       throw new Error('Own provider keys require a confined OpenCode runtime');
     }
-    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd);
+    // The public seat home is readable and writable in the sandbox, so a key
+    // file there is refused with the platform roots, before anything opens it.
+    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd, {
+      platform: ctx._platform, seatDirectories: isPublic ? [openCodeSeatRoot(ctx)] : [],
+    });
 
     const sourceEnv = ctx.env || process.env;
     const childSourceEnv = Object.fromEntries(Object.entries(sourceEnv)
@@ -1256,7 +1461,10 @@ export default {
       root: tempDir,
     });
     let openCodeHome = null;
+    let readyFileDir = null;
+    const readyFiles = [];
     let providerProxy = null;
+    let credentialRelease = null;
     let instanceProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
@@ -1281,6 +1489,7 @@ export default {
         });
       }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
+      readyFileDir = isPublic ? join(openCodeHome.root, 'mcp-ready') : null;
       const cacheHome = isPublic ? join(openCodeHome.root, 'cache') : null;
       const tempWork = isPublic ? join(openCodeHome.root, 'tmp') : join(tempDir, 'tmp');
       await Promise.all([
@@ -1291,7 +1500,11 @@ export default {
       const unavailableMcp = [];
       const mcpReadDirectories = [];
       const bearerFileServers = [];
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
+        readyFileDir,
+        readyFiles,
+        mcpWritesReadyFile: ctx._mcpWritesReadyFile,
         runtimeToken: ctx.runtimeToken,
         instanceUrl: instanceProxy
           ? `http://127.0.0.1:${ISOLATED_INSTANCE_PORT}` : ctx.instanceUrl,
@@ -1302,13 +1515,6 @@ export default {
         bearerFileServers,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
-      // A remote server that holds this spawn's credential file can spend
-      // whatever the credential reaches, a connector grant included. The broker
-      // entry that reaches the adapter has passed the daemon's withhold
-      // (grant-broker-guard.js), but buildMcpConfig hands the file to any http
-      // entry declaring `Bearer ${COMMONLY_AGENT_TOKEN}`, whatever its URL, so
-      // the walk's fail-closed rule keys on what was written (CodeRabbit #3487).
-      const carriesGrant = bearerFileServers.length > 0;
       const config = {
         permission: isPublic
           ? publicPermissions(sandboxMode, Object.keys(mcp), ctx)
@@ -1351,7 +1557,7 @@ export default {
         // After the child env exists: the git check runs under the very env
         // OpenCode gets (its HOME, its XDG config, no GIT_* from the launcher).
         assertSpawnRootOutsideWorkspace(ctx.cwd || process.cwd(), tempDir, {
-          carriesGrant,
+          secretRoots: [openCodeHome.root],
           bounds: ctx._symlinkWalkBounds || SYMLINK_WALK_BOUNDS,
           dependencyBounds: ctx._dependencyWalkBounds || DEPENDENCY_WALK_BOUNDS,
           gitEnv: childEnv,
@@ -1424,6 +1630,27 @@ export default {
         [cmd, ...spawnArgs] = wrapped;
       }
       const credentials = [...spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
+      // F460: a public seat's credential goes at OpenCode's first step, once
+      // its ready files exist, or at the deadline, whichever comes first.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnCall) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnCall);
+        return child;
+      };
+      if (isPublic && credential) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          ownTrigger: true,
+          label: 'public OpenCode seat',
+          // eslint-disable-next-line no-console
+          warn: (text) => console.warn(`[opencode] ${text}`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          fs: { rmSync: ctx._rmSync || rmSync, existsSync: ctx._existsSync || existsSync },
+          ...ctx._credentialRelease,
+        });
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
       const result = await runOpenCode({
         cmd,
         args: spawnArgs,
@@ -1431,10 +1658,9 @@ export default {
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials,
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
-        // CodeRabbit #3487: the walk cannot prove a whole node_modules tree
-        // free of a deep link to the temp root, so a credential handed to a
-        // remote server stops existing once OpenCode has read it. Measured in
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
+        // CodeRabbit #3487, F460: a public seat's credential stops existing
+        // once OpenCode has read it, grant or not. Measured in
         // the 1.19.4 binary: {file:} is expanded once, over the config text at
         // load; every MCP connect (a reconnect included) takes its headers from
         // that cached config; and `run` emits step_start only after tools are
@@ -1442,22 +1668,19 @@ export default {
         // COMMONLY_TOKEN_FILE at startup), has connected. A config reload after
         // this point would fail on the missing file, closed, not open.
         // A delete that fails leaves the credential readable, so the turn ends
-        // rather than run on with it (`force` already ignores a missing file).
-        onFirstStep: isPublic && carriesGrant && credential
+        // rather than run on with it. The ready files and the deadline (F460)
+        // cover a turn that never reaches its first step.
+        onFirstStep: credentialRelease
           ? () => {
-            try {
-              (ctx._rmSync || rmSync)(credential.path, { force: true });
-            } catch (err) {
-              throw new Error(
-                `public OpenCode seat could not delete its connector credential (${credential.path}) once OpenCode `
-                + `had loaded its config: ${err?.message || err}; the turn was stopped so the credential does not `
-                + 'stay readable to its tools',
-              );
-            }
+            const failure = credentialRelease.release('stream');
+            if (failure) throw failure;
           }
           : undefined,
-      });
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
       if (isPublic) {
+        const notReady = missingReadyFile(readyFiles, ctx._existsSync);
+        if (notReady) throw publicMcpNotReadyError(notReady.name);
         const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);
         if (failure) throw publicToolFailedError(failure);
       }
@@ -1467,9 +1690,13 @@ export default {
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } finally {
+      credentialRelease?.stop();
       try { await instanceProxy?.close(); } catch { /* ignore */ }
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      for (const { path } of readyFiles) {
+        try { await rm(path, { force: true }); } catch { /* ignore */ }
+      }
     }
   },
 };
@@ -1488,5 +1715,6 @@ export {
   qualifiedProviderModel,
   resolveProviderKeyFile,
   scanWorkspaceLinks,
+  assertSpawnRootOutsideWorkspace,
   startProviderProxy,
 };

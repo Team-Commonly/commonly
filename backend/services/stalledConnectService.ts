@@ -624,6 +624,9 @@ const resolveConnected = async ({
             fixCommand,
           }),
         metadata: { kind: 'stalled-connect-resolved' },
+        // Commonly's line, like the nudge it resolves: stored under the agent,
+        // not the agent's to delete or rewrite (F440, F442).
+        authorKind: 'kernel',
       });
       resolutionMessageId = extractMessageId(posted) || '';
     } catch (error) {

@@ -39,6 +39,7 @@ interface MessageRow {
   reply_content?: string;
   reply_user_id?: string;
   reply_username?: string;
+  reply_message_type?: string;
 }
 
 interface FormattedMessage extends MessageRow {
@@ -50,7 +51,7 @@ interface FormattedMessage extends MessageRow {
   messageType: string;
   createdAt: unknown;
   userId: { _id: string; username: string; profilePicture?: string; isBot?: boolean } | string;
-  replyTo: { id: string; content: string; username: string; userId: string } | null;
+  replyTo: { id: string; content: string; username: string; userId: string; messageType?: string } | null;
 }
 
 interface ActivityHintResult {
@@ -103,6 +104,8 @@ function formatMessage(msg: MessageRow): FormattedMessage {
           content: (msg.reply_content || '').slice(0, 150),
           username: msg.reply_username || 'Unknown',
           userId: msg.reply_user_id || '',
+          // A system parent is the platform's, whoever it is stored under (F434).
+          ...(msg.reply_message_type ? { messageType: msg.reply_message_type } : {}),
         }
       : null,
   };
@@ -290,7 +293,7 @@ class Message {
           m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
-          rm.user_id as reply_user_id, ru.username as reply_username
+          rm.user_id as reply_user_id, rm.message_type as reply_message_type, ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
         LEFT JOIN messages rm ON m.reply_to_message_id = rm.id AND rm.pod_id = m.pod_id
@@ -353,7 +356,7 @@ class Message {
           m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
-          rm.user_id as reply_user_id, ru.username as reply_username
+          rm.user_id as reply_user_id, rm.message_type as reply_message_type, ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
         LEFT JOIN messages rm ON m.reply_to_message_id = rm.id AND rm.pod_id = m.pod_id

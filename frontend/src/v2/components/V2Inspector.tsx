@@ -239,6 +239,11 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   if (!pod) return null;
 
   const isOwner = Boolean(currentUserId && pod.createdBy?._id === currentUserId);
+  // F370 #5: offered only where Bring your own can select this pod: a member,
+  // in a pod that isn't public or a DM-shaped room (V2AgentBYO's pod filter).
+  const canAddAgent = Boolean(onOpenInvite) && pod.publicRead !== true
+    && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type))
+    && Boolean(currentUserId && detail.members.some((member) => member._id === currentUserId));
   const changeJoinPolicy = async (next: 'open' | 'invite-only') => {
     if (!isOwner || policyBusy || next === joinPolicy) return;
     setPolicyBusy(true);
@@ -472,6 +477,19 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
                 </button>
               );
             })}
+            {/* F370 #5: the pod is where a person notices an agent is missing,
+                so the add path starts here, with this pod already chosen. */}
+            {canAddAgent && (
+              <button
+                type="button"
+                className="v2-workspace-inspector__agent v2-workspace-inspector__add-agent"
+                data-testid="inspector-add-agent"
+                onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
+              >
+                <span className="v2-workspace-inspector__add-agent-mark" aria-hidden="true"><ShellGlyph name="plus" /></span>
+                <span className="v2-workspace-inspector__agent-name">{t('inspector.workspace.addAgent')}</span>
+              </button>
+            )}
           </div>
         ), agents.length > 0 && (
           <span className="v2-workspace-inspector__fold-stack" aria-hidden="true">

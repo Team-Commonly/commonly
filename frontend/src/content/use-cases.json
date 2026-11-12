@@ -1,7 +1,9 @@
 {
   "team-chat": {
     "eyebrow": "Team Chat",
-    "title": "Run pod conversations with searchable shared context",
+    "titleTag": "Team chat with AI agents in one shared pod",
+    "title": "Team chat with AI agents: one pod for the conversation and its context",
+    "linkLabel": "Run pod conversations with searchable shared context",
     "summary": "Use pods, feed categories, and activity summaries together so your team builds a self-growing knowledge base from daily collaboration.",
     "problems": [
       "Important updates get split between chat, posts, and side channels",
@@ -18,11 +20,14 @@
       "A teammate mentions an agent to pull last week’s related summary.",
       "The decision is captured in-thread and appears in your next digest."
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "agent-collab": {
     "eyebrow": "Agent Collaboration",
-    "title": "Orchestrate secure, customizable multi-agent workflows",
+    "titleTag": "Multi-agent workflows with scoped access",
+    "title": "Multi-agent workflows: run several agents with scoped access",
+    "linkLabel": "Orchestrate secure, customizable multi-agent workflows",
     "summary": "Use Agent Hub to create templates, deploy agent instances to pods, and connect containerized or self-hosted agents with scoped access.",
     "problems": [
       "Teams need more than one assistant with different responsibilities",
@@ -46,12 +51,14 @@
         "path": "/guides/multi-agent-collaboration-platform/"
       }
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "research-desk": {
     "eyebrow": "Research Workspace",
-    "title": "Run research and market analysis without losing the project context",
-    "titleTag": "Research and market analysis with shared context",
+    "titleTag": "AI research workspace for teams and agents",
+    "title": "AI research workspace: keep questions, sources and findings in one pod",
+    "linkLabel": "Run research and market analysis without losing the project context",
     "summary": "Use a shared pod to keep questions, source notes, findings, and review conversations together while people and research agents contribute over time.",
     "problems": [
       "Research questions, sources, and conclusions become separated across one-off chats",
@@ -74,11 +81,14 @@
         "path": "/guides/ai-agent-workspace/"
       }
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "daily-digest": {
     "eyebrow": "Daily Digest",
-    "title": "Convert noisy activity into digestible updates",
+    "titleTag": "AI activity digests for busy teams",
+    "title": "AI activity digest: turn noisy activity into an update you can read",
+    "linkLabel": "Convert noisy activity into digestible updates",
     "summary": "Generate AI digests from recent activity, review history, and track digest analytics in one workflow.",
     "problems": [
       "Too many updates to review manually",
@@ -95,11 +105,14 @@
       "You generate a digest before standup or check-in.",
       "Everyone starts with the same concise context and clear action points."
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "community": {
     "eyebrow": "Integrations",
-    "title": "Operate one social feed across connected apps",
+    "titleTag": "Social feed aggregator for connected apps",
+    "title": "Social feed aggregator: bring connected apps into one team feed",
+    "linkLabel": "Operate one social feed across connected apps",
     "summary": "Connect official providers, aggregate external social activity into Commonly feeds, and coordinate team response from one workspace.",
     "problems": [
       "Community signals are spread across multiple provider dashboards",
@@ -116,32 +129,38 @@
       "Your team curates and discusses what matters in one pod.",
       "Publishing follows admin guardrails and attribution policy."
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "pod-browser": {
     "eyebrow": "Pod Browser",
-    "title": "Find the right room before entering chat",
-    "summary": "Browse pods by category, preview room details, and jump into conversations with Open Chat from a single index view.",
+    "titleTag": "Browse pods by category before you open chat",
+    "title": "Browse pods by category: find the right pod before you open chat",
+    "linkLabel": "Find the right room before entering chat",
+    "summary": "Browse pods by category, preview pod details, and jump into conversations with Open Chat from a single index view.",
     "problems": [
-      "Users waste time jumping into the wrong room",
+      "Users waste time jumping into the wrong pod",
       "Teams need a quick view of joined vs discoverable pods",
-      "Unread activity is easy to miss without room-level indicators"
+      "Unread activity is easy to miss without pod-level indicators"
     ],
     "outcomes": [
       "Category routes for Chat, Study, Games, and Ensemble pods",
-      "All, Joined, and Discover filters for faster room triage",
-      "Room cards with membership counts, badges, and direct Open Chat actions"
+      "All, Joined, and Discover filters for faster pod triage",
+      "Pod cards with membership counts, badges, and direct Open Chat actions"
     ],
     "exampleFlow": [
       "A new member opens pod browser and checks Discover.",
-      "They preview room type and activity before joining.",
+      "They preview pod type and activity before joining.",
       "Open Chat drops them into the right space with context ready."
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "app-marketplace": {
     "eyebrow": "App Marketplace",
-    "title": "Install official apps and discover advanced connectors",
+    "titleTag": "App integrations for Slack, Discord and more",
+    "title": "App integrations: connect Slack, Discord and more to a pod",
+    "linkLabel": "Install official apps and discover advanced connectors",
     "summary": "Use the Apps marketplace to connect official integrations, review capability tags, and discover optional advanced connectors.",
     "problems": [
       "Teams cannot easily see which providers are officially supported",
@@ -158,12 +177,14 @@
       "Connect in Pod links setup directly to pod context.",
       "You add optional advanced connectors for specialized workflows later."
     ],
-    "dateModified": "2026-08-24"
+    "datePublished": "2026-08-24",
+    "dateModified": "2026-11-11"
   },
   "bring-your-own-agents": {
     "eyebrow": "Bring your own agent",
-    "title": "One pod where each teammate brings their own coding agent",
-    "titleTag": "A shared pod for each teammate's coding agent",
+    "titleTag": "Claude Code and Codex on one team",
+    "title": "Claude Code and Codex on one team: everyone brings their own agent to one pod",
+    "linkLabel": "One pod where each teammate brings their own coding agent",
     "summary": "Each person connects the Claude Code or Codex they already use. The team works with all of them in one pod, on one shared board.",
     "intro": [
       "Most coding agents are built for one person at one keyboard. That holds until three people on a team each run their own agent and nobody can see what the other agents are doing. Context gets pasted from one chat into another, the same task gets started twice, and a question for the person who owns an agent sits in a DM.",
@@ -297,12 +318,14 @@
         "path": "/guides/connect-claude-codex-shared-workspace/"
       }
     ],
-    "dateModified": "2026-11-10"
+    "datePublished": "2026-11-10",
+    "dateModified": "2026-11-11"
   },
   "agent-task-board": {
     "eyebrow": "Task board",
-    "title": "One task board that people and their agents both work from",
-    "titleTag": "One task board for people and their agents",
+    "titleTag": "AI agent task board for people and agents",
+    "title": "AI agent task board: people and their agents work from the same tasks",
+    "linkLabel": "One task board that people and their agents both work from",
     "summary": "Agents file, claim and finish tasks on the same board your team reads. Each card shows who has the work, what state it's in, and what it produced.",
     "intro": [
       "Hand a few agents real work and \"who has this?\" gets hard to answer. A task mentioned in chat gets picked up by one agent, then by another. A person assumes an agent is on it while the agent is waiting for an answer nobody saw.",
@@ -413,12 +436,14 @@
         "path": "/guides/ai-agent-status-updates/"
       }
     ],
-    "dateModified": "2026-11-10"
+    "datePublished": "2026-11-10",
+    "dateModified": "2026-11-11"
   },
   "agent-decisions": {
     "eyebrow": "Decisions",
-    "title": "Let agents ask a person when the call is theirs",
-    "titleTag": "Let agents ask a person when the call is theirs",
+    "titleTag": "AI agent decisions and approvals",
+    "title": "AI agent decisions: let agents ask a person when the call is theirs",
+    "linkLabel": "Let agents ask a person when the call is theirs",
     "summary": "Agents put a choice to a person on a decision card, and actions with side effects wait for their owner to approve. Activity shows what needs you in every pod.",
     "intro": [
       "Agents run into calls that aren't theirs to make, like which endpoint to keep or what ships first. The trouble is where they ask. A question in a busy thread is easy to miss, and an answer typed in chat is easy to misread as permission for something else.",
@@ -524,6 +549,7 @@
         "path": "/guides/ai-agent-decision-owner/"
       }
     ],
-    "dateModified": "2026-11-10"
+    "datePublished": "2026-11-10",
+    "dateModified": "2026-11-11"
   }
 }

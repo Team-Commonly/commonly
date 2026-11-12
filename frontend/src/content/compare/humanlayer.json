@@ -1,0 +1,207 @@
+{
+  "path": "/compare/humanlayer/",
+  "listOrder": 6,
+  "datePublished": "2026-11-11",
+  "dateModified": "2026-11-11",
+  "title": "Commonly vs HumanLayer: what each ships, side by side",
+  "description": "HumanLayer runs coding agents on your own machines and lets a team steer them from one place. Commonly is one pod where each teammate brings their own agent.",
+  "name": "HumanLayer",
+  "updated": "Updated 2026-11-11. Facts about HumanLayer were read on HumanLayer's own pages on 2026-11-11.",
+  "shortAnswer": "HumanLayer runs coding agents such as Claude Code and Codex on your own machines and lets a team steer them from one place, organized around tasks, plan documents and code diffs. [1][2] Commonly is built around a team where each person brings their own agent: teammates and their agents are members of one pod, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. HumanLayer groups agent sessions, documents and worktrees into tasks, and its workflows have people comment on design and plan documents before code is written. Its core code is published under Apache-2.0, as is Commonly's. [1][2][3][4]",
+  "table": {
+    "them": "HumanLayer",
+    "rows": [
+      {
+        "label": "What it is, in its own words",
+        "them": "\"A multiplayer coding agent IDE and cloud that works seamlessly from your workstation to anywhere you want to run background agents.\" [1]",
+        "us": "One pod for your team and the agents each of you runs. [14]"
+      },
+      {
+        "label": "License",
+        "them": "The README says Apache License 2.0, with a few vendored folders under MIT. The 2026-11-02 release notes say \"HumanLayer core is open source\". The homepage FAQ answers \"Is HumanLayer open source?\" with \"Not yet\". [1][2][3]",
+        "us": "Apache-2.0. [14]"
+      },
+      {
+        "label": "Self-host",
+        "them": "\"HumanLayer Cloud runs this code. Guides for running it yourself are in progress.\" The repo has a Docker Compose file, with a note to change its default passwords before deploying. The Enterprise plan lists \"On-Prem & Private VPC\". [1][2]",
+        "us": "Open source (Apache-2.0). The repo includes a Docker Compose setup. [14]"
+      },
+      {
+        "label": "Agents named",
+        "them": "The README: \"Claude Code, Codex, OpenCode, Pi\". The homepage FAQ: \"Claude Code, Codex, Copilot, Fireworks, with new models/subscription providers added regularly.\" The Pi extension's repo description says \"(preview)\" and its README says \"this plugin is in alpha\". [1][2][12]",
+        "us": "Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click."
+      },
+      {
+        "label": "Where agents run",
+        "them": "\"A local daemon runs many Agent sessions in parallel on your laptop. Spin up cloud daemons for long-running work.\" A remote daemon can run on \"Linux, Windows, a remote machine, or a private-network host\". You bring your own Claude, Codex or other subscriptions or API keys. [1][5][6]",
+        "us": "Your own agent runs on your own machine; the hosted agent runs on Commonly."
+      },
+      {
+        "label": "How agents connect",
+        "them": "The desktop app starts a daemon on the same machine, and that daemon launches Claude or Codex sessions. Daemons send session events through the HumanLayer API to the desktop, web and mobile UI. Plugins mirror Claude Code, OpenCode and Pi sessions into HumanLayer. [2][6]",
+        "us": "One command in Terminal makes your own Claude Code or Codex answer @mentions in your pods while that window stays open, on a Mac. Claude Code can also join over MCP."
+      },
+      {
+        "label": "How people take part",
+        "them": "Access is shared at the task level. Teammates see a task's work according to their task access, people with edit access can add sessions and update task files, reviewers comment on synced documents, and \"Agents can read that feedback in later work.\" The homepage describes inline comments on design documents from people and agents in real time. [1][4]",
+        "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
+      },
+      {
+        "label": "Work and review",
+        "them": "A task groups agent sessions, artifacts and worktrees. Workflows include RPI, RPI Outline, PRD-Oriented, Oneshot and Freeform, and the QRSPI workflow has six phases (questions, research, design, structure, plan, implement) \"with checkpoints your team can verify.\" [1][4]",
+        "us": "Your own connected agent claims tasks on the pod's board, and asks a person on a decision card when a call is theirs."
+      },
+      {
+        "label": "Access to outside tools",
+        "them": "An organization admin connects GitHub, Linear, Jira or Slack. Tasks can start from GitHub issues, Linear issues or Jira tickets. The GitHub App asks for read and write on contents, issues and pull requests. Slack automations post selected artifact events to a channel. [7][8][9][10]",
+        "us": "A grant gives one agent read access to one connected tool, such as Linear, and the token stays server-side."
+      },
+      {
+        "label": "Pricing, as stated",
+        "them": "Starter is free for up to 3 team members and 200 sessions a month. Pro is $100 per user per month. Enterprise is custom and adds SSO/SAML, audit logs and on-prem or private VPC. [1]",
+        "us": "Not listed on this page."
+      }
+    ]
+  },
+  "pickThem": {
+    "name": "HumanLayer",
+    "items": [
+      "You want work to move through set phases (questions, research, design, structure, plan, implement), with checkpoints your team can verify and a design document your team comments on before code is written. [1]",
+      "You want many agent sessions running in parallel on your laptop, and long-running work on remote daemons on your own hosts, including Linux, Windows and private-network machines. [1][5]",
+      "You want tasks to start from GitHub issues, Linear issues or Jira tickets, with links to the task's documents posted back on the GitHub issue. [7][8][9]",
+      "You run OpenCode or Pi alongside Claude Code and Codex. [2][12]",
+      "You need SSO/SAML and audit logs on an enterprise plan, from a vendor that says it is SOC 2 Type II compliant. [1]"
+    ]
+  },
+  "pickUs": [
+    "Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.",
+    "You want everyone, people and agents, to see who has what: each agent is a named member with an owner.",
+    "You want your own agents to claim work on a shared board so two of them don't take the same task.",
+    "You want an agent to stop and ask a person on a decision card when a call is theirs.",
+    "You want a hosted agent you can start from the pod, next to your own.",
+    "You want to give one agent read access to one connected tool, such as Linear, with the token kept server-side."
+  ],
+  "faq": [
+    {
+      "q": "Who makes HumanLayer?",
+      "a": "HumanLayer's terms of use (last updated 2024-08-19) say its website is owned and operated by QueryTale, Inc. d/b/a Metalytics. The code is published at github.com/humanlayer/humanlayer. [2][13]"
+    },
+    {
+      "q": "Are both open source?",
+      "a": "Commonly is Apache-2.0. HumanLayer's README says Apache License 2.0, and its 2026-11-02 release notes say its core is open source. The FAQ on its homepage answers \"Not yet\". [1][2][3][14]"
+    },
+    {
+      "q": "Can I run either one on my own servers?",
+      "a": "HumanLayer's README says its cloud runs the published code and that guides for running it yourself are in progress, and its Enterprise plan lists on-prem and private VPC. Its daemons run agent sessions on hosts you choose. Commonly documents self-hosting with Docker Compose. [1][2][6][14]"
+    },
+    {
+      "q": "Which agents work with each?",
+      "a": "HumanLayer's README names Claude Code, Codex, OpenCode and Pi, and its homepage FAQ names Claude Code, Codex, Copilot and Fireworks. Commonly works with your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. [1][2]"
+    }
+  ],
+  "sourcesIntro": "HumanLayer facts read on HumanLayer's own pages on 2026-11-11:",
+  "sources": [
+    {
+      "n": 1,
+      "label": "HumanLayer homepage (product, pricing, security and FAQ)",
+      "url": "https://www.humanlayer.dev/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 2,
+      "label": "HumanLayer README on GitHub",
+      "url": "https://github.com/humanlayer/humanlayer",
+      "note": "Apache-2.0; read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 3,
+      "label": "HumanLayer Docs, Release Notes (0.201.0, 2026-11-02; 0.183.0, 2026-10-14)",
+      "url": "https://docs.humanlayer.com/release-notes",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 4,
+      "label": "HumanLayer Docs, How HumanLayer tasks keep related work together",
+      "url": "https://docs.humanlayer.com/explanation/tasks",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 5,
+      "label": "HumanLayer Docs, index",
+      "url": "https://docs.humanlayer.com/",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 6,
+      "label": "HumanLayer Docs, How Remote Daemons Work",
+      "url": "https://docs.humanlayer.com/explanation/remote-daemons",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 7,
+      "label": "HumanLayer Docs, Connect GitHub and Create Tasks from Issues",
+      "url": "https://docs.humanlayer.com/guide/github-integration",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 8,
+      "label": "HumanLayer Docs, Connect Linear and Run Ticket Workflows",
+      "url": "https://docs.humanlayer.com/guide/linear-integration",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 9,
+      "label": "HumanLayer Docs, Connect Jira and Create Tasks from Tickets",
+      "url": "https://docs.humanlayer.com/guide/jira-integration",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 10,
+      "label": "HumanLayer Docs, Send HumanLayer Updates to Slack",
+      "url": "https://docs.humanlayer.com/guide/slack-integration",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 11,
+      "label": "HumanLayer Docs, Quickstart: Running a HumanLayer Task",
+      "url": "https://docs.humanlayer.com/tutorials/first-session",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 12,
+      "label": "humanlayer-pi on GitHub (\"pi extension that mirrors pi sessions to HumanLayer (preview)\")",
+      "url": "https://github.com/humanlayer/humanlayer-pi",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 13,
+      "label": "HumanLayer Terms of Use (last updated 2024-08-19)",
+      "url": "https://www.humanlayer.dev/legal/terms.html",
+      "note": "read 2026-11-11",
+      "read": "2026-11-11"
+    },
+    {
+      "n": 14,
+      "label": "Commonly README",
+      "url": "https://github.com/Team-Commonly/commonly",
+      "note": "Apache-2.0",
+      "read": "2026-10-27"
+    }
+  ],
+  "closing": "Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-11-11.",
+  "notes": [
+    "*This page compares HumanLayer, the coding agent workspace at humanlayer.dev (GitHub: humanlayer/humanlayer), with its desktop app, web app, daemon and cloud. The HumanLayer GitHub organization publishes other projects too, which this page does not cover. HumanLayer's 2026-11-02 release notes say its core is now open source, while the FAQ on its homepage, read on 2026-11-11, still answers \"Not yet\". This page cites both. [1][3]*"
+  ]
+}

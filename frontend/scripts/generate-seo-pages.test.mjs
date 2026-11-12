@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  assertNoOpenHolds, buildPageDefinitions, fitDescription, fitTitle, generateSeoPages, publicHitScript, renderMarkdown, renderStaticPage,
+  assertCompareSourced, assertNoOpenHolds, buildPageDefinitions, compareMarkdown, fitDescription, fitTitle, generateSeoPages,
+  loadCompareSources, publicHitScript, renderMarkdown, renderStaticPage,
 } from './generate-seo-pages.mjs';
 import {
   INDEXNOW_KEY, changedUrls, indexNowKeyFile, indexNowPayload, parseSitemap, pingIndexNow, runAfterDeploy,
@@ -25,13 +26,20 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 108);
+  assert.equal(pages.length, 116);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
     '/compare/openagents/',
     '/compare/github-agent-hq/',
     '/compare/buzz/',
+    '/compare/multica/',
+    '/compare/paperclip/',
+    '/compare/humanlayer/',
+    '/compare/raft/',
+    '/compare/agent-relay/',
+    '/compare/orca/',
+    '/compare/mosaic/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -55,7 +63,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/agent-to-agent-messaging/',
     '/guides/self-hosted-ai-agent-platform/',
     '/guides/ai-agent-permissions-and-tokens/',
-    '/guides/connect-cursor-shared-workspace/',
     '/guides/ai-agent-observability/',
     '/guides/ai-agent-events/',
     '/guides/multi-agent-vs-single-agent/',
@@ -67,7 +74,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-marketplace-roles/',
     '/guides/connect-a-custom-agent-http-api/',
     '/guides/what-is-an-agent-pod/',
-    '/guides/connect-openclaw-agent/',
     '/guides/ai-agent-security-best-practices/',
     '/guides/ai-agent-cli/',
     '/guides/ai-agent-orchestration/',
@@ -135,6 +141,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/github-agent-hq-alternative/',
     '/guides/run-claude-code-and-codex-together/',
     '/guides/claude-code-team-chat-mentions/',
+    '/guides/open-source-slack-alternative-ai-agents/',
+    '/guides/see-what-your-coding-agent-is-doing/',
+    '/guides/share-context-between-claude-code-sessions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -172,14 +181,25 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 91);
+  assert.equal(guidePages.length, 92);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
     const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
-    assert.equal(article.author['@type'], 'Organization');
+    // A guide whose D295 pass has landed names Sam; every other guide is as it was (F430).
+    const revised = guides[guide.path.split('/')[2]].revised;
+    assert.equal(article.author['@type'], revised ? 'Person' : 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
-    assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    assert.match(article.datePublished, /^2026-(?:08|09|10|11)-\d{2}$/);
+    if (revised) {
+      assert.equal(article.dateModified, revised);
+      continue;
+    }
+    // F433 removed a held claim from one guide without a D295 pass; its date moves with the text.
+    if (guide.path === '/guides/control-what-coding-agents-can-access/') {
+      assert.equal(article.dateModified, '2026-11-11');
+      continue;
+    }
     assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
@@ -189,17 +209,18 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly AI');
   const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(taskManagementArticle.datePublished, '2026-08-25');
-  assert.equal(taskManagementArticle.dateModified, '2026-08-30');
+  // Revised in D295's first batch (F430).
+  assert.equal(taskManagementArticle.dateModified, '2026-11-11');
   const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const sharedWorkspaceGuide = guidePages.find((page) => page.path === '/guides/connect-claude-codex-shared-workspace/');
   assert.equal(sharedWorkspaceGuide.title, 'Connect Claude Code and Codex to a Shared Workspace');
   const sharedWorkspaceArticle = sharedWorkspaceGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(sharedWorkspaceArticle.datePublished, '2026-08-26');
-  assert.equal(sharedWorkspaceArticle.dateModified, '2026-08-30');
+  assert.equal(sharedWorkspaceArticle.dateModified, '2026-11-11');
   const taskManagementHtml = renderStaticPage(guideTemplate, taskManagementGuide);
-  assert.match(taskManagementHtml, /By Commonly · Reviewed by Commonly SEO team/);
+  assert.match(taskManagementHtml, /By <a href="https:\/\/x\.com\/sam_commonly" rel="author">Sam Xu<\/a> · Reviewed by Commonly SEO team/);
   assert.match(taskManagementHtml, /article:published_time" content="2026-08-25"/);
-  assert.match(taskManagementHtml, /article:modified_time" content="2026-08-30"/);
+  assert.match(taskManagementHtml, /article:modified_time" content="2026-11-11"/);
   assert.match(taskManagementHtml, /href="\/guides\/multi-agent-collaboration-platform\/"/);
   assert.match(taskManagementHtml, /href="\/guides\/ai-agent-workspace\/"/);
   assert.doesNotMatch(taskManagementHtml, /document\.documentElement/);
@@ -276,7 +297,18 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(selfHostedHtml, /<h2>Step 1: Map the architecture you are about to run<\/h2>/);
   assert.match(selfHostedHtml, /You still need to decide:<\/p>\s*<ul>/);
   assert.match(selfHostedHtml, /The local path is intentionally short:<\/p>\s*<pre class="seo-code">/);
-  assert.match(selfHostedHtml, /Before installing a public instance[^<]*:<\/p>\s*<ul>/);
+  // The page claims only what the nightly self-host walk covers: Docker Compose
+  // on Linux with your own agents. No Helm path, and no hosted agents.
+  assert.match(selfHostedHtml, /<h2>Running Commonly yourself with Docker Compose<\/h2>/);
+  const outOfWalkScope = /helm|kubernetes|openclaw|postgres|production checklist|documented public deployment|macos|windows/i;
+  assert.doesNotMatch(selfHostedHtml, outOfWalkScope);
+  // Positive control: each out-of-scope term, and a rendered page that carries one, does match.
+  for (const term of ['Helm', 'Kubernetes', 'OpenClaw', 'Postgres', 'production checklist', 'documented public deployment', 'macOS', 'Windows']) {
+    assert.match(`Run it on ${term}.`, outOfWalkScope, term);
+  }
+  assert.match(renderStaticPage(guideTemplate, { ...selfHostedGuide, content: `${selfHostedGuide.content}<p>Deploy it with Helm.</p>` }), outOfWalkScope);
+  assert.match(selfHostedHtml, /Agents that Commonly hosts for you on commonly\.me don’t come with a self-hosted instance\./);
+  assert.match(selfHostedHtml, /A self-hosted Commonly doesn’t run agents for you\./);
   assert.match(selfHostedHtml, /Self-hosting Commonly can give[^<]*does not, by itself:<\/p>\s*<ul>/);
   assert.match(selfHostedHtml, /<h2>Choose the responsibility you are ready to operate<\/h2><p>These gaps are not reasons to avoid self-hosting\./);
   assert.match(selfHostedHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
@@ -301,18 +333,6 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(permissionsHtml, /<h2>Assuming token scope governs local tools<\/h2>/);
   assert.match(permissionsHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(permissionsHtml, /href="\/guides\/ai-agent-task-management\//);
-  const cursorGuide = guidePages.find((page) => page.path === '/guides/connect-cursor-shared-workspace/');
-  assert.equal(cursorGuide.title, 'How to Connect Cursor to a Shared Workspace | Commonly AI');
-  const cursorHtml = renderStaticPage(guideTemplate, cursorGuide);
-  assert.match(cursorHtml, /Connecting Cursor to a shared workspace gives the agent you use in Cursor/);
-  assert.match(cursorHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
-  assert.match(cursorHtml, /~\/\.cursor\/mcp\.json/);
-  assert.match(cursorHtml, /@commonlyai\/mcp/);
-  assert.match(cursorHtml, /cm_agent_\.\.\./);
-  assert.match(cursorHtml, /It is not a bundled development environment\.<\/p>\s*<div class="seo-table-wrap">/);
-  assert.match(cursorHtml, /In Cursor, invoke the agent with a request like this:<\/p>\s*<pre class="seo-code">/);
-  assert.match(cursorHtml, /<h2>Verify both sides of the access boundary<\/h2>\s*<p>[^<]*<\/p>\s*<p>Confirm all four:<\/p>\s*<ol>/);
-  assert.match(cursorHtml, /<h2>Give the first task a boundary<\/h2>/);
   const observabilityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-observability/');
   assert.equal(observabilityGuide.title, 'AI Agent Observability | Commonly AI');
   const observabilityHtml = renderStaticPage(guideTemplate, observabilityGuide);
@@ -425,15 +445,6 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(agentPodHtml, /AgentInstallation/);
   assert.match(agentPodHtml, /last ten replaced versions of each memory document/);
   assert.doesNotMatch(agentPodHtml, /cm_agent_[A-Za-z0-9]{8,}/);
-  const openClawGuide = guidePages.find((page) => page.path === '/guides/connect-openclaw-agent/');
-  const openClawHtml = renderStaticPage(guideTemplate, openClawGuide);
-  assert.match(openClawHtml, /Connecting an OpenClaw agent means/);
-  assert.match(openClawHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
-  assert.match(openClawHtml, /moltbot\.json/);
-  assert.match(openClawHtml, /heartbeat\.global/);
-  assert.match(openClawHtml, /HEARTBEAT\.md/);
-  assert.match(openClawHtml, /AgentsHub/);
-  assert.doesNotMatch(openClawHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const securityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-security-best-practices/');
   const securityHtml = renderStaticPage(guideTemplate, securityGuide);
   assert.match(securityHtml, /AI agent security is the practice of/);
@@ -1949,19 +1960,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-orchestration\//);
   }
   for (const guidePath of [
-    '/guides/ai-agent-heartbeats-and-scheduled-work/',
-    '/guides/connect-a-custom-agent-http-api/',
-    '/guides/what-is-an-ai-agent-runtime/',
-    '/guides/connect-claude-codex-shared-workspace/',
-  ]) {
-    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
-    assert.match(html, /href="\/guides\/connect-openclaw-agent\//);
-  }
-  for (const guidePath of [
     '/guides/ai-agent-permissions-and-tokens/',
     '/guides/ai-agent-memory/',
     '/guides/ai-agent-handoffs/',
-    '/guides/connect-openclaw-agent/',
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-security-best-practices\//);
@@ -2003,14 +2004,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-permissions-and-tokens\//);
   }
   for (const guidePath of [
-    '/guides/ai-agent-workspace/',
-    '/guides/connect-claude-codex-shared-workspace/',
-    '/guides/ai-agent-permissions-and-tokens/',
-  ]) {
-    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
-    assert.match(html, /href="\/guides\/connect-cursor-shared-workspace\//);
-  }
-  for (const guidePath of [
     '/guides/ai-agent-task-management/',
     '/guides/ai-agent-memory/',
     '/guides/how-to-build-an-ai-agent-team/',
@@ -2023,7 +2016,6 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/agent-to-agent-messaging/',
     '/guides/ai-agent-observability/',
     '/guides/connect-claude-codex-shared-workspace/',
-    '/guides/connect-cursor-shared-workspace/',
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-events\//);
@@ -2431,8 +2423,8 @@ test('every page but home names its place in a BreadcrumbList, ending at itself 
 
 test('every guide Article carries an image (F397)', async () => {
   const articles = (await realPages()).flatMap((page) => page.schema['@graph'].filter((node) => node['@type'] === 'Article'));
-  assert.ok(articles.length >= 90);
-  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=6', article['@id']);
+  assert.ok(articles.length >= 89);
+  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=7', article['@id']);
 });
 
 test('a long title drops the site suffix, then its subtitle; one with neither to drop stops the build (F397)', () => {
@@ -2648,7 +2640,7 @@ test('every sitemap URL carries the lastmod its page records (F369, F395)', asyn
     }
     assert.equal((sitemap.match(/<lastmod>/g) || []).length, entries.length);
     // The guides index changes when its newest guide does.
-    const newest = Object.values(guides).map((guide) => guide.provenance.dateModified).sort().pop();
+    const newest = Object.values(guides).map((guide) => guide.revised || guide.provenance.dateModified).sort().pop();
     assert.equal(pages.find((page) => page.path === '/guides/').dateModified, newest);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
@@ -2776,6 +2768,240 @@ test('every guide is linked from inside another guide, and every in-body guide l
   assert.deepEqual(unlinked, []);
 });
 
+// D295 pass (F430). One explicit field, `revised`, turns a guide's whole pass on at once; a guide
+// without it renders as before. Use-case pages lead with the search phrase and show their date.
+const loadSiteInputs = async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  return { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
+};
+const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] === 'Article');
+// Every guide carries the pass now (F433 revised the last one), so the unrevised
+// case is a real guide with its pass taken off.
+const withUnrevisedGuide = (inputs) => {
+  const [id, { revised: _revised, answer: _answer, ...guide }] = Object.entries(inputs.guides)[0];
+  return { id, guide, inputs: { ...inputs, guides: { ...inputs.guides, [id]: guide } } };
+};
+
+test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
+  const inputs = await loadSiteInputs();
+  const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
+  assert.equal(revised.length, Object.keys(inputs.guides).length);
+  assert.equal(revised.length, 92);
+  const pages = buildPageDefinitions(inputs);
+  for (const [id, guide] of revised) {
+    const page = pages.find((item) => item.path === `/guides/${id}/`);
+    const article = articleOf(page);
+    assert.deepEqual(article.author, {
+      '@type': 'Person', name: 'Sam Xu', url: 'https://x.com/sam_commonly', sameAs: ['https://x.com/sam_commonly'],
+    }, id);
+    assert.equal(article.dateModified, guide.revised, id);
+    assert.equal(page.dateModified, guide.revised, id);
+    assert.ok(page.content.includes('By <a href="https://x.com/sam_commonly" rel="author">Sam Xu</a> · Reviewed by'), id);
+    assert.ok(page.content.includes(`<p><strong>Short answer.</strong> ${guide.answer.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')}</p>`), id);
+    assert.ok(page.content.includes(`<time datetime="${guide.revised}">`), id);
+  }
+  // Sam appears only as that author node: no bio, job title or other claims anywhere in the graph.
+  const graphText = JSON.stringify(pages.find((item) => item.path === `/guides/${revised[0][0]}/`).schema);
+  assert.equal(graphText.match(/Sam Xu/g).length, 1);
+  assert.doesNotMatch(graphText, /jobTitle|description":"Sam|worksFor|alumniOf/);
+});
+
+test('an unrevised guide renders exactly as it did before the pass', async () => {
+  const { id, guide, inputs } = withUnrevisedGuide(await loadSiteInputs());
+  const pages = buildPageDefinitions(inputs);
+  const page = pages.find((item) => item.path === `/guides/${id}/`);
+  assert.equal(articleOf(page).author['@type'], 'Organization');
+  assert.equal(page.dateModified, guide.provenance.dateModified);
+  assert.ok(page.content.includes(`By ${guide.provenance.author} · Reviewed by`));
+  assert.doesNotMatch(page.content, /Short answer\./);
+  assert.doesNotMatch(page.content, /sam_commonly/);
+  // Byte-identical: the same guide with a pass applied and then taken away renders the same page.
+  const withPass = { ...inputs, guides: { ...inputs.guides, [id]: { ...guide, revised: '2026-11-11', answer: 'A.' } } };
+  const passed = buildPageDefinitions(withPass).find((item) => item.path === `/guides/${id}/`);
+  assert.notEqual(passed.content, page.content);
+  const { revised: _r, answer: _a, ...unpassed } = withPass.guides[id];
+  const back = buildPageDefinitions({ ...inputs, guides: { ...inputs.guides, [id]: unpassed } }).find((item) => item.path === `/guides/${id}/`);
+  assert.equal(back.content, page.content);
+  assert.deepEqual(back.schema, page.schema);
+});
+
+test('an answer block without a revised date, or a revised date before dateModified, stops the build', async () => {
+  const { id, guide, inputs } = withUnrevisedGuide(await loadSiteInputs());
+  const build = (patch) => buildPageDefinitions({ ...inputs, guides: { ...inputs.guides, [id]: { ...guide, ...patch } } });
+  assert.throws(() => build({ answer: 'An answer.' }), /has an answer block but no revised date/);
+  assert.throws(() => build({ revised: '2026-01-01' }), /revised date that is not YYYY-MM-DD on or after its dateModified/);
+  assert.throws(() => build({ revised: '11/11/2026' }), /revised date that is not YYYY-MM-DD/);
+  // A pass with no answer block is allowed: the guide still gets its byline and date.
+  const page = build({ revised: '2026-11-11' }).find((item) => item.path === `/guides/${id}/`);
+  assert.equal(articleOf(page).author['@type'], 'Person');
+  assert.doesNotMatch(page.content, /Short answer\./);
+});
+
+test('use-case pages lead with the search phrase, show their Updated date, and carry both dates in structured data', async () => {
+  const inputs = await loadSiteInputs();
+  const pages = buildPageDefinitions(inputs);
+  for (const [id, useCase] of Object.entries(inputs.useCases)) {
+    const page = pages.find((item) => item.path === `/use-cases/${id}/`);
+    assert.equal(page.title, `${useCase.titleTag} | Commonly AI`, id);
+    assert.ok(page.title.length <= 60, `${id}: ${page.title.length}`);
+    assert.ok(page.content.includes(`<h1>${useCase.title.replaceAll('&', '&amp;').replaceAll("'", '&#39;')}</h1>`), id);
+    assert.ok(page.content.includes(`<p class="seo-byline">Updated <time datetime="${useCase.dateModified}">`), id);
+    const node = page.schema['@graph'].find((item) => item['@type'] === 'WebPage');
+    assert.equal(node.datePublished, useCase.datePublished, id);
+    assert.equal(node.dateModified, useCase.dateModified, id);
+    assert.ok(useCase.datePublished <= useCase.dateModified, id);
+  }
+  const index = pages.find((item) => item.path === '/use-cases/');
+  assert.equal(index.title, 'AI agent use cases for teams | Commonly AI');
+  assert.ok(index.content.includes('<h1>AI agent use cases: how teams work with agents in shared pods</h1>'));
+  // pod-browser's own page says "pod" now, all through.
+  const podBrowser = pages.find((item) => item.path === '/use-cases/pod-browser/');
+  const main = podBrowser.content.split('<footer')[0];
+  assert.doesNotMatch(main, /\broom\b/i);
+});
+
+test('a use-case title change leaves every other page\'s footer as it was (linkLabel), while llms.txt reads the new title', async () => {
+  const inputs = await loadSiteInputs();
+  const pages = buildPageDefinitions(inputs);
+  const guide = pages.find((item) => item.path === '/guides/agentic-workflows/');
+  for (const [id, useCase] of Object.entries(inputs.useCases)) {
+    assert.ok(useCase.linkLabel, id);
+    assert.ok(guide.content.includes(`<a href="/use-cases/${id}/">${useCase.linkLabel.replaceAll('&', '&amp;').replaceAll("'", '&#39;')}</a>`), id);
+  }
+  const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
+  const { renderLlmsTxt } = await import('./generate-seo-pages.mjs');
+  const llms = renderLlmsTxt({ base, guides: inputs.guides, useCases: inputs.useCases, pages });
+  for (const useCase of Object.values(inputs.useCases)) assert.ok(llms.includes(`[${useCase.title}]`), useCase.title);
+});
+
+// /compare as data (F429, D295): one file per competitor, one template, and no competitor fact
+// without a source that says where and when it was read.
+const compareFixture = () => ({
+  path: '/compare/example/',
+  listOrder: 9,
+  datePublished: '2026-11-11',
+  dateModified: '2026-11-11',
+  title: 'Commonly vs Example: what each ships',
+  description: 'A factual comparison.',
+  name: 'Example',
+  updated: 'Updated 2026-11-11. Facts about Example were read on its own pages on 2026-11-11.',
+  shortAnswer: 'Example is a thing. [1]',
+  table: { them: 'Example', rows: [{ label: 'License', them: 'MIT. [1]', us: 'Apache-2.0. [2]' }] },
+  pickThem: { name: 'Example', items: ['You want MIT. [1]'] },
+  pickUs: ['You want a pod.'],
+  faq: [{ q: 'Is it open source?', a: 'Yes. [1]' }],
+  sourcesIntro: 'Example facts read on 2026-11-11:',
+  sources: [
+    { n: 1, label: 'Example homepage', url: 'https://example.com/', read: '2026-11-11' },
+    { n: 2, label: 'Commonly README', url: 'https://github.com/Team-Commonly/commonly', read: '2026-11-11' },
+  ],
+  closing: 'Commonly facts come from the Commonly README.',
+});
+
+test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
+  const dir = resolve(frontendDir, 'src/content/compare');
+  const loaded = loadCompareSources(dir);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic']);
+  for (const id of Object.keys(loaded)) {
+    const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
+    assert.equal(loaded[id].markdown, compareMarkdown(data));
+    assert.equal(loaded[id].path, `/compare/${id}/`);
+    assert.ok(data.sources.every((source) => /^https:\/\//.test(source.url) && /^\d{4}-\d{2}-\d{2}$/.test(source.read)), id);
+    assert.ok(data.table.rows.every((row) => /\[\d+\]/.test(row.them)), id);
+  }
+  // The template lays out what the hand-written pages had: heading, dated line, table, sources.
+  const buzz = loaded.buzz.markdown;
+  assert.match(buzz, /^# Commonly vs Buzz\n\n\*Updated 2026-11-11\./);
+  assert.match(buzz, /\n\| \| Buzz \(Block\) \| Commonly \|\n\|---\|---\|---\|\n/);
+  assert.match(buzz, /\n1\. Block, "Introducing Buzz: where humans and agents work together" \(2026-07-21\): https:\/\/block\.xyz\/inside\//);
+  // A malformed file names itself.
+  const broken = await mkdtemp(join(tmpdir(), 'seo-compare-broken-'));
+  try {
+    await writeFile(join(broken, 'bad.json'), '{ nope }');
+    assert.throws(() => loadCompareSources(broken), /^Error: compare\/bad\.json: /);
+  } finally {
+    await rm(broken, { recursive: true, force: true });
+  }
+  // The one fact this change added carries its source.
+  assert.match(loaded['github-agent-hq'].markdown, /\| \*\*License \/ self-host\*\* \| Hosted GitHub service\. .*self-hosted runners.*\[4\] \|/);
+});
+
+test('a compare page with an unsourced competitor fact, an undated source or a dangling citation fails the build', () => {
+  assert.doesNotThrow(() => assertCompareSourced('example', compareFixture()));
+
+  const unsourced = compareFixture();
+  unsourced.table.rows[0].them = 'MIT.';
+  assert.throws(() => assertCompareSourced('example', unsourced), /compare\/example: "License" states a Example fact with no source/);
+
+  const undated = compareFixture();
+  delete undated.sources[0].read;
+  assert.throws(() => assertCompareSourced('example', undated), /source 1 has no read date/);
+
+  const noUrl = compareFixture();
+  noUrl.sources[0].url = 'example.com';
+  assert.throws(() => assertCompareSourced('example', noUrl), /source 1 has no https URL/);
+
+  const dangling = compareFixture();
+  dangling.faq[0].a = 'Yes. [3]';
+  assert.throws(() => assertCompareSourced('example', dangling), /\[3\] cites no listed source/);
+
+  const badDate = compareFixture();
+  badDate.dateModified = '11/11/2026';
+  assert.throws(() => assertCompareSourced('example', badDate), /dateModified is not YYYY-MM-DD/);
+
+  const linkOnly = compareFixture();
+  linkOnly.table.rows[0].them = 'MIT. [1](https://example.com/)';
+  assert.throws(() => assertCompareSourced('example', linkOnly), /"License" states a Example fact with no source/);
+
+  const inserted = compareFixture();
+  inserted.sources.splice(1, 0, { n: 2, label: 'New', url: 'https://example.org/', read: '2026-11-11' });
+  assert.throws(() => assertCompareSourced('example', inserted), /source 3 is numbered 2/);
+
+  const backwards = compareFixture();
+  backwards.datePublished = '2026-11-12';
+  assert.throws(() => assertCompareSourced('example', backwards), /dateModified 2026-11-11 is before datePublished 2026-11-12/);
+
+  const elsewhere = compareFixture();
+  elsewhere.path = '/compare/other/';
+  assert.throws(() => assertCompareSourced('example', elsewhere), /path \/compare\/other\/ is not \/compare\/example\//);
+
+  const unordered = compareFixture();
+  delete unordered.listOrder;
+  assert.throws(() => assertCompareSourced('example', unordered), /listOrder is not a whole number/);
+
+  // A markdown link elsewhere on the page is not a citation either, and doesn't need a source.
+  const linked = compareFixture();
+  linked.pickUs = ['See [the guide](/guides/x/).'];
+  assert.doesNotThrow(() => assertCompareSourced('example', linked));
+});
+
+test('a compare page carries its dates in the WebPage structured data and the sitemap, matching its data file', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-compare-dates-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const sitemap = await readFile(join(outputDir, 'sitemap.xml'), 'utf8');
+    for (const id of ['openagents', 'github-agent-hq', 'buzz']) {
+      const data = JSON.parse(await readFile(resolve(frontendDir, `src/content/compare/${id}.json`), 'utf8'));
+      const html = await readFile(join(outputDir, `compare/${id}/index.html`), 'utf8');
+      const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/)[1])['@graph'];
+      const page = graph.find((node) => node['@type'] === 'WebPage');
+      assert.equal(page.datePublished, data.datePublished, id);
+      assert.equal(page.dateModified, data.dateModified, id);
+      assert.ok(html.includes(`Updated ${data.dateModified}.`), id);
+      assert.ok(sitemap.includes(`<loc>https://commonly.me/compare/${id}/</loc><lastmod>${data.dateModified}</lastmod>`), id);
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
 // IndexNow (F428). The key file must be in the build, the ping must name only what changed, and
 // nothing in the deploy step may throw or fail.
 const sitemapXml = (entries) => `<?xml version="1.0" encoding="UTF-8"?>\n<urlset>\n${entries
@@ -2869,4 +3095,97 @@ test('the deploy step never throws: a dead network, a missing key file and a rej
   const refused = await runAfterDeploy({ argv: ['--key-was-live', '0'], fetchImpl: rejected, log });
   assert.equal(refused.ok, false);
   assert.match(lines.at(-1), /rejected: 2 of 2 .*HTTP 422/);
+});
+
+// F432: the /compare hub states only sourced facts about others and only llms.txt facts about us.
+// It ranks no one, says nothing about what others lack, and names no price of ours, in either
+// locale or in the public doc that mirrors it. The patterns are the retired claims' own phrasings,
+// so a sourced neutral line ("Multica 按席位计费", "only Raft lists Android") can still be written.
+test('the /compare hub copy ranks no one, claims no absence, and states no pricing, in en, zh-CN and the doc', async () => {
+  const en = [/strongest/i, /closest (product )?competitor/i, /better shape/i, /\bnone (of|runs|is)\b/i, /any vendor/i,
+    /first-class/i, /\bnever\b/i, /human seats?/i, /pricing charges/i, /per-agent tax/i, /takes no pull requests/i,
+    /honest version/i, /\bthe only\b/i, /\b(we|commonly) (was|were|is|are) (the )?first\b/i];
+  const zh = [/最强/, /最接近的产品竞争对手/, /形态更合适/, /都不能/, /任何厂商/, /一等公民/, /永远不占/, /计划中的定价/,
+    /人头席位/, /不接受 PR/, /实话实说/, /唯一/, /只有我们/];
+  const hubCopy = async (locale) => {
+    const { compare } = JSON.parse(await readFile(resolve(frontendDir, `src/i18n/locales/${locale}.json`), 'utf8'));
+    const { nav, actions, footer, ...copy } = compare;
+    return JSON.stringify(copy);
+  };
+  const doc = await readFile(resolve(frontendDir, '../docs/commonly-vs-alternatives.md'), 'utf8');
+  // Positive controls: each pattern matches one of the retired phrasings it stands for, so a
+  // pattern that matched nothing could not pass the absence checks below.
+  const enRetired = ['the strongest option', 'its closest competitor', 'a better shape for teams', 'none of them answers',
+    'any vendor', 'agents as first-class members', 'never charges', 'per human seats', 'pricing charges per seat',
+    'no per-agent tax', 'takes no pull requests', 'the honest version', 'the only one', 'Commonly is the first'];
+  const zhRetired = ['最强', '最接近的产品竞争对手', '形态更合适', '都不能', '任何厂商', '一等公民', '永远不占', '计划中的定价',
+    '人头席位', '不接受 PR', '实话实说', '唯一', '只有我们'];
+  for (const [patterns, retired] of [[en, enRetired], [zh, zhRetired]]) {
+    assert.equal(retired.length, patterns.length);
+    patterns.forEach((pattern, i) => assert.match(retired[i], pattern, `control for ${pattern}`));
+  }
+  for (const [label, text, patterns] of [['en', await hubCopy('en'), en], ['zh-CN', await hubCopy('zh-CN'), zh], ['doc', doc, en]]) {
+    for (const pattern of patterns) assert.doesNotMatch(text, pattern, `${label}: ${pattern}`);
+  }
+});
+
+test('the /compare hub links every comparison, so its "each page below" holds', async () => {
+  const translations = JSON.parse(await readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'));
+  const page = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: {} })
+    .find((item) => item.path === '/compare/');
+  for (const source of Object.values(loadCompareSources())) {
+    assert.ok(page.content.includes(`<li><a href="${source.path}">`), source.path);
+  }
+  // With JS on, the app would hide this page and has no route for it, so it must ship without the bundle.
+  assert.equal(page.staticOnly, true);
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>x()</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const html = renderStaticPage(template, page);
+  assert.doesNotMatch(html, /type="module"/);
+  assert.doesNotMatch(html, /document\.documentElement/);
+});
+
+// F433: "calls through a grant are logged" is held until the scope walk passes on prod. No guide,
+// llms.txt base, page string or /compare data file may say it, in any wording that pairs a grant
+// with logging (the /compare files since #3926 removed it there).
+test('no public text claims grant calls are logged while that claim is held', async () => {
+  const held = /(grant|granted connector)[^."]{0,60}\b(logged|recorded)\b|\b(logged|recorded)\b[^."]{0,60}\bgrant/i;
+  // Positive controls, both word orders, in the shapes a page would use.
+  for (const claim of ['Calls through a grant are logged.', 'Every granted connector call is recorded.',
+    'Calls are logged for each grant.', 'Each call is recorded against the grant that allowed it.']) {
+    assert.match(claim, held, claim);
+  }
+  assert.doesNotMatch('Grants can be revoked at any time.', held);
+  const { readdir } = await import('node:fs/promises');
+  const compareFiles = (await readdir(resolve(frontendDir, 'src/content/compare')))
+    .filter((file) => file.endsWith('.json')).map((file) => `src/content/compare/${file}`);
+  assert.ok(compareFiles.length >= 10);
+  for (const file of ['src/content/guides.json', 'public/llms.txt', 'src/i18n/locales/en.json', ...compareFiles]) {
+    const text = await readFile(resolve(frontendDir, file), 'utf8');
+    assert.doesNotMatch(text, held, file);
+  }
+});
+
+// A guide that hands out a command pointing at commonly.me's API says so, and tells someone who
+// runs Commonly themselves to use their own instance's API URL (CodeRabbit on #3951).
+test('every guide whose commands point at the hosted API says how a self-hosted reader changes it', async () => {
+  const { guides } = await loadSiteInputs();
+  const hostedNote = /This example uses the hosted API at commonly\.me\. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead\./;
+  const pointsAtHosted = /COMMONLY_API_URL(=|"\s*:\s*")https:\/\/api\.commonly\.me/;
+  const withHostedCommand = Object.entries(guides)
+    .filter(([, guide]) => guide.sections.some((section) => (section.codeBlocks || []).some((block) => pointsAtHosted.test(block.code))));
+  assert.ok(withHostedCommand.length >= 6, `found ${withHostedCommand.length}`);
+  for (const [id, guide] of withHostedCommand) {
+    assert.match(JSON.stringify(guide), hostedNote, id);
+  }
+});
+
+// The same for raw HTTP examples that call the hosted API by its host, with no COMMONLY_API_URL to set.
+test('every guide whose raw HTTP examples call the hosted host says how a self-hosted reader changes it', async () => {
+  const { guides } = await loadSiteInputs();
+  const hostNote = /The examples here use the hosted API at api\.commonly\.me\. On a Commonly you run yourself, replace that host with your own instance's API URL\./;
+  const callsHostedHost = (code) => /(https|wss):\/\/api\.commonly\.me/.test(code) && !/COMMONLY_API_URL/.test(code);
+  const withHostedHost = Object.entries(guides)
+    .filter(([, guide]) => guide.sections.some((section) => (section.codeBlocks || []).some((block) => callsHostedHost(block.code))));
+  assert.ok(withHostedHost.length >= 2, `found ${withHostedHost.length}`);
+  for (const [id, guide] of withHostedHost) assert.match(JSON.stringify(guide), hostNote, id);
 });

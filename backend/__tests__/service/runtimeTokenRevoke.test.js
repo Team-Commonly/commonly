@@ -222,6 +222,13 @@ describe('revoking a runtime token kills it in every store', () => {
     workspaceInstall.config = new Map([['runtime', { runtimeType: 'webhook' }]]);
     await workspaceInstall.save();
     await AgentCredential.updateOne({ tokenHash }, { $set: { lastUsedAt: new Date() } });
+    // F459: a key that was only used (the probe above) reads "Not connected yet";
+    // connected means it has listened. Stamp the listen the events poll writes
+    // (agentListenerCheckIn) on the embedded copy, so the card starts connected.
+    await User.updateOne(
+      { 'agentRuntimeTokens.tokenHash': tokenHash },
+      { $set: { 'agentRuntimeTokens.$.lastListenedAt': new Date() } },
+    );
     const beforeCard = await request(app).get(`/api/registry/pods/${workspace._id}/agents`);
     expect(beforeCard.status).toBe(200);
     expect(beforeCard.body.agents[0].connection.state).toBe('connected');

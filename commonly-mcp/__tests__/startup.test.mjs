@@ -6,7 +6,9 @@
  * the server still answers after its check-in was turned away.
  */
 import { spawn } from 'child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import http from 'http';
+import os from 'os';
 import net from 'net';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -187,5 +189,45 @@ describe('startup', () => {
   it('without the flag, the same server still sends the post', async () => {
     const { seen } = await postAfterFailedCheckIn({});
     expect(seen).toEqual(['GET /api/agents/runtime/installations', 'POST /api/agents/runtime/pods/P/messages']);
+  });
+  // F421: a public OpenCode seat's stream says nothing about this server, so
+  // the CLI names a file and reads it after the turn (src/ready-file.js).
+  it('creates the named ready file when the host asks for the tools, and not on initialize alone', async () => {
+    const api = await startApi(200);
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'mcp-ready-'));
+    const file = path.join(dir, 'ready');
+    const { child, out } = run(api.url, { COMMONLY_MCP_READY_FILE: file });
+    try {
+      expect(await waitFor(() => api.seen.length > 0)).toBe(true);
+      expect(() => statSync(file)).toThrow();
+      initialize(child);
+      expect(await waitFor(() => /"id":1/.test(out.stdout))).toBe(true);
+      expect(() => statSync(file)).toThrow();
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+      expect(await waitFor(() => /"id":2/.test(out.stdout))).toBe(true);
+      expect(readFileSync(file, 'utf8')).toBe('ready\n');
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+    } finally {
+      child.kill();
+      api.server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still serves when the ready file cannot be written, and says so on stderr only', async () => {
+    const api = await startApi(200);
+    const { child, out } = run(api.url, { COMMONLY_MCP_READY_FILE: '/nonexistent-dir-f421/ready' });
+    try {
+      initialize(child);
+      expect(await waitFor(() => /"id":1/.test(out.stdout))).toBe(true);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+      expect(await waitFor(() => /"id":2/.test(out.stdout))).toBe(true);
+      expect(await waitFor(() => /could not write the ready file: ENOENT/.test(out.stderr))).toBe(true);
+      expect(child.exitCode).toBeNull();
+    } finally {
+      child.kill();
+      api.server.close();
+    }
   });
 });

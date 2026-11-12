@@ -55,8 +55,9 @@ describe('aiProviders.deepseek: off on dev, on by default', () => {
     const lines = read('templates/configmaps/litellm-config.yaml').split('\n');
     const found = lines.map((l, i) => ({ l: l.trim(), i }))
       .filter(({ l }) => /^(model:\s*["']?deepseek\/|api_key:\s*os\.environ\/DEEPSEEK_API_KEY|- \{"[^"]+":\s*\["deepseek)/.test(l));
-    // Two DeepSeek groups, five stand-ins (each a model + key line), four fallbacks.
-    expect(found.length).toBe(2 * 2 + 5 * 2 + 4);
+    // Two DeepSeek groups (each a model + key line) and four Gemini fallbacks.
+    // The five Gemini/gpt-4o stand-ins went with litellm.legacyAliases (F105).
+    expect(found.length).toBe(2 * 2 + 4);
     found.forEach(({ l, i }) => expect([l, underGate(gatesAbove(lines, i))]).toEqual([l, true]));
   });
 

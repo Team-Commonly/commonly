@@ -60,3 +60,37 @@ test('flag-shaped model values are consumed as data and cannot manufacture an ef
     modelFlag: '--model', valueFlags: ['-c', '-o'], codex: true,
   })).toEqual({ model: 'm', effort: 'xhigh' });
 });
+
+// F370 #11: a failed spawn carries its reason code; a backend from before the
+// field refuses it with a 400, and the outcome is sent again without it.
+test('a failed settle carries its reason, and a 400 resends the outcome alone', async () => {
+  const sent = [];
+  let refuse = false;
+  const reporter = createRuntimeReporter({ harness: 'claude', detect: async () => null, client: { post: async (_url, body) => {
+    sent.push(body);
+    if (refuse && body.reason) throw Object.assign(new Error('invalid_runner_observation'), { status: 400 });
+  } } });
+  await reporter.settled('failed', 'claude-signed-out');
+  await reporter.settled('completed', 'claude-signed-out');
+  expect(sent).toEqual([
+    { event: 'settled', outcome: 'failed', reason: 'claude-signed-out' },
+    { event: 'settled', outcome: 'completed' },
+  ]);
+  sent.length = 0;
+  refuse = true;
+  await reporter.settled('failed', 'login');
+  expect(sent).toEqual([
+    { event: 'settled', outcome: 'failed', reason: 'login' },
+    { event: 'settled', outcome: 'failed' },
+  ]);
+});
+
+test('a refusal other than a 400 is not resent, and never rejects the turn', async () => {
+  const sent = [];
+  const reporter = createRuntimeReporter({ harness: 'claude', detect: async () => null, client: { post: async (_url, body) => {
+    sent.push(body);
+    throw Object.assign(new Error('down'), { status: 503 });
+  } } });
+  await expect(reporter.settled('failed', 'login')).resolves.toBeUndefined();
+  expect(sent).toEqual([{ event: 'settled', outcome: 'failed', reason: 'login' }]);
+});

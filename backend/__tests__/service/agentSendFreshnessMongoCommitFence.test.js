@@ -46,6 +46,20 @@ describe('agent freshness: delayed Mongo-only write', () => {
     expect(hold.message).toContain("If you were asked by name, another agent's reply doesn't answer for you");
   });
 
+  // F140: the agent's own install intro (a kernel row under its id) never
+  // holds its first write; any other kernel row under its id still does.
+  it('does not hold on the agent\'s own install intro, and still holds on another kernel row', async () => {
+    await Message.collection.insertOne({ podId, userId: agentId, content: 'Hi all', authorKind: 'kernel',
+      payload: { kind: 'install-intro' }, createdAt: new Date(), freshnessCommittedAt: new Date(), freshnessPending: false });
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+    const start = await Freshness.readStart(podId);
+    await Freshness.recordRead(agentId, podId, start, []);
+    expect(await Cursor.findById(`${agentId}:${podId}`).lean()).not.toBeNull();
+    await Message.collection.insertOne({ podId, userId: agentId, content: 'not connected yet', authorKind: 'kernel',
+      createdAt: new Date(), freshnessPending: true });
+    expect(await Freshness.unseenMessages(agentId, podId)).toMatchObject({ unseenCount: 1 });
+  });
+
   it('holds an insert whose createdAt predates a successful read but whose save finishes later', async () => {
     const peerMessage = new Message({
       podId,

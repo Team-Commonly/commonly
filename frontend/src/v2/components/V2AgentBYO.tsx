@@ -15,7 +15,7 @@
 // expected to paste into their MCP host config immediately. If lost, they
 // can explicitly replace the old key without changing the agent identity.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -23,6 +23,7 @@ import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } fr
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
+import { keepsInstanceKeys } from '../utils/machineInstanceKeys';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -37,7 +38,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceNote, harnessLabel,
+  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, autoDetectedHarness, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel, harnessSignedOut,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -67,7 +68,10 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
 // only in that window. Install line and run line are the same on both, except
 // that on native Windows `agent run` refuses without --unsandboxed: there is no
-// sandbox there, and the flag is the person choosing to run without one. For
+// sandbox there, and the flag is the person choosing to run without one. On
+// Windows both lines name npm's .cmd shims (F342): PowerShell runs the .ps1 shim
+// for a bare `npm` or `commonly`, and Windows 11's default script policy refuses
+// it before the token is ever used; a .cmd is not a script to that policy. For
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
 export const connectSnippet = ({
@@ -92,9 +96,9 @@ export const connectSnippet = ({
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
     : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
   return [
-    CLI_INSTALL_COMMAND,
+    os === 'windows' ? CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ') : CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `${os === 'windows' ? 'commonly.cmd' : 'commonly'} agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs
@@ -159,8 +163,11 @@ type MachineRow = {
   // D245: the daemon runs with no sandbox. Only a native Windows daemon reports
   // this (cli hostSandboxReport), and the CLI gives its seats no grant broker.
   hostUnconfined?: boolean;
+  // The CLI version its daemon last reported running; null when too old to say.
+  cliVersion?: string | null;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
+const HARNESS_RECHECK_MS = 10_000;
 const MACHINE_STATUS_MAX_TICKS = 30;
 // Registration mints a machine-local credential, so it is inherently a terminal
 // act — this page's job is to make it ONE paste (daemonSetupCommand), after
@@ -387,6 +394,9 @@ const V2AgentBYO: React.FC = () => {
   // finish the page, mention the agent, and get silence with no way to know
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
+  // F457: the issued agent's run stopped before checking in because its
+  // harness wasn't on that computer. Keyed to the issue, like stallReport.
+  const [harnessMissingReport, setHarnessMissingReport] = useState<{ key: object; harness: string | null } | null>(null);
   // Which command the person copied for THIS issue, and whether they have been
   // waiting long enough to say so. A stranger copied the MCP snippet three
   // times and never the Terminal command (walk 2026-10-31, TASK-721): the page
@@ -469,10 +479,32 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
-  const choosingMode = !choicesKnown || hostedOffered || machines.length > 0;
   // "Run it here" counts only once the instance says it can host: a hosted
-  // link must not arm a hosted install before, or without, that answer.
-  const mode = chosenMode === 'hosted' && !hostedOffered
+  // link must not arm a hosted install before, or without, that answer. A
+  // machine link for a second instance falls back the same way, unless the
+  // page is reconnecting that instance's wrapper (canReconnect's wrapper case):
+  // Reconnect restarts it on its computer, with the key the daemon holds, and
+  // places nothing.
+  const wrapperReconnect = existingConnection?.runtimeType === 'wrapper'
+    && (Boolean(prefill.reconnect) || ['revoked', 'stale'].includes(existingConnection.connection.state))
+    && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin');
+  // "On my computer" places a second instance only on a computer whose daemon
+  // keeps a key per instance (F427, CLI 0.1.328): an older one keeps one key per
+  // agent name and refuses it. A computer that has not checked in since its
+  // upgrade reads as older until it does. A wrapper Reconnect places nothing,
+  // and its instance may run on an older computer, so it lists every one.
+  const placeableMachines = useMemo(
+    () => (secondInstance && !wrapperReconnect ? machines.filter((m) => keepsInstanceKeys(m.cliVersion)) : machines),
+    [machines, secondInstance, wrapperReconnect],
+  );
+  // Computers on file, none of which can take this instance yet: the page says
+  // how to update one, in place of the line that adds a computer.
+  const machinesNeedUpdate = Boolean(secondInstance) && machines.length > 0 && placeableMachines.length === 0;
+  const machineOffered = placeableMachines.length > 0;
+  const choosingMode = !choicesKnown || hostedOffered || machineOffered;
+  const modeUnavailable = (chosenMode === 'hosted' && !hostedOffered)
+    || (chosenMode === 'machine' && Boolean(secondInstance) && !wrapperReconnect && !machineOffered);
+  const mode = modeUnavailable
     ? (choosingMode ? null : 'byo')
     : chosenMode ?? (choosingMode ? null : 'byo');
   // Shown from first paint for a hosted link (no flash of the full page while
@@ -484,6 +516,12 @@ const V2AgentBYO: React.FC = () => {
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
+  // The preselected computer is one this instance can be placed on.
+  useEffect(() => {
+    if (placeableMachines.length > 0 && !placeableMachines.some((m) => m.machineId === machineId)) {
+      setMachineId(defaultMachine(placeableMachines)?.machineId || '');
+    }
+  }, [placeableMachines, machineId]);
   const selectedMachine = machines.find((m) => m.machineId === machineId);
   const selectedMachineName = selectedMachine
     ? machineDisplayName(selectedMachine, machines, t, i18n.language)
@@ -498,6 +536,10 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
   useEffect(() => { setPendingNarrowing(null); }, [name, podId, mode]);
   const machineInventory = selectedMachine?.runtimeInventory || [];
+  const harnessMissingDetail = selectedMachine
+    ? harnessDeviceDetail(machineInventory, adapter, harnessLabel(harnessCatalog, adapter),
+      machineDisplayName(selectedMachine, machines, t, i18n.language), t)
+    : '';
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
       || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
@@ -605,8 +647,11 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; };
   }, [api, choicesKnown, defaultAgentName, heldNameLink, mode, namePrefill, nameLookupRetry, nameTouched, personaCard, podId,
     prefill.reconnect, prefill.name]);
-  const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
+  const [placed, setPlaced] = useState<{ agentName: string; instanceId: string; machineId: string; machineName: string; harness: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
+  // F458: running, but its harness reported signed out, so it can't answer yet:
+  // that harness's id, or '' while it can.
+  const [placedSignedOut, setPlacedSignedOut] = useState('');
   const [reconnectRequest, setReconnectRequest] = useState<{
     agentName: string; instanceId: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
   } | null>(null);
@@ -639,6 +684,25 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; clearInterval(timer); };
   }, [api, podId, reconnectRequest]);
 
+  // F370 #8: while the chosen harness shows as missing on the chosen computer,
+  // re-read the computer's report, so an install made now shows up here
+  // without a reload. The daemon probes a missing harness again within a
+  // heartbeat or two.
+  // A signed-out harness is re-read the same way, so a sign-in clears its note (F458).
+  const harnessMissing = mode === 'machine' && Boolean(adapter)
+    && (machineInventory.some((row) => row.harness === adapter && !row.installed) || harnessSignedOut(machineInventory, adapter));
+  useEffect(() => {
+    if (!harnessMissing) return undefined;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const data = await api.get<{ machines?: MachineRow[] }>('/api/machines');
+        if (!cancelled && Array.isArray(data?.machines) && data.machines.length) setMachines(data.machines);
+      } catch { /* the next tick tries again */ }
+    }, HARNESS_RECHECK_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [api, harnessMissing]);
+
   // Watch the placement come up: the machine heartbeat carries per-agent
   // supervisor states, so "live" here means the daemon actually spawned it.
   useEffect(() => {
@@ -646,16 +710,26 @@ const V2AgentBYO: React.FC = () => {
     let cancelled = false;
     let ticks = 0;
     setPlacedState('waiting');
+    setPlacedSignedOut('');
     const timer = setInterval(async () => {
       ticks += 1;
       try {
         const data = await api.get<{ machines?: MachineRow[] }>('/api/machines');
         if (cancelled) return;
         const machine = (data?.machines || []).find((m) => m.machineId === placed.machineId);
-        const seat = machine?.agentStates?.find((s) => s.agentName === placed.agentName);
+        // The placed instance's own seat: the default instance may already run
+        // on this computer under the same name (F427).
+        const seat = machine?.agentStates?.find((s) => s.agentName === placed.agentName
+          && String(s.instanceId || 'default').toLowerCase() === placed.instanceId.toLowerCase());
         if (seat?.state === 'running') {
           setPlacedState('running');
-          clearInterval(timer);
+          // The daemon rechecks a signed-out harness within a heartbeat or
+          // two, so keep reading until it says signed in.
+          // Auto-detect names no harness, so check the one the daemon picks.
+          const harness = placed.harness || autoDetectedHarness(machine?.runtimeInventory);
+          const signedOut = Boolean(harness) && harnessSignedOut(machine?.runtimeInventory, harness);
+          setPlacedSignedOut(signedOut ? harness : '');
+          if (!signedOut) clearInterval(timer);
           return;
         }
       } catch {
@@ -958,8 +1032,10 @@ const V2AgentBYO: React.FC = () => {
       });
       setPlaced({
         agentName: cleanName,
+        instanceId: secondInstance || 'default',
         machineId,
         machineName: selectedMachineName,
+        harness: adapter,
       });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
@@ -1256,7 +1332,17 @@ const V2AgentBYO: React.FC = () => {
       }
       try {
         const { data } = await axios.get('/api/users/me/agent-connection');
-        if (cancelled || !data?.connected) return;
+        if (cancelled) return;
+        // F457: a run that found no harness reports it before exiting. Only a
+        // report for this agent, made after this issue, counts; polling goes
+        // on, so installing it and running the line again turns this green.
+        const missing = (Array.isArray(data?.harnessMissing) ? data.harnessMissing : []).find(
+          (row: { agentName?: string; instanceId?: string; at?: string }) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+            && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
+            && row.at && new Date(row.at).getTime() >= issued.issuedAt - 60_000,
+        );
+        setHarnessMissingReport(missing ? { key: issued, harness: typeof missing.harness === 'string' ? missing.harness : null } : null);
+        if (!data?.connected) return;
         const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
           === issued.agentName.toLowerCase();
         const afterIssue = data.lastUsedAt
@@ -1410,8 +1496,9 @@ const V2AgentBYO: React.FC = () => {
   // PowerShell, so there is no per-line split any more. On Windows it carries
   // --unsandboxed, forwarded to the install step (agents run without a sandbox
   // there, as `agent run` does).
+  // npx.cmd on Windows for the same reason as connectSnippet's npm.cmd (F342).
   const daemonCommand = setupOs === 'windows'
-    ? `${daemonSetupCommand(apiUrl)} --unsandboxed`
+    ? `${daemonSetupCommand(apiUrl).replace(/^npx /, 'npx.cmd ')} --unsandboxed`
     : daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
@@ -1426,7 +1513,7 @@ const V2AgentBYO: React.FC = () => {
   // as one more value ("missing required argument 'commandOrUrl'",
   // windows-latest, 2026-11-04). mcp-windows.yml runs this exact line.
   const claudeSnippetWindows = issued
-    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
+    ? `npm.cmd i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
     : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling
@@ -1482,10 +1569,15 @@ const V2AgentBYO: React.FC = () => {
   // in Other ways to connect, on the start form and the result page, so the
   // stop-on-close line can point to it from the result.
   // On Windows `daemon install` registers a logon task (D245).
-  const addComputerBlock = machines.length === 0 ? (
+  // A new computer's setup installs the current CLI, so it takes any instance.
+  // Computers already on file that can't take this instance get the same line,
+  // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
+  const addComputerBlock = machines.length === 0 || machinesNeedUpdate ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-      <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      <span className="v2-byo__label">{t(machinesNeedUpdate ? 'agentByo.addComputer.updateTitle' : 'agentByo.addComputer.title')}</span>
+      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">
+        {t(machinesNeedUpdate ? 'agentByo.addComputer.updateForInstance' : 'agentByo.addComputer.recommended')}
+      </p>
       {/* The computer being added need not be the one browsing: a Windows box
           set up from a Mac needs the Windows command and its note. The same
           choice as the listen block's, so the two never disagree. */}
@@ -1518,7 +1610,7 @@ const V2AgentBYO: React.FC = () => {
           <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
         </p>
       )}
-      <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+      <p className="v2-byo__hint">{t(machinesNeedUpdate ? 'agentByo.addComputer.afterUpdate' : 'agentByo.addComputer.after')}</p>
     </div>
   ) : null;
   // D247: a runner other than Claude Code and Codex takes the place of the
@@ -1797,7 +1889,7 @@ const V2AgentBYO: React.FC = () => {
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
           {hostedHeldLine}
-          {(hostedOffered || machines.length > 0) && (
+          {(hostedOffered || machineOffered) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
             <div className="v2-byo__modes" role="group" aria-labelledby="byo-modes-question">
@@ -1817,7 +1909,7 @@ const V2AgentBYO: React.FC = () => {
                   </V2Hint>
                 </div>
               )}
-              {machines.length > 0 && (
+              {machineOffered && (
                 <div className="v2-byo__mode-option">
                   <button
                     type="button"
@@ -1850,10 +1942,6 @@ const V2AgentBYO: React.FC = () => {
             </div>
             </>
           )}
-          {/* F370: with no computer yet, the daemon line leads the BYO form, after
-              the mode picker when there is one. It is the path that keeps an agent
-              running; the run command below is the quick try. */}
-          {mode === 'byo' && addComputerBlock}
           {mode === 'machine' && (
             <label className={`v2-byo__field${errorField === 'machine' ? ' v2-byo__field--error' : ''}`}>
               <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
@@ -1863,7 +1951,7 @@ const V2AgentBYO: React.FC = () => {
                 className="v2-byo__input"
                 data-testid="byo-machine-select"
               >
-                {machines.map((m) => (
+                {placeableMachines.map((m) => (
                   <option key={m.machineId} value={m.machineId}>
                     {machineDisplayName(m, machines, t, i18n.language)} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
                   </option>
@@ -1892,6 +1980,9 @@ const V2AgentBYO: React.FC = () => {
                   return <option key={id} value={id}>{harnessLabel(harnessCatalog, id)}{note ? ` · ${note}` : ''}</option>;
                 })}
               </select>
+              {harnessMissingDetail && (
+                <span className="v2-byo__hint v2-byo__hint--shown" data-testid="byo-harness-detail">{harnessMissingDetail}</span>
+              )}
             </label>
           )}
           {machineBlocked && (
@@ -1998,6 +2089,11 @@ const V2AgentBYO: React.FC = () => {
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
             <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
+          {/* F448: the form and its button lead, and the daemon line follows as
+              the next step. When it led the page (F370), no outside opener copied
+              it in 14 days, and 4 of 9 left before copying anything. It stays
+              out of Other ways to connect: it is the path that keeps an agent running. */}
+          {mode === 'byo' && addComputerBlock}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
@@ -2053,10 +2149,15 @@ const V2AgentBYO: React.FC = () => {
       {placed && (
         <div className="v2-byo__result" data-testid="byo-machine-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
-            <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running'} />
+            <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running' && !placedSignedOut} />
             <h2>{t('agentByo.machine.heading')} <code>{placed.agentName}</code></h2>
           </div>
-          {placedState === 'running' ? (
+          {placedState === 'running' && placedSignedOut ? (
+            <p className="v2-byo__stopped" data-testid="byo-machine-signed-out">
+              {t('agentByo.machine.signedOut', { machine: placed.machineName,
+                harness: harnessLabel(harnessCatalog, placedSignedOut), command: placedSignedOut })}
+            </p>
+          ) : placedState === 'running' ? (
             <p data-testid="byo-machine-running">{t('agentByo.machine.running', { machine: placed.machineName })}</p>
           ) : (
             <p data-testid={`byo-machine-${placedState}`}>
@@ -2249,16 +2350,18 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
-            {listenerAvailable && (
+            {/* No Windows hint: the .cmd lines never meet PowerShell's script
+                policy, and we don't ask people to loosen it (F342). */}
+            {listenerAvailable && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
+                {t('agentByo.listen.npmPermission')}
               </p>
             )}
-            {listenerAvailable && (
+            {listenerAvailable && !machinesNeedUpdate && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
                 {t(setupOs === 'windows'
-                  ? (machines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
-                  : (machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
+                  ? (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
+                  : (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
@@ -2266,8 +2369,19 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.verified', { name: issued.agentName })}
               </p>
             ) : (
-              <p className="v2-byo__listen-note" data-testid="byo-listen-waiting">
-                {missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
+              <p className={`v2-byo__listen-note${harnessMissingReport?.key === issued ? ' v2-byo__listen-note--stopped' : ''}`}
+                data-testid="byo-listen-waiting">
+                {harnessMissingReport?.key === issued
+                  ? (
+                    <span data-testid="byo-listen-harness-missing">
+                      {harnessMissingReport.harness
+                        ? t('agentByo.listen.harnessMissing', {
+                          name: issued.agentName, tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
+                        })
+                        : t('agentByo.listen.harnessMissingNone', { name: issued.agentName })}
+                    </span>
+                  )
+                  : missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
                   ? t('agentByo.listen.missedCommand', { name: issued.agentName })
                   : listenState === 'timeout'
                     ? t('agentByo.listen.stillWaiting', { name: issued.agentName })
@@ -2410,7 +2524,7 @@ const V2AgentBYO: React.FC = () => {
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
             {addComputerBlock}
-            {machines.length > 0 && (
+            {machineOffered && (
               // A computer on file: the machine choice is the start form's mode
               // picker, which this result page does not show, so offer it here.
               <button

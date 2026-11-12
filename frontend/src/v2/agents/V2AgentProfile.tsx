@@ -4,7 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
-import { presetCharacterOptions } from '../../utils/avatarUtils';
+import { getAvatarSrc, presetCharacterOptions } from '../../utils/avatarUtils';
 import { characterAvatarFor } from '../utils/avatars';
 import { AgentConnection, connectionLabel, fetchOwnedConnection } from '../utils/agentConnection';
 import '../v2.css';
@@ -327,11 +327,21 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   // The same seed chat and Your Team use, so the unpicked face matches them.
   const faceSeed = agent.userId || identity;
   const currentAvatar = agent.profilePicture && agent.profilePicture !== 'default' ? agent.profilePicture : 'default';
-  // 'default' first, then the stored picks, which stay seeded on the identity
-  // so a pick made before this change is still in the grid.
+  // The picks stay seeded on the identity so a pick made before TASK-589 is
+  // still in the grid, and each keeps its number wherever it sits.
+  const presets = presetCharacterOptions(identity, 'agent')
+    .map((option, index) => ({ ...option, number: index + 1, saved: false }));
+  const currentPreset = presets.find((option) => option.id === currentAvatar);
+  // F376: the current avatar first, then the default (the reset), then the
+  // other picks. A saved avatar that isn't one of the picks (an upload, or a
+  // pick from an older seed) is shown first too, so the owner sees what they
+  // have before choosing.
+  const savedSrc = currentAvatar !== 'default' && !currentPreset ? getAvatarSrc(currentAvatar) : null;
   const avatarOptions = [
-    { id: 'default', src: characterAvatarFor(faceSeed, 'agent') },
-    ...presetCharacterOptions(identity, 'agent'),
+    ...(currentPreset ? [currentPreset] : []),
+    ...(savedSrc ? [{ id: currentAvatar, src: savedSrc, number: 0, saved: true }] : []),
+    { id: 'default', src: characterAvatarFor(faceSeed, 'agent'), number: 0, saved: false },
+    ...presets.filter((option) => option !== currentPreset),
   ];
   const runtimeLabel = (agent.runtime || '').toUpperCase();
   const isOwner = Boolean(memIndex?.viewerRole);
@@ -435,11 +445,11 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
         <section id="agent-avatar-picker" className="v2-aprofile__avatar-picker" aria-labelledby="agent-avatar-picker-title">
           <h2 id="agent-avatar-picker-title" className="v2-aprofile__avatar-title">{t('agentProfile.avatar.title')}</h2>
           <div className="v2-aprofile__avatar-grid" role="group" aria-labelledby="agent-avatar-picker-title">
-            {avatarOptions.map((option, index) => {
+            {avatarOptions.map((option) => {
               const current = option.id === currentAvatar;
-              const label = option.id === 'default'
-                ? t('agentProfile.avatar.defaultOption')
-                : t('agentProfile.avatar.option', { number: index });
+              let label = t('agentProfile.avatar.option', { number: option.number });
+              if (option.id === 'default') label = t('agentProfile.avatar.defaultOption');
+              else if (option.saved) label = t('agentProfile.avatar.currentOption');
               return (
                 <button
                   key={option.id}

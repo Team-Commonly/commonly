@@ -1,19 +1,21 @@
 /**
  * F175b: the stdio bridge that puts the grant broker (a Streamable HTTP MCP
  * server) in front of codex, which runs stdio MCP servers only. The bridge
- * reads the seat token from the per-spawn credential file on every request, so
- * the token never rides codex's argv or environment.
+ * reads the seat token from the per-spawn credential file once, at start, so
+ * the token never rides codex's argv or environment, and the file can be
+ * deleted as soon as its readers have it (F460).
  */
 import { jest } from '@jest/globals';
 import { spawn } from 'child_process';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { createServer } from 'http';
-import { mkdtemp, writeFile } from 'fs/promises';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
-  BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR, CREDENTIAL_FILE_VAR as BRIDGE_FILE_VAR, createBrokerBridge,
+  BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR, CREDENTIAL_FILE_VAR as BRIDGE_FILE_VAR, READY_FILE_VAR,
+  createBrokerBridge,
 } from '../src/lib/adapters/codex-broker-bridge.mjs';
 import { CREDENTIAL_FILE_VAR } from '../src/lib/credential-file.js';
 
@@ -64,17 +66,39 @@ describe('createBrokerBridge', () => {
     expect(out).toEqual([{ jsonrpc: '2.0', id: 1, result: { tools: [] } }]);
   });
 
-  test('re-reads the credential file on every request, so a rotated token is used', async () => {
+  // F460: the credential file is deleted once its readers have it, so the
+  // bridge reads it once and keeps working without it.
+  test('reads the credential file once, at prime, and keeps working after it is deleted', async () => {
     const file = await tokenFile('cm_agent_first');
     const fetchImpl = jest.fn(async (_url, init) => jsonResponse({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: {} }));
     const { bridge } = await bridgeWith(fetchImpl, { tokenFile: file });
 
+    expect(bridge.prime()).toBe(true);
+    await rm(file);
     await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }));
-    await writeFile(file, 'cm_agent_second\n');
     await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' }));
 
     expect(fetchImpl.mock.calls.map(([, init]) => init.headers.Authorization))
-      .toEqual(['Bearer cm_agent_first', 'Bearer cm_agent_second']);
+      .toEqual(['Bearer cm_agent_first', 'Bearer cm_agent_first']);
+  });
+
+  test('writes its ready file once, on the first tools/list answered, only after the token is held', async () => {
+    const file = await tokenFile('cm_agent_first');
+    const dir = await mkdtemp(join(tmpdir(), 'bridge-ready-'));
+    const readyFile = join(dir, 'broker.ready');
+    const fetchImpl = jest.fn(async (_url, init) => jsonResponse({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: { tools: [] } }));
+    const { bridge } = await bridgeWith(fetchImpl, { tokenFile: file, readyFile });
+
+    await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+    expect(existsSync(readyFile)).toBe(false);
+    await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }));
+    expect(readFileSync(readyFile, 'utf8')).toBe('ready\n');
+    expect(statSync(readyFile).mode & 0o777).toBe(0o600);
+    // Reverse: a credential that could not be read never marks the bridge ready.
+    const unreadable = join(dir, 'other.ready');
+    const { bridge: broken } = await bridgeWith(fetchImpl, { tokenFile: join(dir, 'missing'), readyFile: unreadable });
+    await broken.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' }));
+    expect(existsSync(unreadable)).toBe(false);
   });
 
   test('echoes the negotiated protocol version on every request after initialize', async () => {
@@ -227,6 +251,11 @@ describe('createBrokerBridge', () => {
 describe('what a public seat\'s read grant has to cover', () => {
   // The public profile grants read on the bridge file alone, so the file may
   // import nothing but node builtins.
+  test('its ready-file variable is the one the commonly MCP server reads', () => {
+    const source = readFileSync(new globalThis.URL('../../commonly-mcp/src/ready-file.js', import.meta.url), 'utf8');
+    expect(source).toContain(`READY_FILE_ENV = '${READY_FILE_VAR}'`);
+  });
+
   test('the bridge imports node builtins only', () => {
     const source = readFileSync(BRIDGE_PATH, 'utf8');
     const specifiers = [...source.matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1]);

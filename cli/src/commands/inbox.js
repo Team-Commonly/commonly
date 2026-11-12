@@ -30,6 +30,7 @@ import {
   INBOX_KINDS,
   TOKEN_FILE_ENV,
 } from '../lib/inbox.js';
+import { CLI } from '../lib/cli-hint.js';
 
 export const INBOX_TOKEN_HELP = `Account token file (or ${TOKEN_FILE_ENV})`;
 
@@ -165,7 +166,7 @@ export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
     env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
-    if (!itemId) throw new InboxRefusal('an item id is required: commonly inbox ack <attentionItemId>');
+    if (!itemId) throw new InboxRefusal(`an item id is required: ${CLI} inbox ack <attentionItemId>`);
     const {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
@@ -180,8 +181,8 @@ export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
     if (err instanceof InboxRefusal) return reportRefusal(err, error);
     if (err?.status === 400) {
       error(`Failed: ${err.message}`);
-      error('Acknowledge takes the item\'s attentionItemId — the id printed as `item=…` by `commonly inbox list`'
-        + ' (the unlabelled source id is what `commonly inbox choose` takes).');
+      error(`Acknowledge takes the item's attentionItemId — the id printed as \`item=…\` by \`${CLI} inbox list\``
+        + ` (the unlabelled source id is what \`${CLI} inbox choose\` takes).`);
       return 1;
     }
     return reportFailure(err, error);
@@ -221,8 +222,8 @@ export const runInboxChoose = async (decisionId, value, opts = {}, deps = {}) =>
     env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
-    if (!decisionId) throw new InboxRefusal('a decision id is required: commonly inbox choose <decisionId> <n|label>');
-    if (value === undefined) throw new InboxRefusal('a value is required: commonly inbox choose <decisionId> <n|label>');
+    if (!decisionId) throw new InboxRefusal(`a decision id is required: ${CLI} inbox choose <decisionId> <n|label>`);
+    if (value === undefined) throw new InboxRefusal(`a value is required: ${CLI} inbox choose <decisionId> <n|label>`);
     const {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
@@ -256,10 +257,10 @@ export const registerInbox = (program) => {
   inbox.addHelpText('after', `
 The account is read from a token file and from nowhere else:
 
-  $ commonly inbox list --token-file ~/.commonly/bin/connector-ops-token
-  $ COMMONLY_TOKEN_FILE=~/.commonly/bin/lily-token commonly inbox list
+  $ ${CLI} inbox list --token-file ~/.commonly/bin/connector-ops-token
+  $ COMMONLY_TOKEN_FILE=~/.commonly/bin/lily-token ${CLI} inbox list
 
-There is no fallback to the saved login. On a host where \`commonly login\` was
+There is no fallback to the saved login. On a host where \`${CLI} login\` was
 run once as somebody else, a fallback would print that person's queue while the
 operator believed they were reading their own. Every run therefore names the
 account it resolved on its first line.
@@ -268,13 +269,13 @@ With neither --token-file nor COMMONLY_TOKEN_FILE set, the command refuses
 before it makes a request.
 
 Examples:
-  $ commonly inbox list --json | jq '.items[].title'
-  $ commonly inbox list --kind decision --pod <podId>
-  $ commonly inbox list --cursor-file ~/.commonly/inbox/connector-ops.cursor   # only what is new
-  $ commonly inbox list --cursor-file ~/.commonly/inbox/c.cursor --window 300  # widen the re-read to 5m
-  $ commonly inbox ack <attentionItemId>
-  $ commonly inbox choose <decisionId> 2          # second option of the card, by position
-  $ commonly inbox choose <decisionId> "Ship it"  # or by its label
+  $ ${CLI} inbox list --json | jq '.items[].title'
+  $ ${CLI} inbox list --kind decision --pod <podId>
+  $ ${CLI} inbox list --cursor-file ~/.commonly/inbox/connector-ops.cursor   # only what is new
+  $ ${CLI} inbox list --cursor-file ~/.commonly/inbox/c.cursor --window 300  # widen the re-read to 5m
+  $ ${CLI} inbox ack <attentionItemId>
+  $ ${CLI} inbox choose <decisionId> 2          # second option of the card, by position
+  $ ${CLI} inbox choose <decisionId> "Ship it"  # or by its label
 
 Cost: with no cursor, \`list\` reads the WHOLE queue, one request per 50 items —
 550 open items is 11 requests. /api/activity is limited to 60 a minute **keyed on

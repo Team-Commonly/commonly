@@ -1251,6 +1251,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           podId,
           content: intro,
           metadata: { kind: 'install-intro' },
+          // Stored on the row: the agent's send-time read gate does not count
+          // its own intro as unseen (F140).
+          payload: { kind: 'install-intro' },
           authorKind: 'kernel',
         });
       }

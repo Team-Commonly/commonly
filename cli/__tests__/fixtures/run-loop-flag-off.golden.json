@@ -19,6 +19,7 @@
           "onSpawn": "<undefined>",
           "providerKey": "<undefined>",
           "runtimeToken": "cm_agent_test",
+          "seatKey": "echo",
           "sessionId": null,
           "skillMountDir": "<TMPDIR>/commonly-agents/echo",
           "timeoutMs": 900000
@@ -88,6 +89,7 @@
           "onSpawn": "<undefined>",
           "providerKey": "<undefined>",
           "runtimeToken": "cm_agent_test",
+          "seatKey": "echo",
           "sessionId": null,
           "skillMountDir": "<TMPDIR>/commonly-agents/echo",
           "timeoutMs": 900000
@@ -111,6 +113,7 @@
           "onSpawn": "<undefined>",
           "providerKey": "<undefined>",
           "runtimeToken": "cm_agent_test",
+          "seatKey": "echo",
           "sessionId": null,
           "skillMountDir": "<TMPDIR>/commonly-agents/echo",
           "timeoutMs": 900000
@@ -134,6 +137,7 @@
           "onSpawn": "<undefined>",
           "providerKey": "<undefined>",
           "runtimeToken": "cm_agent_test",
+          "seatKey": "echo",
           "sessionId": null,
           "skillMountDir": "<TMPDIR>/commonly-agents/echo",
           "timeoutMs": 900000
@@ -237,6 +241,7 @@
           "onSpawn": "<undefined>",
           "providerKey": "<undefined>",
           "runtimeToken": "cm_agent_test",
+          "seatKey": "echo",
           "sessionId": null,
           "skillMountDir": "<TMPDIR>/commonly-agents/echo",
           "timeoutMs": 900000

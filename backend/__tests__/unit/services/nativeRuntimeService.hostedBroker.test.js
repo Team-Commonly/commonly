@@ -292,6 +292,31 @@ describe('a hosted run in a granted pod', () => {
     });
   });
 
+  // F317: a broker call that is not `ok` has not happened yet, so a post later
+  // in the same response waits for the next step. `pending_approval` counts.
+  test('a broker call waiting on approval holds a post in the same response', async () => {
+    mockCallTool.mockResolvedValue({ callId: 'tool_call_pending', result: { pending: true }, outcome: 'pending_approval' });
+    const brokerThenPost = toolCallTurn();
+    brokerThenPost.data.choices[0].message.tool_calls.push({
+      id: 'call_2',
+      type: 'function',
+      function: { name: 'commonly_post_message', arguments: JSON.stringify({ content: 'Done, the issue list is posted.' }) },
+    });
+    mockAxiosPost.mockResolvedValueOnce(brokerThenPost).mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'what is open?' } });
+
+    const AgentMessageService = require('../../../services/agentMessageService');
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Done, the issue list is posted.' }),
+    );
+    const held = mockAxiosPost.mock.calls[1][1].messages.filter((message) => message.role === 'tool')[1];
+    expect(JSON.parse(held.content).error).toMatch(/^Not posted: github_list_issues, .*\(pending_approval\)/);
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls.map((call) => call.outcome)).toEqual(['pending_approval', 'failed']);
+    expect(savedRun.turns[0].toolCalls[1].error).toBe('post_held_after_failed_call');
+  });
+
   test('a hosted provider transport error is failed in the run, matching the grant trail', async () => {
     mockCallTool.mockRejectedValue(new RoomGrantError(
       'provider_unreachable',
@@ -507,6 +532,98 @@ describe('native tools while an outsider-writable grant is live', () => {
     await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
     const savedRun = await AgentRun.create.mock.results[0].value;
     expect(savedRun.turns[0].toolCalls[0].error).toBeUndefined();
+  });
+
+  // F317: on prod a refused handoff tool and a post saying the card had gone
+  // out came in one model response, and the post went out first-hand wrong.
+  const twoCallTurn = (first, second) => ({
+    ...toolCallTurn(),
+    data: {
+      ...toolCallTurn().data,
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [first, second].map(([name, args], index) => ({
+            id: `call-${index}`, type: 'function', function: { name, arguments: JSON.stringify(args) },
+          })),
+        },
+      }],
+    },
+  });
+  const AgentMessageService = require('../../../services/agentMessageService');
+  const toolResults = (callIndex) => mockAxiosPost.mock.calls[callIndex][1].messages
+    .filter((message) => message.role === 'tool')
+    .map((message) => JSON.parse(message.content));
+
+  test('a post in the same response as a refused call is held, and the model is told why', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost
+      .mockResolvedValueOnce(twoCallTurn(
+        ['commonly_write_memory', { content: 'note' }],
+        ['commonly_post_message', { content: 'Saved it to memory.' }],
+      ))
+      .mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Saved it to memory.' }),
+    );
+    const [refused, held] = toolResults(1);
+    expect(refused.ok).toBe(false);
+    expect(held).toEqual({ ok: false, posted: false, error: expect.stringContaining('commonly_write_memory') });
+    expect(held.error).toMatch(/^Not posted: .* did not succeed \(outsider_writable_grant_tool_denied\)/);
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls.map((call) => call.error)).toEqual([
+      'outsider_writable_grant_tool_denied', 'post_held_after_failed_call',
+    ]);
+  });
+
+  test('after a held post the model\'s next-step reply is the one post the person gets', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost
+      .mockResolvedValueOnce(twoCallTurn(
+        ['commonly_write_memory', { content: 'note' }],
+        ['commonly_post_message', { content: 'Saved it to memory.' }],
+      ))
+      .mockResolvedValueOnce(nativeToolTurn('commonly_post_message', { content: 'I could not save that note here.' }))
+      .mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+
+    const posted = AgentMessageService.postMessage.mock.calls.map(([args]) => args.content);
+    expect(posted).toEqual(['I could not save that note here.']);
+  });
+
+  test('a post in the same response as a call that succeeded goes out as before', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost
+      .mockResolvedValueOnce(twoCallTurn(
+        ['commonly_read_context', {}],
+        ['commonly_post_message', { content: 'Here is the summary.' }],
+      ))
+      .mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Here is the summary.' }),
+    );
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls.map((call) => call.error)).toEqual([undefined, undefined]);
+  });
+
+  test('a post before the refused call in that response is not held: only what follows a failure waits', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost
+      .mockResolvedValueOnce(twoCallTurn(
+        ['commonly_post_message', { content: 'Looking into it.' }],
+        ['commonly_write_memory', { content: 'note' }],
+      ))
+      .mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Looking into it.' }),
+    );
   });
 
   test('a newly minted grant refuses an already offered tool, and revocation restores it', async () => {

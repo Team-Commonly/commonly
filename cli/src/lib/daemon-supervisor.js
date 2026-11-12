@@ -59,6 +59,32 @@ export const backoffMs = (restarts) => Math.min(
 
 const identityKey = (agentName, instanceId) => `${agentName} ${instanceId || 'default'}`;
 
+// An instance id becomes part of a local file name.
+const INSTANCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const isDefaultInstance = (instanceId) => String(instanceId || 'default').toLowerCase() === 'default';
+// Instance ids compare case-insensitively, as `agent run` and the server do.
+const sameInstance = (a, b) => String(a || 'default').toLowerCase() === String(b || 'default').toLowerCase();
+
+/**
+ * The local token record a seat lives in, as `agent run <key>` resolves it
+ * (F306, F427): the default instance is `<name>`, another is `<name>@<id>`,
+ * except a key an older CLI saved for that instance under the bare name, which
+ * is used where it is. So a second instance placed on a computer that already
+ * runs the default gets its own record, and neither overwrites the other.
+ * Null for an instance id that can't be a file name.
+ */
+export const recordKeyFor = (row, loadToken) => {
+  const { agentName } = row;
+  const instanceId = row.instanceId || 'default';
+  if (isDefaultInstance(instanceId)) return agentName;
+  if (!INSTANCE_ID_PATTERN.test(instanceId)) return null;
+  const scoped = `${agentName}@${instanceId}`;
+  if (loadToken(scoped)) return scoped;
+  const legacy = loadToken(agentName);
+  if (legacy && sameInstance(legacy.instanceId, instanceId)) return agentName;
+  return scoped;
+};
+
 export const createDaemonSupervisor = ({
   record,
   client,
@@ -104,7 +130,10 @@ export const createDaemonSupervisor = ({
 
   const persist = () => {
     try {
-      persistState(agentStates());
+      // The local record key too, for this host's own readouts (the last turn
+      // is kept per record); the heartbeat reports agentStates() without it.
+      const keys = Array.from(seats.values()).map((s) => s.recordKey || s.agentName);
+      persistState(agentStates().map((state, i) => ({ ...state, recordKey: keys[i] })));
     } catch (error) {
       // A diagnostic state file must never take the daemon down. The log is
       // still useful, and the next state transition retries the write.
@@ -139,13 +168,13 @@ export const createDaemonSupervisor = ({
       return;
     }
     recentStarts.push(at);
-    seat.child = spawnChild(seat.agentName);
+    seat.child = spawnChild(seat.recordKey || seat.agentName);
     seat.state = 'running';
     seat.pid = Number.isInteger(seat.child?.pid) ? seat.child.pid : null;
     seat.lastTurnAt = new Date().toISOString();
     seat.lastError = null;
     persist();
-    log(`[${seat.agentName}] supervising (restarts so far: ${seat.restarts})`);
+    log(`[${seat.recordKey || seat.agentName}] supervising (restarts so far: ${seat.restarts})`);
     seat.child.on('exit', (code) => {
       seat.child = null;
       seat.pid = null;
@@ -158,7 +187,7 @@ export const createDaemonSupervisor = ({
       seat.lastError = code === 0 ? null : `child exited with code ${code}`;
       seat.restarts += 1;
       const delay = backoffMs(seat.restarts - 1);
-      log(`[${seat.agentName}] exited (code ${code}) — respawn in ${Math.round(delay / 1000)}s`);
+      log(`[${seat.recordKey || seat.agentName}] exited (code ${code}) — respawn in ${Math.round(delay / 1000)}s`);
       seat.backoffTimer = setTimeoutFn(() => {
         seat.backoffTimer = null;
         startChild(seat);
@@ -178,7 +207,7 @@ export const createDaemonSupervisor = ({
       seat.backoffTimer = null;
     }
     if (seat.child) {
-      log(`[${seat.agentName}] no longer assigned here — stopping`);
+      log(`[${seat.recordKey || seat.agentName}] no longer assigned here — stopping`);
       seat.child.kill('SIGTERM');
     } else {
       seat.state = 'stopped';
@@ -236,7 +265,7 @@ export const createDaemonSupervisor = ({
   // that refusal is answered with rotate:true — loudly.
   // Returns 'ready' | 'changed' (record updated — the seat must restart to
   // load it) | false.
-  const ensureToken = async (row) => {
+  const ensureToken = async (row, recordKey) => {
     // One derive for this seat, so the broker refusal cannot be applied at three
     // of four sites: `seatBaseline` is where an environment becomes the one the
     // seat RUNS under, and `withholdGrantBroker` asks the same question the
@@ -253,18 +282,19 @@ export const createDaemonSupervisor = ({
       {
         instanceUrl: record.instanceUrl,
         onRefuse: (refusal, names) => log(
-          `[${row.agentName}] ${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
+          `[${recordKey}] ${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
         ),
       },
     );
 
-    const existing = loadToken(row.agentName);
+    const existing = loadToken(recordKey);
     if (existing) {
-      // Local records are still keyed by agent name. Never rotate or launch
-      // another instance through a same-name record: that would overwrite a
-      // different seat's bearer until instance-scoped local records land.
-      if ((existing.instanceId || 'default') !== (row.instanceId || 'default')) {
-        log(`[${row.agentName}] local token belongs to instance '${existing.instanceId || 'default'}'; refusing '${row.instanceId || 'default'}'`);
+      // recordKeyFor gives each instance its own record; a record that still
+      // names another instance (written by hand, or the bare name holding a
+      // non-default instance when the default is placed) is never rotated or
+      // launched as this one, which would overwrite that seat's bearer.
+      if (!sameInstance(existing.instanceId, row.instanceId)) {
+        log(`[${recordKey}] local token belongs to instance '${existing.instanceId || 'default'}'; refusing '${row.instanceId || 'default'}'`);
         return false;
       }
       // A human owner can request a fresh key from Settings after revocation.
@@ -279,15 +309,15 @@ export const createDaemonSupervisor = ({
             agentName: row.agentName, instanceId: row.instanceId, rotate: true,
           });
           if (!minted?.token) throw new Error('mint returned no token');
-          saveToken(row.agentName, {
+          saveToken(recordKey, {
             ...existing,
             runtimeToken: minted.token,
             reconnectRequestAppliedAt: row.reconnectRequestedAt,
           });
-          log(`[${row.agentName}] owner-requested key rotation applied; restarting the seat`);
+          log(`[${recordKey}] owner-requested key rotation applied; restarting the seat`);
           return 'changed';
         } catch (error) {
-          log(`[${row.agentName}] owner-requested key rotation failed: ${error.message}`);
+          log(`[${recordKey}] owner-requested key rotation failed: ${error.message}`);
           return false;
         }
       }
@@ -311,7 +341,7 @@ export const createDaemonSupervisor = ({
         // versa). Keep the existing child/token untouched until the exact
         // requested adapter is detected locally.
         if (detectedAdapter !== declaredAdapter) {
-          log(`[${row.agentName}] requested adapter '${declaredAdapter}' is not available on this machine — keeping the current seat`);
+          log(`[${recordKey}] requested adapter '${declaredAdapter}' is not available on this machine — keeping the current seat`);
           return false;
         }
         nextAdapter = declaredAdapter;
@@ -324,7 +354,7 @@ export const createDaemonSupervisor = ({
         // adapter that needs a server binding (opencode) refuses to run under
         // the server's new one, so starting it would only crash-loop. The
         // owner sets the adapter back, or moves the provider to one it speaks.
-        log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current record and not starting it; `
+        log(`[${recordKey}] host-local provider: ${providerRefused} — keeping the current record and not starting it; `
           + `set the adapter back to ${existing.adapter || 'the previous one'} in Commonly, or change the provider`);
         return false;
       }
@@ -363,7 +393,7 @@ export const createDaemonSupervisor = ({
         if (adapterChanged
           || !isDeepStrictEqual(existing.environment || null, nextEnvironment)
           || (workspacePath && existing.workspacePath !== workspacePath)) {
-          saveToken(row.agentName, nextRecord);
+          saveToken(recordKey, nextRecord);
           log('runtime config changed — restarting the seat to load it');
           return 'changed';
         }
@@ -374,7 +404,7 @@ export const createDaemonSupervisor = ({
         const nextEnvironment = derive(existing.environment, nextAdapter, {
           sandbox: !existing.environment,
         });
-        saveToken(row.agentName, {
+        saveToken(recordKey, {
           ...existing,
           adapter: nextAdapter,
           ...(nextEnvironment ? { environment: nextEnvironment } : {}),
@@ -394,7 +424,7 @@ export const createDaemonSupervisor = ({
           sandbox: !existing.environment,
         });
         if (!isDeepStrictEqual(existing.environment || null, nextEnvironment || null)) {
-          saveToken(row.agentName, { ...existing, environment: nextEnvironment });
+          saveToken(recordKey, { ...existing, environment: nextEnvironment });
           log('record predates the commonly MCP baseline — restarting the seat to load it');
           return 'changed';
         }
@@ -409,7 +439,7 @@ export const createDaemonSupervisor = ({
     if (requestedAdapter) {
       adapter = await resolveAdapter(row.runtime || null);
       if (adapter !== requestedAdapter) {
-        log(`[${row.agentName}] requested adapter '${requestedAdapter}' is not available on this machine — skipping token mint`);
+        log(`[${recordKey}] requested adapter '${requestedAdapter}' is not available on this machine — skipping token mint`);
         return false;
       }
     }
@@ -421,25 +451,25 @@ export const createDaemonSupervisor = ({
       minted = await client.post('/api/agent-binding/runtime-token', body);
     } catch (error) {
       if (error?.status === 409 && error?.body?.code === 'token_exists') {
-        log(`[${row.agentName}] a runtime token exists elsewhere — rotating it to this machine (the old token stops working)`);
+        log(`[${recordKey}] a runtime token exists elsewhere — rotating it to this machine (the old token stops working)`);
         try {
           minted = await client.post('/api/agent-binding/runtime-token', { ...body, rotate: true });
         } catch (rotateError) {
-          log(`[${row.agentName}] token rotation failed: ${rotateError.message}`);
+          log(`[${recordKey}] token rotation failed: ${rotateError.message}`);
           return false;
         }
       } else {
-        log(`[${row.agentName}] token mint failed: ${error.message}`);
+        log(`[${recordKey}] token mint failed: ${error.message}`);
         return false;
       }
     }
     if (!minted?.token) {
-      log(`[${row.agentName}] mint returned no token — skipping`);
+      log(`[${recordKey}] mint returned no token — skipping`);
       return false;
     }
     if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
-      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude, codex, opencode, qwen, or dsh, or attach manually`);
+      log(`[${recordKey}] no usable CLI adapter on this machine — install claude, codex, opencode, qwen, or dsh, or attach manually`);
       return false;
     }
     const environment = environmentFor(row);
@@ -453,7 +483,7 @@ export const createDaemonSupervisor = ({
       adapter,
       { sandbox: true },
     );
-    saveToken(row.agentName, {
+    saveToken(recordKey, {
       agentName: row.agentName,
       instanceId: row.instanceId,
       runtimeToken: minted.token,
@@ -467,7 +497,7 @@ export const createDaemonSupervisor = ({
         return workspacePath ? { workspacePath } : {};
       })() : {}),
     });
-    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment?.value?.model ? `, model: ${environment.value.model}` : ''})`);
+    log(`[${recordKey}] provisioned runtime token (adapter: ${adapter}${environment?.value?.model ? `, model: ${environment.value.model}` : ''})`);
     return 'ready';
   };
 
@@ -527,8 +557,14 @@ export const createDaemonSupervisor = ({
         seats.set(key, seat);
       }
       seat.desired = true;
+      const recordKey = recordKeyFor(row, loadToken);
+      if (!recordKey) {
+        log(`[${row.agentName}] instance id '${row.instanceId}' is not a plain id (letters, digits, '.', '_' or '-'); not starting it`);
+        continue;
+      }
+      seat.recordKey = recordKey;
       // eslint-disable-next-line no-await-in-loop
-      const ready = await ensureToken(row);
+      const ready = await ensureToken(row, recordKey);
       // Report what the seat actually RUNS, which is the record: `agent run`
       // reads it once at boot, and ensureToken above may have just rewritten it
       // (a mint, or a config change). Reading it AFTER ensureToken is the point
@@ -543,7 +579,7 @@ export const createDaemonSupervisor = ({
       // the TASK-065 measurement). ensureToken also REFUSES a change it cannot
       // apply — a requested adapter this machine does not have — so the record
       // is the honest answer there too: it names the adapter that kept running.
-      const current = loadToken(row.agentName);
+      const current = loadToken(recordKey);
       seat.adapter = current ? (current.adapter || null) : (row.runtime?.adapter || null);
       seat.model = current ? (current.environment?.model || null) : (row.runtime?.model || null);
       seat.effort = current ? (current.environment?.effort || null) : (row.runtime?.effort || null);

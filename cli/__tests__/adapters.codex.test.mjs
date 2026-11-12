@@ -12,6 +12,7 @@
  */
 
 import { jest } from '@jest/globals';
+import { createHash } from 'crypto';
 import { EventEmitter } from 'events';
 import {
   existsSync, readdirSync, readFileSync, realpathSync, statSync,
@@ -23,6 +24,7 @@ import {
   readFile,
   readlink,
   realpath,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -36,15 +38,19 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const { default: codexAdapter, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+const { default: codexAdapter, codexNativeBinary, privateCodexHomeDenies } = await import('../src/lib/adapters/codex.js');
 // These turns use a fake spawn, so no Codex answers for its version. A test of
 // the version itself is in adapters.codex.version-floor.test.mjs.
 const codex = {
   ...codexAdapter,
   // child_process is mocked here, so the workspace git check can't run git; it
   // is tested with real git in workspace-git-config.test.mjs.
+  // A turn runs as on macOS unless the test names a platform: on Linux a
+  // private seat gets a Codex home of its own (F445), which the tests that
+  // aren't about it don't expect, and which would be made under the real home
+  // of whoever runs the suite. CI runs it on Linux.
   spawn: (prompt, ctx) => codexAdapter.spawn(prompt, {
-    _codexVersion: '0.162.1', _refuseCodeRunningGitSetup: () => {}, ...ctx,
+    _codexVersion: '0.162.1', _refuseCodeRunningGitSetup: () => {}, _platform: 'darwin', ...ctx,
   }),
 };
 const {
@@ -230,8 +236,10 @@ describe('codex adapter — spawn()', () => {
     expect(res.newSessionId).toBe(threadId);
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('codex');
-    // `exec` subcommand, no `resume`, --json + --skip-git-repo-check + -o + prompt
-    expect(calls[0].args[0]).toBe('exec');
+    // `exec` subcommand, no `resume`, --json + --skip-git-repo-check + -o + prompt.
+    // F387: a private seat under its profile never waits on an approval, so the
+    // global approval option comes before `exec`.
+    expect(calls[0].args.slice(0, 3)).toEqual(['--ask-for-approval', 'never', 'exec']);
     expect(calls[0].args).not.toContain('resume');
     expect(calls[0].args).toContain('--json');
     expect(calls[0].args).toContain('--skip-git-repo-check');
@@ -262,7 +270,9 @@ describe('codex adapter — spawn()', () => {
       environment: { model: 'gpt-5.4', effort: 'xhigh' },
       _spawnImpl: resumed.impl,
     });
-    expect(resumed.calls[0].args.slice(0, 5)).toEqual(['exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check']);
+    expect(resumed.calls[0].args.slice(0, 7)).toEqual([
+      '--ask-for-approval', 'never', 'exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check',
+    ]);
     expect(resumed.calls[0].args).toContain('model_reasoning_effort="xhigh"');
     expect(resumed.calls[0].args[resumed.calls[0].args.indexOf('--model') + 1]).toBe('gpt-5.4');
   });
@@ -405,7 +415,10 @@ describe('codex adapter — spawn()', () => {
     // argv carried `env_vars=["COMMONLY_AGENT_TOKEN"]`, which is how the value
     // reached codex and from there every MCP child it spawned — measured on a
     // live codex seat, three children carrying a 73-char token.
-    expect(cFlags).toEqual([
+    // F387: scope to the mcp_servers.* flags — a host-private seat also carries
+    // the permission-profile `-c` flags, which this assertion is not about.
+    const mcpFlags = cFlags.filter((f) => f.startsWith('mcp_servers.'));
+    expect(mcpFlags).toEqual([
       'mcp_servers.commonly.command="npx"',
       'mcp_servers.commonly.default_tools_approval_mode="approve"',
       'mcp_servers.commonly.args=["-y","@commonlyai/mcp@latest"]',
@@ -460,6 +473,301 @@ describe('codex adapter — spawn()', () => {
       .filter(Boolean);
     expect(cFlags).toContain('default_permissions="commonly_public"');
     expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
+  });
+
+  // F387 (TASK-280): the sandbox bypass is justified ONLY inside a cloud-codex
+  // pod, which declares itself the trusted perimeter. Both tests use a seat with
+  // NO sandbox declared — the private path that currently takes the bypass.
+  test('F387: a cloud-codex pod (COMMONLY_CODEX_TRUSTED_PERIMETER=1) keeps the sandbox bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-pod"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('work in the pod', {
+      sessionId: null,
+      cwd: '/tmp/cloud-codex-workspace',
+      environment: { model: 'test-model' },
+      env: { ...process.env, CODEX_HOME: operatorHome, COMMONLY_CODEX_TRUSTED_PERIMETER: '1' },
+      agentName: 'cloud-codex',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+    // The pod does NOT also get a permission profile — they don't compose.
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual([]);
+    expect(args[0]).toBe('exec');
+  });
+
+  // F387 finding 1: on native Windows Codex can't enforce a profile's read
+  // denies, so a private Codex seat runs there only by its operator's own D245
+  // opt-in, which the run hands the adapter as hostUnconfined.
+  test('F387: a run its operator opted out of the OS sandbox keeps its own policy, with no profile', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work on windows', {
+      sessionId: null,
+      cwd: 'C:\\Users\\me\\project',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'windows-opted-out',
+      hostUnconfined: true,
+      _platform: 'win32',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual([]);
+  });
+
+  test('F387: a native Windows private seat without the opt-out gets no POSIX-only keys', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work', {
+      sessionId: null,
+      cwd: 'C:\\Users\\me\\project',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'windows-private',
+      _platform: 'win32',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toContain('":minimal"="read"');
+    expect(fsFlag).not.toContain('"/"="read"');
+    expect(fsFlag).not.toContain('/private/tmp');
+  });
+
+  test('F387: a private seat on the host (no perimeter flag) gets the private profile, never the bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const seatTemp = await mkdtemp(join(tmpdir(), 'commonly-codex-seat-temp-'));
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-host"}\n'],
+      outputContents: 'ok',
+    });
+
+    // Explicitly clear the perimeter flag so a runner that happens to export it
+    // cannot mask the host-private default.
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome, TMPDIR: seatTemp };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work on the host', {
+      sessionId: null,
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(args).not.toContain('--sandbox');
+    // A private seat keeps its own config.toml; the -c profile wins over it.
+    expect(args).not.toContain('--ignore-user-config');
+    expect(args.slice(0, 2)).toEqual(['--ask-for-approval', 'never']);
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual(['default_permissions="commonly_private"']);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    expect(fsFlag).toBeTruthy();
+    // The disk stays readable; every host secret the seat doesn't use is denied.
+    expect(fsFlag).toContain('"/"="read"');
+    for (const dir of ['~/.commonly', '~/.claude', '~/.codex', '~/.ssh', '~/.aws', '~/.gnupg',
+      '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud', '/private/tmp']) {
+      expect(fsFlag).toContain(`"${dir}"="deny"`);
+    }
+    // The temp roots hold every seat's per-turn folder (token, reply file), so
+    // they are denied; the shell writes only its own folder inside this turn's.
+    expect(fsFlag).toContain(`"${realpathSync(seatTemp)}"="deny"`);
+    expect(fsFlag).toContain(`"${realpathSync(tmpdir())}"="deny"`);
+    expect(fsFlag).not.toContain(`"${realpathSync(seatTemp)}"="write"`);
+    const shellTemp = /"([^"]*\/commonly-codex-[^"/]+\/shell-tmp)"="write"/.exec(fsFlag)?.[1];
+    expect(shellTemp).toBeTruthy();
+    expect(shellTemp.startsWith(`${realpathSync(tmpdir())}/`)).toBe(true);
+    const shellSetFlag = cFlags.find((f) => f.startsWith('shell_environment_policy.set='));
+    expect(shellSetFlag).toContain(`"TMPDIR"="${shellTemp}"`);
+    expect(shellSetFlag).toContain(`"TMPPREFIX"="${shellTemp}/zsh"`);
+    // xcrun shims (/usr/bin/git) cache in the denied user temp root otherwise.
+    expect(shellSetFlag).toContain(`"xcrun_db"="${shellTemp}/xcrun_db"`);
+    expect(fsFlag).toContain('":workspace_roots"={"."="write"');
+    expect(cFlags).toContain('permissions.commonly_private.network.enabled=true');
+    expect(cFlags).toContain('shell_environment_policy.inherit="all"');
+    expect(cFlags).toContain('shell_environment_policy.ignore_default_excludes=false');
+    expect(cFlags.find((f) => f.startsWith('shell_environment_policy.include_only'))).toBeUndefined();
+    // No public-only flags leak onto a private seat.
+    expect(cFlags).not.toContain('web_search="disabled"');
+    await rm(seatTemp, { recursive: true, force: true });
+  });
+
+  test('F387: a resumed private turn carries the profile exactly once', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('again', {
+      sessionId: 'sid-private',
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', 'resume', 'sid-private']);
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.filter((f) => f.startsWith('default_permissions='))).toEqual(['default_permissions="commonly_private"']);
+    expect(cFlags.filter((f) => f.startsWith('permissions.commonly_private.filesystem='))).toHaveLength(1);
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
+
+  // A worktree's `.git` is a file naming its admin folder, outside the
+  // workspace; a commit writes there and in the repository it belongs to.
+  test('F387: a private seat in a git worktree can write its admin folders', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const repo = await mkdtemp(join(tmpdir(), 'commonly-codex-worktree-'));
+    const commonDir = join(repo, 'main', '.git');
+    const gitDir = join(commonDir, 'worktrees', 'seat');
+    const workspace = join(repo, 'seat');
+    await mkdir(gitDir, { recursive: true });
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, '.git'), `gitdir: ${gitDir}\n`);
+    await writeFile(join(gitDir, 'commondir'), '../..\n');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('commit', {
+      sessionId: null,
+      cwd: workspace,
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'worktree-seat',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    const realGitDir = realpathSync(gitDir);
+    const realCommon = realpathSync(commonDir);
+    expect(fsFlag).toContain(`"${realGitDir}"="write"`);
+    expect(fsFlag).toContain(`"${realGitDir}/config.worktree"="read"`);
+    for (const name of ['objects', 'refs', 'logs', 'packed-refs', 'packed-refs.lock']) {
+      expect(fsFlag).toContain(`"${realCommon}/${name}"="write"`);
+    }
+    // The shared repository's config and hooks run code in everyone's git
+    // commands there, so the repository folder itself is never writable.
+    expect(fsFlag).not.toContain(`"${realCommon}"="write"`);
+    expect(fsFlag).not.toContain(`"${realCommon}/hooks"="write"`);
+    expect(fsFlag).not.toContain(`"${realCommon}/config"="write"`);
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  // Measured on codex-cli 0.162.1: Codex keeps `.git` read-only inside a
+  // writable workspace, so a commit fails without this explicit key.
+  test('F387: a private seat in a plain repository can write its .git folder', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const workspace = await mkdtemp(join(tmpdir(), 'commonly-codex-repo-'));
+    await mkdir(join(workspace, '.git'));
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('commit', {
+      sessionId: null,
+      cwd: workspace,
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'repo-seat',
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_private.filesystem='));
+    const dotGit = realpathSync(join(workspace, '.git'));
+    expect(fsFlag).toContain(`"${dotGit}"="write"`);
+    // What runs code stays read-only: a more specific key wins (measured).
+    expect(fsFlag).toContain(`"${dotGit}/config"="read"`);
+    expect(fsFlag).toContain(`"${dotGit}/config.worktree"="read"`);
+    expect(fsFlag).toContain(`"${dotGit}/hooks"="read"`);
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  test('F387: no other seat\'s per-turn folder is reachable from a private shell', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    // Another seat's turn, as writeCredentialFile and -o leave it.
+    const sibling = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
+    await mkdir(join(sibling, 'other-seat-1'));
+    await writeFile(join(sibling, 'other-seat-1', 'token'), 'not-a-real-token');
+    let seen = null;
+    const { impl, calls } = makeSpawnImpl({
+      outputContents: 'ok',
+      // The shell folder exists while the turn runs, inside this turn's folder.
+      onCall: (args) => {
+        const fsFlag = args.find((a) => a.startsWith('permissions.commonly_private.filesystem='));
+        const shellTemp = /"([^"]*\/shell-tmp)"="write"/.exec(fsFlag)?.[1];
+        seen = { shellTemp, exists: shellTemp ? existsSync(shellTemp) : false };
+      },
+    });
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work', {
+      sessionId: null,
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      runtimeToken: 'cm_agent_'.padEnd(73, 'S'),
+      _platform: 'darwin',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const fsFlag = args.find((a) => a.startsWith('permissions.commonly_private.filesystem='));
+    const keys = [...fsFlag.matchAll(/"([^"]+)"="(read|write|deny)"/g)].map(([, path, mode]) => ({ path, mode }));
+    const realSibling = realpathSync(sibling);
+    // Nothing admits the sibling, or any folder holding it, for read or write.
+    const admits = keys.filter(({ path, mode }) => mode !== 'deny' && path !== '/'
+      && (realSibling === path || realSibling.startsWith(`${path}/`)));
+    expect(admits).toEqual([]);
+    // Its root is denied, and the shell's one writable temp folder is this
+    // turn's own, a sibling of the token's folder rather than its parent.
+    expect(keys).toContainEqual({ path: realpathSync(tmpdir()), mode: 'deny' });
+    expect(seen.exists).toBe(true);
+    expect(seen.shellTemp.endsWith('/shell-tmp')).toBe(true);
+    expect(realSibling.startsWith(`${seen.shellTemp}/`)).toBe(false);
+    await rm(sibling, { recursive: true, force: true });
   });
 
   // TASK-273: a public seat whose MCP did not start used to run with a notice,
@@ -933,7 +1241,11 @@ describe('codex adapter — spawn()', () => {
       outputContents: 'ok',
     });
     await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
-    expect(calls[0].args).not.toContain('-c');
+    // F387: a host-private seat (no sandbox declared, no trusted perimeter) now
+    // carries the permission-profile `-c` flags. This test's point is narrower:
+    // an MCP-less seat adds no mcp_servers.* overrides.
+    const cFlags = calls[0].args.map((a, i) => (a === '-c' ? calls[0].args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.some((f) => f.startsWith('mcp_servers.'))).toBe(false);
   });
 
   test('spawn opts force stdin to ignore — regression for codex blocking on piped stdin', async () => {
@@ -966,8 +1278,9 @@ describe('codex adapter — spawn()', () => {
     expect(calls).toHaveLength(1);
     // <sessionId> sits between `exec resume` and the option flags so a future
     // codex parser change can't consume it as the value of a preceding flag
-    // (e.g. -o). Pin the exact position, not just relative ordering.
-    expect(calls[0].args.slice(0, 3)).toEqual(['exec', 'resume', sid]);
+    // (e.g. -o). Pin the exact position, not just relative ordering. F387: the
+    // global approval option precedes `exec` on a private seat's profile.
+    expect(calls[0].args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', 'resume', sid]);
     // Prompt is still the final argument.
     expect(calls[0].args[calls[0].args.length - 1]).toMatch(/keep going$/);
     // -o appears AFTER <sid> — explicit guard against the regression the
@@ -2107,4 +2420,335 @@ describe('the workspace git tool', () => {
     expect(asked).toEqual([]);
     expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
   });
+});
+
+// F444: on Linux Codex execs its sandbox helper from <CODEX_HOME>/tmp/arg0-linux
+// inside bwrap, so a denied home stops every private turn at start (measured on
+// codex-cli 0.164.0). There the home stays readable and everything in it but
+// the helper folder is denied; macOS denies it whole.
+describe('the Codex home a private seat runs with (F444)', () => {
+  let root;
+  let home;
+  beforeEach(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), 'commonly-codex-home-')));
+    home = join(root, 'home');
+    const codexHome = join(home, '.codex');
+    await mkdir(join(codexHome, 'sessions'), { recursive: true });
+    await mkdir(join(codexHome, 'tmp', 'arg0-linux'), { recursive: true });
+    await mkdir(join(codexHome, 'tmp', 'other-scratch'), { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), '{}');
+    await writeFile(join(codexHome, 'config.toml'), '');
+    await writeFile(join(codexHome, 'AGENTS.md'), 'instructions');
+  });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  test('on Linux, from ~/.codex: every entry is denied but the helper path, and absent secrets are named too', () => {
+    const codexHome = join(home, '.codex');
+    const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
+    expect(denies).not.toContain('~/.codex');
+    expect(denies).not.toContain(codexHome);
+    for (const name of ['auth.json', 'config.toml', 'sessions', 'AGENTS.md']) {
+      expect(denies).toContain(join(codexHome, name));
+    }
+    // Written by Codex later; a key for a missing path is accepted on Linux.
+    for (const name of ['archived_sessions', 'history.jsonl', 'log']) {
+      expect(denies).toContain(join(codexHome, name));
+    }
+    expect(denies).toContain(join(codexHome, 'tmp', 'other-scratch'));
+    expect(denies).not.toContain(join(codexHome, 'tmp'));
+    expect(denies.some((path) => path.startsWith(join(codexHome, 'tmp', 'arg0-linux')))).toBe(false);
+  });
+
+  test('on Linux, a database takes its -wal, -shm and -journal, listed or known, and no key is a glob', async () => {
+    const codexHome = join(home, '.codex');
+    await writeFile(join(codexHome, 'other_7.sqlite'), '');
+    const denies = privateCodexHomeDenies({ codexHome, platform: 'linux', home });
+    // The -wal holds the newest rows of every session using this home, and
+    // appears only while a connection is open: absent when the keys are built.
+    for (const db of ['other_7.sqlite', 'logs_2.sqlite', 'state_5.sqlite']) {
+      for (const suffix of ['', '-wal', '-shm', '-journal']) expect(denies).toContain(join(codexHome, `${db}${suffix}`));
+    }
+    for (const name of ['session_index.jsonl', 'shell_snapshots', 'memories']) expect(denies).toContain(join(codexHome, name));
+    // Codex's `*` crosses `/`: a glob matching a file inside a denied folder
+    // stops every turn at start on Linux (run 43103991434).
+    expect(denies.some((path) => /[*?[]/.test(path))).toBe(false);
+  });
+
+  test('on Linux, from another CODEX_HOME: that home is treated the same, and ~/.codex is denied whole', async () => {
+    const elsewhere = join(root, 'elsewhere-codex');
+    await mkdir(join(elsewhere, 'tmp', 'arg0-linux'), { recursive: true });
+    await writeFile(join(elsewhere, 'auth.json'), '{}');
+    const denies = privateCodexHomeDenies({ codexHome: elsewhere, platform: 'linux', home });
+    expect(denies).toContain('~/.codex');
+    expect(denies).toContain(join(elsewhere, 'auth.json'));
+    expect(denies).toContain(join(elsewhere, 'sessions'));
+    expect(denies).not.toContain(elsewhere);
+    expect(denies).not.toContain(join(elsewhere, 'tmp'));
+  });
+
+  test('on macOS the home is denied whole, and a CODEX_HOME elsewhere is denied too', () => {
+    expect(privateCodexHomeDenies({ codexHome: join(home, '.codex'), platform: 'darwin', home })).toEqual(['~/.codex']);
+    const elsewhere = join(root, 'elsewhere-codex');
+    expect(privateCodexHomeDenies({ codexHome: elsewhere, platform: 'darwin', home })).toEqual(['~/.codex', elsewhere]);
+  });
+
+  // F445: on Linux a private seat runs with a Codex home of its own.
+  const linuxSpawn = async ({
+    sessionId = null, env: extraEnv = {}, cwd = join(root, 'workspace'), agentName = 'linux-private-agent', ctx: extraCtx = {},
+  } = {}) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, HOME: home, ...extraEnv };
+    if (!extraEnv.CODEX_HOME) delete env.CODEX_HOME;
+    delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    await codex.spawn('hi', {
+      sessionId, cwd, environment: { model: 'test-model' }, env, agentName,
+      _platform: 'linux', _homeDir: home, _spawnImpl: impl, ...extraCtx,
+    });
+    const { args, opts } = calls[0];
+    const fsFlag = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean)
+      .find((flag) => flag.startsWith('permissions.commonly_private.filesystem='));
+    return { args, fsFlag, codexHome: opts.env.CODEX_HOME };
+  };
+  const privateHomes = () => join(home, '.local', 'state', 'commonly', 'codex-private-homes');
+
+  test('a private seat spawned on Linux runs from its own home: the shared one and other seats\' are denied whole, its helper is not', async () => {
+    await mkdir(join(privateHomes(), 'another-seat'), { recursive: true });
+    const { fsFlag, codexHome } = await linuxSpawn();
+    expect(dirname(codexHome)).toBe(privateHomes());
+    expect(fsFlag).toContain('"~/.codex"="deny"');
+    expect(fsFlag).toContain(`"${join(privateHomes(), 'another-seat')}"="deny"`);
+    expect(fsFlag).not.toContain(`"${codexHome}"="deny"`);
+    expect(fsFlag).not.toContain(`"${privateHomes()}"="deny"`);
+    expect(fsFlag).not.toContain(`"${join(codexHome, 'tmp')}"="deny"`);
+    for (const name of ['sessions', 'history.jsonl', 'logs_2.sqlite-wal']) {
+      expect(fsFlag).toContain(`"${join(codexHome, name)}"="deny"`);
+    }
+    // The links into the shared home carry no key: bwrap would follow one into
+    // the hidden folder and not start (run 43114789288). Their targets are
+    // denied with that home.
+    for (const name of ['auth.json', 'config.toml', 'AGENTS.md']) {
+      expect(fsFlag).not.toContain(`"${join(codexHome, name)}"="deny"`);
+    }
+    // The rest of the host secrets are unchanged.
+    for (const dir of ['~/.commonly', '~/.claude', '~/.ssh', '~/.aws']) expect(fsFlag).toContain(`"${dir}"="deny"`);
+    // Public seats' Codex homes sit outside ~/.commonly on Linux.
+    expect(fsFlag).toContain(`"${join(home, '.local', 'state', 'commonly', 'codex-homes')}"="deny"`);
+  });
+
+  test('the own home starts with no history: only the person\'s login, config and AGENTS.md are linked in', async () => {
+    const shared = join(home, '.codex');
+    await mkdir(join(shared, 'sessions', '2026', '11', '11'), { recursive: true });
+    await writeFile(join(shared, 'sessions', '2026', '11', '11', 'rollout-x-other-thread.jsonl'), 'other sessions');
+    await writeFile(join(shared, 'history.jsonl'), 'other history');
+    await writeFile(join(shared, 'logs_2.sqlite'), 'other logs');
+    const { codexHome } = await linuxSpawn();
+    expect(readdirSync(codexHome).sort()).toEqual(['AGENTS.md', 'auth.json', 'config.toml', 'tmp']);
+    for (const name of ['AGENTS.md', 'auth.json', 'config.toml']) {
+      expect((await lstat(join(codexHome, name))).isSymbolicLink()).toBe(true);
+      expect(await readlink(join(codexHome, name))).toBe(join(shared, name));
+    }
+    expect(existsSync(join(codexHome, 'sessions'))).toBe(false);
+    expect(existsSync(join(codexHome, 'history.jsonl'))).toBe(false);
+  });
+
+  test('a file the seat\'s Codex wrote in its own home is kept, and a link to a removed login is dropped', async () => {
+    const { codexHome } = await linuxSpawn();
+    await rm(join(codexHome, 'config.toml'));
+    await writeFile(join(codexHome, 'config.toml'), 'model = "own"\n');
+    await rm(join(home, '.codex', 'auth.json'));
+    await linuxSpawn();
+    expect(await readFile(join(codexHome, 'config.toml'), 'utf8')).toBe('model = "own"\n');
+    expect(existsSync(join(codexHome, 'auth.json'))).toBe(false);
+    expect((await lstat(join(codexHome, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+  });
+
+  test('a thread in the shared home starts fresh; one in the own home resumes', async () => {
+    const shared = join(home, '.codex', 'sessions', '2026', '11', '11');
+    await mkdir(shared, { recursive: true });
+    await writeFile(join(shared, 'rollout-2026-11-11T00-00-00-old-thread.jsonl'), '');
+    const fresh = await linuxSpawn({ sessionId: 'old-thread' });
+    expect(fresh.args).not.toContain('resume');
+    const own = join(fresh.codexHome, 'sessions', '2026', '11', '11');
+    await mkdir(own, { recursive: true });
+    await writeFile(join(own, 'rollout-2026-11-11T00-00-01-own-thread.jsonl'), '');
+    const resumed = await linuxSpawn({ sessionId: 'own-thread' });
+    expect(resumed.args.slice(resumed.args.indexOf('exec'), resumed.args.indexOf('exec') + 3)).toEqual(['exec', 'resume', 'own-thread']);
+  });
+
+  test('a relative CODEX_HOME is read from the turn\'s folder, as Codex reads it, and denied whole', async () => {
+    const workspace = join(root, 'workspace');
+    await mkdir(join(workspace, 'rel-codex'), { recursive: true });
+    await writeFile(join(workspace, 'rel-codex', 'auth.json'), '{}');
+    const { fsFlag, codexHome } = await linuxSpawn({ cwd: workspace, env: { CODEX_HOME: 'rel-codex' } });
+    expect(fsFlag).toContain(`"${join(workspace, 'rel-codex')}"="deny"`);
+    expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(workspace, 'rel-codex', 'auth.json'));
+  });
+
+  test('a shared home that is a link to another folder is denied by that folder\'s path too', async () => {
+    const real = join(root, 'codex-data');
+    await rename(join(home, '.codex'), real);
+    await symlink(real, join(home, '.codex'));
+    const { fsFlag, codexHome } = await linuxSpawn();
+    expect(fsFlag).toContain('"~/.codex"="deny"');
+    expect(fsFlag).toContain(`"${realpathSync(real)}"="deny"`);
+    expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(home, '.codex', 'auth.json'));
+  });
+
+  test('an XDG_STATE_HOME under ~/.commonly is refused for a private seat, in its own words', async () => {
+    await expect(linuxSpawn({ env: { XDG_STATE_HOME: join(home, '.commonly', 'state') } }))
+      .rejects.toThrow(/puts the private Codex home under .*which the private sandbox denies on Linux/);
+  });
+
+  // F450: Codex's file store writes a refreshed login through the link; its
+  // keyring and auto stores would detach it and leave the person's file stale.
+  test('a seat in its own home keeps the login on the file store, whatever the linked config.toml says', async () => {
+    await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "auto"\n');
+    const { args, codexHome } = await linuxSpawn();
+    const at = args.indexOf('cli_auth_credentials_store="file"');
+    expect(at).toBeGreaterThan(0);
+    expect(args[at - 1]).toBe('-c');
+    // After the subcommand, where codex reads -c for exec.
+    expect(at).toBeGreaterThan(args.indexOf('exec'));
+    expect(await readlink(join(codexHome, 'config.toml'))).toBe(join(home, '.codex', 'config.toml'));
+  });
+
+  test('a login kept in the keyring is named at the first turn, with the fix, and nothing else is', async () => {
+    const stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const said = () => stderr.mock.calls.map(([text]) => String(text)).filter((text) => text.includes('kept in the keyring'));
+    try {
+      // A login in auth.json: nothing to say, whatever the store.
+      await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "auto"\n');
+      await linuxSpawn({ agentName: 'keyring-a' });
+      expect(said()).toEqual([]);
+      // No auth.json and the default store: nothing either.
+      await rm(join(home, '.codex', 'auth.json'));
+      await writeFile(join(home, '.codex', 'config.toml'), 'model = "x"\n');
+      await linuxSpawn({ agentName: 'keyring-b' });
+      expect(said()).toEqual([]);
+      // No auth.json and a keyring store: said once, with the one fix.
+      await writeFile(join(home, '.codex', 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
+      await linuxSpawn({ agentName: 'keyring-c' });
+      await linuxSpawn({ agentName: 'keyring-c' });
+      expect(said()).toHaveLength(1);
+      expect(said()[0]).toMatch(/cli_auth_credentials_store = "keyring"/);
+      // A key inside a table isn't the store setting.
+      await writeFile(join(home, '.codex', 'config.toml'), '[profiles.work]\ncli_auth_credentials_store = "keyring"\n');
+      await linuxSpawn({ agentName: 'keyring-d' });
+      expect(said()).toHaveLength(1);
+      expect(said()[0]).toMatch(/set cli_auth_credentials_store = "file" in your config\.toml and run `codex login`/);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  test('each seat key gets its own home; a seat keyed on its name keeps the one it had, whatever its instance', async () => {
+    const plain = await linuxSpawn({ agentName: 'twin' });
+    const byName = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin' } });
+    // Saved under its name by attach or the connect page, running a persona's instance.
+    const bareKeyed = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin', instanceId: 'priya-twin' } });
+    const other = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin@reviewer', instanceId: 'reviewer' } });
+    expect(byName.codexHome).toBe(plain.codexHome);
+    expect(bareKeyed.codexHome).toBe(plain.codexHome);
+    expect(other.codexHome).not.toBe(plain.codexHome);
+    // Each is denied to the other once it exists.
+    const again = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin' } });
+    expect(again.fsFlag).toContain(`"${other.codexHome}"="deny"`);
+    expect(other.fsFlag).toContain(`"${plain.codexHome}"="deny"`);
+  });
+
+  test('on macOS a private seat keeps running from the shared home, denied whole', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, HOME: home };
+    delete env.CODEX_HOME;
+    delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+    await codex.spawn('hi', {
+      sessionId: null, cwd: join(root, 'workspace'), environment: { model: 'test-model' }, env,
+      agentName: 'mac-private-agent', _platform: 'darwin', _homeDir: home, _spawnImpl: impl,
+    });
+    expect(calls[0].opts.env.CODEX_HOME).toBeUndefined();
+    expect(existsSync(privateHomes())).toBe(false);
+    // The shared home's own login store is left as the person set it.
+    expect(calls[0].args).not.toContain('cli_auth_credentials_store="file"');
+  });
+
+  test('a public seat\'s home is per seat key too, and a seat keyed on its name keeps its own', async () => {
+    const homeFor = async (seatKey) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const env = { ...process.env, HOME: home };
+      delete env.CODEX_HOME;
+      delete env.XDG_STATE_HOME;
+      delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
+      await codex.spawn('hi', {
+        sessionId: null, cwd: join(root, 'workspace'), env, agentName: 'twin-public',
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+        _platform: 'linux', _homeDir: home, _spawnImpl: impl,
+        ...(seatKey ? { seatKey, instanceId: 'some-instance' } : {}),
+      });
+      return calls[0].opts.env.CODEX_HOME;
+    };
+    const publicRoot = join(home, '.local', 'state', 'commonly', 'codex-homes');
+    const plain = await homeFor(null);
+    // The hash a default seat's public home has always had.
+    expect(plain).toBe(join(publicRoot, createHash('sha256').update('twin-public').digest('hex').slice(0, 20)));
+    expect(await homeFor('twin-public')).toBe(plain);
+    expect(await homeFor('twin-public@reviewer')).not.toBe(plain);
+  });
+});
+
+// F441: Codex runs git in the workspace outside the seat's profile, so a public
+// seat whose repository is set to run programs is refused before Codex starts.
+// The real-git check is in workspace-git-config.test.mjs and, with a real
+// Codex, adapters.codex.workspace-git.test.mjs (skipped in CI); this guards the
+// adapter's side where CI runs, through its own refuser seam.
+describe('a repository set up to run programs', () => {
+  const seat = async (sandbox, refuser) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const root = await mkdtemp(join(tmpdir(), 'commonly-codex-refuse-'));
+    try {
+      const realRoot = await realpath(root);
+      const env = { ...process.env, CODEX_HOME: join(root, 'operator') };
+      const result = await codexAdapter.spawn('hi', {
+        cwd: root,
+        environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}) },
+        env,
+        agentName: 'refuse-test-agent',
+        _platform: 'darwin',
+        _codexVersion: '0.162.1',
+        _publicCodexHome: join(root, 'public'),
+        _refuseCodeRunningGitSetup: refuser,
+        _spawnImpl: impl,
+      }).then((value) => ({ value }), (error) => ({ error }));
+      return { ...result, calls, realRoot, env };
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test('a public seat is refused with the refuser\'s error, and Codex never starts', async () => {
+    const refusal = Object.assign(
+      new Error('This public Codex agent won\'t work in /w: its git repository is set to run programs'),
+      { code: 'workspace_git_runs_programs' },
+    );
+    const refuser = jest.fn(() => { throw refusal; });
+    const { error, calls, realRoot, env } = await seat({ trust: 'public', mode: 'workspace' }, refuser);
+    expect(error).toBe(refusal);
+    expect(calls).toHaveLength(0);
+    expect(refuser).toHaveBeenCalledTimes(1);
+    expect(refuser).toHaveBeenCalledWith(realRoot, { seat: 'This public Codex agent', env });
+  });
+
+  test('a public seat whose repository is clean runs once the refuser returns', async () => {
+    const refuser = jest.fn();
+    const { error, calls } = await seat({ trust: 'public', mode: 'workspace' }, refuser);
+    expect(error).toBeUndefined();
+    expect(refuser).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a private seat is not checked here', async () => {
+    const refuser = jest.fn(() => { throw new Error('should not be asked'); });
+    const { error, calls } = await seat(null, refuser);
+    expect(error).toBeUndefined();
+    expect(refuser).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);  });
 });

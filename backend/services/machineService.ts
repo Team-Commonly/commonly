@@ -25,6 +25,11 @@ export interface MachineView {
   inventoryAt: Date | null;
   // D245: this computer's daemon reported running agents without a sandbox.
   hostUnconfined: boolean;
+  // The CLI version its daemon last reported running (TASK-784's host report),
+  // or null for a daemon too old to report one. The BYO page offers a second
+  // instance of an agent only to a computer whose daemon keeps a key per
+  // instance (F427).
+  cliVersion: string | null;
 }
 
 // D5 heartbeat payload bounds. A daemon reports every agent it supervises;
@@ -146,6 +151,7 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
     runtimeInventory: normalizeRuntimeInventory(machine.runtimeInventory) || [],
     inventoryAt: machine.inventoryAt ? new Date(machine.inventoryAt as string | Date) : null,
     hostUnconfined: (machine as { hostUnconfined?: unknown }).hostUnconfined === true,
+    cliVersion: normalizeHostReport((machine as { host?: unknown }).host)?.cliVersion ?? null,
     agentStates: ((machine.agentStates || []) as IMachineAgentState[]).map((s) => ({
       agentName: s.agentName,
       instanceId: s.instanceId,

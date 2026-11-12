@@ -53,10 +53,19 @@ export { UNSANDBOXED_FLAG };
 
 export const unsandboxedMarkerPath = (home = homedir()) => join(home, '.commonly', 'daemon', 'unsandboxed.json');
 
-/** The flag is a Windows answer to a Windows gap; anywhere else it is refused. */
-export const unsandboxedFlagRefusal = (platform = process.platform) => (platform === 'win32'
-  ? null
-  : `${UNSANDBOXED_FLAG} is only for native Windows, which has no sandbox for agents yet. On this machine agents run in a sandbox.`);
+/**
+ * The flag answers a gap in the sandbox: native Windows has none, and a private
+ * Codex agent on Linux has none where bubblewrap can't start (F387, F444). So
+ * on Linux it is accepted only for `agent run` of a Codex agent: pass `adapterName` once it is known,
+ * or `deferred` before the record is read (the run checks again after). The
+ * daemon's marker stays Windows-only.
+ */
+export const unsandboxedFlagRefusal = (platform = process.platform, { adapterName = null, deferred = false } = {}) => {
+  if (platform === 'win32') return null;
+  if (platform === 'linux' && (adapterName === 'codex' || (deferred && adapterName === null))) return null;
+  return `${UNSANDBOXED_FLAG} is only for native Windows, which has no sandbox for agents yet, and for`
+    + ` \`agent run\` of a private Codex agent on Linux. On this machine this agent runs in a sandbox.`;
+};
 
 export const loadUnsandboxedOptIn = ({
   platform = process.platform, home = homedir(), exists = existsSync, read = readFileSync,
@@ -114,8 +123,8 @@ export const hostUnconfinedForRun = ({
 };
 
 /**
- * Does this Codex run go unconfined? Only on win32, only by the user's own
- * opt-in, and only when every pod the seat answers in is confirmed private:
+ * Does this Codex run go unconfined? Only on win32, or on Linux (F387, F444),
+ * only by the user's own opt-in, and only when every pod the seat answers in is confirmed private:
  * `installations` is the server's read of them, and an empty or failed read is
  * a no. Workspace trust stays with Codex's own refusal. The caller removes the
  * sandbox block for this run only, so the saved record keeps its public trust
@@ -123,7 +132,7 @@ export const hostUnconfinedForRun = ({
  */
 export const codexUnconfinedForRun = ({
   optedIn, adapterName, environment, installations, platform = process.platform,
-}) => platform === 'win32' && optedIn === true && adapterName === 'codex'
+}) => (platform === 'win32' || platform === 'linux') && optedIn === true && adapterName === 'codex'
   && effectiveSandboxTrust(environment?.sandbox?.trust) !== 'workspace'
   && allPodsConfirmedPrivate(installations);
 
@@ -142,6 +151,12 @@ export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbo
 /** Codex has no restricted tool settings to keep, so its line says what it costs instead. */
 export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
 
+export const CODEX_LINUX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): you ran this Codex agent without its sandbox, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
+
+export const codexUnsandboxedNotice = (platform = process.platform) => (platform === 'linux'
+  ? CODEX_LINUX_UNSANDBOXED_NOTICE
+  : CODEX_UNSANDBOXED_NOTICE);
+
 // A 404 here is a server from before this route, which reads like a missing agent.
 export const hostReportFailureMessage = (err) => {
   const hint = err?.status === 404
@@ -151,7 +166,9 @@ export const hostReportFailureMessage = (err) => {
 };
 
 export default {
+  CODEX_LINUX_UNSANDBOXED_NOTICE,
   CODEX_UNSANDBOXED_NOTICE,
+  codexUnsandboxedNotice,
   UNSANDBOXED_FLAG,
   UNSANDBOXED_NOTICE,
   codexUnconfinedForRun,

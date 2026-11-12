@@ -695,6 +695,7 @@ describe('messageController', () => {
     it('deletes the resolved PG row and the legacy copy for a copied Mongo id', async () => {
       PGMessage.resolveId.mockResolvedValue('41');
       PGMessage.findById.mockResolvedValue({ user_id: 'u1', pod_id: 'p1' });
+      PGMessage.delete.mockResolvedValue({ id: 41 });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage({ params: { id: '123456789012345678901234' }, userId: 'u1' }, res);
       expect(PGMessage.delete).toHaveBeenCalledWith('41');
@@ -736,6 +737,50 @@ describe('messageController', () => {
       expect(MongoMessage.findByIdAndDelete).toHaveBeenCalledWith('mongo-only');
       expect(PGMessage.resolveId).not.toHaveBeenCalled();
       expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    // F169: two deletes can both pass the lookup; only the one whose own
+    // delete removed the row records it. The other answers 404, records
+    // nothing and leaves the cleanup to the winner.
+    const deleteRecords = (spy) => spy.mock.calls.filter(([line]) => String(line).includes('message deleted'));
+
+    it('records a PG delete only when this call removed the row', async () => {
+      const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+      try {
+        PGMessage.resolveId.mockResolvedValue('41');
+        PGMessage.findById.mockResolvedValue({ id: '41', user_id: 'u1', pod_id: 'p1' });
+        PGMessage.delete.mockResolvedValueOnce({ id: 41 }).mockResolvedValueOnce(undefined);
+        const won = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        const lost = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        await messageController.deleteMessage({ params: { id: '41' }, userId: 'u1' }, won);
+        MongoMessage.deleteOne.mockClear();
+        await messageController.deleteMessage({ params: { id: '41' }, userId: 'u1' }, lost);
+        expect(won.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
+        expect(lost.status).toHaveBeenCalledWith(404);
+        expect(lost.json).not.toHaveBeenCalledWith({ msg: 'Message deleted' });
+        expect(MongoMessage.deleteOne).not.toHaveBeenCalled();
+        expect(deleteRecords(info)).toHaveLength(1);
+      } finally {
+        info.mockRestore();
+      }
+    });
+
+    it('records a Mongo delete only when this call removed the row', async () => {
+      delete process.env.PG_HOST;
+      const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+      try {
+        MongoMessage.findById.mockResolvedValue({ _id: 'mongo-only', userId: 'u1', podId: 'p1' });
+        MongoMessage.findByIdAndDelete.mockResolvedValueOnce({ _id: 'mongo-only' }).mockResolvedValueOnce(null);
+        const won = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        const lost = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        await messageController.deleteMessage({ params: { id: 'mongo-only' }, userId: 'u1' }, won);
+        await messageController.deleteMessage({ params: { id: 'mongo-only' }, userId: 'u1' }, lost);
+        expect(won.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
+        expect(lost.status).toHaveBeenCalledWith(404);
+        expect(deleteRecords(info)).toHaveLength(1);
+      } finally {
+        info.mockRestore();
+      }
     });
 
     it('deletes message successfully for message owner', async () => {

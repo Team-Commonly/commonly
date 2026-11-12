@@ -8,7 +8,7 @@ import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import V2AgentProviderKey from './V2AgentProviderKey';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
-import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
+import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
 
@@ -150,7 +150,8 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
 
   const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
   const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
-  const needsAttention = Boolean(placementError) || (details.mode === 'daemon' && canMove);
+  const needsAttention = Boolean(placementError) || (details.mode === 'daemon' && canMove)
+    || Boolean(runtimeNotReady(runtime));
   useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}

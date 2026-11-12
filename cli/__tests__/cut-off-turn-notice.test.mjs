@@ -38,7 +38,8 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
-const { CUT_OFF_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { CUT_OFF_NOTICE, TOOLS_UNAVAILABLE_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { PUBLIC_MCP_NOT_READY_CODE } = await import('../src/lib/public-tool-error.js');
 
 const drainMicrotasks = async () => {
   for (let i = 0; i < 40; i += 1) {
@@ -155,7 +156,7 @@ const startRun = ({ spawn, ...options }) => {
     onError: (error) => errors.push(error),
     ...options,
   });
-  return { handle, scheduled, logs, errors };
+  return { handle, scheduled, logs, errors, spawn };
 };
 
 const killed = () => new Error('pi exited 143: ');
@@ -184,12 +185,17 @@ const runToTheEnd = async (spawn) => {
 // F279: three failures hand the event to the server's requeue, 10 to 20 minutes
 // away, so this is the first the person hears after part of an answer.
 describe('a third failure on an answer already started', () => {
+  // Each retry is the next wake that runs a turn: an open circuit with a line
+  // for the person also wakes once a minute to check the inbox (F236).
   const fireRetries = async (run, times) => {
     for (let i = 0; i < times; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await run.scheduled.pop().callback();
-      // eslint-disable-next-line no-await-in-loop
-      await drainMicrotasks();
+      const turnsBefore = run.spawn.mock.calls.length;
+      for (let wake = 0; wake < 40 && run.spawn.mock.calls.length === turnsBefore && run.scheduled.length; wake += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await run.scheduled.pop().callback();
+        // eslint-disable-next-line no-await-in-loop
+        await drainMicrotasks();
+      }
     }
   };
 
@@ -234,6 +240,24 @@ describe('a third failure on an answer already started', () => {
       await fireRetries(run, 2);
       expect(spawn).toHaveBeenCalledTimes(3);
       expect(server.wrapperPosts.map((body) => body.content)).toEqual([WONT_START_NOTICE]);
+    } finally { run.handle.stop(); }
+  });
+
+  // F421: a public seat whose Commonly tools never came up. The adapter withholds
+  // the model's tool-less answer, so this fixed line is all the pod ever reads.
+  test('a seat whose Commonly tools never started posts only the tools line, never the model\'s answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-no-tools')]] });
+    const spawn = jest.fn(async () => {
+      throw Object.assign(new Error('public seat withheld this turn\'s reply: Commonly MCP server commonly never reported ready'), {
+        code: PUBLIC_MCP_NOT_READY_CODE,
+      });
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.map((body) => body.content)).toEqual([TOOLS_UNAVAILABLE_NOTICE]);
     } finally { run.handle.stop(); }
   });
 

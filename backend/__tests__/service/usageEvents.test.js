@@ -58,6 +58,68 @@ describe('usage events (D286)', () => {
   });
   afterAll(closeMongoDb);
 
+  describe('the failed Settings read count (F399)', () => {
+    const states = async () => Object.fromEntries((await counts().find({ name: 'usage-drop' }).toArray())
+      .map((row) => [row.value, row.n]));
+    const failed = (user, body, headers = {}) => {
+      let req = request(app).post('/api/stats/usage-state').set('cf-connecting-ip', `198.51.100.${++ip % 250}`)
+        .set('Authorization', `Bearer ${issueSessionToken(user)}`);
+      for (const [key, value] of Object.entries(headers)) req = req.set(key, value);
+      return req.send(body);
+    };
+    // The read counts without holding its response, so wait for the writes to
+    // land, then a further tick so a write that shouldn't exist has had time to.
+    const tick = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+    const settle = async (total) => {
+      for (let i = 0; i < 100; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const n = Object.values(await states()).reduce((a, b) => a + b, 0);
+        if (n >= total) { await tick(150); return; }
+        // eslint-disable-next-line no-await-in-loop
+        await tick(20);
+      }
+      throw new Error(`expected ${total} counted loads, saw ${JSON.stringify(await states())}`);
+    };
+
+    it("counts nothing from the Settings read, whatever the person chose, and no internal account's failed read", async () => {
+      const unset = await makeUser();
+      const off = await makeUser({ preferences: { usageEvents: false } });
+      const admin = await makeUser({ role: 'admin' });
+      await setting(unset, { 'cf-ipcountry': 'DE' }).expect(200);
+      await setting(off, { 'cf-ipcountry': 'US' }).expect(200);
+      await setting(unset, { 'cf-ipcountry': 'US' }).expect(200);
+      await failed(admin, { reason: 'settings-get-failed' }).expect(204);
+      await failed(unset, { reason: 'settings-get-failed' }).expect(204);
+      await settle(1);
+      expect(await states()).toEqual({ 'settings-get-failed': 1 });
+    });
+
+    it('holds only the day, the reason and a count, nothing about the person', async () => {
+      const user = await makeUser();
+      await failed(user, { reason: 'settings-get-failed' }).expect(204);
+      const [row] = await counts().find({ name: 'usage-drop' }).toArray();
+      expect(Object.keys(row).sort()).toEqual(['_id', 'day', 'dayStart', 'n', 'name', 'page', 'refTag', 'value']);
+      expect(row._id).toBe(`${row.day}|usage-drop|settings-get-failed`);
+      expect(JSON.stringify(row)).not.toContain(String(user._id));
+      expect(JSON.stringify(row)).not.toContain(user.username);
+    });
+
+    it('counts a failed read from a bare reason, and refuses any other body', async () => {
+      const user = await makeUser();
+      await failed(user, { reason: 'settings-get-failed' }).expect(204);
+      await failed(user, { reason: 'settings-get-failed', screen: '/' }).expect(400);
+      await failed(user, { reason: 'saved-off' }).expect(400);
+      await failed(user, {}).expect(400);
+      await failed(user, { reason: 'settings-get-failed' }, { dnt: '1' }).expect(204);
+      expect(await states()).toEqual({ 'settings-get-failed': 1 });
+    });
+
+    it('needs a signed-in caller for the failed-read count', async () => {
+      await request(app).post('/api/stats/usage-state').send({ reason: 'settings-get-failed' }).expect(401);
+      expect(await states()).toEqual({});
+    });
+  });
+
   it('stores an allowlisted event with server-set fields and only enum props', async () => {
     const user = await makeUser();
     const forged = new mongoose.Types.ObjectId();

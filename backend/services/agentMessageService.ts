@@ -856,6 +856,22 @@ class AgentMessageService {
    * guidance, so the tool description and the kernel state one number.
    */
   /**
+   * Commonly speaking on its own under a seat's identity, so not the seat's
+   * turn (F447): a kernel post that is not a card. Those are the
+   * stalled-connect nudge and the hosted install intro, and with F442 the
+   * stalled-connect resolution and the native run-failed notices; server code
+   * writes all of them (an agent cannot set authorKind). The one kernel card,
+   * the local-agent setup card, is posted when the agent's model calls
+   * `commonly_offer_local_agent`, so it is the agent choosing to speak: it
+   * counts toward the run and is capped. A new kernel post an agent can
+   * trigger must stay outside this predicate.
+   */
+  static isCommonlyInitiated(row: { author_kind?: unknown; messageType?: unknown; message_type?: unknown } | null | undefined): boolean {
+    if (!row || row.author_kind !== 'kernel') return false;
+    return String(row.messageType ?? row.message_type ?? 'text').toLowerCase() !== 'card';
+  }
+
+  /**
    * Is this pod a strict 1:1, where a run of one speaker's messages is just an
    * answer rather than a monologue?
    *
@@ -940,6 +956,9 @@ class AgentMessageService {
       // (uiCardValidation), so no agent can mark its own post this way. A
       // system line skips; it neither counts nor ends the run.
       if (String((message as { messageType?: string })?.messageType || '').toLowerCase() === 'system') continue;
+      // Nor is Commonly speaking on its own under the seat; it skips the same
+      // way (F447, see isCommonlyInitiated for which kernel posts that is).
+      if (AgentMessageService.isCommonlyInitiated(message)) continue;
       run += 1;
     }
     return run;
@@ -1013,11 +1032,13 @@ class AgentMessageService {
       }>;
       if (!firedAt && !heartbeats.length) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-      // An approval receipt under the agent's identity is a system line: it
-      // neither speaks for the agent nor spends a turn (as countConsecutiveRun).
+      // An approval receipt under the agent's identity is a system line, and
+      // Commonly's own posts are Commonly's: neither speaks for the agent nor
+      // spends a turn (as countConsecutiveRun, F447).
       const ownAt = recent
         .filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId))
         .filter((message) => String((message as { messageType?: string })?.messageType || '').toLowerCase() !== 'system')
+        .filter((message) => !AgentMessageService.isCommonlyInitiated(message))
         .map((message) => new Date(message?.createdAt || 0).valueOf());
       const now = Date.now();
       // The wake at `wakeAt` still owes its turn: nothing posted since, or
@@ -1895,7 +1916,11 @@ class AgentMessageService {
       const failureForPerson = failureNotice === true && personWaiting === true;
       // A long answer reaches the cap on its own, and then the cut-off line is
       // the one post the person still needs (F279).
-      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
+      // Commonly speaking on its own under the seat is not the seat holding the
+      // floor either (F447). The setup card is kernel but the agent's choice,
+      // so it stays capped (isCommonlyInitiated).
+      const commonlyInitiated = AgentMessageService.isCommonlyInitiated({ author_kind: authorKind, messageType });
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine || commonlyInitiated)
         ? 0 : AgentMessageService.resolveConsecutiveRunCap((pod as { agentRunCap?: unknown } | null)?.agentRunCap);
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id, runCap);
@@ -2646,8 +2671,11 @@ class AgentMessageService {
     const before = beforeMs === undefined ? undefined : new Date(beforeMs);
 
     const selfId = selfUserId ? String(selfUserId) : null;
-    const withSelf = (authorId: unknown): { self?: boolean } => (
-      selfId ? { self: String(authorId ?? '') === selfId } : {}
+    // A system line is the platform's, even when it is stored under the agent
+    // it is about ("X isn't connected yet", stopped, task-claimed…): it is
+    // never the caller's own message (F434).
+    const withSelf = (authorId: unknown, messageType: unknown): { self?: boolean } => (
+      selfId ? { self: messageType !== 'system' && String(authorId ?? '') === selfId } : {}
     );
 
     if (PGMessage && process.env.PG_HOST) {
@@ -2689,7 +2717,7 @@ class AgentMessageService {
           },
           username,
           ...(senderUnknown ? {} : { isBot }),
-          ...withSelf(msg.user_id),
+          ...withSelf(msg.user_id, msg.message_type),
           createdAt: msg.created_at as Date,
           // Threading structure for agent readers (TASK-052's read half):
           // the SELECT has carried these since #1106; this mapper was the
@@ -2749,7 +2777,7 @@ class AgentMessageService {
         // D245: same as the PG read above.
         ...(msg.summary ? { summary: msg.summary as string } : {}),
         ...(msg.kind ? { kind: msg.kind as string } : {}),
-        ...withSelf(userId?._id),
+        ...withSelf(userId?._id, msg.messageType),
         createdAt: msg.createdAt as Date,
       };
     }) as MessageNormalized[];

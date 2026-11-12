@@ -1,5 +1,7 @@
 /**
- * Mark historical stalled-connect nudges as Commonly-authored seat posts.
+ * Mark historical stalled-connect nudges and resolution posts as
+ * Commonly-authored seat posts (the resolution since F446: new ones are
+ * written as kernel since F442, older ones were stored as the agent's).
  *
  * The episode keeps the message id, while the message may live in PostgreSQL
  * or in MongoDB when the availability fallback was used. The default is a dry
@@ -56,6 +58,20 @@ export interface MessageAuthorKindBackfillDeps {
   updatePostgresRows: (ids: string[]) => Promise<number>;
   updateMongoRows: (ids: string[]) => Promise<number>;
 }
+
+/** The episode fields that point at a message Commonly posted under the seat. */
+export const EPISODE_MESSAGE_FIELDS = ['nudgeMessageId', 'resolutionMessageId'] as const;
+
+export const episodeReferenceQuery = () => ({
+  $or: EPISODE_MESSAGE_FIELDS.map((field) => ({ [field]: { $type: 'string', $ne: '' } })),
+});
+
+/** Every message id an episode row points at, one entry per set field. */
+export const episodeMessageReferences = (
+  rows: Array<Partial<Record<typeof EPISODE_MESSAGE_FIELDS[number], unknown>>>,
+): string[] => rows.flatMap((row) => EPISODE_MESSAGE_FIELDS
+  .map((field) => (typeof row[field] === 'string' ? String(row[field]) : ''))
+  .filter((id) => id.trim() !== ''));
 
 const classifyReferences = (references: string[]) => {
   const unique = [...new Set(references.map((reference) => String(reference).trim()).filter(Boolean))];
@@ -116,12 +132,11 @@ export async function backfillMessageAuthorKind(
   return report;
 }
 
-const productionDeps = (pool: PgPool | null): MessageAuthorKindBackfillDeps => ({
+export const productionDeps = (pool: PgPool | null): MessageAuthorKindBackfillDeps => ({
   getEpisodeReferences: async () => {
-    const rows = await StalledConnectEpisode.find({
-      nudgeMessageId: { $type: 'string', $ne: '' },
-    }).select('nudgeMessageId').lean();
-    return rows.map((row: { nudgeMessageId?: unknown }) => String(row.nudgeMessageId || ''));
+    const rows = await StalledConnectEpisode.find(episodeReferenceQuery())
+      .select(EPISODE_MESSAGE_FIELDS.join(' ')).lean();
+    return episodeMessageReferences(rows);
   },
   getPostgresRows: async (ids) => {
     if (!pool || ids.length === 0) return [];

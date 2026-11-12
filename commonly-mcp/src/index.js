@@ -30,6 +30,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig, request } from './client.js';
 import { createServer } from './server.js';
 import { channelRequested } from './channel.js';
+import { createReadyFileWriter } from './ready-file.js';
 
 const CHECK_IN_WAIT_MS = 1000;
 
@@ -65,8 +66,13 @@ const main = async () => {
   // which once came before the check-in landed (Growth's walk, 11-04): the
   // person who added it looked like one who never had. So initialize waits for
   // the check-in, for at most a second, so a slow API never holds startup.
+  // A public OpenCode seat's witness that its host took this server's tools
+  // (./ready-file.js). A host asks for them only after initialize succeeded,
+  // inside its own deadline, so the file can't outrun a host that gave up.
+  const markReady = createReadyFileWriter(process.env, { warn: (line) => process.stderr.write(line) });
   const deliver = transport.onmessage;
   transport.onmessage = (message, extra) => {
+    if (message?.method === 'tools/list') markReady();
     if (message?.method !== 'initialize') return deliver(message, extra);
     const cap = new Promise((resolve) => { setTimeout(resolve, CHECK_IN_WAIT_MS).unref(); });
     return Promise.race([checkIn, cap]).then(() => deliver(message, extra));

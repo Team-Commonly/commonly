@@ -201,11 +201,13 @@ describe('the credential file lives only until pi has loaded its extensions', ()
     const { calls, run } = spawnWith([HEADER, assistant('should not be returned')], {
       _rmSync: () => { throw new Error('EPERM'); },
     });
-    await expect(run()).rejects.toThrow(/could not delete its connector credential/);
+    await expect(run()).rejects.toThrow(/could not delete its runtime credential/);
     expect(calls[0].proc.killedWith).toBe('SIGKILL');
   });
 
-  test('a public turn with no broker keeps the old lifetime: removed when the turn ends', async () => {
+  // F146: the first-line delete covers a public turn with no broker too; only
+  // the bridge-side delete stays broker-only.
+  test('a public turn with no broker loses the file at the first JSON line too', async () => {
     const seen = {};
     const { run } = spawnWith(() => [
       (proc) => { seen.path = credentialPathOf(proc); },
@@ -214,7 +216,7 @@ describe('the credential file lives only until pi has loaded its extensions', ()
       assistant('ok'),
     ], { environment: { model: 'deepseek-v4-flash', sandbox: { trust: 'public' }, mcp: [KERNEL] } });
     await run();
-    expect(seen.afterHeader).toBe(true);
+    expect(seen.afterHeader).toBe(false);
     expect(existsSync(seen.path)).toBe(false);
   });
 });

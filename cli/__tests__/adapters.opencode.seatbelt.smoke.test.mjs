@@ -200,9 +200,12 @@ const withSmokeCommonlyMcp = async (fn) => {
     await mkdir(join(pkg, 'src'), { recursive: true });
     await writeFile(join(pkg, 'package.json'), JSON.stringify({
       name: '@commonlyai/mcp', version: '0.3.13', type: 'module',
-      bin: { 'commonly-mcp': 'src/index.js' },
+      bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
+    // Like the shipped server (commonly-mcp/src/ready-file.js), it writes its
+    // ready file on the first tools/list.
     await writeFile(join(pkg, 'src', 'index.js'), `
+      import { writeFileSync } from 'node:fs';
       import { createInterface } from 'node:readline';
       const lines = createInterface({ input: process.stdin });
       lines.on('line', (line) => {
@@ -210,7 +213,11 @@ const withSmokeCommonlyMcp = async (fn) => {
         if (message.id === undefined) return;
         const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
         if (message.method === 'initialize') return reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'commonly-smoke', version: '1' } });
-        if (message.method === 'tools/list') return reply({ tools: [{ name: 'commonly_probe', description: 'smoke', inputSchema: { type: 'object', properties: {} } }] });
+        if (message.method === 'tools/list') {
+          const ready = process.env.COMMONLY_MCP_READY_FILE;
+          if (ready) { try { writeFileSync(ready, 'ready\\n', { flag: 'wx', mode: 0o600 }); } catch {} }
+          return reply({ tools: [{ name: 'commonly_probe', description: 'smoke', inputSchema: { type: 'object', properties: {} } }] });
+        }
         if (message.method === 'tools/call') return reply({ content: [{ type: 'text', text: 'ok' }] });
         return reply({});
       });

@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
-import { forgetUsageEvents, setUsageEventsEnabled, trackUsage } from '../utils/usageEvents';
+import {
+  forgetUsageEvents, reportSettingsReadFailed, setUsageEventsEnabled, trackUsage,
+} from '../utils/usageEvents';
 
 /**
  * Signed-in usage events (D286): reads the person's Settings choice, then sends
@@ -38,7 +40,12 @@ export const useUsageEvents = (): void => {
           try { window.localStorage.setItem(openKey(userId), day); } catch { /* sent again next load */ }
         }
       })
-      .catch(() => { if (live) setUsageEventsEnabled(false); });
+      .catch(() => {
+        if (!live) return;
+        // F399: a load that recorded nothing through our fault is counted, per day only.
+        setUsageEventsEnabled(false);
+        reportSettingsReadFailed();
+      });
     return () => { live = false; forgetUsageEvents(); };
   }, [isAuthenticated, userId]);
 

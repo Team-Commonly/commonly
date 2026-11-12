@@ -22,6 +22,8 @@ const {
 } = require('../utils/testUtils');
 
 jest.mock('../../models/pg/Message');
+const mockPgQuery = jest.fn();
+jest.mock('../../config/db-pg', () => ({ pool: { query: (...args) => mockPgQuery(...args) } }));
 jest.mock('../../services/starterTaskService', () => ({ completeConnectAgentStarterTask: jest.fn() }));
 
 const priorPgHost = process.env.PG_HOST;
@@ -35,6 +37,7 @@ const PGMessage = require('../../models/pg/Message');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { issueRuntimeTokenForAgent } = require('../../routes/registry/tokens');
+const { hash } = require('../../utils/secret');
 const messageRoutes = require('../../routes/messages');
 
 jest.setTimeout(60_000);
@@ -295,6 +298,220 @@ describe('DELETE /api/messages/:id — agent delete-own-message (Mongo store)', 
       expect((await del(msg._id, builder.token)).status).toBe(403);
       expect((await del(msg._id, generateTestToken(stranger._id))).status).toBe(401);
       expect(deleteLines(info)).toEqual([]);
+    });
+  });
+
+  // F438. A system line ("builder isn't connected yet", a task claim) is the
+  // platform's record, stored under the account it is about (F434). Being that
+  // account confers nothing: no agent deletes or retimes one, and a person
+  // does so only as the pod's creator.
+  describe('system lines stored under the caller (F438)', () => {
+    const systemLine = (about) => MongoMessage.create({
+      podId: pod._id, userId: about._id, content: 'builder isn\'t connected yet', messageType: 'system',
+    });
+    // A bot row holding a cm_ user bearer rides the human branch as req.botCaller (F149).
+    const userBearerFor = async (botUser) => {
+      seq += 1;
+      const bearer = `cm_f438bot${seq}x`;
+      await User.updateOne({ _id: botUser._id }, { $set: { apiTokenHash: hash(bearer) } });
+      return bearer;
+    };
+
+    test('an agent runtime token cannot delete a system line stored under it', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const line = await systemLine(builder.user);
+      const res = await del(line._id, builder.token);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('system_line');
+      expect(await exists(line)).toBe(true);
+    });
+
+    test('nor can the same agent through a cm_ user bearer', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const line = await systemLine(builder.user);
+      const res = await del(line._id, await userBearerFor(builder.user));
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('system_line');
+      expect(await exists(line)).toBe(true);
+    });
+
+    test('a person a system line is stored under cannot delete it either', async () => {
+      const member = await human('member');
+      await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: member._id } });
+      const line = await systemLine(member);
+      const res = await del(line._id, generateTestToken(member._id));
+      expect(res.status).toBe(401);
+      expect(await exists(line)).toBe(true);
+    });
+
+    test('the pod creator still deletes a system line', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const line = await systemLine(builder.user);
+      const res = await del(line._id, generateTestToken(owner._id));
+      expect(res.status).toBe(200);
+      expect(await exists(line)).toBe(false);
+    });
+
+    test('an agent cannot delete a PG system line stored under it', async () => {
+      process.env.PG_HOST = 'pg.mocked';
+      const builder = await agent('builder', owner, [pod]);
+      const row = {
+        id: 201, pod_id: String(pod._id), user_id: String(builder.user._id), content: 'offline', message_type: 'system',
+      };
+      PGMessage.resolveId = jest.fn(async () => '201');
+      PGMessage.findById = jest.fn(async () => row);
+      PGMessage.delete = jest.fn();
+      const res = await del('201', builder.token);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('system_line');
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    describe('PATCH /api/messages/:id/created-at', () => {
+      const retime = (id, bearer) => request(app)
+        .patch(`/api/messages/${id}/created-at`)
+        .set('Authorization', `Bearer ${bearer}`)
+        .send({ created_at: '2026-11-01T10:00:00Z' });
+      const pgRow = (about) => ({
+        pgId: '301', pod_id: String(pod._id), user_id: String(about._id), message_type: 'system',
+      });
+      beforeEach(() => {
+        mockPgQuery.mockReset();
+        mockPgQuery.mockResolvedValue({ rowCount: 1, rows: [{ id: 301, created_at: '2026-11-01T10:00:00Z' }] });
+      });
+
+      test('an agent cannot retime a system line stored under it', async () => {
+        const builder = await agent('builder', owner, [pod]);
+        PGMessage.findById = jest.fn(async () => pgRow(builder.user));
+        const res = await retime('301', await userBearerFor(builder.user));
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('system_line');
+        expect(mockPgQuery).not.toHaveBeenCalled();
+      });
+
+      test('a person a system line is stored under cannot retime it', async () => {
+        const member = await human('member');
+        PGMessage.findById = jest.fn(async () => pgRow(member));
+        const res = await retime('301', generateTestToken(member._id));
+        expect(res.status).toBe(403);
+        expect(mockPgQuery).not.toHaveBeenCalled();
+      });
+
+      test('the pod creator retimes a system line', async () => {
+        const builder = await agent('builder', owner, [pod]);
+        PGMessage.findById = jest.fn(async () => pgRow(builder.user));
+        const res = await retime('301', generateTestToken(owner._id));
+        expect(res.status).toBe(200);
+        expect(mockPgQuery).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  // F440. The platform's cards and kernel posts are stored under the agent
+  // they speak for (an approval or run-request card, an intro or nudge). The
+  // agent did not write them, so it may not delete or move them. The ui card
+  // an agent posts itself stays its own.
+  describe('platform posts stored under the agent (F440)', () => {
+    const approvalCard = (about) => MongoMessage.create({
+      podId: pod._id,
+      userId: about._id,
+      content: '[approval needed] send the digest',
+      messageType: 'card',
+      payload: { kind: 'approval', approvalId: 'a1' },
+    });
+    const kernelPost = (about) => MongoMessage.create({
+      podId: pod._id, userId: about._id, content: 'Hi, I just joined', messageType: 'text', authorKind: 'kernel',
+    });
+    const userBearerFor = async (botUser) => {
+      seq += 1;
+      const bearer = `cm_f440bot${seq}x`;
+      await User.updateOne({ _id: botUser._id }, { $set: { apiTokenHash: hash(bearer) } });
+      return bearer;
+    };
+
+    test('an agent cannot delete the approval card the platform posted under it', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const card = await approvalCard(builder.user);
+      const res = await del(card._id, builder.token);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('platform_post');
+      expect(await exists(card)).toBe(true);
+    });
+
+    test('nor through a cm_ user bearer', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const card = await approvalCard(builder.user);
+      const res = await del(card._id, await userBearerFor(builder.user));
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('platform_post');
+      expect(await exists(card)).toBe(true);
+    });
+
+    test('an agent cannot delete its kernel intro', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const intro = await kernelPost(builder.user);
+      const res = await del(intro._id, builder.token);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('platform_post');
+      expect(await exists(intro)).toBe(true);
+    });
+
+    test('an agent still deletes a ui card it posted itself', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const own = await MongoMessage.create({
+        podId: pod._id,
+        userId: builder.user._id,
+        content: 'status',
+        messageType: 'card',
+        payload: { kind: 'ui', v: 1, lang: 'openui@1' },
+      });
+      const res = await del(own._id, builder.token);
+      expect(res.status).toBe(200);
+      expect(await exists(own)).toBe(false);
+    });
+
+    test('the pod creator still deletes a platform card', async () => {
+      const builder = await agent('builder', owner, [pod]);
+      const card = await approvalCard(builder.user);
+      const res = await del(card._id, generateTestToken(owner._id));
+      expect(res.status).toBe(200);
+      expect(await exists(card)).toBe(false);
+    });
+
+    test('an agent cannot delete a PG run-request card stored under it', async () => {
+      process.env.PG_HOST = 'pg.mocked';
+      const builder = await agent('builder', owner, [pod]);
+      const row = {
+        id: 401,
+        pod_id: String(pod._id),
+        user_id: String(builder.user._id),
+        content: '[approval needed] run it',
+        message_type: 'card',
+        payload: { kind: 'approval', actionType: 'run_request' },
+      };
+      PGMessage.resolveId = jest.fn(async () => '401');
+      PGMessage.findById = jest.fn(async () => row);
+      PGMessage.delete = jest.fn();
+      const res = await del('401', builder.token);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('platform_post');
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    test('an agent cannot retime a platform card stored under it', async () => {
+      mockPgQuery.mockReset();
+      const builder = await agent('builder', owner, [pod]);
+      PGMessage.findById = jest.fn(async () => ({
+        pgId: '402', pod_id: String(pod._id), user_id: String(builder.user._id),
+        message_type: 'card', payload: { kind: 'approval' },
+      }));
+      const res = await request(app)
+        .patch('/api/messages/402/created-at')
+        .set('Authorization', `Bearer ${await userBearerFor(builder.user)}`)
+        .send({ created_at: '2026-11-01T10:00:00Z' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('platform_post');
+      expect(mockPgQuery).not.toHaveBeenCalled();
     });
   });
 });

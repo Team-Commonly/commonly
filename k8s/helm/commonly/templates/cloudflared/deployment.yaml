@@ -53,9 +53,16 @@ spec:
       tolerations:
         {{- toYaml .Values.cloudflared.tolerations | nindent 8 }}
       {{- end }}
+      {{- with .Values.cloudflared.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       # Prefer one tunnel per node, so one drain takes one. matchLabelKeys counts
       # only this ReplicaSet's pods, so a roll can't stack the new ones on one node.
       topologySpreadConstraints:
+        {{- with .Values.cloudflared.extraTopologySpreadConstraints }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway

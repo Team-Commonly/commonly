@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 import { appDateLocale } from '../utils/appLocale';
 import {
-  FALLBACK_HARNESSES, HarnessCatalogEntry, OTHER_MODEL, effortLevelsFor, harnessDeviceNote, harnessLabel, modelChoicesFor,
+  FALLBACK_HARNESSES, HarnessCatalogEntry, OTHER_MODEL, effortLevelsFor, harnessDeviceNote, harnessLabel, harnessSignedOut, modelChoicesFor,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 
@@ -11,9 +11,10 @@ export interface RuntimeReceipt { harness: string; version: string | null; model
 export interface RuntimeObservation {
   connectedAt: string; lastSeenAt: string; turnRunning: boolean; lastTurnAt: string | null;
   lastSpawnOutcome?: 'completed' | 'failed' | null;
+  lastSpawnFailure?: string | null;
   lastSpawn: RuntimeReceipt | null; confirmed: RuntimeReceipt | null;
 }
-export interface HarnessInventory { harness: string; installed: boolean; version: string | null; models: string[] | null; efforts: string[] }
+export interface HarnessInventory { harness: string; installed: boolean; version: string | null; models: string[] | null; efforts: string[]; signedIn?: boolean }
 export interface RuntimeSettings {
   providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string; managed?: boolean;
   ownKeyCapability?: { available: boolean; provider: string | null };
@@ -21,7 +22,21 @@ export interface RuntimeSettings {
   catalog?: HarnessCatalogEntry[];
 }
 export type RuntimeUpdate = { adapter?: string; model?: string; effort?: string };
+// The reason codes a runner reports with a failed spawn (F370 #11). Anything
+// else, or none, points at the log on the agent's computer.
+const SPAWN_FAILURE_REASONS = new Set([
+  'claude-signed-out', 'login', 'wont-start', 'out-of-allowance', 'tools-unavailable', 'codex-version', 'model-unavailable',
+]);
 const canonical = (value?: string) => value === 'claude-code' ? 'claude' : value || '';
+/**
+ * F458: why the agent can't answer now, when its computer already said so.
+ * A signed-out harness used to read "connected" until a message failed. The
+ * summary line and the auto-open of How it runs both read this.
+ */
+export const runtimeNotReady = (runtime: RuntimeSettings): 'signedOut' | 'spawnFailed' | null => {
+  if (harnessSignedOut(runtime.inventory, canonical(runtime.adapter || runtime.runtimeType))) return 'signedOut';
+  return runtime.observation?.lastSpawnOutcome === 'failed' ? 'spawnFailed' : null;
+};
 const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: RuntimeUpdate) => Promise<void> }> = ({ runtime, onSave }) => {
   const { t } = useTranslation();
   const k = (key: string, values?: Record<string, string>) => t(`agentManage.controls.${key}`, values);
@@ -155,7 +170,15 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
     </div>)}
     {unlistedModel && alertRow(k('modelNotListed', { model, harness: label(harness) }))}
     {(unsupportedHarness || unsupportedModel || unsupportedEffort) && alertRow(k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
+    {runtimeNotReady(runtime) === 'signedOut' && runtime.observation?.lastSpawnOutcome !== 'failed'
+      && alertRow(k('signedOutRow', { harness: label(savedHarness), command: savedHarness }))}
     {runtime.observation?.lastSpawnOutcome === 'failed' && alertRow(k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
+    {runtime.observation?.lastSpawnOutcome === 'failed' && <div className="lrow v2-agent-settings-page__stack" data-testid="runtime-spawn-failure">
+      <span className="lb" />
+      <span className="vl">{k(`spawnFailure.${SPAWN_FAILURE_REASONS.has(runtime.observation.lastSpawnFailure || '')
+        ? runtime.observation.lastSpawnFailure : 'unknown'}`)}</span>
+      <span className="ac" />
+    </div>}
     <div className="lrow v2-agent-settings-page__stack v2-runtime-controls__status">
       <span className="lb" />
       <span className="vl mo">

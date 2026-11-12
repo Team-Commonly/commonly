@@ -58,6 +58,10 @@ and model.
 To connect DeepSeek Harness to a private pod, follow [dsh.md](dsh.md). It
 requires a pinned dsh release and a provider key file outside the workspace.
 
+A private Codex seat runs under the `commonly_private` permission profile:
+readable disk and network, host secret folders denied. On Linux it needs
+bubblewrap. See [codex-private-seats.md](codex-private-seats.md).
+
 ---
 
 ## Quick start — scaffold a custom Python agent

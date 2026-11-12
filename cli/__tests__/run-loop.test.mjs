@@ -188,6 +188,51 @@ describe('performRun', () => {
     expect(spawn.mock.calls[0][1].environment.effort).toBe(expected);
   });
 
+  // F370 #11: a spawn that started and failed reports its fixed reason code
+  // with the failed outcome, so Settings can say why; never the error text.
+  test.each([
+    [new Error('claude exited with code 1: Not logged in · Please run /login'), 'claude-signed-out'],
+    [new Error('claude exited with code 1: something nobody has seen'), undefined],
+  ])('a failed spawn settles with its reason code (%#)', async (failure, reason) => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));
+    const spawn = jest.fn(async (_prompt, ctx) => {
+      await ctx.onSpawn?.({ model: 'm', effort: null });
+      throw failure;
+    });
+    // Observations go through the machine's own client, not the seat's.
+    const observe = jest.fn().mockResolvedValue({});
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, runtimeReportClient: { post: observe },
+      adapter: { name: 'claude', detect: stubAdapter.detect, spawn },
+      environment: { model: 'm' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    const settled = observe.mock.calls.filter(([url, body]) => url === '/api/agents/runtime/observation' && body.event === 'settled');
+    expect(settled).toHaveLength(1);
+    expect(settled[0][1]).toEqual({ event: 'settled', outcome: 'failed', ...(reason ? { reason } : {}) });
+    expect(JSON.stringify(settled[0][1])).not.toContain('Not logged in');
+  });
+
+  // F336's path: the adapter returns the failure instead of throwing it, after
+  // tool-only output and with no post of its own. It settles with its code too.
+  test('a failure the adapter returns settles with its reason code', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));
+    const spawn = jest.fn(async (_prompt, ctx) => {
+      await ctx.onSpawn?.({ model: 'm', effort: null });
+      return { text: '', failure: new Error('claude exited 1: Not logged in · Please run /login') };
+    });
+    const observe = jest.fn().mockResolvedValue({});
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, runtimeReportClient: { post: observe },
+      adapter: { name: 'claude', detect: stubAdapter.detect, spawn },
+      environment: { model: 'm' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    const settled = observe.mock.calls.filter(([url, body]) => url === '/api/agents/runtime/observation' && body.event === 'settled');
+    expect(settled).toHaveLength(1);
+    expect(settled[0][1]).toEqual({ event: 'settled', outcome: 'failed', reason: 'claude-signed-out' });
+  });
+
   // D247: a listener seat (no daemon) spawns with the model and effort its
   // owner saved on the server, read before the turn; the reply receipt names them.
   test('a listener seat spawns with the model and effort saved on the server', async () => {
@@ -1189,6 +1234,51 @@ describe('performRun', () => {
     );
   });
 
+  test("F434: a system line stored under this agent is not its post, even when an old server says self: true", async () => {
+    // "my-stub isn't connected yet" is stored under this seat's bot user. A
+    // server predating F434 stamps it self: true, but the seat didn't write
+    // it, so it must not swallow the seat's real reply.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false, self: false }] }
+          : {
+            messages: [
+              { _id: 'm1', isBot: false, self: false },
+              {
+                _id: 'm2', isBot: true, self: true, messageType: 'system', username: 'my-stub', content: "my-stub isn't connected yet",
+              },
+            ],
+          };
+      }
+      return { events: [makeEvent({ _id: 'evt-systemline' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'my real reply' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      reply('my real reply'),
+    );
+  });
+
   test('#757: our own post still suppresses even when another agent posted too', async () => {
     // Both happened in the window. Ours is what matters — suppress.
     let messagesCall = 0;
@@ -1322,6 +1412,8 @@ describe('performRun', () => {
     await drainMicrotasks();
     stop();
 
+    expect(spawn.mock.calls[0][0]).toContain('Your final text is posted to the pod');
+    expect(spawn.mock.calls[0][0]).not.toContain('your final text is not posted');
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
       reply('The release owner needs to choose a date.'),
@@ -1364,6 +1456,74 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-hb-prefixed-update/ack',
       { result: { outcome: 'posted' } },
     );
+  });
+
+  // F192: a seat with the commonly MCP posts for itself, so a heartbeat's final
+  // text is its narration ("Checked the board, nothing new"), not a message. A
+  // bare CLI with no posting tool (the stub above) still speaks through output.
+  const seatWithPostTool = { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+
+  test('a heartbeat on a seat with the post tool keeps its narration out of chat', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-narration',
+      type: 'heartbeat',
+      payload: { content: 'Check for a decision that needs a human.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'Checked the board and the pod. Nothing new since the last heartbeat.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      environment: seatWithPostTool,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalled();
+    // The turn is told the truth (TASK-293): its final text goes nowhere, the tool is how it speaks.
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('your final text is not posted');
+    expect(prompt).toContain('post it with commonly_post_message, then end with NO_REPLY');
+    expect(prompt).not.toContain('Your final text is posted to the pod');
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-narration/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('a heartbeat batched with a mention still posts the reply on a seat with the post tool', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-hb-with-mention', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }),
+      makeEvent({ _id: 'evt-mention', type: 'chat.mention', payload: { content: '@my-stub when is the release?' } }),
+    ];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'The release is on Friday.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      environment: seatWithPostTool,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(replyPosts(mockPost)).toHaveLength(1);
   });
 
   test('manual heartbeat without content still runs with a safe fallback prompt', async () => {

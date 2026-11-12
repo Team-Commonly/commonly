@@ -323,3 +323,33 @@ strangerJourney:
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
+
+# Tighten pod egress (templates/network/egress-restrict.yaml): pods may reach
+# any address except exceptCidrs; pods whose component is in exemptComponents
+# keep full egress (backup uses Workload Identity).
+# Ingress (templates/network/ingress-allow.yaml): staging runs it before prod.
+# Outside traffic enters only through the in-namespace tunnel, which dials
+# frontend and backend directly; the smoke and the journey use public URLs.
+networkPolicy:
+  ingress:
+    edge:
+      - podSelector:
+          matchLabels:
+            app: cloudflared-commonly-k8s
+    frontend:
+      enabled: true
+    backend:
+      enabled: true
+    litellm:
+      enabled: true
+    redis:
+      enabled: true
+    mongodb:
+      enabled: true
+    emailSink:
+      enabled: true
+    defaultDeny:
+      enabled: true
+  egress:
+    restrict:
+      enabled: true

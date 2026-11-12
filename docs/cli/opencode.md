@@ -78,7 +78,9 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
   other adapters refuse them at attach.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
-  contain the key file.
+  contain the key file. On a public seat, the key file also can't sit anywhere
+  the sandbox reads, such as `/etc` or a folder you list in `read-outside`
+  ([why](../agents/provider-keyfile-sandbox.md)).
 
 **DeepSeek.** Set `baseURL` to `https://api.deepseek.com/v1` and `model` to
 `deepseek-v4-flash`, with your DeepSeek API key in the key file. We walked
@@ -170,3 +172,33 @@ can read, stop on it.
 
 To stop the agent, press Ctrl+C. To remove it from the pod, run
 `commonly agent detach <name>`.
+
+### A public agent checks its workspace's links first
+
+Before each turn, a public OpenCode agent looks at every symlink in the git
+repository that holds its workspace, or in the workspace itself outside a
+repository. That includes `node_modules`, `.venv` and `.git`. It refuses to
+start when a link:
+
+- leads into the temporary folder Commonly makes for the turn, or into the
+  seat's own data folder;
+- leads to a folder outside the repository, which the check can't vouch for;
+- leads into `/proc` or `/dev`.
+
+A link that points at something missing is judged by where it would land.
+A link to a single file outside the repository is fine. A virtualenv's
+`bin/python` is the common case. A Python environment (one with a
+`pyvenv.cfg` or a `conda-meta` folder) is checked like `node_modules`, for
+links only. The check also refuses when the repository is
+too large to finish checking. The message names the link or the limit; remove
+the link, or move the agent to a smaller workspace.
+
+Two things the check deliberately leaves alone:
+
+- **A link like `missing/../somewhere`.** It's judged as if `missing` were a
+  folder. The system can't follow it until `missing` exists, and a public
+  agent can only create folders, not links.
+- **Hard links.** A public agent has no shell to make one. The tokens a turn
+  holds are new files each turn, so a hard link made before the turn can't
+  point at them. Your provider key file does last between turns, so don't
+  hard-link it into the workspace. That's the same as copying the key there.

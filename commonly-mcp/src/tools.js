@@ -20,6 +20,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { resolveAttachPath } from './attach-path.js';
 import { basename, extname } from 'path';
 import { request, requestUpload, HttpError } from './client.js';
 
@@ -173,6 +174,11 @@ const UI_CARD_CATALOGUE = JSON.parse(readFileSync(new URL('./ui-card-catalogue.j
  * Each entry: { name, description, inputSchema, call(args, config) }
  * `call` returns an MCP-shaped `{ content }` or `{ isError, content }`.
  */
+// MCP tool annotation for tools that send no request or only GETs. A host can
+// skip its approval prompt for these on a server it marks untrusted, so every
+// other tool still asks first (read-only-hints.test.mjs pins the set).
+const READ_ONLY = Object.freeze({ readOnlyHint: true });
+
 export const buildTools = (config, { onFailure } = {}) => {
   const wrap = (fn) => async (args = {}) => {
     try {
@@ -213,6 +219,7 @@ export const buildTools = (config, { onFailure } = {}) => {
   const tools = [
     {
       name: 'commonly_get_started',
+      annotations: READ_ONLY,
       description: 'Read this ONCE at the start of your first turn in Commonly, before any other commonly_* call. Explains what Commonly is, how a pod works, and the behaviour expected of you here. Served from this package — no network call, no auth needed.',
       inputSchema: required({}),
       // Static on purpose: an agent orienting itself must not need a working
@@ -223,6 +230,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_get_ui_card_catalogue',
+      annotations: READ_ONLY,
       description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and three worked examples. Call it before you post a card with commonly_post_message. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
       inputSchema: required({}),
       // Static like commonly_get_started: a card author must be able to read the
@@ -324,6 +332,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_get_messages',
+      annotations: READ_ONLY,
       description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history. Pass `threadRootId` (a message id) to read one thread — returns the root message plus every reply in that thread, oldest first.',
       inputSchema: reqWith({
         podId: STRING,
@@ -349,6 +358,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_get_context',
+      annotations: READ_ONLY,
       description: 'Read pod context — recent messages, recent posts, members (who you can @mention/DM), files a human shared, and pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?". If `files` is non-empty and someone references one, read it with commonly_read_file before answering.',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
@@ -358,6 +368,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_list_files',
+      annotations: READ_ONLY,
       description: 'List the files a human uploaded into a pod (name, type, size) — metadata only. Use this to discover what has been shared, then read one with commonly_read_file. get_context also surfaces these under `files`.',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
@@ -367,6 +378,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_list_artifacts',
+      annotations: READ_ONLY,
       description: 'List every file and page shared in the pods you belong to — newest first, metadata only. `kind` is derived from contentType: image, page (text/html only) or doc; `q` matches the file name; pass `podId` to read one pod, omit it for everything you can see. Page with `after` from the previous result\'s `nextCursor`. Read one with commonly_read_file (podId + fileName).',
       inputSchema: required({
         podId: STRING,
@@ -388,6 +400,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_read_file',
+      annotations: READ_ONLY,
       description: 'Read the content of a file a human uploaded into a pod. Pass the `fileName` from commonly_list_files or the context `files` list. Text files (txt/md/csv/json/etc.) come back as `content`; binary or oversized files return metadata + a `note` instead of bytes. Read the shared file before answering a question about it — do not guess at its contents.',
       inputSchema: reqWith({ podId: STRING, fileName: STRING }, ['podId', 'fileName']),
       call: wrap(async ({ podId, fileName }) => request(config, {
@@ -397,14 +410,16 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_attach_file',
-      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath`: a file under the working directory this server was started in, or under a folder listed in COMMONLY_ATTACH_ROOTS. Hidden files, anything in a hidden folder, and key or certificate files are refused, so write or copy what you want to share into the working directory first. It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
       inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
       call: wrap(async ({ podId, filePath, message, continueAnyway }) => (await trackPost(podId, (async () => {
+        // Checked before any request: a refused path sends nothing.
+        const readPath = resolveAttachPath(filePath);
         const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
         if (continueAnyway !== true) {
           await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
         }
-        const buffer = readFileSync(filePath);
+        const buffer = readFileSync(readPath);
         const name = basename(filePath);
         const contentType = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream';
         const uploaded = await requestUpload(config, {
@@ -443,6 +458,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_get_posts',
+      annotations: READ_ONLY,
       description: 'List recent posts in a pod. Each post includes recent human comments (full text, last 5) and recent agent comments (60-char preview, last 3).',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
@@ -466,6 +482,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_get_tasks',
+      annotations: READ_ONLY,
       description: 'List tasks in a pod, ordered by priority (P0 highest through P3), then task number. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
@@ -593,6 +610,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_list_pods',
+      annotations: READ_ONLY,
       description: 'Discover pods this agent may be able to join. Returns recent pods with `isMember`, member counts, type, and `latestSummary`; `limit` is clamped server-side to [1, 50].',
       inputSchema: required({ limit: INT }),
       call: wrap(async ({ limit }) => request(config, {
@@ -613,6 +631,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_read_agent_memory',
+      annotations: READ_ONLY,
       description: 'Read this agent\'s memory envelope — soul, long_term, and any visibility-typed sections (ADR-003).',
       inputSchema: required({}),
       call: wrap(async () => request(config, {

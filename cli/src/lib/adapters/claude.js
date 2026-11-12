@@ -55,7 +55,9 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { claudeRunStats } from '../reply-receipt.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash, randomUUID } from 'crypto';
+import {
+  createHash, randomBytes, randomUUID, timingSafeEqual,
+} from 'crypto';
 import { accessSync, constants, realpathSync } from 'fs';
 import {
   chmod,
@@ -73,6 +75,7 @@ import {
   unlink,
   writeFile,
 } from 'fs/promises';
+import { createServer } from 'net';
 import { homedir, tmpdir } from 'os';
 import {
   delimiter, dirname, isAbsolute, join,
@@ -92,7 +95,10 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
-import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import {
+  CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, armCredentialRelease, restoreCredentialFile, writeCredentialFile,
+} from '../credential-file.js';
+import { MCP_READY_FILE_ENV, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { workspaceGitAttachment, workspaceGitEnabled } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
@@ -108,6 +114,7 @@ import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 import { startProviderProxy } from '../provider-proxy.js';
+import { CLI } from '../cli-hint.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -136,12 +143,33 @@ const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
+// The helper takes the token from one of two places. With a socket path and a
+// key file as its second and third arguments (a public seat, F461), it sends
+// the key and the adapter, which holds the token in memory for the turn,
+// answers with the token; the credential file can then go once the stdio
+// servers have read it. Otherwise it reads the per-spawn file.
 const HEADER_TOKEN_HELPER_SOURCE = `import { readFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 
-const credentialFile = process.env.${CREDENTIAL_FILE_VAR};
-if (!credentialFile) throw new Error('missing ${CREDENTIAL_FILE_VAR}');
-const token = readFileSync(credentialFile, 'utf8').trim();
-if (!token) throw new Error('empty ${CREDENTIAL_FILE_VAR}');
+const fromChannel = (path, key) => new Promise((resolve, reject) => {
+  const chunks = [];
+  const socket = createConnection({ path }, () => socket.write(key + '\\n'));
+  socket.setTimeout(10000, () => socket.destroy(new Error('the header credential channel did not answer')));
+  socket.on('data', (chunk) => chunks.push(chunk));
+  socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  socket.on('error', reject);
+});
+const channel = process.argv[3];
+let token;
+if (channel) {
+  token = (await fromChannel(channel, readFileSync(process.argv[4], 'utf8').trim())).trim();
+  if (!token) throw new Error('the header credential channel sent nothing');
+} else {
+  const credentialFile = process.env.${CREDENTIAL_FILE_VAR};
+  if (!credentialFile) throw new Error('missing ${CREDENTIAL_FILE_VAR}');
+  token = readFileSync(credentialFile, 'utf8').trim();
+  if (!token) throw new Error('empty ${CREDENTIAL_FILE_VAR}');
+}
 const templates = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const headers = Object.fromEntries(
   Object.entries(templates).map(([name, parts]) => [name, parts.join(token)]),
@@ -1096,10 +1124,86 @@ const writePrivateFile = async (path, contents) => {
   await chmod(path, 0o600);
 };
 
+// F461. The longest socket path the platform takes (sun_path: 104 bytes on
+// macOS with its terminator; Linux allows 108).
+const MAX_SOCKET_PATH = 103;
+
+// F461. A public seat's header helper asks this process for the token over a
+// Unix socket in the spawn's own folder (0700, the socket 0600), so the
+// credential file no longer has to outlive the stdio servers' first read. The
+// token stays in this process's memory.
+//
+// The socket answers only a client that first sends this turn's key, a 256-bit
+// random value in a 0600 file beside it. A Unix connect is not a file read: on
+// macOS another seat's Seatbelt jail, denied this folder, can still connect to
+// a socket whose path it learns (measured), because a seat's network is open.
+// The key keeps the boundary where the file had it, at who can read this
+// folder. Claude's Read tool cannot open a socket, so reading the key alone
+// gets it nothing.
+//
+// Windows keeps the file: a named pipe's default ACL grants read to Everyone. A
+// path too long for a socket, or a socket that cannot be set up, keeps the file
+// too, with a warning.
+const CHANNEL_IDLE_MS = 10_000;
+export const startHeaderCredentialChannel = async (dir, token, { platform = process.platform, warn } = {}) => {
+  const value = typeof token === 'string' ? token.trim() : '';
+  if (!value || platform === 'win32') return null;
+  const path = join(dir, 'headers.sock');
+  const keyPath = join(dir, 'headers.key');
+  if (Buffer.byteLength(path) > MAX_SOCKET_PATH) {
+    warn?.(`the header credential socket path is too long (${path}), so this turn keeps its credential file for its HTTP servers`);
+    return null;
+  }
+  const key = randomBytes(32).toString('hex');
+  const expected = Buffer.from(key);
+  const sockets = new Set();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('error', () => {});
+    socket.setTimeout(CHANNEL_IDLE_MS, () => socket.destroy());
+    socket.setEncoding('utf8');
+    let received = '';
+    socket.on('data', (chunk) => {
+      received += chunk;
+      const newline = received.indexOf('\n');
+      if (newline === -1) {
+        if (received.length > key.length) socket.destroy();
+        return;
+      }
+      const sent = Buffer.from(received.slice(0, newline));
+      socket.removeAllListeners('data');
+      if (sent.length === expected.length && timingSafeEqual(sent, expected)) socket.end(value);
+      else socket.destroy();
+    });
+  });
+  // Ends every open connection too: server.close() alone waits for them.
+  const close = () => new Promise((resolve) => {
+    for (const socket of sockets) socket.destroy();
+    server.close(() => resolve());
+  });
+  try {
+    await writePrivateFile(keyPath, key);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(path, () => { server.off('error', reject); resolve(); });
+    });
+    server.unref();
+    await chmod(path, 0o600);
+  } catch (err) {
+    if (server.listening) await close();
+    await rm(keyPath, { force: true }).catch(() => {});
+    warn?.(`the header credential socket could not be set up (${err?.code || err?.message || err}), so this turn keeps its credential file for its HTTP servers`);
+    return null;
+  }
+  return { path, keyPath, close };
+};
+
 // Claude's headersHelper is invoked when an HTTP connection is established and
 // again after an authentication retry. Keep the token out of its config and
-// environment: the helper reads the current per-spawn file on every invocation.
-const createTokenHeaderHelpers = async (mcpServers, dir) => {
+// environment: the helper asks the channel above when there is one, and reads
+// the current per-spawn file otherwise, on every invocation.
+const createTokenHeaderHelpers = async (mcpServers, dir, channel = null) => {
   const servers = mcpServers
     .map((server, index) => ({ server, index, templates: getTokenHeaderTemplates(server) }))
     .filter((item) => item.templates);
@@ -1116,6 +1220,7 @@ const createTokenHeaderHelpers = async (mcpServers, dir) => {
         QUOTE_SHELL_ARGUMENT(process.execPath),
         QUOTE_SHELL_ARGUMENT(scriptPath),
         QUOTE_SHELL_ARGUMENT(templatesPath),
+        ...(channel ? [QUOTE_SHELL_ARGUMENT(channel.path), QUOTE_SHELL_ARGUMENT(channel.keyPath)] : []),
       ].join(' '),
       headerNames: Object.keys(templates),
     });
@@ -1163,6 +1268,10 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
         label: 'claude',
       }).env;
     }
+    // F460: on a public seat our server names the file it writes once it has
+    // read the credential (a path, not a secret). An older warm build refuses.
+    const readyPath = spawnCommand ? commonlyMcpReadyFile(server, spawnCommand, ctx, { env: entry.env }) : null;
+    if (readyPath) entry.env = { ...(entry.env || {}), [MCP_READY_FILE_ENV]: readyPath };
     const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
     if (server.headers) {
       const headers = { ...server.headers };
@@ -1186,6 +1295,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
   let credential = null;
+  let headerChannel = null;
   try {
     await chmod(dir, 0o700);
     // Written BEFORE the config, because the config may only reference it. It
@@ -1193,8 +1303,19 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     // config — no second lifecycle to get wrong — and so it is inside the one
     // non-workspace path the Seatbelt profile admits.
     credential = writeCredentialFile(ctx.runtimeToken, { agentName: ctx.agentName || 'agent', root: dir });
+    // F461: only a seat that will release its credential (a public one, which
+    // names a ready-file folder) needs the token from somewhere else.
+    const wantsChannel = Boolean(credential?.path && ctx.readyFileDir)
+      && mcpServers.some((server) => getTokenHeaderTemplates(server));
+    if (wantsChannel) {
+      headerChannel = await startHeaderCredentialChannel(dir, ctx.runtimeToken, {
+        platform: ctx.platform,
+        // eslint-disable-next-line no-console
+        warn: (text) => console.warn(`[claude] ${text}`),
+      });
+    }
     const dynamicHeaderHelpers = credential?.path
-      ? await createTokenHeaderHelpers(mcpServers, dir)
+      ? await createTokenHeaderHelpers(mcpServers, dir, headerChannel)
       : new Map();
     const unavailableMcp = [];
     const mcpReadDirectories = [];
@@ -1216,7 +1337,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     const expansionEnv = buildMcpExpansionEnv(config, {
       ...ctx,
       credentialFile: credential?.path || null,
-      headersHelperUsesCredentialFile: dynamicHeaderHelpers.size > 0,
+      headersHelperUsesCredentialFile: dynamicHeaderHelpers.size > 0 && !headerChannel,
     });
     if (expansionEnv[CREDENTIAL_KEY]) {
       // eslint-disable-next-line no-console
@@ -1227,8 +1348,14 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
         + `inherits it. Put the credential on the entry's env to get the file channel.`,
       );
     }
-    return { dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories };
+    return {
+      dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories, headerChannel,
+      // A headersHelper that reads the file on every HTTP (re)connect keeps it
+      // for the turn. One on the channel (F461) does not.
+      helpersReadCredentialFile: dynamicHeaderHelpers.size > 0 && !headerChannel,
+    };
   } catch (err) {
+    try { await headerChannel?.close(); } catch { /* ignore */ }
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
   }
@@ -1411,7 +1538,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       throw new Error(
         `${sandboxTrust} Claude agents run inside a sandbox, and Commonly has no sandbox it can enforce on Windows `
         + `(got sandbox.mode=${JSON.stringify(sandboxMode)}). To run this agent without one, which is your choice, `
-        + `run commonly agent run <name> ${UNSANDBOXED_FLAG} (or commonly daemon install ${UNSANDBOXED_FLAG} for the agents `
+        + `run ${CLI} agent run <name> ${UNSANDBOXED_FLAG} (or ${CLI} daemon install ${UNSANDBOXED_FLAG} for the agents `
         + 'this computer\'s daemon runs), or choose "Run it here" on the Connect page for a hosted agent.',
       );
     }
@@ -1719,6 +1846,30 @@ export default {
 
     let mcpConfig = null;
     let publicClaudeState = null;
+    // F460: a public seat's credential goes once every MCP reader has it.
+    let readyFileDir = null;
+    let ownReadyDir = null;
+    const readyFiles = [];
+    let credentialRelease = null;
+    let releaseFailure = null;
+    let claudeChild = null;
+    const spawnImpl = (...spawnCall) => {
+      claudeChild = (ctx._spawnImpl || childSpawn)(...spawnCall);
+      return claudeChild;
+    };
+    const armRelease = () => {
+      if (!readyFileDir || !mcpConfig?.credential || mcpConfig.helpersReadCredentialFile) return;
+      credentialRelease = armCredentialRelease(mcpConfig.credential, {
+        readyFiles: readyFiles.map(({ path }) => path),
+        label: 'public Claude seat',
+        // eslint-disable-next-line no-console
+        warn: (text) => console.warn(`[claude] ${text}`),
+        onFailure: (failure) => { releaseFailure = failure; claudeChild?.kill?.('SIGKILL'); },
+        ...ctx._credentialRelease,
+      });
+      // A delete that failed at arm time ends the turn before Claude starts.
+      if (credentialRelease.error) throw credentialRelease.error;
+    };
     let providerProxy = null;
     // A login seat's gateway, when the host names one: config, not a secret.
     let publicLoginBaseUrl = null;
@@ -1851,11 +2002,26 @@ export default {
       }
       if (ctx.environment && ctx.cwd) ctx.onSkillsLinked?.(skillMount);
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+        // F460: the jail writes the seat's state folder, so a public seat's MCP
+        // servers write their ready files there (named per spawn, removed after).
+        if (ctx.environment?.sandbox?.trust === 'public' && publicClaudeState?.statePath) {
+          readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
+          await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
+        } else if (ctx.environment?.sandbox?.trust === 'public') {
+          // A policy-only host (D245) prepares no state folder and runs the MCP
+          // children unjailed, so a folder of this turn's own serves.
+          ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
+          await chmod(ownReadyDir, 0o700);
+          readyFileDir = ownReadyDir;
+        }
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
+          readyFileDir,
+          readyFiles,
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
           agentName: ctx.agentName,
           publicSeat: publicTrust,
+          platform: ctx._platform || process.platform,
           commandResolution: { env: withClaudePath(ctx.env), ...ctx._commandResolution },
         });
       }
@@ -1884,6 +2050,7 @@ export default {
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
+      armRelease();
       const stdout = await runClaude({
         cmd,
         args,
@@ -1895,7 +2062,7 @@ export default {
         // and its provider key is not an env var here, so the seat credential is
         // the value a tail can echo back.
         credentials: turnCredentials(spawnCtx),
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
         ownGroup: wantsOwnProcessGroup(ctx),
         transcriptPath: claudeTranscriptPath({
           cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
@@ -1908,6 +2075,7 @@ export default {
         commandResolution: ctx._commandResolution, // test seam only
         confined: reapEverything,
       });
+      if (releaseFailure) throw releaseFailure;
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
@@ -1921,6 +2089,8 @@ export default {
         stats: claudeRunStats(stdout),
       };
     } catch (err) {
+      // F460: a credential that could not be deleted ends the turn; no retry.
+      if (releaseFailure) throw releaseFailure;
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
       // fresh-session retry below (#2247).
@@ -1962,7 +2132,16 @@ export default {
         if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
           Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
         }
+        // F460: the first run may have released the credential once its
+        // servers had it. The retry's servers read it from the same path, so it
+        // is written there again and released again once they are ready.
+        if (credentialRelease) {
+          credentialRelease.stop();
+          await Promise.all(readyFiles.map(({ path }) => rm(path, { force: true })));
+          restoreCredentialFile(mcpConfig.credential, ctx.runtimeToken);
+        }
         const retry = await prepareArgv(retryBase, retryCtx);
+        if (credentialRelease) armRelease();
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
@@ -1970,7 +2149,7 @@ export default {
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: turnCredentials(retryCtx),
-          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
           transcriptPath: claudeTranscriptPath({
             cwd: physicalPath(ctx.cwd), sessionId: freshId,
@@ -1983,7 +2162,8 @@ export default {
           turnReap: ctx._turnReap,
           commandResolution: ctx._commandResolution, // test seam only
           confined: reapEverything,
-        });
+        }).catch((retryErr) => { throw releaseFailure || retryErr; });
+        if (releaseFailure) throw releaseFailure;
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
@@ -1997,12 +2177,21 @@ export default {
       }
       // F153: a Seatbelt seat with no key signs in only through the keychain.
       // When that fails, say how to give it a key instead, as bwrap does.
+      // F171: `commonly daemon install` carries no ANTHROPIC_API_KEY (claude
+      // declares no providerKeyEnv), so the key route is a seat run from a
+      // shell that has it; the hint must not send a daemon operator to a
+      // service file that never receives the key.
       if (publicNativeSandbox && !providerProxy && /not logged in/i.test(String(err?.message))) {
         err.message = `${err.message}. Sign in with \`claude\` in your own terminal on this Mac, `
-          + 'or set ANTHROPIC_API_KEY (in the service env for daemon seats)';
+          + `or run the agent with ANTHROPIC_API_KEY set (\`${CLI} agent run\` from a shell that has it; `
+          + 'the background daemon does not carry it)';
       }
       throw err;
     } finally {
+      credentialRelease?.stop();
+      await Promise.all(readyFiles.map(({ path }) => rm(path, { force: true }).catch(() => {})));
+      if (ownReadyDir) await rm(ownReadyDir, { recursive: true, force: true }).catch(() => {});
+      try { await mcpConfig?.headerChannel?.close(); } catch { /* ignore */ }
       if (mcpConfig?.dir) {
         try { await rm(mcpConfig.dir, { recursive: true, force: true }); } catch { /* ignore */ }
       }

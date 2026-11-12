@@ -180,7 +180,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     }).select('runtimeInventory inventoryAt lastSeenAt').lean() : null;
     const observation = binding && machine ? await AgentRuntimeObservation.findOne({
       agentUserId: binding._id, machineId: binding.botMetadata.machineId,
-    }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome turnRunning lastTurnAt -_id').lean() : null;
+    }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome lastSpawnFailure turnRunning lastTurnAt -_id').lean() : null;
     // The process line follows the agent's own credential use, as the roster
     // does. The machine heartbeat says the computer is online, not that this
     // agent's listener is.

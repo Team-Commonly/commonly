@@ -911,6 +911,14 @@ describe('attention claims (ADR-018)', () => {
 
 
 describe('per-event inbox checkpoint', () => {
+  // These tests attach from the OS temp folder, which is outside the working
+  // directory, so they name it as an allowed folder (attach-path.js).
+  let savedRoots;
+  beforeAll(() => { savedRoots = process.env.COMMONLY_ATTACH_ROOTS; process.env.COMMONLY_ATTACH_ROOTS = tmpdir(); });
+  afterAll(() => {
+    if (savedRoots === undefined) delete process.env.COMMONLY_ATTACH_ROOTS;
+    else process.env.COMMONLY_ATTACH_ROOTS = savedRoots;
+  });
   test('tells a seat outside the wrapper prompt when a reply is finished', () => {
     const { description } = byName.commonly_checkpoint_event;
     expect(description).toContain('finished only after the last one');

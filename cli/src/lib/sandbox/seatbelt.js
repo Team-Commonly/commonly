@@ -299,6 +299,59 @@ const OPEN_NETWORK = String.raw`
   (global-name "com.apple.securityd.xpc"))
 `;
 
+// The static paths the baseline lets a jail READ (file-read* or file-read-data),
+// as `subpaths` (whole trees) and `literals` (one file or directory entry).
+// Read from PLATFORM_BASELINE itself, so a caller keeping a secret out of the
+// jail (a public seat's provider key file) checks what the profile actually
+// admits rather than a copy that drifts. Metadata-only grants are not reads;
+// regex grants cover /dev only and are left out. Dynamic per-turn paths
+// (workspace, state, executables, read-only directories) are the caller's.
+const READ_OPERATIONS = ['file-read*', 'file-read-data'];
+export const parseSeatbeltReadRoots = (profile) => {
+  const subpaths = new Set();
+  const literals = new Set();
+  const text = profile.replace(/;[^\n]*/g, '');
+  let at = text.indexOf('(allow ');
+  while (at !== -1) {
+    // The rule's balanced s-expression; parentheses inside a string don't count.
+    let depth = 0;
+    let end = at;
+    let inString = false;
+    for (; end < text.length; end += 1) {
+      const ch = text[end];
+      if (inString) { if (ch === '\\') end += 1; else if (ch === '"') inString = false; continue; }
+      if (ch === '"') inString = true;
+      else if (ch === '(') depth += 1;
+      else if (ch === ')') { depth -= 1; if (depth === 0) break; }
+    }
+    const rule = text.slice(at, end + 1);
+    const operations = rule.slice('(allow '.length).split('(')[0].trim().split(/\s+/);
+    if (operations.some((op) => READ_OPERATIONS.includes(op))) {
+      for (const match of rule.matchAll(/\((subpath|literal) "([^"]+)"\)/g)) {
+        (match[1] === 'subpath' ? subpaths : literals).add(match[2]);
+      }
+      // Fail closed: a read filter this cannot turn into a root would be a
+      // readable path the key-file check never sees. Regex grants are known
+      // to cover /dev only, and are held to that.
+      for (const filter of rule.matchAll(/\((path|prefix|regex|home-subpath|home-literal|home-prefix)\s+(#?"[^"]*")/g)) {
+        if (filter[1] !== 'regex' || !/^#?"\^\/dev\//.test(filter[2])) {
+          throw new Error(`seatbeltSystemReadRoots: a read rule uses a filter it cannot check: (${filter[1]} ${filter[2]})`);
+        }
+      }
+    }
+    at = text.indexOf('(allow ', end + 1);
+  }
+  return Object.freeze({
+    subpaths: Object.freeze([...subpaths]),
+    literals: Object.freeze([...literals]),
+  });
+};
+let systemReadRoots = null;
+export const seatbeltSystemReadRoots = () => {
+  if (!systemReadRoots) systemReadRoots = parseSeatbeltReadRoots(PLATFORM_BASELINE);
+  return systemReadRoots;
+};
+
 // Both network modes. On macOS, c-ares (node's dns.Resolver and dns.resolve*)
 // reads the resolver list from configd's DNSConfiguration service while the
 // Resolver is constructed. Denied, that lookup does not always fail: at

@@ -2,11 +2,13 @@ import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 /** The per-spawn loopback proxy that holds a provider key for a CLI (OpenAI chat, Anthropic Messages, OpenAI Responses). */
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { constants as fsConstants, realpathSync } from 'fs';
+import { constants as fsConstants, realpathSync, statSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import { chmod, lstat, open, unlink, writeFile } from 'fs/promises';
-import { isAbsolute, relative, sep } from 'path';
+import {
+  dirname, isAbsolute, relative, sep,
+} from 'path';
 
 // Providers sometimes echo request headers in an error response. Redact the
 // material across arbitrary stream chunk boundaries before any model sees it.
@@ -112,8 +114,64 @@ const isPathWithin = (parent, candidate) => {
     && !fromParent.startsWith(`..${sep}`)
     && !isAbsolute(fromParent));
 };
-/** Validate the key path without reading the key. The proxy reads it at spawn. */
-export const resolveProviderKeyFile = async (provider, workspacePath, adapterLabel = 'OpenCode') => {
+// What the file system says a path IS, not how it was spelled: one device and
+// inode, whatever the letter case on a case-insensitive volume, a macOS
+// firmlink (/System/Volumes/Data/opt is /opt) or a symlinked directory.
+// BigInt: inodes on the macOS sealed system volume exceed 2^53, and as numbers
+// /usr and /usr/bin round to the same value.
+const identityOf = (path) => {
+  try {
+    const details = statSync(path, { bigint: true });
+    return `${details.dev}:${details.ino}`;
+  } catch {
+    return null;
+  }
+};
+
+const realOrSelf = (path) => {
+  try { return realpathSync(path); } catch { return path; }
+};
+
+/**
+ * The root a sandbox could read this key file through, or null. A subpath root
+ * holds the file when it is the file's directory or one of its ancestors; a
+ * literal root only when it is the file itself. Either of two tests refuses:
+ * the paths as written and real-pathed (which also covers a root that doesn't
+ * exist yet), and file identity, so any spelling the file system resolves to
+ * the same place is treated as that place. A second hard link is refused by
+ * resolveProviderKeyFile (one link only), not here.
+ */
+export const keyFileReadableRoot = (keyFile, { subpaths = [], literals = [] } = {}) => {
+  const ancestors = new Set();
+  for (let current = keyFile; ; current = dirname(current)) {
+    const id = identityOf(current);
+    if (id) ancestors.add(id);
+    if (dirname(current) === current) break;
+  }
+  for (const root of subpaths) {
+    if (isPathWithin(root, keyFile) || isPathWithin(realOrSelf(root), keyFile)) return root;
+    const id = identityOf(root);
+    if (id && ancestors.has(id)) return root;
+  }
+  const own = identityOf(keyFile);
+  for (const root of literals) {
+    if (root === keyFile || realOrSelf(root) === keyFile) return root;
+    if (own && identityOf(root) === own) return root;
+  }
+  return null;
+};
+
+/**
+ * Validate the key path without reading the key. The proxy reads it at spawn.
+ * `readableRoots` ({ subpaths, literals }) is what a sandboxed seat can read;
+ * the proxy reads the key outside the sandbox, so a key file there is refused.
+ */
+export const resolveProviderKeyFile = async (
+  provider,
+  workspacePath,
+  adapterLabel = 'OpenCode',
+  { readableRoots } = {},
+) => {
   if (!provider) return null;
   const keyFile = provider.keyFile;
   if (typeof keyFile !== 'string' || !isAbsolute(keyFile)) {
@@ -134,6 +192,11 @@ export const resolveProviderKeyFile = async (provider, workspacePath, adapterLab
   if ((details.mode & 0o777) !== 0o600) {
     throw new Error(`${adapterLabel} provider.keyFile must have mode 0600`);
   }
+  // One name only: a second link elsewhere is the same file under a path the
+  // checks below never look at.
+  if (details.nlink !== 1) {
+    throw new Error(`${adapterLabel} provider.keyFile must have exactly one link (no hard links)`);
+  }
   if (typeof workspacePath !== 'string' || !isAbsolute(workspacePath)) {
     throw new Error(`${adapterLabel} provider.keyFile requires an absolute workspace path`);
   }
@@ -145,8 +208,14 @@ export const resolveProviderKeyFile = async (provider, workspacePath, adapterLab
   } catch (err) {
     throw new Error(`${adapterLabel} provider key path could not be resolved: ${err.message}`);
   }
-  if (isPathWithin(realWorkspace, realKeyFile)) {
+  if (isPathWithin(realWorkspace, realKeyFile) || keyFileReadableRoot(realKeyFile, { subpaths: [realWorkspace] })) {
     throw new Error(`${adapterLabel} provider.keyFile must be outside the workspace`);
+  }
+  const readableRoot = readableRoots ? keyFileReadableRoot(realKeyFile, readableRoots) : null;
+  if (readableRoot) {
+    throw new Error(
+      `${adapterLabel} provider.keyFile ${realKeyFile} is inside the seat's sandbox; move it outside ${readableRoot}`,
+    );
   }
   return realKeyFile;
 };
@@ -156,8 +225,8 @@ const readProviderKey = async (keyFile, adapterLabel) => {
   const handle = await open(keyFile, fsConstants.O_RDONLY | noFollow);
   try {
     const details = await handle.stat();
-    if (!details.isFile() || (details.mode & 0o777) !== 0o600) {
-      throw new Error(`${adapterLabel} provider.keyFile changed after validation; expected a regular mode-0600 file`);
+    if (!details.isFile() || (details.mode & 0o777) !== 0o600 || details.nlink !== 1) {
+      throw new Error(`${adapterLabel} provider.keyFile changed after validation; expected a regular mode-0600 file with one link`);
     }
     const value = (await handle.readFile()).toString('utf8').trim();
     if (!value) throw new Error(`${adapterLabel} provider.keyFile must not be empty`);

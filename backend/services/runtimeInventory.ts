@@ -6,6 +6,7 @@ export interface HarnessInventory {
   version: string | null;
   models: string[] | null;
   efforts: string[];
+  signedIn?: boolean;
 }
 const text = (value: unknown): value is string => typeof value === 'string'
   && value.length > 0 && value.length <= 256
@@ -20,6 +21,8 @@ export const normalizeRuntimeInventory = (raw: unknown): HarnessInventory[] | nu
     return row ? [{ harness, installed: row.installed === true,
       version: text(row.version) ? row.version : null,
       models: row.models === null ? null : options(row.models),
-      efforts: options(row.efforts) }] : [];
+      efforts: options(row.efforts),
+      // F458: only a boolean is a verdict; anything else is left out, not false.
+      ...(typeof row.signedIn === 'boolean' ? { signedIn: row.signedIn } : {}) }] : [];
   });
 };

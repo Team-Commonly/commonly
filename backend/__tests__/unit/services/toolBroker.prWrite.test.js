@@ -533,6 +533,8 @@ describe('github.commit_files: what an agent may put in a commit (HOLD round 3)'
     'Signed-off-by: Owner <o@example.com>',
     'SIGNED-OFF-BY : x',
     '  Reviewed-by: a reviewer',
+    '\uFEFFCo-authored-by: hidden',
+    '\u2066Signed-off-by: x\u2069',
   ])('a trailer that attributes anyone refuses before parking: %s', async (line) => {
     await expect(hosted('github.commit_files', commitArgs({ message: `Fix #12\n\n${line}` })))
       .rejects.toMatchObject({ code: 'commit_attribution_trailer' });
@@ -619,6 +621,101 @@ describe('the owner card for a parked commit (HOLD round 3)', () => {
     expect(summary.contents).toEqual({
       label: 'File contents, exactly as they will be committed (shown to the connection owner only)',
       shownBytes: CARD_CONTENTS_MAX, totalBytes: 80 * 1024 + 4, truncated: true,
+    });
+  });
+});
+
+// F168 (#3475 follow-up Lows). A squash merge carries the PR body into the
+// commit, so the body answers to the commit message's trailer rule; the owner
+// reads bidi controls on the card as marks, not as reordered text; and the
+// card's byte cap never splits a character.
+describe('github.create_pull_request: what a PR body may carry (F168)', () => {
+  test.each([
+    'Co-authored-by: Sam <sam@example.com>',
+    'Signed-off-by: Owner <o@example.com>',
+    '  Reviewed-by: a reviewer',
+    '\u200BCo-authored-by: hidden <h@example.com>',
+    '\u202ESigned-off-by: x',
+    'Co-\u200Dauthored-by: split',
+    '\u00A0Co-authored-by: nbsp',
+    '\u3000\u000BSigned-off-by: wide space and vertical tab',
+    'Co-authored\u034F-by: combining grapheme joiner',
+    'Reviewed-by\u00A0: nbsp before the colon',
+  ])('a body trailer that attributes anyone refuses before parking: %s', async (line) => {
+    await expect(hosted('github.create_pull_request', prArgs({ body: `Closes #12\n\n${line}` })))
+      .rejects.toMatchObject({ code: 'pr_attribution_trailer' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    nothingReachedGithub();
+  });
+
+  test('a body that only mentions a trailer mid-line still parks', async () => {
+    await expect(hosted('github.create_pull_request', prArgs({ body: 'Fixes the Co-authored-by: parser' })))
+      .rejects.toMatchObject({ code: 'approval_required' });
+  });
+
+  // F464: a row parked before the park-time check shipped still refuses at run.
+  test('an approved body with a trailer refuses at run, writing nothing', async () => {
+    await expect(hosted('github.create_pull_request', prArgs())).rejects.toMatchObject({ code: 'approval_required' });
+    const call = parked();
+    const canonicalArgs = { ...call.canonicalArgs, body: 'Closes #12\n\nSigned-off-by: Owner <o@example.com>' };
+    await expect(runParked({ ...call, canonicalArgs, argsDigest: mockToolCall.digestArgs(canonicalArgs) }))
+      .rejects.toMatchObject({ code: 'pr_attribution_trailer' });
+    nothingReachedGithub();
+  });
+});
+
+describe('the owner card: raw text and the byte cap (F168)', () => {
+  const { prWriteApprovalSummary, CARD_CONTENTS_MAX } = jest.requireActual('../../../services/prWriteScope');
+  const envelope = (over = {}) => ({
+    owner: 'Team-Commonly', repo: 'commonly', ...commitArgs(), parentSha: PARENT, branchExists: false, ...over,
+  });
+
+  // The card itself shows every format character as its code point
+  // (toolCallView.showInvisibles); the summary hands it the text unchanged.
+  test('bidi controls reach the card unchanged, for the card to mark', () => {
+    const content = 'if (isAdmin) {\u202E } \u2066// check later\u2069\n';
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({
+      message: 'Fix\u202Edaolnwod', files: [{ path: 'src/a.js', content }],
+    }));
+    expect(summary.files[0].content).toBe(content);
+    expect(summary.message.text).toBe('Fix\u202Edaolnwod');
+    expect(summary.subject).toBe('Fix\u202Edaolnwod');
+  });
+
+  test('a plain file keeps its card shape', () => {
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files: [{ path: 'a', content: 'ok' }] }));
+    expect(summary.files[0]).toEqual({ path: 'a', bytes: 2, content: 'ok', truncated: false });
+  });
+
+  test('a cap that falls inside a character backs off to the character before it', () => {
+    const content = `${'a'.repeat(CARD_CONTENTS_MAX - 1)}é`;
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files: [{ path: 'a', content }] }));
+    expect(summary.files[0].content).not.toContain('�');
+    expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 1}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 1} of ${CARD_CONTENTS_MAX + 1} bytes\\]$`));
+    expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX - 1, totalBytes: CARD_CONTENTS_MAX + 1 });
+  });
+  test('a four-byte character at the cap backs off whole, and the next file gets the bytes it saved', () => {
+    const first = `${'a'.repeat(CARD_CONTENTS_MAX - 2)}😀`;
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({
+      files: [{ path: 'a', content: first }, { path: 'b', content: 'bc' }],
+    }));
+    expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 2}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 2} of ${CARD_CONTENTS_MAX + 2} bytes\\]$`));
+    expect(summary.files[1]).toEqual({ path: 'b', bytes: 2, content: 'bc', truncated: false });
+    expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX, totalBytes: CARD_CONTENTS_MAX + 4 });
+  });
+});
+
+describe('the owner card for a pull request (F464)', () => {
+  const { prWriteApprovalSummary } = jest.requireActual('../../../services/prWriteScope');
+  const envelope = (over = {}) => ({ owner: 'Team-Commonly', repo: 'commonly', ...prArgs(), ...over });
+
+  test('the title and body preview reach the card unchanged, with no extra fields', () => {
+    const summary = prWriteApprovalSummary('github.create_pull_request', envelope({
+      title: 'Fix\u202Eexe.txt', body: 'Closes #12 \u2066x\u2069',
+    }));
+    expect(summary).toEqual({
+      repo: 'Team-Commonly/commonly', base: 'main', head: `seat/${SEAT}/fix-12`, title: 'Fix\u202Eexe.txt',
+      draft: false, bodyPreview: 'Closes #12 \u2066x\u2069', bodyLength: 14,
     });
   });
 });

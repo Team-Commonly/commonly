@@ -21,6 +21,8 @@
 /* the page shows a field's hint only while it has focus or an error */
 .v2-feature--byo .v2-byo__field > .v2-byo__hint { display: none; }
 .v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint { display: block; }
+/* F370 #8: why the chosen harness is missing stays visible, focus or not */
+.v2-feature--byo .v2-byo__field > .v2-byo__hint--shown { display: block; }
 .v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
 .v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
@@ -54,6 +56,12 @@
 .v2-feature--byo [data-testid="byo-listen-waiting"]::before, .v2-feature--byo .v2-byo__live::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--v2-accent); }
 .v2-feature--byo .v2-byo__live { color: var(--v2-text-primary); background: var(--v2-accent-soft); box-shadow: inset 0 0 0 1px var(--v2-accent); }
 .v2-feature--byo .v2-byo__live::before { background: var(--v2-accent); }
+/* A stop the person has to act on (F458): the waiting box, in warning tones. */
+.v2-feature--byo .v2-byo__stopped { margin: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border-radius: 10px; background: var(--v2-warning-soft); box-shadow: inset 0 0 0 1px var(--v2-warning); font-size: 13px; line-height: 1.45; color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__stopped::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--v2-warning); }
+/* F457's stopped command (harness not installed) takes the same warning box instead of the pending dot. */
+.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped { background: var(--v2-warning-soft); box-shadow: inset 0 0 0 1px var(--v2-warning); color: var(--v2-text-primary); }
+.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before { background: var(--v2-warning); box-shadow: none; }
 .v2-feature--byo .v2-byo__cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
 .v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: 1 1 220px; margin: 0; }
 @media (max-width: 760px) {

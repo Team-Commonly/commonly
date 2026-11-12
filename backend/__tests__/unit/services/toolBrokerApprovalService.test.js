@@ -415,6 +415,49 @@ test('the approved envelope refuses a grant that predates the re-added connectio
   }));
 });
 
+// F464: a squash merge writes commitTitle/commitMessage as the commit, so they
+// answer to the commit message's attribution-trailer rule.
+describe('merge_pull_request: no attribution trailers in the merge commit (F464)', () => {
+  const github = require('../../../services/githubAppService');
+  beforeEach(() => {
+    github.getPullRequest.mockResolvedValue({ head: { sha: 'head-sha-1' } });
+    mockRoomGrant.findOne.mockResolvedValue(grant({ tools: ['github.merge_pull_request'], writeMode: 'write' }));
+  });
+
+  test.each([
+    ['commitMessage', 'Squash of #42\n\nCo-authored-by: Sam <sam@example.com>'],
+    ['commitTitle', 'Signed-off-by: x'],
+    ['commitMessage', 'Squash\n\n\u200BCo-authored-by: hidden'],
+  ])('a %s with a trailer refuses before parking', async (field, value) => {
+    await expect(broker.callTool({
+      grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',
+      args: { pullNumber: 42, mergeMethod: 'squash', [field]: value },
+    })).rejects.toMatchObject({ code: 'merge_attribution_trailer' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+  });
+
+  test('an approved merge whose message carries a trailer refuses at run, merging nothing', async () => {
+    await expect(broker.callTool({
+      grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',
+      args: { pullNumber: 42, mergeMethod: 'squash' },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+    const proposed = mockProposeAction.mock.calls[0][0].toolCall;
+    const args = { ...proposed.canonicalArgs, commitMessage: 'x\n\nReviewed-by: someone' };
+    await expect(broker.executeApprovedToolCall({
+      grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',
+      args, expectedArgsDigest: mockToolCall.digestArgs(args), approvalId: 'approval-1',
+    })).rejects.toMatchObject({ code: 'merge_attribution_trailer' });
+    expect(github.mergePullRequest).not.toHaveBeenCalled();
+  });
+
+  test('a message that only mentions a trailer mid-line still parks', async () => {
+    await expect(broker.callTool({
+      grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',
+      args: { pullNumber: 42, mergeMethod: 'squash', commitMessage: 'Fix the Co-authored-by: parser' },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+  });
+});
+
 test('a push after propose refuses the merge when the head SHA moved', async () => {
   const github = require('../../../services/githubAppService');
   github.getPullRequest.mockResolvedValue({ head: { sha: 'head-sha-1' } });

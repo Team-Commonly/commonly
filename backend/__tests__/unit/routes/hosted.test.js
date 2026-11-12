@@ -487,6 +487,80 @@ describe('/api/hosted', () => {
     }));
   });
 
+  // F465: a turn already running in the worker outlives the stop. With the
+  // token revoked only after the stop returned, that turn's next post or ack
+  // still landed. Revoked first, it gets a 401.
+  describe('the token is revoked before the worker is stopped', () => {
+    const revokedBeforeStop = () => mockRevokeRuntimeTokens.mock.invocationCallOrder[0]
+      < mockHosted.deprovisionAgent.mock.invocationCallOrder[0];
+
+    it('deprovision', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      // eslint-disable-next-line global-require
+      const sockets = require('../../../services/agentWebSocketService');
+      const disconnect = jest.spyOn(sockets, 'disconnectIdentity').mockImplementation(() => {});
+      mockHosted.deprovisionAgent.mockResolvedValue({ deprovisioned: true });
+
+      const res = await request(app).post('/api/hosted/deprovision').send({ agentName: 'scout' });
+
+      expect(res.status).toBe(200);
+      expect(revokedBeforeStop()).toBe(true);
+      expect(disconnect.mock.invocationCallOrder[0]).toBeLessThan(mockHosted.deprovisionAgent.mock.invocationCallOrder[0]);
+      disconnect.mockRestore();
+    });
+
+    it('deprovision: a stop that fails has already revoked the token, and no stopped record is written', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockHosted.deprovisionAgent.mockRejectedValue(new Error('worker unreachable'));
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const res = await request(app).post('/api/hosted/deprovision').send({ agentName: 'scout' });
+
+      expect(res.status).toBe(500);
+      expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(1);
+      expect(installation.config.get('hosted')).toBeUndefined();
+    });
+
+    it('a provision overtaken by a migration', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockHosted.provisionAgent.mockImplementation(async () => {
+        installation.config.set('hosted', { engine: 'native', provisionedAt: new Date(), migratedFrom: 'durable-object' });
+        return { provisioned: true };
+      });
+      mockHosted.deprovisionAgent.mockResolvedValue({ deprovisioned: true });
+
+      const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+
+      expect(res.status).toBe(409);
+      // The first revoke is the one before minting; the take-back is the second.
+      expect(mockRevokeRuntimeTokens.mock.invocationCallOrder[1])
+        .toBeLessThan(mockHosted.deprovisionAgent.mock.invocationCallOrder[0]);
+    });
+
+    it('a provision overtaken by a migration still stops its worker when the take-back throws', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockHosted.provisionAgent.mockImplementation(async () => {
+        installation.config.set('hosted', { engine: 'native', provisionedAt: new Date(), migratedFrom: 'durable-object' });
+        return { provisioned: true };
+      });
+      const firstRevoke = mockRevokeRuntimeTokens.getMockImplementation();
+      mockRevokeRuntimeTokens
+        .mockImplementationOnce(firstRevoke)
+        .mockRejectedValueOnce(new Error('mongo down'));
+      mockHosted.deprovisionAgent.mockResolvedValue({ deprovisioned: true });
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+
+      expect(res.status).toBe(500);
+      expect(mockHosted.deprovisionAgent).toHaveBeenCalledWith('scout', 'default');
+    });
+  });
+
   // TASK-265: a migration that marks the row native while the
   // worker call is in flight must win. Before the fence, the route saved the
   // Durable Object record it read at the start over the migration's, and the

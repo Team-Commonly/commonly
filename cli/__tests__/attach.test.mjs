@@ -1498,6 +1498,49 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toMatchObject({ code: NO_AGENT_CLI_CODE });
   });
 
+  // F457: the run exits before it checks in, so the connect page waited
+  // forever. It reports what it looked for first, and says how to install it.
+  const reportingFactory = (post = jest.fn(async () => ({ recorded: true }))) => {
+    const get = jest.fn(async () => identityResponse);
+    return { factory: jest.fn(() => ({ get, post })), post };
+  };
+
+  test('a named adapter that is missing is reported, and the error says how to install it', async () => {
+    const { factory, post } = reportingFactory();
+    const run = bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent', adapterOverride: 'claude',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: factory,
+      adapterRegistry: makeRegistry({ claudeFound: false }),
+    });
+    await expect(run).rejects.toThrow(
+      "Adapter 'claude' not found on PATH. Install Claude Code (npm i -g @anthropic-ai/claude-code), "
+      + 'sign in once by running claude, then run this line again.',
+    );
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/harness-missing', { harness: 'claude' });
+  });
+
+  test('finding none of the probed CLIs is reported as null', async () => {
+    const { factory, post } = reportingFactory();
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: factory,
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false }),
+    })).rejects.toMatchObject({ code: NO_AGENT_CLI_CODE });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/harness-missing', { harness: null });
+  });
+
+  test('a report that fails, or an instance without the route, still ends in the install message', async () => {
+    const { factory } = reportingFactory(jest.fn(async () => { throw Object.assign(new Error('nope'), { status: 404 }); }));
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent', adapterOverride: 'codex',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: factory,
+      adapterRegistry: makeRegistry({ codexFound: false }),
+    })).rejects.toThrow(/Install Codex \(npm i -g @openai\/codex\)/);
+  });
+
   test('dsh cannot bootstrap from a bare runtime token without provider settings', async () => {
     const adapterRegistry = {
       getAdapter: () => ({ detect: async () => ({ path: '/bin/dsh', version: '0.2.1-rc.2' }) }),

@@ -140,13 +140,13 @@ describe('V2AgentBYO on Windows', () => {
     expect(note).toHaveTextContent('--allow write');
     expect(note).toHaveTextContent('不能运行命令');
     expect(note).toHaveTextContent('连接器授权');
-    expect(note).toHaveTextContent('commonly daemon install --unsandboxed');
+    expect(note).toHaveTextContent('commonly.cmd daemon install --unsandboxed');
     expect(note).toHaveTextContent('--allow');
     expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/PowerShell 窗口/);
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(/^Windows 上没有沙箱。/);
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent('连接器授权');
     expect(note).not.toHaveTextContent(/您|代理/);
-    expect(screen.getByTestId('byo-listen-npm-hint')).toHaveTextContent('如果 PowerShell 提示禁止运行脚本');
+    expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
   });
 
   test('zh-CN before install: the quick-try line names PowerShell', async () => {

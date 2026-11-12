@@ -43,7 +43,7 @@ Most failures now reach a person. The October draft said "nowhere for owners"; t
 | Hosted agent cap at install or resume | hosted | refusal names the agent holding the slot | installer |
 | Known cause: login, key, credit, model | BYO | wrapper posts one line, hourly per cause per pod | room |
 | Unknown failure cause | BYO | nothing until the mention retires | nobody, then room |
-| Failed spawn | BYO daemon | alert row in agent Settings | owner, if they open it |
+| Failed spawn | BYO daemon | alert row in agent Settings, with the reason and what to do when the runner sent a known cause code (F370 #11; never the error text), else a pointer to the agent's log | owner, if they open it |
 | Supervisor crash | BYO daemon | reported to `/api/machines`, but the web reads only `running` | nobody in the web app |
 | **Kernel wake failed or unclaimed** | any | **nothing** | **nobody** |
 | **Repeated failures on someone else's ask** | any | **nothing to the owner** | **nobody** |

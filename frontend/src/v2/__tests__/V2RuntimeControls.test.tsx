@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import Controls from '../components/V2RuntimeControls';
+import Controls, { runtimeNotReady } from '../components/V2RuntimeControls';
 import Key from '../components/V2AgentProviderKey';
 const mockApi = { get: jest.fn(), put: jest.fn(), del: jest.fn() };
 jest.mock('../hooks/useV2Api', () => ({ useV2Api: () => mockApi }));
@@ -183,7 +183,8 @@ test('a reported inventory marks each harness and sorts the installed ones first
     { harness: 'opencode', installed: true, version: '1.19.3', models: null, efforts: [] },
   ] }} onSave={jest.fn()} />);
   expect(optionTexts('harness')).toEqual(['Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.3',
-    'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness']);
+    'Claude Code · Not on this computer', 'Qwen Code · Not checked here', 'Goose · Not checked here',
+    'Hermes · Not checked here', 'pi · Not checked here', 'DeepSeek Harness · Not checked here']);
 });
 
 test('a harness with no effort flag hides the effort row instead of greying it', () => {
@@ -207,6 +208,28 @@ test('after a real reply, one quiet line names what answered, with a duration on
   view.unmount();
   render(<Controls runtime={{ ...listener, observation: { ...done, lastSpawn: { ...receipt, harness: 'codex', version: '0.162.1', durationMs: 4200 } } }} onSave={jest.fn()} />);
   expect(screen.getByTestId('runtime-answered')).toHaveTextContent('Answered in 4.2s with Codex 0.162.1');
+});
+
+// F370 rough spot #11: a failed spawn says why, from the code the runner sent,
+// and points at the agent's log when there is none it knows.
+test('a failed spawn names its reason, or points at the log when it has none', () => {
+  const failed = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'failed' as const,
+    lastSpawn: receipt, confirmed: null };
+  const view = render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: 'claude-signed-out' } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent(/Claude Code isn’t signed in on the computer this agent runs on/);
+  view.unmount();
+  const next = render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: null } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent('The reason is in the agent’s log on the computer it runs on.');
+  next.unmount();
+  render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: '<b>made up</b>' } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent('The reason is in the agent’s log on the computer it runs on.');
+});
+
+test('a completed spawn shows no failure reason', () => {
+  const done = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'completed' as const,
+    lastSpawn: receipt, confirmed: null, lastSpawnFailure: 'login' };
+  render(<Controls runtime={{ ...listener, observation: done }} onSave={jest.fn()} />);
+  expect(screen.queryByTestId('runtime-spawn-failure')).toBeNull();
 });
 
 test('no reply yet, no answered line', () => {
@@ -260,4 +283,27 @@ test('a stored id no catalogue lists (an earlier Other…) still saves an effort
   fireEvent.change(screen.getByLabelText('effort'), { target: { value: 'max' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', effort: 'max' }));
+});
+
+// F458: a computer that already reported its harness signed out says so here
+// before any message fails; once a spawn has failed, the failure row says it.
+test('a signed-out harness gets its own row until a spawn failure replaces it', () => {
+  const inventory = [{ harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [], signedIn: false }];
+  const view = render(<Controls runtime={{ ...listener, inventory }} onSave={jest.fn()} />);
+  expect(screen.getByText('Codex isn’t signed in on the computer this agent runs on, so it can’t answer yet. Run codex there once and sign in.')).toBeInTheDocument();
+  view.unmount();
+  const failed = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'failed' as const,
+    lastSpawn: receipt, confirmed: null, lastSpawnFailure: 'login' };
+  render(<Controls runtime={{ ...listener, inventory, observation: failed }} onSave={jest.fn()} />);
+  expect(screen.queryByText(/so it can’t answer yet/)).toBeNull();
+  expect(screen.getByTestId('runtime-spawn-failure')).toBeInTheDocument();
+});
+
+test('runtimeNotReady: signed out first, then a failed spawn, else nothing', () => {
+  const out = [{ harness: 'codex', installed: true, version: null, models: null, efforts: [], signedIn: false }];
+  const failed = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'failed' as const, lastSpawn: null, confirmed: null };
+  expect(runtimeNotReady({ ...listener, inventory: out })).toBe('signedOut');
+  expect(runtimeNotReady({ ...listener, inventory: out, adapter: 'claude' })).toBeNull();
+  expect(runtimeNotReady({ ...listener, observation: failed })).toBe('spawnFailed');
+  expect(runtimeNotReady({ ...listener, inventory: [{ ...out[0], signedIn: true }] })).toBeNull();
 });

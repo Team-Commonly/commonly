@@ -3,8 +3,11 @@ import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import GlobalModelConfigService from './globalModelConfigService';
 import { allowedFromEnv, selectAllowedBaseUrl } from '../utils/allowedBaseUrl';
 import { publicAppUrl } from '../utils/publicAppUrl';
+import { defaultChatModel, geminiDirectModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+// F105: with no model named, a call asks LiteLLM (or OpenRouter) for
+// defaultChatModel(), the chart's LITELLM_CHAT_MODEL, and Google's own API for
+// a Gemini name (geminiDirectModel). Both used to default to `gemini-2.5-flash`.
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MAX_OUTPUT_TOKENS = 2048;
 const DEFAULT_LLM_TIMEOUT_MS = Number(process.env.LLM_REQUEST_TIMEOUT_MS) || 120000;
@@ -71,7 +74,7 @@ const getLiteLLMConfig = (): LiteLLMConfig | null => {
   if (!apiKey) {
     throw new Error('LITELLM_API_KEY or LITELLM_MASTER_KEY is required');
   }
-  const model = process.env.LITELLM_CHAT_MODEL || DEFAULT_MODEL;
+  const model = defaultChatModel();
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
     apiKey,
@@ -109,7 +112,7 @@ export const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null
     || (settings?.llmService as unknown as Record<string, unknown>)?.model
     || (settings?.llmService as unknown as Record<string, unknown>)?.defaultModel
     || process.env.OPENROUTER_MODEL
-    || DEFAULT_MODEL,
+    || defaultChatModel(),
   ).trim();
   if (!apiKey) {
     throw new Error('OpenRouter API key is required');
@@ -187,7 +190,9 @@ const generateViaLiteLLM = async (
 };
 
 const generateViaGemini = async (prompt: string, options: GenerateOptions = {}): Promise<string> => {
-  const modelName = options.model || DEFAULT_MODEL;
+  // Only a Gemini name reaches Google: a LiteLLM name (the configured default,
+  // or a fallback after LiteLLM failed) becomes Google's default.
+  const modelName = geminiDirectModel(options.model);
   const model = getGeminiModel(modelName);
   const result = await model.generateContent(prompt);
   const response = await result.response;
@@ -211,9 +216,9 @@ const stripProviderPrefix = (modelName: unknown): string => {
   // Also strip provider org prefixes like "anthropic/claude-3" -> not valid for Gemini
   // If it contains a slash and doesn't start with "gemini", it's not a Gemini model
   if (stripped.includes('/') && !stripped.startsWith('gemini')) {
-    return DEFAULT_MODEL;
+    return GEMINI_DIRECT_MODEL;
   }
-  return stripped || DEFAULT_MODEL;
+  return stripped || GEMINI_DIRECT_MODEL;
 };
 
 const generateViaOpenRouter = async (
@@ -260,7 +265,8 @@ export const generateText = async (prompt: string, options: GenerateOptions = {}
     || llmServiceConfig?.defaultModel
     || '',
   ).trim();
-  const selectedModel = options.model || configuredModel || DEFAULT_MODEL;
+  const selectedModel = options.model || configuredModel
+    || (configuredProvider === 'gemini' ? GEMINI_DIRECT_MODEL : defaultChatModel());
   const runOptions: GenerateOptions = {
     ...options,
     model: selectedModel,

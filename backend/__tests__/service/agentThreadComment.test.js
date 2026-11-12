@@ -186,13 +186,44 @@ describe('addComment says which pod the post belongs to', () => {
     await clearMongoDb();
   });
 
-  const commentOn = async (post, user) => {
+  const commentOn = async (post, user, text = '@seat look') => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await postController.addComment({
-      params: { id: String(post._id) }, body: { text: '@seat look' }, userId: String(user._id), user,
+      params: { id: String(post._id) }, body: { text }, userId: String(user._id), user,
     }, res);
     return AgentMentionService.enqueueMentions.mock.calls[0][0];
   };
+
+  // F232: the borrowed pod's wake-on-message seats, welcome and digest never
+  // asked about a post outside it, so only an explicit @mention goes out.
+  const podOf = (user) => Pod.create({
+    name: 'p', type: 'chat', createdBy: user._id, members: [user._id],
+  });
+  const postIn = (user, podId = null) => Post.create({
+    userId: user._id, content: 'x', comments: [], ...(podId ? { podId } : {}),
+  });
+
+  test('a comment with no @ on a post with no pod is sent with onlyExplicitMentions', async () => {
+    const user = await makeUser();
+    await podOf(user);
+    const mention = await commentOn(await postIn(user), user, 'nice post');
+    expect(mention.onlyExplicitMentions).toBe(true);
+  });
+
+  test('an @mention on a post with no pod is limited the same way', async () => {
+    const user = await makeUser();
+    await podOf(user);
+    const mention = await commentOn(await postIn(user), user);
+    expect(mention.onlyExplicitMentions).toBe(true);
+    expect(mention.message.content).toBe('@seat look');
+  });
+
+  test('a comment on a pod post keeps the pod\'s wake-on-message delivery', async () => {
+    const user = await makeUser();
+    const pod = await podOf(user);
+    const mention = await commentOn(await postIn(user, pod._id), user, 'nice post');
+    expect(mention.onlyExplicitMentions).toBeUndefined();
+  });
 
   test('a pod post stamps its own pod', async () => {
     const user = await makeUser();

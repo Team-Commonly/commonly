@@ -63,17 +63,31 @@ const BODY_PREVIEW = 2000;
 export const CARD_CONTENTS_MAX = 64 * 1024;
 const CARD_MESSAGE_MAX = 4096;
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+
+/** The longest prefix of `bytes` no longer than `max` that ends on a whole UTF-8 character. */
+const utf8Prefix = (bytes: Buffer, max: number): number => {
+  let take = Math.min(bytes.length, max);
+  // A continuation byte (0x80-0xBF) at the cut means a character straddles it.
+  while (take > 0 && take < bytes.length && bytes[take] >= 0x80 && bytes[take] <= 0xbf) take -= 1;
+  return take;
+};
 const shortSha = (sha: string): string => sha.slice(0, 7);
+
+// The summary carries text as it will land. The card shows every format
+// character in it (bidi controls included) as its code point:
+// frontend toolCallView.showInvisibles.
 
 /** The commit message as the owner reads it: whole, labelled, and cut only past the cap. */
 const cardMessage = (message: string): Record<string, unknown> => {
   const truncated = message.length > CARD_MESSAGE_MAX;
+  const shown = truncated ? message.slice(0, CARD_MESSAGE_MAX) : message;
   return {
     label: 'Full commit message, exactly as it will be recorded',
     text: truncated
-      ? `${message.slice(0, CARD_MESSAGE_MAX)}\n`
+      ? `${shown}\n`
         + `[truncated: the card shows ${CARD_MESSAGE_MAX} of ${message.length} characters]`
-      : message,
+      : shown,
     length: message.length,
     truncated,
   };
@@ -94,7 +108,7 @@ const cardFiles = (files: Array<{ path?: unknown; content?: unknown }>): {
   const shown = files.map((file) => {
     const content = Buffer.from(str(file.content), 'utf8');
     totalBytes += content.length;
-    const take = Math.min(content.length, remaining);
+    const take = utf8Prefix(content, remaining);
     remaining -= take;
     shownBytes += take;
     const truncated = take < content.length;

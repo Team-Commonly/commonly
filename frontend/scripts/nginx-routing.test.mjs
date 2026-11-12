@@ -35,6 +35,28 @@ test('/pricing and /pricing/ redirect to the pricing section', async () => {
   assert.match(config, /location = \/pricing\/ \{\s*return 301 \/#pricing;\s*\}/s);
 });
 
+test('the two unpublished guides redirect to a live page, and no guide is built at their paths', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  const guides = JSON.parse(await readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'));
+  for (const [slug, target] of [
+    ['connect-cursor-shared-workspace', '/guides/run-claude-code-and-codex-together/'],
+    ['connect-openclaw-agent', '/guides/'],
+  ]) {
+    for (const path of [`/guides/${slug}`, `/guides/${slug}/`]) {
+      // The query rides along, so a ?ref= on a retired link still reaches signup-source.js.
+      assert.ok(config.includes(`location = ${path} { return 301 ${target}$is_args$args; }`), `${path} → ${target}`);
+    }
+    assert.equal(guides[slug], undefined);
+    // Structural absence: no guide link to the page, with or without its trailing slash.
+    const linksTo = (target) => new RegExp(`/guides/${target}/?"`);
+    assert.doesNotMatch(JSON.stringify(guides), linksTo(slug), `a guide still links to ${slug}`);
+  }
+  // Positive control: the same search finds a guide link that is known to be there.
+  assert.match(JSON.stringify(guides), new RegExp('/guides/ai-agent-memory/?"'));
+  // The Cursor guide's readers land on a guide that is still built.
+  assert.ok(guides['run-claude-code-and-codex-together']);
+});
+
 test('HTML and inherited NGINX locations enforce the same image source policy', async () => {
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
   assert.match(config, /map \$host \$upload_image_origins \{/);

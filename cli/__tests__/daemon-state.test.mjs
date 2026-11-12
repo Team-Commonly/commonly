@@ -36,3 +36,18 @@ test('daemon state is private and allow-listed, never a credential dump', () => 
   }));
   expect(loadDaemonState({ home }).seats[0].lastError).toBe('child process error');
 });
+
+// F427: status reads a second instance's log and last turn by its record key.
+test('the record key survives the save', () => {
+  const home = mkdtempSync(join(tmpdir(), 'commonly-daemon-state-'));
+  saveDaemonState({
+    machineName: 'Mac',
+    seats: [
+      { agentName: 'wren', instanceId: 'alpha', recordKey: 'wren@alpha', state: 'running' },
+      { agentName: 'wren', instanceId: 'default', recordKey: { not: 'a string' }, state: 'running' },
+    ],
+  }, { home });
+  const { seats } = loadDaemonState({ home });
+  expect(seats[0].recordKey).toBe('wren@alpha');
+  expect(seats[1].recordKey).toBeNull();
+});

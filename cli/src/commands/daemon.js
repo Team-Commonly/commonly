@@ -1,4 +1,4 @@
-import { collectRuntimeInventory } from '../lib/runtime-inventory.js';
+import { collectRuntimeInventory, createInventoryCache } from '../lib/runtime-inventory.js';
 /**
  * commonly daemon <subcommand>
  *
@@ -13,7 +13,7 @@ import {
   chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch,
 } from 'fs';
 import { createClient } from '../lib/api.js';
-import { getToken, resolveInstanceUrl } from '../lib/config.js';
+import { getToken, resolveInstance, resolveInstanceUrl } from '../lib/config.js';
 import {
   clearDaemonStop, loadDaemonRecord, loadDaemonStop, removeDaemonRecord,
   saveDaemonRecord, saveDaemonStop,
@@ -26,7 +26,8 @@ import {
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getLastTurn } from '../lib/session-store.js';
 import { getAdapter, providerKeyEnvNames, seatProviderKeyEnv } from '../lib/adapters/index.js';
-import { runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
+import { loginState, runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
+
 import {
   installDaemonService,
   installSummary,
@@ -57,6 +58,28 @@ import {
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 import { machineHostReport } from '../lib/machine-host.js';
 import { orchestrateDaemonSetup } from '../lib/stable-install.js';
+import { CLI } from '../lib/cli-hint.js';
+
+// Set on the steps `daemon setup` runs, so a step can leave a line to setup.
+const SETUP_CHILD_ENV = 'COMMONLY_DAEMON_SETUP_STEP';
+
+// F459: login and register take --instance, so the first-timer walk tried it
+// on run too and got "unknown option". Run serves the one registration this
+// computer has, so --instance only confirms it: the same instance runs, any
+// other (or an unknown saved key) is refused with the register line instead of
+// quietly serving the registered one.
+const instanceKey = (url) => String(url || '').replace(/\/+$/, '').toLowerCase();
+export const daemonRunInstanceRefusal = (record, instanceArg, resolve = resolveInstance) => {
+  if (!instanceArg) return null;
+  const wanted = resolve(instanceArg)?.url;
+  if (wanted && instanceKey(wanted) === instanceKey(record?.instanceUrl)) return null;
+  if (!wanted) {
+    return `This computer is registered with ${record?.instanceUrl}, and no saved instance is named ${instanceArg}. `
+      + `To use another instance, sign in to it first (${CLI} login --instance <url>), then ${CLI} daemon register --instance <url>`;
+  }
+  return `This computer is registered with ${record?.instanceUrl}, not ${instanceArg}. To run it for that instance instead: `
+    + `${CLI} daemon register --instance ${instanceArg}`;
+};
 
 // launchd, systemd and Task Scheduler hold one Commonly daemon per computer
 // account. Install refuses to stop another HOME's; this flag takes it over.
@@ -114,19 +137,22 @@ const watchDaemonStatus = async () => {
       const seats = (loadDaemonState()?.seats || []).map((seat) => ({
         ...seat,
         // The supervisor stamps spawn time; the session store holds real turns.
-        lastTurnAt: readSessionLastTurn(seat.agentName),
+        lastTurnAt: readSessionLastTurn(seat.recordKey || seat.agentName),
       }));
+      // Keyed by the local record, so two instances of one agent never read
+      // each other's log, last turn or pod (F427).
       const logTails = {};
       for (const seat of seats) {
-        const tail = readLogTail(daemonSeatLogPath(seat.agentName), 3);
-        logTails[seat.agentName] = tail ? tail.split('\n') : [];
+        const key = seat.recordKey || seat.agentName;
+        const tail = readLogTail(daemonSeatLogPath(key), 3);
+        logTails[key] = tail ? tail.split('\n') : [];
       }
       let states = null;
       let stateNote = '';
       if (!getToken(record.instanceUrl)) {
-        stateNote = `Not logged in: showing local process state only. Run: commonly login --instance ${record.instanceUrl}`;
+        stateNote = `Not logged in: showing local process state only. Run: ${CLI} login --instance ${record.instanceUrl}`;
       } else {
-        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.agentName)?.podId).filter(Boolean))];
+        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.recordKey || seat.agentName)?.podId).filter(Boolean))];
         try {
           states = await reachFor(podIds);
         } catch (error) {
@@ -168,14 +194,14 @@ const watchDaemonStatus = async () => {
 const requireDaemonRecord = () => {
   const record = loadDaemonRecord();
   if (!record) {
-    throw new Error('No local daemon is registered. Run: commonly daemon register');
+    throw new Error(`No local daemon is registered. Run: ${CLI} daemon register`);
   }
   return record;
 };
 
 const requireUserToken = (instance) => {
   const token = getToken(instance);
-  if (!token) throw new Error(`Not logged in to ${instance}. Run: commonly login --instance ${instance}`);
+  if (!token) throw new Error(`Not logged in to ${instance}. Run: ${CLI} login --instance ${instance}`);
   return token;
 };
 
@@ -271,9 +297,9 @@ const storedDaemonState = async (client, record) => {
 };
 
 export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
-  ? "This computer's old key was revoked. Run: commonly daemon register"
+  ? `This computer's old key was revoked. Run: ${CLI} daemon register`
   : isMissingDaemonMachine(error)
-    ? 'This computer is no longer registered. Run: commonly daemon register'
+    ? `This computer is no longer registered. Run: ${CLI} daemon register`
   : `Daemon status failed: ${error.message}`);
 
 // `daemon setup` on a computer that is already registered for this instance
@@ -296,7 +322,7 @@ export const allowRevokedDaemonReplacement = async ({ existing, client }) => {
   if (!existing) return null;
   const state = await storedDaemonState(client, existing);
   if (state === 'active') {
-    throw new Error(`A local daemon is already registered for ${existing.machineName}. Run: commonly daemon status`);
+    throw new Error(`A local daemon is already registered for ${existing.machineName}. Run: ${CLI} daemon status`);
   }
   return state;
 };
@@ -367,26 +393,30 @@ export const firstSupervisionPass = async ({
 
 export const registerDaemon = (program) => {
   const daemon = program.command('daemon').description('Manage the local Commonly daemon');
+  const signedOutNotes = async () => (await signedOutAdapters({
+    detect: (name) => getAdapter(name)?.detect(),
+    runStatus: runLoginStatus,
+  })).map((name) => `Note: ${signedOutHint(name)}.`);
 
   daemon.addHelpText('after', `
 The daemon token is scoped to this machine and stored in a 0600 file under
 ~/.commonly/daemon/. It is never shown again after registration.
 
 Examples:
-  $ commonly daemon setup                             # install, log in, register, and start — one step
-  $ commonly daemon register --name "Sam's MacBook"
-  $ commonly daemon heartbeat
-  $ commonly daemon status --verbose
-  $ commonly daemon logs --seat my-agent -f
-  $ commonly daemon start|stop|restart
-  $ commonly daemon unregister
+  $ ${CLI} daemon setup                             # install, log in, register, and start — one step
+  $ ${CLI} daemon register --name "Sam's MacBook"
+  $ ${CLI} daemon heartbeat
+  $ ${CLI} daemon status --verbose
+  $ ${CLI} daemon logs --seat my-agent -f
+  $ ${CLI} daemon start|stop|restart
+  $ ${CLI} daemon unregister
 `);
 
   daemon
     .command('setup')
     .description('From a fresh computer in one step: install the CLI under your home (no sudo, no global install), log in, register this computer, and start the daemon')
     .option('--instance <url-or-key>', 'Target Commonly instance')
-    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox (see `commonly daemon install`). Forwarded to the install step.')
+    .option(UNSANDBOXED_FLAG, `Native Windows only: the agents this daemon runs have no sandbox (see \`${CLI} daemon install\`). Forwarded to the install step.`)
     .option(REPLACE_FLAG, REPLACE_HELP)
     .action(async (opts) => {
       try {
@@ -407,7 +437,8 @@ Examples:
           // device-auth and any prompts work; reject on a non-zero exit so a
           // failed step stops the chain before the next one.
           runCli: (entry, args) => new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, [entry, ...args], { stdio: 'inherit', env: process.env });
+            // SETUP_CHILD_ENV: register leaves the signed-out note to setup's last line.
+            const child = spawn(process.execPath, [entry, ...args], { stdio: 'inherit', env: { ...process.env, [SETUP_CHILD_ENV]: '1' } });
             child.on('error', reject);
             child.on('close', (code) => (code === 0
               ? resolve()
@@ -416,11 +447,7 @@ Examples:
         });
         // Growth's F370 walk: setup said all was well, and the first @mention
         // then failed with "claude exited 1: Not logged in".
-        const signedOut = await signedOutAdapters({
-          detect: (name) => getAdapter(name)?.detect(),
-          runStatus: runLoginStatus,
-        });
-        for (const name of signedOut) console.log(`Note: ${signedOutHint(name)}.`);
+        for (const line of await signedOutNotes()) console.log(line);
       } catch (error) {
         console.error(`Daemon setup failed: ${error.message}`);
         process.exitCode = 1;
@@ -462,11 +489,17 @@ Examples:
           console.log('Initial heartbeat accepted.');
         } catch (error) {
           console.error(`Machine is registered, but its initial heartbeat failed: ${error.message}`);
-          console.error('Retry with: commonly daemon heartbeat');
+          console.error(`Retry with: ${CLI} daemon heartbeat`);
           process.exitCode = 1;
         }
         if (existing && existsSync(servicePaths(process.platform, homedir()).file)) {
-          console.log('Restart the installed daemon to use the new key: commonly daemon restart');
+          console.log(`Restart the installed daemon to use the new key: ${CLI} daemon restart`);
+        }
+        // F458: register run by hand (the F454 walk) said nothing, and the
+        // agent looked healthy until its first message failed. Setup prints
+        // this itself, after the install step, so its own register doesn't.
+        if (!process.env[SETUP_CHILD_ENV]) {
+          for (const line of await signedOutNotes()) console.log(line);
         }
       } catch (error) {
         console.error(`Daemon registration failed: ${error.message}`);
@@ -552,7 +585,7 @@ Examples:
     const deps = serviceDeps();
     const target = servicePaths(process.platform, homedir());
     if (!deps.existsFile(target.file)) {
-      throw new Error(`No installed daemon service found. Run: commonly daemon install`);
+      throw new Error(`No installed daemon service found. Run: ${CLI} daemon install`);
     }
     await actionFn({ platform: process.platform, home: homedir(), execCmd: deps.execCmd });
     console.log(`Daemon ${action} requested (${target.kind}).`);
@@ -579,7 +612,7 @@ Examples:
         const optedInBefore = loadUnsandboxedOptIn();
         if (opts.unsandboxed) {
           saveUnsandboxedOptIn();
-          console.log('Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, people you invite later included, can direct it. To turn this off, run: commonly daemon install');
+          console.log(`Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, people you invite later included, can direct it. To turn this off, run: ${CLI} daemon install`);
         } else if (clearUnsandboxedOptIn()) {
           console.log('Turned off running without a sandbox: on Windows, agents this daemon runs are refused again until you choose otherwise.');
         }
@@ -666,19 +699,26 @@ Examples:
     .option('--poll <ms>', 'Work-list poll interval in ms', String(DEFAULT_POLL_MS))
     .option('--heartbeat <ms>', 'Heartbeat interval in ms', String(DEFAULT_HEARTBEAT_MS))
     .option('--foreground', 'Keep the supervisor attached to this terminal (default for direct invocation)')
+    .option('--instance <url-or-key>', 'Confirm the instance this computer is registered with')
     .action(async (opts) => {
       let record;
       try {
         const terminal = loadDaemonStop();
         if (terminal) {
-          console.error('Daemon stopped: no valid local registration. Run: commonly daemon register');
+          console.error(`Daemon stopped: no valid local registration. Run: ${CLI} daemon register`);
           process.exitCode = process.platform === 'darwin' ? 0 : terminal.exitCode;
           return;
         }
         record = requireDaemonRecord();
+        const instanceRefusal = daemonRunInstanceRefusal(record, opts.instance);
+        if (instanceRefusal) {
+          console.error(instanceRefusal);
+          process.exitCode = 1;
+          return;
+        }
         const stopped = loadDaemonStop(record);
         if (stopped) {
-          console.error("Daemon stopped: this computer's key was revoked. Run: commonly daemon register");
+          console.error(`Daemon stopped: this computer's key was revoked. Run: ${CLI} daemon register`);
           // launchd restarts the first nonzero terminal exit once; a saved
           // verdict makes that second invocation successful and ends the loop.
           process.exitCode = process.platform === 'darwin' ? 0 : stopped.exitCode;
@@ -707,7 +747,7 @@ Examples:
           const name = seatProviderKeyEnv({ adapter: saved?.adapter, environment: saved?.environment });
           if (!name || process.env[name] || warnedKeys.has(`${agentName}:${name}`)) return;
           warnedKeys.add(`${agentName}:${name}`);
-          stampLog(`WARNING: [${agentName}] needs ${name}, which is not set in this environment, so it will fail to start (a provider.keyFile avoids this); export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+          stampLog(`WARNING: [${agentName}] needs ${name}, which is not set in this environment, so it will fail to start (a provider.keyFile avoids this); export it and re-run: ${CLI} daemon install (docs/agents/daemon-service-environment.md)`);
         };
         // TASK-660: the daemon outlives many publishes, so say once at start-up
         // when it is stale. Not awaited: supervision never waits on the registry.
@@ -728,7 +768,7 @@ Examples:
           } catch (error) {
             stampLog(`could not save revoked-machine stop marker: ${error.message}`);
           }
-          stampLog("machine key revoked; stopping supervised agents. Run: commonly daemon register");
+          stampLog(`machine key revoked; stopping supervised agents. Run: ${CLI} daemon register`);
           clearInterval(pollTimer);
           clearInterval(heartbeatTimer);
           supervisor.stop();
@@ -736,8 +776,7 @@ Examples:
           // exit parks it on macOS; systemd honors 77 directly.
           process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
         };
-        let cachedInventory;
-        let inventoryCheckedAt = 0;
+        const runtimeInventory = createInventoryCache((harnesses) => collectRuntimeInventory(getAdapter, undefined, harnesses, { loginState }));
         supervisor = createDaemonSupervisor({
           record,
           client,
@@ -746,12 +785,14 @@ Examples:
           // One child per agent, logging to its own file. The child is the
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
-          spawnChild: (agentName) => {
-            warnMissingSeatKey(agentName);
-            const seatLog = daemonSeatLogPath(agentName);
+          // `recordKey` is the local record: `<name>`, or `<name>@<id>` for
+          // another instance, which `agent run` resolves the same way (F427).
+          spawnChild: (recordKey) => {
+            warnMissingSeatKey(recordKey);
+            const seatLog = daemonSeatLogPath(recordKey);
             const out = openSync(seatLog, 'a', 0o600);
             chmodSync(seatLog, 0o600);
-            return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
+            return spawn(process.execPath, [process.argv[1], 'agent', 'run', recordKey], {
               stdio: ['ignore', out, out],
               // Windows: never flash a console window per seat (no-op elsewhere).
               windowsHide: true,
@@ -761,13 +802,7 @@ Examples:
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
           machineReport: daemonMachineReport,
-          runtimeInventory: async () => {
-            if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
-              cachedInventory = await collectRuntimeInventory(getAdapter);
-              inventoryCheckedAt = Date.now();
-            }
-            return cachedInventory;
-          },
+          runtimeInventory,
           resolveAdapter: (runtime) => resolveAdapterForRuntime(runtime),
           log: stampLog,
           persistState: (seats) => saveDaemonState({
@@ -776,7 +811,7 @@ Examples:
             updatedAt: new Date().toISOString(),
             seats: seats.map((seat) => ({
               ...seat,
-              lastTurnAt: getLastTurn(seat.agentName) || seat.lastTurnAt,
+              lastTurnAt: getLastTurn(seat.recordKey || seat.agentName) || seat.lastTurnAt,
             })),
           }),
         });
@@ -851,7 +886,7 @@ Examples:
         });
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
         console.log(`${machine.name}: ${machine.status} (last heartbeat: ${lastSeen})`);
-        if (loadUnsandboxedOptIn()) console.log('Sandbox: unsandboxed (opted in). Agents run with your own access and get no connector grants, and anyone in an invite-only pod can direct a Codex agent there. Turn off: commonly daemon install');
+        if (loadUnsandboxedOptIn()) console.log(`Sandbox: unsandboxed (opted in). Agents run with your own access and get no connector grants, and anyone in an invite-only pod can direct a Codex agent there. Turn off: ${CLI} daemon install`);
         if (opts.verbose) {
           const local = loadDaemonState();
           if (!local) {

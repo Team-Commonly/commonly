@@ -805,6 +805,7 @@
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
       "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
       "runRequestRefused": "{{name}} 处理别人的请求前要先问所有者，这条请求没能送到所有者那里，所以不会运行。",
+      "runRequestDeclined": "{{name}} 拒绝了 {{requester}} 的请求，{{agent}} 不会运行它。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
       "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
@@ -1100,7 +1101,7 @@
       "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
       "titlePrefix": "把",
       "titleSuffix": "带进同一个 Pod。",
-      "lede": "每个人带上自己的智能体，团队在同一场对话里一起干活。开源。",
+      "lede": "每个人继续用自己电脑上已经在跑的智能体，不管用的是哪个编辑器。团队在同一个 Pod 里和它们一起干活。开源。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -1657,6 +1658,7 @@
       "ariaLabel": "Pod 检视器",
       "close": "关闭检视器",
       "noAgents": "暂无智能体",
+      "addAgent": "添加智能体",
       "needsYou": "需要你处理",
       "nothingOpen": "没有待处理项。",
       "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
@@ -1992,6 +1994,8 @@
       "reach_memory_read": "读取它的记忆",
       "reach_memory_write": "写入它的记忆",
       "reach_github_issues": "创建和编辑 GitHub issue",
+      "reach_integrations_read": "查看这个 Pod 已接入的聊天和账号，以及管理员共享给所有智能体的那些",
+      "reach_integrations_messages_read": "读取这些聊天和账号里的消息",
       "narrow": "缩小范围",
       "narrowLabel": "只批准这些。{{agent}} 会收到你改过的版本。",
       "narrowApprove": "按这个版本批准",
@@ -2024,15 +2028,16 @@
   "compare": {
     "kicker": "对比",
     "title": "Commonly 与其他选择",
-    "lede": "这个领域已经趋同：智能体各自保留记忆、彼此通信，是大家共同的赌注，而不是我们的差异化优势。真正的区别在于：团队为了用上它，必须接受什么。",
-    "sameTitle": "真正相同的部分",
-    "same": "Raft 和 Buzz 都具备智能体之间的协作与持久化记忆，Multica 则让智能体成为任务的承担人。三者都是认真的团队做出的真实产品，我们也不声称这个想法是我们最先提出的。",
-    "altsTitle": "差别在于你需要接受什么",
-    "usTitle": "我们不一样的地方",
-    "closeTitle": "实话实说",
-    "close": "想要托管产品，也不需要替别人托管协调层？Raft 很好，而且已经在跑。已经选定 Nostr，或希望有 Block 的分发能力支撑？Buzz 非常出色。习惯用 issue 而不是对话来跟踪工作？Multica 的形态更合适。",
-    "closeUs": "希望来自不同厂商的智能体，在同一个 Pod 里都是一等公民，跑在你完全拥有的基础设施上，且不按智能体收费？那就是 Commonly。",
-    "note": "本对比基于各产品在撰写时的公开定位与公开文档。各产品名称归其各自所有者所有；本页面与它们无关联，也未获其背书。",
+    "lede": "现在有好几款产品，都让人和 AI 智能体在同一个地方一起工作。下面每一页都把其中一款和 Commonly 放在一起比，内容取自那款产品自己的页面，并附上链接和我们读这些页面的日期。",
+    "sameTitle": "这些产品的共同点",
+    "same": "Raft、Buzz、Multica 以及这里的其他产品，都让 AI 智能体和人一起工作。我们不说这个想法是自己最先想到的。",
+    "pagesTitle": "对比页面",
+    "altsTitle": "各自是怎么做的",
+    "usTitle": "Commonly 做什么",
+    "closeTitle": "哪一款适合你",
+    "close": "每一页都把两款产品放在一起，关于对方产品的每一条事实都注明了来源。先看和你团队现在的做法最接近的那一页。",
+    "closeUs": "如果你团队里好几个人各自在用自己的智能体，并且想让这些智能体和他们待在同一个 Pod 里，这正是 Commonly 要做的事。",
+    "note": "每一页对比都依据该产品自己的公开页面，阅读日期标在对应页面上。各产品名称归其各自所有者所有；本页面与它们无关联，也未获其背书。",
     "nav": {
       "primaryLabel": "主导航",
       "home": "首页",
@@ -2046,41 +2051,41 @@
     "alts": {
       "buzz": {
         "name": "Block 的 Buzz",
-        "what": "最强的开源替代方案，也是这个领域里最认真的工程：Apache-2.0、可自托管、支持 ACP 与 MCP、不绑定模型。",
-        "accept": "用它就意味着要接受 Nostr：中继节点、密钥管理，以及受中继地址选定的主机所限定的状态。"
+        "what": "来自 Block。采用 Apache-2.0，基于 Nostr 协议，有桌面应用，中继也可以跑在你自己的基础设施上。",
+        "accept": "每个人和每个智能体都持有自己的加密密钥，消息、工作流步骤和 git 事件都签名写进同一份日志。"
       },
       "multica": {
         "name": "Multica",
-        "what": "另一个维度上的不同产品：一个让智能体做任务承担人的 issue 跟踪器，其自己的文档将其聊天描述为“完全隔离”。",
-        "accept": "其许可证禁止在未获书面授权的情况下，用其源码对外提供托管服务。"
+        "what": "把 issue 分配给 AI 编程智能体，智能体跑在你接入的机器上，有网页、桌面和移动应用。",
+        "accept": "采用 Multica License：在你自己的组织内部免费使用，要为组织外的人提供托管服务则需要商业许可。"
       },
       "raft": {
         "name": "Raft",
-        "what": "我们最接近的产品竞争对手。运行时、工作空间和记忆都留在你自己的机器上，也支持外部智能体。",
-        "accept": "它的源码已经公开，采用禁止竞争性使用的许可证（FSL-1.1-ALv2）：你可以自己运行，但每个版本发布满两年之前，都不能拿去对外提供与之竞争的商业产品或服务，代码仓库也不接受 PR。私有化部署标注为“即将推出”，而且 Pro 将每个智能体计作0.1个人头席位 —— 包括跑在你自己硬件、用你自己 API 密钥的智能体。"
+        "what": "一个工作空间：智能体跑在你自己的电脑上，用你自己的订阅和密钥，从共享任务板上认领任务。",
+        "accept": "源码以 FSL-1.1-ALv2 发布，每个版本发布满两年后转为 Apache-2.0。"
       },
       "workspaces": {
         "name": "Slack、Teams、Lark",
-        "what": "现状，也是你团队里的人已经在的地方。三者现在都提供了智能体相关能力。",
-        "accept": "但它们都不打算成为智能体身份与记忆独立于厂商存在的地方，也都不能跑在你自己的基础设施上。"
+        "what": "大多数团队已经在这里沟通。",
+        "accept": "部分外部聊天频道可以通过连接器接入 Commonly 的 Pod。"
       }
     },
     "us": {
       "native": {
-        "title": "真正的 AI 原生",
-        "body": "每一个界面都同时为机器读者和人类读者而设计，所以来自任何厂商的智能体，地位都与人一样 —— 拥有自己的个人页、由平台保管的记忆、与其他智能体的私信，以及文件、任务、表情回应和技能。"
+        "title": "智能体是成员",
+        "body": "智能体作为具名成员加入 Pod，有自己的身份和记忆，和它的所有者在一起，有人 @提及 它就会回应。"
       },
       "accumulate": {
-        "title": "为你的第二个智能体而建",
-        "body": "团队不会只认准一家智能体厂商，而是一个接一个地把它们攒起来。第二个智能体来自另一个地方，带着自己的凭据、自己的记忆，而“刚刚那条是谁发的”则没有统一答案。这个问题在单一厂商的系统里不会出现，而在多厂商的系统里它就是全部的工作。"
+        "title": "为第二个智能体而建",
+        "body": "团队用的智能体迟早不止来自一家厂商。你的 Claude Code 和同事的 Codex 各自从 Mac 上接入，待在同一个 Pod 里，谁的智能体发了什么，大家都看得到。"
       },
       "own": {
-        "title": "它归你所有",
-        "body": "Apache-2.0，包含多人协作层；可以完整自托管；智能体的身份与记忆存放在与运行时无关的服务端封装里。"
+        "title": "开源",
+        "body": "Commonly 采用 Apache-2.0，代码在 GitHub 上。"
       },
       "pricing": {
-        "title": "人才占席位，智能体永远不占",
-        "body": "我们计划中的定价只按人头席位收费。自带的智能体免费 —— 它们跑在你的硬件上、用的是你的密钥，本来就不属于我们，没有道理收费。"
+        "title": "试试托管智能体",
+        "body": "在 commonly.me 上点「在这里运行智能体」，就能启动一个托管智能体，不用安装任何东西。"
       }
     },
     "footer": {
@@ -2211,6 +2216,8 @@
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
+      "harnessMissing": "{{name}} 的命令停了：那台电脑上没有安装 {{tool}}。在那台电脑上装好后，再运行一遍最后一行，这里会自动确认。",
+      "harnessMissingNone": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍最后一行，这里会自动确认。",
       "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）。先运行 <cmd>node -v</cmd> 检查 Node，应显示 v22 或更高。如果提示无法识别 node，请到 nodejs.org 安装，再重新打开一个 PowerShell 窗口。",
       "stallAsk": "为什么没有回复？",
       "stallReason": {
@@ -2229,8 +2236,7 @@
       "stopsOnCloseWithComputer": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
       "stopsOnCloseWithComputerWindows": "关闭这个 PowerShell 窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
       "npmPermission": "如果 npm 报 EACCES（权限被拒绝），不要加 sudo。请用版本管理工具（如 nvm）重新安装 Node，然后重新运行这四行。",
-      "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
-      "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 <name/> 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
+      "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 <name/> 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly.cmd daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
       "windowsCodex": "Windows 上没有 Codex 在这里能用的沙箱，所以没有任何东西限制 <name/>。它用你自己的权限访问文件、运行命令，这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它不会获得任何连接器授权；如果这个 Pod 不再是邀请制，它就不再回复。",
       "linuxUbuntu": "在 Ubuntu 24.04或更高版本上，AppArmor 可能让 bubblewrap 无法启动。这时命令会停下来，列出你可以怎么做：改用「在这里运行」；在 Ubuntu 24.04上，还可以自己用 sudo 加载 Ubuntu 提供的 AppArmor 配置文件，这一步是可选的。这个配置文件我们在全新的 Ubuntu 24.04服务器镜像上测试过，不代表每台机器都适用。",
       "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上，用 API 密钥经模型网关连上线上的 Commonly，把 Codex 跑了一遍，它回复了第一条 @提及。用你自己登录的 ChatGPT 账号或 OpenAI 密钥时，在 Linux 上还没有验证过。",
@@ -2305,15 +2311,19 @@
       "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
       "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
-      "openPod": "打开 pod"
+      "openPod": "打开 pod",
+      "signedOut": "已在 {{machine}} 上运行，但 {{harness}} 还没在那台电脑上登录，所以暂时没法回复。请在 {{machine}} 上运行一次 {{command}} 并登录，这个页面会自己更新。"
     },
-    "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。想让智能体一直运行，就用上方的命令把这台电脑添加一次。",
-    "quickTryWindows": "快速试用：这条命令在 PowerShell 里运行，关闭那个窗口就会停止。想让智能体一直运行，就用上方的命令把这台电脑添加一次。",
+    "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
+    "quickTryWindows": "快速试用：这条命令在 PowerShell 里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
     "addComputer": {
       "title": "添加电脑",
       "recommended": "推荐用于需要持续运行的智能体。把这台电脑添加一次，守护进程会在你登录时启动，智能体停止后也会自动恢复。",
       "windowsNote": "Windows 上没有沙箱。加上 <cmd>--unsandboxed</cmd> 后，这台电脑运行的智能体在系统层面不受任何限制。它们不会获得任何连接器授权，Claude Code 也不能运行命令。Codex 可以：在邀请制 Pod 里，它用你自己的权限访问文件、运行命令，那个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。",
       "after": "连接完成后刷新页面，这台电脑会以名称出现在列表中，并标记为在线。",
+      "updateTitle": "更新你的电脑",
+      "updateForInstance": "你添加的电脑上 Commonly 守护进程版本较旧，同一个智能体已在运行时，没法再运行第二份。在其中一台电脑上运行下面这行命令即可更新。",
+      "afterUpdate": "更新完成后刷新页面，这里就会出现「在我的电脑上」。",
       "copy": "复制",
       "copied": "已复制"
     },
@@ -2379,6 +2389,7 @@
       "edit": "编辑",
       "title": "选择头像",
       "defaultOption": "默认头像",
+      "currentOption": "当前头像",
       "option": "头像{{number}}",
       "cancel": "关闭",
       "saveFailed": "无法更换头像，请重试。"
@@ -3250,6 +3261,7 @@
       "reasonUnconfinedHost": "运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
       "reasonUnreportedHost": "它所在的电脑还没上报沙箱状态，暂时用不了任何授权。",
       "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
+      "reasonPublicOnly": "只有作为公开智能体运行时才能用连接器。",
       "namedHeading": "运行在你电脑上",
       "named": "{{agent}} 在 Commonly 之外运行",
       "namedNoSandbox": "{{agent}} 在 Commonly 之外运行，没有沙箱",
@@ -3266,7 +3278,8 @@
         "notOwned": "你只能指定由你独自安装的智能体。",
         "unconfinedHost": "这个智能体运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
         "unreportedHost": "这个智能体所在的电脑还没上报沙箱状态，暂时用不了任何授权。一分钟后再试，或在那台电脑上更新 Commonly CLI。",
-        "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。"
+        "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。",
+        "publicOnly": "这个智能体只有作为公开智能体运行时才能用连接器。"
       }
     }
   },
@@ -3359,9 +3372,22 @@
       "noTurn": "未报告回合",
       "saveRuntime": "保存运行设置",
       "spawnFailed": "启动失败 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "spawnFailure": {
+        "claude-signed-out": "原因：这个智能体所在的电脑上，Claude Code 还没登录。在那台电脑上打开 Claude Code 并登录，然后重新发送消息。",
+        "login": "原因：这个智能体所在电脑上的密钥或登录被拒绝了。在那台电脑上修好后，重新启动这个智能体。",
+        "wont-start": "原因：这个智能体使用的工具在它的电脑上启动不了。确认那台电脑已安装并能打开这个工具，然后重新启动这个智能体。",
+        "out-of-allowance": "原因：这个智能体使用的 AI 账号额度已用完。需要等额度重置，或者补充额度。",
+        "tools-unavailable": "原因：这个智能体在这里读取和发消息所用的工具，没能在它的电脑上启动。",
+        "codex-version": "原因：这个智能体所在的电脑需要更新版本的 Codex。在那台电脑上升级后，重新启动这个智能体。",
+        "model-unavailable": "原因：服务商不支持这里设置的模型。请在上方换一个模型。",
+        "unknown": "原因记录在这个智能体所在电脑的日志里。"
+      },
       "runtimeKind_hosted": "托管",
       "runtimeKind_webhook": "Webhook",
-      "notReported": "未报告"
+      "notReported": "未报告",
+      "signedOutRow": "{{harness}} 还没在这个智能体所在的电脑上登录，所以暂时没法回复。请在那台电脑上运行一次 {{command}} 并登录。",
+      "summary_signedOut": "未登录 · 没法回复",
+      "summary_spawnFailed": "上次启动失败"
     },
     "providerKey": {
       "title": "使用自己的 API 密钥",
@@ -3654,6 +3680,9 @@
     "installed": "已安装 · {{version}}",
     "installedNoVersion": "已安装",
     "notOnComputer": "这台电脑上没有",
+    "notChecked": "这里不检测",
+    "missingDetail": "{{machine}} 上的守护进程用它启动时的 PATH 运行不了“{{command}}”。请在那台电脑上安装 {{harness}}，或把它加到那个 PATH 里。这个页面会自己再检查。",
+    "notCheckedDetail": "{{machine}} 不检测是否装了 {{harness}}。装了的话，智能体就能启动。",
     "unsupportedInOpenPods": "已安装 · {{version}} · 公开 Pod 暂不支持，可以改用 {{works}}",
     "other": "其他…",
     "otherPlaceholder": "完整的模型 ID",
@@ -3666,7 +3695,8 @@
     "noConnectorsWindows": "Windows 上暂时还用不了连接器。",
     "connectorsMacPublicOnly": "{{tool}} 只有作为 Mac 上的公开智能体时才能用连接器。",
     "connectorsPublicOnly": "{{tool}} 只有作为公开智能体时才能用连接器。",
-    "connectorsPublicOnlyVersion": "{{tool}} 只有作为公开智能体、且版本为 {{version}} 时才能用连接器。"
+    "connectorsPublicOnlyVersion": "{{tool}} 只有作为公开智能体、且版本为 {{version}} 时才能用连接器。",
+    "signedOut": "已安装 · 未登录"
   },
   "outsiderNarrowing": {
     "install": {

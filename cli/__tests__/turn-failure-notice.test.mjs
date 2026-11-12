@@ -3,12 +3,18 @@ import { classifySpawnFailure, SPAWN_FAILURE_CLASS } from '../src/lib/spawn-retr
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { claudeFailureTail } from '../src/lib/adapters/claude.js';
+import { claimReleaseFor } from '../src/lib/claim-outcome.js';
 import {
+  CLAUDE_SIGNED_OUT_NOTICE,
   LOGIN_NOTICE,
   OUT_OF_ALLOWANCE_NOTICE,
+  TOOLS_UNAVAILABLE_NOTICE,
   WONT_START_NOTICE,
   cantAnswerNotice,
+  claudeSignedOutResult,
   codexVersionNotice,
+  isClaudeSignedOut,
+  spawnFailureReason,
 } from '../src/lib/turn-failure-notice.js';
 
 const causeOf = (error) => cantAnswerNotice(error)?.cause ?? null;
@@ -19,14 +25,65 @@ describe('cantAnswerNotice', () => {
       ['an expired gateway key, walked on prod', adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key. Key Expiry time 2026-11-06')],
       ['a missing bearer', adapterFailure('codex turn failed', 'Error running remote compact task: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header')],
       ['a ChatGPT workspace', new Error('codex turn failed: workspace routing discovery unauthorized (401)')],
-      ['a claude login', new Error('claude exited with code 1: Not logged in · Please run /login')],
-      ['a claude login after a stderr line', new Error('claude exited with code 1: ⚠ connectors are disabled | Not logged in · Please run /login')],
       ['an unscoped key', new Error('claude exited with code 1: x | API Error: 400 This API key is not scoped to a workspace')],
       ['pi with a status it printed', new Error('pi exited 1: 401 {"error":"unauthorized"}')],
       ['pi with a refused route', new Error('upstream refused 401: invalid key')],
       ['a login the wrapper refused', new Error('the Claude login on this machine expires in 3 min, before this turn could end.')],
     ])('%s', (_name, error) => {
       expect(cantAnswerNotice(error)?.text).toBe(LOGIN_NOTICE);
+    });
+  });
+
+  // F436: Claude Code's own wording when no one is signed in on the computer.
+  // The line names that fix, not "the key or login".
+  describe('Claude Code signed out on the computer', () => {
+    test.each([
+      ['as Claude Code prints it', 'claude exited with code 1: Not logged in · Please run /login'],
+      ['after a stderr line', 'claude exited with code 1: ⚠ connectors are disabled | Not logged in · Please run /login'],
+      ['with the Seatbelt seat\'s own hint after it', 'claude exited with code 1: Not logged in · Please run /login. Sign in with `claude` in your own terminal on this Mac, or run the agent with ANTHROPIC_API_KEY set (`commonly agent run` from a shell that has it; the background daemon does not carry it)'],
+    ])('%s', (_name, message) => {
+      const error = new Error(message);
+      expect(cantAnswerNotice(error)).toEqual({ cause: 'claude-signed-out', text: CLAUDE_SIGNED_OUT_NOTICE });
+      expect(isClaudeSignedOut(error)).toBe(true);
+    });
+
+    test('the line names signing in to Claude Code on that computer', () => {
+      expect(CLAUDE_SIGNED_OUT_NOTICE).toContain('Claude Code isn’t signed in on the computer I run on');
+      expect(CLAUDE_SIGNED_OUT_NOTICE).toContain('sign in');
+      expect(CLAUDE_SIGNED_OUT_NOTICE).not.toMatch(/\/login|key/);
+    });
+
+    // The signed-out match acks a message unanswered, so only the claude
+    // adapter's own exit line counts. Elsewhere the words keep the login line.
+    test.each([
+      ['another adapter', 'codex turn failed: Not logged in · Please run /login'],
+      ['a line that is not the exit line', 'inbox batch processing failed: tool said: Not logged in · Please run /login'],
+      ['a later line of the tail', 'claude exited with code 1: boom\nNot logged in · Please run /login'],
+    ])('%s quoting the words is not Claude Code signing out', (_name, message) => {
+      expect(isClaudeSignedOut(new Error(message))).toBe(false);
+    });
+
+    test('a key or route refusal is not a sign-in', () => {
+      expect(isClaudeSignedOut(adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized'))).toBe(false);
+      expect(isClaudeSignedOut(new Error('claude exited with code 1: You\'ve hit your weekly limit · resets Nov 3 at 5pm'))).toBe(false);
+    });
+
+    test('a tool quoting the wording on a public seat is not this seat signing out', () => {
+      const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
+      expect(isClaudeSignedOut(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBe(false);
+    });
+
+    test('the turn is acked as an error and handed on, not completed', () => {
+      // A person's broadcast goes to another listener, a direct mention closes as refused.
+      const broadcast = { type: 'message.posted', payload: { senderIsHuman: true } };
+      expect(claimReleaseFor(broadcast, claudeSignedOutResult())).toEqual({ outcome: 'refused', reason: 'delivery-refused' });
+      expect(claimReleaseFor({ type: 'chat.mention' }, claudeSignedOutResult()).outcome).toBe('refused');
+      expect(claudeSignedOutResult()).toEqual({
+        outcome: 'error',
+        refused: { reason: 'delivery-refused' },
+        reason: 'claude-signed-out',
+        details: { failureClass: 'configuration' },
+      });
     });
   });
 
@@ -293,13 +350,19 @@ describe('cantAnswerNotice', () => {
 
   // The login wordings have no class gate, so the code check is all that stands
   // between a tool's quoted refusal and a statement about this seat's key.
-  test.each([
-    ['failed', PUBLIC_TOOL_FAILED_CODE],
-    ['not ready', PUBLIC_MCP_NOT_READY_CODE],
-  ])('a public seat quoting a tool\'s error, MCP %s, is not reporting its own key', (_name, code) => {
+  test('a public seat quoting a tool\'s error is not reporting its own key', () => {
     const message = 'public seat withheld this turn\'s reply: tool failed (x: Not logged in · Please run /login)';
     expect(cantAnswerNotice(new Error(message))?.cause).toBe('login');
-    expect(cantAnswerNotice(Object.assign(new Error(message), { code }))).toBeNull();
+    expect(cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_TOOL_FAILED_CODE }))).toBeNull();
+  });
+
+  // F421: tools that never started leave a stranger waiting on an API that
+  // still answers, so the pod hears why, whatever the error text quotes.
+  test('a public seat whose Commonly tools never started says so, and only that', () => {
+    const message = 'public seat withheld this turn\'s reply: Commonly MCP server commonly never reported ready (x: Not logged in · Please run /login)';
+    const notice = cantAnswerNotice(Object.assign(new Error(message), { code: PUBLIC_MCP_NOT_READY_CODE }));
+    expect(notice).toEqual({ cause: 'tools-unavailable', text: TOOLS_UNAVAILABLE_NOTICE });
+    expect(notice.text).not.toMatch(/login|key|commonly/i);
   });
 
   test('the line never quotes the error, which can carry key material', () => {
@@ -336,10 +399,31 @@ describe('cantAnswerNotice', () => {
   });
 
   test('every line fits one chat message and says what to do', () => {
-    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
+    [CLAUDE_SIGNED_OUT_NOTICE, LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, TOOLS_UNAVAILABLE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
       expect(line.length).toBeLessThanOrEqual(400);
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');
     });
+  });
+});
+
+// F370 rough spot #11: Settings shows why a spawn failed, from a fixed code the
+// runner picks. The code is the whole report: no error text leaves the seat.
+describe('spawnFailureReason', () => {
+  test.each([
+    ['Claude Code signed out', new Error('claude exited with code 1: Not logged in · Please run /login'), 'claude-signed-out'],
+    ['a refused login', new Error('codex turn failed: workspace routing discovery unauthorized (401)'), 'login'],
+    ['a missing binary', new Error('spawn claude ENOENT'), 'wont-start'],
+    ['a binary that cannot run', adapterFailure('codex', 'permission denied', { exitCode: 126 }), 'wont-start'],
+    ['a model the provider will not run', adapterFailure('codex', 'HTTP 404: model is not found'), 'model-unavailable'],
+    ['tools that never started', Object.assign(new Error('mcp not ready'), { code: PUBLIC_MCP_NOT_READY_CODE }), 'tools-unavailable'],
+  ])('names %s', (_label, error, reason) => {
+    expect(spawnFailureReason(error)).toBe(reason);
+  });
+
+  test('names nothing for a cause it does not know, or no error', () => {
+    expect(spawnFailureReason(new Error('codex exited with code 1: something odd'))).toBeNull();
+    expect(spawnFailureReason(adapterFailure('codex', 'boom', { exitCode: 2 }))).toBeNull();
+    expect(spawnFailureReason(null)).toBeNull();
   });
 });

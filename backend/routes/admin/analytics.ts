@@ -249,7 +249,8 @@ router.get('/lifecycle', adminReadLimiter, auth, adminAuth, async (_req: any, re
       (async () => {
         // eslint-disable-next-line global-require
         const { pool } = require('../../config/db-pg');
-        const r = await pool.query('SELECT user_id, COUNT(*)::int AS messages FROM messages GROUP BY user_id');
+        // System lines are stored under the agent they're about (F434).
+        const r = await pool.query("SELECT user_id, COUNT(*)::int AS messages FROM messages WHERE COALESCE(message_type, '') <> 'system' GROUP BY user_id");
         return r.rows as Array<{ user_id: string; messages: number }>;
       })(),
     ]);

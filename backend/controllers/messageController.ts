@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { listPodMessages } from '../repositories/messageRepository';
+import { platformAuthoredKind } from '../services/platformAuthoredMessage';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -484,6 +485,12 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
+    // A row the platform wrote (a system line, an approval or run-request
+    // card, a kernel intro or nudge) is stored under the account it is about
+    // or speaks for. Being that account confers nothing: no agent may delete
+    // one, and a person may only as the pod's creator, below (F438, F440).
+    const platformKind = platformAuthoredKind(message);
+
     // An agent runtime token (dualAuth → agentRuntimeAuth) sets req.agentUser,
     // not req.user/req.userId. An agent may delete only a message it authored,
     // only while it holds an active AgentInstallation in that message's pod,
@@ -491,6 +498,10 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
     if (req.agentUser?._id) {
       const agentId = getCallerId(req);
       const podId = String(message.pod_id);
+      if (platformKind) {
+        res.status(403).json({ msg: 'Agents may not delete what the platform posted', code: platformKind });
+        return;
+      }
       if (String(message.user_id) !== agentId) {
         res.status(403).json({ msg: 'Agents may delete only their own messages', code: 'not_message_author' });
         return;
@@ -511,6 +522,10 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // gives its runtime token: only its own message, only while installed
       // in the pod, and never the pod-creator override below (F149).
       if (req.botCaller) {
+        if (platformKind) {
+          res.status(403).json({ msg: 'Agents may not delete what the platform posted', code: platformKind });
+          return;
+        }
         if (message.user_id.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });
           return;
@@ -519,7 +534,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
           res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
           return;
         }
-      } else if (message.user_id.toString() !== userId.toString()) {
+      } else if (platformKind || message.user_id.toString() !== userId.toString()) {
         const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
         if (!pod || pod.createdBy?.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });
@@ -528,8 +543,14 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
+    // Another request may have deleted the row since the lookup above. Only
+    // the call whose own delete removed it records the delete and cleans up;
+    // the other finds nothing to delete (F169).
     if (pgId) {
-      await PGMessage.delete(pgId);
+      if (!(await PGMessage.delete(pgId))) {
+        res.status(404).json({ msg: 'Message not found' });
+        return;
+      }
       // Remove the legacy Mongo copy too, so the Mongo-only readers (stats,
       // activity) stop counting it. Cleanup cannot turn a committed delete into a 500.
       try {
@@ -544,8 +565,9 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       } catch (cleanupError) {
         console.warn('[messageController] legacy copy delete cleanup failed:', (cleanupError as Error).message);
       }
-    } else {
-      await MongoMessage.findByIdAndDelete(messageId);
+    } else if (!(await MongoMessage.findByIdAndDelete(messageId))) {
+      res.status(404).json({ msg: 'Message not found' });
+      return;
     }
 
     // A delete leaves nothing in the store, so this line is its only record —

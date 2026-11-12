@@ -246,7 +246,11 @@ describe('a Seatbelt Claude seat\'s state folder (F153)', () => {
     const error = await seatbeltSpawn(impl).catch((err) => err);
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toMatch(/Not logged in/);
-    expect(error.message).toContain('set ANTHROPIC_API_KEY (in the service env for daemon seats)');
+    expect(error.message).toContain('or run the agent with ANTHROPIC_API_KEY set (`commonly agent run` from a shell that has it; '
+      + 'the background daemon does not carry it)');
+    // F171: daemon install never writes ANTHROPIC_API_KEY into the service
+    // file, so the hint must not point there.
+    expect(error.message).not.toMatch(/service env/);
   });
 
   test('a key seat\'s failure carries no key hint: it already has one', async () => {

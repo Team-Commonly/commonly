@@ -90,6 +90,7 @@ import {
   ADAPTERS_WITH_PUBLIC_ONLY_GRANT,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
+  COMMONLY_MCP_SERVER_NAME,
   defaultMcpServers,
   seatBaseline,
   withDefaultMcpServer,
@@ -112,11 +113,11 @@ import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import {
-  UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
+  CODEX_OPTED_IN_PUBLIC_POD_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
 } from '../lib/sandbox/host-check.js';
 import {
-  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostReportFailureMessage, hostUnconfinedForRun, runOptedInUnsandboxed,
-  unsandboxedFlagRefusal,
+  UNSANDBOXED_NOTICE, codexUnconfinedForRun, codexUnsandboxedNotice, hostReportFailureMessage, hostUnconfinedForRun,
+  runOptedInUnsandboxed, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
@@ -145,7 +146,16 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
-import { CANT_ANSWER_NOTICE_WINDOW_MS, CUT_OFF_NOTICE, cantAnswerNotice } from '../lib/turn-failure-notice.js';
+import {
+  CANT_ANSWER_NOTICE_WINDOW_MS,
+  CLAUDE_SIGNED_OUT_FIX,
+  CUT_OFF_NOTICE,
+  cantAnswerNotice,
+  claudeSignedOutResult,
+  isClaudeSignedOut,
+  spawnFailureReason,
+} from '../lib/turn-failure-notice.js';
+import { missingHarnessHint, reportMissingHarness } from '../lib/missing-harness.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -164,6 +174,7 @@ import {
 } from '../lib/enforcement.js';
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
+import { CLI } from '../lib/cli-hint.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -190,7 +201,7 @@ export const saveAgentToken = (name, record) => {
   try {
     refreshMcpTokenCopy(name, record?.runtimeToken);
   } catch (err) {
-    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: ${CLI} mcp config --agent ${name}`);
   }
 };
 
@@ -216,7 +227,7 @@ export const seatKey = (agentName, instanceId) => (
 );
 
 const runCommandFor = (agentName, instanceId) => (
-  `commonly agent run ${agentName}${isDefaultInstanceId(instanceId) ? '' : ` --instance-id ${instanceId}`}`
+  `${CLI} agent run ${agentName}${isDefaultInstanceId(instanceId) ? '' : ` --instance-id ${instanceId}`}`
 );
 
 /**
@@ -402,7 +413,7 @@ export const serverAdapterBindingRefusal = ({
   if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
   const refusal = `Adapter '${adapter}' is not declared for this Commonly installation.`;
   if (!includeAttachGuidance) return refusal;
-  return `${refusal} A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
+  return `${refusal} A pod owner must sign in with ${CLI} login, then run ${CLI} agent attach ${adapter}`
     + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
     + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`;
 };
@@ -449,7 +460,7 @@ export const printAttachRunGuidance = ({
   warn = console.warn,
 } = {}) => {
   if (binding?.canRun) {
-    log(`\n  Run with:    commonly agent run ${agentName}`);
+    log(`\n  Run with:    ${CLI} agent run ${agentName}`);
   } else {
     warn(`\n  WARNING: ${binding?.warning || 'The server did not confirm this adapter binding.'}`);
   }
@@ -490,7 +501,7 @@ export const checkRunAllowRequest = ({ record, requested = [] }) => {
     message: [
       `'${name}' was set up with ${saved.length ? `--allow ${saved.join(',')}` : 'no --allow'}; `
         + `--allow ${requested.join(',')} was not applied.`,
-      `To change it: commonly agent detach ${name} --force, then re-run with the Connect-page `
+      `To change it: ${CLI} agent detach ${name} --force, then re-run with the Connect-page `
         + `env exports and --allow ${requested.join(',')}.`,
     ].join('\n'),
   };
@@ -522,8 +533,8 @@ export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) 
     ok: false,
     message: [
       `'${name}' is bound to the ${bound} adapter by its token file (${tokenPath}); --adapter ${requested} was not applied.`,
-      `To run it with ${requested} here: commonly agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
-      `A daemon-managed seat switches with: commonly agent config ${name} --adapter ${requested}`,
+      `To run it with ${requested} here: ${CLI} agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
+      `A daemon-managed seat switches with: ${CLI} agent config ${name} --adapter ${requested}`,
     ].join('\n'),
   };
 };
@@ -548,9 +559,10 @@ export const bootstrapAgentRecordFromEnv = async ({
   const instanceUrl = (env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
 
   let identity;
+  let client;
   try {
-    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
-      .get('/api/agents/runtime/installations');
+    client = clientFactory({ instance: instanceUrl, token: runtimeToken });
+    identity = await client.get('/api/agents/runtime/installations');
   } catch (err) {
     throw new Error(
       `Could not resolve the agent behind COMMONLY_AGENT_TOKEN against ${instanceUrl}: ${err.message}. `
@@ -571,7 +583,10 @@ export const bootstrapAgentRecordFromEnv = async ({
       throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`);
     }
     if (!await adapter.detect()) {
-      throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
+      // F457: this run exits before it checks in, so the page would wait for
+      // it forever. Say what was missing there, and how to get it here.
+      await reportMissingHarness(client, adapterOverride);
+      throw new Error(`Adapter '${adapterOverride}' not found on PATH. ${missingHarnessHint(adapterOverride)}`);
     }
   } else {
     const missing = [];
@@ -582,6 +597,7 @@ export const bootstrapAgentRecordFromEnv = async ({
       missing.push(candidate);
     }
     if (!adapterName) {
+      await reportMissingHarness(client, null);
       const err = new Error(
         `No supported agent CLI found on PATH (looked for: ${BOOTSTRAP_ADAPTER_DETECT_ORDER.join(', ')}). `
         + 'Install one, or pass --adapter <name>.',
@@ -683,7 +699,7 @@ const listAgents = async (opts, deps) => {
   if (opts.local) {
     const agents = listLocalAgents();
     if (agents.length === 0) {
-      log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+      log(`No agents attached locally. Run: ${CLI} agent attach <adapter> --pod <podId> --name <n>`);
       return 0;
     }
     log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
@@ -696,7 +712,7 @@ const listAgents = async (opts, deps) => {
   }
 
   const token = tokenFor(opts.instance);
-  if (!token) { error('Not logged in. Run: commonly login'); return 1; }
+  if (!token) { error(`Not logged in. Run: ${CLI} login`); return 1; }
 
   const client = clientFactory({ instance: instanceUrlFor(opts.instance), token });
 
@@ -778,7 +794,7 @@ export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
   if (hits.length > 1) {
     const pairs = hits.map((h) => `${h.name || h.agentName}/${h.instanceId}`).join(', ');
     throw new Error(`${hits.length} seats are named '${typed}' here: ${pairs}. `
-      + `Run: commonly agent logs <agentName> --pod ${podId} --instance-id <instance>`);
+      + `Run: ${CLI} agent logs <agentName> --pod ${podId} --instance-id <instance>`);
   }
   if (hits.length === 0) {
     // A typo must not read like an idle seat, so say what was read instead.
@@ -905,7 +921,10 @@ const findOwnPost = (messages, earlierIds) => {
     // With `self`, only THIS agent's own post counts. Without it (an older
     // server), fall back to the legacy any-bot test — which drops this agent's
     // reply whenever another agent answers first (#757).
-    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && (serverKnowsSelf ? m.self === true : true)) {
+    // A system line is stored under the agent it is about; it is never this
+    // agent's post, even from a server that predates F434's `self` fix.
+    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && m.messageType !== 'system'
+      && (serverKnowsSelf ? m.self === true : true)) {
       return {
         id: String(m._id || m.id),
         author: m.username || 'unknown',
@@ -995,6 +1014,12 @@ const HELD_RETRY_MAX_FAILURES = 3;
 // server redelivers it under its cap, and may retire it with the TASK-656 line,
 // which is skipped if the agent has posted in the pod since.
 const PAST_CAP_MAX_CARRIES = 5;
+// F236: how often a seat waiting out an open circuit checks its inbox, so a pod
+// that first asks during the wait is told why within about a minute instead of
+// at the probe (up to ~16 minutes). The check runs no turn: the circuit's delay
+// is unchanged, and the can't-answer limit (once per cause per pod per hour)
+// still decides who hears it.
+const CIRCUIT_NOTICE_CHECK_MS = 60 * 1000;
 
 // Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
 // only a row the snapshot and the kernel's stamp both can't place reads so, and
@@ -1256,7 +1281,7 @@ export const updateAgentConfiguration = async ({
     throw new Error('token record is missing agentName — re-attach the agent');
   }
   if (runtimeKey) {
-    if (adapter || envPath) throw new Error('--adapter and --env require an owner login; run commonly login');
+    if (adapter || envPath) throw new Error(`--adapter and --env require an owner login; run ${CLI} login`);
     const controls = Object.fromEntries(Object.entries({ model, effort })
       .filter(([, value]) => value !== null && value !== undefined));
     if (!Object.keys(controls).length) throw new Error('provide --model or --effort');
@@ -1532,13 +1557,13 @@ export const performAttach = async ({
           'Instead:',
           '  - Run it without an OS sandbox, which is your choice: use the commands on the Connect page.'
             + ' They set COMMONLY_API_URL and COMMONLY_AGENT_TOKEN, then run'
-            + ` commonly agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
+            + ` ${CLI} agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
             + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level"
             + ' confines it, and it gets no connector grants.'
             // agent run prefers a saved record over the page's env vars, so an
             // older record of that name would run with its own settings (#3407).
             + ' If this computer already has an agent saved under that name, the run uses that one and its'
-            + ' settings instead: remove it first with commonly agent detach <name> --force.',
+            + ` settings instead: remove it first with ${CLI} agent detach <name> --force.`,
           '  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.',
           '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
         ].join('\n') : windowsSandboxMessage(adapterName)));
@@ -1808,6 +1833,19 @@ const FAILURE_ON_COMMENT = SAY_A_FAILURE
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
   + FAILURE_IN_PLAIN_WORDS;
+
+// F192: the one place the wrapper does drop final text by kind. On a heartbeat
+// nobody asked anything, and a seat with the commonly MCP posts for itself, so
+// its final text is narration of the checklist; two of three narration cases in
+// a 7-day count were such seats, with no sentinel to catch. TASK-293's rule still
+// holds: the turn is told, in its own closing line, that its final text goes
+// nowhere and the tool is how it speaks. runTurn and the prompt read the same
+// predicate, so the line and the drop can't disagree.
+const seatPostsForItself = (environment) => (environment?.mcp || [])
+  .some((server) => server?.name === COMMONLY_MCP_SERVER_NAME);
+const HEARTBEAT_TEXT_IS_NOT_POSTED = 'This turn is only a heartbeat: nobody asked you anything, and your final text is not posted. '
+  + 'If something needs saying, post it with commonly_post_message, then end with NO_REPLY. '
+  + 'Otherwise end with NO_REPLY alone, with no summary.';
 
 // Who owes an open question an answer depends on who else is here. Walked 11-06:
 // "can anyone…" drew an "I can't" from a seat nobody addressed. With another
@@ -2367,7 +2405,7 @@ export const performRun = ({
         const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
         const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
         log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
-          + `don't apply to it yet. Run once: commonly agent config ${agentName}${flags}`);
+          + `don't apply to it yet. Run once: ${CLI} agent config ${agentName}${flags}`);
       }
     }
     // Dropped only when the device listed its levels and this one is not
@@ -2864,13 +2902,17 @@ export const performRun = ({
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = placement.unconfinedRefused ? UNCONFINED_TURN_REFUSAL : hostSandboxRefusal({
+      // A Codex run its person opted out of the sandbox was allowed for private
+      // pods only, so a turn placed public is refused on every platform. On
+      // Linux a public Codex seat would otherwise pass the host check and run
+      // in the owner's workspace with strangers able to direct it (F387).
+      const turnRefusal = placement.unconfinedRefused ? UNCONFINED_TURN_REFUSAL : (hostSandboxRefusal({
         environment: placement.environment,
         adapterName: adapter.name,
         hostUnconfined,
         optedIn: codexUnconfined,
         ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
-      });
+      }) || (codexUnconfined ? CODEX_OPTED_IN_PUBLIC_POD_MESSAGE : null));
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -3122,6 +3164,8 @@ export const performRun = ({
     // D245 item 4: how long the runtime ran, for the reply receipt.
     let spawnDurationMs;
     let observedSpawn = false;
+    // What a failed spawn threw, read only for its fixed reason code (F370 #11).
+    let spawnFailure = null;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -3169,8 +3213,11 @@ export const performRun = ({
         // A public seat's Commonly server writes nothing once Commonly is
         // unreachable in its process (lib/public-seat-mcp-flag.js).
         environment: publicSeat ? withPublicSeatMcpFlag(placement.environment) : placement.environment,
-        // Only when set, so every other spawn context stays as it was.
-        ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
+        // Only when set, so every other spawn context stays as it was. A Codex
+        // run its person opted out with every pod confirmed private keeps
+        // Codex's own policy, never the permission profile (F387): the adapter
+        // reads this, not the environment.
+        ...(hostUnconfined === true || codexUnconfined === true ? { hostUnconfined: true } : {}),
         ...(publicSeat && !memoryWithheld && opened.ownerWoken === true ? { ownerWoken: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
@@ -3188,6 +3235,11 @@ export const performRun = ({
         runtimeToken: opened.token,
         instanceUrl,
         agentName,
+        // The seat's local key (F306), which a Codex seat's own home is keyed
+        // on (F450): `name@instance` for a second instance, the bare name for
+        // every other seat, including one saved under its name that runs a
+        // non-default instance, so no existing seat moves to a new home.
+        seatKey: stateKey,
         metadata: { event },
       };
       // Supervised or plain, a failure is thrown exactly as the adapter's own
@@ -3197,6 +3249,7 @@ export const performRun = ({
       try {
         result = await turn.run(adapter, spawnPrompt, spawnCtx);
       } catch (spawnError) {
+        spawnFailure = spawnError;
         await postModelUnavailableHint(spawnError, eventPodId, seatEnvironment?.model);
         throw spawnError;
       }
@@ -3207,13 +3260,19 @@ export const performRun = ({
       // failure would be. With one, the turn delivered, and a retry would post twice.
       if (result?.failure) {
         const postSpawn = preSpawnIds ? await snapshotMessages() : null;
-        if (!(postSpawn && findOwnPost(postSpawn, preSpawnIds))) throw result.failure;
+        if (!(postSpawn && findOwnPost(postSpawn, preSpawnIds))) {
+          spawnFailure = result.failure;
+          throw result.failure;
+        }
         log(`[${event.type}] the turn failed after a post of its own, so it is not retried: ${result.failure.message}`);
       }
       spawnCompleted = true;
     } finally {
       try {
-        if (reportRuntime) await runtimeReporter.settled(observedSpawn ? spawnCompleted ? 'completed' : 'failed' : null);
+        if (reportRuntime) {
+          await runtimeReporter.settled(observedSpawn ? spawnCompleted ? 'completed' : 'failed' : null,
+            observedSpawn && !spawnCompleted ? spawnFailureReason(spawnFailure) : null);
+        }
         commitAttribution?.cleanup();
       } finally {
         if (spawnCompleted && skillMount) {
@@ -3264,7 +3323,14 @@ export const performRun = ({
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const declinedInText = event.type !== 'agent.ask' && !someoneIsWaiting(event)
       && CLOSES_ON_BARE_SENTINEL.test(replyText);
-    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText;
+    // F192: a heartbeat turn on a seat that has the commonly MCP. Its prompt
+    // said the final text is not posted (HEARTBEAT_TEXT_IS_NOT_POSTED), so that
+    // text is narration ("Checked the board, nothing new"), not a message. A
+    // bare CLI with no posting tool still speaks through its output.
+    const heartbeatNarration = Boolean(replyText) && seatPostsForItself(placement.environment) && !someoneIsWaiting(event)
+      && (event.type === 'heartbeat' || event.payload?.onlyHeartbeat === true);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText
+      || heartbeatNarration;
     // A refused model route is not a silent turn. pi reports the refusal on its
     // own JSON stream and exits 0 with no text, so before this the seat log read
     // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
@@ -3310,7 +3376,9 @@ export const performRun = ({
       }
     } else if (silentReply) {
       const reason = heartbeatControlReply ? replyText
-        : declinedInText ? 'NO_REPLY' : (replyText || 'empty output');
+        : declinedInText ? 'NO_REPLY'
+          : heartbeatNarration ? 'heartbeat narration; this seat posts with commonly_post_message'
+            : (replyText || 'empty output');
       // A turn that posted via tool and THEN ended with the sentinel is not the
       // same event as a turn that produced nothing — but this branch reported
       // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
@@ -3546,6 +3614,9 @@ export const performRun = ({
     const contextShown = new Set(context.slice(0, Math.max(0, BODY_LIMIT - wakeEntries.length + context.length)));
     const shownEntries = wakeEntries.filter((entry) => !entry.result || contextShown.has(entry));
     const heldBack = entries.filter((entry) => entry.pastCap).length;
+    // The same set the batch's onlyHeartbeat reads, so the closing line matches the drop.
+    const inTurn = entries.filter((entry) => !entry.pastCap);
+    const heartbeatOnly = inTurn.length > 0 && inTurn.every((entry) => entry.event.type === 'heartbeat');
     const answersPerson = shownEntries.some(answersAPerson);
     const bodies = shownEntries.map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
@@ -3612,9 +3683,11 @@ export const performRun = ({
           ? 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
             + 'For anything else here, post only an action or a materially useful response. '
             + FINAL_TEXT_ANSWERS_A_PERSON
-          : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
-            + FINAL_TEXT_IS_POSTED
-            + roomQuestionLine(pod, shownEntries)),
+          : heartbeatOnly && seatPostsForItself(seatEnvironment)
+            ? `Do not narrate the inbox. ${HEARTBEAT_TEXT_IS_NOT_POSTED}`
+            : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
+              + FINAL_TEXT_IS_POSTED
+              + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
 
@@ -4191,6 +4264,8 @@ export const performRun = ({
         ...actionEntries[0].event.payload,
         batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
         hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
+        onlyHeartbeat: entries.filter((entry) => !entry.pastCap)
+          .every((entry) => entry.event.type === 'heartbeat'),
         someoneWaiting: entries.some((entry) => !entry.pastCap && someoneIsWaiting(entry.event)),
       },
     };
@@ -4208,6 +4283,7 @@ export const performRun = ({
             ...entry.event.payload,
             batchEventIds: [String(entry.event._id)],
             hasHeartbeat: entry.event.type === 'heartbeat',
+            onlyHeartbeat: entry.event.type === 'heartbeat',
             someoneWaiting: someoneIsWaiting(entry.event),
           },
         },
@@ -4257,6 +4333,15 @@ export const performRun = ({
           }
         }
       } catch (err) {
+        // F436: a signed-out Claude Code fails every turn the same way until
+        // someone signs in. Held, the event sat behind the 15-minute circuit;
+        // acked, the pod hears why now and the next event is the re-probe.
+        if (isClaudeSignedOut(err)) {
+          for (const entry of actionEntries) entry.result = claudeSignedOutResult();
+          log(`[inbox.batch] ${CLAUDE_SIGNED_OUT_FIX}`);
+          await noticeCantAnswer(err, actionEntries.map((entry) => entry.event));
+          return { entries };
+        }
         if (!isContentRefusal(err)) throw err;
         // Ambient text anyone wrote can draw the refusal, and no waking item
         // should pay for that. So the same items run once more with counts
@@ -4398,7 +4483,7 @@ export const performRun = ({
     tickTimer = null;
     if (!running) return;
     tickInFlight = true;
-    try { await runTick(); } finally {
+    try { await (circuitNotice ? runCircuitNoticeCheck() : runTick()); } finally {
       tickInFlight = false;
       if (!running) {
         try { await handBackCarryOnStop(); } finally { resolveStopped(); }
@@ -4406,8 +4491,12 @@ export const performRun = ({
     }
   };
 
+  // F236: set when a retry opens the circuit for a failure a person can be
+  // told about; `remainingMs` is what is left of the wait after the next check.
+  let circuitNotice = null;
   const runTick = async () => {
     tickUnsettled = [];
+    circuitNotice = null;
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
     let retryScheduled = false;
@@ -4587,6 +4676,9 @@ export const performRun = ({
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
+            circuitNotice = retry.circuitOpen && cantAnswerNotice(err) && !modelUnavailableFailure(err)
+              ? { error: err, remainingMs: retry.delayMs }
+              : null;
             tickUnsettled.push(...claimedAfter(groupIndex));
             const attempted = failedEvents.filter((event) => !pastCapEvents.includes(event));
             await noteFailedTurnPart(attempted);
@@ -4705,6 +4797,11 @@ export const performRun = ({
               // pod to post into, and its sender's ask expires on its own.
               result = contentRefusedResult();
               log(`[${event.type}] the model provider refused the content of event ${event._id} (content_refused) — acked as refused, not retried`);
+            } else if (isClaudeSignedOut(err)) {
+              // F436, as in the batch path. A pod-less or private item has no
+              // pod to tell, so the log line is the whole notice.
+              result = claudeSignedOutResult();
+              log(`[${event.type}] ${CLAUDE_SIGNED_OUT_FIX}`);
             } else {
               // Do not record or ack: the kernel must retain the event for
               // at-least-once delivery. Stop this fetched batch immediately —
@@ -4814,7 +4911,7 @@ export const performRun = ({
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
             + `If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. `
-            + `To remove the agent from its pod: commonly agent detach ${agentName}`,
+            + `To remove the agent from its pod: ${CLI} agent detach ${agentName}`,
           ));
           running = false;
           return;
@@ -4856,7 +4953,55 @@ export const performRun = ({
     // names it, and a sibling's completed turn must not shorten the backoff.
     // A wait the loop schedules itself always ends, so it is not a stall.
     pollLiveness.pause();
-    if (running) tickTimer = setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
+    const waitMs = completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs;
+    const checkMs = Math.max(CIRCUIT_NOTICE_CHECK_MS, intervalMs);
+    if (circuitNotice && waitMs > checkMs) circuitNotice.remainingMs = waitMs - checkMs;
+    else circuitNotice = null;
+    if (running) tickTimer = setTimeoutImpl(tick, circuitNotice ? checkMs : waitMs);
+  };
+
+  // F236: one check during a circuit wait. What it claims joins the carry, so
+  // the probe runs it, a stop hands it back, and its leases are renewed; each
+  // newly waiting pod is told why. No turn runs here.
+  const runCircuitNoticeCheck = async () => {
+    const wait = circuitNotice;
+    try {
+      pollLiveness.arm();
+      const carriedCount = [...heldRetry, ...heldGreeting]
+        .filter((event) => event.deliveryMode !== 'digest').length;
+      const page = await client.get('/api/agents/runtime/events', {
+        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
+        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
+      });
+      pollLiveness.arm();
+      if (pollStalled) return;
+      const fetched = page?.events || [];
+      // A carried id comes back only after the server requeued it, so the
+      // fetched copy holds the live deliveryId and the carried one's is dead.
+      // The fetched copy wins, as in runTick: otherwise the probe, which can no
+      // longer fetch it, would ack a stale nonce and stop the run.
+      const fetchedById = new Map(fetched.map((event) => [String(event._id), event]));
+      // Reassigned only when a copy changes, so the renewal's `heldRetry !== carry`
+      // guard skips its pruning only when there was something to replace.
+      const refetched = (carry) => carry.some((event) => fetchedById.has(String(event._id)));
+      const refreshCarry = (carry) => carry.map((event) => fetchedById.get(String(event._id)) || event);
+      if (refetched(heldRetry)) heldRetry = refreshCarry(heldRetry);
+      if (refetched(heldGreeting)) heldGreeting = refreshCarry(heldGreeting);
+      const carriedIds = new Set([...heldRetry, ...heldGreeting].map((event) => String(event._id)));
+      const fresh = fetched.filter((event) => !carriedIds.has(String(event._id)));
+      if (fetched.length) idleHeartbeat.busy();
+      if (fresh.length) await holdForRetry([], fresh);
+      if (fetched.length) keepHeldLeases(wait.remainingMs);
+      if (fresh.length) await noticeCantAnswer(wait.error, fresh);
+    } catch (error) {
+      log(`[inbox.batch] inbox check during the circuit wait failed: ${error.message}`);
+    }
+    pollLiveness.pause();
+    const checkMs = Math.max(CIRCUIT_NOTICE_CHECK_MS, intervalMs);
+    const stepMs = Math.min(checkMs, wait.remainingMs);
+    wait.remainingMs -= stepMs;
+    if (wait.remainingMs <= 0) circuitNotice = null;
+    if (running) tickTimer = setTimeoutImpl(tick, stepMs);
   };
 
   tick();
@@ -5112,17 +5257,17 @@ export const registerAgent = (program) => {
   agent.addHelpText('after', `
 Examples:
   # Wrap your local claude binary as a pod agent (ADR-005)
-  $ commonly agent attach claude --pod <podId> --name my-claude
-  $ commonly agent run my-claude
-  $ commonly agent detach my-claude
+  $ ${CLI} agent attach claude --pod <podId> --name my-claude
+  $ ${CLI} agent run my-claude
+  $ ${CLI} agent detach my-claude
 
   # Scaffold a custom Python agent (ADR-006)
-  $ commonly agent init --language python --name research-bot --pod <podId>
+  $ ${CLI} agent init --language python --name research-bot --pod <podId>
 
   # List installed agents
-  $ commonly agent list
-  $ commonly agent config my-claude --adapter claude --model gpt-5.4 --effort high
-  $ commonly agent config my-claude --model gpt-5.4 --effort high
+  $ ${CLI} agent list
+  $ ${CLI} agent config my-claude --adapter claude --model gpt-5.4 --effort high
+  $ ${CLI} agent config my-claude --model gpt-5.4 --effort high
 
 Docs:
   https://github.com/Team-Commonly/commonly/blob/main/docs/agents/LOCAL_CLI_WRAPPER.md
@@ -5142,7 +5287,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5197,7 +5342,7 @@ Docs:
         }
         if (runtimeToken) {
           console.log(`\nRuntime token: ${runtimeToken}`);
-          console.log('Use this with: commonly agent connect --name <name> --token <token>');
+          console.log(`Use this with: ${CLI} agent connect --name <name> --token <token>`);
         }
       } catch (err) {
         console.error(`Registration failed: ${err.message}`);
@@ -5220,7 +5365,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = opts.token || getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const port = parseInt(opts.port, 10);
       const localUrl = `http://localhost:${port}${opts.path}`;
@@ -5287,12 +5432,12 @@ Docs:
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
-    .option('--wake-on-message', 'Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: commonly agent wake <name> on|off')
+    .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5351,7 +5496,7 @@ Docs:
             });
           } catch (err) {
             console.warn(`Memory import failed (agent is still attached): ${err.message}`);
-            console.warn(`Retry with: commonly agent import-memory ${opts.name}`);
+            console.warn(`Retry with: ${CLI} agent import-memory ${opts.name}`);
           }
         }
 
@@ -5383,7 +5528,7 @@ Docs:
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        console.error(`No token for '${name}'. Attach it first: ${CLI} agent attach <adapter> --pod <podId> --name ${name}`);
         process.exit(1);
       }
       try {
@@ -5410,13 +5555,13 @@ Docs:
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        console.error(`No token for '${name}'. Attach it first: ${CLI} agent attach <adapter> --pod <podId> --name ${name}`);
         process.exit(1);
       }
       // Skill registration is a USER action (pod-membership-checked route),
       // unlike memory import which authenticates as the agent.
       const userToken = getToken(opts.instance);
-      if (!userToken) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!userToken) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       try {
         const skills = detectSkills({ explicitDir: opts.dir ? pathResolve(opts.dir) : null });
@@ -5471,7 +5616,7 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
-    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
+    .option('--unsandboxed', 'Native Windows, or a private Codex agent on Linux: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
     .action(async (typedName, opts) => {
       // F306: the seat this run is. `name` is the local key (the token file,
       // the log label, the daemon's plist); the server identity is the record's.
@@ -5486,7 +5631,9 @@ Docs:
       const named = instanceId !== null;
       let name = named ? seatKey(agentArg, instanceId) : agentArg;
       if (opts.unsandboxed) {
-        const flagRefusal = unsandboxedFlagRefusal();
+        // On Linux the flag is for a Codex agent only, which the record says;
+        // it is checked again once that is read (F387).
+        const flagRefusal = unsandboxedFlagRefusal(process.platform, { adapterName: opts.adapter || null, deferred: true });
         if (flagRefusal) {
           console.error(`${stamp()} [${name}] ${flagRefusal}`);
           process.exit(1);
@@ -5545,7 +5692,7 @@ Docs:
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` commonly agent attach <adapter> --pod <podId> --name ${agentArg}`,
+            + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
           );
           process.exit(1);
         }
@@ -5562,6 +5709,13 @@ Docs:
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
       // keeps its trust and tool policy, and only the OS jail is skipped.
+      if (opts.unsandboxed) {
+        const flagRefusal = unsandboxedFlagRefusal(process.platform, { adapterName: record.adapter });
+        if (flagRefusal) {
+          console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          process.exit(1);
+        }
+      }
       const optedIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
       const hostUnconfined = hostUnconfinedForRun({
         optedIn,
@@ -5575,7 +5729,7 @@ Docs:
       // the saved record, loses its sandbox block. A read that fails stays
       // refused: nothing here may assume a pod is private.
       let codexUnconfined = false;
-      if (optedIn && record.adapter === 'codex' && process.platform === 'win32') {
+      if (optedIn && record.adapter === 'codex' && (process.platform === 'win32' || process.platform === 'linux')) {
         const seatClient = createClient({ instance: record.instanceUrl, token: record.runtimeToken });
         let installations = null;
         try {
@@ -5600,7 +5754,7 @@ Docs:
           }
         }
       }
-      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${CODEX_UNSANDBOXED_NOTICE}`);
+      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${codexUnsandboxedNotice(process.platform)}`);
       let runEnvironment = record.environment;
       if (codexUnconfined && runEnvironment) {
         const { sandbox: _sandbox, ...unsandboxed } = runEnvironment;
@@ -5619,6 +5773,14 @@ Docs:
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
       }
+      // F444: on Linux a private Codex seat has a sandbox, so a flag its pods
+      // rule out leaves it there; say so rather than let the flag look applied.
+      if (optedIn && record.adapter === 'codex' && process.platform === 'linux' && !codexUnconfined) {
+        console.warn(`${stamp()} [${name}] ${UNSANDBOXED_FLAG} was not applied: ${
+          effectiveSandboxTrust(record.environment?.sandbox?.trust) === 'workspace'
+            ? 'this agent is set to workspace trust'
+            : "a pod this agent answers in isn't confirmed private and invite-only"}, so it runs in Codex's own sandbox.`);
+      }
       if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
         // A named instance is saved under its seat key; an unnamed run keeps
@@ -5633,7 +5795,7 @@ Docs:
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
           `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
-          + `To give it the default: commonly agent detach ${name} --force, then either run a fresh command `
+          + `To give it the default: ${CLI} agent detach ${name} --force, then either run a fresh command `
           + 'from the Connect page, or attach it again with an environment file that sets sandbox.trust: public.',
         );
       }
@@ -5799,8 +5961,8 @@ Docs:
           if (!userToken) {
             console.error(
               `No user login found for ${record.instanceUrl}. Either run `
-              + `'commonly login --instance ${record.instanceUrl}' first, or `
-              + `'commonly agent detach ${name} --force' to clean up local files only.`,
+              + `'${CLI} login --instance ${record.instanceUrl}' first, or `
+              + `'${CLI} agent detach ${name} --force' to clean up local files only.`,
             );
             process.exit(1);
           }
@@ -5844,7 +6006,7 @@ Docs:
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: instanceUrl, token });
 
@@ -5949,7 +6111,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       }
 
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
       const printActivity = async () => {
         const seat = await resolveLogsSeat(client, opts.pod, name, opts.instanceId);
@@ -5989,19 +6151,19 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instance = opts.instance || record.instanceUrl;
       const ownerToken = getToken(instance);
       const runtimeKey = !opts.adapter && !opts.env && !ownerToken && Boolean(record.runtimeToken);
       const token = runtimeKey ? record.runtimeToken : ownerToken;
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       try {
         const instanceUrl = resolveInstanceUrl(instance);
         if (runtimeKey && (!record.instanceUrl
           || new URL(instanceUrl).href.replace(/\/$/, '') !== new URL(record.instanceUrl).href.replace(/\/$/, ''))) {
-          throw new Error('Changing --instance requires an owner login for that instance; run commonly login');
+          throw new Error(`Changing --instance requires an owner login for that instance; run ${CLI} login`);
         }
         const client = createClient({ instance: instanceUrl, token });
         const result = await updateAgentConfiguration({
@@ -6041,12 +6203,12 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       }
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
       const token = getToken(opts.instance || record.instanceUrl);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: instanceUrl, token });
       try {
         const result = await setWakeOnMessage({ client, record, enabled });
@@ -6068,12 +6230,12 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action(async (name, opts) => {
       const record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        console.error(`No token file for '${name}' — is it attached on this machine? (${CLI} agent list --local)`);
         process.exit(1);
       }
       const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
       const token = getToken(opts.instance || record.instanceUrl);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
       const client = createClient({ instance: instanceUrl, token });
       try {
         const result = await clearUnsandboxedMark({ client, record });
@@ -6092,7 +6254,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (name, opts) => {
       const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      if (!token) { console.error(`Not logged in. Run: ${CLI} login`); process.exit(1); }
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
@@ -6116,7 +6278,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .action((name, opts) => {
       const record = loadAgentToken(name);
       if (!record?.runtimeToken) {
-        console.error(`No runtime token found for '${name}'. Run commonly agent attach first.`);
+        console.error(`No runtime token found for '${name}'. Run ${CLI} agent attach first.`);
         process.exit(1);
       }
       const podId = opts.pod || record.podId;

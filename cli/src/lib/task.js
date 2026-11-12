@@ -13,6 +13,7 @@
 import { readFileSync } from 'fs';
 import { DEFAULT_URL, resolveInstance } from './config.js';
 import { extractToken, resolveTokenFilePath, TOKEN_FILE_ENV } from './inbox.js';
+import { CLI } from './cli-hint.js';
 
 export const API_URL_ENV = 'COMMONLY_API_URL';
 export const TASK_TOKEN_ENV = 'COMMONLY_AGENT_TOKEN';
@@ -62,10 +63,10 @@ export const checkStatusFilter = (value) => {
 export const checkUpdateStatus = (value) => {
   const status = String(value).trim().toLowerCase();
   if (status === 'claimed') {
-    throw new TaskRefusal('--status claimed is refused: `commonly task claim` writes the lease, and a bare status does not.');
+    throw new TaskRefusal(`--status claimed is refused: \`${CLI} task claim\` writes the lease, and a bare status does not.`);
   }
   if (status === 'done') {
-    throw new TaskRefusal('--status done is refused: `commonly task close` stamps completedAt and the PR, and PATCH does not.');
+    throw new TaskRefusal(`--status done is refused: \`${CLI} task close\` stamps completedAt and the PR, and PATCH does not.`);
   }
   if (!UPDATE_STATUSES.includes(status)) {
     throw new TaskRefusal(`--status must be ${UPDATE_STATUSES.join(' or ')} (got '${value}').`);

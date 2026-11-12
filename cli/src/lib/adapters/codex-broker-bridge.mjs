@@ -17,8 +17,11 @@
  *     `${COMMONLY_AGENT_TOKEN}`;
  *   - COMMONLY_TOKEN_FILE: the path of this spawn's 0600 credential file, the
  *     same file the commonly MCP server reads.
- * The token is read from that file on every request (as claude's headersHelper
- * does), so it exists only in this process's memory and in the request header.
+ * The token is read from that file once, at start, and kept in this process's
+ * memory and the request header only. On a public seat the file is deleted as
+ * soon as its readers have it (F460): this bridge then writes
+ * COMMONLY_MCP_READY_FILE, as the commonly MCP server does, on the host's first
+ * tools/list.
  *
  * It is a pass-through: each JSON-RPC line from codex is POSTed as it is, and
  * every message in the answer (plain JSON or an event stream) is written back
@@ -32,7 +35,8 @@
  * pieces it shares with the rest of the CLI are restated here, and a test pins
  * the import list.
  */
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +48,8 @@ export const TOKEN_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 // The same name as credential-file.js CREDENTIAL_FILE_VAR (a test pins it).
 export const CREDENTIAL_FILE_VAR = 'COMMONLY_TOKEN_FILE';
+// The same name as commonly-mcp's READY_FILE_ENV (a test pins it).
+export const READY_FILE_VAR = 'COMMONLY_MCP_READY_FILE';
 
 const MAX_ERROR_TEXT = 2048;
 
@@ -71,17 +77,23 @@ export const createBrokerBridge = ({
   url,
   headerTemplates = {},
   tokenFile,
+  readyFile = null,
   fetchImpl = globalThis.fetch,
   write,
+  writeReady = writeFileSync,
+  warn = (text) => process.stderr.write(`[commonly-broker-bridge] ${text}\n`),
   timeoutMs = 120_000,
 }) => {
   let sessionId = null;
   let protocolVersion = null;
   let lastToken = null;
+  let readyWritten = !readyFile;
   // Nothing the bridge writes back may hold the token, whatever produced it.
   const scrub = (text) => (lastToken ? String(text).split(lastToken).join('[token]') : String(text));
 
+  // Once: the file is deleted after its readers have it (F460).
   const readToken = () => {
+    if (lastToken) return lastToken;
     if (!tokenFile) throw new Error(`no credential file (${CREDENTIAL_FILE_VAR} is unset)`);
     let token;
     try {
@@ -94,9 +106,37 @@ export const createBrokerBridge = ({
     return token;
   };
 
+  const needsToken = () => Object.values(headerTemplates).some((v) => String(v).includes(TOKEN_PLACEHOLDER));
+  // Read at start, before the host asks for anything, so a file deleted at the
+  // ready deadline finds the token already held. A file that cannot be read
+  // now is reported on the first request instead.
+  const prime = () => {
+    if (!needsToken()) return true;
+    try {
+      readToken();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // Exclusive, 0600, holds nothing secret; written once the token is held.
+  const markReady = () => {
+    if (readyWritten) return;
+    readyWritten = true;
+    if (!isAbsolute(readyFile)) {
+      warn(`${READY_FILE_VAR} is not an absolute path; not writing it`);
+      return;
+    }
+    try {
+      writeReady(readyFile, 'ready\n', { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      warn(`could not write the ready file: ${error?.code || error?.message || error}`);
+    }
+  };
+
   const headers = () => {
     const templates = Object.entries(headerTemplates);
-    const token = templates.some(([, v]) => String(v).includes(TOKEN_PLACEHOLDER)) ? readToken() : null;
+    const token = needsToken() ? readToken() : null;
     return {
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
@@ -190,6 +230,7 @@ export const createBrokerBridge = ({
       }
       write(JSON.stringify(answer));
       if (isRequest && answer?.id === id && ('result' in answer || 'error' in answer)) answered = true;
+      if (answered && message?.method === 'tools/list' && 'result' in answer && (lastToken || !needsToken())) markReady();
       return answered;
     };
     let res;
@@ -211,7 +252,7 @@ export const createBrokerBridge = ({
     }
   };
 
-  return { handleLine };
+  return { handleLine, prime };
 };
 
 const isMain = () => {
@@ -239,9 +280,11 @@ if (isMain()) {
     url,
     headerTemplates,
     tokenFile: process.env[CREDENTIAL_FILE_VAR],
+    readyFile: process.env[READY_FILE_VAR] || null,
     // A closed stdout (codex gone) must not become an unhandled rejection.
     write: (line) => { try { process.stdout.write(`${line}\n`); } catch { /* codex has gone */ } },
   });
+  bridge.prime();
   const pending = new Set();
   const lines = createInterface({ input: process.stdin });
   lines.on('line', (line) => {

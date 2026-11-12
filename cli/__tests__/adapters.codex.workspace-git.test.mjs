@@ -207,14 +207,21 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
     expect(JSON.stringify(last.input)).not.toContain(SECRET);
   });
 
-  test('a filter the repository defines runs inside the tool\'s sandbox', async () => {
+  // Codex runs git in the workspace outside the seat's profile, so a filter
+  // the repository defines would run as the owner. The seat is refused before
+  // Codex starts (sandbox/workspace-git-config.js): the model is never asked
+  // and the filter never runs.
+  test('a repository whose filter would run a program is refused before Codex starts', async () => {
     // Set up on the host, as a repository a seat was given could already carry.
     const marker = join(root, 'outside', 'filter-ran');
     git(workspace, 'config', 'filter.probe.clean', `sh -c 'touch ${marker}; cat'`);
     await writeFile(join(workspace, '.gitattributes'), 'a.txt filter=probe\n');
     await appendFile(join(workspace, 'a.txt'), 'two\n');
-    const requests = await runTurn(gitCalls([['status', 'status', ['--short']], ['diff', 'diff', []]]));
-    expect(outputOf(requests.at(-1), 'diff')).toContain('two');
+    const turn = runTurn(gitCalls([['status', 'status', ['--short']], ['diff', 'diff', []]]));
+    await expect(turn).rejects.toThrow(/its git repository is set to run programs/);
+    await expect(turn).rejects.toThrow(/filter\.probe\.clean/);
+    await expect(turn).rejects.toMatchObject({ code: 'workspace_git_runs_programs' });
+    expect(model.requests).toHaveLength(0);
     expect(existsSync(marker)).toBe(false);
   });
 });

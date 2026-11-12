@@ -337,6 +337,30 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
+    // F317 holds a post that follows a failed call in the same response, but
+    // not here: this call is the last chance to reply, and a hold would end
+    // the run on the fixed line instead of the model's answer.
+    test('a refused lookup ahead of a post in that call does not hold the post', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(
+          fetchCall('c2', CLEAN_URL),
+          call('c3', 'commonly_post_message', { podId: POD, content: 'I could not use the blog page.' }),
+        ),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual(['I could not use the blog page.']);
+      const [lookup, post] = savedRun.turns[savedRun.turns.length - 1].toolCalls;
+      expect(lookup.error).toBeTruthy();
+      expect(post.error).toBeUndefined();
+    });
+
     test('a second refused lookup ends the run, naming the step and the tool, with the fixed line', async () => {
       chatReplies = [
         toolCalls(fetchCall('c1', STOPPED_URL)),
@@ -359,6 +383,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
       // D245: the runtime composed this line, so it sets its kind.
       expect(AgentMessageService.postMessage.mock.calls[0][0].kind).toBe('error');
+      // F442: it is our line, stored under the agent, so it is marked kernel
+      // and the agent may not delete or rewrite it.
+      expect(AgentMessageService.postMessage.mock.calls[0][0].authorKind).toBe('kernel');
       expect(savedRun.metered).toBe(false);
     });
 
@@ -622,7 +649,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     await runAgent(hostedInstall(), mention);
     expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
     const notice = AgentMessageService.postMessage.mock.calls[0][0];
-    expect(notice).toMatchObject({ failureNotice: true, kind: 'error' });
+    // F442: the platform's line, marked kernel like any other it writes.
+    expect(notice).toMatchObject({ failureNotice: true, kind: 'error', authorKind: 'kernel' });
     // It isn't an answer, so it can't close the first-task card.
     expect(notice).not.toHaveProperty('answeringMessageId');
     expect(axios.post).not.toHaveBeenCalled();

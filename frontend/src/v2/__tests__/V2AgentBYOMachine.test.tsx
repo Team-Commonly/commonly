@@ -6,7 +6,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // runtimeType 'wrapper' and files a placement request (never a binding); the
 // result panel watches the daemon's per-agent heartbeat state.
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -290,11 +290,51 @@ describe('BYO on-my-computer mode', () => {
     const options = Array.from(screen.getByTestId('byo-adapter-select').querySelectorAll('option'));
     expect(options.map((option) => option.textContent)).toEqual([
       'Auto-detect on that computer', 'Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.4',
-      'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness',
+      'Claude Code · Not on this computer', 'Qwen Code · Not checked here', 'Goose · Not checked here',
+      'Hermes · Not checked here', 'pi · Not checked here', 'DeepSeek Harness · Not checked here',
     ]);
     // Not on this computer stays selectable: it may be installed next.
     expect(options.every((option) => !option.disabled)).toBe(true);
     expect(document.body.textContent).not.toMatch(/Tested on a Mac|Not tested yet/);
+  });
+
+  // F370 #8: a missing harness says what the daemon tried, and an install made
+  // now shows up without a reload; one the daemon doesn't check says so.
+  test('a missing harness says why and is rechecked until it shows up', async () => {
+    const missing = { ...machineRow, runtimeInventory: [
+      { harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] },
+      { harness: 'codex', installed: false, version: null, models: null, efforts: [] },
+    ] };
+    mockGet({ catalog: CATALOG, machines: [missing] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option').length).toBeGreaterThan(2));
+    expect(screen.queryByTestId('byo-harness-detail')).toBeNull();
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+      expect(screen.getByTestId('byo-harness-detail')).toHaveTextContent(
+        'The daemon on Sam’s MacBook couldn’t run “codex --version” with the PATH it starts with. Install Codex there, or put it on that PATH.',
+      );
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/machines').length;
+      const before = reads();
+      mockGet({ catalog: CATALOG, machines: [{ ...missing, runtimeInventory: [missing.runtimeInventory[0],
+        { harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [] }] }] });
+      await act(async () => { jest.advanceTimersByTime(10_000); });
+      expect(reads()).toBe(before + 1);
+      expect(screen.queryByTestId('byo-harness-detail')).toBeNull();
+      expect(screen.getByTestId('byo-adapter-select')).toHaveTextContent('Codex · Installed · 0.162.1');
+      // Found: no more rechecks.
+      await act(async () => { jest.advanceTimersByTime(30_000); });
+      expect(reads()).toBe(before + 1);
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'goose' } });
+      expect(screen.getByTestId('byo-harness-detail')).toHaveTextContent(
+        'Sam’s MacBook doesn’t check whether Goose is installed. The agent starts if it is.',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a harness that can\'t answer here says what can instead, and the add button waits', async () => {
@@ -559,5 +599,75 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     expect(screen.getByTestId('byo-machine-select')).toHaveValue('mach-on');
+  });
+});
+
+// F458 (F454 walk step 9): a placement whose harness is signed out read
+// "Running … say hi" and looked healthy. It now says what's missing, and
+// keeps reading the computer until a sign-in clears it.
+describe('a signed-out harness on the placed computer', () => {
+  // CodeRabbit on #3992: auto-detect names no harness, so the check has to use
+  // the one the daemon picks (Claude Code when installed, else Codex).
+  test('with auto-detect left on, the harness the daemon picks is the one checked', async () => {
+    const codexOut = { harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [], signedIn: false };
+    const noClaude = { harness: 'claude', installed: false, version: null, models: null, efforts: [] };
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, runtimeInventory: [noClaude, codexOut] }] });
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    jest.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByText('Add to this computer'));
+      await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+      const { agentName } = axios.post.mock.calls.find(([u]) => u === '/api/agent-binding/request')[1];
+      const seat = { agentName, instanceId: 'default', state: 'running' };
+      mockGet({ catalog: CATALOG, machines: [{ ...machineRow, agentStates: [seat], runtimeInventory: [noClaude, codexOut] }] });
+      await act(async () => { jest.advanceTimersByTime(4_000); });
+      expect(screen.getByTestId('byo-machine-signed-out')).toHaveTextContent(
+        'Running on Sam’s MacBook, but Codex isn’t signed in there, so it can’t answer yet. On Sam’s MacBook, run codex once and sign in.',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('the picker and the running line say so, and a sign-in clears it', async () => {
+    const out = { harness: 'claude', installed: true, version: '2.1', models: null, efforts: [], signedIn: false };
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, runtimeInventory: [out] }] });
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option').length).toBeGreaterThan(2));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+    expect(screen.getByTestId('byo-adapter-select')).toHaveTextContent('Claude Code · Installed · not signed in');
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    // Fake before the click, so the placement watch runs on these timers.
+    jest.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByText('Add to this computer'));
+      await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+      const { agentName } = axios.post.mock.calls.find(([u]) => u === '/api/agent-binding/request')[1];
+      const seat = { agentName, instanceId: 'default', state: 'running' };
+      mockGet({ catalog: CATALOG, machines: [{ ...machineRow, agentStates: [seat], runtimeInventory: [out] }] });
+      await act(async () => { jest.advanceTimersByTime(4_000); });
+      expect(screen.getByTestId('byo-machine-signed-out')).toHaveTextContent(
+        'Running on Sam’s MacBook, but Claude Code isn’t signed in there, so it can’t answer yet. On Sam’s MacBook, run claude once and sign in.',
+      );
+      expect(screen.queryByTestId('byo-machine-running')).toBeNull();
+      mockGet({ catalog: CATALOG, machines: [{ ...machineRow, agentStates: [seat], runtimeInventory: [{ ...out, signedIn: true }] }] });
+      await act(async () => { jest.advanceTimersByTime(4_000); });
+      expect(screen.getByTestId('byo-machine-running')).toBeInTheDocument();
+      expect(screen.queryByTestId('byo-machine-signed-out')).toBeNull();
+      // Signed in: the watch stops.
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/machines').length;
+      const before = reads();
+      await act(async () => { jest.advanceTimersByTime(20_000); });
+      expect(reads()).toBe(before);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

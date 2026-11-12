@@ -25,7 +25,11 @@ import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
 export type ModelProvider = 'anthropic' | 'deepseek';
 
 export interface TurnDeps {
-  storage: DurableObjectStorage;
+  // Only get and put: the DO passes its generation-checked storage (F291).
+  storage: {
+    get<T = unknown>(key: string): Promise<T | undefined>;
+    put(key: string, value: unknown): Promise<void>;
+  };
   apiKey: string;
   // Which pi-ai provider the key belongs to. BYOK per instance; the operator
   // picks. DeepSeek is OpenAI-completions-shaped and cheap — the guide agent

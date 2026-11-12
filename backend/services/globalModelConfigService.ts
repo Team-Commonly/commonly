@@ -1,5 +1,5 @@
 import SystemSetting from '../models/SystemSetting';
-import { agentDefaultModel } from '../config/agentDefaultModel';
+import { agentDefaultModel, defaultChatModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
@@ -36,7 +36,12 @@ export interface GlobalModelConfig {
 const DEFAULT_CONFIG: GlobalModelConfig = {
   llmService: {
     provider: 'auto', // auto | gemini | litellm | openrouter
-    model: 'gemini-2.5-flash',
+    // The chart's LITELLM_CHAT_MODEL, else the agent default (F105), read when
+    // asked. It was `gemini-2.5-flash`, a name LiteLLM served with DeepSeek
+    // wherever Gemini was off (litellm.legacyAliases).
+    get model(): string {
+      return defaultChatModel();
+    },
     contextLimit: 128000, // max input tokens for the configured model
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
@@ -44,13 +49,15 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     },
   },
   openclaw: {
-    provider: 'google', // google | openrouter | openai | anthropic | custom
-    model: 'google/gemini-2.5-flash',
-    fallbackModels: [
-      'google/gemini-2.5-flash',
-      'google/gemini-2.5-flash-lite',
-      'google/gemini-2.0-flash',
-    ],
+    provider: 'openrouter', // google | openrouter | openai | anthropic | custom
+    // The configured default (F105), as the community model below names it:
+    // the `openrouter` provider reaches LiteLLM, which serves it under its own
+    // name. It was `google/gemini-2.5-flash` with two more Gemini names as
+    // fallbacks, which LiteLLM served with DeepSeek wherever Gemini was off.
+    get model(): string {
+      return `openrouter/${agentDefaultModel()}`;
+    },
+    fallbackModels: [],
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
     // Model used by non-dev agents. It names the configured default
@@ -169,10 +176,26 @@ const normalizeContextLimit = (value: unknown): number => {
 // always won: values-dev set LITELLM_CHAT_MODEL=deepseek-v4-flash on 2026-09-01,
 // yet every summary, digest and chat-summary call still asked for
 // gemini-2.5-flash, whose key Google rejects, and fell to the template.
+// A Gemini-direct provider calls Google's own API, so its default is a real
+// Gemini name. The OpenRouter provider takes the operator's OPENROUTER_MODEL
+// when set. Every other provider defaults to the LiteLLM name (F105).
 const defaultLlmServiceModel = (provider: string): string => {
-  const envModel = String(process.env.LITELLM_CHAT_MODEL || '').trim();
-  if (envModel && (provider === 'auto' || provider === 'litellm')) return envModel;
+  if (provider === 'gemini') return GEMINI_DIRECT_MODEL;
+  const openRouterModel = String(process.env.OPENROUTER_MODEL || '').trim();
+  if (provider === 'openrouter' && openRouterModel) return openRouterModel;
   return DEFAULT_CONFIG.llmService.model;
+};
+
+// The OpenClaw `google` provider calls Google directly with the gateway's own
+// key, so with no model named it gets a real Gemini name, as before F105.
+// Every other provider gets the configured default.
+const GOOGLE_OPENCLAW_MODEL = 'google/gemini-2.5-flash';
+const defaultOpenClawModel = (provider: string): string => (
+  provider === 'google' ? GOOGLE_OPENCLAW_MODEL : DEFAULT_CONFIG.openclaw.model
+);
+const savedOpenClawModel = (oc: unknown): string => {
+  const saved = (oc || {}) as { model?: unknown; defaultModel?: unknown };
+  return String(saved.model || saved.defaultModel || '').trim();
 };
 
 const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig => {
@@ -183,7 +206,7 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
       provider: normalizeProvider(llm?.provider),
       model: normalizeModel(
         (llm as Record<string, unknown>)?.model || (llm as Record<string, unknown>)?.defaultModel,
-        DEFAULT_CONFIG.llmService.model,
+        defaultLlmServiceModel(normalizeProvider(llm?.provider)),
       ),
       contextLimit: normalizeContextLimit(llm?.contextLimit),
       openrouter: {
@@ -199,7 +222,7 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
       model: normalizeOpenClawModel({
         provider: normalizeOpenClawProvider(oc?.provider),
         model: (oc as Record<string, unknown>)?.model || (oc as Record<string, unknown>)?.defaultModel,
-        fallback: DEFAULT_CONFIG.openclaw.model,
+        fallback: defaultOpenClawModel(normalizeOpenClawProvider(oc?.provider)),
       }),
       fallbackModels: normalizeFallbackModels(oc?.fallbackModels),
       devAgentIds: normalizeDevAgentIds(
@@ -269,6 +292,8 @@ class GlobalModelConfigService {
         openclaw: {
           ...defaults.openclaw,
           ...(stored.openclaw || {}),
+          // An unsaved model is the default for the saved provider (sanitize).
+          model: savedOpenClawModel(stored.openclaw),
         },
       },
     );
@@ -297,6 +322,11 @@ class GlobalModelConfigService {
       openclaw: {
         ...current.openclaw,
         ...((patch && patch.openclaw) || {}),
+        // A model the save names, else the one the row held; neither, and it is
+        // the default for the provider, so a provider change carries its own.
+        model: patch?.openclaw && 'model' in patch.openclaw
+          ? String(patch.openclaw.model || '')
+          : savedOpenClawModel(storedBefore.openclaw),
       },
     };
 
@@ -313,6 +343,12 @@ class GlobalModelConfigService {
     const rowHeldAPick = Boolean(savedPrimary) && savedPrimary !== RETIRED_COMMUNITY_PRIMARY;
     if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
       delete stored.openclaw.communityAgentModel;
+    }
+    // The OpenClaw model follows the provider's default the same way (F105): a
+    // value equal to it is stored only over a model the row already held.
+    if (!savedOpenClawModel(storedBefore.openclaw)
+      && sanitized.openclaw.model === defaultOpenClawModel(sanitized.openclaw.provider)) {
+      delete stored.openclaw.model;
     }
 
     await SystemSetting.findOneAndUpdate(

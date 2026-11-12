@@ -26,6 +26,9 @@ const fixedLastError = (value) => {
 const seatState = (seat = {}) => ({
   agentName: seat.agentName,
   instanceId: seat.instanceId,
+  // The local record the seat runs from (`<name>` or `<name>@<id>`, F427):
+  // a file name, not a secret. Status reads its log and last turn by it.
+  recordKey: typeof seat.recordKey === 'string' ? seat.recordKey : null,
   state: seat.state,
   restarts: seat.restarts,
   adapter: seat.adapter || null,

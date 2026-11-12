@@ -45,7 +45,9 @@ import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { accessSync, constants, existsSync, realpathSync } from 'fs';
+import {
+  accessSync, constants, existsSync, readFileSync, readdirSync, realpathSync, statSync,
+} from 'fs';
 import {
   chmod,
   lstat,
@@ -70,7 +72,8 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
-import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_KEY, armCredentialRelease, writeCredentialFile } from '../credential-file.js';
+import { MCP_READY_FILE_ENV, bridgeReadyFile, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
@@ -83,11 +86,12 @@ import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { refuseCodeRunningGitSetup } from '../sandbox/workspace-git-config.js';
+import { codexTrustedPerimeter } from '../sandbox/codex-perimeter.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
-import { codexContextTokens, codexHomeFor } from '../session-recycle.js';
+import { codexContextTokens, codexHomeFor, codexRolloutPath } from '../session-recycle.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -175,6 +179,9 @@ const bridgeGrantBroker = (server, ctx) => {
     console.warn(`[codex] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
     return null;
   }
+  // F460: the bridge reads the credential once and says so in its ready file.
+  const readyPath = bridgeReadyFile(server, ctx);
+  if (readyPath) entry.env = { ...entry.env, [MCP_READY_FILE_ENV]: readyPath };
   return [
     '-c', `mcp_servers.${server.name}.command=${toml(entry.command)}`,
     // The broker parks every write for the owner's approval itself, so codex
@@ -223,7 +230,7 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     // one path by which the value ends up in codex's own environment and from
     // there in every MCP child it spawns (TASK-083, measured on a live codex
     // seat before the change).
-    const declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
+    let declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
       credentialFile: ctx.credentialFile,
       label: 'codex',
     }).env;
@@ -257,6 +264,12 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       );
       continue;
     }
+    // F460: on a public seat our server names the file it writes once it has
+    // read the credential (a path, not a secret). An older warm build refuses,
+    // and so does another server handed the credential path. Named only for an
+    // entry that is wired, so a skipped one is never waited for.
+    const readyPath = commonlyMcpReadyFile(server, spawnCommand, ctx, { env: declaredEnv });
+    if (readyPath) declaredEnv = { ...declaredEnv, [MCP_READY_FILE_ENV]: readyPath };
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
     const versionDir = ctx.publicSeat && selectedMcpVersionDir(spawnCommand);
     if (versionDir) mcpReadDirectories.push(versionDir);
@@ -333,6 +346,9 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
 
 const PUBLIC_PERMISSION_PROFILE = 'commonly_public';
 const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
+// F387: a private seat outside a cloud-codex pod. Not a sandbox for untrusted
+// input: public seats keep commonly_public.
+const PRIVATE_PERMISSION_PROFILE = 'commonly_private';
 
 const statOrNull = async (path) => {
   try {
@@ -364,10 +380,10 @@ const statOrNull = async (path) => {
 // refused. macOS has no arg0 helper and keeps its homes where they were.
 const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
 
-const stateHomeUnderCommonly = (ctx, home) => new Error(
-  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the public Codex home under ${join(home, '.commonly')}, `
-  + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.',
-);
+const stateHomeUnderCommonly = (ctx, home, seat = 'public') => Object.assign(new Error(
+  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the ${seat} Codex home under ${join(home, '.commonly')}, `
+  + `which the ${seat} sandbox denies on Linux. Point it elsewhere or unset it.`,
+), { code: 'state_home_under_commonly' });
 
 const publicCodexHomesRoot = (ctx) => {
   const home = ctx._homeDir || homedir();
@@ -382,16 +398,153 @@ const publicCodexHomesRoot = (ctx) => {
   return root;
 };
 
+// An XDG_STATE_HOME under ~/.commonly throws above, and that tree is denied anyway.
+const privatePublicHomesDeny = (ctx) => {
+  if ((ctx._platform || process.platform) !== 'linux') return [];
+  try {
+    return [publicCodexHomesRoot(ctx)];
+  } catch {
+    return [];
+  }
+};
+
 const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
   || process.env.CODEX_HOME
   || join(homedir(), '.codex');
+
+// F445: on Linux a private seat runs with a Codex home of its own, beside the
+// public ones, so the folder its shell can see holds no other session's logs,
+// databases or history: F444 denied a shared home entry by entry, from a
+// listing taken when the turn's keys are built, and anything another session
+// wrote there under a new name, or during a command, stayed readable. The home
+// starts with no history: nothing is copied from the shared one, which holds
+// other sessions' history, the thing being fenced off. What the agent is meant
+// to remember lives in Commonly. Only the person's own setup is carried over,
+// as symlinks Codex follows outside the sandbox: their login, config.toml (a
+// private seat keeps its own config) and global AGENTS.md. macOS denies the
+// shared home whole under Seatbelt and keeps running from it.
+const PRIVATE_CODEX_HOMES = 'codex-private-homes';
+const PRIVATE_HOME_LINKS = Object.freeze(['auth.json', 'config.toml', 'AGENTS.md']);
+
+/** The shared Codex home a private seat's setup comes from. */
+const privateSourceCodexHome = (ctx, env) => pathResolve(
+  ctx.cwd || process.cwd(),
+  env?.CODEX_HOME || join(env?.HOME || homedir(), '.codex'),
+);
+
+/**
+ * Who a seat's own Codex home belongs to (F450): the seat's local key, as the
+ * run loop names its sessions and state (F306). A second instance's is
+ * `name@instance`, so it gets a home of its own; every other seat's is its
+ * bare name, so every home made before this keeps its seat, including a seat
+ * saved under its name that runs a non-default instance.
+ */
+export const codexHomeIdentity = (ctx) => ctx.seatKey || ctx.agentName || ctx.cwd || 'anonymous';
+
+/** Where this private seat's own Codex home is, or null where it has none. */
+export const privateCodexHomePath = (ctx) => {
+  if (ctx._privateCodexHome) return ctx._privateCodexHome;
+  const identity = codexHomeIdentity(ctx);
+  const hash = createHash('sha256').update(`private:${identity}`).digest('hex').slice(0, 20);
+  let publicRoot;
+  try {
+    publicRoot = publicCodexHomesRoot(ctx);
+  } catch (error) {
+    if (error?.code !== 'state_home_under_commonly') throw error;
+    throw stateHomeUnderCommonly(ctx, ctx._homeDir || homedir(), 'private');
+  }
+  return join(dirname(publicRoot), PRIVATE_CODEX_HOMES, hash);
+};
+
+// F450: a login Codex keeps in the keyring is filed under the Codex home's own
+// path and leaves no auth.json, so a seat in a home of its own can't reach it.
+// Said once per process per home, at the first turn.
+const keyringLoginNoted = new Set();
+const KEYRING_STORE = /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m;
+// Only the keys above the first table header are the top level.
+const topLevelToml = (text) => text.split(/^\s*\[/m)[0];
+const noteKeyringLogin = async (source, home) => {
+  if (keyringLoginNoted.has(home)) return;
+  keyringLoginNoted.add(home);
+  if (await statOrNull(join(source, 'auth.json'))) return;
+  const config = await readFile(join(source, 'config.toml'), 'utf8').catch(() => '');
+  const store = topLevelToml(config).match(KEYRING_STORE)?.[1];
+  if (!store) return;
+  process.stderr.write(`[codex] this agent runs from a Codex home of its own (${home}). Your config.toml `
+    + `sets cli_auth_credentials_store = "${store}" and there is no auth.json to link, so a login kept in `
+    + 'the keyring can\'t reach it. '
+    + 'To fix it, set cli_auth_credentials_store = "file" in your config.toml and run `codex login`.\n');
+};
+
+const preparePrivateCodexHome = async (ctx, childEnv) => {
+  const source = privateSourceCodexHome(ctx, childEnv);
+  const home = privateCodexHomePath(ctx);
+  if (pathResolve(home) === source) throw new Error('a private Codex home must be apart from the shared CODEX_HOME');
+  const workspacePath = pathResolve(ctx.cwd || process.cwd());
+  const userHome = ctx._homeDir || homedir();
+  const [workspace, realHome, realSource, realCommonly] = await Promise.all([
+    // As in realpathOfNearest: only a missing workspace falls back to its own path.
+    realpath(workspacePath).catch((error) => {
+      if (error?.code === 'ENOENT') return workspacePath;
+      throw error;
+    }),
+    realpathOfNearest(home),
+    realpathOfNearest(source),
+    realpathOfNearest(join(userHome, '.commonly')),
+  ]);
+  if (contains(workspace, realHome)) {
+    throw new Error(`private codex agents cannot run in ${ctx.cwd}: it contains the agent's own Codex home `
+      + `(${home}), which the sandbox would then expose. Run it in a project folder.`);
+  }
+  // Both are denied whole, and a home inside either would hide Codex's own
+  // sandbox helper, so every turn would stop at start.
+  if (contains(realSource, realHome) || contains(realCommonly, realHome)) {
+    throw new Error(`a private Codex agent's own home (${home}) resolves inside `
+      + `${contains(realSource, realHome) ? `the shared Codex home (${source})` : join(userHome, '.commonly')}, `
+      + 'which its sandbox denies on Linux. Point XDG_STATE_HOME elsewhere or unset it.');
+  }
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  await chmod(home, 0o700);
+  for (const name of PRIVATE_HOME_LINKS) {
+    const from = join(source, name);
+    const to = join(home, name);
+    const [fromStat, toStat] = await Promise.all([statOrNull(from), statOrNull(to)]);
+    // A file the seat's Codex wrote in its own home is its own: kept.
+    if (toStat && !toStat.isSymbolicLink()) continue;
+    if (!fromStat) {
+      // A link to a login the person removed would sign in through it anyway.
+      if (toStat) await unlink(to);
+      continue;
+    }
+    const current = toStat ? pathResolve(dirname(to), await readlink(to)) : null;
+    if (current !== from) {
+      if (toStat) await unlink(to);
+      // Another turn of the same seat may have just made it.
+      await symlink(from, to).catch((error) => { if (error?.code !== 'EEXIST') throw error; });
+    }
+  }
+  await noteKeyringLogin(source, home);
+  await mkdir(join(home, 'tmp', 'arg0-linux'), { recursive: true, mode: 0o700 });
+  // Every other private seat's home, as it stands now. One created during this
+  // turn is denied from the next turn on: until then, what that seat's first
+  // turn writes there stays readable to this turn's commands.
+  const others = entriesOf(dirname(home)).filter((name) => name !== basename(home)).sort()
+    .map((name) => join(dirname(home), name));
+  // The links into the shared home, which is denied whole with their targets.
+  const links = [];
+  for (const name of PRIVATE_HOME_LINKS) {
+    const stat = await statOrNull(join(home, name));
+    if (stat?.isSymbolicLink() && pathResolve(home, await readlink(join(home, name))) === join(source, name)) links.push(name);
+  }
+  return { home, source, realSource, others, links };
+};
 
 // `login: false` is the proxy route (D250): codex authenticates with the
 // per-turn token, so the public home gets no link to the person's Codex login,
 // and a link an earlier turn left is removed.
 const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
   const operatorHome = operatorCodexHome(ctx);
-  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identity = codexHomeIdentity(ctx);
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
   const homesRoot = publicCodexHomesRoot(ctx);
   const publicHome = ctx._publicCodexHome || join(homesRoot, identityHash);
@@ -626,20 +779,9 @@ const parseCodexVersion = (stdout) => (
   /^codex-cli (\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$/m.exec(String(stdout))?.[1] || null
 );
 
-const publicPermissionProfileFlags = (
-  mode,
-  commitAttributionEnv = null,
-  mcpReadDirectories = [],
-  codexHelperReadPaths = [],
-  platform = process.platform,
-  workspacePath = null,
-) => {
-  if (!PUBLIC_SANDBOX_MODES.has(mode)) {
-    throw new Error(
-      `public codex agents require sandbox.mode=workspace or read-only, got ${mode || 'unset'}`,
-    );
-  }
-  const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+// The commit-attribution hooks a profile has to let the shell read: the hooks
+// folder Commonly installs, and each executable hook the repository already had.
+const commitHookReadPaths = (commitAttributionEnv) => {
   const commitHooksPath = commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
   const originalHooksPath = commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
   const originalHookPaths = originalHooksPath
@@ -654,14 +796,37 @@ const publicPermissionProfileFlags = (
         }
       })
     : [];
+  return { commitHooksPath, originalHookPaths };
+};
+
+// Codex's default name filter treats GIT_CONFIG_KEY_n as sensitive, so the
+// attribution keys are set again after filtering. Their values stay in the
+// environment instead of riding argv.
+const gitConfigKeyShellSet = (commitAttributionEnv) => Object.entries(commitAttributionEnv || {})
+  .filter(([name]) => /^GIT_CONFIG_KEY_\d+$/.test(name))
+  .map(([name, value]) => `${toml(name)}=${toml(value)}`);
+
+const publicPermissionProfileFlags = (
+  mode,
+  commitAttributionEnv = null,
+  mcpReadDirectories = [],
+  codexHelperReadPaths = [],
+  platform = process.platform,
+  workspacePath = null,
+) => {
+  if (!PUBLIC_SANDBOX_MODES.has(mode)) {
+    throw new Error(
+      `public codex agents require sandbox.mode=workspace or read-only, got ${mode || 'unset'}`,
+    );
+  }
+  const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+  const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
   // Preserve caller-supplied git config entries alongside the appended
   // hooksPath entry. The explicit allowlist below admits only these concrete
   // variable names, not arbitrary environment variables.
   const gitConfigEnv = Object.keys(commitAttributionEnv || {})
     .filter((name) => /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(name));
-  const gitConfigKeySet = Object.entries(commitAttributionEnv || {})
-    .filter(([name]) => /^GIT_CONFIG_KEY_\d+$/.test(name))
-    .map(([name, value]) => `${toml(name)}=${toml(value)}`);
+  const gitConfigKeySet = gitConfigKeyShellSet(commitAttributionEnv);
   // The profile denies $TMPDIR and /tmp, so a shell heredoc fails. Set for the
   // model's shell alone: codex, its MCP child and the per-turn folder keep the
   // host's temp root, which spawn refuses to find in the workspace. The
@@ -721,6 +886,212 @@ const publicPermissionProfileFlags = (
     // Codex's default name filter treats GIT_CONFIG_KEY_n as sensitive. Set
     // only those key names after filtering; their corresponding values stay
     // in the allowlisted environment instead of riding argv.
+    ...(shellSet.length ? ['-c', `shell_environment_policy.set={${shellSet.join(',')}}`] : []),
+  ];
+};
+
+// Host secrets a private seat's shell never reads. ~/.commonly holds every
+// seat's tokens and state; the seat's own workspace sits under it and is
+// admitted by the more specific workspace rule (on Linux too: measured on
+// codex-cli 0.164.0, a write key inside a denied folder works there). The
+// Codex home is privateCodexHomeDenies'. gh keeps working: on macOS its
+// login is in the keychain, which a credential the seat itself uses has to be.
+const PRIVATE_SECRET_DENIES = Object.freeze([
+  '~/.commonly', '~/.claude', '~/.ssh', '~/.aws', '~/.gnupg',
+  '~/.kube', '~/.docker', '~/.netrc', '~/.config/gcloud',
+]);
+
+const realOrSelf = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+// F444: what the private profile denies of the Codex home the seat runs with.
+// On macOS the home is denied whole. On Linux Codex execs its sandbox helper
+// from `<home>/tmp/arg0-linux` inside bwrap, and a denied home stops every turn
+// at start ("bwrap: execvp codex-linux-sandbox: Permission denied"; a read key
+// for `tmp` under the denied home does not lift it). Measured with `codex
+// sandbox` and a real turn on codex-cli 0.164.0, ubuntu-22.04. So there the
+// home itself stays readable and everything in it is denied except the helper
+// folder: each entry present now, and the names Codex writes later even while
+// they are absent (a key for a missing path is accepted there). Codex's SQLite
+// databases write a `-wal` file during the turn that holds their newest rows,
+// other sessions' included, and SQLite removes it when the last connection
+// closes; so every database name, listed or known, takes its `-wal`, `-shm`
+// and `-journal` too. A database under a new name is listed, with those, from
+// the next turn. No globs: Codex's `*` crosses `/`, and a glob that matched a
+// file inside a folder already denied stopped every turn at start ("bwrap:
+// Can't create file at …: Read-only file system", run 43103991434).
+// `~/.codex` is denied whole when it isn't that home.
+const CODEX_HOME_SECRET_NAMES = Object.freeze([
+  'auth.json', 'config.toml', 'sessions', 'archived_sessions', 'history.jsonl', 'log',
+  'session_index.jsonl', 'shell_snapshots', 'memories',
+  'logs_2.sqlite', 'state_5.sqlite', 'goals_1.sqlite', 'queue_1.sqlite',
+]);
+const SQLITE_SIDECARS = Object.freeze(['-wal', '-shm', '-journal']);
+const CODEX_HELPER_PATH = Object.freeze(['tmp', 'arg0-linux']);
+
+const entriesOf = (dir) => {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
+
+// `links`: entries of the run home that are links into a home denied whole
+// (F445). A key on one makes bwrap follow it into the hidden folder and stop
+// every turn at start ("Can't create file at …/auth.json: No such file or
+// directory", run 43114789288); its target is out of reach already.
+export const privateCodexHomeDenies = ({
+  codexHome = null, platform = process.platform, home = homedir(), links = [],
+} = {}) => {
+  const defaultHome = join(home, '.codex');
+  const runHome = codexHome ? realOrSelf(codexHome) : null;
+  const runsFromDefault = !runHome || runHome === realOrSelf(defaultHome);
+  if (platform !== 'linux') return runsFromDefault ? ['~/.codex'] : ['~/.codex', runHome];
+  const helperHome = runHome || realOrSelf(defaultHome);
+  const denies = runsFromDefault ? [] : ['~/.codex'];
+  // Deny every sibling of the helper path at each level, so only the path
+  // itself stays reachable.
+  let dir = helperHome;
+  for (const [depth, keep] of CODEX_HELPER_PATH.entries()) {
+    const names = new Set(entriesOf(dir));
+    if (depth === 0) {
+      CODEX_HOME_SECRET_NAMES.forEach((name) => names.add(name));
+      [...names].filter((name) => /\.(sqlite|db)$/.test(name))
+        .forEach((name) => SQLITE_SIDECARS.forEach((suffix) => names.add(`${name}${suffix}`)));
+    }
+    names.delete(keep);
+    if (depth === 0) links.forEach((name) => names.delete(name));
+    denies.push(...[...names].sort().map((name) => join(dir, name)));
+    dir = join(dir, keep);
+  }
+  return denies;
+};
+
+// What a commit writes, and nothing that runs code. Codex keeps a workspace's
+// `.git` read-only even inside a writable root, and only an explicit absolute
+// key opens it (measured with `codex sandbox` on 0.162.1: the same key inside
+// :workspace_roots did not). `config` and `hooks` stay read-only, because a
+// hook or a config-defined program (core.fsmonitor, a filter) would run as the
+// person in every later git command there, outside any sandbox; renaming over
+// them is refused too (measured). A git worktree keeps its admin folder
+// outside the workspace (`.git` is a file naming it), and a commit there also
+// writes the shared repository's objects, refs and logs, and packed-refs when
+// git repacks them. Read from the files git leaves, without running git.
+// Measured: a worktree whose repository lies under the denied ~/.commonly
+// can't commit (git can't resolve the path), whatever these keys are.
+const gitAdminKeys = (workspace) => {
+  if (!workspace) return [];
+  const dotGit = join(workspace, '.git');
+  const ownRepository = (dir) => {
+    const real = realOrSelf(dir);
+    return [
+      [real, 'write'],
+      [join(real, 'config'), 'read'],
+      [join(real, 'config.worktree'), 'read'],
+      [join(real, 'hooks'), 'read'],
+    ];
+  };
+  try {
+    if (statSync(dotGit).isDirectory()) return ownRepository(dotGit);
+  } catch {
+    return [];
+  }
+  try {
+    const pointer = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, 'utf8'))?.[1]?.trim();
+    if (!pointer) return [];
+    const gitDir = pathResolve(workspace, pointer);
+    let commonDir = null;
+    try {
+      commonDir = pathResolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+    } catch {
+      // A linked gitdir that is a whole repository of its own.
+      return ownRepository(gitDir);
+    }
+    const realGitDir = realOrSelf(gitDir);
+    const realCommon = realOrSelf(commonDir);
+    return [
+      [realGitDir, 'write'],
+      [join(realGitDir, 'config.worktree'), 'read'],
+      ...['objects', 'refs', 'logs', 'packed-refs', 'packed-refs.lock']
+        .map((name) => [join(realCommon, name), 'write']),
+    ];
+  } catch {
+    // An unreadable `.git` file.
+    return [];
+  }
+};
+
+// F387: the profile for a private Codex seat outside a cloud-codex pod. It is
+// the seat owner's own agent doing dev work, so the disk stays readable, the
+// network is on and the environment is inherited (with Codex's secret-name
+// filter on); what it removes is every host secret the seat doesn't use
+// itself. It is not a sandbox for untrusted input: public seats keep
+// commonly_public.
+const privatePermissionProfileFlags = ({
+  commitAttributionEnv = null,
+  mcpReadDirectories = [],
+  codexHelperReadPaths = [],
+  platform = process.platform,
+  workspace = null,
+  tempRoots = [],
+  shellTempDir = null,
+  codexHome = null,
+  home = homedir(),
+  otherCodexHomes = [],
+  codexHomeLinks = [],
+} = {}) => {
+  const { commitHooksPath, originalHookPaths } = commitHookReadPaths(commitAttributionEnv);
+  const posix = platform !== 'win32';
+  // The temp roots hold every seat's per-turn folder: its runtime token and the
+  // reply file Codex posts from. So they are denied whole, and the shell gets
+  // one folder of its own inside this turn's, as TMPDIR (and TMPPREFIX, which
+  // zsh takes its heredoc files from). Codex, and the MCP child that reads the
+  // token, run outside the profile. On Windows these keys have no drive.
+  const deniedTemp = posix
+    ? [...new Set(['/private/tmp', ...tempRoots.filter(Boolean).map(realOrSelf)])]
+    : [];
+  const shellTemp = posix && shellTempDir ? realOrSelf(shellTempDir) : null;
+  const filesystem = [
+    // Codex reads every key as a path for its own platform; on Windows "/" has
+    // no drive and Codex would refuse the whole profile (as with /private/tmp
+    // in publicPermissionProfileFlags).
+    posix ? '"/"="read"' : '":minimal"="read"',
+    ...[...PRIVATE_SECRET_DENIES, ...privateCodexHomeDenies({ codexHome, platform, home, links: codexHomeLinks }), ...otherCodexHomes]
+      .map((path) => `${toml(path)}="deny"`),
+    ...deniedTemp.map((path) => `${toml(path)}="deny"`),
+    ...(shellTemp ? [`${toml(shellTemp)}="write"`] : []),
+    '":workspace_roots"={"."="write",".commonly/**"="deny",".codex/**"="deny"}',
+    ...gitAdminKeys(workspace).map(([path, mode]) => `${toml(path)}=${toml(mode)}`),
+    ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
+    ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
+    ...mcpReadDirectories.map((path) => `${toml(path)}="read"`),
+    ...codexHelperReadPaths.map((path) => `${toml(path)}="read"`),
+  ].join(',');
+  const shellSet = [
+    ...gitConfigKeyShellSet(commitAttributionEnv),
+    ...(shellTemp
+      ? [
+        `${toml('TMPDIR')}=${toml(shellTemp)}`,
+        `${toml('TMPPREFIX')}=${toml(join(shellTemp, 'zsh'))}`,
+        // macOS's /usr/bin tools are xcrun shims, which keep a cache in the
+        // user temp root (denied above) and print an error on every call
+        // without this.
+        `${toml('xcrun_db')}=${toml(join(shellTemp, 'xcrun_db'))}`,
+      ]
+      : []),
+  ];
+  return [
+    '-c', `default_permissions=${toml(PRIVATE_PERMISSION_PROFILE)}`,
+    '-c', `permissions.${PRIVATE_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
+    '-c', `permissions.${PRIVATE_PERMISSION_PROFILE}.network.enabled=true`,
+    '-c', 'shell_environment_policy.inherit="all"',
+    '-c', 'shell_environment_policy.ignore_default_excludes=false',
     ...(shellSet.length ? ['-c', `shell_environment_policy.set={${shellSet.join(',')}}`] : []),
   ];
 };
@@ -836,8 +1207,23 @@ const buildArgs = ({
   providerProxy = null,
   platform = process.platform,
   workspacePath = null,
+  trustedContainerPerimeter = false,
+  operatorUnconfined = false,
+  privateWorkspace = null,
+  tempRoots = [],
+  shellTempDir = null,
+  privateCodexHome = null,
+  privateHome = homedir(),
+  privateOtherCodexHomes = [],
+  privateCodexHomeLinks = [],
+  loginFileStore = false,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
+  // F387: a private seat keeps the flag below only in a cloud-codex pod, or
+  // when its operator opted this run out of the OS sandbox (D245, native
+  // Windows only: Codex can't enforce a profile's read denies there).
+  const keepsOwnPolicy = trustedContainerPerimeter || operatorUnconfined;
+  const privateProfile = !publicSandbox && !keepsOwnPolicy;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
   // bubblewrap (bwrap) sandbox + approval prompts. bwrap needs CAP_SYS_ADMIN
   // or unprivileged user-namespaces — neither available to standard k8s
@@ -852,6 +1238,15 @@ const buildArgs = ({
   // versions spawn admits (PUBLIC_CODEX_MIN_VERSION). Do not
   // pass legacy `--sandbox` alongside them: Codex documents that the legacy
   // mode disables permission-profile composition.
+  //
+  // F387 (TASK-280): the flag above belongs to a cloud-codex k8s pod, where
+  // bwrap cannot run and the pod is the boundary, or to a run its operator
+  // opted out (keepsOwnPolicy). Every other private seat gets
+  // privatePermissionProfileFlags: readable disk, network on, host secret dirs
+  // denied. It keeps the seat's own config and route (no --ignore-user-config),
+  // since a private seat relies on its config.toml; the -c profile still wins
+  // over config defaults (checked against sandbox_mode, default_permissions and
+  // a user [permissions.*] table on codex-cli 0.162.1).
   const executionPolicy = publicSandbox
     ? [
       '--ignore-user-config',
@@ -867,7 +1262,21 @@ const buildArgs = ({
       ...providerRouteFlags(providerProxy),
       ...PUBLIC_BUILTIN_TOOL_FLAGS,
     ]
-    : ['--dangerously-bypass-approvals-and-sandbox'];
+    : keepsOwnPolicy
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : privatePermissionProfileFlags({
+        commitAttributionEnv,
+        mcpReadDirectories,
+        codexHelperReadPaths,
+        platform,
+        workspace: privateWorkspace,
+        tempRoots,
+        shellTempDir,
+        codexHome: privateCodexHome,
+        home: privateHome,
+        otherCodexHomes: privateOtherCodexHomes,
+        codexHomeLinks: privateCodexHomeLinks,
+      });
   const common = [
     '--json',
     '--skip-git-repo-check',
@@ -878,14 +1287,16 @@ const buildArgs = ({
     ...(publicSandbox && modelBaseUrl ? ['-c', `openai_base_url=${toml(modelBaseUrl)}`] : []),
     ...(model ? ['--model', String(model)] : []),
     ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
+    ...(loginFileStore ? ['-c', 'cli_auth_credentials_store="file"'] : []),
     ...mcpFlags,
     '-o',
     outputFile,
   ];
   // Approval policy is a global option in Codex 0.144, so it must precede
   // the `exec` subcommand. A denied operation is returned to the model;
-  // non-interactive public agents never hang waiting for an operator.
-  const prefix = publicSandbox ? ['--ask-for-approval', 'never'] : [];
+  // non-interactive agents never hang waiting for an operator. A private seat
+  // under its profile keeps its own config.toml, which may ask for approvals.
+  const prefix = publicSandbox || privateProfile ? ['--ask-for-approval', 'never'] : [];
   if (sessionId) {
     // Place <sessionId> immediately after the `exec resume` subcommand so a
     // future codex parser change can't accidentally consume it as the value
@@ -1091,8 +1502,20 @@ export default {
     // alone. claude.js adds parallel reads, whose cue names Claude's Agent tool;
     // Codex has agent tools of its own, under other names. A public seat answers
     // strangers rather than working board rows, so it is taught neither.
+    // F445: a private seat on Linux resumes only a thread in its own Codex
+    // home; one in the shared home (a run before F445) starts fresh, which the
+    // prompt has to know.
+    const ownPrivateHome = (ctx._platform || process.platform) === 'linux' && sandbox?.trust !== 'public'
+      && !codexTrustedPerimeter(ctx.env || process.env) && ctx.hostUnconfined !== true
+      ? privateCodexHomePath(ctx) : null;
+    let sessionId = ctx.sessionId || null;
+    if (ownPrivateHome && sessionId && !codexRolloutPath({ codexHome: ownPrivateHome, sessionId })) {
+      process.stderr.write('[codex] this agent now keeps its own Codex home, so it starts a new thread; '
+        + 'what it is meant to remember is in its Commonly memory.\n');
+      sessionId = null;
+    }
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
-      freshSession: !ctx.sessionId,
+      freshSession: !sessionId,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
       // F118: a public seat reads its memory but is not offered a write.
       memoryReadOnly: sandbox?.trust === 'public' && ctx.ownerWoken !== true,
@@ -1124,6 +1547,8 @@ export default {
     });
 
     let providerProxy = null;
+    const readyFiles = [];
+    let credentialRelease = null;
     try {
       // A public seat can't run git from its shell on macOS: Homebrew's git is
       // outside the profile and /usr/bin/git is an xcrun shim that fails there.
@@ -1164,10 +1589,16 @@ export default {
           ...(workspaceGit ? [workspaceGit] : []),
         ];
       }
+      // F460: a public seat's MCP servers name their ready files here; codex
+      // starts them outside the seat's permission profile, beside the credential.
+      const readyFileDir = sandbox?.trust === 'public' && credential ? join(dir, 'mcp-ready') : null;
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
       const mcp = buildMcpOverrideArgs(seatMcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
+        readyFileDir,
+        readyFiles,
         publicSeat: sandbox?.trust === 'public',
         ownerWoken: ctx.ownerWoken,
         commandResolution: { env: ctx.env || process.env, ...ctx._commandResolution },
@@ -1212,16 +1643,35 @@ export default {
           if (routeNames.has(name.toUpperCase())) delete childEnv[name];
         }
       }
+      // F387: only a cloud-codex pod sets the perimeter env
+      // (sandbox/codex-perimeter.js), and only the operator's own D245 opt-in
+      // sets hostUnconfined. Every other private seat runs under the private
+      // permission profile.
+      const trustedContainerPerimeter = codexTrustedPerimeter(ctx.env || process.env);
+      const operatorUnconfined = ctx.hostUnconfined === true;
+      const privateProfile = publicSandboxMode === null && !trustedContainerPerimeter && !operatorUnconfined;
       // Before the public home is prepared, so a refused seat changes nothing.
-      if (publicSandboxMode !== null) {
+      // A private profile uses the same permission keys, tested to the same bar.
+      if (publicSandboxMode !== null || privateProfile) {
         const codexVersion = await readCodexVersion(ctx, childEnv);
         if (!meetsMinimumVersion(codexVersion, PUBLIC_CODEX_MIN_VERSION)) {
-          throw publicCodexVersionError({ found: codexVersion, required: PUBLIC_CODEX_MIN_VERSION });
+          throw publicCodexVersionError({
+            found: codexVersion,
+            required: PUBLIC_CODEX_MIN_VERSION,
+            seat: publicSandboxMode !== null ? 'public seat' : 'private seat',
+          });
         }
       }
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv, { login: !route })
         : null;
+      const privateCodexHome = privateProfile && ownPrivateHome
+        ? await preparePrivateCodexHome(ctx, childEnv)
+        : null;
+      // The private shell's TMPDIR: inside this turn's folder, which `finally`
+      // removes, and beside (not over) the token's folder.
+      const privateShellTemp = privateProfile ? join(dir, 'shell-tmp') : null;
+      if (privateShellTemp) await mkdir(privateShellTemp, { mode: 0o700 });
       if (route) {
         providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
           provider: { baseURL: route.baseURL },
@@ -1232,7 +1682,7 @@ export default {
         childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
       }
       const args = buildArgs({
-        sessionId: ctx.sessionId || null,
+        sessionId,
         prompt: fullPrompt,
         outputFile,
         mcpFlags: mcp.flags,
@@ -1249,6 +1699,42 @@ export default {
         providerProxy,
         platform: ctx._platform || process.platform,
         workspacePath,
+        trustedContainerPerimeter,
+        operatorUnconfined,
+        privateWorkspace: privateProfile && ctx.cwd ? pathResolve(ctx.cwd) : null,
+        // Both roots: this process's, where every seat's per-turn folder
+        // lives, and the one the shell would inherit.
+        tempRoots: privateProfile ? [tmpdir(), childEnv.TMPDIR] : [],
+        shellTempDir: privateShellTemp,
+        // The home Codex runs with, and the HOME its `~` keys expand against.
+        // Codex reads a relative CODEX_HOME from its own folder, the turn's.
+        privateCodexHome: privateProfile
+          ? privateCodexHome?.home || privateSourceCodexHome(ctx, childEnv)
+          : null,
+        privateHome: childEnv.HOME || homedir(),
+        // Public seats' Codex homes (their sessions and logs): under the denied
+        // ~/.commonly on macOS, outside it on Linux. With a home of its own, the
+        // shared one it came from and every other private seat's are denied whole.
+        privateOtherCodexHomes: privateProfile
+          ? [...new Set([
+            ...privatePublicHomesDeny(ctx),
+            // By its real path too, when it is a link to another folder.
+            ...(privateCodexHome
+              ? [privateCodexHome.source, privateCodexHome.realSource, ...privateCodexHome.others]
+              : []),
+          ])]
+          : [],
+        privateCodexHomeLinks: privateCodexHome?.links || [],
+        // F450: a seat with a home of its own keeps the person's login in
+        // auth.json, linked to theirs. Codex's file store writes a refreshed
+        // login through that link (open + truncate, codex-rs login
+        // auth/storage.rs at rust-v0.164.0), so the person's file gets the new
+        // tokens. Its keyring and auto stores save to the keyring under the
+        // seat home's own path and delete the seat's auth.json, which would
+        // leave the person's file holding the refresh token the refresh just
+        // rotated. config.toml is linked in, so the seat would inherit those
+        // modes; this keeps it on the file store.
+        loginFileStore: Boolean(privateCodexHome),
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
@@ -1266,6 +1752,7 @@ export default {
         childEnv.CODEX_HOME = publicCodexHome.home;
         await writePublicCodexInstructions(childEnv.CODEX_HOME, ctx);
       }
+      if (privateCodexHome) childEnv.CODEX_HOME = privateCodexHome.home;
 
       // The awaits above can outlast a supervisor stall window. Once it has
       // aborted, the attempt has already settled and a retry may be running,
@@ -1274,7 +1761,27 @@ export default {
       if (ctx.signal?.aborted) {
         throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
       }
-      const { threadId, turnCompleted } = await runCodex({
+      // F460: on a public seat the credential goes once every MCP reader has it
+      // (their ready files), or at the deadline. A delete that fails ends the turn.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnArgs) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnArgs);
+        return child;
+      };
+      if (readyFileDir) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          label: 'public codex seat',
+          warn: (text) => process.stderr.write(`[codex] ${text}\n`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          ...ctx._credentialRelease,
+        });
+        // A delete that failed at arm time (every reader already ready) ends
+        // the turn before Codex starts.
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
+      const ran = await runCodex({
         args,
         cwd: ctx.cwd,
         env: childEnv,
@@ -1286,7 +1793,7 @@ export default {
         // nothing left to compare a tail against.
         // The per-turn proxy token is one too: codex was handed it in place of the key.
         credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), route?.key, providerProxy?.token].filter(Boolean),
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
         // A public seat keeps nothing a turn leaves running, whatever the turn
@@ -1294,7 +1801,9 @@ export default {
         // exactly when trust is `public`; workspace trust is refused above.
         confined: publicSandboxMode !== null,
         commandResolution: ctx._commandResolution, // test seam only
-      });
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
+      const { threadId, turnCompleted } = ran;
 
       let text = '';
       try {
@@ -1316,7 +1825,7 @@ export default {
       // a new session, often re-emitted on resume) > the persisted id we
       // came in with > null. The wrapper persists whichever non-null value
       // we return so subsequent turns hit `codex exec resume <id>`.
-      const newSessionId = threadId || ctx.sessionId || null;
+      const newSessionId = threadId || sessionId || null;
       // F404: what the turn's last request was sent, from the rollout the child
       // wrote under its own CODEX_HOME. Null keeps resuming.
       const contextTokens = newSessionId
@@ -1332,6 +1841,7 @@ export default {
         text, newSessionId, contextTokens, ...(Object.keys(stats).length ? { stats } : {}),
       };
     } finally {
+      credentialRelease?.stop();
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }

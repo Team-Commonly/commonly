@@ -48,10 +48,12 @@ import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs';
-import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
+import {
+  mkdir, readdir, readFile, rm, writeFile,
+} from 'fs/promises';
 import { homedir } from 'os';
 import {
-  dirname, isAbsolute, join, relative, sep,
+  dirname, isAbsolute, join,
 } from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -69,8 +71,8 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
-import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
-import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
+import { seatbeltSystemReadRoots, wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { keyFileReadableRoot, resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { promptTokens } from '../session-recycle.js';
 
@@ -333,25 +335,32 @@ const SHARED_PROVIDER_KEYS = ['id', 'baseURL', 'keyFile', 'models'];
 const isSharedProvider = (spec) => Boolean(spec) && SHARED_PROVIDER_KEYS.some((key) => spec[key] !== undefined);
 
 /** The real key file of a shared provider, validated without reading it; null for any other seat. */
-const sharedProviderKeyFile = async (environment, workspacePath) => {
+const sharedProviderKeyFile = async (environment, workspacePath, platform) => {
   if (!isSharedProvider(environment?.provider)) return null;
   const validation = validateEnvironmentSpec(environment);
   if (!validation.ok) throw new Error(validation.errors.join('; '));
-  return resolveProviderKeyFile(environment.provider, workspacePath, 'pi');
+  return resolveProviderKeyFile(environment.provider, workspacePath, 'pi', { environment, platform });
 };
 
 /**
  * The proxy reads a public seat's key file from this process, so the file stays
- * out of the jail, and nothing here admits it. The jail does admit these
- * directories, and the seat home is a stable path a key file could be put in,
- * so a key under one of them would be readable from inside.
+ * out of the jail, and nothing here admits it. The jail does admit the seat's
+ * own directories (the seat home is a stable path a key file could be put in),
+ * and the Seatbelt baseline admits system trees such as /etc, /opt/homebrew/lib
+ * and /usr/local/lib (seatbeltSystemReadRoots, read from the profile itself).
+ * A key under any of them would be readable from inside, so it is refused. The
+ * comparison is the shared keyFileReadableRoot (F453): as written, real-pathed
+ * and by identity, so another spelling of the same path is caught too. The
+ * system roots are also checked when the key file is first resolved; this is
+ * where the per-turn directories join them.
  */
-const refuseKeyFileInJail = (keyFile, readableDirectories) => {
-  for (const directory of readableDirectories) {
-    const fromDirectory = relative(realpathSync(directory), keyFile);
-    if (fromDirectory !== '..' && !fromDirectory.startsWith(`..${sep}`) && !isAbsolute(fromDirectory)) {
-      throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${directory}`);
-    }
+export const refuseKeyFileInJail = (keyFile, readableDirectories, systemRoots = seatbeltSystemReadRoots()) => {
+  const root = keyFileReadableRoot(keyFile, {
+    subpaths: [...readableDirectories, ...systemRoots.subpaths],
+    literals: systemRoots.literals,
+  });
+  if (root) {
+    throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${root}`);
   }
 };
 
@@ -507,6 +516,9 @@ export const piPackageRoot = (binary) => {
 const versionOf = (value) => String(value || '').trim()
   .match(/(?<![\w.+~-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)(?![\w.+~-])/)?.[1] || null;
 
+// The system prompt files pi reads from its agent folder unconditionally.
+const PI_AGENT_DIR_PROMPT_FILES = Object.freeze(['SYSTEM.md', 'APPEND_SYSTEM.md']);
+
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false, ownerWoken = false,
 }) => [
@@ -517,12 +529,16 @@ export const buildArgs = ({
   '--no-prompt-templates',
   '--no-themes',
   // A public seat: no built-in tool (no shell, no file access), the withheld
-  // Commonly tools removed from the registry, and no project-local pi files
-  // from the workspace trusted for this run.
+  // Commonly tools removed from the registry, no project-local pi files from
+  // the workspace trusted for this run, and no AGENTS.md / CLAUDE.md (F146).
+  // pi discovers those from the working directory upward, independently of
+  // --no-approve (0.84.1's resource loader gates them on noContextFiles alone),
+  // so a public turn turns discovery off explicitly.
   ...(publicSeat ? [
     '--no-builtin-tools',
     '--exclude-tools', [...PI_BUILTIN_TOOLS, ...publicSeatWithheldTools({ ownerWoken })].join(','),
     '--no-approve',
+    '--no-context-files',
   ] : []),
   '--provider', provider,
   '--model', model,
@@ -766,7 +782,7 @@ export default {
     assertSandboxSupported(ctx.environment, platform);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
     const isPublic = effectiveSandboxTrust(sandbox?.trust) === 'public';
-    const keyFile = await sharedProviderKeyFile(ctx.environment, ctx.cwd);
+    const keyFile = await sharedProviderKeyFile(ctx.environment, ctx.cwd, platform);
     const provider = resolveProvider(ctx.environment);
     const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
@@ -823,7 +839,13 @@ export default {
     const sessionDir = join(home, 'sessions');
     await mkdir(agentDir, { recursive: true, mode: 0o700 });
     await mkdir(sessionDir, { recursive: true, mode: 0o700 });
-    if (isPublic) await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
+    if (isPublic) {
+      await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
+      // F146: pi 0.84.1 loads these two from PI_CODING_AGENT_DIR with no flag
+      // to turn that off. The CLI writes only models.json there, so a public
+      // turn starts without either.
+      await Promise.all(PI_AGENT_DIR_PROMPT_FILES.map((file) => rm(join(agentDir, file), { force: true })));
+    }
 
     // Resume only what pi wrote; anything else (a codex thread id from before
     // the switch, a wiped home) starts fresh under a new id.
@@ -846,6 +868,24 @@ export default {
     });
     let proxy = null;
     try {
+      const unavailableMcp = [];
+      const mcpReadDirectories = [];
+      const grantBrokers = [];
+      const servers = resolveMcpServers(ctx.environment?.mcp, {
+        ...ctx,
+        credentialFile: credential?.path || null,
+        credentialDir: credential?.dir || null,
+        publicSeat: isPublic,
+        unavailableMcp,
+        mcpReadDirectories,
+        grantBrokers,
+      });
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
+      // Every refusal comes before the proxy opens the key file (F453): nothing
+      // touches a refused key file, this process included.
+      if (keyFile && isPublic) {
+        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
+      }
       // A public pi never holds the provider key: it talks to a loopback proxy
       // with a per-turn token, and the proxy, in this process, adds the key and
       // pins the model (the same shape as Goose and Qwen).
@@ -860,23 +900,6 @@ export default {
       await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(
         proxy ? { ...provider, baseUrl: proxy.baseURL } : provider, model,
       ), null, 2)}\n`, { mode: 0o600 });
-
-      const unavailableMcp = [];
-      const mcpReadDirectories = [];
-      const grantBrokers = [];
-      const servers = resolveMcpServers(ctx.environment?.mcp, {
-        ...ctx,
-        credentialFile: credential?.path || null,
-        credentialDir: credential?.dir || null,
-        publicSeat: isPublic,
-        unavailableMcp,
-        mcpReadDirectories,
-        grantBrokers,
-      });
-      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
-      if (keyFile && isPublic) {
-        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
-      }
       const childEnv = isPublic ? {
         // A scrubbed environment: nothing of the operator's crosses into the
         // jail, and the provider variable holds the proxy's token, not the key.
@@ -936,8 +959,11 @@ export default {
           // Public seat: the CLI made this workspace, so it is pinned (F197).
           pinWorkspace: true,
           readOnlyDirectories: [packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories],
-          // The jailed pi holds the seat token in memory (the bridge reads it),
-          // so nothing it starts may inspect it.
+          // Defense in depth, not the boundary: the jailed pi holds the seat
+          // token in memory (the bridge reads it), and pi has no shell or other
+          // built-in tool to start an inspector with. Its only children are the
+          // MCP servers the bridge starts. Even so, nothing it starts may
+          // inspect another process.
           processInfo: 'self',
         });
       }
@@ -951,22 +977,25 @@ export default {
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials: proxy ? [...credentials, proxy.token] : credentials,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
-        // F175c: a turn holding a grant broker keeps its credential file only
-        // until pi has loaded its extensions. The first layer is inside pi: the
-        // bridge deletes the directory before its factory returns, which pi
-        // awaits before it creates the session (removeSpawnCredential), and
-        // stops pi if it cannot. This is the second layer, at pi's first JSON
-        // line (firstEventWatcher). It is async to pi, so it cannot be the one
-        // that closes the file before a prompt; it normally finds the file gone,
-        // and `force` tolerates that. It covers a turn whose bridge never ran. A
-        // delete that does fail here still ends the turn.
-        onFirstEvent: isPublic && grantBrokers.length && credential
+        // A public turn keeps its credential file only until pi has loaded its
+        // extensions: the bridge reads it at load, and nothing on a public turn
+        // reads it after that (our own server gets the value on its fd 3 pipe,
+        // and pi has no shell). F175c: on a turn holding a grant broker the
+        // first layer is inside pi: the bridge deletes the directory before its
+        // factory returns, which pi awaits before it creates the session
+        // (removeSpawnCredential), and stops pi if it cannot. This is the second
+        // layer, at pi's first JSON line (firstEventWatcher), and since F146 it
+        // runs on every public turn. It is async to pi, so it cannot be the one
+        // that closes the file before a prompt; on a broker turn it normally
+        // finds the file gone, and `force` tolerates that. A delete that does
+        // fail here still ends the turn.
+        onFirstEvent: isPublic && credential
           ? () => {
             try {
               (ctx._rmSync || rmSync)(credential.dir, { recursive: true, force: true });
             } catch (err) {
               throw new Error(
-                `pi adapter: a public pi seat could not delete its connector credential (${credential.path}) once pi `
+                `pi adapter: a public pi seat could not delete its runtime credential (${credential.path}) once pi `
                 + `had loaded its extensions: ${err?.message || err}; the turn was stopped so the credential does not `
                 + 'stay readable during it',
               );

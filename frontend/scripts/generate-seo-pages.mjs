@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,7 +115,7 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
-const ogImage = `${siteUrl}/og-card.png?v=6`;
+const ogImage = `${siteUrl}/og-card.png?v=7`;
 
 // Search results cut a title near 60 characters and a description near 160
 // (F397). Fitted once here, so a long guide title can't ship.
@@ -189,7 +190,7 @@ const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.
 
 // The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
 // (landing-faq.json). Change it when either changes (F395).
-export const LANDING_DATE_MODIFIED = '2026-11-07';
+export const LANDING_DATE_MODIFIED = '2026-11-11';
 
 const recordedDate = (where, value) => {
   if (value === undefined) return undefined;
@@ -212,12 +213,28 @@ const guideProvenance = (guide) => {
     throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
   }
 
+  if (guide.revised !== undefined) {
+    if (!isIsoDate(guide.revised) || guide.revised < provenance.dateModified) {
+      throw new Error(`Guide ${guide.title} has a revised date that is not YYYY-MM-DD on or after its dateModified.`);
+    }
+  } else if (guide.answer !== undefined) {
+    throw new Error(`Guide ${guide.title} has an answer block but no revised date; the two land in one pass.`);
+  }
+
   if (provenance.dateModified < provenance.datePublished) {
     throw new Error(`Guide ${guide.title} has a modified date before its published date.`);
   }
 
-  return provenance;
+  return guide.revised ? { ...provenance, dateModified: guide.revised } : provenance;
 };
+
+// D295 (F430). A guide whose batch has landed carries `revised`, and that one field turns on the
+// whole pass together: the answer block, Sam as the named author, and the new Updated date. A guide
+// without it renders exactly as before. Nothing about the author beyond his name and his X link.
+export const GUIDE_AUTHOR = { name: 'Sam Xu', url: 'https://x.com/sam_commonly' };
+export const guideAuthorPerson = () => ({
+  '@type': 'Person', name: GUIDE_AUTHOR.name, url: GUIDE_AUTHOR.url, sameAs: [GUIDE_AUTHOR.url],
+});
 
 const renderGuideProvenance = (guide) => {
   const provenance = guideProvenance(guide);
@@ -227,7 +244,10 @@ const renderGuideProvenance = (guide) => {
     ? `Published and updated <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time>`
     : `Published <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time> · Updated <time datetime="${escapeHtml(provenance.dateModified)}">${escapeHtml(modified)}</time>`;
 
-  return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
+  const author = guide.revised
+    ? `<a href="${escapeHtml(GUIDE_AUTHOR.url)}" rel="author">${escapeHtml(GUIDE_AUTHOR.name)}</a>`
+    : escapeHtml(provenance.author);
+  return `<p class="seo-byline">By ${author} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
 const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
@@ -336,7 +356,9 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
 // crawlers already index, not only from the sitemap (D139: most of the sitemap sits "Discovered – not indexed").
 export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
   const compareLinks = Object.values(compareSources).map((source) => `<a href="${escapeHtml(source.path)}">${escapeHtml(source.title.split(':')[0])}</a>`);
-  const useCaseLinks = Object.entries(useCases).map(([id, useCase]) => `<a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a>`);
+  // The footer on every page links the use cases. linkLabel pins that text, so a use-case title
+  // change touches only its own page, not every page's footer (D295's one-pass rule, F430).
+  const useCaseLinks = Object.entries(useCases).map(([id, useCase]) => `<a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.linkLabel || useCase.title)}</a>`);
   return `<nav class="seo-site-links" aria-label="More from Commonly">
         <p><a href="/guides/">Guides</a></p>
         ${compareLinks.length ? `<p>Compare: ${compareLinks.join(' · ')}</p>` : ''}
@@ -345,7 +367,10 @@ export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
       </nav>`;
 };
 
-const renderCompare = (compare) => {
+const renderCompare = (compare, compareSources = {}, siteLinks = '') => {
+  // The lede promises "each page below": list every comparison, in listOrder (F432).
+  const comparisonLinks = Object.values(compareSources).map((source) => `
+    <li><a href="${escapeHtml(source.path)}">${escapeHtml(source.title)}</a></li>`).join('');
   const alternativeCards = Object.values(compare.alts).map((alternative) => `
     <article class="seo-card">
       <h3>${escapeHtml(alternative.name)}</h3>
@@ -369,6 +394,11 @@ const renderCompare = (compare) => {
           <p class="seo-actions"><a class="seo-primary" href="/v2/register">${escapeHtml(compare.actions.getStarted)}</a></p>
         </section>
         <section>
+          <h2>${escapeHtml(compare.pagesTitle)}</h2>
+          <ul>${comparisonLinks}
+          </ul>
+        </section>
+        <section>
           <h2>${escapeHtml(compare.sameTitle)}</h2>
           <p>${escapeHtml(compare.same)}</p>
         </section>
@@ -382,6 +412,7 @@ const renderCompare = (compare) => {
         </section>
         <section class="seo-band"><h2>${escapeHtml(compare.closeTitle)}</h2><p>${escapeHtml(compare.close)}</p><p>${escapeHtml(compare.closeUs)}</p></section>
         <p class="seo-note">${escapeHtml(compare.note)}</p>
+        ${siteLinks}
       </main>
       <footer class="seo-footer"><a href="/">Commonly</a> · <a href="https://github.com/Team-Commonly/commonly">GitHub</a></footer>
     </div>`;
@@ -395,6 +426,7 @@ const renderUseCase = (useCase, siteLinks = '') => `
         <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
         <h1>${escapeHtml(useCase.title)}</h1>
         <p class="seo-lede">${escapeHtml(useCase.summary)}</p>
+        ${useCase.dateModified ? `<p class="seo-byline">Updated <time datetime="${escapeHtml(useCase.dateModified)}">${escapeHtml(formatDate(useCase.dateModified))}</time></p>` : ''}
         ${(useCase.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
         <p class="seo-actions"><a class="seo-primary" href="/v2/register">Start with this use case</a><a href="/v2/agents">Explore Agent Hub</a></p>
       </section>
@@ -445,7 +477,8 @@ const renderGuide = (guide, siteLinks = '') => {
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
         <h1>${escapeHtml(guide.title)}</h1>
         <p class="seo-lede">${escapeHtml(guide.description)}</p>
-        ${renderGuideProvenance(guide)}
+        ${renderGuideProvenance(guide)}${guide.answer ? `
+        <p><strong>Short answer.</strong> ${escapeHtml(guide.answer)}</p>` : ''}
         ${(guide.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       </section>
       ${sections}
@@ -472,7 +505,8 @@ const renderLegal = (title, sections, siteLinks = '') => `
     </div>`;
 
 const USE_CASES_INDEX = {
-  title: 'Use cases',
+  titleTag: 'AI agent use cases for teams',
+  title: 'AI agent use cases: how teams work with agents in shared pods',
   lede: 'How teams use Commonly: pods where people and their agents share the same conversations, tasks and context.',
 };
 
@@ -570,244 +604,100 @@ const metadata = ({ title, description, path, schema, faqSchema, faqSchemaId = f
     <script type="application/ld+json" id="${faqSchemaId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
 
-// Compare pages (GEO, D104). The markdown below is GTM's copy, pasted verbatim
-// from the drafts; the renderer only turns it into HTML. A page with an open
-// [HOLD: ...] marker refuses to build, so a held claim cannot ship as text.
-const comparePageSources = {
-  openagents: {
-    path: '/compare/openagents/',
-    // The sitemap's lastmod. Change it with the text below (F395).
-    dateModified: '2026-10-31',
-    title: "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
-    description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
-    markdown: `# Commonly vs OpenAgents
+// Compare pages (GEO, D104; one data file per competitor since F429). Each file in
+// src/content/compare/ is GTM's copy for one competitor, in fields; compareMarkdown is the one
+// template that lays every page out. The build refuses a page whose competitor facts aren't
+// sourced (assertCompareSourced), and, as before, one with an open [HOLD: ...] marker.
+const compareDir = resolve(frontendDir, 'src/content/compare');
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-*Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.*
+export const compareMarkdown = (data) => {
+  const parts = [
+    `# Commonly vs ${data.name}`,
+    `*${data.updated}*`,
+    `**Short answer.** ${data.shortAnswer}`,
+    ...(data.notes || []),
+    `## What each ships today
 
-**Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.
-
-*This page compares OpenAgents at openagents.org (GitHub: openagents-org/openagents). It is not about openagents.com, which is a separate product.*
-
-## What each ships today
-
-| | OpenAgents (openagents.org) | Commonly |
+| | ${data.table.them} | Commonly |
 |---|---|---|
-| **What it is, in its own words** | "The collaboration OS for AI agents": shared conversations, files and a live browser where people and agents work together. [1] | One pod for your team and the agents each of you runs. [9] |
-| **License** | Apache 2.0. [1][5] | Apache-2.0. [9] |
-| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [1][5] | Open source (Apache-2.0). The repo includes a Docker Compose setup (\`./install.sh\`). [9] |
-| **Agents named** | Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says "Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode" and marks others coming soon. [1][5] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
-| **How agents connect** | A desktop Launcher or a CLI for agents on your computer, a pairing code to connect a whole machine, or a hosted cloud agent added with an API key. Agents connect "over open protocols (including MCP)". [2][6] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP. |
-| **Where agent code runs** | "Code execution happens on your machine — never on OpenAgents servers." [3] | Your own agent runs on your machine. The hosted agent runs on Commonly. |
-| **How people take part** | Threads with @mentions, a shared browser you can take over, and Issues. People are invited to collaborate from the workspace, and access is granted to "members, agents, or groups". [2] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
-| **Access to outside tools** | Workspaces have "roles, membership, and access control", and you choose which threads each participant can join. For local agents, model keys go "directly between your machine and the model provider". [3] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
-| **Apps** | Web, desktop (macOS and Windows on the homepage; the README adds a Linux AppImage), iOS and Android. [1][8] | Web. |
-| **Pricing, as stated** | Hosted: "Free to start". FAQ: "Workspaces are open source and available at no cost." Enterprise: a "Talk to us" button that links to Discord. openagents.org/pricing returned a 404 on 2026-10-25. [1][4][5] | Not listed on this page. |
+${data.table.rows.map((row) => `| **${row.label}** | ${row.them} | ${row.us} |`).join('\n')}`,
+    ...(data.afterTable || []),
+    `## When to pick ${data.pickThem.name}
 
-## When to pick OpenAgents
+${data.pickThem.items.map((item) => `- ${item}`).join('\n')}`,
+    `## When to pick Commonly
 
-- You want a long list of agent CLIs supported today, including Cursor, Gemini CLI and GitHub Copilot.
-- You want shared threads, files and a live browser that agents and people use together.
-- You want desktop and mobile apps, or a Launcher that installs and runs agents on each machine.
-- You want the vendor's own statement that agent code never runs on its servers.
+${data.pickUs.map((item) => `- ${item}`).join('\n')}`,
+    `## FAQ
 
-## When to pick Commonly
+${data.faq.map((entry) => `**${entry.q}**\n${entry.a}`).join('\n\n')}`,
+    `## Sources
 
-- Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.
-- You want everyone, people and agents, to see who has what: each agent is a named member with an owner.
-- You want your own agents to claim work on a shared board so two of them don't take the same task.
-- You want an agent to stop and ask a person on a decision card when a call is theirs.
-- You want a hosted agent you can start from the pod, next to your own.
-- You want to give one agent read access to your Linear, and have it see those read tools and nothing more.
+${data.sourcesIntro}
 
-## FAQ
-
-**Is OpenAgents the same as openagents.com?**
-No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com opens with "Projects you can walk into. People and agents building them.", and its homepage doesn't mention openagents.org. [7]
-
-**Are both open source?**
-Yes. Both are Apache-2.0. [1][9]
-
-**Can I run either one on my own servers?**
-Both document self-hosting. OpenAgents with Docker or Kubernetes, Commonly with Docker Compose. [5][9]
-
-**Which agents work with Commonly?**
-Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click.
-
-## Sources
-
-Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:
-
-1. OpenAgents homepage: https://openagents.org/ (headline, agent list, apps, "Free to start", Apache 2.0)
-2. OpenAgents Workspace: https://openagents.org/workspace (threads, browser, Issues, access)
-3. OpenAgents Security: https://openagents.org/security (execution on your machine, invitation links, keys)
-4. OpenAgents Enterprise: https://openagents.org/enterprise ("Free to start", "Talk to us" to Discord)
-5. OpenAgents FAQ: https://openagents.org/faq (no-cost workspaces, Docker/Kubernetes, the five "currently" supported agents)
-6. OpenAgents docs overview: https://openagents.org/docs/en/getting-started/overview (Launcher, pairing code, cloud agent, MCP)
-7. openagents.com homepage: https://openagents.com/ (different product; read to tell the two apart, not cited for any fact above)
-8. OpenAgents GitHub: https://github.com/openagents-org/openagents (Apache-2.0; 4,272 stars and latest release launcher-v1.1.8, both as of 2026-10-28)
-9. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0, \`install.sh\`)
-
-Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
-`,
-  },
-  githubAgentHq: {
-    path: '/compare/github-agent-hq/',
-    dateModified: '2026-10-31',
-    title: "Commonly vs GitHub Agent HQ: where each one fits",
-    description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
-    markdown: `# Commonly vs GitHub Agent HQ
-
-*Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.*
-
-**Short answer.** If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.
-
-## What each ships today
-
-| | GitHub Agent HQ (with Copilot) | Commonly |
-|---|---|---|
-| **What it is, in its own words** | One place to assign, steer and track agents across GitHub, VS Code, mobile and the CLI ("mission control"). Announced 2025-10-28. [1] | One pod for your team and the agents each of you runs. [11] |
-| **Agents** | Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
-| **Where agents run** | Copilot cloud agent works "in a cloud development environment, rather than your local IDE": a cloud sandbox, a GitHub Actions runner or a remote custom environment. [4] For third-party agents, GitHub says "Coding agents consume GitHub Actions minutes and AI credits." [2] | Your own agent runs on your own machine; the hosted agent runs on Commonly. |
-| **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One branch and one PR per task. Sessions on GitHub Actions are limited to one repository; cloud sandbox sessions can span repositories. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
-| **Steering a running agent** | Available for Copilot. "Steering is not available for third-party coding agents." [5] | Reply to it in the pod. |
-| **Who sees the work** | Teammates with repository access can follow shared sessions and PRs. [4] | Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner. |
-| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" [12]. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
-| **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Calls an agent makes through a granted connector are logged. |
-| **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Linear, one agent at a time. |
-| **License / self-host** | Hosted GitHub service. | Apache-2.0, with a Docker Compose setup in the repo. [11] |
-| **Pricing, as stated** | Pro $10/mo, Pro+ $39/mo, Max $100/mo; Business $19 and Enterprise $39 per granted seat per month. Third-party agents are marked "(Preview)". The plans page lists them for Pro+ and Max and "Not included" for Pro, while the docs plan page lists Pro, Pro+ and Max. [7][8] | Not listed on this page. |
-
-**Preview vs GA, as of 2026-10-25:**
-- Third-party Claude and Codex agents: public preview. [2][3]
-- Enterprise AI Controls and agent control plane: GA (2026-02-26). Enterprise-wide MCP allowlists: preview. [6]
-- VS Code Automations and agent merge: preview. HydraFusion: research preview. [9]
-- Copilot cloud agent: the docs page carries no preview label. [4]
-
-## When to pick GitHub Agent HQ
-
-- Your code, issues and reviews already live on GitHub, and your team pays for Copilot.
-- You want the issue → agent → pull request loop inside GitHub, with CodeQL and secret scanning on the agent's code. [2]
-- You need enterprise policy and an audit log that marks agent actions and the human they act for. [6]
-- Your work fits one branch and one PR per task. [4]
-
-## When to pick Commonly
-
-- Teammates each run their own agent, and you want those agents in one pod with the people who own them, where everyone sees who has what.
-- You want work claimed on a shared board so two agents don't take the same task.
-- You want an agent to ask a person on a decision card when the call is theirs.
-- Your agents need to read Linear, and you want to grant that per agent, read-only.
-- You use both: Commonly can sit next to GitHub, where your agents still open PRs.
-- If you're weighing other options too, see [GitHub Agent HQ alternatives](/guides/github-agent-hq-alternative/).
-
-## FAQ
-
-**Is Claude on GitHub Agent HQ generally available?**
-Not as of 2026-10-25. GitHub's docs say third-party coding agents "are currently in public preview." [2]
-
-**Can I steer Claude or Codex mid-task on Agent HQ?**
-GitHub's docs say steering is not available for third-party coding agents. [5]
-
-**Does Commonly replace GitHub?**
-No. Your own Claude Code in a Commonly pod runs on your machine with your own git setup, so it can still branch, push and open pull requests on GitHub as it does today.
-
-## Sources
-
-Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:
-
-1. GitHub blog, "Welcome home, agents" (2025-10-28): https://github.blog/news-insights/company-news/welcome-home-agents/
-2. GitHub Docs, About third-party agents: https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents
-3. GitHub blog, "Pick your agent: Use Claude and Codex on Agent HQ" (2026-02-04): https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/
-4. GitHub Docs, About Copilot cloud agent: https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent
-5. GitHub Docs, Manage agents: https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents
-6. GitHub changelog, Enterprise AI Controls and agent control plane GA (2026-02-26): https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/
-7. GitHub Copilot plans: https://github.com/features/copilot/plans
-8. GitHub Docs, Copilot plans: https://docs.github.com/en/copilot/get-started/plans (Business $19, Enterprise $39 per granted seat per month)
-9. GitHub changelog, Copilot in VS Code September 2026 releases (2026-10-01): https://github.blog/changelog/2026-10-01-github-copilot-in-vs-code-september-2026-releases
-10. Linear changelog, "GitHub Copilot for Linear" (2026-07-30 entry; it links a GitHub post whose URL says "generally available", the entry text does not): https://linear.app/changelog
-11. Commonly README: https://github.com/Team-Commonly/commonly
-12. GitHub Docs, MCP and Copilot: https://docs.github.com/en/copilot/concepts/customizations/mcp
-
-Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
-`,
-  },
-  buzz: {
-    path: '/compare/buzz/',
-    // The sitemap's lastmod. Change it with the text below (F395).
-    dateModified: '2026-11-09',
-    title: "Commonly vs Buzz (Block): what each ships, side by side",
-    description: "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
-    markdown: `# Commonly vs Buzz
-
-*Updated 2026-11-09. Facts about Buzz were read on Block's own pages on 2026-11-09.*
-
-**Short answer.** Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it "a free, open source collaboration platform". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key. Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows (the Windows build is marked alpha). [1][2]
-
-*This page compares Buzz from Block, Inc. at buzz.xyz (GitHub: block/buzz). The Buzz homepage says "Come test the early stages with us." Its README sorts features into what "works today" and what is "being wired up", and this page keeps that split. [2][4]*
-
-## What each ships today
-
-| | Buzz (Block) | Commonly |
-|---|---|---|
-| **What it is, in its own words** | "A workspace where humans and agents build together, on a relay you own." [2] | One pod for your team and the agents each of you runs. [5] |
-| **License** | Apache 2.0. [1][2] | Apache-2.0. [5] |
-| **Self-host** | Yes. "Anyone can run their own instance on their own infrastructure." [1] The repo ships a production Docker Compose bundle. The relay needs Postgres, Redis and an S3-compatible object store, and a one-click Railway template is offered too. buzz.xyz also offers hosted relays. [2][3] | Open source (Apache-2.0). The repo includes a Docker Compose setup. [5] |
-| **Agents named** | Block's post: "Claude Code, Codex, or goose", and teams can "bring their own, or build new ones". The README lists an agent harness for Goose, Codex and Claude Code under "works today". [1][2] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
-| **How agents connect** | An agent gets its own Nostr key and uses Buzz's command-line tool, which takes JSON in and gives JSON out and is "designed for LLM tool calls". An ACP harness connects Goose, Codex and Claude Code. [2] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP. |
-| **Identity and record** | Every participant, human or agent, "holds a cryptographic keypair that belongs to them". Every message, reaction, workflow step, review approval and git event is a signed event in one log, and the relay keeps an audit log. [1][2] | Each agent is a named member with an owner. |
-| **How people take part** | Channels, threads, direct messages, voice and media sharing, with comments pinned to video frames. "Add an agent to a channel the same way you add a person." A self-hosted relay runs closed membership by default, and the owner adds admins and members. [1][2][3] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. |
-| **Work and review** | YAML workflows that fire on a message, a reaction, a schedule or a webhook work today. Workflow approval gates are "being wired up". Git events and a git hosting backend are listed as working, and Block calls the Git integration "still early". [1][2] | Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
-| **Access to outside tools** | "Connect a database, a CRM, a codebase, or a file system", and agents reach them "according to whatever permissions the team configures." [1] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
-| **Apps** | Desktop for macOS (Apple Silicon and Intel), Linux and Windows (an alpha build). The relay also serves a web UI. iOS and Android clients are "being wired up". [2][3] | Web. |
-| **Pricing, as stated** | Block calls Buzz "free", and buzz.xyz offers "Block-provided hosting". [1] | Not listed on this page. |
-
-## When to pick Buzz
-
-- You want each person and each agent to hold its own cryptographic key, with messages, reactions, workflow steps, review approvals and git events signed in one log. [1][2]
-- You want voice, media with comments pinned to video frames, and code repositories next to chat. [1][2]
-- You want desktop apps for macOS and Linux, with a Windows alpha. [2]
-- You want YAML workflows that fire on messages, reactions, schedules or webhooks. [2]
-- You run goose alongside Claude Code and Codex. [1][2]
-
-## When to pick Commonly
-
-- Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.
-- You want everyone, people and agents, to see who has what: each agent is a named member with an owner.
-- You want your own agents to claim work on a shared board so two of them don't take the same task.
-- You want an agent to stop and ask a person on a decision card when a call is theirs.
-- You want a hosted agent you can start from the pod, next to your own.
-- You want to give one agent read access to your Linear, and have it see those read tools and nothing more.
-
-## FAQ
-
-**Who makes Buzz?**
-Block, Inc. Block announced Buzz on 2026-07-21 and publishes the code at github.com/block/buzz. [1][2]
-
-**Are both open source?**
-Yes. Both are Apache-2.0. [1][5]
-
-**Can I run either one on my own servers?**
-Both document self-hosting. Buzz with a Docker Compose bundle or a Railway template, Commonly with Docker Compose. [2][3][5]
-
-**Is Buzz finished?**
-Its README says: "Not finished. We will tell you what works and what doesn't." [2]
-
-**Which agents work with Commonly?**
-Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click.
-
-## Sources
-
-Buzz facts read on Block's own pages on 2026-11-09:
-
-1. Block, "Introducing Buzz: where humans and agents work together" (2026-07-21): https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together (read 2026-11-09)
-2. Buzz README on GitHub: https://github.com/block/buzz (Apache-2.0; read 2026-11-09)
-3. Block Engineering Blog, "Run your own Buzz relay" (2026-07-31): https://engineering.block.xyz/blog/run-your-own-buzz-relay (read 2026-11-09)
-4. Buzz homepage: https://buzz.xyz/ ("Come test the early stages with us."; read 2026-11-09)
-5. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0)
-
-Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
-`,
-  },
+${data.sources.map((source, index) => `${index + 1}. ${source.label}: ${source.url}${source.note ? ` (${source.note})` : ''}`).join('\n')}`,
+    data.closing,
+  ];
+  return `${parts.join('\n\n')}\n`;
 };
+
+// Every source names where it was read and when, every competitor cell in the facts table cites
+// at least one source, and every [n] on the page points at a listed source (F429).
+export const assertCompareSourced = (id, data) => {
+  const problems = [];
+  const sources = data.sources || [];
+  if (!sources.length) problems.push('no sources');
+  sources.forEach((source, index) => {
+    // Each source carries its own number, so inserting one mid-list can't silently shift every later [n].
+    if (source.n !== index + 1) problems.push(`source ${index + 1} is numbered ${source.n}; sources are numbered 1, 2, 3 in order`);
+    if (!/^https:\/\/\S+$/.test(source.url || '')) problems.push(`source ${index + 1} has no https URL`);
+    if (!ISO_DATE.test(source.read || '')) problems.push(`source ${index + 1} has no read date (YYYY-MM-DD)`);
+  });
+  for (const row of data.table?.rows || []) {
+    // [1](https://...) is a link, not a citation.
+    if (!/\[\d+\](?!\()/.test(row.them || '')) problems.push(`"${row.label}" states a ${data.name} fact with no source`);
+  }
+  const markdown = compareMarkdown(data);
+  for (const [, n] of markdown.matchAll(/\[(\d+)\](?!\()/g)) {
+    if (Number(n) < 1 || Number(n) > sources.length) problems.push(`[${n}] cites no listed source`);
+  }
+  for (const field of ['datePublished', 'dateModified']) {
+    if (!ISO_DATE.test(data[field] || '')) problems.push(`${field} is not YYYY-MM-DD`);
+  }
+  if (data.dateModified < data.datePublished) problems.push(`dateModified ${data.dateModified} is before datePublished ${data.datePublished}`);
+  if (data.path !== `/compare/${id}/`) problems.push(`path ${data.path} is not /compare/${id}/`);
+  if (!Number.isInteger(data.listOrder)) problems.push('listOrder is not a whole number');
+  if (problems.length) throw new Error(`compare/${id}: ${[...new Set(problems)].join('; ')}`);
+};
+
+export const compareSourceFromData = (id, data) => {
+  assertCompareSourced(id, data);
+  return {
+    path: data.path,
+    datePublished: data.datePublished,
+    // The sitemap's lastmod. Change it with the text (F395).
+    dateModified: data.dateModified,
+    title: data.title,
+    description: data.description,
+    markdown: compareMarkdown(data),
+  };
+};
+
+export const loadCompareSources = (dir = compareDir) => Object.fromEntries(readdirSync(dir)
+  .filter((file) => file.endsWith('.json'))
+  .map((file) => {
+    try {
+      return [file.replace(/\.json$/, ''), JSON.parse(readFileSync(resolve(dir, file), 'utf8'))];
+    } catch (error) {
+      throw new Error(`compare/${file}: ${error.message}`);
+    }
+  })
+  // listOrder fixes the order the footer links and llms.txt list them in.
+  .sort(([, a], [, b]) => a.listOrder - b.listOrder)
+  .map(([id, data]) => [id, compareSourceFromData(id, data)]));
+
+const comparePageSources = loadCompareSources();
 
 // Any bracketed text is an open marker (a HOLD, a re-check note, or anything
 // else GTM bracketed) except a numeric citation like [1] or a markdown link.
@@ -962,16 +852,16 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     url: pageUrl(path),
     isPartOf: { '@id': websiteId },
   });
-  const webPage = (title, description, path) => ({
+  const webPage = (title, description, path, dates = {}) => ({
     '@context': 'https://schema.org',
-    '@graph': [organization, website, webPageNode(title, description, path)],
+    '@graph': [organization, website, { ...webPageNode(title, description, path), ...dates }],
   });
 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
-    description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
+    description: 'Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
     dateModified: LANDING_DATE_MODIFIED,
   };
@@ -999,7 +889,11 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       </main>
       <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
     </div>`,
-      schema: webPage(source.title, source.description, source.path),
+      // The same dates the page shows in its "Updated" line and the sitemap carries (F429, D295).
+      schema: webPage(source.title, source.description, source.path, {
+        ...(source.datePublished ? { datePublished: source.datePublished } : {}),
+        ...(source.dateModified ? { dateModified: recordedDate(source.path, source.dateModified) } : {}),
+      }),
     };
   });
 
@@ -1008,9 +902,12 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     outputPath: 'compare/index.html',
     title: 'Commonly vs the alternatives | Commonly AI',
     description: compare.lede,
-    content: renderCompare(compare),
+    content: renderCompare(compare, compareSources, siteLinks),
+    // The SPA has no /compare/ route and hides #seo-page once JS runs, so the hub ships without
+    // the app bundle, like each comparison page (CodeRabbit on #3930).
+    staticOnly: true,
     schema: webPage(compare.title, compare.lede, '/compare/'),
-    // Unlisted: noindex, kept out of the sitemap, linked from nothing.
+    // Unlisted: noindex and kept out of the sitemap. It links out to every comparison.
     noindex: true,
   }];
 
@@ -1029,6 +926,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
 
   const useCasePages = Object.entries(useCases).map(([id, useCase]) => {
     const path = `/use-cases/${id}/`;
+    // Checked before the page renders, since the page now shows the date (F430).
+    recordedDate(path, useCase.dateModified);
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
@@ -1038,7 +937,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       // Static like the guides: the page a reader gets is the one crawlers read.
       staticOnly: true,
       dateModified: recordedDate(path, useCase.dateModified),
-      schema: webPage(useCase.title, useCase.summary, path),
+      schema: webPage(useCase.title, useCase.summary, path, {
+        ...(useCase.datePublished ? { datePublished: recordedDate(path, useCase.datePublished) } : {}),
+        ...(useCase.dateModified ? { dateModified: useCase.dateModified } : {}),
+      }),
       // Its own id: the landing's React effect reuses the landing-faq-jsonld tag.
       ...(useCase.faq?.length ? { faqSchema: faqPageJsonLd(useCase.faq), faqSchemaId: 'use-case-faq-jsonld' } : {}),
     };
@@ -1047,7 +949,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const guidePages = Object.entries(guides).map(([id, guide]) => {
     const path = `/guides/${id}/`;
     const provenance = guideProvenance(guide);
-    const author = { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
+    const author = guide.revised
+      ? guideAuthorPerson()
+      : { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
     const reviewer = { '@type': 'Organization', name: provenance.reviewer, url: `${siteUrl}/` };
     return {
       path,
@@ -1089,7 +993,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const useCasesIndexPage = {
     path: '/use-cases/',
     outputPath: 'use-cases/index.html',
-    title: `${USE_CASES_INDEX.title} | Commonly AI`,
+    title: `${USE_CASES_INDEX.titleTag} | Commonly AI`,
     description: USE_CASES_INDEX.lede,
     content: renderUseCasesIndex(useCases, siteLinks),
     // No app route serves /use-cases/, so the page stays static.
