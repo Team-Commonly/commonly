@@ -74,8 +74,9 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
   `baseURL` is the host without `/v1`, for example `https://api.anthropic.com`,
   because the provider adds `/v1/messages` itself. Set it to `google` to use
   OpenCode's own Google provider (`@ai-sdk/google`) on Gemini's API; see
-  **Gemini** below. Only OpenCode accepts `anthropic-messages` and `google`; the
-  other adapters refuse them at attach.
+  **Gemini** below. Only OpenCode accepts `google`. pi also accepts
+  `anthropic-messages`, on private seats only. The other adapters refuse both at
+  attach.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
   contain the key file. On a public seat, the key file also can't sit anywhere
