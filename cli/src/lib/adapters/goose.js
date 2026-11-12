@@ -312,7 +312,7 @@ export default {
     assertSandboxSupported(environment);
     const validation = validateEnvironmentSpec(environment || {});
     if (!validation.ok) throw new Error(validation.errors.join('; '));
-    return resolveProviderKeyFile(environment?.provider, workspacePath, 'Goose');
+    return resolveProviderKeyFile(environment?.provider, workspacePath, 'Goose', { environment });
   },
 
   async detect() {

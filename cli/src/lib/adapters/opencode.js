@@ -725,7 +725,7 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   if (!validation.ok) {
     throw new Error(`Invalid OpenCode provider configuration: ${validation.errors.join('; ')}`);
   }
-  return resolveProviderKeyFile(environment.provider, workspacePath);
+  return resolveProviderKeyFile(environment.provider, workspacePath, undefined, { environment });
 };
 
 const STALE_SESSION_PATTERN = /session not found/i;

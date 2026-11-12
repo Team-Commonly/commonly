@@ -358,7 +358,7 @@ export default {
     if (!TESTED_DSH_VERSIONS.includes(detected?.version)) {
       throw new Error(`dsh adapter: installed version ${detected?.version || 'unknown'} is not smoke-tested (${TESTED_DSH_VERSIONS.join(', ')})`);
     }
-    return resolveProviderKeyFile(environment.provider, workspacePath, 'dsh');
+    return resolveProviderKeyFile(environment.provider, workspacePath, 'dsh', { environment });
   },
 
   async detect() {
@@ -396,7 +396,9 @@ export default {
     if (!TESTED_DSH_VERSIONS.includes(version)) {
       throw new Error(`dsh adapter: installed version ${version || 'unknown'} is not smoke-tested (${TESTED_DSH_VERSIONS.join(', ')})`);
     }
-    const keyFile = await resolveProviderKeyFile(ctx.environment.provider, ctx.cwd, 'dsh');
+    const keyFile = await resolveProviderKeyFile(ctx.environment.provider, ctx.cwd, 'dsh', {
+      environment: ctx.environment, platform: ctx._platform,
+    });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-dsh-'));
     await chmod(tempDir, 0o700);
     let proxy;

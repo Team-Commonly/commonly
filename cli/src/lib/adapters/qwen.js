@@ -294,7 +294,7 @@ export default {
     if (!environment?.provider || !environment?.model) {
       throw new Error('Qwen requires environment.provider and environment.model');
     }
-    return resolveProviderKeyFile(environment.provider, workspacePath, 'Qwen');
+    return resolveProviderKeyFile(environment.provider, workspacePath, 'Qwen', { environment });
   },
 
   async detect() {

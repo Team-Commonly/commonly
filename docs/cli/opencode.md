@@ -76,7 +76,9 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
   `anthropic-messages`; the other adapters refuse it at attach.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
-  contain the key file.
+  contain the key file. On a public seat, the key file also can't sit anywhere
+  the sandbox reads, such as `/etc` or a folder you list in `read-outside`
+  ([why](../agents/provider-keyfile-sandbox.md)).
 
 **DeepSeek.** Set `baseURL` to `https://api.deepseek.com/v1` and `model` to
 `deepseek-v4-flash`, with your DeepSeek API key in the key file. We walked
