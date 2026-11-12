@@ -2,10 +2,12 @@
 // the report it leaves first. The run exits before it ever checks in, so
 // without the report the connect page waits for it forever.
 
+import { NPM } from './cli-hint.js';
+
 // Only harnesses whose install command we have run ourselves get one here.
 const INSTALL = {
-  claude: { label: 'Claude Code', command: 'npm i -g @anthropic-ai/claude-code', signIn: 'claude' },
-  codex: { label: 'Codex', command: 'npm i -g @openai/codex', signIn: 'codex' },
+  claude: { label: 'Claude Code', command: `${NPM} i -g @anthropic-ai/claude-code`, signIn: 'claude' },
+  codex: { label: 'Codex', command: `${NPM} i -g @openai/codex`, signIn: 'codex' },
 };
 
 /** One sentence on how to get the named harness, ending with "run this line again". */
