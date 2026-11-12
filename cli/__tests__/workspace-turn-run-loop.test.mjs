@@ -107,6 +107,19 @@ describe('performRun workspace turn placement', () => {
     expect(ctx.memoryLongTerm).toBe('notes from the project');
   });
 
+  // A fresh machine has no scratch folder, and a workspace seat's skills
+  // mount there; the first @mention failed ENOENT until someone made it.
+  test('a workspace seat makes its scratch folder, where its skills mount', async () => {
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+    const { ctx } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod],
+    });
+    expect(ctx.cwd).toBe(workspaceDir);
+    expect(ctx.skillMountDir).toBe(scratchDir);
+    expect(fs.existsSync(scratchDir)).toBe(true);
+  });
+
   test('a turn that runs public never reads the seat\'s memory', async () => {
     const { ctx, get } = await runOneTurn({
       environment: { sandbox: { trust: 'workspace' } },

@@ -2363,6 +2363,11 @@ export const performRun = ({
   const scratchCwd = join(tmpdir(), 'commonly-agents', stateKey);
   const agentCwd = workspacePath || scratchCwd;
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+  // A workspace seat still mounts its skills into the scratch folder (the
+  // claude adapter's skillMountDir), and that mount's mkdir is not recursive:
+  // on a machine that never ran this seat without a workspace, the first
+  // turn failed ENOENT and opened the circuit.
+  if (!existsSync(scratchCwd)) mkdirSync(scratchCwd, { recursive: true });
   // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
   // its pods before every turn, and a turn it cannot confirm (a failed read
   // included) runs as a public seat in the scratch folder. The session is
