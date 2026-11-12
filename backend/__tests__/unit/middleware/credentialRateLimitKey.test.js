@@ -4,11 +4,20 @@
 // (The task-write limiters sit behind dualAuth, whose own choice they key on.)
 const fs = require('fs');
 const path = require('path');
+jest.mock('jsonwebtoken', () => ({ verify: jest.fn(() => { throw new Error('stop after the token is read'); }) }));
+jest.mock('../../../models/User', () => ({ findOne: jest.fn(), findById: jest.fn() }));
+jest.mock('../../../services/apiTokenService', () => ({ findApiTokenUser: jest.fn() }));
+jest.mock('../../../services/sessionAccountService', () => ({
+  isAccountInstanceRestricted: jest.fn(), loadSessionAccount: jest.fn(), sessionRefusal: jest.fn(),
+}));
+
+const jwt = require('jsonwebtoken');
 const {
+  humanAuthCredential,
   humanCredentialRateLimitKey,
   messageWriteRateLimitKey,
 } = require('../../../middleware/credentialRateLimitKey');
-const { humanAuthCredential } = require('../../../middleware/auth');
+const auth = require('../../../middleware/auth');
 
 const reqOf = (headers, method = 'POST') => ({
   method,
@@ -49,10 +58,31 @@ test('a message delete still keys on the dual-auth credential, so an agent token
   expect(a).not.toBe(b);
 });
 
-test('the message limiter uses this key, and auth.ts reads its token through humanAuthCredential', () => {
+// auth.ts is left untouched (an edit re-flags every route's CodeQL rate-limit
+// alert), so the limiter keeps its own copy of auth's token read. This runs
+// auth() itself and fails the moment the two read different tokens.
+test.each([
+  [{ Authorization: 'Bearer person-jwt' }],
+  [{ Authorization: 'person-jwt' }],
+  [{ 'x-auth-token': 'person-jwt' }],
+  [{ Authorization: 'Bearer person-jwt', 'x-auth-token': 'other' }],
+  [{ Authorization: 'Bearer ', 'x-auth-token': 'person-jwt' }],
+  [{ Authorization: 'Bearer  spaced ' }],
+  [{ 'x-commonly-agent-token': 'cm_agent_a', 'x-auth-token': 'person-jwt' }],
+  [{}],
+])('auth() verifies exactly the token humanAuthCredential reads, for %j', async (headers) => {
+  jwt.verify.mockClear();
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await auth(reqOf(headers), res, jest.fn());
+  const expected = humanAuthCredential(reqOf(headers));
+  if (expected) expect(jwt.verify.mock.calls[0][0]).toBe(expected);
+  else expect(jwt.verify).not.toHaveBeenCalled();
+});
+
+test('the message limiter uses this key, and auth.ts stays untouched', () => {
   const read = (file) => fs.readFileSync(path.join(__dirname, '../../..', file), 'utf8');
   const messages = read('routes/messages.ts');
   expect(messages).toMatch(/keyGenerator: messageWriteRateLimitKey/);
   expect(messages).toMatch(/router.post\('\/:podId', sendMessageRateLimit, auth, createMessage\)/);
-  expect(read('middleware/auth.ts')).toMatch(/let token = humanAuthCredential\(req\)/);
+  expect(read('middleware/auth.ts')).not.toMatch(/credentialRateLimitKey|humanAuthCredential/);
 });

@@ -32,14 +32,9 @@ export function touchLastActive(id: string): void {
   }
 }
 
-/** The token auth() verifies: Authorization (a "Bearer " prefix dropped),
- * else x-auth-token. A limiter in front of auth() keys on this (F455). */
-export function humanAuthCredential(req: Pick<Request, 'header'>): string {
-  return req.header('Authorization')?.replace('Bearer ', '') || req.header('x-auth-token') || '';
-}
-
 export default async function auth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
-  let token = humanAuthCredential(req);
+  let token = req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) token = req.header('x-auth-token');
 
   if (!token) {
     return res.status(401).json({ msg: 'No token, authorization denied' });

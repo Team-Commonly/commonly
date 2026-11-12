@@ -1,12 +1,20 @@
 import { createHash } from 'crypto';
 import type { Request } from 'express';
-import { humanAuthCredential } from './auth';
 import { resolveDualAuthCredential } from './dualAuth';
 import { cloudflareIpRateLimitKeyGenerator } from './ipRateLimit';
 
 // The limiter can see a request without header() in tests; it falls to the IP key.
 type HeaderRequest = { header?: Request['header']; method?: string };
 type WithHeader = Pick<Request, 'header'>;
+
+/** The token auth() verifies: Authorization (a "Bearer " prefix dropped), else
+ * x-auth-token. It mirrors auth.ts's first two lines rather than being imported
+ * by auth.ts, because any edit to auth.ts makes CodeQL re-flag every route that
+ * runs auth() for js/missing-rate-limiting. A test runs auth() itself and fails
+ * if the two ever read different tokens. */
+export function humanAuthCredential(req: WithHeader): string {
+  return req.header('Authorization')?.replace('Bearer ', '') || req.header('x-auth-token') || '';
+}
 
 const tokenKey = (credential: string, req: HeaderRequest): string => (credential
   ? `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`
