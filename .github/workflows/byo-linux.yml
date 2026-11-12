@@ -162,12 +162,18 @@ jobs:
         env:
           CODEX_VERSION: ${{ inputs.codex_version }}
           CLI_VERSION: ${{ inputs.cli_version }}
+          WALK: ${{ inputs.walk }}
         run: |
           set -o pipefail
           case "$CODEX_VERSION" in (*[!0-9.]*|'') echo "::error::codex_version must be a version number"; exit 1;; esac
           # Exactly x.y.z: npm would read "0.1" as a range and install the newest match.
           if [ -n "$CLI_VERSION" ] && ! [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::cli_version must be an exact version, like 0.1.334"; exit 1
+          fi
+          # This checkout's adapter refuses a home under /tmp itself (F186), so
+          # the F470 walk needs a published CLI from before that to reach Codex.
+          if [ "$WALK" = public-codex-temp-home ] && [ -z "$CLI_VERSION" ]; then
+            echo "::error::walk=public-codex-temp-home needs cli_version 0.1.357 or older"; exit 1
           fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap

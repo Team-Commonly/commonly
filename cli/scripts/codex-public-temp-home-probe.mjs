@@ -20,7 +20,7 @@
  * byo-linux.yml runs it as walk=public-codex-temp-home.
  */
 import { spawnSync } from 'child_process';
-import { existsSync, readdirSync } from 'fs';
+import { appendFileSync, existsSync, readdirSync } from 'fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import http from 'http';
 import { homedir } from 'os';
@@ -30,6 +30,9 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_PATH = process.env.PROBE_ADAPTER || join(HERE, '..', 'src', 'lib', 'adapters', 'codex.js');
 const MARK = 'f470-sandboxed-';
+// Planted in the seat's ~/.commonly, which the public profile denies: a turn
+// whose shell can print it ran outside the sandbox and answers nothing.
+const LEAK = 'f470-unsandboxed-read';
 const log = (line) => console.log(line);
 
 const message = (text) => ({ type: 'message', role: 'assistant', id: 'm1', content: [{ type: 'output_text', text }] });
@@ -50,8 +53,12 @@ const startModel = async () => {
           type: 'function_call',
           name: 'exec_command',
           call_id: 'probe',
-          // The shell computes the number, so the marker in the output proves the command ran.
-          arguments: JSON.stringify({ cmd: `echo ${MARK}$((6*7))`, yield_time_ms: 10000 }),
+          // The shell computes the number, so the marker proves the command ran; the
+          // read of the denied ~/.commonly must fail, which proves it ran sandboxed.
+          arguments: JSON.stringify({
+            cmd: `echo ${MARK}$((6*7)); cat "$HOME/.commonly/probe.txt" 2>&1 | head -c 200`,
+            yield_time_ms: 10000,
+          }),
         }]
         : [message('done')];
       const id = `r${requests.length}`;
@@ -72,6 +79,10 @@ const startModel = async () => {
 
 const outputOf = (body) => JSON.stringify((body?.input || []).find((i) => i.call_id === 'probe' && /output/.test(i.type))?.output ?? null);
 
+// The adapter from F186 on refuses a home under /tmp itself, so a run on it
+// would answer for the CLI, not for Codex.
+const refusedByCli = (outcome) => /code=codex_home_under_temp/.test(outcome);
+
 const walk = (dir, depth = 0) => (existsSync(dir) && depth < 6
   ? readdirSync(dir, { withFileTypes: true })
     .flatMap((e) => [join(dir, e.name), ...(e.isDirectory() ? walk(join(dir, e.name), depth + 1) : [])])
@@ -86,13 +97,15 @@ const turn = async (codex, label, stateHome) => {
   const base = process.env.RUNNER_TEMP || join(homedir(), '.cache');
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, 'f470-probe-'));
-  await Promise.all(['workspace', 'home', 'operator'].map((d) => mkdir(join(root, d))));
+  await Promise.all(['workspace', 'home/.commonly', 'operator'].map((d) => mkdir(join(root, d), { recursive: true })));
+  await writeFile(join(root, 'home', '.commonly', 'probe.txt'), LEAK);
   await writeFile(join(root, 'operator', 'auth.json'), JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'stub-key' }));
   const model = await startModel();
   const proxy = `http://127.0.0.1:${model.port}`;
   log(`\n== ${label}: XDG_STATE_HOME=${stateHome}`);
   let outcome;
   try {
+    try {
     const result = await codex.spawn('run the probe', {
       sessionId: null,
       cwd: join(root, 'workspace'),
@@ -113,20 +126,29 @@ const turn = async (codex, label, stateHome) => {
       _homeDir: join(root, 'home'),
       _workspaceGitServer: () => null,
     });
-    outcome = `spawn resolved, reply ${JSON.stringify(String(result?.text ?? '')).slice(0, 120)}`;
-  } catch (error) {
-    outcome = `spawn rejected code=${error?.code ?? '-'}: ${String(error?.message).slice(0, 900)}`;
+      outcome = `spawn resolved, reply ${JSON.stringify(String(result?.text ?? '')).slice(0, 120)}`;
+    } catch (error) {
+      outcome = `spawn rejected code=${error?.code ?? '-'}: ${String(error?.message).slice(0, 900)}`;
+    }
+    const output = outputOf(model.requests.at(-1));
+    const ran = output.includes(`${MARK}42`);
+    const leaked = output.includes(LEAK);
+    log(outcome);
+    log(`model requests: ${model.requests.length} | shell output: ${output.slice(0, 400)}`);
+    // What the arg0-linux folder holds (Codex's helper aliases), not the folder itself.
+    const helper = walk(join(stateHome, 'commonly', 'codex-homes'))
+      .filter((p) => /\/arg0-linux\/./.test(p)).map((p) => p.split('/').pop());
+    log(`inside arg0-linux: ${helper.length}${helper.length ? ` (${helper.slice(0, 4).join(', ')})` : ''}`);
+    const verdict = refusedByCli(outcome) ? 'CLI REFUSED (an adapter from F186 on; use a cli_version of 0.1.357 or older)'
+      : leaked ? 'UNSANDBOXED (the shell read the denied ~/.commonly; this run answers nothing)'
+        : ran ? 'TURN RAN (sandboxed: command output returned, denied read failed)'
+          : 'NO TURN (command output missing)';
+    log(`RESULT ${label}: ${verdict}`);
+    return { ran: ran && !leaked, verdict, cliRefused: refusedByCli(outcome) };
+  } finally {
+    await model.close();
+    await rm(root, { recursive: true, force: true });
   }
-  const output = outputOf(model.requests.at(-1));
-  const ran = output.includes(`${MARK}42`);
-  log(outcome);
-  log(`model requests: ${model.requests.length} | shell output: ${output.slice(0, 300)}`);
-  const helper = walk(join(stateHome, 'commonly', 'codex-homes')).filter((p) => p.includes('arg0-linux'));
-  log(`arg0-linux entries: ${helper.length}${helper.length ? ` (${helper.map((p) => p.split('/').pop()).slice(0, 4).join(', ')})` : ''}`);
-  log(`RESULT ${label}: ${ran ? 'TURN RAN (sandboxed command output returned)' : 'NO TURN (command output missing)'}`);
-  await model.close();
-  await rm(root, { recursive: true, force: true });
-  return ran;
 };
 
 const codexVersion = spawnSync('codex', ['--version'], { encoding: 'utf8' }).stdout?.trim() || 'codex not found';
@@ -136,10 +158,18 @@ const { default: codex } = await import(pathToFileURL(ADAPTER_PATH).href);
 
 const outside = await mkdtemp(join(process.env.RUNNER_TEMP || join(homedir(), '.cache'), 'f470-state-'));
 const underTmp = await mkdtemp('/tmp/f470-state-');
-const control = await turn(codex, 'control', join(outside, 'state'));
-const temp = await turn(codex, 'temp', join(underTmp, 'state'));
-await rm(outside, { recursive: true, force: true });
-await rm(underTmp, { recursive: true, force: true });
-log(`\nSUMMARY control=${control ? 'ran' : 'no turn'} temp=${temp ? 'ran' : 'no turn'}`);
-// The control must run, or the runner can't answer the question.
-process.exit(control ? 0 : 1);
+let control;
+let temp;
+try {
+  control = await turn(codex, 'control', join(outside, 'state'));
+  temp = await turn(codex, 'temp', join(underTmp, 'state'));
+} finally {
+  await rm(outside, { recursive: true, force: true });
+  await rm(underTmp, { recursive: true, force: true });
+}
+const summary = `SUMMARY ${codexVersion}: control ${control.verdict} | home under /tmp ${temp.verdict}`;
+log(`\n${summary}`);
+if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+// The control must run sandboxed, and the temp case must reach Codex, or the
+// run can't answer the question.
+process.exit(control.ran && !temp.cliRefused ? 0 : 1);
