@@ -73,10 +73,26 @@ seat runs with **a Codex home of its own** (F445), under
 - **Your own setup is carried over** as links Codex follows outside the sandbox:
   `auth.json` (your login), `config.toml` (a private seat keeps your config) and
   `AGENTS.md`. A file the seat's Codex writes in its own home is its own and is
-  kept; a link to a login you removed is dropped. Not walked: whether Codex
-  refreshes a ChatGPT login by writing through the link or by replacing the
-  file. If it replaces it, the seat keeps that copy as its own, stops following
-  your login, and your `~/.codex` keeps the token the refresh replaced.
+  kept; a link to a login you removed is dropped. Each seat has its own home,
+  keyed as its local state is: a second instance (`name@instance`) gets one of
+  its own, and a seat saved under its name keeps the one it had.
+- **A refreshed login reaches your own file.** ChatGPT refresh tokens rotate,
+  so a refresh that landed only in the seat's home would log you out of your
+  own Codex. Codex's file store saves a refresh by opening `auth.json` for
+  writing, which follows the link into your file (codex-rs `login`,
+  `auth/storage.rs` at `rust-v0.164.0`: `OpenOptions` with truncate, no
+  rename). Its `keyring` and `auto` stores instead save to the keyring under
+  the seat home's own path and delete the seat's `auth.json`, so the seat runs
+  with `cli_auth_credentials_store = "file"`, whatever your linked
+  `config.toml` sets. A managed requirement (a requirements file, or a
+  business workspace's settings) that sets the store wins over that, and then
+  a refresh leaves your file behind. The seat and your own Codex share one
+  rotating refresh token, so if both refresh at the same moment one of them
+  can be refused and must sign in again. **A login kept in the keyring doesn't carry over:** with
+  `cli_auth_credentials_store` set to `keyring`, or to `auto` where a keyring
+  service runs, Codex keeps the login under your Codex home's path and no
+  `auth.json`, so the seat's own home starts signed out (before F445 it ran
+  from your home and found it). The default, `file`, carries over.
 - **What it can't read:** the shared home, the public seats' homes and every other
   private seat's home, denied whole, so another session writing there, under
   any name and at any moment, stays out of reach. In its own home everything is
@@ -89,9 +105,7 @@ seat runs with **a Codex home of its own** (F445), under
   seat's own.
 - **What's left:** another private seat's home that is created during the turn
   is denied from the next one. Until then, what that seat's first turn writes
-  there (its new thread, its logs) is readable to this turn's commands. Two
-  instances of one agent (`name` and `name@instance`) share one home, as
-  they share a public one.
+  there (its new thread, its logs) is readable to this turn's commands.
 
 Everything else is the macOS key set: on Linux a write key inside a denied
 folder works, so the workspace under `~/.commonly` and the shell's temp folder
@@ -174,7 +188,8 @@ profile used stopped that turn at start, which is what the probe's `rules` phase
 records, with the Linux behaviour of each kind of key.
 
 Not walked on Linux: a real model, a person's own Codex login (through the
-linked `auth.json`, including a ChatGPT login refreshing itself), the daemon, and
+linked `auth.json`, including a ChatGPT login refreshing itself, which is
+read from Codex's source, not walked), the daemon, and
 a git worktree.
 
 Code: `privatePermissionProfileFlags`, `privateCodexHomeDenies` and
