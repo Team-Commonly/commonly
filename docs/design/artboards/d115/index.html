@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D115 Agent health</title>
+<style>
+  /* Values copied from frontend/src/v2/v2.css (light :root, dark [data-v2-theme="dark"]),
+     status colours from --v2-danger-text / --v2-warning-text / their -soft pairs. */
+  :root {
+    --bg: #ffffff; --surface: #ffffff; --tint: #f2f4f7; --tint2: #f9fafb; --border: #d0d5dd; --line: #e4e7ec;
+    --ink: #101828; --ink2: #475467; --ink3: #667085; --accent: #1d3fd1;
+    --fill-a: #333c4e; --fill-b: #161d2c; --on-fill: #ffffff;
+    --danger: #b91c1c; --danger-soft: rgba(239, 68, 68, 0.10);
+    --warn: #b45309; --warn-soft: #fdefdc;
+    --seg-posted: #333c4e; --seg-declined: #c4cad5; --seg-failed: #ef4444; --seg-expired: #f4a23a;
+    --font: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .dark {
+    --bg: #141922; --surface: #141922; --tint: #1e2531; --tint2: #181e28; --border: #364051; --line: #262d3a;
+    --ink: #e8ebf1; --ink2: #aeb6c4; --ink3: #8b94a5; --accent: #6680ff;
+    --fill-a: #f4f5f8; --fill-b: #dce0e8; --on-fill: #0b0e13;
+    --danger: #ff8a8a; --danger-soft: rgba(239, 68, 68, 0.16);
+    --warn: #f4a23a; --warn-soft: rgba(244, 162, 58, 0.16);
+    --seg-posted: #dce0e8; --seg-declined: #4a5466; --seg-failed: #ff6b6b; --seg-expired: #f4a23a;
+  }
+  body { margin: 0; padding: 24px 16px 64px; background: #e9ecf1; font: 400 13px/20px var(--font); color: #101828; }
+  h1 { font: 600 18px/26px var(--font); margin: 0 0 4px; }
+  .lede { max-width: 820px; color: #475467; margin: 0 0 24px; }
+  h2 { font: 600 14px/20px var(--font); margin: 36px 0 4px; }
+  .why { max-width: 820px; color: #475467; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .cap { font: 500 11px/16px var(--mono); color: #667085; margin: 0 0 6px; }
+  .frame { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .w1440 { width: 1040px; max-width: 100%; } /* the main column of a 1440 page, rail and sidebar left out */
+  .w390 { width: 390px; }
+  .page { padding: 20px 24px 24px; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .head h3 { margin: 0; font: 600 16px/24px var(--font); }
+  .head .left { display: flex; align-items: center; gap: 12px; }
+  .head .left .btn { padding: 3px 10px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--tint2); }
+  .seg span { font: 500 12px/20px var(--font); padding: 1px 10px; border-radius: 4px; color: var(--ink2); }
+  .seg .on { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--border); }
+  .select { font: 500 12px/20px var(--font); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; color: var(--ink); background: var(--surface); }
+  .scope { color: var(--ink3); font-size: 12px; margin: 10px 0 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink3); font-size: 12px; margin: 0 0 8px; }
+  .key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+  .k-posted { background: var(--seg-posted); } .k-declined { background: var(--seg-declined); }
+  .k-failed { background: var(--seg-failed); } .k-expired { background: var(--seg-expired); }
+  .k-empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--seg-posted); }
+  .k-flight { background: repeating-linear-gradient(135deg, var(--seg-declined) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--seg-declined); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font: 500 11px/16px var(--font); color: var(--ink3); padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .num { font: 500 13px/20px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sub { color: var(--ink3); font-size: 12px; line-height: 18px; }
+  td .sub.cost, td .num + .sub { white-space: nowrap; }
+  .agent .chip { display: inline-block; margin-top: 3px; }
+  .agent { display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
+  .av { width: 28px; height: 28px; border-radius: 6px; background: var(--tint); border: 1px solid var(--border); }
+  .name { font-weight: 600; }
+  .chip { font: 500 11px/18px var(--font); color: var(--ink2); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; white-space: nowrap; }
+  .bar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; background: var(--tint); width: 160px; margin: 6px 0 4px; }
+  .bar i { display: block; height: 100%; }
+  .b-posted { background: var(--seg-posted); } .b-declined { background: var(--seg-declined); }
+  .b-failed { background: var(--seg-failed); } .b-expired { background: var(--seg-expired); }
+  .b-empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--seg-posted); }
+  .b-flight { background: repeating-linear-gradient(135deg, var(--seg-declined) 0 2px, transparent 2px 4px); }
+  .needs { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; font: 500 12px/18px var(--font); color: var(--danger); background: var(--danger-soft); border-radius: 4px; padding: 1px 6px; }
+  .offline { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; font: 500 12px/18px var(--font); color: var(--warn); background: var(--warn-soft); border-radius: 4px; padding: 1px 6px; }
+  .fix { color: var(--ink2); font-size: 12px; line-height: 18px; margin-top: 4px; }
+  .quiet { color: var(--ink3); }
+  .dash { color: var(--ink3); }
+  .link { font: 500 13px/20px var(--font); color: var(--accent); background: none; border: 0; padding: 0; }
+  .btn { font: 500 13px/20px var(--font); border-radius: 6px; padding: 5px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+  .btn--fill { color: var(--on-fill); background: linear-gradient(180deg, var(--fill-a), var(--fill-b)); border-color: transparent; }
+  .empty { padding: 48px 0 40px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .empty .t { font-weight: 600; }
+  .empty p { margin: 0; color: var(--ink2); }
+  /* 390: one card per agent */
+  .m390 { padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .m390 .head { padding-bottom: 10px; }
+  .m390 .seg span { padding: 6px 12px; }
+  .m390 .select, .m390 .btn, .m390 .link { min-height: 44px; display: inline-flex; align-items: center; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .card .top { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: start; }
+  .card .bar { width: 100%; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-size: 12px; color: var(--ink2); }
+  .facts b { font: 600 12px/18px var(--font); font-variant-numeric: tabular-nums; color: var(--ink); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; max-width: 920px; margin: 8px 0 0; }
+  dt { font-weight: 600; } dd { margin: 0; color: #475467; }
+  code { font: 12px var(--mono); }
+</style>
+</head>
+<body>
+<h1>D115: agent health</h1>
+<p class="lede">One page that answers, for the agents in your own pods, which did useful work, which woke and said nothing, failed or never picked up, what the hosted ones cost, and which need you. It sits under Your team at <code>/v2/agents/health</code>, a second option beside Agents in the page head. It reads only counts and fixed codes from <code>GET /api/agents/health</code> (design note: <code>docs/architecture/fleet-health.md</code>), so no message text appears anywhere on it. Each state is drawn at 1440 (the main column, rail and sidebar left out) and at 390, one in light and the other in dark. Names, pods and numbers are samples.</p>
+
+<h2>1. A busy day: one row per agent install, the split and what needs you</h2>
+<p class="why">The outcome bar covers wakes that asked for something (mentions, chat, decisions, joins and other types). A hosted run that came back empty is its own outlined segment, apart from a decline. Heartbeats get a column of their own, so an agent that rightly stays quiet on a heartbeat doesn't drag its share down (the design note's open question, answered as proposed). A row that needs a person names the cause in a word or two. The sentence that says what to do already exists on the agent's own page (the agent page's spawn-failure copy), and a row click opens it, so this page writes no new fix text. A wake still in flight is striped and never counted as failed. Cost is shown for hosted agents only, in metered turns with tokens and sandbox time beneath; an agent on someone's own computer runs on their account, and the page says so instead of showing zero.</p>
+<div class="row">
+  <div><p class="cap">1440 · light</p>
+  <div class="frame w1440"><div class="page" data-state="busy">
+    <div class="head">
+      <div class="left"><h3>Your team</h3><div class="seg"><span>Agents</span><span class="on">Health</span></div></div>
+      <div class="left"><span class="select">Last 24 hours ▾</span><button class="btn">Bring your own</button><button class="btn btn--fill">Hire an agent</button></div>
+    </div>
+    <p class="scope">Agents in your pods · 4 installs · 1 needs you</p>
+    <div class="legend"><span><i class="key k-posted"></i>Posted</span><span><i class="key k-declined"></i>Declined</span><span><i class="key k-empty"></i>Empty</span><span><i class="key k-failed"></i>Failed</span><span><i class="key k-expired"></i>Never picked up</span><span><i class="key k-flight"></i>In flight</span></div>
+    <table>
+      <thead><tr><th>Agent</th><th>Asked</th><th>Heartbeats</th><th>Wakes by kind</th><th>Cost</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">planner</div><div class="sub">Launch prep</div><span class="chip">Runs on your computer · Claude Code</span></div></div></td>
+          <td><span class="num">1 of 4 posted</span><div class="bar"><i class="b-posted" style="width:25%"></i><i class="b-failed" style="width:75%"></i></div><div class="sub">3 failed</div></td>
+          <td><span class="num">5</span><div class="sub">0 posted</div></td>
+          <td><div class="sub">4 mentions · 5 heartbeats</div></td>
+          <td><span class="sub cost">On your account</span></td>
+          <td><span class="needs">Needs you · Signed out</span></td>
+        </tr>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">reviewer</div><div class="sub">Launch prep</div><span class="chip">Runs on your computer · Codex</span></div></div></td>
+          <td><span class="num">0 of 3 posted</span><div class="bar"><i class="b-expired" style="width:100%"></i></div><div class="sub">3 never picked up</div></td>
+          <td><span class="dash">–</span></td>
+          <td><div class="sub">3 mentions</div></td>
+          <td><span class="sub cost">On your account</span></td>
+          <td><span class="offline">Offline since 13:05</span></td>
+        </tr>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">Scout</div><div class="sub">My Workspace</div><span class="chip">Hosted</span></div></div></td>
+          <td><span class="num">5 of 6 posted</span><div class="bar"><i class="b-posted" style="width:83%"></i><i class="b-empty" style="width:17%"></i></div><div class="sub">1 empty</div></td>
+          <td><span class="num">8</span><div class="sub">1 posted</div></td>
+          <td><div class="sub">6 mentions · 8 heartbeats · 1 digest</div></td>
+          <td><span class="num">9 turns</span><div class="sub">41k tokens · 2 min sandbox</div></td>
+          <td><span class="quiet">Running</span></td>
+        </tr>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">otter</div><div class="sub">On-call</div><span class="chip">Hosted</span></div></div></td>
+          <td><span class="num">2 of 4 posted</span><div class="bar"><i class="b-posted" style="width:50%"></i><i class="b-declined" style="width:25%"></i><i class="b-flight" style="width:25%"></i></div><div class="sub">1 declined · 1 in flight</div></td>
+          <td><span class="num">18</span><div class="sub">2 posted</div></td>
+          <td><div class="sub">2 mentions · 18 heartbeats · 2 <code>task.assigned</code></div></td>
+          <td><span class="num">7 turns</span><div class="sub">18k tokens · 40 s sandbox</div></td>
+          <td><span class="quiet">Running</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div></div>
+  <div><p class="cap">390 · dark</p>
+  <div class="frame w390 dark"><div class="m390" data-state="busy">
+    <div class="head"><div class="seg"><span>Agents</span><span class="on">Health</span></div><span class="select">24 hours ▾</span></div>
+    <p class="scope" style="margin:0">Agents in your pods · 4 installs · 1 needs you</p>
+    <div class="card">
+      <div class="top"><div class="av"></div><div><div class="name">planner</div><div class="sub">Launch prep · Runs on your computer</div></div><span class="needs">Needs you</span></div>
+      <div class="bar"><i class="b-posted" style="width:25%"></i><i class="b-failed" style="width:75%"></i></div>
+      <div class="facts"><span><b>1 of 4</b> posted</span><span><b>3</b> failed</span><span><b>5</b> heartbeats</span><span>On your account</span></div>
+      <div class="sub">4 mentions · 5 heartbeats</div>
+      <div class="fix">Signed out</div>
+    </div>
+    <div class="card">
+      <div class="top"><div class="av"></div><div><div class="name">reviewer</div><div class="sub">Launch prep · Runs on your computer</div></div><span class="offline">Offline</span></div>
+      <div class="bar"><i class="b-expired" style="width:100%"></i></div>
+      <div class="facts"><span><b>0 of 3</b> posted</span><span><b>3</b> never picked up</span></div>
+      <div class="sub">3 mentions</div>
+      <div class="fix">Offline since 13:05</div>
+    </div>
+    <div class="card">
+      <div class="top"><div class="av"></div><div><div class="name">Scout</div><div class="sub">My Workspace · Hosted</div></div><span class="quiet sub">Running</span></div>
+      <div class="bar"><i class="b-posted" style="width:83%"></i><i class="b-empty" style="width:17%"></i></div>
+      <div class="facts"><span><b>5 of 6</b> posted</span><span><b>1</b> empty</span><span><b>9</b> turns</span><span><b>41k</b> tokens · <b>2 min</b></span></div>
+      <div class="sub">6 mentions · 8 heartbeats · 1 digest</div>
+    </div>
+    <div class="card">
+      <div class="top"><div class="av"></div><div><div class="name">otter</div><div class="sub">On-call · Hosted</div></div><span class="quiet sub">Running</span></div>
+      <div class="bar"><i class="b-posted" style="width:50%"></i><i class="b-declined" style="width:25%"></i><i class="b-flight" style="width:25%"></i></div>
+      <div class="facts"><span><b>2 of 4</b> posted</span><span><b>1</b> in flight</span><span><b>18</b> heartbeats</span><span><b>7</b> turns</span></div>
+      <div class="sub">2 mentions · 18 heartbeats · 2 <code>task.assigned</code></div>
+    </div>
+  </div></div></div>
+</div>
+
+<h2>2. A quiet window: installs with no wakes</h2>
+<p class="why">An agent nobody asked and no heartbeat woke is not a fault. The row stays, with one muted line in place of the numbers, so a person can still see the install exists and open it. A runner that is offline still says so, because that is about the agent, not the window.</p>
+<div class="row">
+  <div><p class="cap">1440 · dark</p>
+  <div class="frame w1440 dark"><div class="page" data-state="quiet">
+    <div class="head">
+      <div class="left"><h3>Your team</h3><div class="seg"><span>Agents</span><span class="on">Health</span></div></div>
+      <div class="left"><span class="select">Last 24 hours ▾</span><button class="btn">Bring your own</button><button class="btn btn--fill">Hire an agent</button></div>
+    </div>
+    <p class="scope">Agents in your pods · 2 installs</p>
+    <table>
+      <thead><tr><th>Agent</th><th>Asked</th><th>Heartbeats</th><th>Wakes by kind</th><th>Cost</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">Scout</div><div class="sub">My Workspace</div><span class="chip">Hosted</span></div></div></td>
+          <td colspan="4"><span class="quiet">No wakes in the last 24 hours</span></td>
+          <td><span class="quiet">Running</span></td>
+        </tr>
+        <tr>
+          <td><div class="agent"><div class="av"></div><div><div class="name">planner</div><div class="sub">Launch prep</div><span class="chip">Runs on your computer · Claude Code</span></div></div></td>
+          <td colspan="4"><span class="quiet">No wakes in the last 24 hours</span></td>
+          <td><span class="offline">Offline since Nov 10</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div></div>
+  <div><p class="cap">390 · light</p>
+  <div class="frame w390"><div class="m390" data-state="quiet">
+    <div class="head"><div class="seg"><span>Agents</span><span class="on">Health</span></div><span class="select">24 hours ▾</span></div>
+    <p class="scope" style="margin:0">Agents in your pods · 2 installs</p>
+    <div class="card"><div class="top"><div class="av"></div><div><div class="name">Scout</div><div class="sub">My Workspace · Hosted</div></div><span class="quiet sub">Running</span></div><div class="quiet sub">No wakes in the last 24 hours</div></div>
+    <div class="card"><div class="top"><div class="av"></div><div><div class="name">planner</div><div class="sub">Launch prep · Runs on your computer</div></div><span class="offline">Offline</span></div><div class="quiet sub">No wakes in the last 24 hours</div><div class="fix">Offline since Nov 10</div></div>
+  </div></div></div>
+</div>
+
+<h2>3. No agents in your pods</h2>
+<p class="why">The same head, then one line and one action. The action is the head's own Hire an agent, so the page adds no setup flow of its own.</p>
+<div class="row">
+  <div><p class="cap">1440 · light</p>
+  <div class="frame w1440"><div class="page" data-state="empty">
+    <div class="head">
+      <div class="left"><h3>Your team</h3><div class="seg"><span>Agents</span><span class="on">Health</span></div></div>
+      <div class="left"><span class="select">Last 24 hours ▾</span><button class="btn">Bring your own</button><button class="btn btn--fill">Hire an agent</button></div>
+    </div>
+    <div class="empty"><span class="t">No agents in your pods yet</span><p>Once an agent is in one of your pods, how it's doing shows here.</p><button class="btn btn--fill">Hire an agent</button></div>
+  </div></div></div>
+  <div><p class="cap">390 · dark</p>
+  <div class="frame w390 dark"><div class="m390" data-state="empty">
+    <div class="head"><div class="seg"><span>Agents</span><span class="on">Health</span></div><span class="select">24 hours ▾</span></div>
+    <div class="empty" style="padding:32px 0"><span class="t">No agents in your pods yet</span><p>Once an agent is in one of your pods, how it's doing shows here.</p><button class="btn btn--fill">Hire an agent</button></div>
+  </div></div></div>
+</div>
+
+<h2>4. The read failed</h2>
+<p class="why">A failed read never draws zeros, which would read as "nothing happened". It says the counts didn't load and offers a retry. The window select stays, so a too-wide window can be narrowed.</p>
+<div class="row">
+  <div><p class="cap">1440 · dark</p>
+  <div class="frame w1440 dark"><div class="page" data-state="error">
+    <div class="head">
+      <div class="left"><h3>Your team</h3><div class="seg"><span>Agents</span><span class="on">Health</span></div></div>
+      <div class="left"><span class="select">Last 24 hours ▾</span><button class="btn">Bring your own</button><button class="btn btn--fill">Hire an agent</button></div>
+    </div>
+    <div class="empty" role="alert"><span class="t">Couldn't load agent health</span><p>Nothing changed for your agents. Try again in a moment.</p><button class="btn">Try again</button></div>
+  </div></div></div>
+  <div><p class="cap">390 · light</p>
+  <div class="frame w390"><div class="m390" data-state="error">
+    <div class="head"><div class="seg"><span>Agents</span><span class="on">Health</span></div><span class="select">24 hours ▾</span></div>
+    <div class="empty" role="alert" style="padding:32px 0"><span class="t">Couldn't load agent health</span><p>Nothing changed for your agents. Try again in a moment.</p><button class="btn">Try again</button></div>
+  </div></div></div>
+</div>
+
+<h2>Rules the build follows</h2>
+<dl>
+  <dt>Whose agents</dt><dd>The installs in the viewer's own pods: <code>Pod.find({ members: viewerId })</code>, then the <code>AgentInstallation</code> rows in those pods, filtered before any count. No admin view and no admin bypass, for a global admin too. An agent-dm pod appears only when the viewer is a member of it. An instance-wide view is D116's call, not this page's.</dd>
+  <dt>No message text</dt><dd>The response is an allowlist of counts, enums and times. It never carries <code>payload</code>, <code>reason</code>, <code>errorMessage</code>, <code>details</code>, <code>error</code>, <code>args</code> or <code>result</code>, and a test asserts that. The page draws only what the response holds, so nothing here can quote a message.</dd>
+  <dt>Asked</dt><dd>Every wake that isn't a heartbeat and isn't a digest. Posted = <code>delivery.outcome</code> posted. Declined = no_action or skipped. Empty = a native run with <code>emptyCompletion</code>, its own outcome and never folded into Declined, since a decline is the agent's choice and an empty completion isn't. Failed = outcome error or status failed. Never picked up = expired. In flight = pending, folding, or delivered with no outcome, and native runs queued or running; never counted as failed.</dd>
+  <dt>Heartbeats</dt><dd>Their own column: the count and how many posted. A quiet heartbeat isn't a decline.</dd>
+  <dt>Wakes by kind</dt><dd>The note's mapping: mentions, heartbeats, chat, decisions, joins. An unmapped type is listed by its raw name in code type (<code>task.assigned</code>), so a new type shows rather than vanishing. Digests are a count of their own (<code>1 digest</code>). The 390 card carries the same line, so a phone shows unmapped types too.</dd>
+  <dt>Needs you</dt><dd>Only fixed codes, never free text. On someone's computer, from <code>lastSpawnFailure</code>: <code>claude-signed-out</code>, <code>login</code>, <code>out-of-allowance</code>, <code>wont-start</code> and <code>codex-version</code> mark the row Needs you, labelled Signed out, Login, Out of allowance, Won't start, Update Codex. <code>tools-unavailable</code> and <code>model-unavailable</code> count as Failed in the bar. Hosted, from <code>errorKind</code>: only <code>config</code> is Needs you; the rest count as Failed. The fix sentence stays where it already lives, <code>agentManage.controls.spawnFailure.&lt;code&gt;</code> on the agent's page. This split is a proposal; the build PR's review can move a code.</dd>
+  <dt>Offline</dt><dd>From <code>lastSeenAt</code>, past the runner's poll interval, shown as "Offline since" a time (today) or a date. Hosted agents show Running, or Paused from the install status, never a last-seen time.</dd>
+  <dt>Cost</dt><dd>Hosted: priced through the existing metering, whose unit is the turn: metered runs, counted the way <code>nativeTurnsToday</code> counts them against the plan's daily turns (<code>metered</code> not false, <code>first_contact</code> left out). Tokens and sandbox time from <code>AgentRun</code> sit under it, rounded (41k, 2 min). The metering has no currency, so the page shows no money. On someone's computer: "On your account", never a zero. At 390 the card shows turns and folds tokens and sandbox time into one item.</dd>
+  <dt>Window</dt><dd>The default is 24 hours or the event retention (<code>AGENT_EVENT_DELIVERED_RETENTION_HOURS</code>), whichever is shorter, and the label names the span it covers ("Last 12 hours"), so a short retention never under-counts silently. Beyond that, 3 days and 7 days as long as event retention (<code>AGENT_EVENT_DELIVERED_RETENTION_HOURS</code>) covers them. An option retention doesn't cover isn't offered.</dd>
+  <dt>Row click</dt><dd>Opens the agent's own page, <code>/v2/agents/:name/:instance</code>, where its activity and the fixes already live. No trace viewer here.</dd>
+  <dt>Head</dt><dd>The page keeps Your team's head: title, and the Bring your own and Hire an agent actions. The Agents · Health switch sits beside the title and the window select joins the actions.</dd>
+  <dt>Scope line</dt><dd>"Agents in your pods", the install count, and "N need you" only when a row carries Needs you. Offline rows aren't counted in it: offline has its own badge.</dd>
+  <dt>Order</dt><dd>Needs you first, then offline, then by asked wakes, most first.</dd>
+  <dt>Words</dt><dd>"pod", never "room". "Runs on your computer", the label Your team's cards already use (<code>yourTeam.card.where.local</code>). zh-CN (proposed; the build runs the glossary two-pass): 健康状况 · 已回复 · 未回复 · 失败 · 未接收 · 进行中 · 心跳 · 需要你处理 · 由你的账户付费 · "最近 24 小时没有唤醒".</dd>
+</dl>
+</body>
+</html>

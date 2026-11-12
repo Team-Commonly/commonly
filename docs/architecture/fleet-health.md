@@ -1,6 +1,6 @@
 # Fleet health: design note
 
-Status: design note, not built. Owner: CTO. Artboard: ux-lead, after this note. It may become an enterprise feature; packaging is decided in the enterprise ADR (D116), not here.
+Status: design note, not built. Owner: CTO. Artboard: [`docs/design/artboards/d115/`](../design/artboards/d115/README.md) (Launch, 2026-11-12). It may become an enterprise feature; packaging is decided in the enterprise ADR (D116), not here.
 
 ## The question it answers
 
@@ -34,7 +34,7 @@ The endpoint selects only the fields in the table above. A test asserts that the
 
 ## What the page shows
 
-One row per agent installation, for a chosen window (24 hours by default). The longest window is the event retention, read from `AGENT_EVENT_DELIVERED_RETENTION_HOURS` (168 hours by default), so the page never silently under-counts when ops shortens it.
+One row per agent installation, for a chosen window (24 hours by default). The longest window is the event retention, read from `AGENT_EVENT_DELIVERED_RETENTION_HOURS` (168 hours by default), so the page never silently under-counts when ops shortens it. The default is 24 hours or the retention, whichever is shorter, and the window label names the span it covers.
 
 ### Wakes, by display kind
 
@@ -69,7 +69,7 @@ For native agents, `AgentRun.emptyCompletion` adds the empty case. Runs that are
 
 ### Cost
 
-- **Native:** `totalTokens` and `sandboxSeconds`, priced through the existing metering.
+- **Native:** priced through the existing metering, whose unit is the turn: metered runs, counted as `nativeTurnsToday` counts them against the plan's daily turns. `totalTokens` and `sandboxSeconds` sit beside it. The metering has no currency, so the page shows no money.
 - **BYO:** none. The person's own account pays and we don't see it, so the page says so instead of showing zero.
 
 ### Liveness (BYO)
@@ -92,7 +92,7 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 - **One read endpoint:** `GET /api/agents/health?window=24h` (no such route exists today).
 - **Queries:** aggregation pipelines over existing indexes. `AgentEvent` uses `{agentName, instanceId, status, createdAt}`; `AgentRun` uses `{podId, agentName, instanceId, startedAt}`.
 - **Size:** at today's volume (hundreds of events per agent per day) a live aggregate is cheap. Add a rollup only if p95 passes 500 ms.
-- **The page:** the v2 shell as a table, with no new design primitives. The artboard comes first.
+- **The page:** the v2 shell as a table, with no new design primitives. Build to the artboard.
 - **Tests:**
   - a service test per outcome mapping against real Mongo;
   - a membership test proving that another pod's agents never appear, including for a global admin;
