@@ -1428,7 +1428,9 @@ export const resolveAttachSandbox = ({
   // this they refused the only environment dsh accepts. The adapter's
   // check throws on every other shape, so this admits nothing it would refuse.
   if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
-    return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
+    // A bare public dsh seat names no mode; its one shape is Seatbelt workspace,
+    // so the Seatbelt check below runs at attach, not first at its spawn (F115).
+    return { mode: environment.sandbox.mode || 'workspace', trust: environment.sandbox.trust };
   }
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;

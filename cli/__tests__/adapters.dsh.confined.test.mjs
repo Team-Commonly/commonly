@@ -220,6 +220,8 @@ test('a confined turn runs through the pinned proxy, the relay and the egress fe
       statePath: home, network: 'loopback',
       readOnlyDirectories: [realpathSync(join(pkg, '..', '..')), mcpDir],
     });
+    // A private seat's workspace is the operator's folder, and a link there may be theirs.
+    expect(options.pinWorkspace).toBe(false);
     const ports = options.loopbackNetworkPorts;
     expect(ports).toHaveLength(3);
     expect(new Set(ports).size).toBe(3);
@@ -418,6 +420,9 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
       expect(seen.relay).toBe('instance-ok');
       const { options } = wraps.find((entry) => entry.inner);
       expect(options.loopbackNetworkPorts).toHaveLength(2);
+      // CodeRabbit on #4021: the CLI makes this folder, so a link left by an earlier
+      // turn's process is refused, never followed to a write grant on its target.
+      expect(options.pinWorkspace).toBe(true);
       expect(options.loopbackNetworkPorts).toContain(Number(new URL(seen.mcp.env.COMMONLY_API_URL).port));
     });
   });

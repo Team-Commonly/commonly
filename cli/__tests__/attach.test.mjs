@@ -198,7 +198,7 @@ describe("resolveAttachSandbox — dsh's confined shape", () => {
 
   test('a public-trust dsh seat attaches, bare or with the confined shape spelled out (F115)', () => {
     expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'public' } }, adapterName: 'dsh', adapter: dsh }))
-      .toEqual({ trust: 'public' });
+      .toEqual({ mode: 'workspace', trust: 'public' });
     expect(resolveAttachSandbox({ environment: { sandbox: { ...confined.sandbox, trust: 'public' } }, adapterName: 'dsh', adapter: dsh }))
       .toEqual({ mode: 'workspace', trust: 'public' });
   });
@@ -583,7 +583,7 @@ describe('performAttach', () => {
   // confined dsh shape meets the trust-keyed refusal. dsh's real validator runs
   // (only detection is stubbed), and the Seatbelt probe is injected so both of
   // its outcomes are pinned on every host.
-  const attachConfinedDsh = async (seatbelt) => {
+  const attachConfinedDsh = async (seatbelt, sandbox = { mode: 'workspace', network: { policy: 'restricted' } }) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-dsh-attach-'));
     try {
       const keyFile = path.join(root, 'provider-key');
@@ -594,7 +594,7 @@ describe('performAttach', () => {
         workspace: { path: path.join(root, 'workspace') },
         model: 'deepseek-chat',
         provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
-        sandbox: { mode: 'workspace', network: { policy: 'restricted' } },
+        sandbox,
       }));
       const client = makeClient({ runtimeToken: 'cm_agent_dsh' });
       client.get = jest.fn(async () => ({ publicRead: false, communityListed: false }));
@@ -614,6 +614,19 @@ describe('performAttach', () => {
 
   test('attach --env admits confined dsh and logs its Seatbelt confinement', async () => {
     const { error, logs } = await attachConfinedDsh({ available: true });
+    expect(error).toBeNull();
+    expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
+  });
+
+  // F115 (CodeRabbit on #4021): a bare public dsh seat names no mode, and still
+  // meets the Seatbelt check at attach, not first at its spawn.
+  test('a bare public dsh seat is refused at attach where Seatbelt is missing', async () => {
+    const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' }, { trust: 'public' });
+    expect(error?.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
+  });
+
+  test('a bare public dsh seat attaches with Seatbelt and logs it', async () => {
+    const { error, logs } = await attachConfinedDsh({ available: true }, { trust: 'public' });
     expect(error).toBeNull();
     expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
   });

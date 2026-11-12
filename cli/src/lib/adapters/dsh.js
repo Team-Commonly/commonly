@@ -553,6 +553,11 @@ export default {
         [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
           workspacePath: workspace,
           workspaceAccess: 'write',
+          // A public turn's folder is one the CLI made, so it is pinned: a link
+          // left there by an earlier turn's process is refused, not followed to a
+          // write grant on its target (as goose, opencode and claude pin theirs).
+          // A private seat's workspace is the operator's, and a link may be theirs.
+          pinWorkspace: isPublic,
           executablePath: process.execPath,
           statePath: home,
           mcpConfigDir: tempDir,
