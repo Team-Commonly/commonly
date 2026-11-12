@@ -64,8 +64,9 @@ as shell commands.
 
 F113d closes both. A public turn never runs in the seat's workspace. The jail
 and Goose start in an empty folder of the turn's own home, so no skill, plugin
-or settings file of the seat is found. Public Goose has no file tool, so the
-workspace was never usable to it anyway. Then a hook the adapter owns refuses
+or settings file of the seat is found. Public Goose has no file tool, so it
+never needed the workspace. It did load the workspace's `.goosehints` and
+`AGENTS.md` into the prompt, and no longer does. Then a hook the adapter owns refuses
 every `load_skill` call, builtin skills included: a `PreToolUse` command that
 exits 2, with `on_failure: block` so a hook that cannot run still refuses. The
 hook sits with the adapter's files, which the jail reads and cannot change, and
@@ -79,6 +80,12 @@ denial. Undoing either half fails it on real 1.59.0: without the hook, the
 model gets an answer from Goose's skill loader. Back in the seat's workspace, a
 planted settings file switches our hook off and the planted skill loads in
 full. 1.56.0 through 1.58.x were never proven, so they stay refused.
+
+Two limits. If Goose cannot read `hooks.json` it logs and skips it, and nothing
+checks at run time that the hook loaded, so the per-version proof is the guard.
+A slash command also loads a skill without the hook. A stranger cannot send
+one, because a public turn's prompt always opens with the memory frame, and a
+unit test holds that.
 
 ## Proof
 

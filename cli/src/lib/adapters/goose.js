@@ -482,6 +482,8 @@ export default {
         } else {
           if ((ctx._platform || process.platform) !== 'darwin') throw new Error('goose adapter: Seatbelt requires macOS');
           [executable, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
+            // The turn folder sits in the home the jail writes, so read-only mode
+            // no longer narrows anything here (F113d); it is kept for the profile.
             workspacePath: turnWorkspace, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
             executablePath: binary, statePath: home, mcpConfigDir: tempDir,
             // The adapter made this folder for the turn, so it is pinned (F197).

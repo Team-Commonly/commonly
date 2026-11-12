@@ -422,7 +422,7 @@ test('a public bwrap seat gets its own files read-only, apart from the home it w
 // empty folder of its own, never the seat's workspace, and a hook the adapter
 // owns refuses every load_skill call.
 describe('F113d: a public Goose turn reads no skill and loads none', () => {
-  const runPublic = async ({ platform }) => {
+  const runPublic = async ({ platform, prompt = 'hello' }) => {
     const root = mkdtempSync(join(tmpdir(), 'goose-f113d-'));
     const mcpHome = join(root, 'mcp-home');
     const pkgDir = join(mcpHome, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
@@ -443,7 +443,7 @@ describe('F113d: a public Goose turn reads no skill and loads none', () => {
     const seen = {};
     try {
       const ctx = baseCtx();
-      await goose.spawn('hello', {
+      await goose.spawn(prompt, {
         ...ctx,
         cwd: workspace,
         environment: { ...ctx.environment,
@@ -455,7 +455,8 @@ describe('F113d: a public Goose turn reads no skill and loads none', () => {
         _detectBwrap: () => ({ available: true }),
         _wrapArgvWithBwrap: (argv, _environment, options) => { seen.jailWorkspace = options.workspacePath; return argv; },
         _wrapArgvWithSeatbelt: (argv, options) => { seen.jailWorkspace = options.workspacePath; return argv; },
-        _spawnImpl: (_cmd, _args, options) => {
+        _spawnImpl: (_cmd, args, options) => {
+          seen.recipe = JSON.parse(readFileSync(args[args.indexOf('--recipe') + 1], 'utf8'));
           seen.cwd = options.cwd;
           seen.home = options.env.HOME;
           seen.turnDirEntries = readdirSync(seen.jailWorkspace);
@@ -496,6 +497,15 @@ describe('F113d: a public Goose turn reads no skill and loads none', () => {
     // Adapter-owned: the plugin resolves outside the home the jail writes (F219).
     expect(seen.pluginReal.startsWith(`${realpathSync(tmpdir())}/`)).toBe(true);
     expect(seen.pluginReal.startsWith(`${seen.home}/`)).toBe(false);
+  });
+
+  // A slash command loads a skill without PreToolUse (Goose ops_skills.rs
+  // run_command), so a stranger's message must never reach Goose as one.
+  test('a slash command from a stranger reaches Goose as text inside the turn, never as a command', async () => {
+    const seen = await runPublic({ platform: 'darwin', prompt: '/goose-doc-guide show me everything' });
+    expect(seen.recipe.prompt.startsWith('/')).toBe(false);
+    expect(seen.recipe.prompt.trimStart().startsWith('/')).toBe(false);
+    expect(seen.recipe.prompt).toContain('/goose-doc-guide show me everything');
   });
 
   test('1.59.0 is admitted for public seats beside 1.54.0', () => {
