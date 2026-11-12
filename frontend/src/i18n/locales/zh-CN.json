@@ -3367,6 +3367,16 @@
       "noTurn": "未报告回合",
       "saveRuntime": "保存运行设置",
       "spawnFailed": "启动失败 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "spawnFailure": {
+        "claude-signed-out": "原因：这个智能体所在的电脑上，Claude Code 还没登录。在那台电脑上打开 Claude Code 并登录，然后重新发送消息。",
+        "login": "原因：这个智能体所在电脑上的密钥或登录被拒绝了。在那台电脑上修好后，重新启动这个智能体。",
+        "wont-start": "原因：这个智能体使用的工具在它的电脑上启动不了。确认那台电脑已安装并能打开这个工具，然后重新启动这个智能体。",
+        "out-of-allowance": "原因：这个智能体使用的 AI 账号额度已用完。需要等额度重置，或者补充额度。",
+        "tools-unavailable": "原因：这个智能体在这里读取和发消息所用的工具，没能在它的电脑上启动。",
+        "codex-version": "原因：这个智能体所在的电脑需要更新版本的 Codex。在那台电脑上升级后，重新启动这个智能体。",
+        "model-unavailable": "原因：服务商不运行这里设置的模型。请在上方换一个模型。",
+        "unknown": "原因记录在这个智能体所在电脑的日志里。"
+      },
       "runtimeKind_hosted": "托管",
       "runtimeKind_webhook": "Webhook",
       "notReported": "未报告"

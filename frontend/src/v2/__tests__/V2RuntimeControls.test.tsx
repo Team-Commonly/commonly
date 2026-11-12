@@ -209,6 +209,28 @@ test('after a real reply, one quiet line names what answered, with a duration on
   expect(screen.getByTestId('runtime-answered')).toHaveTextContent('Answered in 4.2s with Codex 0.162.1');
 });
 
+// F370 rough spot #11: a failed spawn says why, from the code the runner sent,
+// and points at the agent's log when there is none it knows.
+test('a failed spawn names its reason, or points at the log when it has none', () => {
+  const failed = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'failed' as const,
+    lastSpawn: receipt, confirmed: null };
+  const view = render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: 'claude-signed-out' } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent(/Claude Code isn’t signed in on the computer this agent runs on/);
+  view.unmount();
+  const next = render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: null } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent('The reason is in the agent’s log on the computer it runs on.');
+  next.unmount();
+  render(<Controls runtime={{ ...listener, observation: { ...failed, lastSpawnFailure: '<b>made up</b>' } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-spawn-failure')).toHaveTextContent('The reason is in the agent’s log on the computer it runs on.');
+});
+
+test('a completed spawn shows no failure reason', () => {
+  const done = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'completed' as const,
+    lastSpawn: receipt, confirmed: null, lastSpawnFailure: 'login' };
+  render(<Controls runtime={{ ...listener, observation: done }} onSave={jest.fn()} />);
+  expect(screen.queryByTestId('runtime-spawn-failure')).toBeNull();
+});
+
 test('no reply yet, no answered line', () => {
   render(<Controls runtime={runtime} onSave={jest.fn()} />);
   expect(screen.queryByTestId('runtime-answered')).toBeNull();

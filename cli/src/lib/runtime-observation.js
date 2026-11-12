@@ -22,6 +22,16 @@ export const createRuntimeReporter = ({ client, harness, detect }) => {
       }).catch(() => {});
       return queue;
     },
-    settled: (outcome = null) => send({ event: 'settled', ...(outcome ? { outcome } : {}) }),
+    // A failed spawn carries its reason code (F370 #11). A backend from before
+    // the field refuses the whole report with a 400, so it's sent once more
+    // without the reason, and the outcome still lands.
+    settled: (outcome = null, reason = null) => {
+      const body = { event: 'settled', ...(outcome ? { outcome } : {}) };
+      if (!(outcome === 'failed' && reason)) return send(body);
+      queue = queue.then(() => client.post('/api/agents/runtime/observation', { ...body, reason })
+        .catch((error) => (error?.status === 400 ? client.post('/api/agents/runtime/observation', body) : undefined)))
+        .catch(() => {});
+      return queue;
+    },
   };
 };

@@ -3370,6 +3370,16 @@
       "noTurn": "no turn reported",
       "saveRuntime": "Save runtime",
       "spawnFailed": "spawn failed · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "spawnFailure": {
+        "claude-signed-out": "Why: Claude Code isn’t signed in on the computer this agent runs on. Open Claude Code there and sign in, then send your message again.",
+        "login": "Why: the key or login on the computer this agent runs on was refused. Fix it there, then start the agent again.",
+        "wont-start": "Why: the tool this agent runs on wouldn’t start on its computer. Check it’s installed and opens there, then start the agent again.",
+        "out-of-allowance": "Why: the AI account this agent runs on has used up its allowance. It needs to reset, or more needs adding.",
+        "tools-unavailable": "Why: the tools this agent uses to read and post here didn’t start on its computer.",
+        "codex-version": "Why: the computer this agent runs on needs a newer Codex. Upgrade it there, then start the agent again.",
+        "model-unavailable": "Why: the provider won’t run the model set here. Pick another model above.",
+        "unknown": "The reason is in the agent’s log on the computer it runs on."
+      },
       "runtimeKind_hosted": "hosted",
       "runtimeKind_webhook": "webhook",
       "notReported": "not reported"

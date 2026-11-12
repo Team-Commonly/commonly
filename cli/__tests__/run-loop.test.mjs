@@ -188,6 +188,31 @@ describe('performRun', () => {
     expect(spawn.mock.calls[0][1].environment.effort).toBe(expected);
   });
 
+  // F370 #11: a spawn that started and failed reports its fixed reason code
+  // with the failed outcome, so Settings can say why; never the error text.
+  test.each([
+    [new Error('claude exited with code 1: Not logged in · Please run /login'), 'claude-signed-out'],
+    [new Error('claude exited with code 1: something nobody has seen'), undefined],
+  ])('a failed spawn settles with its reason code (%#)', async (failure, reason) => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));
+    const spawn = jest.fn(async (_prompt, ctx) => {
+      await ctx.onSpawn?.({ model: 'm', effort: null });
+      throw failure;
+    });
+    // Observations go through the machine's own client, not the seat's.
+    const observe = jest.fn().mockResolvedValue({});
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, runtimeReportClient: { post: observe },
+      adapter: { name: 'claude', detect: stubAdapter.detect, spawn },
+      environment: { model: 'm' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    const settled = observe.mock.calls.filter(([url, body]) => url === '/api/agents/runtime/observation' && body.event === 'settled');
+    expect(settled).toHaveLength(1);
+    expect(settled[0][1]).toEqual({ event: 'settled', outcome: 'failed', ...(reason ? { reason } : {}) });
+    expect(JSON.stringify(settled[0][1])).not.toContain('Not logged in');
+  });
+
   // D247: a listener seat (no daemon) spawns with the model and effort its
   // owner saved on the server, read before the turn; the reply receipt names them.
   test('a listener seat spawns with the model and effort saved on the server', async () => {

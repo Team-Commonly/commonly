@@ -152,6 +152,7 @@ import {
   cantAnswerNotice,
   claudeSignedOutResult,
   isClaudeSignedOut,
+  spawnFailureReason,
 } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
@@ -3130,6 +3131,8 @@ export const performRun = ({
     // D245 item 4: how long the runtime ran, for the reply receipt.
     let spawnDurationMs;
     let observedSpawn = false;
+    // What a failed spawn threw, read only for its fixed reason code (F370 #11).
+    let spawnFailure = null;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -3213,6 +3216,7 @@ export const performRun = ({
       try {
         result = await turn.run(adapter, spawnPrompt, spawnCtx);
       } catch (spawnError) {
+        spawnFailure = spawnError;
         await postModelUnavailableHint(spawnError, eventPodId, seatEnvironment?.model);
         throw spawnError;
       }
@@ -3223,13 +3227,19 @@ export const performRun = ({
       // failure would be. With one, the turn delivered, and a retry would post twice.
       if (result?.failure) {
         const postSpawn = preSpawnIds ? await snapshotMessages() : null;
-        if (!(postSpawn && findOwnPost(postSpawn, preSpawnIds))) throw result.failure;
+        if (!(postSpawn && findOwnPost(postSpawn, preSpawnIds))) {
+          spawnFailure = result.failure;
+          throw result.failure;
+        }
         log(`[${event.type}] the turn failed after a post of its own, so it is not retried: ${result.failure.message}`);
       }
       spawnCompleted = true;
     } finally {
       try {
-        if (reportRuntime) await runtimeReporter.settled(observedSpawn ? spawnCompleted ? 'completed' : 'failed' : null);
+        if (reportRuntime) {
+          await runtimeReporter.settled(observedSpawn ? spawnCompleted ? 'completed' : 'failed' : null,
+            observedSpawn && !spawnCompleted ? spawnFailureReason(spawnFailure) : null);
+        }
         commitAttribution?.cleanup();
       } finally {
         if (spawnCompleted && skillMount) {

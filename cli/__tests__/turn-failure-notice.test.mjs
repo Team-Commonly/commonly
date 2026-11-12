@@ -14,6 +14,7 @@ import {
   claudeSignedOutResult,
   codexVersionNotice,
   isClaudeSignedOut,
+  spawnFailureReason,
 } from '../src/lib/turn-failure-notice.js';
 
 const causeOf = (error) => cantAnswerNotice(error)?.cause ?? null;
@@ -403,5 +404,26 @@ describe('cantAnswerNotice', () => {
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');
     });
+  });
+});
+
+// F370 rough spot #11: Settings shows why a spawn failed, from a fixed code the
+// runner picks. The code is the whole report: no error text leaves the seat.
+describe('spawnFailureReason', () => {
+  test.each([
+    ['Claude Code signed out', new Error('claude exited with code 1: Not logged in · Please run /login'), 'claude-signed-out'],
+    ['a refused login', new Error('codex turn failed: workspace routing discovery unauthorized (401)'), 'login'],
+    ['a missing binary', new Error('spawn claude ENOENT'), 'wont-start'],
+    ['a binary that cannot run', adapterFailure('codex', 'permission denied', { exitCode: 126 }), 'wont-start'],
+    ['a model the provider will not run', adapterFailure('codex', 'HTTP 404: model is not found'), 'model-unavailable'],
+    ['tools that never started', Object.assign(new Error('mcp not ready'), { code: PUBLIC_MCP_NOT_READY_CODE }), 'tools-unavailable'],
+  ])('names %s', (_label, error, reason) => {
+    expect(spawnFailureReason(error)).toBe(reason);
+  });
+
+  test('names nothing for a cause it does not know, or no error', () => {
+    expect(spawnFailureReason(new Error('codex exited with code 1: something odd'))).toBeNull();
+    expect(spawnFailureReason(adapterFailure('codex', 'boom', { exitCode: 2 }))).toBeNull();
+    expect(spawnFailureReason(null)).toBeNull();
   });
 });
