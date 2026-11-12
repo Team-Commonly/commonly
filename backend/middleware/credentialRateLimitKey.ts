@@ -36,6 +36,9 @@ export const dualCredentialRateLimitKey = (req: HeaderRequest, prefix = 'tok'): 
   prefix,
 );
 
+/** The message reaction / thread-state limiter: behind dualAuth, own budget. */
+export const reactionRateLimitKey = (req: HeaderRequest): string => dualCredentialRateLimitKey(req, 'rxn');
+
 /** POST /api/messages/:podId is behind `auth`; DELETE /api/messages/:id is
  * behind dualAuth. They share one limiter, each keyed by its own verifier. */
 export const messageWriteRateLimitKey = (req: HeaderRequest): string => (req.method === 'DELETE'

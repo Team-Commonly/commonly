@@ -90,7 +90,7 @@ test('the message limiter uses this key, and auth.ts stays untouched', () => {
 // F456: the read limiter (behind auth) and the reaction / thread-state
 // limiter (behind dualAuth) keyed on the raw Authorization header alone, so a
 // caller using only an alt header fell to the shared address bucket.
-const { dualCredentialRateLimitKey } = require('../../../middleware/credentialRateLimitKey');
+const { dualCredentialRateLimitKey, reactionRateLimitKey } = require('../../../middleware/credentialRateLimitKey');
 
 const IP_KEY = humanCredentialRateLimitKey(reqOf({}));
 
@@ -119,6 +119,8 @@ test('a person on x-auth-token gets their own reaction bucket too', () => {
 test('the read and reaction limiters use these keys', () => {
   const messages = fs.readFileSync(path.join(__dirname, '../../../routes/messages.ts'), 'utf8');
   expect(messages).toMatch(/readMessageRateLimit = rateLimit\(\{[\s\S]*?keyGenerator: humanCredentialRateLimitKey,/);
-  expect(messages).toMatch(/reactionRateLimit = rateLimit\(\{[\s\S]*?keyGenerator: \(req: RateLimitReq\) => dualCredentialRateLimitKey\(req, 'rxn'\),/);
+  expect(messages).toMatch(/reactionRateLimit = rateLimit\(\{[\s\S]*?keyGenerator: reactionRateLimitKey,/);
+  expect(reactionRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_a' })))
+    .toBe(dualCredentialRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_a' }), 'rxn'));
   expect(messages).not.toMatch(/req\.get\?\.\('authorization'\)/);
 });
