@@ -93,10 +93,12 @@ test('rotating a non-Bearer Authorization keeps one bucket and still authenticat
   expect(agentAuth).toHaveBeenCalledTimes(1);
 });
 
-test('agentRuntimeAuth reads its token through the shared parser', () => {
+test('agentRuntimeAuth and the agent-only grant limiter read the token through the shared parser', () => {
   const fs = require('fs');
   const path = require('path');
-  const source = fs.readFileSync(path.join(__dirname, '../../../middleware/agentRuntimeAuth.ts'), 'utf8');
-  expect(source).toMatch(/agentRuntimeCredential\(req\)/);
-  expect(source).not.toMatch(/startsWith\('Bearer '\)/);
+  const read = (file) => fs.readFileSync(path.join(__dirname, '../../..', file), 'utf8');
+  const auth = read('middleware/agentRuntimeAuth.ts');
+  expect(auth).toMatch(/agentRuntimeCredential\(req\)/);
+  expect(auth).not.toMatch(/startsWith\('Bearer '\)/);
+  expect(read('routes/grants.ts')).toMatch(/agentGrantCredential = bindGrantLimiterCredential\(\(req\) => agentRuntimeCredential\(/);
 });
