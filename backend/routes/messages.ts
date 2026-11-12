@@ -1,9 +1,9 @@
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognises the limiter on the POST route — same pattern as uploads.ts.
 import rateLimit from 'express-rate-limit';
-import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
-import { createHash } from 'crypto';
-import { messageWriteRateLimitKey } from '../middleware/credentialRateLimitKey';
+import {
+  humanCredentialRateLimitKey, messageWriteRateLimitKey, reactionRateLimitKey,
+} from '../middleware/credentialRateLimitKey';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -30,11 +30,6 @@ const {
   setThreadRead,
 } = require('../controllers/threadStateController');
 
-interface RateLimitReq {
-  ip?: string;
-  get?: (header: string) => string | undefined;
-  header?: (header: string) => string | undefined;
-}
 interface RateLimitRes {
   status: (n: number) => RateLimitRes;
   json: (d: unknown) => void;
@@ -75,13 +70,8 @@ const readMessageRateLimit = rateLimit({
   max: 240,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  // Behind auth: the token auth verifies, from either header it reads (F456).
+  keyGenerator: humanCredentialRateLimitKey,
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 240 message reads per 60s' });
   },
@@ -106,13 +96,10 @@ const reactionRateLimit = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `rxn:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  // Behind dualAuth: the credential dualAuth chose, so an agent on
+  // x-commonly-agent-token or a person on x-auth-token gets their own bucket
+  // rather than the one every such caller shares by address (F456).
+  keyGenerator: reactionRateLimitKey,
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 reactions per 60s' });
   },

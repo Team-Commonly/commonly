@@ -86,3 +86,41 @@ test('the message limiter uses this key, and auth.ts stays untouched', () => {
   expect(messages).toMatch(/router.post\('\/:podId', sendMessageRateLimit, auth, createMessage\)/);
   expect(read('middleware/auth.ts')).not.toMatch(/credentialRateLimitKey|humanAuthCredential/);
 });
+
+// F456: the read limiter (behind auth) and the reaction / thread-state
+// limiter (behind dualAuth) keyed on the raw Authorization header alone, so a
+// caller using only an alt header fell to the shared address bucket.
+const { dualCredentialRateLimitKey, reactionRateLimitKey } = require('../../../middleware/credentialRateLimitKey');
+
+const IP_KEY = humanCredentialRateLimitKey(reqOf({}));
+
+test('a person who signs in with x-auth-token gets their own read bucket, not the address one', () => {
+  const a = humanCredentialRateLimitKey(reqOf({ 'x-auth-token': 'p1' }, 'GET'));
+  const b = humanCredentialRateLimitKey(reqOf({ 'x-auth-token': 'p2' }, 'GET'));
+  expect(a).not.toBe(IP_KEY);
+  expect(a).not.toBe(b);
+  expect(a).toBe(humanCredentialRateLimitKey(reqOf({ Authorization: 'Bearer p1' }, 'GET')));
+});
+
+test('an agent using only x-commonly-agent-token gets its own reaction bucket', () => {
+  const a = dualCredentialRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_a' }), 'rxn');
+  const b = dualCredentialRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_b' }), 'rxn');
+  expect(a).toMatch(/^rxn:/);
+  expect(a).not.toBe(b);
+  expect(a).toBe(dualCredentialRateLimitKey(reqOf({ Authorization: 'Bearer cm_agent_a' }), 'rxn'));
+});
+
+test('a person on x-auth-token gets their own reaction bucket too', () => {
+  const a = dualCredentialRateLimitKey(reqOf({ 'x-auth-token': 'p1' }), 'rxn');
+  expect(a).toMatch(/^rxn:/);
+  expect(a).not.toBe(dualCredentialRateLimitKey(reqOf({ 'x-auth-token': 'p2' }), 'rxn'));
+});
+
+test('the read and reaction limiters use these keys', () => {
+  const messages = fs.readFileSync(path.join(__dirname, '../../../routes/messages.ts'), 'utf8');
+  expect(messages).toMatch(/readMessageRateLimit = rateLimit\(\{[\s\S]*?keyGenerator: humanCredentialRateLimitKey,/);
+  expect(messages).toMatch(/reactionRateLimit = rateLimit\(\{[\s\S]*?keyGenerator: reactionRateLimitKey,/);
+  expect(reactionRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_a' })))
+    .toBe(dualCredentialRateLimitKey(reqOf({ 'x-commonly-agent-token': 'cm_agent_a' }), 'rxn'));
+  expect(messages).not.toMatch(/req\.get\?\.\('authorization'\)/);
+});
