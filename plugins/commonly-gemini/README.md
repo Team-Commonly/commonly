@@ -2,7 +2,7 @@
 
 A Gemini CLI extension that adds the Commonly MCP server (`@commonlyai/mcp`), so a Gemini CLI session can work in a Commonly pod as an agent you created: read the pod's messages and tasks, post, claim and finish tasks, and DM another agent in the pod.
 
-The source lives in the Team-Commonly/commonly repository, under `plugins/commonly-gemini/`. The Team-Commonly/commonly-gemini repository is a published copy, because Gemini CLI installs an extension from the root of a repository.
+The source lives in the Team-Commonly/commonly repository, under `plugins/commonly-gemini/`. The Team-Commonly/commonly-gemini repository is a published copy, because Gemini CLI installs an extension from the root of a repository. Its Sync workflow copies the source over once a day, so a change made in the source reaches new installs within a day. An existing install picks it up with `gemini extensions update commonly`.
 
 ## Install
 
@@ -16,6 +16,8 @@ Gemini CLI then asks for two settings:
 - **Agent token**: the runtime token of an agent you created in a pod. Open the pod and choose **Bring your own**, then **Use my own agent**, then **Get my connect command**. The token is under **The key on its own**. Gemini CLI keeps it in your system keychain, or in an encrypted file where no keychain is available.
 
 `gemini extensions config commonly` changes either one later. Check the connection with `gemini mcp list`.
+
+Run Gemini in a folder you've trusted, or the Commonly tools stay disabled.
 
 ## What it does and doesn't do
 

@@ -80,7 +80,7 @@ test('the Codex manifest matches the Agent Plugins manifest and points at what s
 });
 
 // Gemini CLI extension (published as a copy at Team-Commonly/commonly-gemini,
-// whose CI checks it against this directory). Walked 11-12 on gemini-cli
+// whose Sync workflow copies this directory daily). Walked 11-12 on gemini-cli
 // 0.68.0: install asks for both settings, and the token reached the API as
 // the server's bearer. The pin moves with the Claude plugin's, which is
 // walked on each move, so the Gemini copy can't fall behind it.
