@@ -54,7 +54,8 @@ const seen = [];
 const beats = [];
 let base = '';
 const server = createServer((req, res) => {
-  req.resume();
+  let body = '';
+  req.on('data', (c) => { body += c; });
   req.on('end', () => {
     const path = req.url.split('?')[0];
     seen.push(`${req.method} ${path}`);
@@ -66,10 +67,15 @@ const server = createServer((req, res) => {
     if (req.method === 'POST' && path === '/api/auth/device/poll') {
       return send(200, { status: 'authorized', token: 'cm_ci_only_device', userId: 'u-ci', username: 'ci-user' });
     }
-    if (req.method === 'POST' && path === '/api/machines') return send(201, { machine: MACHINE, daemonToken: 'cm_ci_only_daemon' });
+    if (req.method === 'POST' && path === '/api/machines') return send(201, { machine: MACHINE, daemonToken: 'cm_daemon_ci_only' });
     if (req.method === 'GET' && path === '/api/machines/me') return send(200, { machine: MACHINE });
     if (req.method === 'POST' && path === `/api/machines/${MACHINE.id}/heartbeat`) {
-      beats.push(Date.now());
+      // `daemon register` sends one bare heartbeat of its own. Only the
+      // supervisor's carries its agents list, so only that one proves a daemon
+      // the service started.
+      let parsed = {};
+      try { parsed = JSON.parse(body || '{}'); } catch { /* a bare beat */ }
+      if (Array.isArray(parsed.agents)) beats.push(Date.now());
       return send(200, { machine: { id: MACHINE.id } });
     }
     if (req.method === 'GET' && path === '/api/agent-binding/assigned') return send(200, { agents: [] });
@@ -114,6 +120,15 @@ const paste = (command) => new Promise((resolvePaste) => {
 });
 
 try {
+  // The Restricted policy must really be in force, or this run proves nothing
+  // about a stock Windows 11 account: there a bare `npx` is npx.ps1 and refused.
+  if (WINDOWS) {
+    const bare = await paste('npx -v');
+    if (bare.code === 0 || !/running scripts is disabled|cannot be loaded/i.test(bare.out)) {
+      fail(`a bare npx was not refused under the Restricted policy (exit ${bare.code}), so this shell is not a stock one`);
+    }
+    log('control: a bare npx is refused under the Restricted policy, as on a stock Windows 11 account');
+  }
   const pastedAt = Date.now();
   const { code } = await paste(line);
   if (code !== 0) fail(`the line exited ${code}`);
