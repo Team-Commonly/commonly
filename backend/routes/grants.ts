@@ -1,4 +1,5 @@
 import dualAuth, { resolveDualAuthCredential } from '../middleware/dualAuth';
+import { agentRuntimeCredential } from '../middleware/agentRuntimeCredential';
 import { githubAppOfConfig, isGithubAppConfigured } from '../services/githubAppNames';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
@@ -81,11 +82,8 @@ const bindGrantLimiterCredential = (
   next();
 };
 const dualGrantCredential = bindGrantLimiterCredential((req) => resolveDualAuthCredential(req).token);
-const agentGrantCredential = bindGrantLimiterCredential((req) => {
-  const authorization = req.get('Authorization');
-  return authorization?.startsWith('Bearer ')
-    ? authorization.replace('Bearer ', '').trim() : req.get('x-commonly-agent-token');
-});
+// Agent-only routes key on the token agentRuntimeAuth verifies (F169).
+const agentGrantCredential = bindGrantLimiterCredential((req) => agentRuntimeCredential({ header: (name: string) => req.get(name) }));
 
 const grantRateLimit = rateLimit({
   windowMs: 60_000,
