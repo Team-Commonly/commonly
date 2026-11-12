@@ -1325,7 +1325,8 @@ const V2AgentBYO: React.FC = () => {
         // report for this agent, made after this issue, counts; polling goes
         // on, so installing it and running the line again turns this green.
         const missing = (Array.isArray(data?.harnessMissing) ? data.harnessMissing : []).find(
-          (row: { agentName?: string; at?: string }) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+          (row: { agentName?: string; instanceId?: string; at?: string }) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+            && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
             && row.at && new Date(row.at).getTime() >= issued.issuedAt - 60_000,
         );
         setHarnessMissingReport(missing ? { key: issued, harness: typeof missing.harness === 'string' ? missing.harness : null } : null);

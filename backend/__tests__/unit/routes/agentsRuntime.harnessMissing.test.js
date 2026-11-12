@@ -50,6 +50,11 @@ describe('POST /api/agents/runtime/harness-missing', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
+  test('an alias is stored as its catalog id', async () => {
+    await post({ harness: 'claude-code' });
+    expect(mockUpdateOne.mock.calls[0][1].$set['botMetadata.harnessMissing'].harness).toBe('claude');
+  });
+
   test('a failed write answers 503', async () => {
     mockUpdateOne.mockRejectedValue(new Error('down'));
     const response = await post({ harness: 'codex' });

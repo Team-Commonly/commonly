@@ -98,6 +98,7 @@ describe('V2AgentBYO listening verification', () => {
     axios.get.mockResolvedValueOnce(missingRead([
       { agentName: 'old-agent', instanceId: 'default', harness: 'codex', at: new Date().toISOString() },
       { agentName: 'sam-claude', instanceId: 'default', harness: 'claude', at: '2020-01-01T00:00:00.000Z' },
+      { agentName: 'sam-claude', instanceId: 'second', harness: 'claude', at: new Date().toISOString() },
     ]));
     await act(async () => { jest.advanceTimersByTime(4000); });
     expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();

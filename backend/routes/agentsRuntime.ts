@@ -577,7 +577,8 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
   }
   try {
     await User.updateOne({ _id: req.agentUser._id }, {
-      $set: { 'botMetadata.harnessMissing': { harness: body.harness, at: new Date() } },
+      // The catalog id, so an alias (claude-code) still reads as its label.
+      $set: { 'botMetadata.harnessMissing': { harness: body.harness && harnessCatalogEntry(body.harness)!.id, at: new Date() } },
     });
     return res.json({ recorded: true });
   } catch (error) {
