@@ -135,6 +135,18 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
       expect(AgentEvent.find).not.toHaveBeenCalled();
     });
 
+    it('a repeat in another place spends the ask: the next copy is held', async () => {
+      eventRows([{ status: 'delivered', payload: { messageId: '12' } }]);
+      User.exists.mockResolvedValue({ _id: PERSON });
+      const duplicate = await check([
+        inThread(row(11, SEAT, 'Blue', 3), null),
+        inThread(row(12, PERSON, '@seat again?', 2), 5),
+        inThread(row(13, SEAT, 'Blue', 1), null),
+      ]);
+      expect(duplicate).toMatchObject({ id: 13 });
+      expect(AgentEvent.find).not.toHaveBeenCalled();
+    });
+
     it('reads rows back to the oldest ask it still counts', async () => {
       await check([
         row(11, SEAT, 'Blue', 30),

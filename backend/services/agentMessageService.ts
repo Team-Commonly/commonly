@@ -1124,9 +1124,11 @@ class AgentMessageService {
     instanceId?: string;
     userId: unknown;
     recent: Array<MessageNormalized & { user_id?: string }>;
+    /** The normalized text being posted: a copy of it closes an ask wherever it landed. */
+    target?: string;
   }): Promise<boolean> {
     const {
-      podId, agentName, instanceId, userId, recent,
+      podId, agentName, instanceId, userId, recent, target,
     } = options;
     if (!agentName) return false;
     const authorOf = (message: MessageNormalized & { user_id?: string }) => String(message?.userId?._id || message?.user_id || '');
@@ -1138,8 +1140,11 @@ class AgentMessageService {
     // A post answers an ask in its own place: the same thread, the main
     // channel, or a thread opened under the ask. A Mongo read carries no thread
     // keys, so there any later post closes it, as before threads (F263).
+    // A copy of this text closes it anywhere, so one ask buys one repeat even
+    // when the repeat lands in another place.
     const answers = (post: MessageNormalized, ask: MessageNormalized) => (
       post.thread_root_id === undefined || ask.thread_root_id === undefined
+      || (target !== undefined && AgentMessageService.normalizeForDedupe(post.content || '') === target)
       || String(post.thread_root_id ?? '') === String(ask.thread_root_id ?? '')
       || String(post.thread_root_id) === idOf(ask)
     );
@@ -1208,7 +1213,7 @@ class AgentMessageService {
 
     if (!hit) return null;
     if (await AgentMessageService.personAskStillOpen({
-      podId, agentName, instanceId, userId, recent: recent as MessageEntry[],
+      podId, agentName, instanceId, userId, recent: recent as MessageEntry[], target,
     })) return null;
     return {
       id: hit.id || hit._id || null,
