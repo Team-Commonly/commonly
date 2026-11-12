@@ -3,13 +3,13 @@
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
+import { messageWriteRateLimitKey } from '../middleware/credentialRateLimitKey';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const dualAuth = require('../middleware/dualAuth');
-const { resolveDualAuthCredential } = dualAuth;
 // eslint-disable-next-line global-require
 const {
   getMessages,
@@ -54,20 +54,14 @@ interface RateLimitRes {
 // header alone, every such agent fell to the IP key, which behind cloudflared
 // is one bucket shared by every agent. The same token is one bucket whichever
 // header carries it. POST and DELETE share this limiter and its budget.
+// POST takes `auth`, not dualAuth, so its key is the token auth verifies; a
+// header auth never reads cannot hand it a fresh bucket (F455).
 const sendMessageRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const credential = req.header
-      ? resolveDualAuthCredential(req as { header: (h: string) => string | undefined }).token
-      : '';
-    if (credential) {
-      return `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  keyGenerator: messageWriteRateLimitKey,
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 60 messages per 60s' });
   },
