@@ -12,7 +12,8 @@
 import { listEvents, ackEvent, postMessage, StaleDeliveryError, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
-import { resolveStagedReply, commitStagedReply, stagedKey } from './staging';
+import { resolveStagedReply, commitStagedReply, stagedKey, StagingStorage } from './staging';
+import { generationStorage, GENERATION_KEY, GenerationStorage } from './generation';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
@@ -61,6 +62,8 @@ export class AgentRuntimeDO implements DurableObject {
         runtimeToken: body.runtimeToken,
         pollSeconds: body.pollSeconds || POLL_DEFAULT_S,
         provisionedAt: Date.now(),
+        // F291: a turn from an earlier provisioning cannot write into this one.
+        [GENERATION_KEY]: crypto.randomUUID(),
       });
       await this.state.storage.setAlarm(Date.now() + 1000);
       return Response.json({ provisioned: true });
@@ -96,18 +99,23 @@ export class AgentRuntimeDO implements DurableObject {
     const cfg = await this.cfg();
     if (!cfg) return; // deprovisioned — let the alarm chain die
     const pollSeconds = (await this.state.storage.get<number>('pollSeconds')) || POLL_DEFAULT_S;
+    // F291: every write below goes through this, so after a deprovision (or a
+    // new provisioning) this poll's turns write nothing back.
+    const store = generationStorage(
+      this.state.storage as unknown as StagingStorage,
+      await this.state.storage.get<string>(GENERATION_KEY),
+    );
     try {
       const events = await listEvents(cfg);
-      const processed = (await this.state.storage.get<string[]>('processedEventIds')) || [];
+      const processed = (await store.get<string[]>('processedEventIds')) || [];
       let batchErrors = 0;
       for (const event of events) {
-        const stillProvisioned = await this.state.storage.get<string>('runtimeToken');
-        if (!stillProvisioned) return;
+        if (!(await store.current())) return;
         try {
           if (!processed.includes(event._id)) {
-            await this.handleEvent(cfg, event);
+            await this.handleEvent(cfg, event, store);
             processed.push(event._id);
-            await this.state.storage.put('processedEventIds', processed.slice(-200));
+            await store.put('processedEventIds', processed.slice(-200));
           }
           const deliveryId = event.payload?.deliveryId;
           await ackEvent(
@@ -121,22 +129,23 @@ export class AgentRuntimeDO implements DurableObject {
             // after our claim expired. Not an error to record as ours; stop
             // this runtime's retry path. The processed-id ring is what keeps
             // a later redelivery from re-running an already handled turn.
-            await this.state.storage.delete(stagedKey(event._id));
+            await store.delete(stagedKey(event._id));
             continue;
           }
           batchErrors += 1;
-          await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
+          await store.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
         }
       }
-      await this.state.storage.put('lastPollAt', Date.now());
+      await store.put('lastPollAt', Date.now());
       // Otto (#1318 round 2): a latched lastError makes a runtime that blipped
       // an hour ago indistinguishable from one broken now — the surface he
       // watches. A clean batch clears it.
-      if (batchErrors === 0) await this.state.storage.delete('lastError');
+      if (batchErrors === 0) await store.delete('lastError');
     } catch (err) {
-      await this.state.storage.put('lastError', String((err as Error).message));
+      await store.put('lastError', String((err as Error).message));
     } finally {
-      if (await this.state.storage.get('runtimeToken')) {
+      // A new provisioning set its own alarm; only this one's chain continues.
+      if (await store.current()) {
         await this.state.storage.setAlarm(Date.now() + pollSeconds * 1000);
       }
     }
@@ -148,35 +157,39 @@ export class AgentRuntimeDO implements DurableObject {
   // staged reply and skips the model entirely. Staged entries are cleared
   // once the post succeeds; orphans from a stuck post are pruned after
   // STAGE_TTL_MS on the next stage (staging.ts), so storage cannot grow.
-  private async handleEvent(cfg: CapConfig, event: CapEvent): Promise<void> {
+  private async handleEvent(cfg: CapConfig, event: CapEvent, store: GenerationStorage): Promise<void> {
     const podId = event.podId || event.payload?.podId;
     if (!podId) return;
     if (event.type !== 'chat.mention' && event.type !== 'first_contact') return;
     // No eager context fetch: the mention is the prompt and read_pod_context
     // earns the read when the model needs it.
     const { reply } = await resolveStagedReply(
-      this.state.storage,
+      store,
       event._id,
-      () => this.runTurn(String(event.payload?.content || ''), buildCapTools(cfg, podId)),
+      () => this.runTurn(store, String(event.payload?.content || ''), buildCapTools(cfg, podId)),
     );
     // NO_REPLY contract: total-match suppression, same as every runtime.
     if (reply.trim() !== 'NO_REPLY') {
       await postMessage(cfg, podId, reply);
     }
-    await commitStagedReply(this.state.storage, event._id);
+    await commitStagedReply(store, event._id);
   }
 
   // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
   // transport, tail-bounded context. Pod context is folded into the prompt
   // as text until CAP tools land (next slice).
-  private async runTurn(prompt: string, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
+  private async runTurn(
+    store: GenerationStorage,
+    prompt: string,
+    tools: ReturnType<typeof buildCapTools> = [],
+  ): Promise<string> {
     // No silent NO_REPLY on a missing key — runTurn throws, the event stays
     // unacked, and /status shows the misconfiguration (Otto, #1339).
     const provider = (this.env.MODEL_PROVIDER === 'deepseek' ? 'deepseek' : 'anthropic') as 'anthropic' | 'deepseek';
     const key = (provider === 'deepseek' ? this.env.DEEPSEEK_API_KEY : this.env.ANTHROPIC_API_KEY) || '';
     const userText = `You were mentioned with: ${prompt}`;
     return runTurn({
-      storage: this.state.storage,
+      storage: store,
       apiKey: key,
       provider,
       modelId: this.env.MODEL_ID,
