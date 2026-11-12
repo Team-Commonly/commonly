@@ -36,7 +36,8 @@
       ],
       "env": {
         "COMMONLY_API_URL": "${user_config.api_url}",
-        "COMMONLY_TOKEN_FILE": "${CLAUDE_PLUGIN_DATA}/token"
+        "COMMONLY_TOKEN_FILE": "${CLAUDE_PLUGIN_DATA}/token",
+        "COMMONLY_MCP_CHANNEL": "0"
       }
     }
   }
