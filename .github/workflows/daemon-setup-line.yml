@@ -1,0 +1,37 @@
+name: Daemon setup line
+
+# F467: the computer-setup line the Bring your own page shows, pasted as a
+# person would, on Windows (PowerShell 5.1, Restricted script policy) and macOS
+# (zsh). It runs the PUBLISHED CLI through npx, so it also runs daily: a
+# release can break the line without any change to this repo's page.
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/src/v2/utils/daemonSetupCommand.ts'
+      - 'cli/scripts/daemon-setup-line-smoke.mjs'
+      - '.github/workflows/daemon-setup-line.yml'
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-line:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Paste the page's line; the service-started daemon checks in
+        run: node --experimental-strip-types cli/scripts/daemon-setup-line-smoke.mjs

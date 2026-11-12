@@ -5,7 +5,7 @@
 // instance the computer would register against commonly.me.
 const fs = require('fs');
 const path = require('path');
-const { daemonSetupCommand } = require('../utils/daemonSetupCommand');
+const { daemonSetupCommand, daemonSetupCommandFor } = require('../utils/daemonSetupCommand');
 
 // Every v2 source file, not a fixed list: a new surface that hardcodes the host
 // (the invite modal, Your Team, a future copy button) must fail here too.
@@ -28,6 +28,13 @@ describe('copy-paste setup commands follow the page instance', () => {
     // page instance must be that flag's value, with the trailing slash dropped.
     expect(command).toMatch(/ daemon setup --instance https:\/\/api-dev\.example\.test$/);
     expect(command).not.toMatch(/commonly\.me/);
+  });
+
+  test('the Windows form targets the page instance too, through npx.cmd, with --unsandboxed last', () => {
+    expect(daemonSetupCommandFor('unix')).toBe(daemonSetupCommand());
+    expect(daemonSetupCommandFor('windows')).toBe(
+      'npx.cmd -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed',
+    );
   });
 
   test('no v2 source hardcodes the production API host', () => {
