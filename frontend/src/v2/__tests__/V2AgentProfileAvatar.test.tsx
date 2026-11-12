@@ -13,6 +13,8 @@ jest.mock('axios', () => {
   };
 });
 jest.mock('../../utils/avatarUtils', () => ({
+  // A saved upload resolves to itself; anything else the picker would draw is a pick.
+  getAvatarSrc: jest.fn((id: string) => (id.startsWith('https://') ? id : null)),
   presetCharacterOptions: jest.fn((seed: string) => [
     { id: `bottts:${seed}-v1`, src: `pick:${seed}-v1` },
     { id: `bottts:${seed}-v2`, src: `pick:${seed}-v2` },
@@ -146,6 +148,50 @@ describe('V2AgentProfile avatar picker', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Avatar 1' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not change the avatar. Try again.');
+  });
+
+  // F376.
+  const choicesIn = (picker: HTMLElement) => within(picker).getAllByRole('button')
+    .filter((b) => b.hasAttribute('aria-pressed'));
+
+  it('puts a saved pick first, marked, with the default next and the pick keeping its number', async () => {
+    mockProfile('bottts:openclaw:aria-v2');
+    renderProfile();
+    const choices = choicesIn(await openPicker());
+
+    expect(choices.map((b) => b.getAttribute('aria-label'))).toEqual(['Avatar 2', 'Default avatar', 'Avatar 1']);
+    expect(choices[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(choices[0].querySelector('img')).toHaveAttribute('src', 'pick:openclaw:aria-v2');
+    expect(choices.slice(1).every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+  });
+
+  it('shows a saved avatar that is not one of the picks first, as the current one', async () => {
+    mockProfile('https://cdn.example.test/aria.png');
+    renderProfile();
+    const choices = choicesIn(await openPicker());
+
+    expect(choices.map((b) => b.getAttribute('aria-label'))).toEqual(['Current avatar', 'Default avatar', 'Avatar 1', 'Avatar 2']);
+    expect(choices[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(choices[0].querySelector('img')).toHaveAttribute('src', 'https://cdn.example.test/aria.png');
+    // Clicking it again saves nothing; the default resets it.
+    fireEvent.click(choices[0]);
+    expect(profileClient.put).not.toHaveBeenCalled();
+    fireEvent.click(choices[1]);
+    expect(profileClient.put).toHaveBeenCalledWith(
+      '/api/agent-profile/openclaw/aria/avatar',
+      { avatar: 'default' },
+      expect.anything(),
+    );
+  });
+
+  it('reverse: a saved value it cannot draw adds no tile, and nothing is marked', async () => {
+    // A v1 colour id: getAvatarSrc draws nothing for it.
+    mockProfile('blue');
+    renderProfile();
+    const choices = choicesIn(await openPicker());
+
+    expect(choices.map((b) => b.getAttribute('aria-label'))).toEqual(['Default avatar', 'Avatar 1', 'Avatar 2']);
+    expect(choices.every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
   });
 
   it('shows no edit control to a viewer who cannot edit', async () => {

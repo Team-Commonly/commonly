@@ -2401,6 +2401,7 @@
       "edit": "Edit",
       "title": "Choose an avatar",
       "defaultOption": "Default avatar",
+      "currentOption": "Current avatar",
       "option": "Avatar {{number}}",
       "cancel": "Close",
       "saveFailed": "Could not change the avatar. Try again."

@@ -2389,6 +2389,7 @@
       "edit": "编辑",
       "title": "选择头像",
       "defaultOption": "默认头像",
+      "currentOption": "当前头像",
       "option": "头像{{number}}",
       "cancel": "关闭",
       "saveFailed": "无法更换头像，请重试。"
