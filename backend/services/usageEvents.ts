@@ -255,6 +255,27 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
   return true;
 }
 
+// A signed-in load where the app couldn't read the Settings choice, so it
+// recorded nothing: our fault, not anyone's choice, counted per day and
+// nothing else (F399). The row holds the reason and the day: no user, country,
+// IP, pod or screen. A person's own opt-out, the EU/UK default and DNT/GPC are
+// never counted, since each promises that nothing is recorded.
+export const USAGE_DROP = 'usage-drop';
+export const USAGE_STATES = ['settings-get-failed'] as const;
+export type UsageState = typeof USAGE_STATES[number];
+
+export async function countUsageState(state: UsageState): Promise<void> {
+  if (!USAGE_STATES.includes(state)) return;
+  const dayStart = utcDayStart(new Date());
+  const day = dayStart.toISOString().slice(0, 10);
+  await ensureIndexes();
+  await mongoose.connection.db.collection('ui_daily_counts').updateOne(
+    { _id: `${day}|${USAGE_DROP}|${state}` } as any,
+    { $setOnInsert: { day, dayStart, name: USAGE_DROP, page: '', refTag: '', value: state }, $inc: { n: 1 } },
+    { upsert: true },
+  );
+}
+
 // Account deletion removes the person's rows at once (CTO 6).
 export async function deleteUiEventsFor(userId: string): Promise<void> {
   const ids: unknown[] = [userId];

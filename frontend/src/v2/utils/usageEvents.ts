@@ -142,6 +142,20 @@ export const trackPublic = (name: PublicEventName, value?: string): void => {
   }).catch(() => {});
 };
 
+// The Settings read failed, so this load records nothing. One count goes out,
+// carrying only the reason (F399); DNT/GPC sends none.
+export const reportSettingsReadFailed = (): void => {
+  const token = readToken();
+  if (!token || browserSignal() || typeof fetch !== 'function') return;
+  void fetch(`${getApiBaseUrl()}/api/stats/usage-state`, {
+    method: 'POST',
+    keepalive: true,
+    credentials: 'omit',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason: 'settings-get-failed' }),
+  }).catch(() => {});
+};
+
 // Sign-out or an account switch: nothing queued for one person goes out under another's token.
 export const forgetUsageEvents = (): void => {
   enabled = null;
