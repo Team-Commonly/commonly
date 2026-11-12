@@ -49,8 +49,8 @@ export const deriveAgentConnection = ({
   // as far as listening read "Not seen in N min" and offered Reconnect. When
   // its keys are embedded ones (which the listener check-in stamps), it counts
   // as connected only once one of them has listened: the rule /agent-states
-  // already applies (TASK-719). A computer's seats run on ledger keys the
-  // check-in doesn't stamp, so they keep the use-based verdict below.
+  // already applies (TASK-719). A computer's seats (`wrapper`) are left to the
+  // use-based verdict below: their liveness is the daemon's, judged there.
   if (!isMachine && hasEmbedded && !usableEmbedded.some((token) => token.lastListenedAt)) {
     return { state: 'never', lastSeenAt: null };
   }

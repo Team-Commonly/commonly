@@ -73,8 +73,11 @@ export const daemonRunInstanceRefusal = (record, instanceArg, resolve = resolveI
   if (!instanceArg) return null;
   const wanted = resolve(instanceArg)?.url;
   if (wanted && instanceKey(wanted) === instanceKey(record?.instanceUrl)) return null;
-  const which = wanted ? `not ${instanceArg}` : `and no saved instance is named ${instanceArg}`;
-  return `This computer is registered with ${record?.instanceUrl}, ${which}. To run it for that instance instead: `
+  if (!wanted) {
+    return `This computer is registered with ${record?.instanceUrl}, and no saved instance is named ${instanceArg}. `
+      + `To use another instance, sign in to it first (${CLI} login --instance <url>), then ${CLI} daemon register --instance <url>`;
+  }
+  return `This computer is registered with ${record?.instanceUrl}, not ${instanceArg}. To run it for that instance instead: `
     + `${CLI} daemon register --instance ${instanceArg}`;
 };
 

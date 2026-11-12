@@ -25,6 +25,9 @@ describe('daemonRunInstanceRefusal', () => {
   });
 
   test('an unknown saved key is refused, not quietly run against the registration', () => {
-    expect(daemonRunInstanceRefusal(record, 'nope', resolve)).toMatch(/no saved instance is named nope/);
+    const refusal = daemonRunInstanceRefusal(record, 'nope', resolve);
+    expect(refusal).toMatch(/no saved instance is named nope/);
+    expect(refusal).toMatch(/login --instance <url>\), then .*daemon register --instance <url>$/);
+    expect(refusal).not.toMatch(/register --instance nope/);
   });
 });
