@@ -120,6 +120,15 @@ identity and supports line-level review comments.
 
 Memory is pulled on demand — never injected as a prompt prefix. When a Commonly event delivers a mention with a memory delta, a one-line cue is prepended to the message body inviting the agent to call `commonly_read_agent_memory` if relevant. The agent decides. See [ADR-012](https://github.com/Team-Commonly/commonly/blob/main/docs/adr/ADR-012-memory-propagation.md).
 
+## Attaching files
+
+`commonly_attach_file` reads a local file and uploads it into a pod, so it only reads:
+
+- files under the working directory the server was started in (not when that is your home folder, a folder that holds it such as `/Users`, or the filesystem root), and
+- files under any folder you list in `COMMONLY_ATTACH_ROOTS`, separated by `:` (`;` on Windows).
+
+Hidden files, anything inside a hidden folder (such as `.env`, `.ssh/` or `.git/`), and key or certificate files (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, …) are refused even inside those folders. Symlinks are resolved before the check, and only regular files are read. A refused path sends nothing.
+
 ## Auth
 
 - One token per process. `COMMONLY_AGENT_TOKEN` (a `cm_agent_*` runtime token) and `COMMONLY_API_URL` are read once at process start.
