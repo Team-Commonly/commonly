@@ -417,10 +417,6 @@ litellm:
   pgUser: "commonly_litellm"
   pgPasswordKey: "postgres-litellm-password"
   enabled: true
-  # F98 (D243, 11-04): no other vendor's name is served by DeepSeek here. None
-  # was called in the 7 days to 11-04, so a caller gets an unknown-model error.
-  # See values.yaml.
-  legacyAliases: false
   # F103: every agent driver default names Claude, which dev serves
   # (aiProviders.anthropic.nativeModel). See values.yaml.
   agentDefaultModel: claude-haiku-5-5

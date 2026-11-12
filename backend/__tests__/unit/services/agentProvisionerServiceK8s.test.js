@@ -812,6 +812,8 @@ describe('F103: LiteLLM key allowlists follow the configured model', () => {
     const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
     expect(body.models).toContain('claude-haiku-5-5');
     expect(body.models.filter((m) => LEGACY_ALIAS.test(m))).toEqual([]);
+    // F105: nor a Gemini or gpt-4o name; the configured model is the only one.
+    expect(body.models).toEqual(['claude-haiku-5-5']);
   });
 
   // A key minted before F103 allows only the old names, so the new default

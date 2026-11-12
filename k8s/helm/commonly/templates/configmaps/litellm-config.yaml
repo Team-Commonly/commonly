@@ -103,11 +103,11 @@ data:
 
       # --- Gemini (direct google provider) ---
       # Served by Google where aiProviders.gemini is on (off on dev since F85:
-      # Google rejects the key). F98 (D243, 11-04): with Gemini off these names
-      # used to be served by DeepSeek, which gives a caller another vendor's model
-      # with no signal. That stand-in now renders only under litellm.legacyAliases
-      # (off on dev, on in base until F105; see values.yaml), so with Gemini off on
-      # dev a caller gets an unknown-model error.
+      # Google rejects the key). With Gemini off these names aren't served, and a
+      # caller gets LiteLLM's unknown-model error. Until F105 they were served by
+      # DeepSeek under litellm.legacyAliases, which gave a caller another vendor's
+      # model with no signal; F105 moved every code default off them and removed
+      # the flag (docs/development/LITELLM.md, "Upgrading past F105").
       {{- if .Values.aiProviders.gemini.enabled }}
       - model_name: google/gemini-2.5-flash
         litellm_params:
@@ -124,32 +124,11 @@ data:
           model: gemini/gemini-2.0-flash
           api_key: os.environ/GEMINI_API_KEY
 
-      # Aliases for backend llmService default model names
+      # The bare name llmService's old default used; Gemini by its own name.
       - model_name: gemini-2.5-flash
         litellm_params:
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
-      {{- end }}
-      {{- if and (not .Values.aiProviders.gemini.enabled) .Values.litellm.legacyAliases .Values.aiProviders.deepseek.enabled }}
-      - model_name: google/gemini-2.5-flash
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: google/gemini-2.5-flash-lite
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: google/gemini-2.0-flash
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: gemini-2.5-flash
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
       {{- end }}
 
       # F103 (11-04) deleted the legacy aliases: nemotron, gpt-5.4*, openai-codex/*,
@@ -161,8 +140,8 @@ data:
       # aiProviders.openai.enabled off (F85): the OpenAI key is a placeholder, so
       # these upstreams only ever sent content out to be refused, so none is routed
       # (the backend has embeddings and images off: EMBEDDING_PROVIDER=none,
-      # AVATAR_PROVIDER=design). gpt-4o's DeepSeek stand-in renders only under
-      # litellm.legacyAliases (F98).
+      # AVATAR_PROVIDER=design). With it off gpt-4o isn't served; its DeepSeek
+      # stand-in went with litellm.legacyAliases in F105.
       {{- if .Values.aiProviders.openai.enabled }}
       - model_name: text-embedding-3-large
         litellm_params:
@@ -173,12 +152,6 @@ data:
         litellm_params:
           model: openai/gpt-4o
           api_key: os.environ/OPENAI_API_KEY
-      {{- end }}
-      {{- if and (not .Values.aiProviders.openai.enabled) .Values.litellm.legacyAliases .Values.aiProviders.deepseek.enabled }}
-      - model_name: gpt-4o
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
       {{- end }}
 
       # --- OpenAI image generation (agent avatars, enriched content gen) ---
@@ -239,10 +212,10 @@ data:
       # the "LiteLLM is failing its callers" alert covers deepseek itself
       # going dead (docs/runbooks/alerting.md#litellm-failing).
       # F98 (11-04): a fallback renders only for a name that renders: the Gemini
-      # names where Gemini is on or legacyAliases is. Dev, with neither, has none.
+      # names, where Gemini is on. Dev, with Gemini off, has none.
       # (F103 deleted the nemotron pair and its fallbacks.) F159: and only where
       # DeepSeek, their target, renders.
-      {{- if and .Values.aiProviders.deepseek.enabled (or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases) }}
+      {{- if and .Values.aiProviders.deepseek.enabled .Values.aiProviders.gemini.enabled }}
       fallbacks:
         - {"gemini-2.5-flash":        ["deepseek-v4-flash"]}
         - {"google/gemini-2.5-flash": ["deepseek-v4-flash"]}

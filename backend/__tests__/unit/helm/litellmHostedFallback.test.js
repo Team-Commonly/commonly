@@ -6,7 +6,7 @@ const { HELM_CHART } = require('../../utils/repoRoot');
 const template = fs.readFileSync(path.join(HELM_CHART,
   'templates/configmaps/litellm-config.yaml'), 'utf8');
 // Parse the actual proxy config, not comments or the surrounding Helm template.
-// Lines that are only a Helm directive (the aiProviders and legacyAliases gates)
+// Lines that are only a Helm directive (the aiProviders gates)
 // are dropped. A gated pair (`if … else … end`) would leave two copies of a key,
 // and json: true keeps only the last, so a check on that key would read one
 // branch only: on 11-04 it read `fallbacks: []` and passed whatever the real

@@ -1550,26 +1550,13 @@ const applyOpenClawConcurrencyDefaults = (config: any) => {
   }
 };
 
-// The Gemini names an agent's LiteLLM key may still call where Gemini is on.
-// No default names them since F105: they were every agent's fallbacks, which
-// LiteLLM served with DeepSeek wherever Gemini was off (litellm.legacyAliases).
-const GEMINI_KEY_MODELS = [
-  'google/gemini-2.5-flash',
-  'google/gemini-2.5-flash-lite',
-  'google/gemini-2.0-flash',
-];
-
-// The models an agent's LiteLLM virtual key may call (F103): the configured
-// default (config/agentDefaultModel), plus the Gemini names. F105 moved every
-// default off them; they leave the allowlist only once LiteLLM's spend logs
-// show no key calling them.
+// The models an agent's LiteLLM virtual key may call: the configured default
+// (config/agentDefaultModel, F103). F105 removed the four Gemini names, which
+// were every agent's fallbacks; no key called them on commonly.me in the 7
+// days to 11-12. A key minted before keeps its own list.
 // A key minted before F103 lacks the default, so both issuers re-issue a key
 // whose allowlist doesn't carry it; otherwise the new default would 401.
-const litellmKeyModels = () => [
-  agentDefaultModel(),
-  ...GEMINI_KEY_MODELS,
-  'gemini-2.5-flash',
-];
+const litellmKeyModels = () => [agentDefaultModel()];
 const keyAllowsDefaultModel = (info: any) => Array.isArray(info?.models) && info.models.includes(agentDefaultModel());
 
 // Default dev agent IDs — overridden by DB openclaw.devAgentIds if set.
