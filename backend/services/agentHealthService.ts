@@ -183,7 +183,8 @@ export async function readAgentHealth(
 
   // 3. Events and runs, grouped on allowlisted keys only, then kept only when
   // the group's (agent, instance, pod) is an install in the viewer's pods.
-  const [eventGroups, runGroups] = await Promise.all([
+  const runMatch = { podId: { $in: podIds }, agentName: { $in: agentNames }, startedAt: { $gte: since } };
+  const [eventGroups, runGroups, latestRuns] = await Promise.all([
     AgentEvent.aggregate([
       { $match: { podId: { $in: podIds }, agentName: { $in: agentNames }, createdAt: { $gte: since } } },
       {
@@ -198,7 +199,7 @@ export async function readAgentHealth(
       },
     ]),
     AgentRun.aggregate([
-      { $match: { podId: { $in: podIds }, agentName: { $in: agentNames }, startedAt: { $gte: since } } },
+      { $match: runMatch },
       {
         $group: {
           _id: {
@@ -209,6 +210,19 @@ export async function readAgentHealth(
           n: { $sum: 1 },
           tokens: { $sum: { $ifNull: ['$totalTokens', 0] } },
           sandbox: { $sum: { $ifNull: ['$sandboxSeconds', 0] } },
+        },
+      },
+    ]),
+    // Needs you reads the latest finished run only: a config error the agent
+    // has since run cleanly past is history (a count), not an action.
+    AgentRun.aggregate([
+      { $match: { ...runMatch, status: { $in: ['succeeded', 'failed', 'interrupted'] } } },
+      { $sort: { startedAt: -1 } },
+      {
+        $group: {
+          _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+          status: { $first: '$status' },
+          errorKind: { $first: '$errorKind' },
         },
       },
     ]),
@@ -283,11 +297,11 @@ export async function readAgentHealth(
       if (failure && BYO_NEEDS_YOU.has(failure)) row.needsYou = failure;
     }
   }
-  for (const row of rows.values()) {
-    if (row.runtime !== 'byo' && row.runs) {
-      const code = Object.keys(row.runs.errorKinds).find((kind) => HOSTED_NEEDS_YOU.has(kind));
-      if (code) row.needsYou = code;
-    }
+  for (const group of latestRuns as any[]) {
+    const id = group._id || {};
+    const row = rows.get(key(id.agentName, id.instanceId, id.podId));
+    if (!row || row.runtime === 'byo') continue;
+    if (group.status === 'failed' && HOSTED_NEEDS_YOU.has(String(group.errorKind))) row.needsYou = String(group.errorKind);
   }
 
   // Needs you first, then offline, then by asked wakes, most first.

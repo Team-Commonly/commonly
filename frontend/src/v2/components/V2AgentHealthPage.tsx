@@ -255,7 +255,7 @@ const V2AgentHealthPage: React.FC = () => {
                     </div>
                   </td>
                   {quiet ? (
-                    <td className="v2-health__quiet" colSpan={4}>
+                    <td className="v2-health__quiet" colSpan={3}>
                       {t('agentHealth.noWakes', { span: spanLabel(hours) })}
                     </td>
                   ) : (
@@ -290,21 +290,22 @@ const V2AgentHealthPage: React.FC = () => {
                         ) : <span className="v2-health__muted">–</span>}
                       </td>
                       <td className="v2-health__kinds"><span className="v2-health__sub">{kindLine(row)}</span></td>
-                      <td className="v2-health__cost">
-                        {row.runtime === 'byo' ? (
-                          <span className="v2-health__sub">{t('agentHealth.cost.onYourAccount')}</span>
-                        ) : row.runs ? (
-                          <>
-                            <span className="v2-health__num">{t('agentHealth.cost.turns', { count: row.runs.meteredTurns })}</span>
-                            <span className="v2-health__sub">
-                              {t('agentHealth.cost.tokens', { value: roundTokens(row.runs.totalTokens) })}
-                              {row.runs.sandboxSeconds > 0 && <> · {sandbox(row.runs.sandboxSeconds)}</>}
-                            </span>
-                          </>
-                        ) : <span className="v2-health__muted">–</span>}
-                      </td>
                     </>
                   )}
+                  {/* Cost always renders: a metered manual run can happen with no wakes. */}
+                  <td className="v2-health__cost">
+                    {row.runtime === 'byo' ? (
+                      <span className="v2-health__sub">{t('agentHealth.cost.onYourAccount')}</span>
+                    ) : row.runs ? (
+                      <>
+                        <span className="v2-health__num">{t('agentHealth.cost.turns', { count: row.runs.meteredTurns })}</span>
+                        <span className="v2-health__sub">
+                          {t('agentHealth.cost.tokens', { value: roundTokens(row.runs.totalTokens) })}
+                          {row.runs.sandboxSeconds > 0 && <> · {sandbox(row.runs.sandboxSeconds)}</>}
+                        </span>
+                      </>
+                    ) : <span className="v2-health__muted">–</span>}
+                  </td>
                   <td className="v2-health__status">
                     {needsCode ? (
                       <span className="v2-health__badge v2-health__badge--needs">

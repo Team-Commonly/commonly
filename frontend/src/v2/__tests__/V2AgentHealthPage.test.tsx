@@ -90,6 +90,18 @@ describe('V2AgentHealthPage', () => {
     expect(screen.getByText('No wakes in the last 24 hours')).toBeInTheDocument();
   });
 
+  test('a hosted agent with metered runs but no wakes still shows its cost', async () => {
+    axios.get.mockResolvedValue(response([row({
+      runs: { total: 2, succeeded: 2, failed: 0, interrupted: 0, inFlight: 0, empty: 0, meteredTurns: 2, totalTokens: 3000, sandboxSeconds: 0, errorKinds: {} },
+    })]));
+    renderPage();
+    const table = await screen.findByRole('table');
+    const r = within(table).getAllByRole('row')[1];
+    expect(within(r).getByText('No wakes in the last 24 hours')).toBeInTheDocument();
+    expect(within(r).getByText('2 turns')).toBeInTheDocument();
+    expect(r.textContent).toContain('3k tokens');
+  });
+
   test('a row opens the agent\'s own page', async () => {
     axios.get.mockResolvedValue(response([row({ asked: buckets({ total: 1, posted: 1 }), kinds: kinds({ mention: 1 }) })]));
     renderPage();

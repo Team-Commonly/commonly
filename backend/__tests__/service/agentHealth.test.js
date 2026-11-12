@@ -126,6 +126,7 @@ describe('GET /api/agents/health', () => {
       instanceId: 'default',
       trigger: 'mention',
       status: 'succeeded',
+      startedAt: new Date(Date.now() - 30 * 60 * 1000),
       totalTokens: 1000,
       sandboxSeconds: 30,
       turns: [{ turnIndex: 0, model: 'm', llmResponseText: SECRET }],
@@ -136,6 +137,7 @@ describe('GET /api/agents/health', () => {
       instanceId: 'default',
       trigger: 'mention',
       status: 'succeeded',
+      startedAt: new Date(Date.now() - 20 * 60 * 1000),
       totalTokens: 200,
       emptyCompletion: true,
     });
@@ -145,8 +147,18 @@ describe('GET /api/agents/health', () => {
       instanceId: 'default',
       trigger: 'first_contact',
       status: 'failed',
+      startedAt: new Date(Date.now() - 10 * 60 * 1000),
       errorKind: 'config',
       errorMessage: SECRET,
+    });
+    // heron: a config failure, then a clean run. The latest finished run decides
+    // needs-you, so the fixed config is a count in errorKinds, not an action.
+    await install('heron', shared._id, { runtimeType: 'native' });
+    await AgentRun.create({
+      podId: shared._id, agentName: 'heron', instanceId: 'default', trigger: 'mention', status: 'failed', errorKind: 'config', startedAt: new Date(Date.now() - 15 * 60 * 1000),
+    });
+    await AgentRun.create({
+      podId: shared._id, agentName: 'heron', instanceId: 'default', trigger: 'mention', status: 'succeeded', startedAt: new Date(Date.now() - 5 * 60 * 1000),
     });
     await AgentRun.create({
       podId: dmPod._id, agentName: 'scribe', instanceId: 'default', trigger: 'mention', status: 'succeeded', totalTokens: 999,
@@ -182,6 +194,10 @@ describe('GET /api/agents/health', () => {
       total: 3, succeeded: 2, failed: 1, empty: 1, meteredTurns: 2, totalTokens: 1200, sandboxSeconds: 30, errorKinds: { config: 1 },
     });
     expect(otter.needsYou).toBe('config');
+    // A config failure the agent has since run cleanly past keeps its count but asks nothing.
+    const heron = res.body.agents.find((row) => row.agentName === 'heron');
+    expect(heron.runs.errorKinds).toEqual({ config: 1 });
+    expect(heron.needsYou).toBeNull();
   });
 
   it('reads BYO liveness and its fixed failure code', async () => {
@@ -202,7 +218,7 @@ describe('GET /api/agents/health', () => {
   it('never lists another pod\'s agent, an uninstalled one, or a co-member\'s agent-dm', async () => {
     const res = await request(app).get('/api/agents/health').set('Authorization', `Bearer ${token(viewer)}`);
     const names = res.body.agents.map((row) => `${row.agentName}@${row.pod.id}`);
-    expect(names.sort()).toEqual([`otter@${shared._id}`, `scribe@${shared._id}`].sort());
+    expect(names.sort()).toEqual([`heron@${shared._id}`, `otter@${shared._id}`, `scribe@${shared._id}`].sort());
   });
 
   it('gives a global admin who is a member of nothing an empty list', async () => {
