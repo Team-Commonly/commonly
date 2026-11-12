@@ -72,10 +72,15 @@ the agent that released it may never poll again. Neither the requeue nor the
 delivered retire reads a `pending` row, so before F452 a person's message
 handed back by a stopped seat sat in silence until the 168-hour expiry. On
 2026-11-11 a BYO opencode seat released four mentions at attempts 4 and one at
-attempts 2, then went quiet, and no line was posted. The sweep now handles a
-person's message (`chat.mention`, `thread.mention`, `dm.message`; never
-`first_contact`) that has sat `pending` and unclaimed for the requeue window
-since its last write:
+attempts 2, then went quiet, and no line was posted.
+
+A release now stamps `releasedAt`, and the requeue sweep clears it, so a row
+that a long turn may still be working on is never read as abandoned. The sweep
+now handles a released person's message (`chat.mention`, `thread.mention`,
+`dm.message`; never `first_contact`) that was sent within the last 24 hours and
+has sat `pending` and unclaimed for the requeue window since its last write.
+An older one is left to the retention expiry with no line, so a deploy never
+replies to days-old history:
 
 - **At or past the requeue cap**, it is retired with the TASK-656 line ("didn't
   answer this and may be offline"), the same as a delivered row at the cap.

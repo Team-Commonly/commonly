@@ -54,7 +54,9 @@ const status = async (event) => (await AgentEvent.findById(event._id).lean()).st
 // A row the runner handed back: pending, claimed `attempts` times, no nonce,
 // last written `idleMinutes` ago. updatedAt is set on the collection directly,
 // since Mongoose would stamp it with now.
-const released = async ({ attempts, idleMinutes = 30, ...overrides } = {}) => {
+const released = async ({
+  attempts, idleMinutes = 30, ageMinutes = idleMinutes + 5, ...overrides
+} = {}) => {
   const event = await AgentEvent.create({
     agentName: 'otto',
     instanceId: 'default',
@@ -64,6 +66,7 @@ const released = async ({ attempts, idleMinutes = 30, ...overrides } = {}) => {
     attempts,
     deliveredAt: null,
     deliveryNonce: null,
+    releasedAt: minutesAgo(idleMinutes),
     payload: {
       messageId: '41', threadRootId: '40', userId: String(person._id), content: '@otto can you review this?',
     },
@@ -71,7 +74,7 @@ const released = async ({ attempts, idleMinutes = 30, ...overrides } = {}) => {
   });
   await AgentEvent.collection.updateOne(
     { _id: event._id },
-    { $set: { updatedAt: minutesAgo(idleMinutes), createdAt: minutesAgo(idleMinutes + 5) } },
+    { $set: { updatedAt: minutesAgo(idleMinutes), createdAt: minutesAgo(ageMinutes) } },
   );
   return event;
 };
@@ -264,6 +267,26 @@ describe('who never gets a line', () => {
     expect(await lines()).toHaveLength(0);
   });
 
+  test('a row the requeue sweep put back, not a release: a long turn may still answer it', async () => {
+    const event = await released({ attempts: 2, releasedAt: null });
+
+    await collect();
+
+    expect((await AgentEvent.findById(event._id).lean()).unansweredNoticeAt).toBeFalsy();
+    expect(await lines()).toHaveLength(0);
+  });
+
+  test('a released message older than a day, below or past the cap: left to expiry', async () => {
+    const below = await released({ attempts: 2, ageMinutes: 25 * 60 });
+    const past = await released({ attempts: 4, ageMinutes: 25 * 60, payload: { messageId: '42', userId: String(person._id), content: '@otto old' } });
+
+    await collect();
+
+    expect(await status(below)).toBe('pending');
+    expect(await status(past)).toBe('pending');
+    expect(await lines()).toHaveLength(0);
+  });
+
   test('when the agent has posted in the pod since the message', async () => {
     const event = await released({ attempts: 2 });
     await mockPool.query('INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3)', [
@@ -292,4 +315,34 @@ test('a second replica that read the same row posts no second notice', async () 
     find.mockRestore();
   }
   expect(await lines()).toHaveLength(1);
+});
+
+test('a release stamps releasedAt and the requeue sweep clears it', async () => {
+  const nonce = 'r'.repeat(32);
+  const held = await AgentEvent.create({
+    agentName: 'otto',
+    instanceId: 'default',
+    podId: POD,
+    type: 'chat.mention',
+    status: 'delivered',
+    attempts: 1,
+    deliveredAt: minutesAgo(1),
+    deliveryNonce: nonce,
+    payload: { messageId: '41', userId: String(person._id), content: '@otto hi' },
+  });
+
+  expect(await AgentEventService.releaseDelivery(String(held._id), 'otto', 'default', nonce)).toBe('released');
+  expect((await AgentEvent.findById(held._id).lean()).releasedAt).toBeInstanceOf(Date);
+
+  // Claimed again, then silent past the window: the requeue puts it back, unstamped.
+  await AgentEvent.collection.updateOne(
+    { _id: held._id },
+    { $set: { status: 'delivered', attempts: 2, deliveredAt: minutesAgo(30), deliveryNonce: nonce } },
+  );
+  await collect();
+
+  const saved = await AgentEvent.findById(held._id).lean();
+  expect(saved.status).toBe('pending');
+  expect(saved.releasedAt).toBeNull();
+  expect(await lines()).toHaveLength(0);
 });

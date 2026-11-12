@@ -118,6 +118,10 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // mention that line was about. Past a day it's closed, and the person is told.
 // Only a person gets the day: a kernel wake is worth nothing that late.
 const START_PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// F452: a released message older than this is left to the retention expiry,
+// with no line: "ask again later" on a days-old message helps nobody, and the
+// first sweep after a deploy must not reply to a week of history.
+const UNCLAIMED_RELEASE_LINE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PERSON_WAITING_FILTER = {
   type: { $in: PERSON_WAITING_EVENT_TYPES },
   'payload.triggerAuthor': { $ne: 'kernel' },
@@ -180,6 +184,7 @@ interface EventDoc {
   instanceId?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  releasedAt?: Date | null;
   deliveredAt?: Date | null;
   unansweredNoticeAt?: Date | null;
   payload?: Record<string, unknown>;
@@ -1224,7 +1229,11 @@ class AgentEventService {
           // replacement has claimed yet — so a supervisor restart can no
           // longer let a stale child terminate the new child's delivery
           // mid-turn.
-          $set: { status: 'pending', deliveredAt: null, deliveryNonce: null },
+          // F452: a requeued row was not handed back, so it loses any
+          // release stamp; only a release reaches the unclaimed-release passes.
+          $set: {
+            status: 'pending', deliveredAt: null, deliveryNonce: null, releasedAt: null,
+          },
         },
       ) as { modifiedCount?: number };
       requeuedDelivered = requeueResult?.modifiedCount || 0;
@@ -1437,6 +1446,8 @@ class AgentEventService {
       status: 'pending',
       deliveryMode: { $ne: 'digest' },
       inProcessQueued: { $ne: true },
+      releasedAt: { $ne: null },
+      createdAt: { $gte: new Date(Date.now() - UNCLAIMED_RELEASE_LINE_MAX_AGE_MS) },
       updatedAt: { $lt: threshold },
       attempts: { $gte: attemptCap },
       type: { $in: PERSON_WAITING_EVENT_TYPES },
@@ -1476,6 +1487,8 @@ class AgentEventService {
       status: 'pending',
       deliveryMode: { $ne: 'digest' },
       inProcessQueued: { $ne: true },
+      releasedAt: { $ne: null },
+      createdAt: { $gte: new Date(Date.now() - UNCLAIMED_RELEASE_LINE_MAX_AGE_MS) },
       updatedAt: { $lt: threshold },
       attempts: { $gte: 1, $lt: attemptCap },
       unansweredNoticeAt: null,
@@ -1491,6 +1504,9 @@ class AgentEventService {
         { $set: { unansweredNoticeAt: new Date() } },
         { new: true },
       ).lean() as EventDoc | null;
+      // Marked before the line is tried, so a failed post is never retried:
+      // missing one line beats posting two. A false return (the agent posted
+      // since, or no one waiting) is the line correctly not owed.
       if (marked) {
         noticed += 1;
         // eslint-disable-next-line no-await-in-loop
@@ -3122,7 +3138,11 @@ class AgentEventService {
     };
     const result = await AgentEvent.updateOne(
       { ...held, $or: [{ attempts: { $lt: ceiling } }, { attempts: { $exists: false } }] },
-      { $set: { status: 'pending', deliveredAt: null, deliveryNonce: null } },
+      {
+        $set: {
+          status: 'pending', deliveredAt: null, deliveryNonce: null, releasedAt: new Date(),
+        },
+      },
     );
     if (result.modifiedCount === 1) return 'released';
     return await AgentEvent.exists({ ...held, attempts: { $gte: ceiling } }) ? 'at_ceiling' : 'not_held';
