@@ -49,19 +49,30 @@ const KIND_BY_TYPE: Record<string, WakeKind> = {
 const BYO_NEEDS_YOU = new Set(['claude-signed-out', 'login', 'out-of-allowance', 'wont-start', 'codex-version']);
 const HOSTED_NEEDS_YOU = new Set(['config']);
 
-export type OutcomeBucket = 'posted' | 'declined' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
+export type OutcomeBucket = 'posted' | 'declined' | 'empty' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
 type Buckets = Record<OutcomeBucket, number> & { total: number };
 const emptyBuckets = (): Buckets => ({
-  total: 0, posted: 0, declined: 0, failed: 0, expired: 0, acknowledged: 0, inFlight: 0,
+  total: 0, posted: 0, declined: 0, empty: 0, failed: 0, expired: 0, acknowledged: 0, inFlight: 0,
 });
+
+// The one delivery reason the page reads, as a computed flag: a BYO turn that
+// printed nothing is acked no_action with reason 'empty-output'
+// (cli/src/lib/claim-outcome.js). It is empty, not a decline. The reason text
+// itself never leaves the database.
+export const EMPTY_OUTPUT_REASON = 'empty-output';
 
 /**
  * One event group to one outcome. The order matters: a recorded outcome wins,
  * then a terminal status. Pending, folding and delivered with no outcome are in
  * flight, never failed (fleet-health.md, Outcomes).
  */
-export function eventOutcome(status: string | null | undefined, outcome: string | null | undefined): OutcomeBucket {
+export function eventOutcome(
+  status: string | null | undefined,
+  outcome: string | null | undefined,
+  emptyOutput = false,
+): OutcomeBucket {
   if (outcome === 'posted') return 'posted';
+  if (outcome === 'no_action' && emptyOutput) return 'empty';
   if (outcome === 'no_action' || outcome === 'skipped') return 'declined';
   if (outcome === 'error' || status === 'failed') return 'failed';
   if (status === 'expired') return 'expired';
@@ -78,7 +89,12 @@ export interface HealthWindow { hours: number; retentionHours: number; options: 
  */
 export function resolveWindow(
   requested: unknown,
-  retentionHours = Number(process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS || 168),
+  // Delivered and failed events are deleted on separate clocks; the shorter
+  // one bounds the span, or failures would be under-counted.
+  retentionHours = Math.min(
+    Number(process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS || 168),
+    Number(process.env.AGENT_EVENT_FAILED_RETENTION_HOURS || 168),
+  ),
 ): HealthWindow {
   const retention = Math.max(1, Number.isFinite(retentionHours) ? Math.floor(retentionHours) : 168);
   const fallback = Math.min(24, retention);
@@ -175,6 +191,7 @@ export async function readAgentHealth(
           _id: {
             agentName: '$agentName', instanceId: '$instanceId', podId: '$podId',
             type: '$type', deliveryMode: '$deliveryMode', status: '$status', outcome: '$delivery.outcome',
+            emptyOutput: { $eq: ['$delivery.reason', EMPTY_OUTPUT_REASON] },
           },
           n: { $sum: 1 },
         },
@@ -207,7 +224,7 @@ export async function readAgentHealth(
     if (kind) row.kinds[kind] += n;
     else row.otherKinds[String(id.type)] = (row.otherKinds[String(id.type)] || 0) + n;
     const target = kind === 'heartbeat' ? row.heartbeats : row.asked;
-    target[eventOutcome(id.status, id.outcome)] += n;
+    target[eventOutcome(id.status, id.outcome, id.emptyOutput === true)] += n;
     target.total += n;
   }
 

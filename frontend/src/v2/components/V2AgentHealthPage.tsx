@@ -14,7 +14,7 @@ import './V2AgentHealthPage.css';
  * pods and carries no message text, so nothing here can quote one.
  */
 
-type Bucket = 'posted' | 'declined' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
+type Bucket = 'posted' | 'declined' | 'empty' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
 type Buckets = Record<Bucket, number> & { total: number };
 type Kind = 'mention' | 'heartbeat' | 'chat' | 'decision' | 'joined';
 
@@ -44,7 +44,9 @@ interface AgentHealthResponse {
   agents: AgentHealthRow[];
 }
 
-// The bar's order, left to right. Empty is a hosted run's own outcome (never a decline).
+// The bar's order, left to right. Empty (a turn that printed nothing) is its own
+// outcome, never a decline. Every segment counts asked events only; runs are
+// not split by trigger, so a run count would mix heartbeats into the bar.
 const SEGMENTS = ['posted', 'declined', 'empty', 'acknowledged', 'failed', 'expired', 'inFlight'] as const;
 type Segment = typeof SEGMENTS[number];
 const KINDS: Kind[] = ['mention', 'chat', 'decision', 'joined', 'heartbeat'];
@@ -53,7 +55,7 @@ const NEEDS_YOU_CODES = ['claude-signed-out', 'login', 'out-of-allowance', 'wont
 export const segmentCounts = (row: AgentHealthRow): Record<Segment, number> => ({
   posted: row.asked.posted,
   declined: row.asked.declined,
-  empty: row.runs?.empty || 0,
+  empty: row.asked.empty || 0,
   acknowledged: row.asked.acknowledged,
   failed: row.asked.failed,
   expired: row.asked.expired,

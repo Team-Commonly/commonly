@@ -26,7 +26,7 @@ const healthRoutes = require('../../routes/agentHealth');
 const JWT_SECRET = 'test-jwt-secret-for-agent-health';
 const SECRET = 'SECRET-MESSAGE-TEXT';
 
-jest.setTimeout(60_000);
+jest.setTimeout(60000);
 
 describe('GET /api/agents/health', () => {
   let app;
@@ -35,11 +35,21 @@ describe('GET /api/agents/health', () => {
   const token = (user) => jwt.sign({ id: user._id.toString() }, JWT_SECRET);
 
   const install = (agentName, podId, runtime, extra = {}) => AgentInstallation.create({
-    agentName, podId, instanceId: 'default', version: '1.0.0', installedBy: viewer._id,
-    status: 'active', config: { runtime, note: SECRET }, ...extra,
+    agentName,
+    podId,
+    instanceId: 'default',
+    version: '1.0.0',
+    installedBy: viewer._id,
+    status: 'active',
+    config: { runtime, note: SECRET },
+    ...extra,
   });
   const event = (agentName, podId, type, status, outcome, extra = {}) => AgentEvent.create({
-    agentName, instanceId: 'default', podId, type, status,
+    agentName,
+    instanceId: 'default',
+    podId,
+    type,
+    status,
     payload: { content: SECRET },
     ...(outcome ? { delivery: { outcome, reason: SECRET, details: { reply: SECRET } } } : {}),
     ...extra,
@@ -54,17 +64,28 @@ describe('GET /api/agents/health', () => {
 
     viewer = await User.create({ username: 'health-viewer', email: 'hv@test.com', password: 'password123' });
     stranger = await User.create({ username: 'health-stranger', email: 'hs@test.com', password: 'password123' });
-    globalAdmin = await User.create({ username: 'health-admin', email: 'ha@test.com', password: 'password123', role: 'admin' });
+    globalAdmin = await User.create({
+      username: 'health-admin', email: 'ha@test.com', password: 'password123', role: 'admin', 
+    });
     botUser = await User.create({
-      username: 'scribe-bot', email: 'scribe@test.com', password: 'password123', isBot: true,
+      username: 'scribe-bot',
+      email: 'scribe@test.com',
+      password: 'password123',
+      isBot: true,
       botMetadata: { agentName: 'scribe', instanceId: 'default' },
     });
 
-    shared = await Pod.create({ name: 'Launch prep', type: 'chat', createdBy: viewer._id, members: [viewer._id, stranger._id] });
-    otherPod = await Pod.create({ name: 'Not yours', type: 'chat', createdBy: stranger._id, members: [stranger._id] });
+    shared = await Pod.create({
+      name: 'Launch prep', type: 'chat', createdBy: viewer._id, members: [viewer._id, stranger._id], 
+    });
+    otherPod = await Pod.create({
+      name: 'Not yours', type: 'chat', createdBy: stranger._id, members: [stranger._id], 
+    });
     // The leak case: scribe shares a pod with the viewer, and has a DM with a
     // third agent that the viewer isn't a member of.
-    dmPod = await Pod.create({ name: 'scribe + ghost', type: 'agent-dm', createdBy: stranger._id, members: [stranger._id] });
+    dmPod = await Pod.create({
+      name: 'scribe + ghost', type: 'agent-dm', createdBy: stranger._id, members: [stranger._id], 
+    });
 
     await install('otter', shared._id, { runtimeType: 'native' });
     await install('scribe', shared._id, { host: 'byo', runtimeType: 'local-cli' });
@@ -95,26 +116,49 @@ describe('GET /api/agents/health', () => {
     await event('scribe', dmPod._id, 'chat.mention', 'acked', 'posted');
     // scribe in the shared pod.
     await event('scribe', shared._id, 'chat.mention', 'failed', null);
+    // A turn that printed nothing: the CLI acks no_action with reason 'empty-output'.
+    // It is empty, never a decline.
+    await event('scribe', shared._id, 'chat.mention', 'acked', 'no_action', { delivery: { outcome: 'no_action', reason: 'empty-output' } });
 
     await AgentRun.create({
-      podId: shared._id, agentName: 'otter', instanceId: 'default', trigger: 'mention', status: 'succeeded',
-      totalTokens: 1000, sandboxSeconds: 30, turns: [{ turnIndex: 0, model: 'm', llmResponseText: SECRET }],
+      podId: shared._id,
+      agentName: 'otter',
+      instanceId: 'default',
+      trigger: 'mention',
+      status: 'succeeded',
+      totalTokens: 1000,
+      sandboxSeconds: 30,
+      turns: [{ turnIndex: 0, model: 'm', llmResponseText: SECRET }],
     });
     await AgentRun.create({
-      podId: shared._id, agentName: 'otter', instanceId: 'default', trigger: 'mention', status: 'succeeded',
-      totalTokens: 200, emptyCompletion: true,
+      podId: shared._id,
+      agentName: 'otter',
+      instanceId: 'default',
+      trigger: 'mention',
+      status: 'succeeded',
+      totalTokens: 200,
+      emptyCompletion: true,
     });
     await AgentRun.create({
-      podId: shared._id, agentName: 'otter', instanceId: 'default', trigger: 'first_contact', status: 'failed',
-      errorKind: 'config', errorMessage: SECRET,
+      podId: shared._id,
+      agentName: 'otter',
+      instanceId: 'default',
+      trigger: 'first_contact',
+      status: 'failed',
+      errorKind: 'config',
+      errorMessage: SECRET,
     });
     await AgentRun.create({
       podId: dmPod._id, agentName: 'scribe', instanceId: 'default', trigger: 'mention', status: 'succeeded', totalTokens: 999,
     });
 
     await AgentRuntimeObservation.create({
-      agentUserId: botUser._id, machineId: 'mac-1', connectedAt: new Date(),
-      lastSeenAt: new Date(Date.now() - 60 * 60 * 1000), lastSpawnOutcome: 'failed', lastSpawnFailure: 'claude-signed-out',
+      agentUserId: botUser._id,
+      machineId: 'mac-1',
+      connectedAt: new Date(),
+      lastSeenAt: new Date(Date.now() - 60 * 60 * 1000),
+      lastSpawnOutcome: 'failed',
+      lastSpawnFailure: 'claude-signed-out',
     });
   });
 
@@ -127,7 +171,9 @@ describe('GET /api/agents/health', () => {
     expect(res.status).toBe(200);
     const otter = res.body.agents.find((row) => row.agentName === 'otter');
     expect(otter.runtime).toBe('hosted');
-    expect(otter.asked).toEqual({ total: 9, posted: 2, declined: 2, failed: 2, expired: 1, acknowledged: 0, inFlight: 2 });
+    expect(otter.asked).toEqual({
+      total: 9, posted: 2, declined: 2, empty: 0, failed: 2, expired: 1, acknowledged: 0, inFlight: 2, 
+    });
     expect(otter.heartbeats).toMatchObject({ total: 2, posted: 1, declined: 1 });
     expect(otter.digests).toBe(1);
     expect(otter.kinds).toMatchObject({ mention: 7, chat: 1, heartbeat: 2 });
@@ -147,7 +193,9 @@ describe('GET /api/agents/health', () => {
     expect(scribe[0].liveness).toMatchObject({ online: false, turnRunning: false, lastSpawnFailure: 'claude-signed-out' });
     expect(scribe[0].needsYou).toBe('claude-signed-out');
     // The two posted DM wakes and the DM run are not the viewer's.
-    expect(scribe[0].asked).toMatchObject({ total: 1, failed: 1, posted: 0 });
+    expect(scribe[0].asked).toMatchObject({
+      total: 2, failed: 1, empty: 1, declined: 0, posted: 0, 
+    });
     expect(scribe[0].runs).toBeNull();
   });
 
@@ -169,9 +217,9 @@ describe('GET /api/agents/health', () => {
     expect(body).not.toContain(SECRET);
     // `config` isn't listed: `errorKinds` legitimately carries the code `config`.
     // The install's own config is seeded with SECRET above, so the first check covers it.
-    for (const field of ['payload', 'reason', 'errorMessage', 'details', 'error', 'args', 'result', 'turns']) {
+    ['payload', 'reason', 'errorMessage', 'details', 'error', 'args', 'result', 'turns'].forEach((field) => {
       expect(body).not.toMatch(new RegExp(`"${field}"\\s*:`));
-    }
+    });
   });
 
   it('refuses an agent\'s own account', async () => {
@@ -197,17 +245,26 @@ describe('agent health helpers', () => {
     expect(resolveWindow('500h', 168).hours).toBe(24);
     expect(resolveWindow(undefined, 12)).toEqual({ hours: 12, retentionHours: 12, options: [12] });
     expect(resolveWindow('72h', 48)).toEqual({ hours: 24, retentionHours: 48, options: [24] });
+    // The default bound is the shorter of the delivered and failed retentions.
+    const saved = { d: process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS, f: process.env.AGENT_EVENT_FAILED_RETENTION_HOURS };
+    process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS = '168';
+    process.env.AGENT_EVENT_FAILED_RETENTION_HOURS = '48';
+    try { expect(resolveWindow('72h').retentionHours).toBe(48); } finally {
+      if (saved.d === undefined) delete process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS; else process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS = saved.d;
+      if (saved.f === undefined) delete process.env.AGENT_EVENT_FAILED_RETENTION_HOURS; else process.env.AGENT_EVENT_FAILED_RETENTION_HOURS = saved.f;
+    }
   });
 
   it('maps every status and outcome, keeping in-flight apart from failed', () => {
     expect(eventOutcome('acked', 'posted')).toBe('posted');
     expect(eventOutcome('acked', 'no_action')).toBe('declined');
+    expect(eventOutcome('acked', 'no_action', true)).toBe('empty');
     expect(eventOutcome('acked', 'skipped')).toBe('declined');
     expect(eventOutcome('acked', 'error')).toBe('failed');
     expect(eventOutcome('failed', null)).toBe('failed');
     expect(eventOutcome('expired', null)).toBe('expired');
     expect(eventOutcome('acked', 'acknowledged')).toBe('acknowledged');
     expect(eventOutcome('acked', null)).toBe('acknowledged');
-    for (const status of ['pending', 'folding', 'delivered']) expect(eventOutcome(status, null)).toBe('inFlight');
+    ['pending', 'folding', 'delivered'].forEach((status) => expect(eventOutcome(status, null)).toBe('inFlight'));
   });
 });

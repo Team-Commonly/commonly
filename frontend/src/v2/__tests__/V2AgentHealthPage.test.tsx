@@ -19,7 +19,7 @@ const authValue = {
   register: jest.fn(), login: jest.fn(), logout: jest.fn(), mergeUser: jest.fn(),
 };
 
-const buckets = (over = {}) => ({ total: 0, posted: 0, declined: 0, failed: 0, expired: 0, acknowledged: 0, inFlight: 0, ...over });
+const buckets = (over = {}) => ({ total: 0, posted: 0, declined: 0, empty: 0, failed: 0, expired: 0, acknowledged: 0, inFlight: 0, ...over });
 const kinds = (over = {}) => ({ mention: 0, heartbeat: 0, chat: 0, decision: 0, joined: 0, ...over });
 const row = (over = {}) => ({
   agentName: 'otter', instanceId: 'default', displayName: 'otter',
@@ -46,7 +46,7 @@ afterEach(() => { jest.clearAllMocks(); window.localStorage.clear(); });
 describe('V2AgentHealthPage', () => {
   test('a busy row: the asked split, heartbeats apart, kinds with a raw type, metered turns', async () => {
     axios.get.mockResolvedValue(response([row({
-      asked: buckets({ total: 4, posted: 2, declined: 1, inFlight: 1 }),
+      asked: buckets({ total: 5, posted: 2, declined: 1, empty: 1, inFlight: 1 }),
       heartbeats: buckets({ total: 18, posted: 2 }),
       kinds: kinds({ mention: 2, heartbeat: 18 }), otherKinds: { 'task.assigned': 2 }, digests: 1,
       runs: { total: 7, succeeded: 6, failed: 0, interrupted: 0, inFlight: 1, empty: 1, meteredTurns: 7, totalTokens: 18400, sandboxSeconds: 40, errorKinds: {} },
@@ -54,7 +54,7 @@ describe('V2AgentHealthPage', () => {
     renderPage();
     const table = await screen.findByRole('table');
     const r = within(table).getAllByRole('row')[1];
-    expect(within(r).getByText('2 of 4 posted')).toBeInTheDocument();
+    expect(within(r).getByText('2 of 5 posted')).toBeInTheDocument();
     // Empty is its own outcome beside the decline, never folded into it.
     expect(within(r).getByText('1 declined · 1 empty · 1 in flight')).toBeInTheDocument();
     expect(within(r).getByText('18')).toBeInTheDocument();
@@ -134,9 +134,10 @@ describe('V2AgentHealthPage', () => {
 });
 
 describe('agent health helpers', () => {
-  test('segment counts take empty from runs and nothing else', () => {
-    const counts = segmentCounts(row({ asked: buckets({ total: 3, declined: 1, posted: 2 }), runs: { empty: 2 } }));
-    expect(counts).toMatchObject({ posted: 2, declined: 1, empty: 2 });
+  test('segment counts come from asked events only: a run count never enters the bar', () => {
+    // Runs aren't split by trigger, so runs.empty would mix heartbeats into Asked.
+    const counts = segmentCounts(row({ asked: buckets({ total: 4, declined: 1, posted: 2, empty: 1 }), runs: { empty: 20 } }));
+    expect(counts).toMatchObject({ posted: 2, declined: 1, empty: 1 });
   });
   test('token rounding', () => {
     expect(roundTokens(999)).toBe('999');
