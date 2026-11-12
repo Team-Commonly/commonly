@@ -279,6 +279,23 @@
   background: var(--v2-surface-hover);
 }
 
+/* F370 #5: the add row lines up with the agent rows; its mark is an empty
+   avatar slot, quieter than a face. */
+.v2-root button.v2-workspace-inspector__add-agent { grid-template-columns: 28px minmax(0, 1fr); cursor: pointer; }
+.v2-root button.v2-workspace-inspector__add-agent .v2-workspace-inspector__agent-name { color: var(--v2-text-secondary); }
+.v2-root button.v2-workspace-inspector__add-agent:hover .v2-workspace-inspector__agent-name { color: var(--v2-text-primary); }
+.v2-workspace-inspector__add-agent-mark {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--v2-text-muted);
+  border-radius: 4px;
+  color: var(--v2-text-secondary);
+}
+
 .v2-workspace-inspector__avatar.v2-avatar {
   width: 28px;
   height: 28px;

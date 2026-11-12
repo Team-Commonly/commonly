@@ -472,6 +472,20 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
                 </button>
               );
             })}
+            {/* F370 #5: the pod is where a person notices an agent is missing,
+                so the add path starts here, with this pod already chosen.
+                Shown where invites are: never in a DM or an agent room. */}
+            {onOpenInvite && (
+              <button
+                type="button"
+                className="v2-workspace-inspector__agent v2-workspace-inspector__add-agent"
+                data-testid="inspector-add-agent"
+                onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
+              >
+                <span className="v2-workspace-inspector__add-agent-mark" aria-hidden="true"><ShellGlyph name="plus" /></span>
+                <span className="v2-workspace-inspector__agent-name">{t('inspector.workspace.addAgent')}</span>
+              </button>
+            )}
           </div>
         ), agents.length > 0 && (
           <span className="v2-workspace-inspector__fold-stack" aria-hidden="true">

@@ -426,6 +426,18 @@ describe('V2Inspector', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents');
   });
 
+  // F370 #5: the pod's Agents fold adds an agent with this pod already chosen,
+  // and only where people can be invited (never in a DM or an agent room).
+  test('the Agents fold adds an agent to this pod, only where invites are', () => {
+    const view = renderInspector();
+    fireEvent.click(screen.getByTestId('inspector-add-agent'));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=pod-1');
+    expect(screen.getByTestId('inspector-add-agent')).toHaveTextContent('Add an agent');
+    view.unmount();
+    renderInspector({ onOpenInvite: undefined });
+    expect(screen.queryByTestId('inspector-add-agent')).toBeNull();
+  });
+
   test('lists this pod\'s own queue rows even when the global slice misses them', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/activity/decision-queue?podId=pod-1')
       ? { items: [{ id: 'pod-row', kind: 'decision', title: 'Pod-only decision', podId: 'pod-1' }] }
