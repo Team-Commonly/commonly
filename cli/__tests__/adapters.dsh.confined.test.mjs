@@ -16,7 +16,7 @@ import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
 import dsh, {
-  developerToolsDir, DSH_PUBLIC_DISABLED_PLUGINS, DSH_PUBLIC_GUARD_SERVICE, isConfinedDsh, isPublicDsh, PUBLIC_TURN_DIR, seatHome,
+  developerToolsDir, DSH_PUBLIC_DISABLED_PLUGINS, DSH_PUBLIC_GUARD_SERVICE, isConfinedDsh, isPublicDsh, PUBLIC_TURN_DIR, seatHome, WITHHELD_TOOLS_MCP_ENV,
   systemToolsFirst, TESTED_DSH_VERSIONS,
 } from '../src/lib/adapters/dsh.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS, publicSeatWithheldTools } from '../src/lib/public-withheld-tools.js';
@@ -396,6 +396,8 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
       expect(guard.config).toEqual({ withheld: [...PUBLIC_SEAT_WITHHELD_TOOLS] });
       expect(mcp.inject).toEqual([DSH_PUBLIC_GUARD_SERVICE]);
       expect(mcp.config.env.COMMONLY_MCP_PUBLIC_SEAT).toBe('1');
+      // F468: the server is told what to keep off the list; the guard still refuses at the call.
+      expect(mcp.config.env.COMMONLY_MCP_WITHHELD_TOOLS).toBe(PUBLIC_SEAT_WITHHELD_TOOLS.join(','));
       // The last row is the MCP, which the stub reads.
       expect(rows.at(-1).insert[0].id).toBe('mcp-commonly');
     });
@@ -408,6 +410,8 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
       expect(guard.config.withheld).toEqual(publicSeatWithheldTools({ ownerWoken: true }));
       expect(guard.config.withheld).toContain('commonly_attach_file');
       expect(guard.config.withheld).not.toContain('commonly_write_agent_memory');
+      const { mcp } = readReport(home);
+      expect(mcp.env.COMMONLY_MCP_WITHHELD_TOOLS).toBe(guard.config.withheld.join(','));
     });
   });
 
@@ -471,6 +475,11 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
     // A private seat keeps the home it had before F115, sessions included.
     const before = createHash('sha256').update(`${seat.instanceUrl}\0${seat.agentName}`).digest('hex').slice(0, 24);
     expect(privateHome).toBe(join(homedir(), '.commonly', 'dsh-homes', before));
+  });
+
+  test('the adapter names the MCP server\'s withheld-tools variable as the server does', async () => {
+    const { WITHHELD_TOOLS_ENV } = await import('../../commonly-mcp/src/server.js');
+    expect(WITHHELD_TOOLS_MCP_ENV).toBe(WITHHELD_TOOLS_ENV);
   });
 
   test('the guard refuses every tool but the Commonly ones it was not told to withhold', async () => {

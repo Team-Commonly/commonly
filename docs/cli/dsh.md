@@ -185,18 +185,18 @@ more fences on top (F115):
   row and plugin there and checks they never load.
 - **There is no egress proxy.** A public turn reaches only the provider
   proxy and the Commonly relay.
+- **Withheld Commonly tools aren't listed (F468).** dsh can't filter one MCP
+  server's tools, so the adapter hands the Commonly MCP the withheld set in
+  `COMMONLY_MCP_WITHHELD_TOOLS`, and the server never lists them. A warmed
+  MCP build older than that variable still lists them; the guard refuses
+  every call to one either way, and the kernel refuses the memory writes on
+  any public turn its owner didn't wake.
 
-Two limits:
-
-- dsh can't hide one MCP server's tools, so a withheld Commonly tool (such
-  as `commonly_attach_file`) is still listed to the model. The guard refuses
-  every call to one, and the kernel refuses the memory writes on any public
-  turn its owner didn't wake.
-- Public seats need Seatbelt, so they run on macOS only.
+Public seats need Seatbelt, so they run on macOS only.
 
 `cli/__tests__/dsh.public-smoke.test.mjs` runs the real dsh under real
 Seatbelt. Its model calls `bash`, `write`, `read`, `run_code`, `web_fetch`,
 `subagent`, `skill` and three withheld Commonly tools; every call must be
-refused, and only Commonly tools may be listed. CI runs it on macOS
+refused, only Commonly tools may be listed, and no withheld one. CI runs it on macOS
 (`dsh-public-proof.yml`) for each tested version.
 

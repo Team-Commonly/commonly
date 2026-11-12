@@ -131,8 +131,9 @@ export function apply(ctx) {
     expect(offered).toContain(`${PREFIX}commonly_get_context`);
     expect(offered).not.toContain(`${PREFIX}planted_shell`);
     expect(existsSync(plantedRan)).toBe(false);
-    // dsh can't hide one MCP server's tools, so a withheld Commonly tool is still
-    // listed; the guard refuses every call to one (the attacks below include three).
+    // F468: the Commonly MCP keeps the withheld tools off the list, and the guard
+    // still refuses a call to one by name (the attacks below include three).
+    expect(offered.filter((name) => PUBLIC_SEAT_WITHHELD_TOOLS.includes(name.slice(PREFIX.length)))).toEqual([]);
     expect(attacks.map(([name]) => name.slice(PREFIX.length)).filter((name) => PUBLIC_SEAT_WITHHELD_TOOLS.includes(name)))
       .toHaveLength(3);
 

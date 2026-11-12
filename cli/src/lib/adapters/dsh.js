@@ -62,6 +62,8 @@ export const DSH_PUBLIC_GUARD_SERVICE = 'commonlyPublicGuard';
 /** A public turn's working directory, emptied before each turn, under the seat home. */
 export const PUBLIC_TURN_DIR = 'public-turn';
 const PUBLIC_GUARD_SOURCE = new URL('./dsh-public-guard.mjs', import.meta.url);
+// @commonlyai/mcp's WITHHELD_TOOLS_ENV (commonly-mcp/src/server.js); a test holds the two equal.
+export const WITHHELD_TOOLS_MCP_ENV = 'COMMONLY_MCP_WITHHELD_TOOLS';
 // The one thing a public seat's home keeps between turns (a symlink is not kept).
 const PUBLIC_HOME_KEPT = 'sessions';
 
@@ -230,9 +232,16 @@ export const resolveCommonlyMcp = (declared, ctx) => {
   const values = { credentialFile: ctx.credentialFile, instanceUrl: ctx.instanceUrl };
   const env = Object.fromEntries(Object.entries(delivery.env)
     .map(([name, value]) => [name, substitute(value, values)]));
-  // A public seat's MCP always carries the public-seat flag, whatever was declared.
-  if (ctx.publicSeat) env[PUBLIC_SEAT_MCP_ENV] = '1';
-  const allowed = ['COMMONLY_API_URL', 'COMMONLY_TOKEN_FILE', ...(ctx.publicSeat ? [PUBLIC_SEAT_MCP_ENV] : [])];
+  // A public seat's MCP always carries the public-seat flag, whatever was declared,
+  // and the tools it must keep off the list (F468): dsh can't filter one server's
+  // tools, so the server does. The guard still refuses them at the call, which also
+  // covers a warmed MCP build too old to read the list.
+  if (ctx.publicSeat) {
+    env[PUBLIC_SEAT_MCP_ENV] = '1';
+    env[WITHHELD_TOOLS_MCP_ENV] = [...(ctx.withheldTools || [])].join(',');
+  }
+  const allowed = ['COMMONLY_API_URL', 'COMMONLY_TOKEN_FILE',
+    ...(ctx.publicSeat ? [PUBLIC_SEAT_MCP_ENV, WITHHELD_TOOLS_MCP_ENV] : [])];
   if (Object.keys(env).some((name) => !allowed.includes(name))
     || env.COMMONLY_TOKEN_FILE !== ctx.credentialFile || env.COMMONLY_API_URL !== ctx.instanceUrl) {
     throw new Error('dsh adapter: Commonly MCP must use this spawn\'s credential file');
@@ -496,6 +505,7 @@ export default {
       }
       const mcp = resolveCommonlyMcp(ctx.environment?.mcp, {
         publicSeat: isPublic,
+        withheldTools: publicSeat?.withheld,
         credentialFile: credential.path,
         instanceUrl: confined ? relay.url : ctx.instanceUrl,
         ...(confined ? {
