@@ -29,6 +29,7 @@ permissions:
   id-token: write     # required to mint the OIDC token for google-github-actions/auth
   contents: read
   statuses: read      # read the staging-smoke commit status for the prod-promote gate
+  actions: read       # read the post-merge Service Tests result on this SHA (D227)
 
 concurrency:
   group: deploy-dev
@@ -103,6 +104,46 @@ jobs:
           echo "staging-smoke on $SHA = ${STATE:-<none>}"
           if [ "$STATE" != "success" ]; then
             echo "::error title=staging-smoke gate::no green staging-smoke on $SHA (got: ${STATE:-none}). Deploy Staging on this SHA first (it runs the Tier-1 smoke and posts the status), or re-dispatch with allow_without_staging_smoke=true for an emergency."
+            exit 1
+          fi
+
+      # D227: Service Tests (Tier 1, real DBs) left the merge queue and run post-merge on
+      # push:main, so a red there must stop the roll instead of the queue. Reads the latest
+      # push-event Tests run on this SHA. A commit with no push run (a release commit that is
+      # not on main) has nothing to read and only warns; the emergency override above covers
+      # this gate too.
+      - name: Gate on post-merge Service Tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          REPO: ${{ github.repository }}
+          ALLOW: ${{ inputs.allow_without_staging_smoke }}
+        run: |
+          set -uo pipefail
+          if [ "$ALLOW" = "true" ]; then
+            echo "::warning title=service-tests gate::bypassed via allow_without_staging_smoke=true"
+            exit 0
+          fi
+          RUN=$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?head_sha=$SHA&event=push&per_page=20" \
+            --jq '.workflow_runs | sort_by(.created_at) | last | .id // empty' 2>/dev/null || echo "")
+          if [ -z "$RUN" ]; then
+            echo "::warning title=service-tests gate::no push-event Tests run on $SHA (not a main commit?); nothing to gate on"
+            exit 0
+          fi
+          # One line per Service Tests shard: "<status> <conclusion>".
+          JOBS=$(gh api "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("Service Tests")) | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
+          echo "Service Tests on $SHA (run $RUN):"; printf '%s\n' "${JOBS:-<none>}"
+          if [ -z "$JOBS" ]; then
+            echo "::error title=service-tests gate::run $RUN on $SHA has no Service Tests jobs; push:main must run them (tests.yml)"
+            exit 1
+          fi
+          if printf '%s\n' "$JOBS" | grep -qv '^completed '; then
+            echo "::error title=service-tests gate::Service Tests on $SHA are still running (run $RUN). Re-dispatch when they finish."
+            exit 1
+          fi
+          if printf '%s\n' "$JOBS" | grep -qv '^completed success$'; then
+            echo "::error title=service-tests gate::Service Tests on $SHA did not pass (run $RUN). Fix main, or re-run the job if it was a flake, before rolling."
             exit 1
           fi
 

@@ -357,3 +357,38 @@ test('tests.yml lists every job but itself and the probe in test-gate needs', ()
   assert.ok(needs, 'test-gate has no needs list');
   assert.deepEqual(needs[1].split(',').map((n) => n.trim()).sort(), ids.sort());
 });
+
+// D227 (CTO 2026-11-12): Service Tests left the PR run and the merge queue, and run
+// post-merge (push:main) plus nightly; Backend tests in the queue follow the changed-paths
+// gate. These pin the shape so a revert that puts the 10m real-DB suite back on the queue,
+// or runs the backend matrix for a docs-only queue entry, fails here.
+const ifLine = (id) => {
+  const m = jobBlock(id).match(/^    if: (.+)$/m);
+  assert.ok(m, `job ${id} has no if:`);
+  return m[1];
+};
+
+test('D227: Service Tests run post-merge and nightly only, never on a PR or in the queue', () => {
+  const cond = ifLine('service-test');
+  for (const ev of ['push', 'schedule', 'workflow_dispatch']) assert.match(cond, new RegExp(`github\\.event_name == '${ev}'`));
+  assert.doesNotMatch(cond, /merge_group/);
+  assert.doesNotMatch(cond, /pull_request/);
+});
+
+test('D227: Backend tests in the merge queue run only when the entry touches backend paths', () => {
+  const cond = ifLine('backend-tests');
+  assert.doesNotMatch(cond, /\|\| github\.event_name == 'merge_group' \|\|/, 'merge_group must not be unconditional');
+  assert.match(cond, /\(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) && needs\.changes\.outputs\.backend == 'true'/);
+});
+
+test('D227: the changes filter diffs a merge_group entry against the queue base', () => {
+  assert.match(jobBlock('changes'), /elif \[ "\$event" = "merge_group" \]; then\n\s+base="\$\{\{ github\.event\.merge_group\.base_sha \}\}"/);
+});
+
+test('D227: a red post-merge Service Tests run blocks Deploy Dev', () => {
+  const deploy = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.github', 'workflows', 'deploy-dev.yml'), 'utf8');
+  assert.match(deploy, /^  actions: read/m);
+  assert.match(deploy, /- name: Gate on post-merge Service Tests/);
+  assert.match(deploy, /select\(\.name \| startswith\("Service Tests"\)\)/);
+  assert.match(deploy, /grep -qv '\^completed success\$'/);
+});
