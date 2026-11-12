@@ -1,5 +1,5 @@
 import SystemSetting from '../models/SystemSetting';
-import { agentDefaultModel } from '../config/agentDefaultModel';
+import { agentDefaultModel, defaultChatModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
@@ -36,7 +36,12 @@ export interface GlobalModelConfig {
 const DEFAULT_CONFIG: GlobalModelConfig = {
   llmService: {
     provider: 'auto', // auto | gemini | litellm | openrouter
-    model: 'gemini-2.5-flash',
+    // The chart's LITELLM_CHAT_MODEL, else the agent default (F105), read when
+    // asked. It was `gemini-2.5-flash`, a name LiteLLM served with DeepSeek
+    // wherever Gemini was off (litellm.legacyAliases).
+    get model(): string {
+      return defaultChatModel();
+    },
     contextLimit: 128000, // max input tokens for the configured model
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
@@ -44,13 +49,15 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     },
   },
   openclaw: {
-    provider: 'google', // google | openrouter | openai | anthropic | custom
-    model: 'google/gemini-2.5-flash',
-    fallbackModels: [
-      'google/gemini-2.5-flash',
-      'google/gemini-2.5-flash-lite',
-      'google/gemini-2.0-flash',
-    ],
+    provider: 'openrouter', // google | openrouter | openai | anthropic | custom
+    // The configured default (F105), as the community model below names it:
+    // the `openrouter` provider reaches LiteLLM, which serves it under its own
+    // name. It was `google/gemini-2.5-flash` with two more Gemini names as
+    // fallbacks, which LiteLLM served with DeepSeek wherever Gemini was off.
+    get model(): string {
+      return `openrouter/${agentDefaultModel()}`;
+    },
+    fallbackModels: [],
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
     // Model used by non-dev agents. It names the configured default
@@ -169,11 +176,11 @@ const normalizeContextLimit = (value: unknown): number => {
 // always won: values-dev set LITELLM_CHAT_MODEL=deepseek-v4-flash on 2026-09-01,
 // yet every summary, digest and chat-summary call still asked for
 // gemini-2.5-flash, whose key Google rejects, and fell to the template.
-const defaultLlmServiceModel = (provider: string): string => {
-  const envModel = String(process.env.LITELLM_CHAT_MODEL || '').trim();
-  if (envModel && (provider === 'auto' || provider === 'litellm')) return envModel;
-  return DEFAULT_CONFIG.llmService.model;
-};
+// A Gemini-direct provider calls Google's own API, so its default is a real
+// Gemini name; every other provider defaults to the LiteLLM name (F105).
+const defaultLlmServiceModel = (provider: string): string => (
+  provider === 'gemini' ? GEMINI_DIRECT_MODEL : DEFAULT_CONFIG.llmService.model
+);
 
 const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig => {
   const llm = candidate?.llmService || ({} as Partial<LlmServiceConfig>);

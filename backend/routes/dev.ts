@@ -12,6 +12,8 @@ const Pod = require('../models/Pod');
 const AgentEventService = require('../services/agentEventService');
 // eslint-disable-next-line global-require
 const { requireDevRoutes } = require('../config/devRoutes');
+// eslint-disable-next-line global-require
+const { defaultChatModel } = require('../config/agentDefaultModel');
 
 interface AuthReq {
   user?: { id?: string; _id?: unknown };
@@ -34,7 +36,8 @@ const getLiteLLMConfig = (): { baseUrl: string; apiKey: string | undefined; mode
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
     apiKey,
-    model: process.env.LITELLM_CHAT_MODEL || 'gemini-2.5-flash',
+    // The chart's LITELLM_CHAT_MODEL, else the agent default (F105).
+    model: defaultChatModel(),
   };
 };
 

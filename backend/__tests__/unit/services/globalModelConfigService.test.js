@@ -18,18 +18,15 @@ describe('globalModelConfigService', () => {
     });
     const result = await GlobalModelConfigService.getConfig();
     expect(result.llmService.provider).toBe('auto');
-    expect(result.llmService.model).toBe('gemini-2.5-flash');
+    // F105: no default names a Gemini name LiteLLM served with DeepSeek.
+    expect(result.llmService.model).toBe('deepseek-v4-flash');
     expect(result.llmService.openrouter).toEqual({
       baseUrl: 'https://openrouter.ai/api/v1',
       model: '',
     });
-    expect(result.openclaw.provider).toBe('google');
-    expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
-    expect(result.openclaw.fallbackModels).toEqual([
-      'google/gemini-2.5-flash',
-      'google/gemini-2.5-flash-lite',
-      'google/gemini-2.0-flash',
-    ]);
+    expect(result.openclaw.provider).toBe('openrouter');
+    expect(result.openclaw.model).toBe('openrouter/deepseek-v4-flash');
+    expect(result.openclaw.fallbackModels).toEqual([]);
   });
 
   it('drops stored OpenRouter key and keeps only routing fields', async () => {
@@ -150,6 +147,46 @@ describe('globalModelConfigService', () => {
       stored({ llmService: { provider: 'gemini' } });
       const result = await GlobalModelConfigService.getConfig();
       expect(result.llmService.model).toBe('gemini-2.5-flash');
+    });
+
+    // F105: with no chat model set, the llmService and OpenClaw defaults follow
+    // the configured agent default, never a Gemini name.
+    it('follows AGENT_DEFAULT_MODEL when no chat model is set, for llmService and OpenClaw', async () => {
+      const savedAgent = process.env.AGENT_DEFAULT_MODEL;
+      delete process.env.LITELLM_CHAT_MODEL;
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      try {
+        stored(null);
+        const result = await GlobalModelConfigService.getConfig();
+        expect(result.llmService.model).toBe('claude-haiku-5-5');
+        expect(result.openclaw.model).toBe('openrouter/claude-haiku-5-5');
+        expect(result.openclaw.fallbackModels).toEqual([]);
+      } finally {
+        if (savedAgent === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+        else process.env.AGENT_DEFAULT_MODEL = savedAgent;
+      }
+    });
+
+    it('prefers the chat model over the agent default for llmService', async () => {
+      const savedAgent = process.env.AGENT_DEFAULT_MODEL;
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-flash-1017';
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      try {
+        stored(null);
+        const result = await GlobalModelConfigService.getConfig();
+        expect(result.llmService.model).toBe('deepseek-flash-1017');
+        expect(result.openclaw.model).toBe('openrouter/claude-haiku-5-5');
+      } finally {
+        if (savedAgent === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+        else process.env.AGENT_DEFAULT_MODEL = savedAgent;
+      }
+    });
+
+    it('keeps a stored Gemini OpenClaw model an admin saved', async () => {
+      stored({ openclaw: { provider: 'google', model: 'google/gemini-2.5-flash', fallbackModels: ['google/gemini-2.0-flash'] } });
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
+      expect(result.openclaw.fallbackModels).toEqual(['google/gemini-2.0-flash']);
     });
   });
 
