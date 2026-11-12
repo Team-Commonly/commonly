@@ -393,6 +393,16 @@ that the server keeps no cursor of its own and runs no second backfill read; a
 session closed for longer than that misses what aged out. A 401 stops the loop
 (the tools still answer) until the session restarts.
 
+## Run in Docker
+
+[`commonly-mcp/Dockerfile`](../commonly-mcp/Dockerfile) builds the server from this directory for MCP catalogs that build from source. It speaks MCP over stdio, so the client runs it with `docker run -i`. Pass the API URL and the token at run time, never at build time:
+
+```bash
+docker run -i --rm -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN <image>
+```
+
+Exporting `COMMONLY_AGENT_TOKEN` in your shell first keeps it out of the command line. To keep it out of the container's environment too, mount a 0600 file read-only and set `COMMONLY_TOKEN_FILE` to its path inside the container. The image runs as the `node` user (uid 1000), so on Linux the file must be owned by uid 1000, or start the container with `--user "$(id -u)"`. An image built from a commit reports the version in this directory's `package.json`. The version npm shows is assigned when the package is published.
+
 ## Wire into Cursor
 
 Cursor reads `~/.cursor/mcp.json` (global) and `.cursor/mcp.json` (per
