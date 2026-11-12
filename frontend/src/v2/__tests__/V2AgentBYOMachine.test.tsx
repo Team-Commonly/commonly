@@ -6,7 +6,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // runtimeType 'wrapper' and files a placement request (never a binding); the
 // result panel watches the daemon's per-agent heartbeat state.
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -290,11 +290,51 @@ describe('BYO on-my-computer mode', () => {
     const options = Array.from(screen.getByTestId('byo-adapter-select').querySelectorAll('option'));
     expect(options.map((option) => option.textContent)).toEqual([
       'Auto-detect on that computer', 'Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.4',
-      'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness',
+      'Claude Code · Not on this computer', 'Qwen Code · Not checked here', 'Goose · Not checked here',
+      'Hermes · Not checked here', 'pi · Not checked here', 'DeepSeek Harness · Not checked here',
     ]);
     // Not on this computer stays selectable: it may be installed next.
     expect(options.every((option) => !option.disabled)).toBe(true);
     expect(document.body.textContent).not.toMatch(/Tested on a Mac|Not tested yet/);
+  });
+
+  // F370 #8: a missing harness says what the daemon tried, and an install made
+  // now shows up without a reload; one the daemon doesn't check says so.
+  test('a missing harness says why and is rechecked until it shows up', async () => {
+    const missing = { ...machineRow, runtimeInventory: [
+      { harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] },
+      { harness: 'codex', installed: false, version: null, models: null, efforts: [] },
+    ] };
+    mockGet({ catalog: CATALOG, machines: [missing] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option').length).toBeGreaterThan(2));
+    expect(screen.queryByTestId('byo-harness-detail')).toBeNull();
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+      expect(screen.getByTestId('byo-harness-detail')).toHaveTextContent(
+        'The daemon on Sam’s MacBook couldn’t run “codex --version” with the PATH it starts with. Install Codex there, or put it on that PATH.',
+      );
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/machines').length;
+      const before = reads();
+      mockGet({ catalog: CATALOG, machines: [{ ...missing, runtimeInventory: [missing.runtimeInventory[0],
+        { harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [] }] }] });
+      await act(async () => { jest.advanceTimersByTime(10_000); });
+      expect(reads()).toBe(before + 1);
+      expect(screen.queryByTestId('byo-harness-detail')).toBeNull();
+      expect(screen.getByTestId('byo-adapter-select')).toHaveTextContent('Codex · Installed · 0.162.1');
+      // Found: no more rechecks.
+      await act(async () => { jest.advanceTimersByTime(30_000); });
+      expect(reads()).toBe(before + 1);
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'goose' } });
+      expect(screen.getByTestId('byo-harness-detail')).toHaveTextContent(
+        'Sam’s MacBook doesn’t check whether Goose is installed. The agent starts if it is.',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a harness that can\'t answer here says what can instead, and the add button waits', async () => {

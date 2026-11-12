@@ -38,7 +38,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceNote, harnessLabel,
+  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -167,6 +167,7 @@ type MachineRow = {
   cliVersion?: string | null;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
+const HARNESS_RECHECK_MS = 10_000;
 const MACHINE_STATUS_MAX_TICKS = 30;
 // Registration mints a machine-local credential, so it is inherently a terminal
 // act — this page's job is to make it ONE paste (daemonSetupCommand), after
@@ -532,6 +533,10 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
   useEffect(() => { setPendingNarrowing(null); }, [name, podId, mode]);
   const machineInventory = selectedMachine?.runtimeInventory || [];
+  const harnessMissingDetail = selectedMachine
+    ? harnessDeviceDetail(machineInventory, adapter, harnessLabel(harnessCatalog, adapter),
+      machineDisplayName(selectedMachine, machines, t, i18n.language), t)
+    : '';
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
       || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
@@ -672,6 +677,24 @@ const V2AgentBYO: React.FC = () => {
     const timer = setInterval(() => { void check(); }, MACHINE_STATUS_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
   }, [api, podId, reconnectRequest]);
+
+  // F370 #8: while the chosen harness shows as missing on the chosen computer,
+  // re-read the computer's report, so an install made now shows up here
+  // without a reload. The daemon probes a missing harness again within a
+  // heartbeat or two.
+  const harnessMissing = mode === 'machine' && Boolean(adapter)
+    && machineInventory.some((row) => row.harness === adapter && !row.installed);
+  useEffect(() => {
+    if (!harnessMissing) return undefined;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const data = await api.get<{ machines?: MachineRow[] }>('/api/machines');
+        if (!cancelled && Array.isArray(data?.machines) && data.machines.length) setMachines(data.machines);
+      } catch { /* the next tick tries again */ }
+    }, HARNESS_RECHECK_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [api, harnessMissing]);
 
   // Watch the placement come up: the machine heartbeat carries per-agent
   // supervisor states, so "live" here means the daemon actually spawned it.
@@ -1932,6 +1955,9 @@ const V2AgentBYO: React.FC = () => {
                   return <option key={id} value={id}>{harnessLabel(harnessCatalog, id)}{note ? ` · ${note}` : ''}</option>;
                 })}
               </select>
+              {harnessMissingDetail && (
+                <span className="v2-byo__hint v2-byo__hint--shown" data-testid="byo-harness-detail">{harnessMissingDetail}</span>
+              )}
             </label>
           )}
           {machineBlocked && (

@@ -6810,3 +6810,13 @@ describe('F164 narrowing notices (F170 browser check)', () => {
   });
 });
 
+
+// F370 #8: a field hint shows only on focus; the line saying why the chosen
+// harness is missing must stay visible, or the reason is hidden again.
+describe('BYO harness detail stays visible', () => {
+  it('shows the missing-harness line without focus', () => {
+    const byoCss = read('../components/V2AgentBYO.css');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__field > .v2-byo__hint--shown')).toContain('display: block');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__hint v2-byo__hint--shown" data-testid="byo-harness-detail"');
+  });
+});
