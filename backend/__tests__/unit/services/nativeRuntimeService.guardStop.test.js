@@ -337,6 +337,30 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
+    // F317 holds a post that follows a failed call in the same response, but
+    // not here: this call is the last chance to reply, and a hold would end
+    // the run on the fixed line instead of the model's answer.
+    test('a refused lookup ahead of a post in that call does not hold the post', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(
+          fetchCall('c2', CLEAN_URL),
+          call('c3', 'commonly_post_message', { podId: POD, content: 'I could not use the blog page.' }),
+        ),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual(['I could not use the blog page.']);
+      const [lookup, post] = savedRun.turns[savedRun.turns.length - 1].toolCalls;
+      expect(lookup.error).toBeTruthy();
+      expect(post.error).toBeUndefined();
+    });
+
     test('a second refused lookup ends the run, naming the step and the tool, with the fixed line', async () => {
       chatReplies = [
         toolCalls(fetchCall('c1', STOPPED_URL)),
