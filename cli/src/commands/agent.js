@@ -1014,6 +1014,12 @@ const HELD_RETRY_MAX_FAILURES = 3;
 // server redelivers it under its cap, and may retire it with the TASK-656 line,
 // which is skipped if the agent has posted in the pod since.
 const PAST_CAP_MAX_CARRIES = 5;
+// F236: how often a seat waiting out an open circuit checks its inbox, so a pod
+// that first asks during the wait is told why within about a minute instead of
+// at the probe (up to ~16 minutes). The check runs no turn: the circuit's delay
+// is unchanged, and the can't-answer limit (once per cause per pod per hour)
+// still decides who hears it.
+const CIRCUIT_NOTICE_CHECK_MS = 60 * 1000;
 
 // Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
 // only a row the snapshot and the kernel's stamp both can't place reads so, and
@@ -4470,7 +4476,7 @@ export const performRun = ({
     tickTimer = null;
     if (!running) return;
     tickInFlight = true;
-    try { await runTick(); } finally {
+    try { await (circuitNotice ? runCircuitNoticeCheck() : runTick()); } finally {
       tickInFlight = false;
       if (!running) {
         try { await handBackCarryOnStop(); } finally { resolveStopped(); }
@@ -4478,8 +4484,12 @@ export const performRun = ({
     }
   };
 
+  // F236: set when a retry opens the circuit for a failure a person can be
+  // told about; `remainingMs` is what is left of the wait after the next check.
+  let circuitNotice = null;
   const runTick = async () => {
     tickUnsettled = [];
+    circuitNotice = null;
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
     let retryScheduled = false;
@@ -4659,6 +4669,9 @@ export const performRun = ({
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
+            circuitNotice = retry.circuitOpen && cantAnswerNotice(err) && !modelUnavailableFailure(err)
+              ? { error: err, remainingMs: retry.delayMs }
+              : null;
             tickUnsettled.push(...claimedAfter(groupIndex));
             const attempted = failedEvents.filter((event) => !pastCapEvents.includes(event));
             await noteFailedTurnPart(attempted);
@@ -4933,7 +4946,55 @@ export const performRun = ({
     // names it, and a sibling's completed turn must not shorten the backoff.
     // A wait the loop schedules itself always ends, so it is not a stall.
     pollLiveness.pause();
-    if (running) tickTimer = setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
+    const waitMs = completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs;
+    const checkMs = Math.max(CIRCUIT_NOTICE_CHECK_MS, intervalMs);
+    if (circuitNotice && waitMs > checkMs) circuitNotice.remainingMs = waitMs - checkMs;
+    else circuitNotice = null;
+    if (running) tickTimer = setTimeoutImpl(tick, circuitNotice ? checkMs : waitMs);
+  };
+
+  // F236: one check during a circuit wait. What it claims joins the carry, so
+  // the probe runs it, a stop hands it back, and its leases are renewed; each
+  // newly waiting pod is told why. No turn runs here.
+  const runCircuitNoticeCheck = async () => {
+    const wait = circuitNotice;
+    try {
+      pollLiveness.arm();
+      const carriedCount = [...heldRetry, ...heldGreeting]
+        .filter((event) => event.deliveryMode !== 'digest').length;
+      const page = await client.get('/api/agents/runtime/events', {
+        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
+        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
+      });
+      pollLiveness.arm();
+      if (pollStalled) return;
+      const fetched = page?.events || [];
+      // A carried id comes back only after the server requeued it, so the
+      // fetched copy holds the live deliveryId and the carried one's is dead.
+      // The fetched copy wins, as in runTick: otherwise the probe, which can no
+      // longer fetch it, would ack a stale nonce and stop the run.
+      const fetchedById = new Map(fetched.map((event) => [String(event._id), event]));
+      // Reassigned only when a copy changes, so the renewal's `heldRetry !== carry`
+      // guard skips its pruning only when there was something to replace.
+      const refetched = (carry) => carry.some((event) => fetchedById.has(String(event._id)));
+      const refreshCarry = (carry) => carry.map((event) => fetchedById.get(String(event._id)) || event);
+      if (refetched(heldRetry)) heldRetry = refreshCarry(heldRetry);
+      if (refetched(heldGreeting)) heldGreeting = refreshCarry(heldGreeting);
+      const carriedIds = new Set([...heldRetry, ...heldGreeting].map((event) => String(event._id)));
+      const fresh = fetched.filter((event) => !carriedIds.has(String(event._id)));
+      if (fetched.length) idleHeartbeat.busy();
+      if (fresh.length) await holdForRetry([], fresh);
+      if (fetched.length) keepHeldLeases(wait.remainingMs);
+      if (fresh.length) await noticeCantAnswer(wait.error, fresh);
+    } catch (error) {
+      log(`[inbox.batch] inbox check during the circuit wait failed: ${error.message}`);
+    }
+    pollLiveness.pause();
+    const checkMs = Math.max(CIRCUIT_NOTICE_CHECK_MS, intervalMs);
+    const stepMs = Math.min(checkMs, wait.remainingMs);
+    wait.remainingMs -= stepMs;
+    if (wait.remainingMs <= 0) circuitNotice = null;
+    if (running) tickTimer = setTimeoutImpl(tick, stepMs);
   };
 
   tick();
