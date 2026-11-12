@@ -214,15 +214,22 @@ describe('a PR write summary', () => {
     expect(prWriteView('github.create_pull_request', { bodyPreview: 'abc', bodyLength: 3 }).notices).toEqual([]);
   });
 
-  // F464: the server marks bidi controls in the preview, so the preview runs
-  // longer than the body it shows; bodyShown carries the real count.
-  test('a marked PR body counts what it shows from bodyShown, which is not a row', () => {
-    const marked = '⟦U+202E⟧'.repeat(300);
-    const cut = prWriteView('github.create_pull_request', { bodyPreview: marked, bodyShown: 300, bodyLength: 2500 });
-    expect(cut.notices).toEqual([{ key: 'approvalCard.toolCall.notice.bodyCut', vars: { shown: '300', total: '2500' } }]);
-    expect(cut.rows.map((row) => row.keys[0])).not.toContain('bodyShown');
-    const whole = prWriteView('github.create_pull_request', { bodyPreview: marked, bodyShown: 300, bodyLength: 300 });
-    expect(whole.notices).toEqual([]);
+  // F464: the merge card has no server summary; its free-text commit title and
+  // message are pinned arguments, and every row shows a format character as
+  // its code point, as the PR-write rows do.
+  test('a merge card shows a bidi control in its commit message as its code point', () => {
+    const view = toolCallView('github.merge_pull_request', {
+      owner: 'Team-Commonly', repo: 'commonly', pullNumber: 42, mergeMethod: 'squash',
+      commitTitle: 'Fix\u202Eexe.txt', commitMessage: 'Squash\n\n\u2066x\u2069',
+    });
+    const value = (key: string) => view.rows.find((row) => row.keys.includes(key))?.value;
+    expect(value('commitTitle')).toBe('Fix\\u{202E}exe.txt');
+    expect(value('commitMessage')).toBe('Squash\n\n\\u{2066}x\\u{2069}');
+  });
+
+  test('a PR card shows a bidi control in its title and body as its code point', () => {
+    const view = prWriteView('github.create_pull_request', { title: 'a\u202Eb', bodyPreview: 'c\u2066d', bodyLength: 3 });
+    expect(view.rows.map((row) => row.value)).toEqual(['a\\u{202E}b', 'c\\u{2066}d', '3']);
   });
 
   test('a push always says its contents are not shown', () => {

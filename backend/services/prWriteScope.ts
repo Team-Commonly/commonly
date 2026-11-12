@@ -64,17 +64,6 @@ export const CARD_CONTENTS_MAX = 64 * 1024;
 const CARD_MESSAGE_MAX = 4096;
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-/**
- * F168: the bidirectional controls that reorder how text displays (the
- * "Trojan Source" set). On the card each shows as a visible mark, so the
- * owner reads the characters that will be committed, not their rendering.
- * Display only: the envelope that runs is unchanged.
- */
-const BIDI_CONTROL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
-const markBidi = (text: string): string => text.replace(
-  BIDI_CONTROL,
-  (ch) => `⟦U+${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}⟧`,
-);
 
 /** The longest prefix of `bytes` no longer than `max` that ends on a whole UTF-8 character. */
 const utf8Prefix = (bytes: Buffer, max: number): number => {
@@ -85,10 +74,14 @@ const utf8Prefix = (bytes: Buffer, max: number): number => {
 };
 const shortSha = (sha: string): string => sha.slice(0, 7);
 
+// The summary carries text as it will land. The card shows every format
+// character in it (bidi controls included) as its code point:
+// frontend toolCallView.showInvisibles.
+
 /** The commit message as the owner reads it: whole, labelled, and cut only past the cap. */
 const cardMessage = (message: string): Record<string, unknown> => {
   const truncated = message.length > CARD_MESSAGE_MAX;
-  const shown = markBidi(truncated ? message.slice(0, CARD_MESSAGE_MAX) : message);
+  const shown = truncated ? message.slice(0, CARD_MESSAGE_MAX) : message;
   return {
     label: 'Full commit message, exactly as it will be recorded',
     text: truncated
@@ -119,7 +112,7 @@ const cardFiles = (files: Array<{ path?: unknown; content?: unknown }>): {
     remaining -= take;
     shownBytes += take;
     const truncated = take < content.length;
-    const text = markBidi(content.subarray(0, take).toString('utf8'));
+    const text = content.subarray(0, take).toString('utf8');
     return {
       path: str(file.path),
       bytes: content.length,
@@ -154,12 +147,9 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
   const repo = `${str(a.owner)}/${str(a.repo)}`;
   if (tool === 'github.create_pull_request') {
     const body = str(a.body);
-    const shown = body.slice(0, BODY_PREVIEW);
     return {
-      repo, base: str(a.base), head: str(a.head), title: markBidi(str(a.title)), draft: a.draft === true,
-      // The preview is marked, so it can run longer than what it shows:
-      // bodyShown counts the body characters it carries.
-      bodyPreview: markBidi(shown), bodyShown: shown.length, bodyLength: body.length,
+      repo, base: str(a.base), head: str(a.head), title: str(a.title), draft: a.draft === true,
+      bodyPreview: body.slice(0, BODY_PREVIEW), bodyLength: body.length,
     };
   }
   if (tool === 'github.commit_files') {
@@ -176,7 +166,7 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
       lands: branchExists
         ? `adds to existing branch ${head} at ${shortSha(parentSha)}`
         : `new branch ${head} from ${str(a.base)} at ${shortSha(parentSha)}`,
-      subject: markBidi(message.split('\n', 1)[0]),
+      subject: message.split('\n', 1)[0],
       message: cardMessage(message),
       ...cardFiles(files),
       fileCount: files.length, parentSha, branchExists,

@@ -427,6 +427,7 @@ describe('merge_pull_request: no attribution trailers in the merge commit (F464)
   test.each([
     ['commitMessage', 'Squash of #42\n\nCo-authored-by: Sam <sam@example.com>'],
     ['commitTitle', 'Signed-off-by: x'],
+    ['commitMessage', 'Squash\n\n\u200BCo-authored-by: hidden'],
   ])('a %s with a trailer refuses before parking', async (field, value) => {
     await expect(broker.callTool({
       grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',

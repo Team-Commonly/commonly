@@ -24,7 +24,7 @@ import { recordBrokerCall } from './brokerRecordService';
 import { APPROVAL_OUTCOME_UNKNOWN, isWriteUnknown } from './brokerWriteOutcome';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
 import {
-  ATTRIBUTION_TRAILER, assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles,
+  assertOwnedSeatBranch, commitSeatFiles, hasAttributionTrailer, prepareCommitFiles,
 } from './seatGithubCommit';
 import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 
@@ -384,14 +384,14 @@ const getPullRequest: GithubToolDefinition = {
 };
 
 // F168/F464: text that ends up in a commit answers to the commit message's
-// rule (seatGithubCommit.ATTRIBUTION_TRAILER): an agent's work is attributed to
+// rule (seatGithubCommit.hasAttributionTrailer): an agent's work is attributed to
 // the App, and it does not get to name people. A squash merge puts a PR body in
 // the commit; a merge's commitTitle/commitMessage IS the commit.
 const assertNoAttributionTrailer = (
   texts: unknown[],
   refusal: { code: string; what: string },
 ): void => {
-  if (texts.some((text) => typeof text === 'string' && ATTRIBUTION_TRAILER.test(text))) {
+  if (texts.some((text) => typeof text === 'string' && hasAttributionTrailer(text))) {
     throw new RoomGrantError(
       refusal.code,
       `${refusal.what} may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...)`,
