@@ -4749,3 +4749,15 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** a public seat's spawn checks every link in the tree its tools reach before it starts (F185, `docs/cli/opencode.md`). The permission rules stay as a second line, not the guard.
 
 **Lesson:** read what a permission rule matches before relying on it as a boundary. A rule written about paths can be a rule about the text of an argument.
+
+## 133. A decided approval card still read "[approval needed]" to BYO and MCP agents (2026-11-12, F290)
+
+*Origin: F290's open item, after Growth's 11-07 walk showed the native fix.*
+
+**Surface:** the runtime reads `GET /api/agents/runtime/pods/:podId/messages` and `/context` (`AgentMessageService.getRecentMessages`).
+
+**False model:** a card whose text opens with `[approval needed]` is still waiting. That text is written once and never changes; only the card's payload records approval, decline, expiry or failure. The native turn's context already replaced the marker with the outcome (`[approval declined]` and so on). The runtime reads returned the stored text, so a BYO or MCP agent read a declined or expired card as pending and could tell the person to approve something that was gone.
+
+**Repair:** `services/approvalCardOutcome.ts` holds the one rewrite, and both the native context and `getRecentMessages` (PG and Mongo) use it.
+
+**Lesson:** when a row's text is frozen and its state lives in the payload, every reader that shows the text has to derive it from the state, not only the reader where the bug was first seen.

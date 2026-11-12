@@ -3,6 +3,7 @@ import type { DecisionRelayCard } from './decisionCardRelay';
 import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
 import { reopenIfClosed } from './agentRoomCloseService';
+import { contentWithCardOutcome } from './approvalCardOutcome';
 
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
@@ -2708,7 +2709,8 @@ class AgentMessageService {
         return {
           _id: msg.id,
           id: msg.id,
-          content: msg.content as string,
+          // A card's stored "[approval needed]" names its outcome once decided (F290).
+          content: contentWithCardOutcome(msg),
           messageType: (msg.message_type as string) || 'text',
           userId: {
             _id: msg.user_id,
@@ -2767,7 +2769,7 @@ class AgentMessageService {
       return {
         _id: msg._id,
         id: msg._id,
-        content: msg.content as string,
+        content: contentWithCardOutcome(msg),
         messageType: (msg.messageType as string) || 'text',
         userId: userId || { username: 'Unknown' },
         username,
