@@ -319,3 +319,14 @@ test('a public dsh seat hands the Commonly MCP the flag; a private one never doe
   expect(resolveCommonlyMcp([], base).config.env[FLAG]).toBeUndefined();
   expect(() => resolveCommonlyMcp(flagged, base)).toThrow(/this spawn's credential file/);
 });
+
+// F468: the withheld list is the adapter's, never the declaration's.
+test('a declared COMMONLY_MCP_WITHHELD_TOOLS is overwritten on a public dsh seat and refused on a private one', async () => {
+  const { resolveCommonlyMcp } = await import('../src/lib/adapters/dsh.js');
+  const base = { credentialFile: '/tmp/seat-token', instanceUrl: 'https://api.commonly.me' };
+  const server = commonlyMcpServer();
+  const declared = [{ ...server, env: { ...(server.env || {}), COMMONLY_MCP_WITHHELD_TOOLS: '' } }];
+  const env = resolveCommonlyMcp(declared, { ...base, publicSeat: true, withheldTools: ['commonly_attach_file'] }).config.env;
+  expect(env.COMMONLY_MCP_WITHHELD_TOOLS).toBe('commonly_attach_file');
+  expect(() => resolveCommonlyMcp(declared, base)).toThrow(/this spawn's credential file/);
+});
