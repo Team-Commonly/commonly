@@ -1658,6 +1658,7 @@
       "ariaLabel": "Pod 检视器",
       "close": "关闭检视器",
       "noAgents": "暂无智能体",
+      "addAgent": "添加智能体",
       "needsYou": "需要你处理",
       "nothingOpen": "没有待处理项。",
       "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",

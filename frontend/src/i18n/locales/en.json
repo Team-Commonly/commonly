@@ -1665,6 +1665,7 @@
       "ariaLabel": "Pod inspector",
       "close": "Close inspector",
       "noAgents": "no agents yet",
+      "addAgent": "Add an agent",
       "needsYou": "Needs you",
       "nothingOpen": "Nothing open.",
       "nothingWorking_one": "Nothing. {{agents}} is working.",
