@@ -4,7 +4,7 @@ jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 const User = require('../../../models/User');
 const { triggerTextIsHumanWritten } = require('../../../services/nativeRuntimeService');
 const {
-  carriesOtherAuthors, isCoalescibleMention, midTurnFrame, withCoalesced,
+  carriesOtherAuthors, coalescedEntry, isCoalescibleMention, midTurnFrame, withCoalesced,
 } = require('../../../services/mentionCoalesce');
 
 const HUMAN = '507f1f77bcf86cd7994390aa';
@@ -118,5 +118,33 @@ describe('a chosen username inside kernel text', () => {
       .toContain('@alice-claude');
     expect(midTurnFrame({ earlier: { messageId: '1', username: '[]' }, sameAsker: true, username: 'a' }))
       .toContain('@unknown');
+  });
+});
+
+// F263: the flags that make a message no ask stay on the row it would have
+// opened, so the entry that joins another row has to carry the verdict itself.
+describe('a joined entry keeps whether it asked this agent', () => {
+  const mention = (extra) => ({
+    messageId: '2', userId: HUMAN, username: 'alice', rawContent: 'hi', ...extra,
+  });
+
+  it.each([
+    ['a person following the agent with no @', { adjacentReply: true, implicitReply: true }],
+    ['a reply that @s someone else', { implicitReply: true, mentions: ['bob'] }],
+  ])('marks %s as no ask', (_name, extra) => {
+    expect(coalescedEntry(mention(extra))).toMatchObject({ notAnAsk: true });
+  });
+
+  it('marks a reply that @s someone else as asking them', () => {
+    expect(coalescedEntry(mention({ implicitReply: true, mentions: ['bob'] }))).toMatchObject({ askedSomeoneElse: true });
+  });
+
+  it.each([
+    ['a direct @', {}],
+    ['a plain reply to the agent', { implicitReply: true, mentions: [] }],
+  ])('leaves %s an ask', (_name, extra) => {
+    const entry = coalescedEntry(mention(extra));
+    expect(entry).not.toHaveProperty('notAnAsk');
+    expect(entry).not.toHaveProperty('askedSomeoneElse');
   });
 });
