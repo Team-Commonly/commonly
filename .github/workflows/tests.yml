@@ -6,9 +6,9 @@ on:
     # pull_request and merge_group entry, and run on merge_group for the
     # packages the entry touches (so an inter-PR conflict between two queued
     # PRs is caught in the queue, not as red-on-main — #3186), and all of them
-    # here post-merge, with the nightly schedule. Service Tests run only here
-    # and nightly (D227); a red one blocks Deploy Dev. v1.0.x stays for
-    # release-branch coverage.
+    # here post-merge, with the nightly schedule. Service Tests never run in the
+    # queue (D227): on a backend PR, here and nightly; a red one here blocks
+    # Deploy Dev. v1.0.x stays for release-branch coverage.
     branches: [ v1.0.x, main ]
   # No branches filter on pull_request: stacked PRs (base = another feature
   # branch) previously got ZERO test runs — every number on them was
@@ -456,11 +456,12 @@ jobs:
         shard: [1, 2]
     # Always GitHub-hosted, as frontend-tests.
     needs: [latchkey-route, changes]
-    # Post-merge only (D227, CTO 2026-11-12): push:main, nightly and dispatch. These
-    # real-DB Tier-1 tests were the long pole on both the PR run and the queue run
-    # (~10m); they no longer gate a PR or the queue. A red here blocks Deploy Dev
+    # Off the merge queue (D227, CTO 2026-11-12): these real-DB Tier-1 tests were the
+    # long pole of the queue run (~10m). They run post-merge (push:main), nightly, and
+    # on a PR only when backend/cli changed, so a backend change (a SQL change, say)
+    # still meets real Postgres before merge. A red post-merge run blocks Deploy Dev
     # (its "Gate on post-merge Service Tests" step) and SRE files a board row.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ubuntu-latest
 
     services:

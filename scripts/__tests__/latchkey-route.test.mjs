@@ -368,11 +368,12 @@ const ifLine = (id) => {
   return m[1];
 };
 
-test('D227: Service Tests run post-merge and nightly only, never on a PR or in the queue', () => {
+test('D227: Service Tests never run in the queue, and still run on a backend PR', () => {
   const cond = ifLine('service-test');
   for (const ev of ['push', 'schedule', 'workflow_dispatch']) assert.match(cond, new RegExp(`github\\.event_name == '${ev}'`));
   assert.doesNotMatch(cond, /merge_group/);
-  assert.doesNotMatch(cond, /pull_request/);
+  // A backend change (a SQL change, say) must meet real Postgres before merge.
+  assert.match(cond, /\(github\.event_name == 'pull_request' && needs\.changes\.outputs\.backend == 'true'\)/);
 });
 
 test('D227: Backend tests in the merge queue run only when the entry touches backend paths', () => {
@@ -391,4 +392,9 @@ test('D227: a red post-merge Service Tests run blocks Deploy Dev', () => {
   assert.match(deploy, /- name: Gate on post-merge Service Tests/);
   assert.match(deploy, /select\(\.name \| startswith\("Service Tests"\)\)/);
   assert.match(deploy, /grep -qv '\^completed success\$'/);
+  // Fails closed: an API error must stop the roll, never read as "no run" (CTO 11-12).
+  const gate = deploy.slice(deploy.indexOf('- name: Gate on post-merge Service Tests'), deploy.indexOf('\n  deploy:\n'));
+  assert.doesNotMatch(gate, /\|\| echo ""/);
+  assert.equal((gate.match(/if ! (RUN|JOBS)=\$\(gh api /g) || []).length, 2);
+  assert.match(gate, /could not read Tests runs/);
 });
