@@ -26,6 +26,14 @@
  * CIMD remains the registration mode. openid binds providerSubject during
  * reconnect. The revoke page is the signed-in Authorized applications page
  * verified in the 2026-10-15 walk, not the workspace security settings page.
+ *
+ * The revoke endpoint is the token endpoint: Linear advertises one URL for
+ * both. F228 measured it on 2026-11-12 with a real read grant to a throwaway
+ * public client, sent as removal sends it (token, token_type_hint, client_id):
+ * revoking the refresh token answered 200, and the grant then refused both
+ * tokens (the access token 401 at the MCP resource, the refresh invalid_grant).
+ * A never-issued token also answers 200 there, so a removal cannot stall on it.
+ * Fixture: linear-authorization-server-2026-11-12.json.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 
@@ -44,6 +52,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   writeScope: "write",
   revoke: {
     page: "https://linear.app/settings/account/security",
+    endpoint: "https://mcp.linear.app/token",
   },
   tools: [
     {
