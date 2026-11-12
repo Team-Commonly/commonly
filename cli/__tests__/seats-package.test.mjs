@@ -65,9 +65,18 @@ describe('packages/seats', () => {
       .rejects.toThrow('no enforced confinement adapter exists');
   });
 
-  test('the CLI provider proxy is the package module', () => {
-    expect(Object.keys(cliProxy).sort()).toEqual(['PROVIDER_WIRES', 'redactProviderMaterial', 'resolveProviderKeyFile', 'startProviderProxy']);
-    for (const name of Object.keys(cliProxy)) expect(cliProxy[name]).toBe(seatsProxy[name]);
+  // The CLI re-exports the package module, except the key-file resolver it
+  // wraps with its sandbox roots (F453): the roots come from the CLI's own
+  // Seatbelt and bwrap modules, which the package does not import.
+  test('the CLI provider proxy is the package module, plus its sandbox-aware key-file check', () => {
+    expect(Object.keys(cliProxy).sort()).toEqual([
+      'PROVIDER_WIRES', 'keyFileReadableRoot', 'redactProviderMaterial', 'resolveProviderKeyFile',
+      'sandboxReadableRoots', 'startProviderProxy',
+    ]);
+    for (const name of Object.keys(seatsProxy)) {
+      if (name === 'resolveProviderKeyFile') expect(cliProxy[name]).not.toBe(seatsProxy[name]);
+      else expect(cliProxy[name]).toBe(seatsProxy[name]);
+    }
   });
 
   test('a registry refuses duplicate names', () => {

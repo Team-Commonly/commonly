@@ -55,6 +55,23 @@ const DEFAULT_RO_BINDS = [
   '/lib64',
 ];
 
+/**
+ * What a bwrap sandbox binds for reading, as roots (F453): the default binds
+ * plus the seat's declared read-outside and write-outside, tilde-expanded the
+ * way wrapArgvWithBwrap expands them. A caller keeping a secret out of the
+ * sandbox (a public seat's provider key file) checks against this rather than
+ * a copy of the bind list. Per-turn paths (workspace, state, adapter inputs)
+ * are the caller's.
+ */
+export const bwrapReadRoots = (env) => {
+  const declared = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
+    ? env.sandbox.filesystem[key].map(expandHome) : []);
+  return {
+    subpaths: [...new Set([...DEFAULT_RO_BINDS, ...declared('read-outside'), ...declared('write-outside')])],
+    literals: [],
+  };
+};
+
 // `bwrap --version` only proves the binary is there. On Ubuntu 24.04 and later
 // AppArmor restricts unprivileged user namespaces, so bwrap is installed and
 // every sandbox it starts fails (`setting up uid map: Permission denied`,
