@@ -55,7 +55,7 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { runProdWalk } from './windows-byo-prod.mjs';
-import { installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
+import { cliHintsFrom, installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_byo_smoke';
@@ -328,7 +328,7 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
   ];
   const firstError = out.split(/\r?\n/).map((l) => l.trim())
     .find((l) => /running scripts is disabled|is not recognized|error|denied|not logged in|log ?in|api key/i.test(l)) || '';
-  return { problems, installExit, delivered: leg.delivered, steps, firstError };
+  return { problems, installExit, delivered: leg.delivered, steps, firstError, out };
 };
 
 // The workflow step runs under pwsh 7, whose PSModulePath leaks into a child
@@ -395,6 +395,10 @@ if (tarball) {
   else {
     stepTable('scripts blocked', blocked);
     publishedOutcome(blocked).fail.forEach((problem) => fail(`scripts blocked: ${problem}`));
+    // Gated (F435): the commands the CLI itself prints on this policy are ones that run here.
+    const hints = cliHintsFrom(blocked.out);
+    log(`scripts blocked: the CLI's printed commands:\n  ${hints.shim.map((line) => line.trim()).join('\n  ') || '(none)'}`);
+    hints.problems.forEach((problem) => fail(`scripts blocked: ${problem}`));
   }
   // Reported: the bare lines on the same policy, to show where they stop.
   const bare = await withRestrictedPolicy(() => walk('scripts blocked, bare', `npm.cmd i -g ${tarball}`, { bare: true, timeoutMs: REPORT_LEG_TIMEOUT_MS, freshShell: true }));
