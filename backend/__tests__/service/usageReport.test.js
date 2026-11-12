@@ -59,11 +59,11 @@ describe('usage report', () => {
       // Outside the window.
       event(people.ana, 'app-open', day('2026-10-01')),
     ]);
-    // F399's per-load recording state, written into the same collection.
-    const usageState = (value, n) => ({
-      _id: `2026-11-09|usage-drop|${value}`,
-      day: '2026-11-09',
-      dayStart: day('2026-11-09'),
+    // F399's failed-read count, written into the same collection.
+    const usageState = (value, n, dayIso = '2026-11-09') => ({
+      _id: `${dayIso}|usage-drop|${value}`,
+      day: dayIso,
+      dayStart: day(dayIso),
       name: 'usage-drop',
       page: '',
       refTag: '',
@@ -74,8 +74,8 @@ describe('usage report', () => {
       { _id: '2026-11-09|page-view|/|x|', day: '2026-11-09', dayStart: day('2026-11-09'), name: 'page-view', page: '/', refTag: 'x', n: 7 },
       { _id: '2026-11-09|cta-click|/|none|pricing', day: '2026-11-09', dayStart: day('2026-11-09'), name: 'cta-click', page: '/', refTag: 'none', value: 'pricing', n: 2 },
       { _id: '2026-10-01|page-view|/|none|', day: '2026-10-01', dayStart: day('2026-10-01'), name: 'page-view', page: '/', refTag: 'none', n: 99 },
-      usageState('recorded', 5),
-      usageState('region-default-off', 2),
+      usageState('settings-get-failed', 7),
+      usageState('settings-get-failed', 2, '2026-11-10'),
     ]);
   });
 
@@ -110,14 +110,14 @@ describe('usage report', () => {
     ]);
   });
 
-  it('reports the per-load recording state apart, small cells as <5, never as a logged-out hit (F399)', async () => {
+  it('reports failed Settings reads apart, small cells as <5, never as a logged-out hit (F399)', async () => {
     const report = await build();
     expect(report.usageStates).toEqual([
-      { day: '2026-11-09', state: 'recorded', loads: 5 },
-      { day: '2026-11-09', state: 'region-default-off', loads: '<5' },
+      { day: '2026-11-10', state: 'settings-get-failed', loads: '<5' },
+      { day: '2026-11-09', state: 'settings-get-failed', loads: 7 },
     ]);
     expect(report.loggedOut.some((row) => row.name === 'usage-drop')).toBe(false);
-    expect(formatUsageReport(report)).toContain('by whether usage was recorded');
+    expect(formatUsageReport(report)).toContain('could not read the usage setting');
   });
 
   it('ignores a prefix shorter than 4 characters, so a slip cannot drop real people', async () => {

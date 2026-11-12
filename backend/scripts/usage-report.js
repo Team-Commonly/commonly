@@ -16,7 +16,7 @@ const MAX_DAYS = 90;
 // them from every read, so a prefix needs at least this many characters.
 const MIN_PREFIX = 4;
 const DAY_MS = 24 * 3600 * 1000;
-// F399: the smallest per-day recording-state count the report prints as a number.
+// F399: the smallest per-day failed-read count the report prints as a number.
 const USAGE_STATE_MIN = 5;
 
 const configList = (value) => String(value || '').split(',')
@@ -83,9 +83,8 @@ async function buildUsageReport(db, opts = {}) {
     .find({ day: { $gte: utcDay(since), $lt: utcDay(until) } })
     .project({ _id: 0, day: 1, name: 1, page: 1, refTag: 1, value: 1, n: 1 })
     .toArray();
-  // F399's per-load recording state lives in the same collection; it is no page
-  // hit. A cell under USAGE_STATE_MIN prints as '<5', so a day with one person
-  // can't say where they were.
+  // F399's failed-read count lives in the same collection; it is no page hit.
+  // A cell under USAGE_STATE_MIN prints as '<5'.
   const usageStates = counts.filter((row) => row.name === 'usage-drop').map((row) => ({
     day: row.day, state: row.value || '', loads: row.n < USAGE_STATE_MIN ? `<${USAGE_STATE_MIN}` : row.n,
   })).sort((a, b) => b.day.localeCompare(a.day) || a.state.localeCompare(b.state));
@@ -132,7 +131,7 @@ function formatUsageReport(report) {
     table(report.signedIn, ['day', 'name', 'screen', 'step', 'events', 'people']),
     '\nLogged-out hits per day, by page\n',
     table(report.loggedOut, ['day', 'name', 'page', 'ref', 'value', 'hits']),
-    '\nSigned-in page loads per day, by whether usage was recorded (our own accounts not counted)\n',
+    '\nSigned-in loads per day where the app could not read the usage setting (our own accounts not counted)\n',
     table(report.usageStates || [], ['day', 'state', 'loads']),
   ].filter(Boolean).join('');
 }

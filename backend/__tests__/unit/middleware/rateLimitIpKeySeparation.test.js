@@ -252,13 +252,9 @@ describe('TASK-126 ip key separation', () => {
     const routesOn = (key) => walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
       .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort();
     expect(routesOn(presentedCredentialRateLimitKeyGenerator)).toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
-    // F399: usage events, the counted Settings read and the failed-read count are capped per account after auth,
-    // beside the per-IP cap ahead of it.
+    // F399: usage events and the failed-read count are capped per account after auth, beside the per-IP cap ahead of it.
     expect(routesOn(authenticatedUserRateLimitKeyGenerator))
-      .toEqual([
-        'DELETE /api/users/me', 'GET /api/users/me/usage-events', 'POST /api/stats/ui-event', 'POST /api/stats/usage-state',
-        'POST /api/uploads/',
-      ]);
+      .toEqual(['DELETE /api/users/me', 'POST /api/stats/ui-event', 'POST /api/stats/usage-state', 'POST /api/uploads/']);
     expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === loginEmailRateLimitKeyGenerator)
       .map((w) => `${w.method.toUpperCase()} ${w.path}`))
       .toEqual(['POST /api/auth/login']);

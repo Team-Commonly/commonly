@@ -58,15 +58,9 @@ describe('usage events (D286)', () => {
   });
   afterAll(closeMongoDb);
 
-  describe('the per-load recording state (F399)', () => {
+  describe('the failed Settings read count (F399)', () => {
     const states = async () => Object.fromEntries((await counts().find({ name: 'usage-drop' }).toArray())
       .map((row) => [row.value, row.n]));
-    const counted = (user, headers = {}) => {
-      let req = request(app).get('/api/users/me/usage-events?count=1').set('cf-connecting-ip', `192.0.2.${++ip % 250}`)
-        .set('Authorization', `Bearer ${issueSessionToken(user)}`);
-      for (const [key, value] of Object.entries(headers)) req = req.set(key, value);
-      return req;
-    };
     const failed = (user, body, headers = {}) => {
       let req = request(app).post('/api/stats/usage-state').set('cf-connecting-ip', `198.51.100.${++ip % 250}`)
         .set('Authorization', `Bearer ${issueSessionToken(user)}`);
@@ -87,41 +81,27 @@ describe('usage events (D286)', () => {
       throw new Error(`expected ${total} counted loads, saw ${JSON.stringify(await states())}`);
     };
 
-    it('counts each counted read by its state, in usageAllowed order, and never a DNT or GPC load', async () => {
+    it("counts nothing from the Settings read, whatever the person chose, and no internal account's failed read", async () => {
       const unset = await makeUser();
       const off = await makeUser({ preferences: { usageEvents: false } });
-      const on = await makeUser({ preferences: { usageEvents: true } });
-      await counted(unset, { 'cf-ipcountry': 'US' }).expect(200);
-      await counted(unset, { 'cf-ipcountry': 'DE' }).expect(200);
-      await counted(unset).expect(200); // no country: asked first
-      await counted(off, { 'cf-ipcountry': 'US' }).expect(200);
-      await counted(on, { 'cf-ipcountry': 'FR' }).expect(200);
-      await counted(on, { 'cf-ipcountry': 'US', 'sec-gpc': '1' }).expect(200);
-      await counted(unset, { 'cf-ipcountry': 'DE', dnt: '1' }).expect(200);
-      await settle(5);
-      expect(await states()).toEqual({ recorded: 2, 'region-default-off': 2, 'saved-off': 1 });
+      const admin = await makeUser({ role: 'admin' });
+      await setting(unset, { 'cf-ipcountry': 'DE' }).expect(200);
+      await setting(off, { 'cf-ipcountry': 'US' }).expect(200);
+      await setting(unset, { 'cf-ipcountry': 'US' }).expect(200);
+      await failed(admin, { reason: 'settings-get-failed' }).expect(204);
+      await failed(unset, { reason: 'settings-get-failed' }).expect(204);
+      await settle(1);
+      expect(await states()).toEqual({ 'settings-get-failed': 1 });
     });
 
-    it('holds only the day, the state and a count, nothing about the person', async () => {
+    it('holds only the day, the reason and a count, nothing about the person', async () => {
       const user = await makeUser();
-      await counted(user, { 'cf-ipcountry': 'US' }).expect(200);
-      await settle(1);
+      await failed(user, { reason: 'settings-get-failed' }).expect(204);
       const [row] = await counts().find({ name: 'usage-drop' }).toArray();
       expect(Object.keys(row).sort()).toEqual(['_id', 'day', 'dayStart', 'n', 'name', 'page', 'refTag', 'value']);
-      expect(row._id).toBe(`${row.day}|usage-drop|recorded`);
+      expect(row._id).toBe(`${row.day}|usage-drop|settings-get-failed`);
       expect(JSON.stringify(row)).not.toContain(String(user._id));
       expect(JSON.stringify(row)).not.toContain(user.username);
-    });
-
-    it("doesn't count the Settings page's own read, or an internal account", async () => {
-      const user = await makeUser();
-      const admin = await makeUser({ role: 'admin' });
-      await setting(user, { 'cf-ipcountry': 'US' }).expect(200);
-      await counted(admin, { 'cf-ipcountry': 'US' }).expect(200);
-      await failed(admin, { reason: 'settings-get-failed' }).expect(204);
-      await counted(user, { 'cf-ipcountry': 'US' }).expect(200);
-      await settle(1);
-      expect(await states()).toEqual({ recorded: 1 });
     });
 
     it('counts a failed read from a bare reason, and refuses any other body', async () => {

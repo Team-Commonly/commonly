@@ -19,13 +19,12 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/which suggested start you picked first/)).toBeInTheDocument();
     expect(screen.getByText(/We never record what you type, a command, a key or a token\.$/)).toBeInTheDocument();
     expect(screen.getByText(/^Product usage: when you're signed in, we record which screens you open and which buttons you press/)).toBeInTheDocument();
-    expect(screen.getByText(/In the EU, the EEA and the UK it starts off, and nothing about you is recorded until you turn it on\./)).toBeInTheDocument();
+    expect(screen.getByText(/In the EU, the EEA and the UK it starts off, and nothing is recorded until you turn it on\./)).toBeInTheDocument();
     expect(screen.getByText(/If your browser sends Do Not Track or Global Privacy Control, no product usage is recorded\./)).toBeInTheDocument();
     expect(screen.getByText(/beyond the screen's name, the fixed event name and that it was a direct conversation\./)).toBeInTheDocument();
     expect(screen.getByText(/We don't use third-party analytics\.$/)).toBeInTheDocument();
-    // F399: the per-day count of why usage was off is disclosed too.
-    expect(screen.getByText(/Those counts hold only the reason and the day, nothing about you\./)).toBeInTheDocument();
-    expect(screen.getByText(/Global Privacy Control, the app opening isn't counted either\./)).toBeInTheDocument();
+    // F399: the per-day count of failed setting reads is disclosed too.
+    expect(screen.getByText(/The count holds only the day, nothing about you\./)).toBeInTheDocument();
     expect(screen.getByText('Setup-step records have no expiry date.')).toBeInTheDocument();
     expect(screen.getByText('Product usage records are deleted after 90 days.')).toBeInTheDocument();
     expect(screen.getByText("Page counts for visitors who aren't signed in, which hold no identifier, are kept for 13 months.")).toBeInTheDocument();

@@ -29,8 +29,7 @@ export const useUsageEvents = (): void => {
     let sentDay: string | null = null;
     try { sentDay = window.localStorage.getItem(openKey(userId)); } catch { sentDay = null; }
     if (sentDay !== day) trackUsage('app-open');
-    // count=1: the server adds this load to the day's count for its state (F399).
-    axios.get('/api/users/me/usage-events', { params: { count: '1' } })
+    axios.get('/api/users/me/usage-events')
       .then(({ data }) => {
         if (!live) return;
         const on = Boolean(data?.usageEvents) && !data?.browserSignal;
@@ -43,6 +42,7 @@ export const useUsageEvents = (): void => {
       })
       .catch(() => {
         if (!live) return;
+        // F399: a load that recorded nothing through our fault is counted, per day only.
         setUsageEventsEnabled(false);
         reportSettingsReadFailed();
       });
