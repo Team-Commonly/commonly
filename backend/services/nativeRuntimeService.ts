@@ -232,6 +232,17 @@ const COMPUTER_SET_ASIDE_LIMIT = 5;
 // The tool results that carry what a page showed.
 const COMPUTER_READ_TOOLS = new Set(['computer_navigate', 'computer_snapshot', 'computer_screenshot']);
 const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
+// F317: a model can ask for a tool and, in the same response, post a reply
+// that describes its result, before that result exists. On prod a hosted agent
+// called commonly_offer_local_agent and commonly_post_message together; the
+// offer was refused and the post still said the card had gone out. So once a
+// call in a response fails, a later post in that response is held, and the model
+// posts in its next step, with the failure in front of it.
+export const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
+export const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
+  `Not posted: ${failed.name}, called earlier in this same response, did not succeed (${failed.error}). `
+  + 'Read its result above, then post your reply in your next step, saying what actually happened.'
+);
 // The refusal for any tool that round does not offer. When the round did not
 // try to post, the model reads it before one further call (F33: it asked for
 // the set-aside page again).
@@ -3289,6 +3300,12 @@ export async function runAgent(
         });
         // Screenshots wait until every result of this round is in.
         const roundImages: Array<{ base64: string; read?: (typeof computerResults)[number] }> = [];
+        // F317: the first call in this response that did not succeed. A posting
+        // call after it is held, except in the recovery round and in the turn's
+        // last allowed step: both are the last chance to reply at all, and the
+        // cap would turn a held reply into a failure line.
+        let failedEarlierInRound: { name: string; error: string } | null = null;
+        const mayHoldPost = !recoveryRound && turnIndex < MAX_TURNS - 1;
 
         for (const tc of toolCalls) {
           const toolStart = Date.now();
@@ -3336,6 +3353,10 @@ export async function runAgent(
               outcome: brokerCall.outcome,
               elapsedMs: elapsed,
             });
+            // `pending_approval` counts: the action has not happened yet either.
+            if (brokerCall.outcome !== 'ok' && !failedEarlierInRound) {
+              failedEarlierInRound = { name: toolName, error: String(brokerCall.outcome || 'failed') };
+            }
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
@@ -3365,6 +3386,10 @@ export async function runAgent(
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
           let result: DispatchResult;
           if (replied) result = { content: { ok: false, error: replied }, error: replied };
+          else if (failedEarlierInRound && mayHoldPost && POSTING_NATIVE_TOOLS.has(toolName)) {
+            const held = postHeldAfterFailedCall(failedEarlierInRound);
+            result = { content: { ok: false, posted: false, error: held }, error: POST_HELD_AFTER_FAILED_CALL };
+          }
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           } else result = { content: { ok: false, error: notOffered }, error: notOffered };
@@ -3385,6 +3410,9 @@ export async function runAgent(
             outcome: result.error ? 'failed' : 'ok',
             elapsedMs: elapsed,
           });
+          if (result.error && !failedEarlierInRound) {
+            failedEarlierInRound = { name: toolName, error: String(result.error) };
+          }
           if (toolName === 'commonly_post_message' && !result.error) {
             postedViaTool = true;
             finalMessage = typeof (parsedArgs as any)?.content === 'string'
@@ -3563,10 +3591,13 @@ export async function runAgent(
       // A heartbeat that called the post tool and never got a post through
       // meant to say something, so it did not decline: the run fails, and its
       // digest is not settled as answered. A duplicate is the exception: those
-      // words are already in the pod, and the guidance tells it to drop them.
+      // words are already in the pod, and the guidance tells it to drop them. So
+      // is a post held behind a failed call (F317): the model saw that failure
+      // before it chose, next step, to post or to decline.
       if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
         && run.turns.some((t: any) => (t.toolCalls || []).some(
           (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed'
+            && c.error !== POST_HELD_AFTER_FAILED_CALL
             && !/^duplicate_/.test(String(c.result?.result?.reason)),
         ))) {
         run.status = 'failed';
