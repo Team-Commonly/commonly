@@ -535,3 +535,185 @@ describe('mountSkills', () => {
     expect(fs.readFileSync(path.join(slot, 'hand-edited.md'), 'utf8')).toBe('mine');
   });
 });
+
+// F171: skills are written only into a real .claude/skills directory. Each
+// component is checked with lstat and never followed; a link, or anything that
+// is not a real directory, gets no mount, and none of the write steps (mkdir,
+// the refresh, the copy, the marker, the read-only pass) runs.
+describe('mountSkills refuses a linked .claude or .claude/skills (F171)', () => {
+  let root;
+  let workspace;
+  let outside;
+  let skillSrc;
+  let name;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171-'));
+    workspace = path.join(root, 'ws');
+    outside = path.join(root, 'outside');
+    skillSrc = path.join(root, 'src', 'my-skill');
+    fs.mkdirSync(workspace);
+    fs.mkdirSync(outside);
+    fs.mkdirSync(skillSrc, { recursive: true });
+    fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), '# my skill', 'utf8');
+    name = path.basename(skillSrc);
+  });
+  afterEach(() => {
+    // Restore write bits so cleanup works whatever a run left read-only.
+    const thaw = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) thaw(full);
+        else if (e.isFile()) fs.chmodSync(full, 0o644);
+      }
+    };
+    thaw(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  // Every entry under dir, read with lstat so a link is recorded, not followed.
+  const snapshot = (dir) => {
+    const out = [];
+    const walk = (d, rel) => {
+      for (const e of fs.readdirSync(d).sort()) {
+        const full = path.join(d, e);
+        const r = path.join(rel, e);
+        const st = fs.lstatSync(full);
+        if (st.isSymbolicLink()) out.push([r, 'link', fs.readlinkSync(full)]);
+        else if (st.isDirectory()) { out.push([r, 'dir', st.mode & 0o777]); walk(full, r); }
+        else out.push([r, 'file', st.mode & 0o777, fs.readFileSync(full, 'utf8')]);
+      }
+    };
+    walk(dir, '');
+    return out;
+  };
+
+  // Where each layout's link points, and the path under that target that
+  // corresponds to the skill slot.
+  const layouts = {
+    '.claude links outside the workspace': () => {
+      fs.symlinkSync(outside, path.join(workspace, '.claude'));
+      return { target: outside, slotUnder: path.join(outside, 'skills', name) };
+    },
+    '.claude/skills links outside the workspace': () => {
+      fs.mkdirSync(path.join(workspace, '.claude'));
+      fs.symlinkSync(outside, path.join(workspace, '.claude', 'skills'));
+      return { target: outside, slotUnder: path.join(outside, name) };
+    },
+    '.claude links elsewhere inside the workspace': () => {
+      const inside = path.join(workspace, 'notes');
+      fs.mkdirSync(inside);
+      fs.symlinkSync(inside, path.join(workspace, '.claude'));
+      return { target: inside, slotUnder: path.join(inside, 'skills', name) };
+    },
+    '.claude/skills links elsewhere inside the workspace': () => {
+      const inside = path.join(workspace, 'notes');
+      fs.mkdirSync(inside);
+      fs.mkdirSync(path.join(workspace, '.claude'));
+      fs.symlinkSync(inside, path.join(workspace, '.claude', 'skills'));
+      return { target: inside, slotUnder: path.join(inside, name) };
+    },
+    '.claude is a relative link that climbs out': () => {
+      fs.symlinkSync(path.join('..', 'outside'), path.join(workspace, '.claude'));
+      return { target: outside, slotUnder: path.join(outside, 'skills', name) };
+    },
+  };
+  const cases = Object.keys(layouts);
+
+  const mount = () => mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+  const refused = () => ({ mounted: [], conflicted: [{ path: skillSrc, reason: 'unsafe-skill-dir' }] });
+
+  // The mkdir step: nothing is created anywhere, and the link stays a link.
+  test.each(cases)('mkdir step: %s; the mount is refused and nothing is created', async (layout) => {
+    layouts[layout]();
+    const outsideBefore = snapshot(outside);
+    const workspaceBefore = snapshot(workspace);
+
+    expect(await mount()).toEqual(refused());
+
+    expect(snapshot(outside)).toEqual(outsideBefore);
+    expect(snapshot(workspace)).toEqual(workspaceBefore);
+  });
+
+  // The refresh step: a marked directory at the link target is left as it was.
+  test.each(cases)('refresh step: %s; a marked directory at the target is left as it was', async (layout) => {
+    const { slotUnder } = layouts[layout]();
+    fs.mkdirSync(slotUnder, { recursive: true });
+    fs.writeFileSync(path.join(slotUnder, '.commonly-skill-mount'), 'mounted-from: elsewhere\n');
+    fs.writeFileSync(path.join(slotUnder, 'keep.txt'), 'real work');
+
+    expect(await mount()).toEqual(refused());
+
+    expect(fs.readFileSync(path.join(slotUnder, 'keep.txt'), 'utf8')).toBe('real work');
+  });
+
+  // The copy, marker and read-only steps: nothing at the link target changes.
+  test.each(cases)('copy, marker and read-only steps: %s; nothing at the target changes', async (layout) => {
+    const { target, slotUnder } = layouts[layout]();
+    fs.mkdirSync(slotUnder, { recursive: true });
+    fs.writeFileSync(path.join(slotUnder, '.commonly-skill-mount'), 'mounted-from: elsewhere\n');
+    fs.writeFileSync(path.join(slotUnder, 'keep.txt'), 'real work');
+    fs.chmodSync(path.join(slotUnder, 'keep.txt'), 0o644);
+    const before = snapshot(target);
+
+    expect(await mount()).toEqual(refused());
+
+    expect(snapshot(target)).toEqual(before);
+    expect(fs.existsSync(path.join(slotUnder, 'SKILL.md'))).toBe(false);
+    expect(fs.readFileSync(path.join(slotUnder, '.commonly-skill-mount'), 'utf8')).toBe('mounted-from: elsewhere\n');
+    expect(fs.statSync(path.join(slotUnder, 'keep.txt')).mode & 0o777).toBe(0o644);
+  });
+
+  test('a dangling .claude link is refused, and nothing is created at its target', async () => {
+    const missing = path.join(outside, 'not-yet');
+    fs.symlinkSync(missing, path.join(workspace, '.claude'));
+
+    expect(await mount()).toEqual(refused());
+
+    expect(fs.existsSync(missing)).toBe(false);
+  });
+
+  test.each(['.claude', path.join('.claude', 'skills')])('a regular file at %s is refused and left as it was', async (rel) => {
+    fs.mkdirSync(path.dirname(path.join(workspace, rel)), { recursive: true });
+    fs.writeFileSync(path.join(workspace, rel), 'not a dir');
+
+    expect(await mount()).toEqual(refused());
+
+    expect(fs.readFileSync(path.join(workspace, rel), 'utf8')).toBe('not a dir');
+  });
+
+  test('every declared source is reported, and none is written', async () => {
+    const second = path.join(root, 'src', 'other-skill');
+    fs.mkdirSync(second);
+    fs.writeFileSync(path.join(second, 'SKILL.md'), '# other');
+    fs.symlinkSync(outside, path.join(workspace, '.claude'));
+
+    const result = await mountSkills({ skills: { claude: [skillSrc, second] } }, workspace);
+
+    expect(result).toEqual({
+      mounted: [],
+      conflicted: [
+        { path: skillSrc, reason: 'unsafe-skill-dir' },
+        { path: second, reason: 'unsafe-skill-dir' },
+      ],
+    });
+    expect(snapshot(outside)).toEqual([]);
+  });
+
+  // Controls: real directories still mount, whether the workspace already
+  // has them or not.
+  test('real .claude and .claude/skills directories still mount', async () => {
+    fs.mkdirSync(path.join(workspace, '.claude', 'skills'), { recursive: true });
+
+    expect(await mount()).toEqual({ mounted: [skillSrc], conflicted: [] });
+
+    expect(fs.readFileSync(path.join(workspace, '.claude', 'skills', name, 'SKILL.md'), 'utf8')).toBe('# my skill');
+  });
+
+  test('a workspace with no .claude gets real directories, not links', async () => {
+    expect(await mount()).toEqual({ mounted: [skillSrc], conflicted: [] });
+
+    expect(fs.lstatSync(path.join(workspace, '.claude')).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(workspace, '.claude', 'skills')).isDirectory()).toBe(true);
+  });
+});

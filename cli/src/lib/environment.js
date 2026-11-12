@@ -544,6 +544,43 @@ const freezeFiles = async (dir) => {
   }
 };
 
+// F171: skills are written only into a real .claude/skills directory inside
+// the workspace. Each component is read with lstat and never followed. A
+// missing one is created with a plain mkdir inside the real directory just
+// checked, then read again; a link, or anything that is not a real directory,
+// returns null and mountSkills writes nothing.
+const SKILLS_DIR_PARTS = ['.claude', 'skills'];
+
+const lstatOrNull = async (p) => {
+  try {
+    return await lstat(p);
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+};
+
+const realSkillsDir = async (workspacePath) => {
+  let dir = workspacePath;
+  for (const part of SKILLS_DIR_PARTS) {
+    dir = join(dir, part);
+    // eslint-disable-next-line no-await-in-loop
+    let st = await lstatOrNull(dir);
+    if (!st) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await mkdir(dir);
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      st = await lstatOrNull(dir);
+    }
+    if (!st || st.isSymbolicLink() || !st.isDirectory()) return null;
+  }
+  return dir;
+};
+
 /**
  * Mount each `skills.claude[]` source into `<workspacePath>/.claude/skills/`
  * as a READ-ONLY SNAPSHOT COPY.
@@ -570,10 +607,14 @@ const freezeFiles = async (dir) => {
  * skill paths). Optional — when omitted, relative paths fall back to
  * `workspacePath`.
  *
+ * A workspace whose .claude or .claude/skills is a link, or not a directory,
+ * gets no mount at all: every source is reported as 'unsafe-skill-dir' and
+ * nothing is written (F171).
+ *
  * Returns `{ mounted, conflicted }`:
  *   - `mounted`:    string[]            — absolute source paths snapshotted
  *   - `conflicted`: Array<{path, reason}> where reason ∈
- *       'not-a-mount' | 'missing-source'
+ *       'not-a-mount' | 'missing-source' | 'unsafe-skill-dir'
  */
 export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
   const sources = Array.isArray(spec?.skills?.claude) ? spec.skills.claude : [];
@@ -581,8 +622,16 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
   const conflicted = [];
   if (sources.length === 0) return { mounted, conflicted };
 
-  const skillsDir = join(workspacePath, '.claude', 'skills');
-  await mkdir(skillsDir, { recursive: true });
+  const skillsDir = await realSkillsDir(workspacePath);
+  if (!skillsDir) {
+    return {
+      mounted,
+      conflicted: sources.map((rawSource) => ({
+        path: resolveSkillSource(rawSource, envFileDir || workspacePath),
+        reason: 'unsafe-skill-dir',
+      })),
+    };
+  }
 
   for (const rawSource of sources) {
     const absSource = resolveSkillSource(rawSource, envFileDir || workspacePath);
