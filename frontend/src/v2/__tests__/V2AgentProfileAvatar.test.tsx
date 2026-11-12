@@ -14,7 +14,12 @@ jest.mock('axios', () => {
 });
 jest.mock('../../utils/avatarUtils', () => ({
   // A saved upload resolves to itself; anything else the picker would draw is a pick.
-  getAvatarSrc: jest.fn((id: string) => (id.startsWith('https://') ? id : null)),
+  getAvatarSrc: jest.fn((id: string) => {
+    if (id.startsWith('https://')) return id;
+    // A robot pick from any seed is drawn, as the real one regenerates it.
+    if (id.startsWith('bottts:')) return `pick:${id.slice(7)}`;
+    return null;
+  }),
   presetCharacterOptions: jest.fn((seed: string) => [
     { id: `bottts:${seed}-v1`, src: `pick:${seed}-v1` },
     { id: `bottts:${seed}-v2`, src: `pick:${seed}-v2` },
@@ -163,6 +168,20 @@ describe('V2AgentProfile avatar picker', () => {
     expect(choices[0]).toHaveAttribute('aria-pressed', 'true');
     expect(choices[0].querySelector('img')).toHaveAttribute('src', 'pick:openclaw:aria-v2');
     expect(choices.slice(1).every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+    // Shown once, and clicking it again saves nothing.
+    expect(choices.filter((b) => b.getAttribute('aria-label') === 'Avatar 2')).toHaveLength(1);
+    fireEvent.click(choices[0]);
+    expect(profileClient.put).not.toHaveBeenCalled();
+  });
+
+  it('shows a pick from an older seed first, as the current one', async () => {
+    mockProfile('bottts:openclaw:aria-old-v3');
+    renderProfile();
+    const choices = choicesIn(await openPicker());
+
+    expect(choices.map((b) => b.getAttribute('aria-label'))).toEqual(['Current avatar', 'Default avatar', 'Avatar 1', 'Avatar 2']);
+    expect(choices[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(choices[0].querySelector('img')).toHaveAttribute('src', 'pick:openclaw:aria-old-v3');
   });
 
   it('shows a saved avatar that is not one of the picks first, as the current one', async () => {
