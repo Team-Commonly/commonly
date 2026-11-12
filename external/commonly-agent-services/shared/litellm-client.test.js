@@ -39,7 +39,7 @@ test('a failed LiteLLM call falls back to Google with a Gemini name, never the L
   const client = new LiteLLMClient({ baseUrl: 'http://litellm', model: 'deepseek-v4-flash', geminiApiKey: 'k' });
   await withFetch((url) => (url.startsWith('http://litellm') ? fail() : ok(geminiReply)), async (calls) => {
     await client.chatCompletion([{ role: 'user', content: 'x' }]);
-    const google = calls.find((c) => c.url.includes('generativelanguage.googleapis.com'));
+    const google = calls.find((c) => new URL(c.url).hostname === 'generativelanguage.googleapis.com');
     assert.ok(google, 'the Gemini fallback ran');
     assert.match(google.url, /\/models\/gemini-2\.5-flash:generateContent/);
     assert.doesNotMatch(google.url, /deepseek/);

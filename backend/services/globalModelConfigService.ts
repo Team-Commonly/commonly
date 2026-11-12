@@ -177,10 +177,26 @@ const normalizeContextLimit = (value: unknown): number => {
 // yet every summary, digest and chat-summary call still asked for
 // gemini-2.5-flash, whose key Google rejects, and fell to the template.
 // A Gemini-direct provider calls Google's own API, so its default is a real
-// Gemini name; every other provider defaults to the LiteLLM name (F105).
-const defaultLlmServiceModel = (provider: string): string => (
-  provider === 'gemini' ? GEMINI_DIRECT_MODEL : DEFAULT_CONFIG.llmService.model
+// Gemini name. The OpenRouter provider takes the operator's OPENROUTER_MODEL
+// when set. Every other provider defaults to the LiteLLM name (F105).
+const defaultLlmServiceModel = (provider: string): string => {
+  if (provider === 'gemini') return GEMINI_DIRECT_MODEL;
+  const openRouterModel = String(process.env.OPENROUTER_MODEL || '').trim();
+  if (provider === 'openrouter' && openRouterModel) return openRouterModel;
+  return DEFAULT_CONFIG.llmService.model;
+};
+
+// The OpenClaw `google` provider calls Google directly with the gateway's own
+// key, so with no model named it gets a real Gemini name, as before F105.
+// Every other provider gets the configured default.
+const GOOGLE_OPENCLAW_MODEL = 'google/gemini-2.5-flash';
+const defaultOpenClawModel = (provider: string): string => (
+  provider === 'google' ? GOOGLE_OPENCLAW_MODEL : DEFAULT_CONFIG.openclaw.model
 );
+const savedOpenClawModel = (oc: unknown): string => {
+  const saved = (oc || {}) as { model?: unknown; defaultModel?: unknown };
+  return String(saved.model || saved.defaultModel || '').trim();
+};
 
 const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig => {
   const llm = candidate?.llmService || ({} as Partial<LlmServiceConfig>);
@@ -206,7 +222,7 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
       model: normalizeOpenClawModel({
         provider: normalizeOpenClawProvider(oc?.provider),
         model: (oc as Record<string, unknown>)?.model || (oc as Record<string, unknown>)?.defaultModel,
-        fallback: DEFAULT_CONFIG.openclaw.model,
+        fallback: defaultOpenClawModel(normalizeOpenClawProvider(oc?.provider)),
       }),
       fallbackModels: normalizeFallbackModels(oc?.fallbackModels),
       devAgentIds: normalizeDevAgentIds(
@@ -276,6 +292,8 @@ class GlobalModelConfigService {
         openclaw: {
           ...defaults.openclaw,
           ...(stored.openclaw || {}),
+          // An unsaved model is the default for the saved provider (sanitize).
+          model: savedOpenClawModel(stored.openclaw),
         },
       },
     );
@@ -304,6 +322,11 @@ class GlobalModelConfigService {
       openclaw: {
         ...current.openclaw,
         ...((patch && patch.openclaw) || {}),
+        // A model the save names, else the one the row held; neither, and it is
+        // the default for the provider, so a provider change carries its own.
+        model: patch?.openclaw && 'model' in patch.openclaw
+          ? String(patch.openclaw.model || '')
+          : savedOpenClawModel(storedBefore.openclaw),
       },
     };
 
@@ -321,10 +344,10 @@ class GlobalModelConfigService {
     if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
       delete stored.openclaw.communityAgentModel;
     }
-    // The OpenClaw model follows AGENT_DEFAULT_MODEL the same way (F105): the
-    // default carried in by the merge is stored only over a model the row held.
-    if (!String(storedBefore.openclaw?.model || '').trim()
-      && sanitized.openclaw.model === DEFAULT_CONFIG.openclaw.model) {
+    // The OpenClaw model follows the provider's default the same way (F105): a
+    // value equal to it is stored only over a model the row already held.
+    if (!savedOpenClawModel(storedBefore.openclaw)
+      && sanitized.openclaw.model === defaultOpenClawModel(sanitized.openclaw.provider)) {
       delete stored.openclaw.model;
     }
 
