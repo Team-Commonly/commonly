@@ -47,6 +47,19 @@ export const signedOutAdapters = async ({ detect, runStatus, env = process.env, 
   return out;
 };
 
+/**
+ * One harness's login, for the daemon's inventory (F458): true signed in (exit
+ * 0), false signed out (exit 1), null when there is no verdict: no checked
+ * probe for it, a key in the environment it runs on instead, or a probe that
+ * couldn't run. Only the exit code is read, as above.
+ */
+export const loginState = async (name, { runStatus = runLoginStatus, env = process.env } = {}) => {
+  if (!LOGIN_STATUS_ARGS[name] || (KEY_ENV[name] || []).some((key) => envSet(env, key))) return null;
+  const code = await runStatus(name, LOGIN_STATUS_ARGS[name]).catch(() => null);
+  if (code === 0) return true;
+  return code === SIGNED_OUT_EXIT ? false : null;
+};
+
 // The exit code of `<name> <args>`, with every stream discarded. null when it
 // cannot run or takes longer than `timeoutMs` (a CLI that opens a prompt).
 export const runLoginStatus = (name, args, { timeoutMs = 10_000, spawnFn = spawn } = {}) => new Promise((done) => {

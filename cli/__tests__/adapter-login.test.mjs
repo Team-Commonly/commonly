@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 import { jest } from '@jest/globals';
 
 import {
-  LOGIN_STATUS_ARGS, runLoginStatus, signedOutAdapters, signedOutHint,
+  LOGIN_STATUS_ARGS, loginState, runLoginStatus, signedOutAdapters, signedOutHint,
 } from '../src/lib/adapter-login.js';
 import { checkAdapterLogin, FAIL, PASS, SKIP } from '../src/lib/doctor.js';
 import { seatProviderKeyEnv } from '../src/lib/adapters/index.js';
@@ -104,5 +104,24 @@ describe('the provider key one seat needs', () => {
     expect(seatProviderKeyEnv({ adapter: 'pi' })).toBe('COMMONLY_LITELLM_KEY');
     expect(seatProviderKeyEnv({ adapter: 'pi', environment: { provider: { apiKeyEnv: 'MY_KEY' } } })).toBe('MY_KEY');
     expect(seatProviderKeyEnv({ adapter: 'pi', environment: { provider: { keyFile: '/k' } } })).toBeNull();
+  });
+});
+
+// F458: the daemon's inventory carries each harness's login, so the page can
+// say "not signed in" before the first message fails.
+describe('loginState', () => {
+  test('exit 0 is signed in, exit 1 signed out, anything else no verdict', async () => {
+    expect(await loginState('claude', { runStatus: async () => 0, env: {} })).toBe(true);
+    expect(await loginState('claude', { runStatus: async () => 1, env: {} })).toBe(false);
+    expect(await loginState('codex', { runStatus: async () => 2, env: {} })).toBeNull();
+    expect(await loginState('codex', { runStatus: async () => null, env: {} })).toBeNull();
+    expect(await loginState('codex', { runStatus: async () => { throw new Error('x'); }, env: {} })).toBeNull();
+  });
+
+  test('a harness with no checked probe, or one running on a key, has no verdict and is not probed', async () => {
+    const runStatus = jest.fn(async () => 1);
+    expect(await loginState('opencode', { runStatus, env: {} })).toBeNull();
+    expect(await loginState('claude', { runStatus, env: { ANTHROPIC_API_KEY: 'k' } })).toBeNull();
+    expect(runStatus).not.toHaveBeenCalled();
   });
 });

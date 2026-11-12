@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
 import V2AgentRuntimeBody, { Runtime, V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
+import { runtimeNotReady } from '../components/V2RuntimeControls';
 import { AgentControlLoader } from '../components/V2AgentControlSection';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import { usePhone } from '../connectors/usePhone';
@@ -395,6 +396,8 @@ const V2AgentSettingsPage: React.FC = () => {
   // does poll with a key, so runtimeType alone can't say this.
   const runsOnCommonly = connectionState === 'available';
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
+  // F458: "connected" alone read as healthy while the agent couldn't answer.
+  const runsNotReady = runtimeNotReady(runtime);
   const memoryHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`;
   const talkLabel = t('agentProfile.hero.talkTo', { name: displayName });
   const talkButton = (
@@ -576,7 +579,9 @@ const V2AgentSettingsPage: React.FC = () => {
                 <summary>
                   <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
                   <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}
-                    {!(runsOnCommonly && processState === 'notReported') && <span className="mo">{t(`agentManage.controls.${processState}`)}</span>}
+                    {runsNotReady
+                      ? <span className="mo v2-agent-settings-page__summary-warn" data-testid="agent-how-it-runs-not-ready">{t(`agentManage.controls.summary_${runsNotReady}`)}</span>
+                      : !(runsOnCommonly && processState === 'notReported') && <span className="mo">{t(`agentManage.controls.${processState}`)}</span>}
                   </span>
                   <V2AgentSettingsIcon name="chev" className="chev" />
                 </summary>

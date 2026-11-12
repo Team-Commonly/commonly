@@ -38,7 +38,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel,
+  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel, harnessSignedOut,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -644,8 +644,10 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; };
   }, [api, choicesKnown, defaultAgentName, heldNameLink, mode, namePrefill, nameLookupRetry, nameTouched, personaCard, podId,
     prefill.reconnect, prefill.name]);
-  const [placed, setPlaced] = useState<{ agentName: string; instanceId: string; machineId: string; machineName: string } | null>(null);
+  const [placed, setPlaced] = useState<{ agentName: string; instanceId: string; machineId: string; machineName: string; harness: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
+  // F458: running, but its harness reported signed out, so it can't answer yet.
+  const [placedSignedOut, setPlacedSignedOut] = useState(false);
   const [reconnectRequest, setReconnectRequest] = useState<{
     agentName: string; instanceId: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
   } | null>(null);
@@ -682,8 +684,9 @@ const V2AgentBYO: React.FC = () => {
   // re-read the computer's report, so an install made now shows up here
   // without a reload. The daemon probes a missing harness again within a
   // heartbeat or two.
+  // A signed-out harness is re-read the same way, so a sign-in clears its note (F458).
   const harnessMissing = mode === 'machine' && Boolean(adapter)
-    && machineInventory.some((row) => row.harness === adapter && !row.installed);
+    && (machineInventory.some((row) => row.harness === adapter && !row.installed) || harnessSignedOut(machineInventory, adapter));
   useEffect(() => {
     if (!harnessMissing) return undefined;
     let cancelled = false;
@@ -703,6 +706,7 @@ const V2AgentBYO: React.FC = () => {
     let cancelled = false;
     let ticks = 0;
     setPlacedState('waiting');
+    setPlacedSignedOut(false);
     const timer = setInterval(async () => {
       ticks += 1;
       try {
@@ -715,7 +719,11 @@ const V2AgentBYO: React.FC = () => {
           && String(s.instanceId || 'default').toLowerCase() === placed.instanceId.toLowerCase());
         if (seat?.state === 'running') {
           setPlacedState('running');
-          clearInterval(timer);
+          // The daemon rechecks a signed-out harness within a heartbeat or
+          // two, so keep reading until it says signed in.
+          const signedOut = harnessSignedOut(machine?.runtimeInventory, placed.harness);
+          setPlacedSignedOut(signedOut);
+          if (!signedOut) clearInterval(timer);
           return;
         }
       } catch {
@@ -1021,6 +1029,7 @@ const V2AgentBYO: React.FC = () => {
         instanceId: secondInstance || 'default',
         machineId,
         machineName: selectedMachineName,
+        harness: adapter,
       });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
@@ -2124,10 +2133,15 @@ const V2AgentBYO: React.FC = () => {
       {placed && (
         <div className="v2-byo__result" data-testid="byo-machine-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
-            <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running'} />
+            <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running' && !placedSignedOut} />
             <h2>{t('agentByo.machine.heading')} <code>{placed.agentName}</code></h2>
           </div>
-          {placedState === 'running' ? (
+          {placedState === 'running' && placedSignedOut ? (
+            <p className="v2-byo__stopped" data-testid="byo-machine-signed-out">
+              {t('agentByo.machine.signedOut', { machine: placed.machineName,
+                harness: harnessLabel(harnessCatalog, placed.harness), command: placed.harness })}
+            </p>
+          ) : placedState === 'running' ? (
             <p data-testid="byo-machine-running">{t('agentByo.machine.running', { machine: placed.machineName })}</p>
           ) : (
             <p data-testid={`byo-machine-${placedState}`}>

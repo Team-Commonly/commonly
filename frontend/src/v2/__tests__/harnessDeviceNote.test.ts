@@ -1,4 +1,4 @@
-import { harnessDeviceNote } from '../utils/harnessCatalog';
+import { harnessDeviceNote, harnessSignedOut } from '../utils/harnessCatalog';
 
 const t = (key: string, values: Record<string, string> = {}) => `${key}${JSON.stringify(values)}`;
 
@@ -15,5 +15,22 @@ describe('harnessDeviceNote', () => {
       .toBe('harness.installed{"version":"1.56.0"}');
     expect(harnessDeviceNote([{ harness: 'goose', installed: true, version: '1.560.1', models: null, efforts: [] }], 'goose', t))
       .toBe('harness.installed{"version":"1.560.1"}');
+  });
+});
+
+// F458: a computer that reports a harness signed out says so in the picker;
+// no verdict reads as plain installed, never as signed out.
+describe('signed out', () => {
+  const row = (signedIn?: boolean) => ({ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [],
+    ...(signedIn === undefined ? {} : { signedIn }) });
+  test('the note and the check agree, and the claude-code alias counts', () => {
+    expect(harnessDeviceNote([row(false)], 'claude', t)).toBe('harness.signedOut{}');
+    expect(harnessDeviceNote([row(true)], 'claude', t)).toBe('harness.installed{"version":"2.1"}');
+    expect(harnessDeviceNote([row()], 'claude', t)).toBe('harness.installed{"version":"2.1"}');
+    expect(harnessSignedOut([row(false)], 'claude')).toBe(true);
+    expect(harnessSignedOut([row(false)], 'claude-code')).toBe(true);
+    expect(harnessSignedOut([row()], 'claude')).toBe(false);
+    expect(harnessSignedOut([{ ...row(false), installed: false }], 'claude')).toBe(false);
+    expect(harnessSignedOut([row(false)], 'codex')).toBe(false);
   });
 });

@@ -2252,7 +2252,8 @@
       "running": "Running on {{machine}} — say hi in the pod.",
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
-      "openPod": "Open the pod"
+      "openPod": "Open the pod",
+      "signedOut": "Running on {{machine}}, but {{harness}} isn’t signed in there, so it can’t answer yet. On {{machine}}, run {{command}} once and sign in. This page updates by itself."
     },
     "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
     "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
@@ -3383,7 +3384,10 @@
       },
       "runtimeKind_hosted": "hosted",
       "runtimeKind_webhook": "webhook",
-      "notReported": "not reported"
+      "notReported": "not reported",
+      "signedOutRow": "{{harness}} isn’t signed in on the computer this agent runs on, so it can’t answer yet. Run {{command}} there once and sign in.",
+      "summary_signedOut": "not signed in · can’t answer",
+      "summary_spawnFailed": "last start failed"
     },
     "providerKey": {
       "title": "Use my own API key",
@@ -3699,7 +3703,8 @@
     "noConnectorsWindows": "Connectors don’t work on Windows yet.",
     "connectorsMacPublicOnly": "{{tool}} can use connectors only as a public agent on a Mac.",
     "connectorsPublicOnly": "{{tool}} can use connectors only as a public agent.",
-    "connectorsPublicOnlyVersion": "{{tool}} can use connectors only as a public agent, on version {{version}}."
+    "connectorsPublicOnlyVersion": "{{tool}} can use connectors only as a public agent, on version {{version}}.",
+    "signedOut": "Installed · not signed in"
   },
   "outsiderNarrowing": {
     "install": {

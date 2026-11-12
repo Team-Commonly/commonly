@@ -601,3 +601,46 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveValue('mach-on');
   });
 });
+
+// F458 (F454 walk step 9): a placement whose harness is signed out read
+// "Running … say hi" and looked healthy. It now says what's missing, and
+// keeps reading the computer until a sign-in clears it.
+describe('a signed-out harness on the placed computer', () => {
+  test('the picker and the running line say so, and a sign-in clears it', async () => {
+    const out = { harness: 'claude', installed: true, version: '2.1', models: null, efforts: [], signedIn: false };
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, runtimeInventory: [out] }] });
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option').length).toBeGreaterThan(2));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+    expect(screen.getByTestId('byo-adapter-select')).toHaveTextContent('Claude Code · Installed · not signed in');
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    // Fake before the click, so the placement watch runs on these timers.
+    jest.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByText('Add to this computer'));
+      await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+      const { agentName } = axios.post.mock.calls.find(([u]) => u === '/api/agent-binding/request')[1];
+      const seat = { agentName, instanceId: 'default', state: 'running' };
+      mockGet({ catalog: CATALOG, machines: [{ ...machineRow, agentStates: [seat], runtimeInventory: [out] }] });
+      await act(async () => { jest.advanceTimersByTime(4_000); });
+      expect(screen.getByTestId('byo-machine-signed-out')).toHaveTextContent(
+        'Running on Sam’s MacBook, but Claude Code isn’t signed in there, so it can’t answer yet. On Sam’s MacBook, run claude once and sign in.',
+      );
+      expect(screen.queryByTestId('byo-machine-running')).toBeNull();
+      mockGet({ catalog: CATALOG, machines: [{ ...machineRow, agentStates: [seat], runtimeInventory: [{ ...out, signedIn: true }] }] });
+      await act(async () => { jest.advanceTimersByTime(4_000); });
+      expect(screen.getByTestId('byo-machine-running')).toBeInTheDocument();
+      expect(screen.queryByTestId('byo-machine-signed-out')).toBeNull();
+      // Signed in: the watch stops.
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/machines').length;
+      const before = reads();
+      await act(async () => { jest.advanceTimersByTime(20_000); });
+      expect(reads()).toBe(before);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
