@@ -46,21 +46,31 @@ const sendsIn = (slice) => [
   ...[...slice.matchAll(/\brequestUpload\(/g)].map(() => 'UPLOAD'),
 ];
 
+// The tools whose source sends no request, or GETs only. Each tool's slice runs
+// from its name declaration (either quote style) to the next tool's.
+const deriveReadOnly = (source, names) => {
+  const starts = names.map((n) => source.search(new RegExp(`name:\\s*(['"])${n}\\1`)));
+  expect(starts.every((s) => s >= 0)).toBe(true);
+  return names.filter((n, i) => {
+    const end = starts.filter((s) => s > starts[i]).sort((a, b) => a - b)[0] ?? source.length;
+    return sendsIn(source.slice(starts[i], end)).every((m) => m === 'GET');
+  }).sort();
+};
+
 test('the derivation reads both quote styles and counts an upload as a write', () => {
   expect(sendsIn(`request(config, { method: "POST", path })`)).toEqual(['POST']);
   expect(sendsIn(`request(config, { method:'DELETE' })`)).toEqual(['DELETE']);
   expect(sendsIn(`await requestUpload(config, { path, file })`)).toEqual(['UPLOAD']);
   expect(sendsIn(`request(config, { method: 'GET', path })`)).toEqual(['GET']);
+  const fixture = `
+    { name: "t_read", call: () => request(config, { method: "GET", path }) },
+    { name: 't_post', call: () => request(config, { method: "POST", path }) },
+    { name: "t_upload", call: () => requestUpload(config, { path, file }) },
+    { name: 't_local', call: () => ({ ok: true }) },`;
+  expect(deriveReadOnly(fixture, ['t_read', 't_post', 't_upload', 't_local'])).toEqual(['t_local', 't_read']);
 });
 
 test('the hinted set is every tool that sends no request or GETs only', () => {
   const source = readFileSync(new URL('../src/tools.js', import.meta.url), 'utf8');
-  const names = buildTools(cfg).map((t) => t.name);
-  const starts = names.map((n) => source.search(new RegExp(`name:\\s*(['"])${n}\\1`)));
-  expect(starts.every((s) => s >= 0)).toBe(true);
-  const derived = names.filter((n, i) => {
-    const end = starts.filter((s) => s > starts[i]).sort((a, b) => a - b)[0] ?? source.length;
-    return sendsIn(source.slice(starts[i], end)).every((m) => m === 'GET');
-  }).sort();
-  expect(derived).toEqual(READ_ONLY);
+  expect(deriveReadOnly(source, buildTools(cfg).map((t) => t.name))).toEqual(READ_ONLY);
 });
