@@ -34,7 +34,7 @@ The endpoint selects only the fields in the table above. A test asserts that the
 
 ## What the page shows
 
-One row per agent installation, for a chosen window (24 hours by default). The longest window is the event retention, read from `AGENT_EVENT_DELIVERED_RETENTION_HOURS` (168 hours by default), so the page never silently under-counts when ops shortens it.
+One row per agent installation, for a chosen window (24 hours by default). The longest window is the event retention, read from `AGENT_EVENT_DELIVERED_RETENTION_HOURS` (168 hours by default), so the page never silently under-counts when ops shortens it. The default is 24 hours or the retention, whichever is shorter, and the window label names the span it covers.
 
 ### Wakes, by display kind
 
@@ -69,7 +69,7 @@ For native agents, `AgentRun.emptyCompletion` adds the empty case. Runs that are
 
 ### Cost
 
-- **Native:** `totalTokens` and `sandboxSeconds`, priced through the existing metering.
+- **Native:** priced through the existing metering, whose unit is the turn: metered runs, counted as `nativeTurnsToday` counts them against the plan's daily turns. `totalTokens` and `sandboxSeconds` sit beside it. The metering has no currency, so the page shows no money.
 - **BYO:** none. The person's own account pays and we don't see it, so the page says so instead of showing zero.
 
 ### Liveness (BYO)

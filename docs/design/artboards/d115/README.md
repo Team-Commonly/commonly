@@ -2,7 +2,7 @@
 
 The frame for the agent health page that `docs/architecture/fleet-health.md` designs. Open `index.html` in a browser. It draws four states, each at 1440 and at 390, one in light and the other in dark:
 
-1. **A busy day.** One row per agent install. The outcome bar splits the wakes that asked for something into posted, declined, failed, never picked up and in flight. Heartbeats get a column of their own. Cost is shown for hosted agents. Needs you and Offline badges sit in the status column.
+1. **A busy day.** One row per agent install. The outcome bar splits the wakes that asked for something into posted, declined, empty (a hosted run that came back with nothing), failed, never picked up and in flight. Heartbeats get a column of their own. Cost is shown for hosted agents in metered turns, the existing metering's unit, with tokens and sandbox time beneath. Needs you and Offline badges sit in the status column.
 2. **A quiet window.** Installs with no wakes keep their row, with one muted line in place of the numbers.
 3. **No agents in your pods.** The head plus one line and Hire an agent.
 4. **The read failed.** No zeros, a retry, and the window select stays.
