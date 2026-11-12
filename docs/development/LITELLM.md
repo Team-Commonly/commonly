@@ -105,7 +105,7 @@ Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-dep
 **DeepSeek is an optional provider** (`aiProviders.deepseek.enabled`, F159). On
 by default, so a self-hosted install gets the `deepseek-v4-flash` and
 `deepseek-flash-1017` routes, LiteLLM's `DEEPSEEK_API_KEY` (from
-`commonly-deepseek-api-key`), the Gemini/`gpt-4o` stand-ins and Gemini fallbacks
+`commonly-deepseek-api-key`), the Gemini fallbacks
 that target it, and `LITELLM_CHAT_MODEL=deepseek-v4-flash` on the backend. Off,
 none of that renders and `LITELLM_CHAT_MODEL` follows `litellm.agentDefaultModel`,
 which must then name another route. Dev turns it off: hosted agents run Claude
@@ -143,11 +143,14 @@ where that provider is on. A new agent LiteLLM key also stops allowing the four
 Gemini names; a key minted before keeps its list. A leftover `legacyAliases` key
 in an override file is ignored.
 
-**Who it affects.** Only an install with Gemini or OpenAI turned off where
+**Who it affects.** Mainly an install with Gemini or OpenAI turned off where
 something still names one of those models itself: a saved admin model policy,
 an agent or seat config, or your own client. No code default names them since
 F105. On commonly.me no Commonly caller reached one in the 7 days to 11-12
-(LiteLLM spend logs).
+(LiteLLM spend logs). Separately, wherever Gemini is on, an agent LiteLLM key minted after
+F105 can no longer call a Gemini name: an agent's own provisioned config never
+asks for one, but a tool that reuses the key with a Gemini name gets LiteLLM's
+key-access error.
 
 **The error it gets.** LiteLLM (v1.106.2) answers HTTP 400:
 

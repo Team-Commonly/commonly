@@ -28,7 +28,7 @@ data:
       # `content` and never concatenate the two, or the guide's first message to
       # a stranger is the model thinking out loud.
       #
-      # F159: every DeepSeek route, stand-in and fallback renders only under
+      # F159: every DeepSeek route and fallback renders only under
       # aiProviders.deepseek (on in base, off on dev: hosted agents are Claude
       # only under D243).
       {{- if .Values.aiProviders.deepseek.enabled }}

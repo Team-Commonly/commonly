@@ -30,7 +30,8 @@ aiProviders:
   gemini:
     enabled: true
   # Gates LiteLLM's OpenAI upstreams (chat, embeddings, images). Off, gpt-4o is
-  # served by DeepSeek and embeddings/images are not routed (F85).
+  # not served (LiteLLM's unknown-model error, F105) and embeddings/images are
+  # not routed (F85).
   openai:
     enabled: true
   # Anthropic through LiteLLM (F91, D243). On, LiteLLM gets ANTHROPIC_API_KEY
@@ -43,7 +44,7 @@ aiProviders:
     nativeModel: claude-haiku-5-5
   # DeepSeek through LiteLLM: the deepseek-v4-flash and deepseek-flash-1017
   # routes, LiteLLM's DEEPSEEK_API_KEY (from commonly-deepseek-api-key), the
-  # Gemini/gpt-4o stand-ins and the Gemini fallbacks, and the backend's
+  # Gemini fallbacks, and the backend's
   # LITELLM_CHAT_MODEL default. On by default: DeepSeek is the base chart's
   # default model (litellm.agentDefaultModel) and stays a self-host option.
   # Off, LITELLM_CHAT_MODEL follows litellm.agentDefaultModel, which must then
