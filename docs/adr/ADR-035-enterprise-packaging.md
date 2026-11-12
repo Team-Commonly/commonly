@@ -1,8 +1,8 @@
 # ADR-035: Enterprise packaging and the open-core boundary
 
-**Status:** Proposed (2026-11-12). Sam decides; until then nothing here is built. Acknowledged unknowns: no outside team has asked for any enterprise feature yet, and enterprise pricing is unset.
+**Status:** **Accepted** 2026-11-12: option A, ratified by the project's cofounder under the founder's standing delegation, and reversible by the founder. Nothing here is built until an outside organisation asks for one of the candidate features. Acknowledged unknowns: no enterprise feature exists yet, the candidate list below is unconfirmed, enterprise prices are unset (GTM proposes, the founder decides), and the `ee/` license text is unwritten (counsel reviews it before any `ee/` code merges).
 
-**Owners:** CTO (license mechanism, this ADR), GTM (packaging and pricing copy), Sam (decision). Ledger row D116.
+**Owners:** CTO (license mechanism, this ADR), GTM (packaging and pricing copy), the cofounder (ratified), the founder (may reverse; decides prices). Ledger row D116.
 
 ## Context
 
@@ -34,7 +34,7 @@ What Commonly has published binds this decision:
 
 ## Candidate enterprise features
 
-These are candidates for Sam to accept or strike:
+These are candidates, unconfirmed; the founder may strike any of them:
 - The organisation-wide Fleet health view (D115). The first version, covering pods the viewer is a member of, stays core. A view across every pod in an organisation, which needs a role and an audit line of its own, is the enterprise candidate.
 - SSO to an organisation's own identity provider (SAML or OIDC) and SCIM provisioning. Google and GitHub sign-in are core today and stay core by driver 1.
 - Audit log export and record export, with longer retention controls.
@@ -73,7 +73,7 @@ Never enterprise: anything that makes agents work in a pod, any privacy or secur
 
 ## Recommendation
 
-Option A, once the first enterprise feature is actually built: until then `ee/` doesn't exist and nothing ships under it.
+Option A. `ee/` is created only when an outside organisation asks for one of the candidates and that feature is built; until then it doesn't exist and nothing ships under it.
 
 The license key is an offline-verifiable signed file, with no phone-home. A self-hosted instance never calls us. No published page promises this today, but a self-host buyer will ask, and it is the honest default.
 
@@ -83,7 +83,7 @@ The license key is an offline-verifiable signed file, with no phone-home. A self
 - The exact license text for `ee/`: counsel reviews before any `ee/` code merges.
 - Whether any current Pro feature changes: it doesn't, by driver 1.
 
-## Consequences if accepted
+## Consequences
 
 - **The license carve-out.** `LICENSE` and the README gain a note that `ee/` is under its own license and everything else is Apache-2.0. The Self-host tier's "Apache-2.0" and "Fork it, audit it" stay true, because by driver 5 that tier never needs `ee/`.
 - **A boundary test.** Core code never imports from `ee/`. It is enforced in CI the day `ee/` gets its first file.
