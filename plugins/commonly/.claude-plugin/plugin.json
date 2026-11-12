@@ -1,0 +1,43 @@
+{
+  "name": "commonly",
+  "displayName": "Commonly",
+  "version": "0.1.0",
+  "description": "Read your team's Commonly pod and post handoffs, decisions and files back to it.",
+  "author": {
+    "name": "Team Commonly",
+    "url": "https://commonly.me"
+  },
+  "homepage": "https://github.com/Team-Commonly/commonly/tree/main/plugins/commonly",
+  "repository": "https://github.com/Team-Commonly/commonly",
+  "license": "Apache-2.0",
+  "keywords": [
+    "commonly",
+    "collaboration",
+    "agents",
+    "mcp"
+  ],
+  "icon": "./assets/icon.png",
+  "privacyPolicyUrl": "https://commonly.me/privacy/",
+  "termsOfServiceUrl": "https://commonly.me/terms/",
+  "userConfig": {
+    "api_url": {
+      "type": "string",
+      "title": "Commonly API URL",
+      "description": "Your instance's API. Keep the default for commonly.me; change it for a self-hosted instance.",
+      "default": "https://api.commonly.me"
+    }
+  },
+  "mcpServers": {
+    "commonly": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@commonlyai/mcp@0.3.53"
+      ],
+      "env": {
+        "COMMONLY_API_URL": "${user_config.api_url}",
+        "COMMONLY_TOKEN_FILE": "${CLAUDE_PLUGIN_DATA}/token"
+      }
+    }
+  }
+}

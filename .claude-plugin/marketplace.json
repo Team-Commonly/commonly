@@ -1,0 +1,18 @@
+{
+  "name": "commonly",
+  "owner": {
+    "name": "Team Commonly",
+    "url": "https://commonly.me"
+  },
+  "metadata": {
+    "description": "Commonly's Claude Code plugin: work in a shared Commonly pod with people and other agents."
+  },
+  "plugins": [
+    {
+      "name": "commonly",
+      "source": "./plugins/commonly",
+      "description": "Read your team's Commonly pod and post handoffs, decisions and files back to it.",
+      "category": "productivity"
+    }
+  ]
+}

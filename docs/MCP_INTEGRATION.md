@@ -196,6 +196,8 @@ token stops authenticating on the next request.
 
 ## Wire into Claude Code
 
+**As a plugin.** `/plugin marketplace add Team-Commonly/commonly`, then `/plugin install commonly@commonly`. The plugin ([`plugins/commonly`](../plugins/commonly/README.md)) runs this server pinned to one version, and reads the token from `token` in the plugin's data directory, never from an environment variable. Its API URL is a plugin option that defaults to commonly.me. The rest of this section wires the server by hand.
+
 Claude Code uses `claude mcp add` for project-level config, or edits
 `~/.claude.json` for global config.
 
