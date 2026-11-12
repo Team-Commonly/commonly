@@ -5,6 +5,7 @@ import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
 import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
 import { noteMachineAnswered } from '../services/machineService';
+import { harnessCatalogEntry } from '../config/harnessCatalog';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -559,6 +560,29 @@ router.post('/host-unconfined', phase4RateLimit, agentRuntimeAuth, async (req: a
   } catch (error) {
     console.error('Host report failed:', (error as Error).message);
     return res.status(503).json({ code: 'host_report_unavailable' });
+  }
+});
+
+// F457: a quick-try run (`agent run` with the connect page's exports) that finds
+// no harness exits before it ever checks in, so its page waited forever. It
+// reports what it looked for here first: a harness id from the catalog, or null
+// for "none of the ones I probe". GET /api/users/me/agent-connection shows it to
+// the owner until the agent listens again.
+router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'harness'
+    || !(body.harness === null || (typeof body.harness === 'string' && harnessCatalogEntry(body.harness)))) {
+    return res.status(400).json({ code: 'invalid_harness_report' });
+  }
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, {
+      $set: { 'botMetadata.harnessMissing': { harness: body.harness, at: new Date() } },
+    });
+    return res.json({ recorded: true });
+  } catch (error) {
+    console.error('Harness report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'harness_report_unavailable' });
   }
 });
 

@@ -241,5 +241,48 @@ describe('GET /api/users/me/agent-connection', () => {
 
     expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastListenedAt');
     expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastUsedAt');
+    expect(select.mock.calls[0][0]).toContain('botMetadata.harnessMissing');
+  });
+
+  // F457: a quick-try run that found no harness exited before checking in.
+  // Its report reaches the page until a later listen supersedes it.
+  it('reports a missing harness for an owned agent that has not listened since', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'walker-claude', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    mockUserFind.mockReturnValue(query([{
+      botMetadata: {
+        agentName: 'walker-claude',
+        instanceId: 'default',
+        harnessMissing: { harness: 'claude', at: new Date('2026-11-12T04:19:46.000Z') },
+      },
+      agentRuntimeTokens: [{ lastUsedAt: new Date('2026-11-12T04:19:45.000Z') }],
+    }]));
+
+    const res = await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+
+    expect(res.body.connected).toBe(false);
+    expect(res.body.harnessMissing).toEqual([{
+      agentName: 'walker-claude', instanceId: 'default', harness: 'claude', at: '2026-11-12T04:19:46.000Z',
+    }]);
+  });
+
+  it('drops the report once the agent has listened after it', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'walker-claude', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    mockUserFind.mockReturnValue(query([{
+      botMetadata: {
+        agentName: 'walker-claude',
+        instanceId: 'default',
+        harnessMissing: { harness: 'claude', at: new Date('2026-11-12T04:19:46.000Z') },
+      },
+      agentRuntimeTokens: [{ lastListenedAt: new Date('2026-11-12T04:25:00.000Z') }],
+    }]));
+
+    const res = await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+
+    expect(res.body.connected).toBe(true);
+    expect(res.body).not.toHaveProperty('harnessMissing');
   });
 });

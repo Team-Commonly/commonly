@@ -2216,6 +2216,8 @@
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
+      "harnessMissing": "{{name}} 的命令停了：那台电脑上没有安装 {{tool}}。终端里写了怎么安装，装好后再运行一遍最后一行，这里会自动确认。",
+      "harnessMissingNone": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍最后一行，这里会自动确认。",
       "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）。先运行 <cmd>node -v</cmd> 检查 Node，应显示 v22 或更高。如果提示无法识别 node，请到 nodejs.org 安装，再重新打开一个 PowerShell 窗口。",
       "stallAsk": "为什么没有回复？",
       "stallReason": {

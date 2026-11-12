@@ -2159,6 +2159,8 @@
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "harnessMissing": "{{name}}’s command stopped: {{tool}} isn’t installed on that computer. The terminal says how to install it. Then run the last line again, and this page will confirm it.",
+      "harnessMissingNone": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the last line again, and this page will confirm it.",
       "windowsCheck": "Use PowerShell, not Command Prompt (cmd). Check Node first: <cmd>node -v</cmd> should print v22 or later. If node isn’t recognized, install it from nodejs.org and open a new PowerShell window.",
       "stallAsk": "Why isn’t it answering?",
       "stallReason": {

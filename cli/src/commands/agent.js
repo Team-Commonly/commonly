@@ -154,6 +154,7 @@ import {
   isClaudeSignedOut,
   spawnFailureReason,
 } from '../lib/turn-failure-notice.js';
+import { missingHarnessHint, reportMissingHarness } from '../lib/missing-harness.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -557,9 +558,10 @@ export const bootstrapAgentRecordFromEnv = async ({
   const instanceUrl = (env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
 
   let identity;
+  let client;
   try {
-    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
-      .get('/api/agents/runtime/installations');
+    client = clientFactory({ instance: instanceUrl, token: runtimeToken });
+    identity = await client.get('/api/agents/runtime/installations');
   } catch (err) {
     throw new Error(
       `Could not resolve the agent behind COMMONLY_AGENT_TOKEN against ${instanceUrl}: ${err.message}. `
@@ -580,7 +582,10 @@ export const bootstrapAgentRecordFromEnv = async ({
       throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`);
     }
     if (!await adapter.detect()) {
-      throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
+      // F457: this run exits before it checks in, so the page would wait for
+      // it forever. Say what was missing there, and how to get it here.
+      await reportMissingHarness(client, adapterOverride);
+      throw new Error(`Adapter '${adapterOverride}' not found on PATH. ${missingHarnessHint(adapterOverride)}`);
     }
   } else {
     const missing = [];
@@ -591,6 +596,7 @@ export const bootstrapAgentRecordFromEnv = async ({
       missing.push(candidate);
     }
     if (!adapterName) {
+      await reportMissingHarness(client, null);
       const err = new Error(
         `No supported agent CLI found on PATH (looked for: ${BOOTSTRAP_ADAPTER_DETECT_ORDER.join(', ')}). `
         + 'Install one, or pass --adapter <name>.',

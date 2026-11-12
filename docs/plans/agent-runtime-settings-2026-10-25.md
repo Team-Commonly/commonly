@@ -33,6 +33,14 @@ but hangs) waits for the full refresh instead. While the chosen harness shows as
 computer's report every 10 seconds and says what the daemon ran; a harness the
 computer doesn't check reads "Not checked here", never as missing (F370 #8).
 
+The quick-try command (`agent run` with the page's exports, no daemon) has no
+inventory, and on a missing harness it exits before it ever checks in. It posts
+`POST /api/agents/runtime/harness-missing` with the harness id first (null when
+it probed its whole list and found none), then prints how to install it.
+`GET /api/users/me/agent-connection` returns that report to the owner until the
+agent listens again, and the page shows it in place of "Waiting for … to check
+in" while it keeps polling (F457).
+
 Process connection and runtime progress remain separate signals. Runner facts
 refresh every 30 seconds without reloading form drafts. An unavailable read or
 a seat without machine telemetry is unreported, rather than disconnected. A desired
