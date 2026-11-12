@@ -101,6 +101,14 @@ export interface IAgentEvent extends Document {
   attempts: number;
   deliveredAt?: Date;
   expiredAt?: Date;
+  // F452: when the person waiting on this event was told it hasn't been
+  // answered yet. One marker for every unanswered line, so a row never gets a
+  // second one, whichever pass reaches it next.
+  unansweredNoticeAt?: Date | null;
+  // F189/F452: set when a stopping runner hands the delivery back to pending
+  // (POST /events/release); cleared by the requeue sweep. Only a released row
+  // reaches the unclaimed-release passes.
+  releasedAt?: Date | null;
   error?: string;
   delivery?: IAgentEventDelivery;
   // ADR-012 §3: snapshot of AgentMemory.revision captured at the
@@ -139,6 +147,8 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     payload: Schema.Types.Mixed,
     status: { type: String, enum: ['pending', 'folding', 'delivered', 'acked', 'failed', 'expired'], default: 'pending' },
     expiredAt: Date,
+    unansweredNoticeAt: { type: Date, default: null },
+    releasedAt: { type: Date, default: null },
     deliveryMode: { type: String, enum: ['wake', 'digest'], default: 'wake' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,

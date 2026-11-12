@@ -301,6 +301,9 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
       // because this is the test that reads the whole $set exhaustively, so a
       // future edit that drops the field fails here first.
       deliveryNonce: null,
+      // F452: a requeued row was not handed back by its runner, so it carries
+      // no release stamp into the unclaimed-release passes.
+      releasedAt: null,
     });
   });
 

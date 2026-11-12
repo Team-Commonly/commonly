@@ -119,18 +119,25 @@ export async function emitSystemActionLine(line: SystemActionLine): Promise<void
 export interface UnansweredMentionLine extends SystemLineActor {
   agentLabel: string;
   attempts: number;
+  // F452: the event is still pending, so an answer may yet come. The line
+  // must stay true if it does.
+  stillPending?: boolean;
   messageId: string | number | null;
   threadRootId?: string | number | null;
 }
 
 export async function emitUnansweredMentionLine(line: UnansweredMentionLine): Promise<void> {
-  const content = `${line.agentLabel} didn't answer this and may be offline. `
-    + 'Ask again later, or ask someone else in the pod.';
+  const content = line.stillPending
+    ? `${line.agentLabel} hasn't answered this yet and may be offline. `
+      + 'Ask again later, or ask someone else in the pod.'
+    : `${line.agentLabel} didn't answer this and may be offline. `
+      + 'Ask again later, or ask someone else in the pod.';
   await insertSystemLine(line, content, {
     kind: 'system-action',
     action: 'mention-unanswered',
     actorName: line.agentLabel,
     attempts: line.attempts,
+    ...(line.stillPending ? { stillPending: true } : {}),
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
