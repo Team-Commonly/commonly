@@ -6,7 +6,7 @@ import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 // whose action failed mustn't read as done, so the action's ending comes first.
 // Every place pod messages are SHOWN to an agent goes through this: the native
 // turn's context (nativeRuntimeService), and the runtime messages, bot-messages
-// and context reads plus the pod-context summary (getRecentMessages with
+// and catch-up reads plus the pod-context summary behind /context (getRecentMessages with
 // { cardOutcome: true }), which BYO and MCP agents use (F290). Internal checks
 // that compare text, such as the duplicate-post guard, keep the stored text.
 export const cardOutcome = (card: Record<string, unknown>): string | null => {
