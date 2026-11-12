@@ -1905,6 +1905,12 @@ describe('codex adapter — the public Codex home on Linux', () => {
       expect(readdirSync(temp)).toEqual([]);
     });
 
+    test('on macOS a home inside the temp folder runs: Codex there has no such refusal', async () => {
+      const calls = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project, extra: { _codexTempRoot: fakeHome } });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].opts.env.CODEX_HOME.startsWith(fakeHome)).toBe(true);
+    });
+
     test('a home beside the temp folder runs', async () => {
       const calls = await publicSpawn(fakeHome, { cwd: project, extra: { _codexTempRoot: join(fakeHome, 'temp-root') } });
       expect(calls).toHaveLength(1);

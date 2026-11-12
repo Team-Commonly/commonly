@@ -405,6 +405,8 @@ const publicCodexHomesRoot = (ctx) => {
 // three of those opened the circuit. Codex's temp folder is its own TMPDIR,
 // else /tmp, compared as written; the real paths are compared as well, so a
 // link either way is refused too. `_codexTempRoot` replaces it in tests.
+// Linux only: Codex on macOS ran from a home under $TMPDIR (codex-cli 0.162.1,
+// measured 2026-11-12), and walk recipes there often put HOME in the temp folder.
 const codexTempRoot = (ctx, childEnv) => {
   if (ctx._codexTempRoot !== undefined) return ctx._codexTempRoot;
   const fromEnv = childEnv?.TMPDIR;
@@ -412,6 +414,7 @@ const codexTempRoot = (ctx, childEnv) => {
 };
 
 const refuseCodexHomeUnderTemp = async (ctx, childEnv, home, seat) => {
+  if ((ctx._platform || process.platform) !== 'linux') return;
   const root = codexTempRoot(ctx, childEnv);
   const [realRoot, realHome] = await Promise.all([realpathOfNearest(root), realpathOfNearest(home)]);
   if (!contains(pathResolve(root), pathResolve(home)) && !contains(realRoot, realHome)) return;
