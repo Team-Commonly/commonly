@@ -114,6 +114,24 @@ only (D243), and DeepSeek had no calls in the window before deletion (see
 `backend/__tests__/unit/helm/devNoDeepseek.test.js`, and
 `scripts/verify-agent-default-model.js --no-deepseek` on the dev render in CI.
 
+**No code default names a stand-in (F105).** With nothing naming a model,
+a platform call (llmService, the dev chat route, the admin policy's llmService
+model) asks LiteLLM for `LITELLM_CHAT_MODEL`, else `AGENT_DEFAULT_MODEL`
+(`backend/config/agentDefaultModel.ts`: `defaultChatModel`). The admin policy's
+OpenClaw model is `openrouter/<AGENT_DEFAULT_MODEL>` with no fallbacks, and an
+admin save stores it only over a model the row already held, so it keeps
+following the chart. The shared bot client and newshound default to
+`deepseek-v4-flash` when `AGENT_MODEL` is unset; the chart sets commonly-bot's
+`AGENT_MODEL`, and `docker-compose.dev.yml` sets newshound's. Before F105 every one of these said `gemini-2.5-flash` or
+`google/gemini-*`, which LiteLLM served with DeepSeek wherever Gemini was off
+(`litellm.legacyAliases`). A call that goes straight to Google's own API (the
+Gemini SDK in llmService, the bots' Gemini REST fallback) still sends a Gemini
+name, because that is real Gemini: `geminiDirectModel` keeps a Gemini name and
+turns any other into `gemini-2.5-flash`, so a LiteLLM name never reaches Google.
+Saved values are not rewritten: an admin policy or an AgentProfile that holds a
+Gemini name keeps it. `legacyAliases` itself retires in a separate change, once
+LiteLLM's spend logs show no calls under the stand-in names.
+
 **DeepSeek tool shim** (`/app/deepseek_tool_shim.py`, source in
 `k8s/helm/commonly/files/litellm/`, mounted from the `litellm-config` ConfigMap). It's
 the second entry in `litellm_settings.callbacks` and applies only to the
@@ -649,7 +667,7 @@ Set these env vars for local backend to route through it:
 |-----|-------|
 | `LITELLM_BASE_URL` | `http://localhost:4000` |
 | `LITELLM_MASTER_KEY` | `dev-litellm-key` |
-| `LITELLM_CHAT_MODEL` | optional, defaults to `gemini-2.5-flash` |
+| `LITELLM_CHAT_MODEL` | `gemini-2.5-flash`, a model this LiteLLM serves. Unset, calls ask for `AGENT_DEFAULT_MODEL` (built-in `deepseek-v4-flash`), which it doesn't serve. `docker-compose.dev.yml` sets both to `gemini-2.5-flash` (F105) |
 | `LITELLM_DISABLED` | `true` to bypass and call Gemini directly |
 
 For embeddings:

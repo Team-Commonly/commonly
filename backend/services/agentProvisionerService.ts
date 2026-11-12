@@ -1,5 +1,6 @@
 export {};
 import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 
 const fs = require('fs');
 const path = require('path');
@@ -943,11 +944,14 @@ const applyOpenClawModelDefaults = async (config: any) => {
   } catch (error: any) {
     modelConfig = null;
   }
+  // The policy's model and fallbacks; the defaults after `||` and `:` are used
+  // only when the policy can't be read, and match its own: the configured
+  // model, no fallbacks (F105; they were three Gemini names).
   const defaultPrimary = String(
     modelConfig?.openclaw?.model
     || modelConfig?.openclaw?.defaultModel
     || '',
-  ).trim() || 'google/gemini-2.5-flash';
+  ).trim() || `openrouter/${agentDefaultModel()}`;
   const hasPolicyPrimary = Boolean(String(
     modelConfig?.openclaw?.model
     || modelConfig?.openclaw?.defaultModel
@@ -955,7 +959,7 @@ const applyOpenClawModelDefaults = async (config: any) => {
   ).trim());
   const defaultFallbacks = Array.isArray(modelConfig?.openclaw?.fallbackModels)
     ? modelConfig.openclaw.fallbackModels
-    : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
+    : [];
   if (hasPolicyPrimary) {
     config.agents.defaults.model.primary = defaultPrimary;
   } else if (!config.agents.defaults.model.primary) {

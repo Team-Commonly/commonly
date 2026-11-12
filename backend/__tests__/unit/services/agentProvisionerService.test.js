@@ -370,10 +370,9 @@ describe('agentProvisionerService', () => {
       expect(parsed.agents.defaults.contextPruning.mode).toBe('cache-ttl');
       expect(parsed.agents.defaults.contextPruning.ttl).toBe('90m');
       expect(parsed.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
-      expect(parsed.agents.defaults.model.primary).toBe('google/gemini-2.5-flash');
-      expect(parsed.agents.defaults.model.fallbacks).toEqual(
-        expect.arrayContaining(['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash']),
-      );
+      // The policy's defaults (F105): the configured model, no fallbacks.
+      expect(parsed.agents.defaults.model.primary).toBe('openrouter/deepseek-v4-flash');
+      expect(parsed.agents.defaults.model.fallbacks).toEqual([]);
     });
 
     // The k8s path grew the cycle trailer on its default branch in PR #827;

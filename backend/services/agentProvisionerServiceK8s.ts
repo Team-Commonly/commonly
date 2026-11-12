@@ -1550,21 +1550,24 @@ const applyOpenClawConcurrencyDefaults = (config: any) => {
   }
 };
 
-// Direct Gemini provider fallbacks (google/ prefix, not via OpenRouter).
-// Requires a valid GEMINI_API_KEY in the gateway's api-keys secret.
-const GEMINI_FALLBACKS = [
+// The Gemini names an agent's LiteLLM key may still call where Gemini is on.
+// No default names them since F105: they were every agent's fallbacks, which
+// LiteLLM served with DeepSeek wherever Gemini was off (litellm.legacyAliases).
+const GEMINI_KEY_MODELS = [
   'google/gemini-2.5-flash',
   'google/gemini-2.5-flash-lite',
   'google/gemini-2.0-flash',
 ];
 
 // The models an agent's LiteLLM virtual key may call (F103): the configured
-// default (config/agentDefaultModel), plus the Gemini names, which F105 moves.
+// default (config/agentDefaultModel), plus the Gemini names. F105 moved every
+// default off them; they leave the allowlist only once LiteLLM's spend logs
+// show no key calling them.
 // A key minted before F103 lacks the default, so both issuers re-issue a key
 // whose allowlist doesn't carry it; otherwise the new default would 401.
 const litellmKeyModels = () => [
   agentDefaultModel(),
-  ...GEMINI_FALLBACKS,
+  ...GEMINI_KEY_MODELS,
   'gemini-2.5-flash',
 ];
 const keyAllowsDefaultModel = (info: any) => Array.isArray(info?.models) && info.models.includes(agentDefaultModel());
@@ -2236,10 +2239,9 @@ const applyOpenClawModelDefaults = async (config: any) => {
   // DeepSeek after OpenRouter retired it.
   const defaultModel = agentDefaultModel();
   config.agents.defaults.model.primary = `openrouter/${defaultModel}`;
-  // Gemini entries go straight to Google with the gateway's GEMINI_API_KEY.
-  // Where that key is absent or revoked they are inert, and the agent fails
-  // loud for that turn. F105 moves them.
-  config.agents.defaults.model.fallbacks = Array.from(new Set(GEMINI_FALLBACKS));
+  // No fallbacks (F105). They were three Gemini names, which reached Google
+  // only with the gateway's GEMINI_API_KEY and were inert without it.
+  config.agents.defaults.model.fallbacks = [];
 
   // HARD GUARDRAIL: community fallback chain MUST NOT include any
   // openai-codex/* model. Codex quota is paid and shared across the
@@ -2302,7 +2304,7 @@ const applyOpenClawModelDefaults = async (config: any) => {
   // override stays so a dev agent's chain can diverge again later.
   const devAgentModel = {
     primary: `openrouter/${defaultModel}`,
-    fallbacks: Array.from(new Set(GEMINI_FALLBACKS)),
+    fallbacks: [],
   };
 
   return { codexCredentials, devAgentIds, devAgentModel };

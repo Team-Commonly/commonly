@@ -454,11 +454,9 @@ describe('agentProvisionerServiceK8s', () => {
     // Community agents (cuz is not in DEFAULT_DEV_AGENT_IDS) inherit the
     // gateway-level default: the configured model (F103), never openai-codex.
     expect(config.agents.defaults.model.primary).toBe('openrouter/deepseek-v4-flash');
-    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404). Gemini
-    // entries remain as inert placeholders until GEMINI_API_KEY is reinstated.
-    expect(config.agents.defaults.model.fallbacks).toEqual(
-      expect.arrayContaining(['google/gemini-2.5-flash']),
-    );
+    // No fallbacks (F105): they were three Gemini names, which LiteLLM served
+    // with DeepSeek wherever Gemini was off. Trinity went 2026-05-03.
+    expect(config.agents.defaults.model.fallbacks).toEqual([]);
     expect(config.agents.defaults.model.fallbacks).not.toContain('openrouter/arcee-ai/trinity-large-preview:free');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4-mini');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4');

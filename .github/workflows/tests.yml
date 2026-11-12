@@ -397,6 +397,7 @@ jobs:
           node --test \
             external/commonly-agent-services/shared/delivery-nonce.test.js \
             external/commonly-agent-services/shared/summary-text.test.js \
+            external/commonly-agent-services/shared/litellm-client.test.js \
             external/commonly-agent-services/commonly-bot/index.test.js
       - run: cd commonly-mcp && npm test
       - run: cd cli && npm run lint && npm test

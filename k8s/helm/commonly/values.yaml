@@ -680,11 +680,12 @@ litellm:
   agentDefaultModel: deepseek-v4-flash
   # F98/F103: the Gemini/gpt-4o stand-ins only. With this on, the Gemini names
   # (where aiProviders.gemini is off) and gpt-4o (where aiProviders.openai is
-  # off) are served by DeepSeek, as they were before F98. It exists only for the
-  # callers that still default to those names: llmService's DEFAULT_MODEL, the
-  # commonly-bot and newshound clients, gatewayProvisionerServiceK8s,
-  # agentProvisionerService, AgentProfile, routes/dev.ts and the admin policy
-  # defaults. It retires with them in F105. (F103 deleted the other legacy
+  # off) are served by DeepSeek, as they were before F98. F105 moved every code
+  # default off those names (llmService, the commonly-bot and newshound
+  # clients, both provisioners, AgentProfile, routes/dev.ts and the admin
+  # policy), so only a caller that names one itself, or a saved admin policy
+  # that holds one, still reaches a stand-in.
+  # It retires once LiteLLM's spend logs show none. (F103 deleted the other legacy
   # names: nemotron, gpt-5.4*, openai-codex/*, codex-mini-latest, o4-mini and
   # codex-cli/gpt-5.4.) Dev sets it false.
   legacyAliases: true

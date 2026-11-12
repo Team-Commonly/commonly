@@ -5,11 +5,20 @@
  * Supports OpenAI-compatible API format.
  */
 
+const GEMINI_DIRECT_MODEL = 'gemini-2.5-flash';
+const geminiDirectModel = (model) => {
+  const name = String(model || '').trim();
+  return /^(models\/)?gemini-/i.test(name) ? name : GEMINI_DIRECT_MODEL;
+};
+
 class LiteLLMClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || process.env.LITELLM_BASE_URL || '';
     this.apiKey = config.apiKey || process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY;
-    this.defaultModel = config.model || process.env.AGENT_MODEL || 'gemini-2.5-flash';
+    // The chart sets AGENT_MODEL. The name after it matches the chart's base
+    // default (F105); it was `gemini-2.5-flash`, which LiteLLM served with
+    // DeepSeek wherever Gemini was off.
+    this.defaultModel = config.model || process.env.AGENT_MODEL || 'deepseek-v4-flash';
     this.defaultTemperature = config.temperature || 0.7;
     this.defaultMaxTokens = config.maxTokens || 1024;
     this.geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || '';
@@ -119,7 +128,9 @@ class LiteLLMClient {
   }
 
   async chatCompletionGemini(messages, options = {}) {
-    const model = options.model || this.defaultModel;
+    // Google's own API takes only a Gemini name; a LiteLLM name (the default,
+    // or the model a failed LiteLLM call asked for) becomes Google's default.
+    const model = geminiDirectModel(options.model || this.defaultModel);
     const temperature = options.temperature ?? this.defaultTemperature;
     const maxTokens = options.maxTokens || this.defaultMaxTokens;
 

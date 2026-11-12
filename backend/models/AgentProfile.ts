@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 
 export type AgentProfileTone = 'friendly' | 'professional' | 'casual' | 'formal' | 'technical';
 export type AgentProfileStatus = 'active' | 'paused' | 'archived';
@@ -113,9 +114,12 @@ const AgentProfileSchema = new Schema<IAgentProfile>(
     toolPolicy: { type: ToolPolicySchema, default: () => ({}) },
     contextPolicy: { type: ContextPolicySchema, default: () => ({}) },
     integrations: [{ type: Schema.Types.ObjectId, ref: 'Integration' }],
+    // Stored and returned with the profile; no turn routes on it. A new
+    // profile names the configured default and no fallback (F105); they were
+    // two Gemini names. Saved profiles keep what they hold.
     modelPreferences: {
-      preferred: { type: String, default: 'gemini-2.5-pro' },
-      fallback: { type: String, default: 'gemini-2.5-flash' },
+      preferred: { type: String, default: () => agentDefaultModel() },
+      fallback: { type: String, default: '' },
     },
     status: { type: String, enum: ['active', 'paused', 'archived'], default: 'active' },
     isDefault: { type: Boolean, default: false },

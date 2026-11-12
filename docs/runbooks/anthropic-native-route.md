@@ -77,7 +77,7 @@ mapped to Claude, /privacy names no DeepSeek.
 **Base and self-hosted installs keep DeepSeek.** `aiProviders.deepseek` is on
 by default: DeepSeek is the base default model and an optional provider for a
 self-hosted instance. There, the Gemini and `gpt-4o` stand-ins render where
-their provider is off and `litellm.legacyAliases` is on (until F105), and where
+their provider is off and `litellm.legacyAliases` is on, and where
 Gemini is on the four Gemini names fall back to `deepseek-v4-flash`.
 
 **Staging still runs on DeepSeek.** It renders with Anthropic off, so its Scout

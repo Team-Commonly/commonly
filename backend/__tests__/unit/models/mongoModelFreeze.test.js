@@ -38,8 +38,9 @@ const MODEL_CALL = /\bmodel\s*(?:<[^>]*>)?\(/g;
 // The whole first argument must be the literal: `'User' + suffix` is not `User`.
 const LITERAL_NAME = /^\s*(['"`])(\w+)\1\s*[,)]/;
 // Outside models/ any of these is a model defined where the freeze cannot read
-// it. No space before `(`, so prose like "the model (fallback)" never matches.
-const DEFINITION = /\bmodel(?:<[^>]*>)?\(|new\s+(?:mongoose\.)?Schema\s*(?:<[^>]*>)?\(/;
+// it. No space before `(`, so prose like "the model (fallback)" never matches,
+// and a getter named `model` (`get model(): string`) is not a model call.
+const DEFINITION = /(?<!\bget\s+)\bmodel(?:<[^>]*>)?\(|new\s+(?:mongoose\.)?Schema\s*(?:<[^>]*>)?\(/;
 
 // One entry per model call: the name it registers, or null when it is not a literal.
 const registrationsIn = (source) => [...source.matchAll(MODEL_CALL)].map((call) => {
@@ -79,6 +80,8 @@ describe('Mongo model freeze (ADR-034 D4)', () => {
     ['mongoose.model(NAME, s)', 'model<IF>(`F`, s)', 'new Schema<IG>({})', 'new mongoose.Schema({})']
       .forEach((source) => expect(DEFINITION.test(source)).toBe(true));
     expect(DEFINITION.test('// fall back to the default model (no override).')).toBe(false);
+    expect(DEFINITION.test('    get model(): string {')).toBe(false);
+    expect(DEFINITION.test('const forgotten = model(NAME, s);')).toBe(true);
   });
 
   it('registers no Mongo model outside the frozen list', () => {
