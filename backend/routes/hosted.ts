@@ -381,13 +381,20 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       // migration owns this identity now: stop what this request started and
       // take its token back. Both are idempotent with the migration's own stop
       // and revoke, and the token was minted before the mark, so the issuer's
-      // refusal could not have caught it.
+      // refusal could not have caught it. The token goes first (F465), so a
+      // turn the stop cannot reach is refused at its next call. A revoke that
+      // throws must not skip the stop: the migration already recorded its own
+      // stop, and the owner's deprovision of a native row never calls the
+      // worker, so nothing else would stop this one.
       try {
-        await hostedRuntime.deprovisionAgent(agentName, instanceId);
-      } catch (error: any) {
-        console.warn('[hosted] stopping a provision overtaken by migration failed:', error?.message || error);
+        await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
+      } finally {
+        try {
+          await hostedRuntime.deprovisionAgent(agentName, instanceId);
+        } catch (error: any) {
+          console.warn('[hosted] stopping a provision overtaken by migration failed:', error?.message || error);
+        }
       }
-      await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
       return res.status(409).json({
         code: 'hosted_engine_migrated',
         message: 'This agent moved to the native engine while it was starting. Provision it again.',
@@ -430,9 +437,11 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
       return res.json({ deprovisioned: true, agentName, instanceId });
     }
     if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
-    await hostedRuntime.deprovisionAgent(agentName, instanceId);
-    // The stopped runtime was the token's only holder. Revoke it now rather
-    // than at the next provision, which may never come.
+    // F465: revoke before the stop. The worker was the token's only holder, but
+    // a turn already running there outlives the stop, and with the token still
+    // live its next post or ack lands. Revoked first, that call gets a 401. A
+    // stop that then fails leaves a worker polling with a dead token, which a
+    // retried deprovision stops; revoking is idempotent.
     // Without a bot user the installation copies are still revoked.
     const agentUser = await User.findOne({
       username: AgentIdentityService.buildAgentUsername(agentName, instanceId),
@@ -442,6 +451,7 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
     // A socket authenticated with the old token stays open until told to go.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     require('../services/agentWebSocketService').disconnectIdentity(agentName, instanceId);
+    await hostedRuntime.deprovisionAgent(agentName, instanceId);
     // A row migrated meanwhile keeps the migration's record; the worker is
     // stopped either way, which is what both wanted.
     await writeDurableObjectRecord(installation, { provisionedAt: null, deprovisionedAt: new Date() });
