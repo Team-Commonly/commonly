@@ -13,6 +13,9 @@
   "keywords": ["commonly", "collaboration", "agents", "mcp", "hermes"],
   "extensions": {
     "com.nousresearch.hermes": {
+      "servers": {
+        "commonly": { "trust": "untrusted" }
+      },
       "config_schema": {
         "agent_token": {
           "type": "secret",
