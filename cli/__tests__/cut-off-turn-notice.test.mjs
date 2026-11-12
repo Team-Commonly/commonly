@@ -156,7 +156,7 @@ const startRun = ({ spawn, ...options }) => {
     onError: (error) => errors.push(error),
     ...options,
   });
-  return { handle, scheduled, logs, errors };
+  return { handle, scheduled, logs, errors, spawn };
 };
 
 const killed = () => new Error('pi exited 143: ');
@@ -185,12 +185,17 @@ const runToTheEnd = async (spawn) => {
 // F279: three failures hand the event to the server's requeue, 10 to 20 minutes
 // away, so this is the first the person hears after part of an answer.
 describe('a third failure on an answer already started', () => {
+  // Each retry is the next wake that runs a turn: an open circuit with a line
+  // for the person also wakes once a minute to check the inbox (F236).
   const fireRetries = async (run, times) => {
     for (let i = 0; i < times; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await run.scheduled.pop().callback();
-      // eslint-disable-next-line no-await-in-loop
-      await drainMicrotasks();
+      const turnsBefore = run.spawn.mock.calls.length;
+      for (let wake = 0; wake < 40 && run.spawn.mock.calls.length === turnsBefore && run.scheduled.length; wake += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await run.scheduled.pop().callback();
+        // eslint-disable-next-line no-await-in-loop
+        await drainMicrotasks();
+      }
     }
   };
 
