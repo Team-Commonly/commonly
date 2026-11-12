@@ -8,13 +8,18 @@
  */
 import { jest } from '@jest/globals';
 import { spawn as spawnReal } from 'child_process';
+import { createHash } from 'crypto';
 import { createServer } from 'http';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
-import dsh, { developerToolsDir, isConfinedDsh, systemToolsFirst, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
+import dsh, {
+  developerToolsDir, DSH_PUBLIC_DISABLED_PLUGINS, DSH_PUBLIC_GUARD_SERVICE, isConfinedDsh, isPublicDsh, PUBLIC_TURN_DIR, seatHome,
+  systemToolsFirst, TESTED_DSH_VERSIONS,
+} from '../src/lib/adapters/dsh.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS, publicSeatWithheldTools } from '../src/lib/public-withheld-tools.js';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { OWN_PROCESS_GROUP } from '@commonlyai/seats/process-group';
 import { superviseRun } from '@commonlyai/seats/supervisor';
@@ -64,7 +69,7 @@ const connect = (target) => new Promise((resolve) => {
   const relay = await fetch(mcp.env.COMMONLY_API_URL + '/api/health').then((r) => r.text(), (e) => e.message);
   const egress = process.env.HTTPS_PROXY ? await connect('exfil.example:443') : null;
   fs.writeFileSync('.stub-report.json', JSON.stringify({
-    status: response.status, relay, egress, mcp,
+    status: response.status, relay, egress, mcp, rows, cwd: process.cwd(),
     sandboxPolicy: rows.find((row) => row.id === 'sandbox-policy').config,
     env: { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, TMPDIR: process.env.TMPDIR, DEVELOPER_DIR: process.env.DEVELOPER_DIR, PATH: process.env.PATH },
   }));
@@ -215,6 +220,8 @@ test('a confined turn runs through the pinned proxy, the relay and the egress fe
       statePath: home, network: 'loopback',
       readOnlyDirectories: [realpathSync(join(pkg, '..', '..')), mcpDir],
     });
+    // A private seat's workspace is the operator's folder, and a link there may be theirs.
+    expect(options.pinWorkspace).toBe(false);
     const ports = options.loopbackNetworkPorts;
     expect(ports).toHaveLength(3);
     expect(new Set(ports).size).toBe(3);
@@ -276,7 +283,6 @@ test('only the one confined shape is accepted', () => {
   ]) {
     expect(() => isConfinedDsh({ sandbox })).toThrow(/one confined shape/);
   }
-  expect(() => isConfinedDsh({ sandbox: { ...CONFINED, trust: 'public' } })).toThrow(/public-trust/);
 });
 
 test('an unconfined seat keeps its old spawn: no wrap, no fence, no pin', async () => {
@@ -328,5 +334,160 @@ test('the supervisor flag is what puts a dsh child in its own group', async () =
     await dsh.spawn('hi', record(true));
     expect(Object.hasOwn(calls[0], 'detached')).toBe(false);
     expect(calls[1].detached).toBe(process.platform !== 'win32');
+  });
+});
+
+describe('F115: a public dsh turn offers the model only the Commonly tools a public seat may use', () => {
+  const PUBLIC = { trust: 'public' };
+  const publicSeat = (ctx, extra = {}) => ({
+    ...ctx, ...extra, environment: { ...ctx.environment, sandbox: PUBLIC, ...(extra.environment || {}) },
+  });
+  const turnDir = (home) => join(home, PUBLIC_TURN_DIR);
+  const readReport = (home) => JSON.parse(readFileSync(join(turnDir(home), '.stub-report.json'), 'utf8'));
+
+  test('public trust is confined: bare, legacy and with the confined shape spelled out', () => {
+    for (const sandbox of [PUBLIC, { trust: 'internal' }, { ...CONFINED, trust: 'public' }]) {
+      expect(isConfinedDsh({ sandbox })).toBe(true);
+      expect(isPublicDsh({ sandbox })).toBe(true);
+    }
+    expect(isPublicDsh({ sandbox: CONFINED })).toBe(false);
+    expect(isPublicDsh({})).toBe(false);
+    for (const sandbox of [
+      { trust: 'public', mode: 'none' },
+      { trust: 'public', mode: 'workspace', network: { policy: 'unrestricted' } },
+      { trust: 'public', mode: 'bwrap' },
+    ]) {
+      expect(() => isConfinedDsh({ sandbox })).toThrow(/one confined shape/);
+    }
+  });
+
+  test('the turn runs in an empty folder the adapter owns, with every native tool plugin off', async () => {
+    await withSeat(async ({ ctx, home, wraps }) => {
+      await writeFile(join(ctx.cwd, '.env'), 'DSH_SEAT_PLANTED=1\n');
+      await mkdir(turnDir(home), { recursive: true });
+      await writeFile(join(turnDir(home), 'left-over'), 'from an earlier turn');
+      const result = await dsh.spawn('[[reply:public-ok]]', publicSeat(ctx));
+      expect(result.text).toBe('public-ok');
+      const seen = readReport(home);
+      expect(realpathSync(seen.cwd)).toBe(realpathSync(turnDir(home)));
+      expect(existsSync(join(turnDir(home), 'left-over'))).toBe(false);
+      expect(seen.sandboxPolicy).toEqual({ mode: 'danger-full-access', workspaceRoot: turnDir(home) });
+      const disabled = seen.rows.filter((row) => row.disabled === true).map((row) => row.id);
+      for (const id of DSH_PUBLIC_DISABLED_PLUGINS) expect(disabled).toContain(id);
+      for (const id of ['tool-bash', 'tool-fs', 'tool-web', 'tool-workflow', 'tool-subagent', 'tool-skill', 'agent-instructions']) {
+        expect(DSH_PUBLIC_DISABLED_PLUGINS).toContain(id);
+      }
+      const { options } = wraps.find((entry) => entry.inner);
+      expect(options).toMatchObject({ workspacePath: turnDir(home), workspaceAccess: 'write', statePath: home });
+      // The seat's workspace is no part of the jail.
+      expect(buildSeatbeltProfile(options)).not.toContain(ctx.cwd);
+    });
+  });
+
+  test('the Commonly MCP loads only behind the guard, which comes from the adapter', async () => {
+    await withSeat(async ({ ctx, home }) => {
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      const { rows } = readReport(home);
+      const inserts = rows.filter((row) => row.insert).map((row) => row.insert[0]);
+      expect(inserts.map((entry) => entry.id)).toEqual(['commonly-public-guard', 'mcp-commonly']);
+      const [guard, mcp] = inserts;
+      expect(guard.name).toMatch(/commonly-public-guard\.mjs$/);
+      expect(guard.name.startsWith(ctx.cwd)).toBe(false);
+      expect(guard.config).toEqual({ withheld: [...PUBLIC_SEAT_WITHHELD_TOOLS] });
+      expect(mcp.inject).toEqual([DSH_PUBLIC_GUARD_SERVICE]);
+      expect(mcp.config.env.COMMONLY_MCP_PUBLIC_SEAT).toBe('1');
+      // The last row is the MCP, which the stub reads.
+      expect(rows.at(-1).insert[0].id).toBe('mcp-commonly');
+    });
+  });
+
+  test('an owner-woken turn gets the memory writes back and nothing else', async () => {
+    await withSeat(async ({ ctx, home }) => {
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx, { ownerWoken: true }));
+      const guard = readReport(home).rows.find((row) => row.insert?.[0].id === 'commonly-public-guard').insert[0];
+      expect(guard.config.withheld).toEqual(publicSeatWithheldTools({ ownerWoken: true }));
+      expect(guard.config.withheld).toContain('commonly_attach_file');
+      expect(guard.config.withheld).not.toContain('commonly_write_agent_memory');
+    });
+  });
+
+  test('a public turn reaches only the provider proxy and the relay', async () => {
+    await withSeat(async ({ ctx, home, wraps }) => {
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      const seen = readReport(home);
+      expect(seen.env.HTTPS_PROXY).toBeUndefined();
+      expect(seen.egress).toBeNull();
+      expect(seen.relay).toBe('instance-ok');
+      const { options } = wraps.find((entry) => entry.inner);
+      expect(options.loopbackNetworkPorts).toHaveLength(2);
+      // CodeRabbit on #4021: the CLI makes this folder, so a link left by an earlier
+      // turn's process is refused, never followed to a write grant on its target.
+      expect(options.pinWorkspace).toBe(true);
+      expect(options.loopbackNetworkPorts).toContain(Number(new URL(seen.mcp.env.COMMONLY_API_URL).port));
+    });
+  });
+
+  test('a public home keeps only its sessions between turns, so nothing planted there loads', async () => {
+    await withSeat(async ({ ctx, home }) => {
+      const planted = [
+        ['profiles', 'headless', 'cordis.patch.yml'], ['cordis.patch.yml'], ['.env'], ['planted.mjs'],
+        ['.node_modules', 'x', 'index.js'],
+      ];
+      for (const parts of planted) {
+        await mkdir(join(home, ...parts.slice(0, -1)), { recursive: true });
+        await writeFile(join(home, ...parts), 'planted');
+      }
+      await mkdir(join(home, 'sessions', 'w'), { recursive: true });
+      await writeFile(join(home, 'sessions', 'w', 'kept'), 'session');
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      for (const parts of planted) expect(existsSync(join(home, parts[0]))).toBe(false);
+      expect(readFileSync(join(home, 'sessions', 'w', 'kept'), 'utf8')).toBe('session');
+    });
+  });
+
+  test('a sessions symlink is removed, not kept, and the native-addon cache in tmp/ is cleared', async () => {
+    await withSeat(async ({ ctx, root, home }) => {
+      const elsewhere = join(root, 'elsewhere');
+      await mkdir(elsewhere, { recursive: true });
+      await writeFile(join(elsewhere, 'planted'), 'planted');
+      await mkdir(join(home, 'tmp', 'cache'), { recursive: true });
+      await writeFile(join(home, 'tmp', 'cache', 'addon.node'), 'planted');
+      await symlink(elsewhere, join(home, 'sessions'));
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      expect(existsSync(join(home, 'sessions'))).toBe(false);
+      expect(existsSync(join(home, 'tmp', 'cache'))).toBe(false);
+      // The link went, its target stayed.
+      expect(readFileSync(join(elsewhere, 'planted'), 'utf8')).toBe('planted');
+    });
+  });
+
+  test('a public seat never shares a home with a private turn of the same agent', () => {
+    const seat = { instanceUrl: 'https://api.example', agentName: 'deep' };
+    const privateHome = seatHome({ ...seat, environment: { sandbox: CONFINED } });
+    expect(seatHome({ ...seat, environment: {} })).toBe(privateHome);
+    for (const sandbox of [PUBLIC, { trust: 'internal' }, { ...CONFINED, trust: 'public' }]) {
+      expect(seatHome({ ...seat, environment: { sandbox } })).not.toBe(privateHome);
+    }
+    // A private seat keeps the home it had before F115, sessions included.
+    const before = createHash('sha256').update(`${seat.instanceUrl}\0${seat.agentName}`).digest('hex').slice(0, 24);
+    expect(privateHome).toBe(join(homedir(), '.commonly', 'dsh-homes', before));
+  });
+
+  test('the guard refuses every tool but the Commonly ones it was not told to withhold', async () => {
+    const { apply, inject, name } = await import('../src/lib/adapters/dsh-public-guard.mjs');
+    expect(name).toBe('commonly-public-guard');
+    expect(inject).toEqual(['tools']);
+    let guard;
+    const provided = {};
+    const ctx = { tools: { guard: (fn) => { guard = fn; } }, provide: (key, value) => { provided[key] = value; } };
+    apply(ctx, { withheld: ['commonly_attach_file'] });
+    expect(Object.keys(provided)).toEqual([DSH_PUBLIC_GUARD_SERVICE]);
+    expect(guard({ name: 'mcp__commonly__commonly_post_message' })).toBeUndefined();
+    for (const tool of ['bash', 'write', 'web_fetch', 'run_code', 'subagent', 'mcp__commonly__commonly_attach_file',
+      'mcp__commonly__', 'mcp__other__commonly_post_message', 'xmcp__commonly__commonly_post_message', '']) {
+      expect(guard({ name: tool })).toMatch(/is not available on a public seat/);
+    }
+    expect(guard({})).toMatch(/is not available on a public seat/);
+    expect(() => apply(ctx, {})).toThrow(/withheld/);
   });
 });

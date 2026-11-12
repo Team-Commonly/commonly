@@ -1,0 +1,61 @@
+name: DeepSeek Harness public tool boundary
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/adapters/dsh.js'
+      - 'cli/src/lib/adapters/dsh-public-guard.mjs'
+      - 'cli/src/lib/adapters/seat-model.js'
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/provider-proxy.js'
+      - 'cli/src/lib/instance-proxy.js'
+      - 'cli/src/lib/upstream-refusal.js'
+      - 'cli/src/lib/mcp*.js'
+      - 'cli/src/lib/credential-file.js'
+      - 'cli/src/lib/environment.js'
+      - 'cli/src/lib/public-withheld-tools.js'
+      - 'cli/src/lib/public-seat-mcp-flag.js'
+      - 'cli/src/lib/memory-bridge.js'
+      - 'packages/seats/**'
+      - 'cli/__tests__/dsh.public-smoke.test.mjs'
+      - 'commonly-mcp/**'
+      - '.github/workflows/dsh-public-proof.yml'
+
+permissions:
+  contents: read
+
+# Every version in TESTED_DSH_VERSIONS (cli/src/lib/adapters/dsh.js) is proven
+# here before a public seat runs it. A public dsh seat needs Seatbelt, so this
+# runs on macOS only. The package is pinned by the integrity npm publishes.
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '0.2.1-rc.2'
+            integrity: sha512-tvY+yhfKRifthbqPe/OK0AYxM5ZkvqfYq/jMYgJcEUxiRRL1Vwra3Ti5TB6AXgSWQdiPHYh/Vp6SJa9yHwMNuw==
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install fixture dependencies and pinned dsh
+        env:
+          DSH_VERSION: ${{ matrix.version }}
+          DSH_INTEGRITY: ${{ matrix.integrity }}
+        run: |
+          npm ci --prefix cli --ignore-scripts --no-audit --no-fund
+          npm ci --prefix commonly-mcp --ignore-scripts --no-audit --no-fund
+          mkdir -p .dev/dsh
+          npm install --prefix .dev/dsh --ignore-scripts --no-audit --no-fund --save-exact "@deepseek-ai/dsh@${DSH_VERSION}"
+          node -e 'const l = require("./.dev/dsh/package-lock.json"); const got = l.packages["node_modules/@deepseek-ai/dsh"]; if (got.version !== process.env.DSH_VERSION || got.integrity !== process.env.DSH_INTEGRITY) { console.error("dsh package does not match the pin", got.version, got.integrity); process.exit(1); }'
+      - name: Exercise real dsh under Seatbelt
+        run: |
+          export COMMONLY_DSH_SMOKE_BINARY="$PWD/.dev/dsh/node_modules/.bin/dsh"
+          cd cli
+          node --experimental-vm-modules node_modules/.bin/jest __tests__/dsh.public-smoke.test.mjs --runInBand

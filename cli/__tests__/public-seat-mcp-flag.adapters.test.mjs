@@ -308,10 +308,14 @@ test("a public pi seat's Commonly server gets the public-seat flag", async () =>
   expect(spawned[0].env[FLAG]).toBe('1');
 });
 
-// dsh: not tested. dsh refuses public-trust seats outright (dsh.js:46, "public-trust
-// seats are not supported"), so no public seat runs the Commonly MCP through it.
-test('a dsh seat refuses public trust, so it never carries the flag', () => {
-  // The refusal is the reason there is no dsh case above; fail here if it lifts.
-  expect(readFileSync(new URL('../src/lib/adapters/dsh.js', import.meta.url), 'utf8'))
-    .toContain('public-trust seats are not supported');
+// dsh (F115): a public seat's MCP entry carries the flag, declared or not, and
+// a private seat refuses an MCP env it did not build.
+test('a public dsh seat hands the Commonly MCP the flag; a private one never does', async () => {
+  const { resolveCommonlyMcp } = await import('../src/lib/adapters/dsh.js');
+  const base = { credentialFile: '/tmp/seat-token', instanceUrl: 'https://api.commonly.me' };
+  expect(resolveCommonlyMcp([], { ...base, publicSeat: true }).config.env[FLAG]).toBe('1');
+  const flagged = withPublicSeatMcpFlag({ mcp: [commonlyMcpServer()] }).mcp;
+  expect(resolveCommonlyMcp(flagged, { ...base, publicSeat: true }).config.env[FLAG]).toBe('1');
+  expect(resolveCommonlyMcp([], base).config.env[FLAG]).toBeUndefined();
+  expect(() => resolveCommonlyMcp(flagged, base)).toThrow(/this spawn's credential file/);
 });
