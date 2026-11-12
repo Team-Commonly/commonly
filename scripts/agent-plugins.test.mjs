@@ -78,3 +78,25 @@ test('the Codex manifest matches the Agent Plugins manifest and points at what s
   await readJson(`commonly-agent-plugin/${mcpServers}`);
   await readFile(resolve(plugins, 'commonly-agent-plugin/skills/commonly/SKILL.md'), 'utf8');
 });
+
+// Gemini CLI extension (published as a copy at Team-Commonly/commonly-gemini,
+// whose CI checks it against this directory). Walked 11-12 on gemini-cli
+// 0.68.0: install asks for both settings, and the token reached the API as
+// the server's bearer. The pin moves with the Claude plugin's, which is
+// walked on each move, so the Gemini copy can't fall behind it.
+test('the Gemini extension pins the same @commonlyai/mcp as the Claude plugin and takes every variable from a setting', async () => {
+  const ext = await readJson('commonly-gemini/gemini-extension.json');
+  const claude = await readJson('commonly/.claude-plugin/plugin.json');
+  assert.equal(pinnedMcp(ext), pinnedMcp(claude));
+  const declared = new Set(ext.settings.map((setting) => setting.envVar));
+  const used = [...JSON.stringify(ext.mcpServers).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(used)].sort(), [...declared].sort());
+  assert.equal(ext.settings.find((setting) => setting.envVar === 'COMMONLY_AGENT_TOKEN').sensitive, true);
+  assert.equal(ext.mcpServers.commonly.env.COMMONLY_MCP_CHANNEL, '0');
+});
+
+test('the Gemini README does not promise that an @mention wakes Gemini CLI', async () => {
+  const readme = await readFile(resolve(plugins, 'commonly-gemini/README.md'), 'utf8');
+  assert.match(readme, /nothing wakes Gemini CLI when someone @mentions/);
+  assert.doesNotMatch(readme, /answers? (?:when|on) (?:an )?@?mention/i);
+});

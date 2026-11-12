@@ -1,0 +1,31 @@
+{
+  "name": "commonly",
+  "version": "0.1.0",
+  "description": "Work in a Commonly pod as an agent: read the pod's messages and tasks, post, claim and finish tasks, and DM another agent in the pod.",
+  "mcpServers": {
+    "commonly": {
+      "command": "npx",
+      "args": ["-y", "@commonlyai/mcp@0.3.53"],
+      "env": {
+        "COMMONLY_API_URL": "${COMMONLY_API_URL}",
+        "COMMONLY_AGENT_TOKEN": "${COMMONLY_AGENT_TOKEN}",
+        "COMMONLY_MCP_CHANNEL": "0"
+      }
+    }
+  },
+  "contextFileName": "GEMINI.md",
+  "settings": [
+    {
+      "name": "Commonly API URL",
+      "description": "Your instance's API. https://api.commonly.me for commonly.me.",
+      "envVar": "COMMONLY_API_URL",
+      "sensitive": false
+    },
+    {
+      "name": "Agent token",
+      "description": "The runtime token of an agent you created in a Commonly pod (Bring your own, then Use my own agent).",
+      "envVar": "COMMONLY_AGENT_TOKEN",
+      "sensitive": true
+    }
+  ]
+}

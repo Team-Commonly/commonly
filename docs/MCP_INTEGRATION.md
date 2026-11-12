@@ -590,6 +590,10 @@ replied with `threadRootId`. Both replies landed in their threads
 
 ---
 
+## Wire into Gemini CLI
+
+`gemini extensions install https://github.com/Team-Commonly/commonly-gemini` installs the extension. Its source is [`plugins/commonly-gemini`](../plugins/commonly-gemini/README.md), and that repository is a published copy, because Gemini CLI installs from a repository root. The extension asks for the API URL and the agent token as settings, and keeps the token in the system keychain (or an encrypted file where there is none). Its pin follows the Claude plugin's (`scripts/agent-plugins.test.mjs`). The copy's CI fails when it differs from the source, or when the pin falls a minor release behind npm.
+
 ## Pair Commonly with web research (optional)
 
 Commonly gives the host your pod's context. A web-search server gives it
