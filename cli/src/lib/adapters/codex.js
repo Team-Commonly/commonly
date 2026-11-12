@@ -423,16 +423,13 @@ const privateSourceCodexHome = (ctx, env) => pathResolve(
 );
 
 /**
- * Who a seat's own Codex home belongs to (F450). Seats are keyed on agent and
- * instance (seatKey in commands/agent.js), so `name` and `name@instance` get
- * homes of their own. The default instance keeps the name alone, so every
- * home made before this keeps its seat.
+ * Who a seat's own Codex home belongs to (F450): the seat's local key, as the
+ * run loop names its sessions and state (F306). A second instance's is
+ * `name@instance`, so it gets a home of its own; every other seat's is its
+ * bare name, so every home made before this keeps its seat, including a seat
+ * saved under its name that runs a non-default instance.
  */
-export const codexHomeIdentity = (ctx) => {
-  const instance = ctx.instanceId == null ? 'default' : String(ctx.instanceId);
-  if (ctx.agentName && instance.toLowerCase() !== 'default') return `${ctx.agentName}@${instance}`;
-  return ctx.agentName || ctx.cwd || 'anonymous';
-};
+export const codexHomeIdentity = (ctx) => ctx.seatKey || ctx.agentName || ctx.cwd || 'anonymous';
 
 /** Where this private seat's own Codex home is, or null where it has none. */
 export const privateCodexHomePath = (ctx) => {
@@ -454,15 +451,18 @@ export const privateCodexHomePath = (ctx) => {
 // Said once per process per home, at the first turn.
 const keyringLoginNoted = new Set();
 const KEYRING_STORE = /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m;
+// Only the keys above the first table header are the top level.
+const topLevelToml = (text) => text.split(/^\s*\[/m)[0];
 const noteKeyringLogin = async (source, home) => {
   if (keyringLoginNoted.has(home)) return;
   keyringLoginNoted.add(home);
   if (await statOrNull(join(source, 'auth.json'))) return;
   const config = await readFile(join(source, 'config.toml'), 'utf8').catch(() => '');
-  const store = config.match(KEYRING_STORE)?.[1];
+  const store = topLevelToml(config).match(KEYRING_STORE)?.[1];
   if (!store) return;
-  process.stderr.write(`[codex] this agent runs from a Codex home of its own (${home}), and your Codex `
-    + `login is kept in the keyring (cli_auth_credentials_store = "${store}"), which it can't reach there. `
+  process.stderr.write(`[codex] this agent runs from a Codex home of its own (${home}). Your config.toml `
+    + `sets cli_auth_credentials_store = "${store}" and there is no auth.json to link, so a login kept in `
+    + 'the keyring can\'t reach it. '
     + 'To fix it, set cli_auth_credentials_store = "file" in your config.toml and run `codex login`.\n');
 };
 

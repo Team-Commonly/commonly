@@ -3199,8 +3199,11 @@ export const performRun = ({
         runtimeToken: opened.token,
         instanceUrl,
         agentName,
-        // A Codex seat's own home is keyed on both (F450).
-        instanceId,
+        // The seat's local key (F306), which a Codex seat's own home is keyed
+        // on (F450): `name@instance` for a second instance, the bare name for
+        // every other seat, including one saved under its name that runs a
+        // non-default instance, so no existing seat moves to a new home.
+        seatKey: stateKey,
         metadata: { event },
       };
       // Supervised or plain, a failure is thrown exactly as the adapter's own

@@ -2631,20 +2631,27 @@ describe('the Codex home a private seat runs with (F444)', () => {
       await linuxSpawn({ agentName: 'keyring-c' });
       expect(said()).toHaveLength(1);
       expect(said()[0]).toMatch(/cli_auth_credentials_store = "keyring"/);
+      // A key inside a table isn't the store setting.
+      await writeFile(join(home, '.codex', 'config.toml'), '[profiles.work]\ncli_auth_credentials_store = "keyring"\n');
+      await linuxSpawn({ agentName: 'keyring-d' });
+      expect(said()).toHaveLength(1);
       expect(said()[0]).toMatch(/set cli_auth_credentials_store = "file" in your config\.toml and run `codex login`/);
     } finally {
       stderr.mockRestore();
     }
   });
 
-  test('each instance of an agent gets its own home; the default instance keeps the one it had', async () => {
+  test('each seat key gets its own home; a seat keyed on its name keeps the one it had, whatever its instance', async () => {
     const plain = await linuxSpawn({ agentName: 'twin' });
-    const byDefault = await linuxSpawn({ agentName: 'twin', ctx: { instanceId: 'default' } });
-    const other = await linuxSpawn({ agentName: 'twin', ctx: { instanceId: 'reviewer' } });
-    expect(byDefault.codexHome).toBe(plain.codexHome);
+    const byName = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin' } });
+    // Saved under its name by attach or the connect page, running a persona's instance.
+    const bareKeyed = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin', instanceId: 'priya-twin' } });
+    const other = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin@reviewer', instanceId: 'reviewer' } });
+    expect(byName.codexHome).toBe(plain.codexHome);
+    expect(bareKeyed.codexHome).toBe(plain.codexHome);
     expect(other.codexHome).not.toBe(plain.codexHome);
     // Each is denied to the other once it exists.
-    const again = await linuxSpawn({ agentName: 'twin' });
+    const again = await linuxSpawn({ agentName: 'twin', ctx: { seatKey: 'twin' } });
     expect(again.fsFlag).toContain(`"${other.codexHome}"="deny"`);
     expect(other.fsFlag).toContain(`"${plain.codexHome}"="deny"`);
   });
@@ -2664,8 +2671,8 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(calls[0].args).not.toContain('cli_auth_credentials_store="file"');
   });
 
-  test('a public seat\'s home is per instance too, and the default instance\'s is unchanged', async () => {
-    const homeFor = async (instanceId) => {
+  test('a public seat\'s home is per seat key too, and a seat keyed on its name keeps its own', async () => {
+    const homeFor = async (seatKey) => {
       const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
       const env = { ...process.env, HOME: home };
       delete env.CODEX_HOME;
@@ -2675,7 +2682,7 @@ describe('the Codex home a private seat runs with (F444)', () => {
         sessionId: null, cwd: join(root, 'workspace'), env, agentName: 'twin-public',
         environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
         _platform: 'linux', _homeDir: home, _spawnImpl: impl,
-        ...(instanceId ? { instanceId } : {}),
+        ...(seatKey ? { seatKey, instanceId: 'some-instance' } : {}),
       });
       return calls[0].opts.env.CODEX_HOME;
     };
@@ -2683,8 +2690,8 @@ describe('the Codex home a private seat runs with (F444)', () => {
     const plain = await homeFor(null);
     // The hash a default seat's public home has always had.
     expect(plain).toBe(join(publicRoot, createHash('sha256').update('twin-public').digest('hex').slice(0, 20)));
-    expect(await homeFor('default')).toBe(plain);
-    expect(await homeFor('reviewer')).not.toBe(plain);
+    expect(await homeFor('twin-public')).toBe(plain);
+    expect(await homeFor('twin-public@reviewer')).not.toBe(plain);
   });
 });
 

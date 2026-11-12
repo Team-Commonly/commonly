@@ -73,9 +73,9 @@ seat runs with **a Codex home of its own** (F445), under
 - **Your own setup is carried over** as links Codex follows outside the sandbox:
   `auth.json` (your login), `config.toml` (a private seat keeps your config) and
   `AGENTS.md`. A file the seat's Codex writes in its own home is its own and is
-  kept; a link to a login you removed is dropped. Each instance of an agent
-  (`name`, `name@instance`) has its own home; the default instance keeps the
-  one it always had.
+  kept; a link to a login you removed is dropped. Each seat has its own home,
+  keyed as its local state is: a second instance (`name@instance`) gets one of
+  its own, and a seat saved under its name keeps the one it had.
 - **A refreshed login reaches your own file.** ChatGPT refresh tokens rotate,
   so a refresh that landed only in the seat's home would log you out of your
   own Codex. Codex's file store saves a refresh by opening `auth.json` for
@@ -84,7 +84,11 @@ seat runs with **a Codex home of its own** (F445), under
   rename). Its `keyring` and `auto` stores instead save to the keyring under
   the seat home's own path and delete the seat's `auth.json`, so the seat runs
   with `cli_auth_credentials_store = "file"`, whatever your linked
-  `config.toml` sets. **A login kept in the keyring doesn't carry over:** with
+  `config.toml` sets. A managed requirement (a requirements file, or a
+  business workspace's settings) that sets the store wins over that, and then
+  a refresh leaves your file behind. The seat and your own Codex share one
+  rotating refresh token, so if both refresh at the same moment one of them
+  can be refused and must sign in again. **A login kept in the keyring doesn't carry over:** with
   `cli_auth_credentials_store` set to `keyring`, or to `auto` where a keyring
   service runs, Codex keeps the login under your Codex home's path and no
   `auth.json`, so the seat's own home starts signed out (before F445 it ran
