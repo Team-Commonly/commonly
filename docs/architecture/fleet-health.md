@@ -1,6 +1,6 @@
 # Fleet health: design note
 
-Status: design note, not built. Owner: CTO. Artboard: [`docs/design/artboards/d115/`](../design/artboards/d115/README.md) (Launch, 2026-11-12). It may become an enterprise feature; packaging is decided in the enterprise ADR (D116), not here.
+Status: built. The read is `GET /api/agents/health` (`backend/services/agentHealthService.ts`) and the page is `/v2/agents/health` (`V2AgentHealthPage`). Owner: CTO. Artboard: [`docs/design/artboards/d115/`](../design/artboards/d115/README.md) (Launch, 2026-11-12). It may become an enterprise feature; packaging is decided in the enterprise ADR (D116), not here.
 
 ## The question it answers
 
@@ -109,3 +109,14 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 ## Open questions
 
 - Should a heartbeat that legitimately says nothing count as declined? The proposal is that it doesn't: heartbeats keep a column of their own so they don't drag the posted share down.
+
+## Where the build differs from the frame
+
+- **The window control** is the segmented control the Activity page ships, and it sits in the body's toolbar row beside the scope line, not in the page head. In the head it ran off a phone screen next to Bring your own and Hire an agent.
+- **Acknowledged** is a seventh outcome: an event acked with no recorded outcome. It is shown only when a row has one, and never counted as posted.
+- **A failed read** shows no window control, because the options come from the response.
+- **Empty comes from the event, not the run.** A BYO turn that printed nothing is acked `no_action` with reason `empty-output`; the read turns that one reason into a flag in the aggregation, so it counts as empty and the reason text never leaves the database. Run counts never enter the Asked bar, because runs aren't split by trigger and would mix heartbeats in.
+- **Known gap: a turn Commonly refused shows as declined.** The hosted runtime acks `no_action` for `native-no-turn`, `consecutive_run_cap` and `cloud_agents_not_entitled`, so the page counts them as the agent's own decline. Separating them needs its own outcome and legend entry.
+- **The window** is bounded by the shorter of the delivered and failed event retentions.
+- **The install status label** reads Active, Paused, Error or Stale, from `AgentInstallation.status`. It never reads Running, which would claim a turn is in progress.
+

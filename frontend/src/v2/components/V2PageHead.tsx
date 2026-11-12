@@ -14,10 +14,12 @@ interface V2PageHeadProps {
   lead?: React.ReactNode;
   /** An id on the h1, for a region labelled by its title. */
   titleId?: string;
+  /** Drawn after the title and meta, inside the identity: a view switch. */
+  aside?: React.ReactNode;
 }
 
 const V2PageHead: React.FC<V2PageHeadProps> = ({
-  title, meta, actions, hint, className = '', titleClassName = '', metaClassName = '', hintLabel = 'About this page', lead, titleId,
+  title, meta, actions, hint, className = '', titleClassName = '', metaClassName = '', hintLabel = 'About this page', lead, titleId, aside,
 }) => (
   <header className={`v2-page-head${className ? ` ${className}` : ''}`}>
     {lead}
@@ -25,6 +27,7 @@ const V2PageHead: React.FC<V2PageHeadProps> = ({
       <h1 id={titleId} className={titleClassName}>{title}</h1>
       {hint != null && <V2Hint label={hintLabel}>{hint}</V2Hint>}
       {meta != null && <span className={`v2-page-head__meta${metaClassName ? ` ${metaClassName}` : ''}`}>{meta}</span>}
+      {aside}
     </div>
     {actions != null && <div className="v2-page-head__actions">{actions}</div>}
   </header>

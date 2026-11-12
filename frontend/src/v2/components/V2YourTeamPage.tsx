@@ -8,6 +8,7 @@ import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
+import V2TeamViewSwitch from './V2TeamViewSwitch';
 import { roomRefusal } from '../utils/roomRefusal';
 
 // The shared head bar's title and count classes, plus this page's own hook.
@@ -538,6 +539,7 @@ const V2YourTeamPage: React.FC = () => {
         className="v2-feature__header v2-page-head--wrap v2-team__head"
         titleClassName={HEAD_TITLE_CLASS}
         title={t('yourTeam.title')}
+        aside={<V2TeamViewSwitch value="agents" />}
         metaClassName={HEAD_META_CLASS}
         hint={isEntitled ? undefined : t('yourTeam.redeem.gated')}
         hintLabel={t('common.aboutPage', { title: t('yourTeam.title') })}

@@ -48,6 +48,7 @@ const V2DiscordCallback = React.lazy(() => import('./components/V2DiscordCallbac
 const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
 const V2ResetPassword = React.lazy(() => import('./components/V2ResetPassword'));
 const V2YourTeamPage = React.lazy(() => import('./components/V2YourTeamPage'));
+const V2AgentHealthPage = React.lazy(() => import('./components/V2AgentHealthPage'));
 const V2InviteRedeem = React.lazy(() => import('./components/V2InviteRedeem'));
 const V2CommunityRedirect = React.lazy(() => import('./components/V2CommunityRedirect'));
 const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
@@ -362,6 +363,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents/manage"
                   element={<Navigate to="/v2/agents" replace />}
+                />
+                <Route
+                  path="agents/health"
+                  element={feature(t('agentHealth.pageTitle'), <V2AgentHealthPage />, false, false, 'v2-feature--bar')}
                 />
                 <Route
                   path="agents/byo"
