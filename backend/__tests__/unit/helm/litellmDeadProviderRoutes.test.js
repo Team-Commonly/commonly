@@ -61,13 +61,10 @@ describe('LiteLLM routes no request to a provider that is switched off', () => {
 
 // F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and a name that
 // answers with another vendor's model gives its caller that model with no
-// signal. The 7-day spend log to 11-04 showed no call to any of these names on
-// dev, so dev (litellm.legacyAliases false) renders none of them: a caller gets
-// an unknown-model error instead of a silent stand-in. The chart's own driver
-// defaults still named them on installs we can't measure, so base kept the
-// stand-ins behind the flag (CTO ruling 11-04). F103 moved those defaults to
-// litellm.agentDefaultModel and deleted the names outright; the flag now gates
-// only the Gemini/gpt-4o stand-ins, until F105.
+// signal. F98 put the stand-ins behind litellm.legacyAliases, F103 deleted the
+// non-Gemini legacy names, and F105 moved every code default off the Gemini and
+// gpt-4o names and removed the flag (spend logs, 7 days to 11-12: no Commonly
+// caller reached one). Each name is now served only by its own provider.
 const entries = () => lines.map((l, i) => ({ l: l.trim(), i }))
   .filter(({ l }) => l.startsWith('- model_name:'))
   .map(({ l, i }) => ({ name: l.replace('- model_name:', '').trim(), i }));
@@ -75,34 +72,27 @@ const blockOf = (at) => {
   const next = lines.findIndex((l, k) => k > at && /^\s*- model_name:|^\s*router_settings:|^\s*\{\{-? (if|end|else)/.test(l));
   return lines.slice(at + 1, next === -1 ? undefined : next).join('\n');
 };
-// F159: and only where DeepSeek, the stand-in's upstream, renders.
-const standInGate = (provider) => `{{- if and (not .Values.aiProviders.${provider}.enabled) .Values.litellm.legacyAliases .Values.aiProviders.deepseek.enabled }}`;
 const LEGACY_NAMES = [
   'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3-super-120b-a12b:free',
   'gpt-5.4', 'openai-codex/gpt-5.4', 'gpt-5.4-mini', 'openai-codex/gpt-5.4-mini', 'gpt-5.4-nano',
   'openai-codex/gpt-5.4-nano', 'codex-mini-latest', 'o4-mini', 'codex-cli/gpt-5.4',
 ];
 
-describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is on', () => {
-  test('dev renders no stand-in; base keeps the Gemini/gpt-4o ones until F105', () => {
-    expect(dev.litellm.legacyAliases).toBe(false);
-    expect(base.litellm.legacyAliases).toBe(true);
+describe('no other vendor\'s name is served by DeepSeek', () => {
+  test('the legacyAliases flag is gone from both values files and the template', () => {
+    expect(base.litellm).not.toHaveProperty('legacyAliases');
+    expect(dev.litellm).not.toHaveProperty('legacyAliases');
+    expect(lines.filter((l) => l.includes('.Values.litellm.legacyAliases'))).toEqual([]);
   });
 
-  test('every entry that reaches DeepSeek under another name sits under the legacyAliases flag', () => {
+  test('no entry reaches DeepSeek under another name', () => {
     const standIns = entries()
       .filter(({ i }) => /model:\s*deepseek\//.test(blockOf(i)))
       .filter(({ name }) => !name.startsWith('deepseek-'));
-    expect(standIns.map(({ name }) => name).sort()).toEqual(
-      ['gemini-2.5-flash', 'google/gemini-2.0-flash', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'gpt-4o'],
-    );
-    // A provider-off gate ANDed with the flag; never `not` the flag.
-    const gate = /^\{\{- if and \(not \.Values\.aiProviders\.\w+\.enabled\) \.Values\.litellm\.legacyAliases \.Values\.aiProviders\.deepseek\.enabled \}\}$/;
-    standIns.forEach(({ name, i }) => expect([name, gateAbove(i)]).toEqual([name, expect.stringMatching(gate)]));
+    expect(standIns.map(({ name }) => name)).toEqual([]);
   });
 
-  // F103: these names are gone in every render, flag or not, as routes and as
-  // fallbacks.
+  // F103: these names are gone in every render, as routes and as fallbacks.
   test.each(LEGACY_NAMES)('%s is neither a route nor a fallback', (name) => {
     expect(entries().filter((entry) => entry.name === name)).toEqual([]);
     expect(lines.filter((l) => l.includes(`"${name}"`))).toEqual([]);
@@ -111,24 +101,21 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
   test.each([
     ['gemini-2.5-flash', 'gemini'], ['google/gemini-2.5-flash', 'gemini'], ['google/gemini-2.5-flash-lite', 'gemini'],
     ['google/gemini-2.0-flash', 'gemini'], ['gpt-4o', 'openai'],
-  ])('%s is served by %s where it is on, and by a stand-in only under the legacyAliases flag', (name, provider) => {
+  ])('%s is served only by %s, where it is on', (name, provider) => {
     const found = entries().filter((entry) => entry.name === name);
-    expect(found).toHaveLength(2);
-    const [real, standIn] = found;
-    expect(gateAbove(real.i)).toBe(`{{- if .Values.aiProviders.${provider}.enabled }}`);
-    expect(blockOf(real.i)).not.toMatch(/deepseek/);
-    expect(gateAbove(standIn.i)).toBe(standInGate(provider));
-    expect(blockOf(standIn.i)).toMatch(/model:\s*deepseek\/deepseek-v4-flash/);
+    expect(found).toHaveLength(1);
+    expect(gateAbove(found[0].i)).toBe(`{{- if .Values.aiProviders.${provider}.enabled }}`);
+    expect(blockOf(found[0].i)).not.toMatch(/deepseek/);
   });
 
-  test('a Gemini fallback renders where DeepSeek is on and Gemini or legacyAliases is, and no other fallback is listed', () => {
+  test('a Gemini fallback renders only where DeepSeek and Gemini are both on, and no other fallback is listed', () => {
     const gemini = [];
     const other = [];
     lines.forEach((l, i) => {
       if (/^\s*- \{"(gemini-|google\/)/.test(l)) gemini.push(gateAbove(i));
       else if (/^\s*- \{"[^"]+":\s*\[/.test(l)) other.push(l.trim());
     });
-    expect(gemini).toEqual(Array(4).fill('{{- if and .Values.aiProviders.deepseek.enabled (or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases) }}'));
+    expect(gemini).toEqual(Array(4).fill('{{- if and .Values.aiProviders.deepseek.enabled .Values.aiProviders.gemini.enabled }}'));
     expect(other).toEqual([]);
   });
 });

@@ -105,7 +105,7 @@ Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-dep
 **DeepSeek is an optional provider** (`aiProviders.deepseek.enabled`, F159). On
 by default, so a self-hosted install gets the `deepseek-v4-flash` and
 `deepseek-flash-1017` routes, LiteLLM's `DEEPSEEK_API_KEY` (from
-`commonly-deepseek-api-key`), the Gemini/`gpt-4o` stand-ins and Gemini fallbacks
+`commonly-deepseek-api-key`), the Gemini fallbacks
 that target it, and `LITELLM_CHAT_MODEL=deepseek-v4-flash` on the backend. Off,
 none of that renders and `LITELLM_CHAT_MODEL` follows `litellm.agentDefaultModel`,
 which must then name another route. Dev turns it off: hosted agents run Claude
@@ -129,8 +129,42 @@ Gemini SDK in llmService, the bots' Gemini REST fallback) still sends a Gemini
 name, because that is real Gemini: `geminiDirectModel` keeps a Gemini name and
 turns any other into `gemini-2.5-flash`, so a LiteLLM name never reaches Google.
 Saved values are not rewritten: an admin policy or an AgentProfile that holds a
-Gemini name keeps it. `legacyAliases` itself retires in a separate change, once
-LiteLLM's spend logs show no calls under the stand-in names.
+Gemini name keeps it.
+
+### Upgrading past F105: `litellm.legacyAliases` is gone
+
+**What was removed.** The `litellm.legacyAliases` value, on by default in the
+base chart, and the five routes it rendered. Where a provider was off, they
+served another vendor's name with DeepSeek: `gemini-2.5-flash`,
+`google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite` and
+`google/gemini-2.0-flash` where `aiProviders.gemini` was off, and `gpt-4o` where
+`aiProviders.openai` was off. Each name is now served only by its own provider,
+where that provider is on. A new agent LiteLLM key also stops allowing the four
+Gemini names; a key minted before keeps its list. A leftover `legacyAliases` key
+in an override file is ignored.
+
+**Who it affects.** Mainly an install with Gemini or OpenAI turned off where
+something still names one of those models itself: a saved admin model policy,
+an agent or seat config, or your own client. No code default names them since
+F105. On commonly.me no Commonly caller reached one in the 7 days to 11-12
+(LiteLLM spend logs). Separately, wherever Gemini is on, an agent LiteLLM key minted after
+F105 can no longer call a Gemini name: an agent's own provisioned config never
+asks for one, but a tool that reuses the key with a Gemini name gets LiteLLM's
+key-access error.
+
+**The error it gets.** LiteLLM (v1.106.2) answers HTTP 400:
+
+```
+/chat/completions: Invalid model name passed in model=gpt-4o. Call `/v1/models` to view available models for your key.
+```
+
+A virtual key whose own model list doesn't include the name is refused before
+that, with LiteLLM's key-access error.
+
+**The fix.** Point the caller at the model the chart serves under its own name,
+`litellm.agentDefaultModel` (base `deepseek-v4-flash`), or turn the vendor's
+provider on with a working key. For a saved admin policy, set its model in
+the admin model policy (Global Integrations).
 
 **DeepSeek tool shim** (`/app/deepseek_tool_shim.py`, source in
 `k8s/helm/commonly/files/litellm/`, mounted from the `litellm-config` ConfigMap). It's
