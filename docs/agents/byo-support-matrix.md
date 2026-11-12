@@ -235,13 +235,35 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     home. A private seat keeps its credential for the turn, as before.
   - Claude Code's fresh-session retry writes the credential again at the path
     its config names, and deletes it again once that run's servers are ready.
-  - **Not covered:** a Claude Code turn with an HTTP broker keeps the file. Its
-    `headersHelper` reads it on every connect and reconnect, so deleting the
-    file would cost the broker its next reconnect. Moving that helper to a
-    channel that holds the token in memory is a follow-up.
+  - A Claude Code turn with an HTTP broker loses the file too (F461). Its
+    `headersHelper` runs on every connect and reconnect. On a public seat it
+    asks the adapter for the token over a Unix socket, `headers.sock` in the
+    spawn's 0700 MCP folder, with the socket itself 0600. The adapter holds the
+    token in memory and closes the socket when the turn ends. A turn whose only
+    MCP server is the broker has no stdio reader, so its file goes before
+    Claude starts.
+    - The socket answers only a client that first sends the turn's key, a
+      256-bit random value in `headers.key` (0600) beside it. The key matters
+      because connecting isn't reading a file. On macOS the connect goes
+      through the seat's open network rule, not its folder rules, so another
+      seat's jail that learned the path could connect. That jail can't read
+      the key, so it gets nothing (checked under real `sandbox-exec` with two
+      seat profiles). Who can get the token is again whoever can read this
+      folder, as with the file.
+    - Opening the socket as a file fails (macOS, and ENXIO on Linux), so a Read
+      tool gets nothing from it. A Read of the key alone gets no token, because
+      a Read can't connect.
+    - On Linux the connect works through bwrap's read-only bind of the folder
+      (checked with a read-only bind mount in a container).
+    - Windows keeps the file for the turn. A named pipe's default ACL lets
+      Everyone read it, which is wider than a 0600 file.
+    - A temp folder whose socket path would pass 103 bytes, or a socket that
+      can't be set up, also keeps the file, with a warning.
+    - A private seat's helper still reads the file.
   - Measured with stub servers that write their ready files, per adapter
-    (`adapters.*.credential-release-f460.test.mjs`), and with the release
-    timing in `credential-release.test.mjs`.
+    (`adapters.*.credential-release-f460.test.mjs`), with the release
+    timing in `credential-release.test.mjs`, and with Claude Code's header
+    socket under real Seatbelt (`seatbelt.claude-header-channel.smoke.test.mjs`).
 - **Temp files in a public Codex shell.** The profile denies `$TMPDIR` and
   `/tmp`, so a writable seat's shell gets `TMPDIR` and zsh's `TMPPREFIX` in its
   workspace. Heredocs work (real turn, codex-cli 0.162.1 on macOS, stub model,

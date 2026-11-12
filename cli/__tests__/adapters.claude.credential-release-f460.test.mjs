@@ -3,12 +3,15 @@
  * once our Commonly server has written its ready file (in the seat's state
  * folder, which the jail writes), or at the deadline. A delete that fails ends
  * the turn. The fresh-session retry gets the credential back at the path its
- * config names, and loses it again once its servers are ready. A turn with a
- * headersHelper (an HTTP broker) keeps the file: the helper reads it on every
- * reconnect, the residual F460 names.
+ * config names, and loses it again once its servers are ready. F461: a turn
+ * with a headersHelper (an HTTP broker) loses the file too, because its helper
+ * asks the adapter over a socket in the spawn's folder; Windows, where that
+ * would be a named pipe, keeps the file.
  */
 import { jest } from '@jest/globals';
+import { execFile } from 'child_process';
 import { EventEmitter } from 'events';
+import { promisify } from 'util';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -34,6 +37,13 @@ const stdoutFor = (text) => [
   { type: 'result', subtype: 'success', is_error: false, result: text },
 ].map((event) => JSON.stringify(event)).join('\n');
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+// Runs a headersHelper as Claude does, through a shell with Claude's env. Async:
+// the channel it asks is served from this same process.
+const runHelper = async (command, env) => {
+  const { stdout } = await promisify(execFile)('/bin/sh', ['-c', command], { env, encoding: 'utf8' });
+  return JSON.parse(stdout);
+};
+const channelOf = (command) => command.match(/'([^']*headers\.sock)'/)?.[1];
 
 // A Claude whose Commonly server writes its ready file (or not), then answers
 // after `turnMs`. Each spawn records whether the credential existed at its
@@ -52,6 +62,7 @@ const fakeClaude = ({ writeReady = true, turnMs = 300, fail = () => null } = {})
       readyFile: env.COMMONLY_MCP_READY_FILE,
       headersHelper: Boolean(config.mcpServers['commonly-grant-broker']?.headersHelper),
     };
+    const helper = config.mcpServers['commonly-grant-broker']?.headersHelper;
     run.atStart = Boolean(run.tokenFile && fs.existsSync(run.tokenFile));
     runs.push(run);
     const failure = fail(runs.length);
@@ -59,6 +70,11 @@ const fakeClaude = ({ writeReady = true, turnMs = 300, fail = () => null } = {})
       if (writeReady && run.readyFile) fs.writeFileSync(run.readyFile, 'ready\n', { flag: 'wx' });
       await sleep(turnMs);
       run.atEnd = Boolean(run.tokenFile && fs.existsSync(run.tokenFile));
+      // A reconnect late in the turn, after the file is gone.
+      if (helper) {
+        run.helperCommand = helper;
+        run.headers = await runHelper(helper, opts.env).catch((err) => ({ error: String(err.message) }));
+      }
       if (proc.kill.mock.calls.length) return;
       if (failure) {
         proc.stderr.emit('data', Buffer.from(failure));
@@ -168,12 +184,82 @@ describe('a public Claude seat', () => {
     expect(fake.runs[1]).toMatchObject({ atStart: true, atEnd: false });
   });
 
-  test('a turn with an HTTP broker keeps the credential: its headersHelper reads it on every reconnect', async () => {
+  // F461.
+  test('a turn with an HTTP broker loses the file too; its helper still gets the token after', async () => {
     warmBuild({ readyFile: true });
     const fake = fakeClaude();
-    await turn(fake, { mcp: [COMMONLY_MCP, BROKER] });
-    expect(fake.runs[0].headersHelper).toBe(true);
-    expect(fake.runs[0]).toMatchObject({ atStart: true, atEnd: true });
+    await expect(turn(fake, { mcp: [COMMONLY_MCP, BROKER] })).resolves.toMatchObject({ text: 'Here you go.' });
+    const [run] = fake.runs;
+    expect(run.headersHelper).toBe(true);
+    expect(run).toMatchObject({ atStart: true, atEnd: false });
+    expect(run.headers).toEqual({ Authorization: 'Bearer cm_agent_f460_claude_token' });
+    // The token rides no argument, and the channel ends with the turn.
+    expect(run.helperCommand).not.toContain('cm_agent_f460_claude_token');
+    const socket = channelOf(run.helperCommand);
+    expect(socket).toEqual(expect.any(String));
+    expect(fs.existsSync(socket)).toBe(false);
+    await expect(runHelper(run.helperCommand, {})).rejects.toThrow();
+  });
+
+  test('the channel is a 0600 socket in the spawn\'s 0700 folder, which a file read cannot open', async () => {
+    warmBuild({ readyFile: true });
+    let seen = null;
+    const fake = fakeClaude();
+    const impl = (cmd, args, opts) => {
+      const config = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8'));
+      const socket = channelOf(config.mcpServers['commonly-grant-broker'].headersHelper);
+      const stat = fs.statSync(socket);
+      let readError = null;
+      try { fs.readFileSync(socket); } catch (err) { readError = err.code; }
+      seen = {
+        socket: stat.isSocket(),
+        mode: stat.mode & 0o777,
+        dirMode: fs.statSync(path.dirname(socket)).mode & 0o777,
+        readError,
+      };
+      return fake.impl(cmd, args, opts);
+    };
+    await turn({ impl, runs: fake.runs }, { mcp: [COMMONLY_MCP, BROKER] });
+    expect(seen).toMatchObject({ socket: true, mode: 0o600, dirMode: 0o700 });
+    expect(seen.readError).toEqual(expect.any(String));
+  });
+
+  test('a broker-only turn has no stdio reader, so the file goes before Claude starts', async () => {
+    warmBuild({ readyFile: true });
+    const fake = fakeClaude();
+    const seen = [];
+    const impl = (cmd, args, opts) => {
+      const config = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8'));
+      const helper = config.mcpServers['commonly-grant-broker'].headersHelper;
+      const credentialDirs = fs.readdirSync(path.dirname(channelOf(helper)))
+        .filter((name) => name.startsWith('public-test-'));
+      seen.push(credentialDirs.length);
+      return fake.impl(cmd, args, opts);
+    };
+    await turn({ impl, runs: fake.runs }, { mcp: [BROKER] });
+    expect(seen).toEqual([0]);
+    expect(fake.runs[0].headers).toEqual({ Authorization: 'Bearer cm_agent_f460_claude_token' });
+  });
+
+  test('the fresh-session retry\'s helper still gets the token from the same channel', async () => {
+    warmBuild({ readyFile: true });
+    const fake = fakeClaude({ fail: (n) => (n === 1 ? 'Error: Session ID abc-123 is already in use.' : null) });
+    await turn(fake, { sessionId: 'abc-123', mcp: [COMMONLY_MCP, BROKER] });
+    expect(fake.runs).toHaveLength(2);
+    for (const run of fake.runs) {
+      expect(run).toMatchObject({ atStart: true, atEnd: false });
+      expect(run.headers).toEqual({ Authorization: 'Bearer cm_agent_f460_claude_token' });
+    }
+  });
+
+  test('reverse: on Windows the broker keeps reading the file, which stays for the turn', async () => {
+    warmBuild({ readyFile: true });
+    const fake = fakeClaude();
+    await turn(fake, { mcp: [COMMONLY_MCP, BROKER], extra: { hostUnconfined: true, _platform: 'win32' } });
+    const [run] = fake.runs;
+    expect(channelOf(run.helperCommand)).toBeUndefined();
+    expect(run).toMatchObject({ atStart: true, atEnd: true });
+    expect(run.headers).toEqual({ Authorization: 'Bearer cm_agent_f460_claude_token' });
   });
 
   // Opus review HOLD 1: a policy-only Windows host prepares no state folder and
@@ -202,4 +288,14 @@ test('reverse: a private seat names no ready file and keeps its credential for t
   await turn(fake, { trust: null });
   expect(fake.runs[0].readyFile).toBeUndefined();
   expect(fake.runs[0]).toMatchObject({ atStart: true, atEnd: true });
+});
+
+test('reverse: a private seat\'s broker helper reads the file, with no channel', async () => {
+  warmBuild({ readyFile: true });
+  const fake = fakeClaude();
+  await turn(fake, { trust: null, mcp: [COMMONLY_MCP, BROKER] });
+  const [run] = fake.runs;
+  expect(channelOf(run.helperCommand)).toBeUndefined();
+  expect(run).toMatchObject({ atStart: true, atEnd: true });
+  expect(run.headers).toEqual({ Authorization: 'Bearer cm_agent_f460_claude_token' });
 });
