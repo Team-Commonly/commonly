@@ -103,6 +103,7 @@ describe('V2AgentBYO listening verification', () => {
     await act(async () => { jest.advanceTimersByTime(4000); });
     expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
     expect(screen.getByTestId('byo-listen-waiting')).toHaveTextContent(/Waiting for sam-claude to check in/);
+    expect(screen.getByTestId('byo-listen-waiting')).not.toHaveClass('v2-byo__listen-note--stopped');
 
     axios.get.mockResolvedValueOnce(missingRead([
       { agentName: 'sam-claude', instanceId: 'default', harness: 'claude', at: new Date().toISOString() },
@@ -111,6 +112,8 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
       'sam-claude’s command stopped: Claude Code isn’t installed on that computer.',
     );
+    // F458: a stopped command reads as a warning, not the pending dot.
+    expect(screen.getByTestId('byo-listen-waiting')).toHaveClass('v2-byo__listen-note--stopped');
 
     axios.get.mockResolvedValueOnce(missingRead([
       { agentName: 'sam-claude', instanceId: 'default', harness: null, at: new Date().toISOString() },

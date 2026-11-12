@@ -6831,5 +6831,9 @@ describe('not-ready lines keep their warning colour', () => {
     const byoCss = read('../components/V2AgentBYO.css');
     expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped')).toContain('var(--v2-warning-soft)');
     expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped::before')).toContain('var(--v2-warning)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped'))
+      .toContain('var(--v2-warning-soft)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before'))
+      .toContain('var(--v2-warning)');
   });
 });

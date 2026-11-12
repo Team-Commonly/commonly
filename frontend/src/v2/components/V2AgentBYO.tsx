@@ -2366,7 +2366,8 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.verified', { name: issued.agentName })}
               </p>
             ) : (
-              <p className="v2-byo__listen-note" data-testid="byo-listen-waiting">
+              <p className={`v2-byo__listen-note${harnessMissingReport?.key === issued ? ' v2-byo__listen-note--stopped' : ''}`}
+                data-testid="byo-listen-waiting">
                 {harnessMissingReport?.key === issued
                   ? (
                     <span data-testid="byo-listen-harness-missing">

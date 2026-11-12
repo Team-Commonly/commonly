@@ -59,6 +59,9 @@
 /* A stop the person has to act on (F458): the waiting box, in warning tones. */
 .v2-feature--byo .v2-byo__stopped { margin: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border-radius: 10px; background: var(--v2-warning-soft); box-shadow: inset 0 0 0 1px var(--v2-warning); font-size: 13px; line-height: 1.45; color: var(--v2-text-primary); }
 .v2-feature--byo .v2-byo__stopped::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--v2-warning); }
+/* F457's stopped command (harness not installed) takes the same warning box instead of the pending dot. */
+.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped { background: var(--v2-warning-soft); box-shadow: inset 0 0 0 1px var(--v2-warning); color: var(--v2-text-primary); }
+.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before { background: var(--v2-warning); box-shadow: none; }
 .v2-feature--byo .v2-byo__cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
 .v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: 1 1 220px; margin: 0; }
 @media (max-width: 760px) {
