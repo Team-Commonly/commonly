@@ -122,6 +122,15 @@ export const harnessSignedOut = (inventory: HarnessDeviceRow[] = [], id: string)
   return inventory.some((row) => row.harness === harness && row.installed && row.signedIn === false);
 };
 
+/**
+ * The harness a daemon runs when the agent names none: Claude Code if it found
+ * it, else Codex, as cli resolveAdapterForRuntime (commands/daemon.js) picks.
+ * Inventory `installed` comes from the same detect(). '' when it found neither.
+ */
+export const autoDetectedHarness = (inventory: HarnessDeviceRow[] = []): string => (
+  ['claude', 'codex'].find((id) => inventory.some((row) => row.harness === id && row.installed)) || ''
+);
+
 /** The device's own non-empty list wins; otherwise the catalogue's ladder. */
 export const effortLevelsFor = (entry?: HarnessCatalogEntry | null, row?: HarnessDeviceRow | null): string[] => (
   row?.efforts?.length ? row.efforts : entry?.efforts || []

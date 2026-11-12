@@ -1,4 +1,4 @@
-import { harnessDeviceNote, harnessSignedOut } from '../utils/harnessCatalog';
+import { autoDetectedHarness, harnessDeviceNote, harnessSignedOut } from '../utils/harnessCatalog';
 
 const t = (key: string, values: Record<string, string> = {}) => `${key}${JSON.stringify(values)}`;
 
@@ -33,4 +33,13 @@ describe('signed out', () => {
     expect(harnessSignedOut([{ ...row(false), installed: false }], 'claude')).toBe(false);
     expect(harnessSignedOut([row(false)], 'codex')).toBe(false);
   });
+});
+
+// The daemon's auto-detect order (cli resolveAdapterForRuntime): Claude Code, then Codex.
+test('autoDetectedHarness follows the daemon: claude if installed, else codex, else none', () => {
+  const row = (harness: string, installed: boolean) => ({ harness, installed, version: null, models: null, efforts: [] });
+  expect(autoDetectedHarness([row('codex', true), row('claude', true)])).toBe('claude');
+  expect(autoDetectedHarness([row('claude', false), row('codex', true)])).toBe('codex');
+  expect(autoDetectedHarness([row('opencode', true)])).toBe('');
+  expect(autoDetectedHarness([])).toBe('');
 });

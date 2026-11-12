@@ -38,7 +38,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel, harnessSignedOut,
+  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, autoDetectedHarness, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel, harnessSignedOut,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -649,8 +649,9 @@ const V2AgentBYO: React.FC = () => {
     prefill.reconnect, prefill.name]);
   const [placed, setPlaced] = useState<{ agentName: string; instanceId: string; machineId: string; machineName: string; harness: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
-  // F458: running, but its harness reported signed out, so it can't answer yet.
-  const [placedSignedOut, setPlacedSignedOut] = useState(false);
+  // F458: running, but its harness reported signed out, so it can't answer yet:
+  // that harness's id, or '' while it can.
+  const [placedSignedOut, setPlacedSignedOut] = useState('');
   const [reconnectRequest, setReconnectRequest] = useState<{
     agentName: string; instanceId: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
   } | null>(null);
@@ -709,7 +710,7 @@ const V2AgentBYO: React.FC = () => {
     let cancelled = false;
     let ticks = 0;
     setPlacedState('waiting');
-    setPlacedSignedOut(false);
+    setPlacedSignedOut('');
     const timer = setInterval(async () => {
       ticks += 1;
       try {
@@ -724,8 +725,10 @@ const V2AgentBYO: React.FC = () => {
           setPlacedState('running');
           // The daemon rechecks a signed-out harness within a heartbeat or
           // two, so keep reading until it says signed in.
-          const signedOut = harnessSignedOut(machine?.runtimeInventory, placed.harness);
-          setPlacedSignedOut(signedOut);
+          // Auto-detect names no harness, so check the one the daemon picks.
+          const harness = placed.harness || autoDetectedHarness(machine?.runtimeInventory);
+          const signedOut = Boolean(harness) && harnessSignedOut(machine?.runtimeInventory, harness);
+          setPlacedSignedOut(signedOut ? harness : '');
           if (!signedOut) clearInterval(timer);
           return;
         }
@@ -2152,7 +2155,7 @@ const V2AgentBYO: React.FC = () => {
           {placedState === 'running' && placedSignedOut ? (
             <p className="v2-byo__stopped" data-testid="byo-machine-signed-out">
               {t('agentByo.machine.signedOut', { machine: placed.machineName,
-                harness: harnessLabel(harnessCatalog, placed.harness), command: placed.harness })}
+                harness: harnessLabel(harnessCatalog, placedSignedOut), command: placedSignedOut })}
             </p>
           ) : placedState === 'running' ? (
             <p data-testid="byo-machine-running">{t('agentByo.machine.running', { machine: placed.machineName })}</p>
