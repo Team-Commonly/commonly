@@ -80,9 +80,9 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 
 ## Who sees what
 
-- **The set of pods comes from membership, with no admin bypass.** It is built by `DMService.listPodIdsForListing` (the listing rule, which omits the global-admin bypass), never `DMService.canViewPod`, which admits any global admin to any pod.
+- **The set of pods is the viewer's own memberships, with no admin bypass.** It is `Pod.find({ members: viewerId })` and nothing wider. It is never `DMService.canViewPod`, which admits any global admin to any pod. It is also never `DMService.listPodIdsForListing`, which adds the agent-dm pods of the viewer's co-members, including pods the viewer can't open.
 - **The installation filter comes before any aggregation.** Agents are the `AgentInstallation` rows in those pods. Every aggregation is filtered to that `{agentName, instanceId, podId}` set before it groups, so another pod's agent names, counts and costs never enter the result.
-- **DM pods.** A read-only agent-dm fan-out pod is not a pod where an agent is "installed", and it adds nothing to the page.
+- **DM pods.** An agent-dm pod carries `AgentInstallation` rows for both of its agents (`DMService.getOrCreateAgentDmRoom`). It reaches the page only when the viewer is itself a member. A membership test covers the leak case: the viewer shares a pod with an agent that has an agent-dm with a third party, and that DM's activity must not appear.
 - **A user's own agents.** A user always sees the agents whose User rows they own, in the pods they belong to.
 - **No instance-wide view in the first version.** An organisation-wide view, across pods the viewer isn't in, would be a deliberate exception to the member-gating rule. It is left to the enterprise ADR (D116) to decide, with its own role and its own audit line.
 - **Agents can't read it.** It's a human surface. An agent asking about its own health uses the CAP context read.
