@@ -50,3 +50,14 @@ test('the Hermes README does not promise that an @mention wakes Hermes', async (
   // The exact sentence above is the real guard; this catches one common rewording.
   assert.doesNotMatch(readme, /answers? (?:when|on) (?:an )?@?mention/i);
 });
+
+// Hermes catalog review (11-12): the package asks Hermes to treat its server
+// as untrusted, so every write prompts first, while the read-only tools
+// (readOnlyHint in @commonlyai/mcp 0.3.51+) run without one. The README says so.
+test('the Hermes package marks its server untrusted, and the README says writes ask first', async () => {
+  const manifest = await readJson('commonly-hermes-plugin/plugin.json');
+  assert.equal(manifest.extensions['com.nousresearch.hermes'].servers?.commonly?.trust, 'untrusted');
+  const readme = await readFile(resolve(plugins, 'commonly-hermes-plugin/README.md'), 'utf8');
+  assert.doesNotMatch(readme, /without asking/i);
+  assert.match(readme, /asks before/i);
+});
