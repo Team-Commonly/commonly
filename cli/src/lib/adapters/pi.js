@@ -48,7 +48,9 @@ import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs';
-import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
+import {
+  mkdir, readdir, readFile, rm, writeFile,
+} from 'fs/promises';
 import { homedir } from 'os';
 import {
   dirname, isAbsolute, join, relative, sep,
@@ -507,6 +509,9 @@ export const piPackageRoot = (binary) => {
 const versionOf = (value) => String(value || '').trim()
   .match(/(?<![\w.+~-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)(?![\w.+~-])/)?.[1] || null;
 
+// The system prompt files pi reads from its agent folder unconditionally.
+const PI_AGENT_DIR_PROMPT_FILES = Object.freeze(['SYSTEM.md', 'APPEND_SYSTEM.md']);
+
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false, ownerWoken = false,
 }) => [
@@ -517,12 +522,16 @@ export const buildArgs = ({
   '--no-prompt-templates',
   '--no-themes',
   // A public seat: no built-in tool (no shell, no file access), the withheld
-  // Commonly tools removed from the registry, and no project-local pi files
-  // from the workspace trusted for this run.
+  // Commonly tools removed from the registry, no project-local pi files from
+  // the workspace trusted for this run, and no AGENTS.md / CLAUDE.md (F146).
+  // pi discovers those from the working directory upward, independently of
+  // --no-approve (0.84.1's resource loader gates them on noContextFiles alone),
+  // so a public turn turns discovery off explicitly.
   ...(publicSeat ? [
     '--no-builtin-tools',
     '--exclude-tools', [...PI_BUILTIN_TOOLS, ...publicSeatWithheldTools({ ownerWoken })].join(','),
     '--no-approve',
+    '--no-context-files',
   ] : []),
   '--provider', provider,
   '--model', model,
@@ -823,7 +832,13 @@ export default {
     const sessionDir = join(home, 'sessions');
     await mkdir(agentDir, { recursive: true, mode: 0o700 });
     await mkdir(sessionDir, { recursive: true, mode: 0o700 });
-    if (isPublic) await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
+    if (isPublic) {
+      await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
+      // F146: pi 0.84.1 loads these two from PI_CODING_AGENT_DIR with no flag
+      // to turn that off. The CLI writes only models.json there, so a public
+      // turn starts without either.
+      await Promise.all(PI_AGENT_DIR_PROMPT_FILES.map((file) => rm(join(agentDir, file), { force: true })));
+    }
 
     // Resume only what pi wrote; anything else (a codex thread id from before
     // the switch, a wiped home) starts fresh under a new id.
@@ -936,8 +951,11 @@ export default {
           // Public seat: the CLI made this workspace, so it is pinned (F197).
           pinWorkspace: true,
           readOnlyDirectories: [packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories],
-          // The jailed pi holds the seat token in memory (the bridge reads it),
-          // so nothing it starts may inspect it.
+          // Defense in depth, not the boundary: the jailed pi holds the seat
+          // token in memory (the bridge reads it), and pi has no shell or other
+          // built-in tool to start an inspector with. Its only children are the
+          // MCP servers the bridge starts. Even so, nothing it starts may
+          // inspect another process.
           processInfo: 'self',
         });
       }
@@ -951,22 +969,25 @@ export default {
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials: proxy ? [...credentials, proxy.token] : credentials,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
-        // F175c: a turn holding a grant broker keeps its credential file only
-        // until pi has loaded its extensions. The first layer is inside pi: the
-        // bridge deletes the directory before its factory returns, which pi
-        // awaits before it creates the session (removeSpawnCredential), and
-        // stops pi if it cannot. This is the second layer, at pi's first JSON
-        // line (firstEventWatcher). It is async to pi, so it cannot be the one
-        // that closes the file before a prompt; it normally finds the file gone,
-        // and `force` tolerates that. It covers a turn whose bridge never ran. A
-        // delete that does fail here still ends the turn.
-        onFirstEvent: isPublic && grantBrokers.length && credential
+        // A public turn keeps its credential file only until pi has loaded its
+        // extensions: the bridge reads it at load, and nothing on a public turn
+        // reads it after that (our own server gets the value on its fd 3 pipe,
+        // and pi has no shell). F175c: on a turn holding a grant broker the
+        // first layer is inside pi: the bridge deletes the directory before its
+        // factory returns, which pi awaits before it creates the session
+        // (removeSpawnCredential), and stops pi if it cannot. This is the second
+        // layer, at pi's first JSON line (firstEventWatcher), and since F146 it
+        // runs on every public turn. It is async to pi, so it cannot be the one
+        // that closes the file before a prompt; on a broker turn it normally
+        // finds the file gone, and `force` tolerates that. A delete that does
+        // fail here still ends the turn.
+        onFirstEvent: isPublic && credential
           ? () => {
             try {
               (ctx._rmSync || rmSync)(credential.dir, { recursive: true, force: true });
             } catch (err) {
               throw new Error(
-                `pi adapter: a public pi seat could not delete its connector credential (${credential.path}) once pi `
+                `pi adapter: a public pi seat could not delete its runtime credential (${credential.path}) once pi `
                 + `had loaded its extensions: ${err?.message || err}; the turn was stopped so the credential does not `
                 + 'stay readable during it',
               );
