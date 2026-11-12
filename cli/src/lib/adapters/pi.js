@@ -71,7 +71,7 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
-import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { seatbeltSystemReadRoots, wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { promptTokens } from '../session-recycle.js';
@@ -344,16 +344,29 @@ const sharedProviderKeyFile = async (environment, workspacePath) => {
 
 /**
  * The proxy reads a public seat's key file from this process, so the file stays
- * out of the jail, and nothing here admits it. The jail does admit these
- * directories, and the seat home is a stable path a key file could be put in,
- * so a key under one of them would be readable from inside.
+ * out of the jail, and nothing here admits it. The jail does admit the seat's
+ * own directories (the seat home is a stable path a key file could be put in),
+ * and the Seatbelt baseline admits system trees such as /etc, /opt/homebrew/lib
+ * and /usr/local/lib (seatbeltSystemReadRoots, read from the profile itself).
+ * A key under any of them would be readable from inside, so it is refused.
+ * Each root is compared as written and through its real path (/etc is
+ * /private/etc on macOS); a root that does not exist is compared as written.
  */
-const refuseKeyFileInJail = (keyFile, readableDirectories) => {
-  for (const directory of readableDirectories) {
-    const fromDirectory = relative(realpathSync(directory), keyFile);
-    if (fromDirectory !== '..' && !fromDirectory.startsWith(`..${sep}`) && !isAbsolute(fromDirectory)) {
-      throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${directory}`);
-    }
+const realOrSelf = (path) => { try { return realpathSync(path); } catch { return path; } };
+const within = (root, path) => {
+  const fromRoot = relative(root, path);
+  return fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
+};
+export const refuseKeyFileInJail = (keyFile, readableDirectories, systemRoots = seatbeltSystemReadRoots()) => {
+  const refuse = (root) => {
+    throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${root}`);
+  };
+  const forms = (root) => [...new Set([root, realOrSelf(root)])];
+  for (const directory of [...readableDirectories, ...systemRoots.subpaths]) {
+    if (forms(directory).some((root) => within(root, keyFile))) refuse(directory);
+  }
+  for (const literal of systemRoots.literals) {
+    if (forms(literal).includes(keyFile)) refuse(literal);
   }
 };
 
