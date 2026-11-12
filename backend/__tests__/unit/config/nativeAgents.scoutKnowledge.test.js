@@ -294,6 +294,12 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Post the line each time they ask, even after they declined a card/);
   });
 
+  // F290: Haiku once wrote "the card above" after a refusal that posted no card.
+  test('a card refused for any other reason was never posted, so nothing points at it', () => {
+    expect(prompt).toMatch(/refused for any other reason was never posted: do not point to a card above or below/);
+    expect(prompt).toMatch(/give them the Bring your own page steps instead/);
+  });
+
   test('gives an MCP line for each tool the card connects', () => {
     expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
       + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');

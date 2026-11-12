@@ -475,6 +475,9 @@ const isDuplicateKeyError = (error: unknown): boolean => {
   return e?.code === 1 && /duplicate key|unique constraint/i.test(String(e?.message || ''));
 };
 
+const NO_CARD_POSTED = 'No new card is in the pod, so do not point to one; '
+  + 'mention an earlier card only if the pod shows it still waiting ([approval needed]).';
+
 const queueFull = (waiting: number): ProposeResult => ({
   ok: false,
   code: 'approval_queue_full',
@@ -893,14 +896,17 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     }
     // A store failure may clear on retry; a refusal (or a skip) will not, so
     // it gets its own code and the message service's reason (F180).
+    // Both say no card exists: a model told only "not posted" once wrote "the
+    // card above" with nothing there (F290). A duplicate refusal can leave an
+    // identical earlier card, which the pod's own text shows as waiting or not.
     if (postThrew && !thrownRefusal) {
-      return { ok: false, error: 'card message could not be posted', code: 'approval_unavailable' };
+      return { ok: false, error: `card message could not be posted. ${NO_CARD_POSTED}`, code: 'approval_unavailable' };
     }
     const reason = thrownRefusal
       || String(posted?.reason || (posted?.success ? 'not_posted' : 'refused'));
     return {
       ok: false,
-      error: `approval card was not posted (${reason})`,
+      error: `approval card was not posted (${reason}). ${NO_CARD_POSTED}`,
       code: 'approval_card_refused',
       reason,
     };

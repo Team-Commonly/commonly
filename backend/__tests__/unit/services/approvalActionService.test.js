@@ -523,3 +523,27 @@ test('a proposal carries its originating run into the saved action and posted ca
   expect(row.messageId).toBe('42');
   expect(row.save).toHaveBeenCalled();
 });
+
+// F290: Haiku once wrote "the card above" after a refusal that posted no card.
+// The refusal itself says no new card exists, which the model reads in the turn.
+test.each([
+  [{ success: false, refused: true, reason: 'pod_closed' }, /approval card was not posted \(pod_closed\)/],
+  [{ success: true, skipped: true, reason: 'duplicate_recent' }, /approval card was not posted \(duplicate_recent\)/],
+])('a card that was not posted says no new card is in the pod (%j)', async (posted, head) => {
+  const { proposeAction } = require('../../../services/approvalActionService');
+  const row = flaggedRow({});
+  mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ createdBy: OWNER }) }) });
+  mockInstallFindOne.mockResolvedValue({ installedBy: OWNER });
+  mockApprovalCreate.mockResolvedValue(row);
+  mockPostMessage.mockResolvedValue(posted);
+
+  const result = await proposeAction({
+    podId: 'pod-1', agentName: 'guide', instanceId: 'udefault',
+    actionType: 'create_pod', params: { name: 'Research', type: 'chat' }, summary: 'Create a research pod',
+  });
+
+  expect(result).toMatchObject({ ok: false, code: 'approval_card_refused' });
+  expect(result.error).toMatch(head);
+  expect(result.error).toMatch(/No new card is in the pod, so do not point to one/);
+  expect(result.error).toMatch(/only if the pod shows it still waiting \(\[approval needed\]\)/);
+});
