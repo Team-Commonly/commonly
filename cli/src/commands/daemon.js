@@ -28,8 +28,6 @@ import { getLastTurn } from '../lib/session-store.js';
 import { getAdapter, providerKeyEnvNames, seatProviderKeyEnv } from '../lib/adapters/index.js';
 import { loginState, runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
 
-// Set on the steps `daemon setup` runs, so a step can leave a line to setup.
-const SETUP_CHILD_ENV = 'COMMONLY_DAEMON_SETUP_STEP';
 import {
   installDaemonService,
   installSummary,
@@ -61,6 +59,9 @@ import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from
 import { machineHostReport } from '../lib/machine-host.js';
 import { orchestrateDaemonSetup } from '../lib/stable-install.js';
 import { CLI } from '../lib/cli-hint.js';
+
+// Set on the steps `daemon setup` runs, so a step can leave a line to setup.
+const SETUP_CHILD_ENV = 'COMMONLY_DAEMON_SETUP_STEP';
 
 // launchd, systemd and Task Scheduler hold one Commonly daemon per computer
 // account. Install refuses to stop another HOME's; this flag takes it over.
