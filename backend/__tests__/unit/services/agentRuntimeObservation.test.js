@@ -100,3 +100,20 @@ it('stores a failed spawn reason only as a known code, and clears it', async () 
   expect(await settle({ outcome: 'completed' })).toBe(200);
   expect(await failure()).toBeNull();
 });
+
+// The reason codes live in the CLI, the model and Settings. A code one side
+// lacks fails quietly (a 400 the runner swallows, or "see the log"), so the
+// three lists are pinned equal here.
+it('keeps the spawn failure reasons the same in the CLI, the model and Settings', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { SPAWN_FAILURE_REASONS } = require('../../../models/AgentRuntimeObservation');
+  const listIn = (file, pattern) => {
+    const match = fs.readFileSync(path.join(__dirname, '../../../..', file), 'utf8').match(pattern);
+    return [...match[1].matchAll(/'([^']+)'/g)].map((found) => found[1]);
+  };
+  const cli = listIn('cli/src/lib/turn-failure-notice.js', /export const SPAWN_FAILURE_REASONS = (\[[^\]]*\])/);
+  const settings = listIn('frontend/src/v2/components/V2RuntimeControls.tsx', /const SPAWN_FAILURE_REASONS = new Set\((\[[^\]]*\])\)/);
+  expect([...cli].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
+  expect([...settings].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
+});
