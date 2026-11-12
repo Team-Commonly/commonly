@@ -21,7 +21,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
-import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
 import { keepsInstanceKeys } from '../utils/machineInstanceKeys';
 import V2FeaturePage from './V2FeaturePage';
@@ -192,8 +192,7 @@ const browserOs = (): SetupOs => {
   // Browser spellings only, case-sensitive: jsdom's user agent carries the
   // host's process.platform in lower case ("(linux)"), which must not flip the
   // page on a Linux CI host.
-  // navigator.platform reads "Win32" on every Windows browser, 64-bit included.
-  if (/Windows/.test(platform) || /^Win/.test(nav.platform || '')) return 'windows';
+  if (browserIsWindows()) return 'windows';
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
@@ -1493,13 +1492,8 @@ const V2AgentBYO: React.FC = () => {
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
   // One line, run through npx — nothing to install first. It works as is in
-  // PowerShell, so there is no per-line split any more. On Windows it carries
-  // --unsandboxed, forwarded to the install step (agents run without a sandbox
-  // there, as `agent run` does).
-  // npx.cmd on Windows for the same reason as connectSnippet's npm.cmd (F342).
-  const daemonCommand = setupOs === 'windows'
-    ? `${daemonSetupCommand(apiUrl).replace(/^npx /, 'npx.cmd ')} --unsandboxed`
-    : daemonSetupCommand(apiUrl);
+  // PowerShell, so there is no per-line split any more (Windows form: the util).
+  const daemonCommand = daemonSetupCommandFor(setupOs === 'windows' ? 'windows' : 'unix', apiUrl);
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`

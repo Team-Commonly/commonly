@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentRuntimeBody, { V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
-import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { daemonSetupCommand, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 
 jest.mock('axios', () => {
   const mock = {
@@ -126,6 +126,20 @@ test('without an active computer, the setup hint includes daemon installation', 
   renderSection();
   expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
   expect(screen.getByText(daemonSetupCommand())).toBeInTheDocument();
+});
+
+// F467: a bare `npx` is npx.ps1 in PowerShell, which Windows 11's default
+// script policy refuses (F342), so a Windows visitor gets the page's Windows form.
+test('on a Windows browser, the setup hint is the npx.cmd line with --unsandboxed', async () => {
+  const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32');
+  try {
+    renderSection();
+    expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
+    expect(screen.getByText(daemonSetupCommandFor('windows'))).toBeInTheDocument();
+    expect(daemonSetupCommandFor('windows')).toMatch(/^npx\.cmd -y .* --unsandboxed$/);
+  } finally {
+    platform.mockRestore();
+  }
 });
 
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {

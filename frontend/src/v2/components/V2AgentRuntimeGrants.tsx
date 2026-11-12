@@ -9,7 +9,7 @@ import V2AgentProviderKey from './V2AgentProviderKey';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
-import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
 
 export interface Runtime extends RuntimeSettings {}
@@ -184,7 +184,7 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                   <button type="button" className="b b-s b-sm" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                     {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                   </button>
-                </div> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommand()}</code></p>}
+                </div> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
               </div>
             </details>
           ) : (
