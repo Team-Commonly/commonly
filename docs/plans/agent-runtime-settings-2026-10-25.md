@@ -24,6 +24,13 @@ an unsupported stored effort remains visible but is not passed. Validation on
 save and the actual adapter launch must agree. A declared supported choice
 must never be silently replaced with another value.
 
+The daemon probes each walked harness with `<id> --version` on the PATH it
+starts with, refreshes the full report every five minutes, and probes a missing
+harness again every 25 seconds, so an install shows up within a heartbeat or
+two. While the chosen harness shows as missing, the BYO page re-reads the
+computer's report every 10 seconds and says what the daemon ran; a harness the
+computer doesn't check reads "Not checked here", never as missing (F370 #8).
+
 Process connection and runtime progress remain separate signals. Runner facts
 refresh every 30 seconds without reloading form drafts. An unavailable read or
 a seat without machine telemetry is unreported, rather than disconnected. A desired

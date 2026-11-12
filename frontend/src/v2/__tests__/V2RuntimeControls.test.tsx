@@ -183,7 +183,8 @@ test('a reported inventory marks each harness and sorts the installed ones first
     { harness: 'opencode', installed: true, version: '1.19.3', models: null, efforts: [] },
   ] }} onSave={jest.fn()} />);
   expect(optionTexts('harness')).toEqual(['Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.3',
-    'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness']);
+    'Claude Code · Not on this computer', 'Qwen Code · Not checked here', 'Goose · Not checked here',
+    'Hermes · Not checked here', 'pi · Not checked here', 'DeepSeek Harness · Not checked here']);
 });
 
 test('a harness with no effort flag hides the effort row instead of greying it', () => {

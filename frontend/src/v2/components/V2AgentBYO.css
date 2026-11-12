@@ -21,6 +21,8 @@
 /* the page shows a field's hint only while it has focus or an error */
 .v2-feature--byo .v2-byo__field > .v2-byo__hint { display: none; }
 .v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint { display: block; }
+/* F370 #8: why the chosen harness is missing stays visible, focus or not */
+.v2-feature--byo .v2-byo__field > .v2-byo__hint--shown { display: block; }
 .v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
 .v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }

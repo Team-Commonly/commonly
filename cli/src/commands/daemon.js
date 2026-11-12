@@ -1,4 +1,4 @@
-import { collectRuntimeInventory } from '../lib/runtime-inventory.js';
+import { collectRuntimeInventory, createInventoryCache } from '../lib/runtime-inventory.js';
 /**
  * commonly daemon <subcommand>
  *
@@ -740,8 +740,7 @@ Examples:
           // exit parks it on macOS; systemd honors 77 directly.
           process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
         };
-        let cachedInventory;
-        let inventoryCheckedAt = 0;
+        const runtimeInventory = createInventoryCache((harnesses) => collectRuntimeInventory(getAdapter, undefined, harnesses));
         supervisor = createDaemonSupervisor({
           record,
           client,
@@ -767,13 +766,7 @@ Examples:
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
           machineReport: daemonMachineReport,
-          runtimeInventory: async () => {
-            if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
-              cachedInventory = await collectRuntimeInventory(getAdapter);
-              inventoryCheckedAt = Date.now();
-            }
-            return cachedInventory;
-          },
+          runtimeInventory,
           resolveAdapter: (runtime) => resolveAdapterForRuntime(runtime),
           log: stampLog,
           persistState: (seats) => saveDaemonState({

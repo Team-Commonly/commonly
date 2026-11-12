@@ -96,12 +96,15 @@ const UNSUPPORTED_IN_OPEN_PODS: Record<string, { version: RegExp; works: string 
   goose: { version: /^1\.56(?:\.|$)/, works: 'Goose 1.54' },
 };
 
-/** "Installed · 2.1", "Not on this computer", or nothing when the computer said nothing about it. */
+/**
+ * "Installed · 2.1", "Not on this computer", "Not checked here" when the
+ * computer reported others but not this one, or nothing when it reported none.
+ */
 export const harnessDeviceNote = (
   inventory: HarnessDeviceRow[] = [], id: string, t: (key: string, values?: Record<string, string>) => string,
 ): string => {
   const row = inventory.find((entry) => entry.harness === id);
-  if (!row) return '';
+  if (!row) return inventory.length ? t('harness.notChecked') : '';
   if (!row.installed) return t('harness.notOnComputer');
   const unsupported = UNSUPPORTED_IN_OPEN_PODS[id];
   if (row.version && unsupported?.version.test(row.version)) {
@@ -125,3 +128,18 @@ export const modelChoicesFor = (
 };
 
 export const OTHER_MODEL = '__other__';
+
+/**
+ * Why a harness shows as missing or unchecked, in a sentence (F370 #8). The
+ * daemon probes each harness it checks with `<id> --version` on the PATH it
+ * starts with, and probes a missing one again every heartbeat or two.
+ */
+export const harnessDeviceDetail = (
+  inventory: HarnessDeviceRow[] = [], id: string, harness: string, machine: string,
+  t: (key: string, values?: Record<string, string>) => string,
+): string => {
+  if (!id || !inventory.length) return '';
+  const row = inventory.find((entry) => entry.harness === id);
+  if (!row) return t('harness.notCheckedDetail', { harness, machine });
+  return row.installed ? '' : t('harness.missingDetail', { harness, machine, command: `${id} --version` });
+};
