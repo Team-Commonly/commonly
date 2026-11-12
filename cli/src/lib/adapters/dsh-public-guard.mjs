@@ -20,11 +20,12 @@ const PREFIX = 'mcp__commonly__';
 export function apply(ctx, config) {
   if (!Array.isArray(config?.withheld)) throw new Error('commonly-public-guard: config.withheld is required');
   const withheld = new Set(config.withheld.map(String));
-  ctx.provide('commonlyPublicGuard', Object.freeze({ withheld: [...withheld] }));
+  // The guard first: the service it provides is what lets the Commonly MCP start.
   ctx.tools.guard((exec) => {
     const tool = typeof exec?.name === 'string' ? exec.name : '';
     const raw = tool.startsWith(PREFIX) ? tool.slice(PREFIX.length) : '';
     if (raw && !withheld.has(raw)) return undefined;
     return `${tool || 'This tool'} is not available on a public seat`;
   });
+  ctx.provide('commonlyPublicGuard', Object.freeze({ withheld: [...withheld] }));
 }

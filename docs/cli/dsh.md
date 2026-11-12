@@ -165,8 +165,8 @@ more fences on top (F115):
   It also turns off the one that reads workspace instruction files. The list
   is `DSH_PUBLIC_DISABLED_PLUGINS` in `cli/src/lib/adapters/dsh.js`.
 - **A guard plugin refuses every other call.** The adapter copies
-  `dsh-public-guard.mjs` into the turn's own folder and loads it from the
-  patch. It refuses any tool that isn't a Commonly MCP tool, and any Commonly
+  `dsh-public-guard.mjs` into the turn's private temp folder, which the jail
+  can read but not write, and loads it from the patch. It refuses any tool that isn't a Commonly MCP tool, and any Commonly
   tool a public seat is withheld (`PUBLIC_SEAT_WITHHELD_TOOLS`; a turn its
   owner woke gets the memory writes back). A tool a later dsh adds is refused
   without a code change.
@@ -174,10 +174,15 @@ more fences on top (F115):
   on a service the guard provides. If the guard fails to load, dsh logs the
   error and still runs the turn, but with no Commonly tools at all, never
   with unguarded ones.
-- **The turn runs in an empty folder** under the seat home, emptied before
-  each turn. So nothing in the seat's workspace reaches it, such as a `.env`
-  dsh would load or an `AGENTS.md`. A turn won't start if the seat home holds
-  a `cordis.patch.yml` or `.env`, which dsh would layer onto every run.
+- **The turn runs in an empty folder** under the seat home, so nothing in the
+  seat's workspace reaches it, such as a `.env` dsh would load or an
+  `AGENTS.md`.
+- **A public seat has a home of its own,** never shared with a private turn
+  of the same agent. Before each turn everything in it except `sessions/` is
+  removed: dsh also loads layers from its home (the `profiles/` user patch,
+  which can insert plugins, `cordis.patch.yml`, `.env` and HOME-relative
+  modules), and it regenerates its stock profile. A test plants a profile
+  row and plugin there and checks they never load.
 - **There is no egress proxy.** A public turn reaches only the provider
   proxy and the Commonly relay.
 

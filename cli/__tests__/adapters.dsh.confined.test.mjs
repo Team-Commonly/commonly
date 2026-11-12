@@ -8,6 +8,7 @@
  */
 import { jest } from '@jest/globals';
 import { spawn as spawnReal } from 'child_process';
+import { createHash } from 'crypto';
 import { createServer } from 'http';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
@@ -15,7 +16,7 @@ import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
 import dsh, {
-  developerToolsDir, DSH_PUBLIC_DISABLED_PLUGINS, DSH_PUBLIC_GUARD_SERVICE, isConfinedDsh, isPublicDsh, PUBLIC_TURN_DIR,
+  developerToolsDir, DSH_PUBLIC_DISABLED_PLUGINS, DSH_PUBLIC_GUARD_SERVICE, isConfinedDsh, isPublicDsh, PUBLIC_TURN_DIR, seatHome,
   systemToolsFirst, TESTED_DSH_VERSIONS,
 } from '../src/lib/adapters/dsh.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS, publicSeatWithheldTools } from '../src/lib/public-withheld-tools.js';
@@ -421,14 +422,34 @@ describe('F115: a public dsh turn offers the model only the Commonly tools a pub
     });
   });
 
-  test('a patch file in the seat home stops the turn before dsh starts', async () => {
+  test('a public home keeps only its sessions between turns, so nothing planted there loads', async () => {
     await withSeat(async ({ ctx, home }) => {
-      await mkdir(home, { recursive: true });
-      await writeFile(join(home, 'cordis.patch.yml'), '[]\n');
-      const spawned = jest.fn();
-      await expect(dsh.spawn('hi', publicSeat(ctx, { _spawnImpl: spawned }))).rejects.toThrow(/cordis\.patch\.yml/);
-      expect(spawned).not.toHaveBeenCalled();
+      const planted = [
+        ['profiles', 'headless', 'cordis.patch.yml'], ['cordis.patch.yml'], ['.env'], ['planted.mjs'],
+        ['.node_modules', 'x', 'index.js'],
+      ];
+      for (const parts of planted) {
+        await mkdir(join(home, ...parts.slice(0, -1)), { recursive: true });
+        await writeFile(join(home, ...parts), 'planted');
+      }
+      await mkdir(join(home, 'sessions', 'w'), { recursive: true });
+      await writeFile(join(home, 'sessions', 'w', 'kept'), 'session');
+      await dsh.spawn('[[reply:ok]]', publicSeat(ctx));
+      for (const parts of planted) expect(existsSync(join(home, parts[0]))).toBe(false);
+      expect(readFileSync(join(home, 'sessions', 'w', 'kept'), 'utf8')).toBe('session');
     });
+  });
+
+  test('a public seat never shares a home with a private turn of the same agent', () => {
+    const seat = { instanceUrl: 'https://api.example', agentName: 'deep' };
+    const privateHome = seatHome({ ...seat, environment: { sandbox: CONFINED } });
+    expect(seatHome({ ...seat, environment: {} })).toBe(privateHome);
+    for (const sandbox of [PUBLIC, { trust: 'internal' }, { ...CONFINED, trust: 'public' }]) {
+      expect(seatHome({ ...seat, environment: { sandbox } })).not.toBe(privateHome);
+    }
+    // A private seat keeps the home it had before F115, sessions included.
+    const before = createHash('sha256').update(`${seat.instanceUrl}\0${seat.agentName}`).digest('hex').slice(0, 24);
+    expect(privateHome).toBe(join(homedir(), '.commonly', 'dsh-homes', before));
   });
 
   test('the guard refuses every tool but the Commonly ones it was not told to withhold', async () => {

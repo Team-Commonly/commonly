@@ -62,8 +62,8 @@ export const DSH_PUBLIC_GUARD_SERVICE = 'commonlyPublicGuard';
 /** A public turn's working directory, emptied before each turn, under the seat home. */
 export const PUBLIC_TURN_DIR = 'public-turn';
 const PUBLIC_GUARD_SOURCE = new URL('./dsh-public-guard.mjs', import.meta.url);
-// dsh layers these from its home onto every run; a public seat holds neither.
-const PUBLIC_HOME_REFUSED = ['cordis.patch.yml', '.env'];
+// The one thing a public seat's home keeps between turns (a symlink is not kept).
+const PUBLIC_HOME_KEPT = 'sessions';
 
 export const TESTED_DSH_VERSIONS = Object.freeze(['0.2.1-rc.2']);
 const PROXY_KEY_ENV = 'COMMONLY_DSH_PROXY_KEY';
@@ -169,7 +169,10 @@ export const assertServedModel = (check, credentials) => {
 /** A stable home per agent and Commonly instance, never the operator's ~/.dsh. */
 export const seatHome = (ctx) => {
   if (ctx._dshHome) return ctx._dshHome;
-  const id = createHash('sha256').update(`${ctx.instanceUrl || ''}\0${ctx.agentName || ''}`).digest('hex').slice(0, 24);
+  // F115: a public seat never shares a home with a private turn of the same agent,
+  // which could plant a profile row or plugin there. A private seat's id is unchanged.
+  const trust = isPublicDsh(ctx.environment) ? '\0public' : '';
+  const id = createHash('sha256').update(`${ctx.instanceUrl || ''}\0${ctx.agentName || ''}${trust}`).digest('hex').slice(0, 24);
   return join(homedir(), '.commonly', 'dsh-homes', id);
 };
 
@@ -443,16 +446,17 @@ export default {
     await chmod(home, 0o700);
     // F115: a public turn runs in an empty folder the adapter owns, so nothing a
     // seat or a stranger put in the workspace (a .env dsh would load, say)
-    // reaches it, and dsh's home layers must be absent.
+    // reaches it. dsh also loads layers from its home: profiles/<name>/ (a user
+    // patch that may insert plugins, and their node_modules), cordis.patch.yml,
+    // .env, and HOME-relative module paths. So everything in a public home but
+    // its sessions is removed before each turn; dsh regenerates its stock profile.
     let workspace = ctx.cwd;
     if (isPublic) {
-      for (const file of PUBLIC_HOME_REFUSED) {
-        if (existsSync(join(home, file))) {
-          throw new Error(`dsh adapter: a public seat's home holds ${file}, which dsh would load into every turn; remove ${join(home, file)}`);
-        }
+      for (const entry of await readdir(home, { withFileTypes: true })) {
+        if (entry.name === PUBLIC_HOME_KEPT && entry.isDirectory()) continue;
+        await rm(join(home, entry.name), { recursive: true, force: true });
       }
       workspace = join(home, PUBLIC_TURN_DIR);
-      await rm(workspace, { recursive: true, force: true });
       await mkdir(workspace, { mode: 0o700 });
     }
     const binary = ctx._dshBinary || 'dsh';
@@ -520,7 +524,10 @@ export default {
       await chmod(patchPath, 0o600);
       const env = childEnvironment(sourceEnv, home, bearer);
       const resume = await sessionExists(home, ctx.sessionId);
-      const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !resume });
+      // A public turn its owner didn't wake can't write memory, so the cue mustn't ask it to.
+      const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
+        freshSession: !resume, ...(isPublic ? { memoryReadOnly: ctx.ownerWoken !== true } : {}),
+      });
       const args = ['--profile', 'headless', '--patch', patchPath, '--json',
         ...(resume ? ['--session-id', ctx.sessionId] : []), fullPrompt];
       const requested = Number(ctx.timeoutMs);

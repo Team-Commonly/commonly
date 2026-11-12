@@ -52,7 +52,7 @@ jobs:
           npm ci --prefix cli --ignore-scripts --no-audit --no-fund
           npm ci --prefix commonly-mcp --ignore-scripts --no-audit --no-fund
           mkdir -p .dev/dsh
-          npm install --prefix .dev/dsh --no-audit --no-fund --save-exact "@deepseek-ai/dsh@${DSH_VERSION}"
+          npm install --prefix .dev/dsh --ignore-scripts --no-audit --no-fund --save-exact "@deepseek-ai/dsh@${DSH_VERSION}"
           node -e 'const l = require("./.dev/dsh/package-lock.json"); const got = l.packages["node_modules/@deepseek-ai/dsh"]; if (got.version !== process.env.DSH_VERSION || got.integrity !== process.env.DSH_INTEGRITY) { console.error("dsh package does not match the pin", got.version, got.integrity); process.exit(1); }'
       - name: Exercise real dsh under Seatbelt
         run: |
