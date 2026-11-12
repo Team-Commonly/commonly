@@ -73,18 +73,21 @@ describe('usage events (D286)', () => {
       for (const [key, value] of Object.entries(headers)) req = req.set(key, value);
       return req.send(body);
     };
-    // The read counts without holding its response, so wait for the writes to land.
+    // The read counts without holding its response, so wait for the writes to
+    // land, then a further tick so a write that shouldn't exist has had time to.
+    const tick = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
     const settle = async (total) => {
       for (let i = 0; i < 100; i += 1) {
         // eslint-disable-next-line no-await-in-loop
         const n = Object.values(await states()).reduce((a, b) => a + b, 0);
-        if (n >= total) return;
+        if (n >= total) { await tick(150); return; }
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => { setTimeout(resolve, 20); });
+        await tick(20);
       }
+      throw new Error(`expected ${total} counted loads, saw ${JSON.stringify(await states())}`);
     };
 
-    it('counts each counted read by its state, in usageAllowed order', async () => {
+    it('counts each counted read by its state, in usageAllowed order, and never a DNT or GPC load', async () => {
       const unset = await makeUser();
       const off = await makeUser({ preferences: { usageEvents: false } });
       const on = await makeUser({ preferences: { usageEvents: true } });
@@ -94,8 +97,9 @@ describe('usage events (D286)', () => {
       await counted(off, { 'cf-ipcountry': 'US' }).expect(200);
       await counted(on, { 'cf-ipcountry': 'FR' }).expect(200);
       await counted(on, { 'cf-ipcountry': 'US', 'sec-gpc': '1' }).expect(200);
-      await settle(6);
-      expect(await states()).toEqual({ recorded: 2, 'region-default-off': 2, 'saved-off': 1, 'privacy-signal': 1 });
+      await counted(unset, { 'cf-ipcountry': 'DE', dnt: '1' }).expect(200);
+      await settle(5);
+      expect(await states()).toEqual({ recorded: 2, 'region-default-off': 2, 'saved-off': 1 });
     });
 
     it('holds only the day, the state and a count, nothing about the person', async () => {

@@ -209,7 +209,8 @@ router.post(
     }
     try {
       const user = await User.findById(req.userId).select('username role isBot').lean();
-      if (user && !user.isBot && !isInternalUser(user) && !privacySignal(req)) await countUsageState('settings-get-failed');
+      const counts = user && !user.isBot && !isInternalUser(user) && !privacySignal(req);
+      if (counts) await countUsageState('settings-get-failed');
     } catch (err: any) {
       console.warn('[usage-events] usage state count failed:', err?.message);
     }

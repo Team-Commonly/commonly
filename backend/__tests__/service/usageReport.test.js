@@ -75,7 +75,7 @@ describe('usage report', () => {
       { _id: '2026-11-09|cta-click|/|none|pricing', day: '2026-11-09', dayStart: day('2026-11-09'), name: 'cta-click', page: '/', refTag: 'none', value: 'pricing', n: 2 },
       { _id: '2026-10-01|page-view|/|none|', day: '2026-10-01', dayStart: day('2026-10-01'), name: 'page-view', page: '/', refTag: 'none', n: 99 },
       usageState('recorded', 5),
-      usageState('privacy-signal', 2),
+      usageState('region-default-off', 2),
     ]);
   });
 
@@ -110,11 +110,11 @@ describe('usage report', () => {
     ]);
   });
 
-  it('reports the per-load recording state on its own, never as a logged-out hit (F399)', async () => {
+  it('reports the per-load recording state apart, small cells as <5, never as a logged-out hit (F399)', async () => {
     const report = await build();
     expect(report.usageStates).toEqual([
-      { day: '2026-11-09', state: 'privacy-signal', loads: 2 },
       { day: '2026-11-09', state: 'recorded', loads: 5 },
+      { day: '2026-11-09', state: 'region-default-off', loads: '<5' },
     ]);
     expect(report.loggedOut.some((row) => row.name === 'usage-drop')).toBe(false);
     expect(formatUsageReport(report)).toContain('by whether usage was recorded');

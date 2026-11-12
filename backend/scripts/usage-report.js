@@ -16,6 +16,8 @@ const MAX_DAYS = 90;
 // them from every read, so a prefix needs at least this many characters.
 const MIN_PREFIX = 4;
 const DAY_MS = 24 * 3600 * 1000;
+// F399: the smallest per-day recording-state count the report prints as a number.
+const USAGE_STATE_MIN = 5;
 
 const configList = (value) => String(value || '').split(',')
   .map((entry) => entry.trim().toLowerCase()).filter(Boolean);
@@ -81,9 +83,11 @@ async function buildUsageReport(db, opts = {}) {
     .find({ day: { $gte: utcDay(since), $lt: utcDay(until) } })
     .project({ _id: 0, day: 1, name: 1, page: 1, refTag: 1, value: 1, n: 1 })
     .toArray();
-  // F399's per-load recording state lives in the same collection; it is no page hit.
+  // F399's per-load recording state lives in the same collection; it is no page
+  // hit. A cell under USAGE_STATE_MIN prints as '<5', so a day with one person
+  // can't say where they were.
   const usageStates = counts.filter((row) => row.name === 'usage-drop').map((row) => ({
-    day: row.day, state: row.value || '', loads: row.n,
+    day: row.day, state: row.value || '', loads: row.n < USAGE_STATE_MIN ? `<${USAGE_STATE_MIN}` : row.n,
   })).sort((a, b) => b.day.localeCompare(a.day) || a.state.localeCompare(b.state));
   const loggedOut = counts.filter((row) => row.name !== 'usage-drop').map((row) => ({
     day: row.day, name: row.name, page: row.page, ref: row.refTag || 'none', value: row.value || '', hits: row.n,

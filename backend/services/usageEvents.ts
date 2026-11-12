@@ -258,16 +258,17 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
 // Why recording is off for a signed-in page load, counted per day and nothing
 // else (F399). `recorded` is the denominator, so the off share is readable.
 // The row holds the reason and the day: no user, country, IP, pod or screen,
-// so a count can't be joined back to a person. Our own accounts aren't counted.
+// so a count can't be joined back to a person. Our own accounts aren't counted,
+// and a DNT or GPC load isn't counted at all: that signal means nothing is
+// recorded, not even as a number.
 export const USAGE_DROP = 'usage-drop';
-export const USAGE_STATES = [
-  'recorded', 'privacy-signal', 'region-default-off', 'saved-off', 'settings-get-failed',
-] as const;
+export const USAGE_STATES = ['recorded', 'region-default-off', 'saved-off', 'settings-get-failed'] as const;
 export type UsageState = typeof USAGE_STATES[number];
 
-// The state the Settings read hands the app, in usageAllowed's order.
-export const usageState = (req: Headers, preference: unknown): UsageState => {
-  if (privacySignal(req)) return 'privacy-signal';
+// The state the Settings read hands the app, in usageAllowed's order; null
+// under DNT/GPC, which is never counted.
+export const usageState = (req: Headers, preference: unknown): UsageState | null => {
+  if (privacySignal(req)) return null;
   if (preference === true) return 'recorded';
   if (preference === false) return 'saved-off';
   return defaultUsageEvents(req) ? 'recorded' : 'region-default-off';

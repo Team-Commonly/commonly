@@ -276,21 +276,34 @@ const usageSettingLimit = rateLimit({
   handler: (_req: unknown, res: any) => res.status(429).json({ msg: 'rate limit exceeded: too many usage setting requests' }),
 });
 
+// Reads are also capped per account after auth, so one account looping the
+// app's counted read (?count=1) can't swamp a day's counts (F399).
+const usageCountUserLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserRateLimitKeyGenerator,
+  handler: (_req: unknown, res: any) => res.status(429)
+    .json({ msg: 'rate limit exceeded: too many usage setting requests' }),
+});
+
 const usageEventsState = (req: any, preference: unknown) => ({
   usageEvents: preference === true || preference === false ? preference : defaultUsageEvents(req),
   chosen: preference === true || preference === false,
   browserSignal: privacySignal(req),
 });
 
-router.get('/me/usage-events', usageSettingLimit, auth, async (req: any, res: any) => {
+router.get('/me/usage-events', usageSettingLimit, auth, usageCountUserLimit, async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('username role preferences isBot').lean();
     if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
     // The app's own read on each page load (?count=1) adds one to the day's
     // count for its state; the Settings page's read doesn't (F399).
-    if (req.query?.count === '1' && !isInternalUser(user)) {
-      countUsageState(usageState(req, user.preferences?.usageEvents))
-        .catch((err: Error) => console.warn('[users] usage state count failed:', err.message));
+    const counted = req.query?.count === '1' && !isInternalUser(user);
+    const state = counted ? usageState(req, user.preferences?.usageEvents) : null;
+    if (state) {
+      countUsageState(state).catch((err: Error) => console.warn('[users] usage state count failed:', err.message));
     }
     return res.json(usageEventsState(req, user.preferences?.usageEvents));
   } catch (error) {
