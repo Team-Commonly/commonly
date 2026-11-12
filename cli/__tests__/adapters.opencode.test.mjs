@@ -390,7 +390,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
   const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
 
   const runSeat = async (chunks, {
-    trust = 'public', mcp = COMMONLY_MCP, readyFile = true, serverWrites = true, seen = {},
+    trust = 'public', mcp = COMMONLY_MCP, readyFile = true, serverWrites = true, seen = {}, platform = 'darwin',
   } = {}) => {
     let outcome;
     await withTemp(async (root) => {
@@ -418,14 +418,20 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
         env: { PATH: process.env.PATH },
         environment: {
           model: 'gpt-5.4',
-          ...(trust === 'public' ? { sandbox: { trust: 'public', mode: 'read-only' } } : {}),
+          ...(trust === 'public'
+            ? { sandbox: { trust: 'public', mode: platform === 'linux' ? 'bwrap' : 'read-only' } } : {}),
           provider: { id: 'local', baseURL: 'https://llm.example.test/v1', keyFile },
           mcp,
         },
         agentName: 'hq-canary',
         _opencodeHomeRoot: join(root, 'opencode-state'),
         _binaryPath: '/usr/local/bin/opencode',
-        _platform: 'darwin',
+        _platform: platform,
+        _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
+        _wrapArgvWithBwrap: (argv, environment) => {
+          seen.writeOutside = environment.sandbox.filesystem['write-outside'];
+          return ['/usr/bin/bwrap', '--test', ...argv];
+        },
         // Stands in for the Commonly server: it creates the file its config names.
         _spawnImpl: makeSpawnImpl({
           chunks,
@@ -505,6 +511,17 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
     const result = await runSeat(turn(), { readyFile: true, seen });
     expect(result.text).toBe(narration);
     expect(seen.env.COMMONLY_MCP_READY_FILE.startsWith(`${seen.statePath}/mcp-ready/`)).toBe(true);
+    expect(seen.readyFileLeftAfterTurn).toBe(false);
+  });
+
+  // Under bwrap the server can write only inside the sandbox's write-outside
+  // folders, so a ready file anywhere else would withhold every public turn.
+  test('on Linux the ready file sits inside a folder bwrap leaves writable, and is removed after the turn', async () => {
+    const seen = {};
+    const result = await runSeat(turn(), { readyFile: true, seen, platform: 'linux' });
+    expect(result.text).toBe(narration);
+    const readyPath = seen.env.COMMONLY_MCP_READY_FILE;
+    expect(seen.writeOutside.some((dir) => readyPath.startsWith(`${dir}/`))).toBe(true);
     expect(seen.readyFileLeftAfterTurn).toBe(false);
   });
 

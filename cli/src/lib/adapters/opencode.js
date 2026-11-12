@@ -986,8 +986,9 @@ export { PUBLIC_TOOL_FAILED_CODE };
 // exits 0, so the reply would be an answer written without reading the pod
 // (measured with a stub provider on 2026-11-11). The server creates the file
 // this adapter names in COMMONLY_MCP_READY_FILE once OpenCode asks for its
-// tools (tools/list, sent only after initialize succeeded), inside the folder the sandbox lets the seat write (OpenCode's own
-// data home: Seatbelt's statePath, bwrap's write-outside). A turn whose file is
+// tools (tools/list, sent only after initialize succeeded), inside the folder
+// the sandbox lets the seat write (OpenCode's own data home: Seatbelt's
+// statePath, bwrap's write-outside). A turn whose file is
 // missing never had the server, so its reply is withheld and the run loop tells
 // the waiting pod why (turn-failure-notice.js) and retries.
 export { MCP_READY_FILE_ENV };
