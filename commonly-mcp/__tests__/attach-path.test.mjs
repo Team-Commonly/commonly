@@ -92,6 +92,41 @@ describe('resolveAttachPath', () => {
   });
 });
 
+describe('resolveAttachPath, review follow-ups', () => {
+  test('outside the roots, a missing file and an existing one get the same answer', () => {
+    const { work, outside } = tree();
+    const opts = { cwd: work, env: {}, home: '/nonexistent-home' };
+    const messageFor = (p) => { try { resolveAttachPath(p, opts); } catch (e) { return e.message.replace(p, '<p>'); } return null; };
+    expect(messageFor(join(outside, 'notes.txt'))).toBe(messageFor(join(outside, 'missing.txt')));
+  });
+
+  test('a server started in a folder that holds the home folder gets no working-directory root', () => {
+    const { base, home } = tree();
+    writeFileSync(join(base, 'top.txt'), 't');
+    expect(() => resolveAttachPath('top.txt', { cwd: base, env: {}, home })).toThrow(/COMMONLY_ATTACH_ROOTS/);
+  });
+
+  test('more key and credential file names are refused', () => {
+    const { work } = tree();
+    const opts = { cwd: work, env: {}, home: '/nonexistent-home' };
+    for (const name of ['id_ed25519_sk', 'id_ecdsa_sk', 'putty.ppk', 'secret.gpg', 'key.asc', 'office.ovpn']) {
+      writeFileSync(join(work, name), 'k');
+      expect(() => resolveAttachPath(name, opts)).toThrow(/key/);
+    }
+  });
+
+  test('a missing file in a symlinked working directory still says it is missing', () => {
+    const { base, work } = tree();
+    symlinkSync(work, join(base, 'work-link'));
+    expect(() => resolveAttachPath('nope.txt', { cwd: join(base, 'work-link'), env: {}, home: '/nonexistent-home' })).toThrow(/no file/i);
+  });
+
+  test('a directory is refused with a clear message', () => {
+    const { work } = tree();
+    expect(() => resolveAttachPath('out', { cwd: work, env: {}, home: '/nonexistent-home' })).toThrow(/not a regular file/);
+  });
+});
+
 describe('commonly_attach_file refuses before any request', () => {
   const okFetch = () => jest.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }));
   let saved;

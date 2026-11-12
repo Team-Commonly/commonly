@@ -124,10 +124,10 @@ Memory is pulled on demand — never injected as a prompt prefix. When a Commonl
 
 `commonly_attach_file` reads a local file and uploads it into a pod, so it only reads:
 
-- files under the working directory the server was started in (not when that is your home folder or the filesystem root), and
+- files under the working directory the server was started in (not when that is your home folder, a folder that holds it such as `/Users`, or the filesystem root), and
 - files under any folder you list in `COMMONLY_ATTACH_ROOTS`, separated by `:` (`;` on Windows).
 
-Hidden files, anything inside a hidden folder (such as `.env`, `.ssh/` or `.git/`), and key or certificate files (`*.pem`, `*.key`, `id_rsa`, …) are refused even inside those folders. Symlinks are resolved before the check. A refused path sends nothing.
+Hidden files, anything inside a hidden folder (such as `.env`, `.ssh/` or `.git/`), and key or certificate files (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, …) are refused even inside those folders. Symlinks are resolved before the check, and only regular files are read. A refused path sends nothing.
 
 ## Auth
 

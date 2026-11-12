@@ -8,13 +8,13 @@
 // part starting with ".") and key-shaped file names are still refused.
 // Symlinks are resolved first, so a link inside a root that points outside it,
 // or at a hidden file, is refused too.
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
-  delimiter, isAbsolute, parse, relative, resolve, sep,
+  basename, delimiter, dirname, isAbsolute, join, parse, relative, resolve, sep,
 } from 'node:path';
 
-const KEY_NAME = /^(id_(rsa|dsa|ecdsa|ed25519)|.+\.(pem|key|p12|pfx|jks|keystore|kdbx))$/i;
+const KEY_NAME = /^(id_(rsa|dsa|ecdsa|ed25519)(_sk)?|.+\.(pem|key|p12|pfx|jks|keystore|kdbx|ppk|gpg|asc|ovpn))$/i;
 
 const real = (p) => {
   try {
@@ -33,7 +33,9 @@ const allowedRoots = ({ cwd, env, home }) => {
   const roots = [];
   const cwdReal = real(cwd);
   const homeReal = real(home) || home;
-  if (cwdReal && cwdReal !== homeReal && cwdReal !== parse(cwdReal).root) roots.push(cwdReal);
+  // Not a workspace: the home folder, the filesystem root, or any folder that
+  // holds the home folder (such as /Users or /home).
+  if (cwdReal && !inside(cwdReal, homeReal) && cwdReal !== parse(cwdReal).root) roots.push(cwdReal);
   for (const entry of String(env.COMMONLY_ATTACH_ROOTS || '').split(delimiter)) {
     const trimmed = entry.trim();
     if (!trimmed || !isAbsolute(trimmed)) continue;
@@ -51,10 +53,14 @@ export function resolveAttachPath(filePath, {
   cwd = process.cwd(), env = process.env, home = homedir(),
 } = {}) {
   const asked = resolve(cwd, String(filePath || ''));
-  const target = real(asked);
-  if (!target) throw new Error(`There is no file at ${filePath}.`);
   const roots = allowedRoots({ cwd, env, home });
-  const root = roots.find((r) => inside(r, target));
+  const target = real(asked);
+  // Outside the roots, a missing file gets the same answer as an existing one,
+  // so the error never says whether a path outside them exists.
+  // A missing file is placed by its folder's real path, so a symlinked working
+  // directory still reads as inside.
+  const placed = target || (real(dirname(asked)) ? join(real(dirname(asked)), basename(asked)) : asked);
+  const root = roots.find((r) => inside(r, placed));
   if (!root) {
     const where = roots.length ? roots.join(', ') : 'none: the server was started in the home folder or the filesystem root';
     throw new Error(
@@ -62,12 +68,16 @@ export function resolveAttachPath(filePath, {
       + 'Write or copy the file into the working directory, or add its folder to COMMONLY_ATTACH_ROOTS.',
     );
   }
+  if (!target) throw new Error(`There is no file at ${filePath}.`);
   const parts = relative(root, target).split(sep).filter(Boolean);
   if (parts.some((part) => part.startsWith('.'))) {
     throw new Error(`${filePath} is a hidden file or inside a hidden folder; commonly_attach_file does not attach those.`);
   }
   if (KEY_NAME.test(parts[parts.length - 1] || '')) {
     throw new Error(`${filePath} looks like a key or certificate file; commonly_attach_file does not attach those.`);
+  }
+  if (!statSync(target).isFile()) {
+    throw new Error(`${filePath} is not a regular file; commonly_attach_file attaches files only.`);
   }
   return target;
 }
