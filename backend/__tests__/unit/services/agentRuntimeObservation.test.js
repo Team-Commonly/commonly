@@ -117,3 +117,16 @@ it('keeps the spawn failure reasons the same in the CLI, the model and Settings'
   expect([...cli].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
   expect([...settings].sort()).toEqual([...SPAWN_FAILURE_REASONS].sort());
 });
+
+// F458: the daemon's login verdict rides the inventory so the page can say
+// "not signed in" before a message fails. Only a boolean is a verdict.
+it('keeps a boolean signedIn and drops anything else', () => {
+  const result = normalizeRuntimeInventory([
+    { harness: 'claude', installed: true, signedIn: false },
+    { harness: 'codex', installed: true, signedIn: true },
+    { harness: 'opencode', installed: true, signedIn: 'no' },
+  ]);
+  expect(result.find((row) => row.harness === 'claude').signedIn).toBe(false);
+  expect(result.find((row) => row.harness === 'codex').signedIn).toBe(true);
+  expect(result.find((row) => row.harness === 'opencode')).not.toHaveProperty('signedIn');
+});

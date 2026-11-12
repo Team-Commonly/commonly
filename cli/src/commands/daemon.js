@@ -26,7 +26,8 @@ import {
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getLastTurn } from '../lib/session-store.js';
 import { getAdapter, providerKeyEnvNames, seatProviderKeyEnv } from '../lib/adapters/index.js';
-import { runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
+import { loginState, runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
+
 import {
   installDaemonService,
   installSummary,
@@ -58,6 +59,9 @@ import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from
 import { machineHostReport } from '../lib/machine-host.js';
 import { orchestrateDaemonSetup } from '../lib/stable-install.js';
 import { CLI } from '../lib/cli-hint.js';
+
+// Set on the steps `daemon setup` runs, so a step can leave a line to setup.
+const SETUP_CHILD_ENV = 'COMMONLY_DAEMON_SETUP_STEP';
 
 // launchd, systemd and Task Scheduler hold one Commonly daemon per computer
 // account. Install refuses to stop another HOME's; this flag takes it over.
@@ -371,6 +375,10 @@ export const firstSupervisionPass = async ({
 
 export const registerDaemon = (program) => {
   const daemon = program.command('daemon').description('Manage the local Commonly daemon');
+  const signedOutNotes = async () => (await signedOutAdapters({
+    detect: (name) => getAdapter(name)?.detect(),
+    runStatus: runLoginStatus,
+  })).map((name) => `Note: ${signedOutHint(name)}.`);
 
   daemon.addHelpText('after', `
 The daemon token is scoped to this machine and stored in a 0600 file under
@@ -411,7 +419,8 @@ Examples:
           // device-auth and any prompts work; reject on a non-zero exit so a
           // failed step stops the chain before the next one.
           runCli: (entry, args) => new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, [entry, ...args], { stdio: 'inherit', env: process.env });
+            // SETUP_CHILD_ENV: register leaves the signed-out note to setup's last line.
+            const child = spawn(process.execPath, [entry, ...args], { stdio: 'inherit', env: { ...process.env, [SETUP_CHILD_ENV]: '1' } });
             child.on('error', reject);
             child.on('close', (code) => (code === 0
               ? resolve()
@@ -420,11 +429,7 @@ Examples:
         });
         // Growth's F370 walk: setup said all was well, and the first @mention
         // then failed with "claude exited 1: Not logged in".
-        const signedOut = await signedOutAdapters({
-          detect: (name) => getAdapter(name)?.detect(),
-          runStatus: runLoginStatus,
-        });
-        for (const name of signedOut) console.log(`Note: ${signedOutHint(name)}.`);
+        for (const line of await signedOutNotes()) console.log(line);
       } catch (error) {
         console.error(`Daemon setup failed: ${error.message}`);
         process.exitCode = 1;
@@ -471,6 +476,12 @@ Examples:
         }
         if (existing && existsSync(servicePaths(process.platform, homedir()).file)) {
           console.log(`Restart the installed daemon to use the new key: ${CLI} daemon restart`);
+        }
+        // F458: register run by hand (the F454 walk) said nothing, and the
+        // agent looked healthy until its first message failed. Setup prints
+        // this itself, after the install step, so its own register doesn't.
+        if (!process.env[SETUP_CHILD_ENV]) {
+          for (const line of await signedOutNotes()) console.log(line);
         }
       } catch (error) {
         console.error(`Daemon registration failed: ${error.message}`);
@@ -740,7 +751,7 @@ Examples:
           // exit parks it on macOS; systemd honors 77 directly.
           process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
         };
-        const runtimeInventory = createInventoryCache((harnesses) => collectRuntimeInventory(getAdapter, undefined, harnesses));
+        const runtimeInventory = createInventoryCache((harnesses) => collectRuntimeInventory(getAdapter, undefined, harnesses, { loginState }));
         supervisor = createDaemonSupervisor({
           record,
           client,

@@ -1584,3 +1584,62 @@ describe('one Identity & access list (d215 frame)', () => {
     );
   });
 });
+
+// F458: the summary used to say "connected" while the agent couldn't answer.
+// A signed-out harness, or a failed last spawn, says so there, and How it runs opens.
+test('How it runs names a signed-out harness in its summary and opens', async () => {
+  const at = '2026-11-12T05:00:00Z';
+  let signedIn = false;
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) {
+      return Promise.resolve({ data: { writablePodId: 'pod-1', runtimeSourcePodId: 'pod-1',
+        runtimeManaged: true, runtimeEditable: true, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude' },
+        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [], signedIn }],
+        processConnected: true, runtimeObservation: { connectedAt: at, lastSeenAt: at, turnRunning: false,
+          lastTurnAt: null, lastSpawn: null, confirmed: null },
+        installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+      } });
+    }
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+    } } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    return Promise.resolve({ data: [] });
+  });
+  const view = renderPage();
+  const runs = await screen.findByTestId('agent-how-it-runs');
+  await waitFor(() => expect(screen.getByTestId('agent-how-it-runs-not-ready')).toHaveTextContent('not signed in · can’t answer'));
+  expect(runs.querySelector('summary')).not.toHaveTextContent(/connected/);
+  await waitFor(() => expect(runs).toHaveAttribute('open'));
+  view.unmount();
+  signedIn = true;
+  renderPage();
+  const again = await screen.findByTestId('agent-how-it-runs');
+  await waitFor(() => expect(again.querySelector('summary')).toHaveTextContent('connected'));
+  expect(screen.queryByTestId('agent-how-it-runs-not-ready')).toBeNull();
+});
+
+// F458 review: a failed last spawn says so in the summary too, not "connected".
+test('How it runs names a failed last start in its summary', async () => {
+  const at = '2026-11-12T05:00:00Z';
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) {
+      return Promise.resolve({ data: { writablePodId: 'pod-1', runtimeSourcePodId: 'pod-1',
+        runtimeManaged: true, runtimeEditable: true, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude' },
+        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] }],
+        processConnected: true, runtimeObservation: { connectedAt: at, lastSeenAt: at, turnRunning: false,
+          lastTurnAt: at, lastSpawnOutcome: 'failed', lastSpawnFailure: 'login', lastSpawn: null, confirmed: null },
+        installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+      } });
+    }
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+    } } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  const runs = await screen.findByTestId('agent-how-it-runs');
+  await waitFor(() => expect(screen.getByTestId('agent-how-it-runs-not-ready')).toHaveTextContent('last start failed'));
+  await waitFor(() => expect(runs).toHaveAttribute('open'));
+});

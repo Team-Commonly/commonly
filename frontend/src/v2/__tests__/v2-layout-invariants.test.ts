@@ -6820,3 +6820,20 @@ describe('BYO harness detail stays visible', () => {
     expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__hint v2-byo__hint--shown" data-testid="byo-harness-detail"');
   });
 });
+
+// F458: a not-ready agent's summary word and BYO stop line read as warnings. The
+// summary rule must outrank `details.disc > summary .vl .mo`, which sets ink2.
+describe('not-ready lines keep their warning colour', () => {
+  it('the settings summary word and the BYO stopped line use the warning tokens', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(topLevelRuleBody(surface, '.v2-agent-settings-page details.disc > summary .vl .mo.v2-agent-settings-page__summary-warn'))
+      .toContain('var(--v2-warning-text)');
+    const byoCss = read('../components/V2AgentBYO.css');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped')).toContain('var(--v2-warning-soft)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo .v2-byo__stopped::before')).toContain('var(--v2-warning)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped'))
+      .toContain('var(--v2-warning-soft)');
+    expect(topLevelRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before'))
+      .toContain('var(--v2-warning)');
+  });
+});

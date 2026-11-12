@@ -4,7 +4,9 @@
 // module only orders it and merges what a computer reported.
 
 export interface HarnessCatalogEntry { id: string; label: string; models: string[] | null; efforts: string[] }
-export interface HarnessDeviceRow { harness: string; installed: boolean; version: string | null; models: string[] | null; efforts: string[] }
+// signedIn (F458) is present only when the computer had a verdict: a key in its
+// environment, or a harness with no checked login probe, leaves it out.
+export interface HarnessDeviceRow { harness: string; installed: boolean; version: string | null; models: string[] | null; efforts: string[]; signedIn?: boolean }
 
 // Used only until the server's list arrives, or when it can't be read: the two
 // harnesses the add page always offered.
@@ -106,12 +108,28 @@ export const harnessDeviceNote = (
   const row = inventory.find((entry) => entry.harness === id);
   if (!row) return inventory.length ? t('harness.notChecked') : '';
   if (!row.installed) return t('harness.notOnComputer');
+  if (row.signedIn === false) return t('harness.signedOut');
   const unsupported = UNSUPPORTED_IN_OPEN_PODS[id];
   if (row.version && unsupported?.version.test(row.version)) {
     return t('harness.unsupportedInOpenPods', { version: row.version, works: unsupported.works });
   }
   return row.version ? t('harness.installed', { version: row.version }) : t('harness.installedNoVersion');
 };
+
+/** F458: the computer reported this harness installed and signed out. No verdict is not signed out. */
+export const harnessSignedOut = (inventory: HarnessDeviceRow[] = [], id: string): boolean => {
+  const harness = id === 'claude-code' ? 'claude' : id;
+  return inventory.some((row) => row.harness === harness && row.installed && row.signedIn === false);
+};
+
+/**
+ * The harness a daemon runs when the agent names none: Claude Code if it found
+ * it, else Codex, as cli resolveAdapterForRuntime (commands/daemon.js) picks.
+ * Inventory `installed` comes from the same detect(). '' when it found neither.
+ */
+export const autoDetectedHarness = (inventory: HarnessDeviceRow[] = []): string => (
+  ['claude', 'codex'].find((id) => inventory.some((row) => row.harness === id && row.installed)) || ''
+);
 
 /** The device's own non-empty list wins; otherwise the catalogue's ladder. */
 export const effortLevelsFor = (entry?: HarnessCatalogEntry | null, row?: HarnessDeviceRow | null): string[] => (

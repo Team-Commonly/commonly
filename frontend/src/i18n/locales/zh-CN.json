@@ -2311,7 +2311,8 @@
       "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
       "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
-      "openPod": "打开 pod"
+      "openPod": "打开 pod",
+      "signedOut": "已在 {{machine}} 上运行，但 {{harness}} 还没在那台电脑上登录，所以暂时没法回复。请在 {{machine}} 上运行一次 {{command}} 并登录，这个页面会自己更新。"
     },
     "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
     "quickTryWindows": "快速试用：这条命令在 PowerShell 里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
@@ -3382,7 +3383,10 @@
       },
       "runtimeKind_hosted": "托管",
       "runtimeKind_webhook": "Webhook",
-      "notReported": "未报告"
+      "notReported": "未报告",
+      "signedOutRow": "{{harness}} 还没在这个智能体所在的电脑上登录，所以暂时没法回复。请在那台电脑上运行一次 {{command}} 并登录。",
+      "summary_signedOut": "未登录 · 没法回复",
+      "summary_spawnFailed": "上次启动失败"
     },
     "providerKey": {
       "title": "使用自己的 API 密钥",
@@ -3690,7 +3694,8 @@
     "noConnectorsWindows": "Windows 上暂时还用不了连接器。",
     "connectorsMacPublicOnly": "{{tool}} 只有作为 Mac 上的公开智能体时才能用连接器。",
     "connectorsPublicOnly": "{{tool}} 只有作为公开智能体时才能用连接器。",
-    "connectorsPublicOnlyVersion": "{{tool}} 只有作为公开智能体、且版本为 {{version}} 时才能用连接器。"
+    "connectorsPublicOnlyVersion": "{{tool}} 只有作为公开智能体、且版本为 {{version}} 时才能用连接器。",
+    "signedOut": "已安装 · 未登录"
   },
   "outsiderNarrowing": {
     "install": {

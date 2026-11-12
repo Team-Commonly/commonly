@@ -257,6 +257,8 @@
 .v2-agent-settings-page .lrow.v2-agent-settings-page__alert { grid-template-columns: minmax(0, 1fr) auto; min-height: 44px; }
 .v2-agent-settings-page .v2-agent-settings-page__alert .lb { font-weight: 500; color: var(--ink); }
 .v2-agent-settings-page .v2-agent-settings-page__alert--muted .lb { color: var(--mu); }
+/* F458: the summary's not-ready word, in warning text so it isn't read as a status. */
+.v2-agent-settings-page details.disc > summary .vl .mo.v2-agent-settings-page__summary-warn { color: var(--v2-warning-text); }
 .v2-agent-settings-page .lrow.v2-agent-settings-page__plain { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 44px; }
 .v2-agent-settings-page .v2-agent-settings-page__plain .lb { font-weight: 500; }
 .v2-agent-settings-page__figure.vl { font-size: 13px; color: var(--ink); }
