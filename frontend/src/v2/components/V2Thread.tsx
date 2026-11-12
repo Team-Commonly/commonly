@@ -15,7 +15,7 @@ import V2ThreadMessages, { ASK_START_ID, V2ThreadHistoryStatus } from './V2Threa
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import V2BringTeammate from './V2BringTeammate';
-import { isSoloHumanPod, teammateInviteMoment } from '../utils/teammateInviteMoment';
+import { isSoloHumanPod, teammateInviteMoment, type TeammateInviteMomentResult } from '../utils/teammateInviteMoment';
 import {
   HistorySearchState,
   UseV2PodDetailResult,
@@ -315,6 +315,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const [noAgentsHint, setNoAgentsHint] = useState<{ messageId: string } | null>(null);
   const [awaitingAgentReply, setAwaitingAgentReply] = useState<AwaitingAgentReply | null>(null);
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
+  // The message a long pod's teammate card follows, kept per pod and viewer.
+  const teammateMomentPin = useRef<{ key: string; moment: TeammateInviteMomentResult } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   // Keep the id of the last message sent from this composer. Comparing ids,
@@ -1631,9 +1633,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       buildAgentUsername(agent.agentName, agent.instanceId || 'default'),
       agent.displayName || '', agent.profile?.displayName || '',
     ]).filter(Boolean).map((key) => key.toLowerCase()));
-  const rawTeammateMoment = soloHuman && detail.initialMessagesLoaded === true
-    && !hasMore && !loading && !firstRunVisible
-    ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
+  // A pod with more than a page of history loads with hasMore, so its first
+  // answer may be above the window: the card then follows the latest agent
+  // post in view and stays on that message for this pod, so newer posts or
+  // older pages don't move it.
+  const momentKey = `${pod._id}.${currentUserId || ''}`;
+  if (teammateMomentPin.current?.key !== momentKey) teammateMomentPin.current = null;
+  const pinnedMoment = teammateMomentPin.current?.moment || null;
+  const momentReady = soloHuman && detail.initialMessagesLoaded === true && !loading && !firstRunVisible;
+  let rawTeammateMoment: TeammateInviteMomentResult | null = null;
+  if (momentReady && pinnedMoment && messages.some((message) => String(message.id) === pinnedMoment.messageId)) {
+    rawTeammateMoment = pinnedMoment;
+  } else if (momentReady && !pinnedMoment) {
+    rawTeammateMoment = teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace,
+      { latestInView: hasMore });
+    if (rawTeammateMoment && hasMore) teammateMomentPin.current = { key: momentKey, moment: rawTeammateMoment };
+  }
   const momentAuthor = rawTeammateMoment?.username.toLowerCase() || '';
   const momentAgent = momentAuthor ? (agents || []).find((agent) => agent.agentName !== 'scout' && (
     buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase() === momentAuthor

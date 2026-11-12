@@ -2,9 +2,14 @@
 
 `V2BringTeammate` uses the existing pod invite model and member-authorized API.
 It appears for the sole human in a group pod, after that person's first agent
-reply, in the owned Scout workspace, or in the ordinary empty state. An
-incomplete history cannot establish the first reply. Direct-message pod types
-are excluded. Membership changes remove the prompt when a second human joins.
+reply, in the owned Scout workspace, or in the ordinary empty state. A failed
+history read never places it. A pod with more than one page of history (50
+messages) loads with older pages still unread, so its first reply may be out
+of view. There the card follows the latest agent post in view, where the
+person lands, and stays on that message for the visit even when newer posts
+arrive or older pages load. Until 2026-11-12 such a pod never showed the card
+unless the person scrolled back to its start. Direct-message pod types are
+excluded. Membership changes remove the prompt when a second human joins.
 
 An impression performs only GET. A press reuses this user's usable link for the
 same placement, or creates one with a seven-day expiry. Clipboard refusal keeps

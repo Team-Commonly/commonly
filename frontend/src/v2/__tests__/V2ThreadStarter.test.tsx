@@ -676,6 +676,50 @@ describe('second-person prompt placements', () => {
     </MemoryRouter></AuthContext.Provider>);
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
   });
+  // A pod with more than one page of history (50 messages) loads with hasMore,
+  // and its first answer is above the window. The card still shows, after the
+  // latest answer in view, where the person lands, and stays there.
+  const rowsBeforeCard = () => {
+    const card = document.querySelector('.v2-teammate');
+    return screen.getAllByText('Rendered message')
+      .filter((row) => row.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+  };
+  const agentPost = (id, content = 'Status update') => ({
+    id, pod_id: 'p1', user_id: 'bot', content, message_type: 'text', created_at: `2026-10-25T10:${id}:00Z`, user: { username: 'scout', isBot: true },
+  });
+  test('a pod with more history than one page still offers the card, after the latest answer in view', async () => {
+    const detail = withReply();
+    detail.hasMore = true;
+    detail.messages = [...messages, { ...messages[0], id: '12', content: 'And the follow-up?' }, agentPost('13', 'Follow-up done')];
+    renderChat(detail);
+    expect(await screen.findByText(/They can work with Scout too/)).toBeInTheDocument();
+    expect(rowsBeforeCard()).toBe(4);
+  });
+  test('with no message of the person in view, the latest agent post in view carries the card', async () => {
+    const detail = withReply();
+    detail.hasMore = true;
+    detail.messages = [agentPost('20'), agentPost('21'), agentPost('22')];
+    renderChat(detail);
+    expect(await screen.findByText(/They can work with Scout too/)).toBeInTheDocument();
+    expect(rowsBeforeCard()).toBe(3);
+  });
+  test('in a long pod the card stays after the answer it first followed when newer posts arrive', async () => {
+    const detail = withReply();
+    detail.hasMore = true;
+    detail.messages = [agentPost('20'), agentPost('21')];
+    const view = renderChat(detail);
+    expect(await screen.findByText(/They can work with Scout too/)).toBeInTheDocument();
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2Thread detail={{ ...detail, messages: [...detail.messages, agentPost('22')] }} />
+    </MemoryRouter></AuthContext.Provider>);
+    expect(screen.getAllByText('Rendered message')).toHaveLength(3);
+    expect(rowsBeforeCard()).toBe(2);
+    // Reaching the start of the history doesn't move it either.
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2Thread detail={{ ...detail, hasMore: false, messages: [...messages, ...detail.messages, agentPost('22')] }} />
+    </MemoryRouter></AuthContext.Provider>);
+    expect(rowsBeforeCard()).toBe(4);
+  });
   test('socket messages after a failed initial history read do not qualify as the first reply', () => {
     const failed = makeDetail({ initialLoadComplete: true, initialMessagesLoaded: false, error: 'History unavailable', hasMore: false });
     const view = renderChat(failed);
@@ -821,9 +865,11 @@ describe('second-person prompt placements', () => {
       expect(list.scrollTop).toBe(300);
     });
   });
+  // These hold the card back with `loading` (the transcript is the same); a
+  // long pod's hasMore no longer holds it back.
   test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
     const settled = withReply();
-    const view = renderChat({ ...settled, hasMore: true });
+    const view = renderChat({ ...settled, loading: true });
     expect(document.querySelector('.v2-teammate')).toBeNull();
     scrollListTo(1600);
     clearScrolls();
@@ -843,11 +889,11 @@ describe('second-person prompt placements', () => {
       id: '12', pod_id: 'p1', user_id: 'bot', content: 'And a second step', message_type: 'text',
       created_at: '2026-10-25T10:02:00Z', user: { username: 'scout', isBot: true },
     }] };
-    const view = renderChat({ ...settled, hasMore: true });
+    const view = renderChat({ ...settled, loading: true });
     scrollListTo(1600);
     clearScrolls();
     // An arrival at the end starts a smooth follow...
-    rerenderChat(view, { ...arrived, hasMore: true });
+    rerenderChat(view, { ...arrived, loading: true });
     expect(endFollows()).toBe(1);
     clearScrolls();
     // ...whose first animation frame is still far from the end. That is the
@@ -859,7 +905,7 @@ describe('second-person prompt placements', () => {
   });
   test('a reader scrolled up stays put when the invite card mounts', async () => {
     const settled = withReply();
-    const view = renderChat({ ...settled, hasMore: true });
+    const view = renderChat({ ...settled, loading: true });
     scrollListTo(100);
     clearScrolls();
     rerenderChat(view, settled);

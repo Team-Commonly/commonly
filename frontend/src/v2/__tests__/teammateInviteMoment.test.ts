@@ -33,3 +33,14 @@ test('in the owned workspace Scout\'s answer never counts; the person\'s own age
     .toEqual({ messageId: '4', username: 'claude-code-laptop', source: 'workspace-own-agent' });
   expect(teammateInviteMoment([ask, own], 'person', new Set(['claude-code-laptop']), agentKeys, false)?.source).toBe('first-agent-post');
 });
+test('with only the latest page loaded, the latest agent post counts without a visible ask, and the same posts still never do', () => {
+  const later = { ...answer, id: '5' };
+  const system = { ...answer, id: 'kernel', author_kind: 'kernel' as const };
+  const failed = { ...answer, id: 'failed', metadata: { runFailed: true } };
+  const latestInView = { latestInView: true };
+  expect(teammateInviteMoment([answer, later, system, failed], 'person', agentKeys, agentKeys, false, latestInView))
+    .toEqual({ messageId: '5', username: 'scout-person', source: 'first-agent-post' });
+  expect(teammateInviteMoment([system, failed, ask], 'person', agentKeys, agentKeys, false, latestInView)).toBeNull();
+  // Scout's posts in the owned workspace still never carry it.
+  expect(teammateInviteMoment([answer, later], 'person', agentKeys, agentKeys, true, latestInView)).toBeNull();
+});
