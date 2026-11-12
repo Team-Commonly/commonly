@@ -45,6 +45,20 @@ const allowedRoots = ({ cwd, env, home }) => {
   return roots;
 };
 
+// Where a path that doesn't exist would be: its nearest existing ancestor's
+// real path, with the missing parts joined back on.
+const placeMissing = (asked) => {
+  const missing = [];
+  let dir = asked;
+  while (!real(dir)) {
+    const parent = dirname(dir);
+    if (parent === dir) return asked;
+    missing.unshift(basename(dir));
+    dir = parent;
+  }
+  return join(real(dir), ...missing);
+};
+
 /**
  * Resolve `filePath` (relative to `cwd`) to the real path to read, or throw an
  * Error whose message tells the model what to do instead.
@@ -57,12 +71,14 @@ export function resolveAttachPath(filePath, {
   const target = real(asked);
   // Outside the roots, a missing file gets the same answer as an existing one,
   // so the error never says whether a path outside them exists.
-  // A missing file is placed by its folder's real path, so a symlinked working
-  // directory still reads as inside.
-  const placed = target || (real(dirname(asked)) ? join(real(dirname(asked)), basename(asked)) : asked);
+  // A missing file is placed by the real path of its nearest existing folder,
+  // so a symlinked working directory still reads as inside.
+  const placed = target || placeMissing(asked);
   const root = roots.find((r) => inside(r, placed));
   if (!root) {
-    const where = roots.length ? roots.join(', ') : 'none: the server was started in the home folder or the filesystem root';
+    const where = roots.length
+      ? roots.join(', ')
+      : 'none: the server was started in the home folder, a folder that holds it, or the filesystem root';
     throw new Error(
       `${filePath} is outside the folders commonly_attach_file may read (${where}). `
       + 'Write or copy the file into the working directory, or add its folder to COMMONLY_ATTACH_ROOTS.',
