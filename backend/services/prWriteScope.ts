@@ -63,17 +63,38 @@ const BODY_PREVIEW = 2000;
 export const CARD_CONTENTS_MAX = 64 * 1024;
 const CARD_MESSAGE_MAX = 4096;
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
+ * F168: the bidirectional controls that reorder how text displays (the
+ * "Trojan Source" set). On the card each shows as a visible mark, so the
+ * owner reads the characters that will be committed, not their rendering.
+ * Display only: the envelope that runs is unchanged.
+ */
+const BIDI_CONTROL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+const markBidi = (text: string): string => text.replace(
+  BIDI_CONTROL,
+  (ch) => `⟦U+${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}⟧`,
+);
+
+/** The longest prefix of `bytes` no longer than `max` that ends on a whole UTF-8 character. */
+const utf8Prefix = (bytes: Buffer, max: number): number => {
+  let take = Math.min(bytes.length, max);
+  // A continuation byte (0x80-0xBF) at the cut means a character straddles it.
+  while (take > 0 && take < bytes.length && bytes[take] >= 0x80 && bytes[take] <= 0xbf) take -= 1;
+  return take;
+};
 const shortSha = (sha: string): string => sha.slice(0, 7);
 
 /** The commit message as the owner reads it: whole, labelled, and cut only past the cap. */
 const cardMessage = (message: string): Record<string, unknown> => {
   const truncated = message.length > CARD_MESSAGE_MAX;
+  const shown = markBidi(truncated ? message.slice(0, CARD_MESSAGE_MAX) : message);
   return {
     label: 'Full commit message, exactly as it will be recorded',
     text: truncated
-      ? `${message.slice(0, CARD_MESSAGE_MAX)}\n`
+      ? `${shown}\n`
         + `[truncated: the card shows ${CARD_MESSAGE_MAX} of ${message.length} characters]`
-      : message,
+      : shown,
     length: message.length,
     truncated,
   };
@@ -94,11 +115,11 @@ const cardFiles = (files: Array<{ path?: unknown; content?: unknown }>): {
   const shown = files.map((file) => {
     const content = Buffer.from(str(file.content), 'utf8');
     totalBytes += content.length;
-    const take = Math.min(content.length, remaining);
+    const take = utf8Prefix(content, remaining);
     remaining -= take;
     shownBytes += take;
     const truncated = take < content.length;
-    const text = content.subarray(0, take).toString('utf8');
+    const text = markBidi(content.subarray(0, take).toString('utf8'));
     return {
       path: str(file.path),
       bytes: content.length,
@@ -152,7 +173,7 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
       lands: branchExists
         ? `adds to existing branch ${head} at ${shortSha(parentSha)}`
         : `new branch ${head} from ${str(a.base)} at ${shortSha(parentSha)}`,
-      subject: message.split('\n', 1)[0],
+      subject: markBidi(message.split('\n', 1)[0]),
       message: cardMessage(message),
       ...cardFiles(files),
       fileCount: files.length, parentSha, branchExists,

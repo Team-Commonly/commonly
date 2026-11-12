@@ -62,7 +62,7 @@ const DECEPTIVE_PATH_CHARACTER = /[\p{Cf}\p{Zl}\p{Zp}\u200B-\u200D\uFEFF\u202A-\
  * `Signed-off-by:`, `Reviewed-by:` and every other `<Word>-by:`, in any case.
  * A seat's commit is attributed to the App; it does not get to name people.
  */
-const ATTRIBUTION_TRAILER = /^[ \t]*[A-Za-z][A-Za-z-]*-by[ \t]*:/im;
+export const ATTRIBUTION_TRAILER = /^[ \t]*[A-Za-z][A-Za-z-]*-by[ \t]*:/im;
 
 const validBranchName = (value: unknown): value is string => typeof value === 'string'
   && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value)
