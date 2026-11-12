@@ -48,26 +48,32 @@ interface RateLimitRes {
 // path. Applied as the FIRST middleware on POST so CodeQL's
 // js/missing-rate-limiting query sees it.
 //
-// Keyed on the credential dualAuth itself selects, not the raw Authorization
-// header (F141). DELETE /:id takes dualAuth, which accepts a runtime token on
+// Keyed on the credential auth itself reads, not the raw Authorization
+// header (F141; F456 for the read and reaction limiters). DELETE /:id takes dualAuth, which accepts a runtime token on
 // `x-commonly-agent-token` with no Authorization header at all; keyed on that
 // header alone, every such agent fell to the IP key, which behind cloudflared
 // is one bucket shared by every agent. The same token is one bucket whichever
 // header carries it. POST and DELETE share this limiter and its budget.
+// One key for all three limiters: the token auth or dualAuth will verify,
+// whichever header carries it (Authorization, x-commonly-agent-token for an
+// agent, x-auth-token for a person), hashed. With no credential, the
+// Cloudflare-aware IP key.
+const credentialRateKey = (req: RateLimitReq, prefix: string): string => {
+  const credential = req.header
+    ? resolveDualAuthCredential(req as { header: (h: string) => string | undefined }).token
+    : '';
+  if (credential) {
+    return `${prefix}:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`;
+  }
+  return cloudflareIpRateLimitKeyGenerator(req as never);
+};
+
 const sendMessageRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const credential = req.header
-      ? resolveDualAuthCredential(req as { header: (h: string) => string | undefined }).token
-      : '';
-    if (credential) {
-      return `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  keyGenerator: (req: RateLimitReq) => credentialRateKey(req, 'tok'),
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 60 messages per 60s' });
   },
@@ -75,19 +81,15 @@ const sendMessageRateLimit = rateLimit({
 
 // Reads are cheaper than writes but still hit the DB and (now clamped) can
 // return up to 200 rows — throttle so a leaked token can't spray unbounded
-// GETs. Same token/IP keying as the write limiter.
+// GETs. Same token/IP keying as the write limiter: `auth` also reads
+// x-auth-token, so keying on Authorization alone sent those callers to the
+// shared IP key (F456).
 const readMessageRateLimit = rateLimit({
   windowMs: 60_000,
   max: 240,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  keyGenerator: (req: RateLimitReq) => credentialRateKey(req, 'tok'),
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 240 message reads per 60s' });
   },
@@ -112,13 +114,8 @@ const reactionRateLimit = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: RateLimitReq) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `rxn:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return cloudflareIpRateLimitKeyGenerator(req as never);
-  },
+  // dualAuth routes: an agent may send only x-commonly-agent-token (F456).
+  keyGenerator: (req: RateLimitReq) => credentialRateKey(req, 'rxn'),
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 reactions per 60s' });
   },
