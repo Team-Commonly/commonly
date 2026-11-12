@@ -3,10 +3,12 @@ name: Tests
 on:
   push:
     # main added (tests-slim fast lane): the heavy suites skip on an unrelated
-    # pull_request, but still run on merge_group (so an inter-PR conflict between
-    # two queued PRs is caught in the queue, not as red-on-main — #3186) and here
-    # post-merge as a safety net, with the nightly schedule. v1.0.x stays for
-    # release-branch coverage.
+    # pull_request and merge_group entry, and run on merge_group for the
+    # packages the entry touches (so an inter-PR conflict between two queued
+    # PRs is caught in the queue, not as red-on-main — #3186), and all of them
+    # here post-merge, with the nightly schedule. Service Tests never run in the
+    # queue (D227): on a backend PR, here and nightly; a red one here blocks
+    # Deploy Dev. v1.0.x stays for release-branch coverage.
     branches: [ v1.0.x, main ]
   # No branches filter on pull_request: stacked PRs (base = another feature
   # branch) previously got ZERO test runs — every number on them was
@@ -61,8 +63,12 @@ permissions:
 #
 # Per-SHA grouping lets every commit finish; PR runs still supersede correctly
 # because pull_request.number short-circuits before the fallback is read.
+#
+# The event name is in the non-PR fallback (D227): Deploy Dev gates on the push run's
+# Service Tests, so a schedule or workflow_dispatch run on the same SHA must not cancel
+# that push run and leave the roll blocked on a "cancelled" result.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: true
 
 jobs:
@@ -85,15 +91,18 @@ jobs:
         run: |
           backend=false; frontend=false; chart=false
           # Resolve a diff base: the PR base for a pull_request, the pushed-from
-          # commit for a push. Other events (merge_group, schedule, dispatch)
-          # leave all-false — the heavy jobs gate those on the event name, not on
-          # these outputs; only Latchkey routing reads them, and on push:main that
-          # is what keeps Latchkey from firing on a docs-only merge (D227).
+          # commit for a push, and main as the queue saw it for a merge_group, so
+          # the queue commit's diff is exactly the PR being merged (D227: Backend
+          # tests on merge_group follow this gate). Schedule and dispatch leave
+          # all-false; the heavy jobs gate those on the event name. On push:main
+          # these outputs keep Latchkey from firing on a docs-only merge.
           event="${{ github.event_name }}"; base=""
           if [ "$event" = "pull_request" ]; then
             base="${{ github.event.pull_request.base.sha }}"
           elif [ "$event" = "push" ]; then
             base="${{ github.event.before }}"
+          elif [ "$event" = "merge_group" ]; then
+            base="${{ github.event.merge_group.base_sha }}"
           fi
           if [ -n "$base" ] && ! printf '%s' "$base" | grep -qE '^0{40}$'; then
             files=$(git diff --no-renames --name-only "$base"...HEAD 2>/dev/null || git diff --no-renames --name-only "$base" HEAD)
@@ -284,10 +293,12 @@ jobs:
     # Shards 2-3 always run on GitHub-hosted runners, and skipped routing
     # leaves the output empty, which falls back to GitHub-hosted too.
     needs: [latchkey-route, changes]
-    # tests-slim fast lane: skipped only on an unrelated PR. Runs on merge_group
-    # (queue catches inter-PR conflicts), post-merge (push:main), nightly, and on
-    # a PR only when backend/cli/packages/deps changed.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
+    # tests-slim fast lane: always post-merge (push:main) and nightly; on a PR and
+    # in the merge queue only when backend/cli/packages/deps changed (D227: a
+    # frontend- or docs-only queue entry skips the ~9m backend matrix; the queue
+    # still builds on the PRs ahead, so a backend PR still catches a conflict
+    # with them).
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || ((github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.backend == 'true')) }}
     runs-on: ${{ matrix.shard == 1 && needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
@@ -449,9 +460,12 @@ jobs:
         shard: [1, 2]
     # Always GitHub-hosted, as frontend-tests.
     needs: [latchkey-route, changes]
-    # tests-slim fast lane: post-merge + nightly, and on a PR only when backend/cli
-    # changed (these are the real-DB Tier-1 integration tests).
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
+    # Off the merge queue (D227, CTO 2026-11-12): these real-DB Tier-1 tests were the
+    # long pole of the queue run (~10m). They run post-merge (push:main), nightly, and
+    # on a PR only when backend/cli changed, so a backend change (a SQL change, say)
+    # still meets real Postgres before merge. A red post-merge run blocks Deploy Dev
+    # (its "Gate on post-merge Service Tests" step) and SRE files a board row.
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ubuntu-latest
 
     services:
