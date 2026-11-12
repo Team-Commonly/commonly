@@ -1463,10 +1463,23 @@ class AgentEventService {
       if (retired) {
         retiredCount += 1;
         if (!retired.unansweredNoticeAt) {
-          // eslint-disable-next-line no-await-in-loop
-          await noteUnansweredMention(retired).catch((lineErr: Error) => {
-            console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
-          });
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await noteUnansweredMention(retired);
+          } catch (lineErr) {
+            // A thrown line (a failed lookup or insert) must not end in silence:
+            // put the row back so a later sweep retries it. updatedAt moves, so
+            // that is after a fresh window. A false return is silence owed, kept.
+            console.warn('[agent-event] unanswered-mention line not posted, row kept for a retry:', (lineErr as Error).message);
+            retiredCount -= 1;
+            // eslint-disable-next-line no-await-in-loop
+            await AgentEvent.updateOne(
+              { _id: retired._id, status: 'failed', error },
+              { $set: { status: 'pending' }, $unset: { error: 1 } },
+            ).catch((restoreErr: Error) => {
+              console.warn('[agent-event] unanswered-mention row not restored:', restoreErr.message);
+            });
+          }
         }
       }
     }
@@ -1504,15 +1517,27 @@ class AgentEventService {
         { $set: { unansweredNoticeAt: new Date() } },
         { new: true },
       ).lean() as EventDoc | null;
-      // Marked before the line is tried, so a failed post is never retried:
-      // missing one line beats posting two. A false return (the agent posted
-      // since, or no one waiting) is the line correctly not owed.
+      // Marked before the line is tried, so two replicas can't both post. A
+      // false return (the agent posted since, or no one waiting) is the line
+      // correctly not owed, and the mark stays. A thrown line (a failed lookup
+      // or insert) clears the mark, so a later sweep retries rather than leave
+      // the person in silence; updatedAt moves, so that is after a fresh window.
       if (marked) {
         noticed += 1;
-        // eslint-disable-next-line no-await-in-loop
-        await noteUnansweredMention(marked, { stillPending: true }).catch((lineErr: Error) => {
-          console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
-        });
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await noteUnansweredMention(marked, { stillPending: true });
+        } catch (lineErr) {
+          console.warn('[agent-event] unanswered-mention line not posted, mark cleared for a retry:', (lineErr as Error).message);
+          noticed -= 1;
+          // eslint-disable-next-line no-await-in-loop
+          await AgentEvent.updateOne(
+            { _id: marked._id, unansweredNoticeAt: marked.unansweredNoticeAt },
+            { $set: { unansweredNoticeAt: null } },
+          ).catch((restoreErr: Error) => {
+            console.warn('[agent-event] unanswered-mention mark not cleared:', restoreErr.message);
+          });
+        }
       }
     }
     return noticed;

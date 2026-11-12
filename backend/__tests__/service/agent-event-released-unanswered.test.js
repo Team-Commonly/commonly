@@ -317,6 +317,57 @@ test('a second replica that read the same row posts no second notice', async () 
   expect(await lines()).toHaveLength(1);
 });
 
+describe('a line that throws is retried, not lost', () => {
+  const failOnce = () => jest.spyOn(mockPool, 'query').mockRejectedValueOnce(new Error('pg unavailable'));
+  const ageOut = (event) => AgentEvent.collection.updateOne({ _id: event._id }, { $set: { updatedAt: minutesAgo(30) } });
+
+  test('the notice: the mark is cleared, and the next sweep past the window posts once', async () => {
+    const event = await released({ attempts: 2 });
+    const query = failOnce();
+
+    await collect();
+    query.mockRestore();
+    expect((await AgentEvent.findById(event._id).lean()).unansweredNoticeAt).toBeNull();
+    expect(await lines()).toHaveLength(0);
+
+    await ageOut(event);
+    await collect();
+    await collect();
+    expect(await lines()).toHaveLength(1);
+    expect((await AgentEvent.findById(event._id).lean()).unansweredNoticeAt).toBeInstanceOf(Date);
+  });
+
+  test('the retire: the row goes back to pending, and the next sweep retires it with one line', async () => {
+    const event = await released({ attempts: 4 });
+    const query = failOnce();
+
+    await collect();
+    query.mockRestore();
+    const kept = await AgentEvent.findById(event._id).lean();
+    expect(kept.status).toBe('pending');
+    expect(kept.error).toBeUndefined();
+    expect(await lines()).toHaveLength(0);
+
+    await ageOut(event);
+    await collect();
+    await collect();
+    expect(await status(event)).toBe('failed');
+    expect(await lines()).toHaveLength(1);
+  });
+
+  test('a deliberate silence (the agent posted since) is not retried', async () => {
+    const event = await released({ attempts: 2 });
+    await mockPool.query('INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3)', [
+      String(POD), String(agent._id), 'On it.',
+    ]);
+
+    await collect();
+
+    expect((await AgentEvent.findById(event._id).lean()).unansweredNoticeAt).toBeInstanceOf(Date);
+    expect(await lines()).toHaveLength(0);
+  });
+});
+
 test('a release stamps releasedAt and the requeue sweep clears it', async () => {
   const nonce = 'r'.repeat(32);
   const held = await AgentEvent.create({
