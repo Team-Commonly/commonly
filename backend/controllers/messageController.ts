@@ -543,8 +543,14 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
+    // Another request may have deleted the row since the lookup above. Only
+    // the call whose own delete removed it records the delete and cleans up;
+    // the other finds nothing to delete (F169).
     if (pgId) {
-      await PGMessage.delete(pgId);
+      if (!(await PGMessage.delete(pgId))) {
+        res.status(404).json({ msg: 'Message not found' });
+        return;
+      }
       // Remove the legacy Mongo copy too, so the Mongo-only readers (stats,
       // activity) stop counting it. Cleanup cannot turn a committed delete into a 500.
       try {
@@ -559,8 +565,9 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       } catch (cleanupError) {
         console.warn('[messageController] legacy copy delete cleanup failed:', (cleanupError as Error).message);
       }
-    } else {
-      await MongoMessage.findByIdAndDelete(messageId);
+    } else if (!(await MongoMessage.findByIdAndDelete(messageId))) {
+      res.status(404).json({ msg: 'Message not found' });
+      return;
     }
 
     // A delete leaves nothing in the store, so this line is its only record —

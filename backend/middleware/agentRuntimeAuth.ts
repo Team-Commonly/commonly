@@ -1,4 +1,5 @@
 import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
+import { agentRuntimeCredential } from './agentRuntimeCredential';
 import { Request, Response, NextFunction } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
 import User, { IUser } from '../models/User';
@@ -60,13 +61,8 @@ export const usageStamp = (prefix: string, req: Request): Record<string, Date> =
   return { [`${prefix}.lastUsedAt`]: now, ...(mcp ? { [`${prefix}.lastMcpSeenAt`]: now } : {}) };
 };
 
-const extractToken = (req: Request): string | undefined => {
-  const authHeader = req.header('Authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.replace('Bearer ', '').trim();
-  }
-  return req.header('x-commonly-agent-token');
-};
+// One parser with dualAuth, whose rate-limit key must name this token (F169).
+const extractToken = (req: Request): string | undefined => agentRuntimeCredential(req) || undefined;
 
 // Every 401 goes through here, so each refusal is logged and counted with its
 // reason (TASK-712). The response is unchanged: same status, same message.

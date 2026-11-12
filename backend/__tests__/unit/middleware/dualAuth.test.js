@@ -11,12 +11,14 @@ jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
   return next();
 }));
 jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '').trim() || req.header('x-commonly-agent-token');
+  // The real middleware reads its token through the shared parser (F169).
+  const token = jest.requireActual('../../../middleware/agentRuntimeCredential').agentRuntimeCredential(req);
   if (token !== 'cm_agent_valid') return res.status(401).json({ verifier: 'agent' });
   req.agentUser = { _id: 'agent-1' };
   return next();
 }));
 const dualAuth = require('../../../middleware/dualAuth');
+const { resolveDualAuthCredential } = dualAuth;
 const humanAuth = require('../../../middleware/auth');
 const agentAuth = require('../../../middleware/agentRuntimeAuth');
 const app = express();
@@ -55,6 +57,46 @@ test.each([
   [{ 'x-commonly-agent-token': 'not-a-runtime-token', 'x-auth-token': 'valid-user' }, 'human', 'valid-user'],
   [{ 'x-auth-token': 'cm_agent_valid' }, 'human', 'cm_agent_valid'],
 ])('the limiter keys the selected verifier credential for %j', (headers, verifier, token) => {
-  const { resolveDualAuthCredential } = require('../../../middleware/dualAuth');
   expect(resolveDualAuthCredential({ header: (name) => headers[name] })).toEqual({ verifier, token });
+});
+
+// F169: the limiter's key and the agent verifier read the runtime token with
+// one parser. A non-Bearer Authorization once picked the agent path and keyed
+// the bucket on its own text, while agentRuntimeAuth ignored it and
+// authenticated with x-commonly-agent-token: a fresh bucket per request.
+const { agentRuntimeCredential } = require('../../../middleware/agentRuntimeCredential');
+const HEADER_SETS = [
+  { Authorization: 'cm_agent_junk-1', 'x-commonly-agent-token': 'cm_agent_valid' },
+  { Authorization: 'cm_agent_junk-2', 'x-commonly-agent-token': 'cm_agent_valid' },
+  { Authorization: 'Basic cm_agent_junk', 'x-commonly-agent-token': 'cm_agent_valid' },
+  { Authorization: 'Token Bearer cm_agent_junk', 'x-commonly-agent-token': 'cm_agent_valid' },
+  { Authorization: 'Bearer ', 'x-commonly-agent-token': 'cm_agent_valid' },
+  { Authorization: 'Bearer cm_agent_valid' },
+  { Authorization: 'Bearer  cm_agent_valid ' },
+  { 'x-commonly-agent-token': ' cm_agent_valid ' },
+  { Authorization: 'cm_agent_alone' },
+];
+test.each(HEADER_SETS)('the agent bucket is keyed on the token the agent verifier reads, for %j', (headers) => {
+  const req = { header: (name) => headers[name] };
+  const chosen = resolveDualAuthCredential(req);
+  const read = agentRuntimeCredential(req);
+  if (chosen.verifier === 'agent') expect(chosen.token).toBe(read);
+  else expect(read.startsWith('cm_agent_')).toBe(false);
+});
+
+test('rotating a non-Bearer Authorization keeps one bucket and still authenticates as the real token', async () => {
+  const keys = HEADER_SETS.slice(0, 4).map((headers) => resolveDualAuthCredential({ header: (name) => headers[name] }));
+  expect(new Set(keys.map((key) => key.token))).toEqual(new Set(['cm_agent_valid']));
+  keys.forEach((key) => expect(key.verifier).toBe('agent'));
+  const res = await request(app).get('/').set({ Authorization: 'cm_agent_junk-3', 'x-commonly-agent-token': 'cm_agent_valid' });
+  expect(res.status).toBe(200);
+  expect(agentAuth).toHaveBeenCalledTimes(1);
+});
+
+test('agentRuntimeAuth reads its token through the shared parser', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const source = fs.readFileSync(path.join(__dirname, '../../../middleware/agentRuntimeAuth.ts'), 'utf8');
+  expect(source).toMatch(/agentRuntimeCredential\(req\)/);
+  expect(source).not.toMatch(/startsWith\('Bearer '\)/);
 });
