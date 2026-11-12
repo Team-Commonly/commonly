@@ -168,6 +168,32 @@ const asRoot = process.getuid?.() === 0;
   });
 });
 
+// CodeRabbit on #3997: a private seat arms no release, so the temp folder's
+// removal is the one delete of its credential. A turn that worked but whose
+// cleanup failed reports that failure instead of success.
+(asRoot ? test.skip : test)('a private turn whose cleanup fails reports it rather than success', async () => {
+  await withSeat(async (ctx) => {
+    let locked = null;
+    const fake = fakeQwen({ turnMs: 200 });
+    const impl = (...args) => {
+      const child = fake.impl(...args);
+      locked = dirname(dirname(fake.seen.tokenFile));
+      chmodSync(locked, 0o500);
+      return child;
+    };
+    try {
+      await expect(qwen.spawn('hello', {
+        ...ctx,
+        environment: { ...ctx.environment, sandbox: undefined },
+        _spawnImpl: impl,
+      })).rejects.toMatchObject({ code: 'EACCES' });
+      expect(fake.seen.readyFile).toBeUndefined();
+    } finally {
+      if (locked) { chmodSync(locked, 0o700); rmSync(locked, { recursive: true, force: true }); }
+    }
+  });
+});
+
 test('a warm build from before ready files is refused before Qwen runs', async () => {
   await withSeat(async (ctx) => {
     const fake = fakeQwen();

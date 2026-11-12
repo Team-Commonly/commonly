@@ -371,6 +371,8 @@ export default {
     const home = await mkdtemp(join(tmpdir(), 'commonly-goose-home-'));
     let proxy;
     let credentialRelease = null;
+    let reply = null;
+    let cleanupFailure = null;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
         root: tempDir, agentName: ctx.agentName || 'agent',
@@ -490,14 +492,19 @@ export default {
         spawnImpl,
       }).catch((err) => { throw releaseFailure || err; });
       if (releaseFailure) throw releaseFailure;
-      return { text, newSessionId: null };
+      reply = { text, newSessionId: null };
     } finally {
       credentialRelease?.stop();
       try { await proxy?.close(); } finally {
-        // Best effort: a folder that will not go (the same fault that failed a
-        // credential delete, say) must not replace the error the turn ends with.
-        await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true }).catch(() => {})));
+        const removed = await Promise.allSettled([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
+        cleanupFailure = removed.find((outcome) => outcome.status === 'rejected')?.reason || null;
       }
     }
+    // Reached only when the turn worked. A cleanup failure is then the turn's
+    // error: on a private seat that rm is the one delete of the credential, so
+    // the turn must not report success over it. When another error ended the
+    // turn (a failed release, say), it propagates past this and is kept.
+    if (cleanupFailure) throw cleanupFailure;
+    return reply;
   },
 };

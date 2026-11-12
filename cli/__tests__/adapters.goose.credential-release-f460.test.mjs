@@ -149,6 +149,42 @@ const asRoot = process.getuid?.() === 0;
   });
 });
 
+// CodeRabbit on #3997: a private seat arms no release, so the temp folder's
+// removal is the one delete of its credential. A turn that worked but whose
+// cleanup failed reports that failure instead of success.
+(asRoot ? test.skip : test)('a private turn whose cleanup fails reports it rather than success', async () => {
+  await withSeat(async (ctx) => {
+    let locked = null;
+    let answered = false;
+    // A private Goose names the credential inside --with-extension, not a recipe.
+    const impl = (_cmd, args) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = jest.fn();
+      const tokenFile = args.join(' ').match(/COMMONLY_TOKEN_FILE=(\S+)/)[1];
+      locked = dirname(dirname(tokenFile));
+      chmodSync(locked, 0o500);
+      setTimeout(() => {
+        answered = true;
+        child.stdout.emit('data', Buffer.from(reply));
+        child.emit('close', 0);
+      }, 50);
+      return child;
+    };
+    try {
+      await expect(goose.spawn('hello', {
+        ...ctx,
+        environment: { ...ctx.environment, sandbox: undefined },
+        _spawnImpl: impl,
+      })).rejects.toMatchObject({ code: 'EACCES' });
+      expect(answered).toBe(true);
+    } finally {
+      if (locked) { chmodSync(locked, 0o700); rmSync(locked, { recursive: true, force: true }); }
+    }
+  });
+});
+
 test('a warm build from before ready files is refused before Goose runs', async () => {
   await withSeat(async (ctx) => {
     const fake = fakeGoose();
