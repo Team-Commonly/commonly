@@ -868,6 +868,24 @@ export default {
     });
     let proxy = null;
     try {
+      const unavailableMcp = [];
+      const mcpReadDirectories = [];
+      const grantBrokers = [];
+      const servers = resolveMcpServers(ctx.environment?.mcp, {
+        ...ctx,
+        credentialFile: credential?.path || null,
+        credentialDir: credential?.dir || null,
+        publicSeat: isPublic,
+        unavailableMcp,
+        mcpReadDirectories,
+        grantBrokers,
+      });
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
+      // Every refusal comes before the proxy opens the key file (F453): nothing
+      // touches a refused key file, this process included.
+      if (keyFile && isPublic) {
+        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
+      }
       // A public pi never holds the provider key: it talks to a loopback proxy
       // with a per-turn token, and the proxy, in this process, adds the key and
       // pins the model (the same shape as Goose and Qwen).
@@ -882,23 +900,6 @@ export default {
       await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(
         proxy ? { ...provider, baseUrl: proxy.baseURL } : provider, model,
       ), null, 2)}\n`, { mode: 0o600 });
-
-      const unavailableMcp = [];
-      const mcpReadDirectories = [];
-      const grantBrokers = [];
-      const servers = resolveMcpServers(ctx.environment?.mcp, {
-        ...ctx,
-        credentialFile: credential?.path || null,
-        credentialDir: credential?.dir || null,
-        publicSeat: isPublic,
-        unavailableMcp,
-        mcpReadDirectories,
-        grantBrokers,
-      });
-      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
-      if (keyFile && isPublic) {
-        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
-      }
       const childEnv = isPublic ? {
         // A scrubbed environment: nothing of the operator's crosses into the
         // jail, and the provider variable holds the proxy's token, not the key.

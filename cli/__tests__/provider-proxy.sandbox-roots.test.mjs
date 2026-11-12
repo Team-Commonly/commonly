@@ -59,8 +59,13 @@ describe('sandboxReadableRoots', () => {
     expect(roots.literals).toEqual([]);
   });
 
-  test('a platform with no sandbox here gets none', () => {
-    expect(sandboxReadableRoots(publicEnv(), 'win32')).toBeUndefined();
+  test('a confined seat on a platform with no baseline here gets empty roots, so its seat directories are still checked', () => {
+    expect(sandboxReadableRoots(publicEnv(), 'win32')).toEqual({ subpaths: [], literals: [] });
+  });
+
+  test('the adapter decides: a confined private seat is checked, an unconfined public one is not', () => {
+    expect(sandboxReadableRoots({}, 'darwin', { sandboxed: true })).toBe(seatbeltSystemReadRoots());
+    expect(sandboxReadableRoots(publicEnv(), 'darwin', { sandboxed: false })).toBeUndefined();
   });
 });
 
@@ -103,6 +108,20 @@ describe('resolveProviderKeyFile refuses a key file the sandbox can read', () =>
   test('macOS: a key in the user\'s temp tree is outside every baseline grant', async () => {
     await expect(resolveProviderKeyFile(provider(), workspace, 'T', { environment: publicEnv(), platform: 'darwin' }))
       .resolves.toBe(keyFile);
+  });
+
+  test('a seat directory the adapter names is checked on a confined seat only', async () => {
+    await expect(resolveProviderKeyFile(provider(), workspace, 'T', {
+      environment: publicEnv(), platform: 'darwin', seatDirectories: [keys],
+    })).rejects.toThrow(`move it outside ${keys}`);
+    await expect(resolveProviderKeyFile(provider(), workspace, 'T', {
+      environment: { model: 'm', provider: provider() }, platform: 'darwin', seatDirectories: [keys],
+    })).resolves.toBe(keyFile);
+  });
+
+  test('a key file with a second hard link is refused, wherever the link is', async () => {
+    await link(keyFile, join(workspace, 'provider-copy.key'));
+    await expect(resolveProviderKeyFile(provider(), workspace, 'T')).rejects.toThrow(/exactly one link/);
   });
 
   test('without an environment the shared resolver behaves as before', async () => {

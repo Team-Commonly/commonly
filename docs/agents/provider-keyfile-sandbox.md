@@ -1,58 +1,77 @@
-# A public seat's provider key file stays out of its sandbox (F453)
+# A confined seat's provider key file stays out of its sandbox (F453)
 
-A public seat with its own provider (the shared `provider` block: `id`,
-`baseURL`, `keyFile`) never holds its key. A provider proxy in the CLI process
-reads `keyFile` outside the sandbox and adds the key to outbound requests. That
-only works if the sandbox can't read the file too, so the CLI refuses a key
-file the sandbox could read, at attach and on every spawn, before anything
-starts.
+A seat with its own provider (the shared `provider` block: `id`, `baseURL`,
+`keyFile`) that runs in a sandbox never holds its key. A provider proxy in the
+CLI process reads `keyFile` outside the sandbox and adds the key to outbound
+requests. That only works if the sandbox can't read the file too, so the CLI
+refuses a key file the sandbox could read. The refusal happens at attach and on
+every spawn, before anything starts.
+
+**Nothing opens a refused key file, the CLI process included.** Every refusal
+runs before the proxy reads the key, so the order stays honest if the proxy
+later reads lazily or the file becomes readable.
+`cli/__tests__/provider-proxy.refused-keyfile-never-opened.test.mjs` counts
+opens of the key path, which must stay at 0. It also fails any open of that
+path as unreadable, so a refusal that came after a read would show up as
+`EACCES`.
 
 ## Where the check lives
 
 Once, in the resolver every adapter already calls: `resolveProviderKeyFile` in
 `cli/src/lib/provider-proxy.js`. It wraps the package's resolver
-(`packages/seats/src/wire/provider-proxy.js`) and passes it the roots the seat's
-sandbox can read. An adapter gets the check by passing its environment
-(`{ environment }`). `cli/__tests__/provider-proxy.adapter-wiring.test.mjs`
-fails for an adapter that leaves the environment out.
+(`packages/seats/src/wire/provider-proxy.js`), which checks the file itself and
+the workspace, and passes it the roots the sandbox can read. An adapter passes:
 
-| Seat | Roots checked |
+- `environment`, always.
+- `sandboxed`, when its own rule for confinement isn't "public trust". dsh
+  confines a private seat that declares `{ mode: 'workspace', network: {
+  policy: 'restricted' } }`.
+- `seatDirectories`: stable directories the adapter itself gives the sandbox.
+
+`cli/__tests__/provider-proxy.adapter-wiring.test.mjs` pins that each adapter
+with a shared provider block passes them. The list is fixed, so a new adapter
+belongs there too.
+
+| Spawn | Roots checked |
 |---|---|
-| Not public (no `sandbox.trust`, or `workspace`) | none. The seat runs unconfined, and its shell can read the file anyway. |
-| Public on macOS | every `file-read*` / `file-read-data` grant in the Seatbelt baseline (`seatbeltSystemReadRoots`, parsed from the profile itself), for example `/etc`, `/private/etc`, `/opt/homebrew/lib`, `/usr/local/lib`. |
-| Public on Linux | bwrap's read binds: the default binds plus the seat's declared `read-outside` and `write-outside` (`bwrapReadRoots`). |
+| Unconfined | none. Its shell can read the file anyway. |
+| Confined on macOS | every `file-read*` / `file-read-data` grant in the Seatbelt baseline (`seatbeltSystemReadRoots`, parsed from the profile itself), for example `/etc`, `/private/etc`, `/opt/homebrew/lib`, `/usr/local/lib`, plus the seat directories. |
+| Confined on Linux | bwrap's default read binds plus the seat's declared `read-outside` and `write-outside` (`bwrapReadRoots`), plus the seat directories. |
 
 The legacy `internal` trust counts as public here, as it does everywhere else.
 
-The workspace is always refused. Per-turn paths an adapter adds to the sandbox
-belong to that adapter:
+Seat directories per adapter:
 
-- pi checks its seat home and state through the same comparison
-  (`refuseKeyFileInJail`).
-- The others add a fresh temp directory, binaries and package directories.
+| Adapter | Seat directories | Where |
+|---|---|---|
+| opencode (public) | its stable data home `~/.commonly/opencode-homes/<id>` | passed to the resolver |
+| dsh (confined) | its stable home `~/.commonly/dsh-homes/<id>` | passed to the resolver |
+| pi (public) | its seat home, pi's package, the CLI's code and prepared MCP builds | `refuseKeyFileInJail`, same comparison, before the proxy starts |
+| goose, qwen | none needed: a fresh temp home per turn | |
+
+Not covered yet: per-turn read-only binds an adapter adds beyond those, such as
+opencode's optional `/usr/sbin` and `/sbin` on Linux, package directories and
+MCP build directories in goose, qwen and dsh. These are root-owned or package
+trees.
 
 ## How a path is compared
 
 A key file is refused when a readable root is its directory or one of its
-ancestors (a subpath), or is the file itself (a literal). Either of two tests
-refuses:
+ancestors (a subpath), or is the file itself (a literal). Paths are compared as
+written, through their real path (which covers a root that doesn't exist yet),
+and by file identity (device and inode, as BigInt). So any spelling the file
+system resolves to the same place is treated as that place.
 
-- **The path as written and through its real path.** This also covers a root
-  that doesn't exist yet.
-- **File identity: device and inode.** Seatbelt matches the path the kernel
-  resolves, so a jailed process reads a granted file through any spelling of
-  it. On this Mac that includes `/Users/x/KEYS/k` on a case-insensitive volume,
-  and `/System/Volumes/Data/Users/x/keys/k` through the firmlink. Node's
-  `realpathSync` keeps both spellings as typed. `realpathSync.native` fixes the
-  case but not the firmlink. Identity catches every spelling of an existing
-  path, plus symlinked directories and hard links, with no hand-written table.
+The resolver also refuses a key file with more than one link. A second hard
+link is the same file under a name the checks never see. The proxy re-checks
+the link count when it opens the file.
 
-Inodes are compared as BigInt. On the macOS sealed system volume they pass
-2^53, and as plain numbers `/usr` and `/usr/bin` round to the same value.
+BigInt matters on macOS. Inodes on the sealed system volume pass 2^53, and as
+plain numbers `/usr` and `/usr/bin` round to the same value.
 
-`cli/__tests__/provider-proxy.keyfile-spellings.smoke.test.mjs` reads one key
-file under real `sandbox-exec` through all three spellings, then checks that
-the resolver refuses each one.
+`cli/__tests__/provider-proxy.keyfile-spellings.smoke.test.mjs` runs under real
+`sandbox-exec` and checks both sides: what the sandbox can read, and what the
+resolver refuses.
 
 ## When the Seatbelt profile changes
 

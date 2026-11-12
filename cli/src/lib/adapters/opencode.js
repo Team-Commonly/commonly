@@ -716,7 +716,7 @@ const buildProviderConfig = (provider, model, keyFile) => {
   };
 };
 
-const validateProviderEnvironment = async (environment, workspacePath) => {
+const validateProviderEnvironment = async (environment, workspacePath, options = {}) => {
   if (environment?.provider === undefined) return null;
   const validation = validateEnvironmentSpec({
     provider: environment.provider,
@@ -725,7 +725,7 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   if (!validation.ok) {
     throw new Error(`Invalid OpenCode provider configuration: ${validation.errors.join('; ')}`);
   }
-  return resolveProviderKeyFile(environment.provider, workspacePath, undefined, { environment });
+  return resolveProviderKeyFile(environment.provider, workspacePath, undefined, { environment, ...options });
 };
 
 const STALE_SESSION_PATTERN = /session not found/i;
@@ -939,6 +939,10 @@ const seatIdentity = (ctx) => [
   ctx.metadata?.event?.podId || 'default-pod',
 ].join('\0');
 
+/** A public seat's stable data home: Seatbelt's statePath, bwrap's write-outside. */
+const openCodeSeatRoot = (ctx) => ctx._opencodeHomeRoot
+  || join(homedir(), '.commonly', 'opencode-homes', createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24));
+
 const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
   const operatorDataHome = ctx.env?.XDG_DATA_HOME
     || process.env.XDG_DATA_HOME
@@ -951,8 +955,7 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
       authPath: null,
     };
   }
-  const identity = createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24);
-  const root = ctx._opencodeHomeRoot || join(homedir(), '.commonly', 'opencode-homes', identity);
+  const root = openCodeSeatRoot(ctx);
   const operatorAppData = join(pathResolve(operatorDataHome), 'opencode');
   if (pathResolve(root) === pathResolve(operatorAppData)) {
     throw new Error('OpenCode seat data must be isolated from the operator OpenCode data directory');
@@ -1181,7 +1184,11 @@ export default {
     if (ctx.providerKey && (!isPublic || !['workspace', 'read-only', 'bwrap'].includes(sandboxMode))) {
       throw new Error('Own provider keys require a confined OpenCode runtime');
     }
-    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd);
+    // The public seat home is readable and writable in the sandbox, so a key
+    // file there is refused with the platform roots, before anything opens it.
+    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd, {
+      platform: ctx._platform, seatDirectories: isPublic ? [openCodeSeatRoot(ctx)] : [],
+    });
 
     const sourceEnv = ctx.env || process.env;
     const childSourceEnv = Object.fromEntries(Object.entries(sourceEnv)

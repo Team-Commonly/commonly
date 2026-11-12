@@ -137,8 +137,9 @@ const realOrSelf = (path) => {
  * holds the file when it is the file's directory or one of its ancestors; a
  * literal root only when it is the file itself. Either of two tests refuses:
  * the paths as written and real-pathed (which also covers a root that doesn't
- * exist yet), and identity, so no other spelling of an existing path slips
- * past (letter case, a firmlink, a symlinked directory).
+ * exist yet), and file identity, so any spelling the file system resolves to
+ * the same place is treated as that place. A second hard link is refused by
+ * resolveProviderKeyFile (one link only), not here.
  */
 export const keyFileReadableRoot = (keyFile, { subpaths = [], literals = [] } = {}) => {
   const ancestors = new Set();
@@ -191,6 +192,11 @@ export const resolveProviderKeyFile = async (
   if ((details.mode & 0o777) !== 0o600) {
     throw new Error(`${adapterLabel} provider.keyFile must have mode 0600`);
   }
+  // One name only: a second link elsewhere is the same file under a path the
+  // checks below never look at.
+  if (details.nlink !== 1) {
+    throw new Error(`${adapterLabel} provider.keyFile must have exactly one link (no hard links)`);
+  }
   if (typeof workspacePath !== 'string' || !isAbsolute(workspacePath)) {
     throw new Error(`${adapterLabel} provider.keyFile requires an absolute workspace path`);
   }
@@ -219,8 +225,8 @@ const readProviderKey = async (keyFile, adapterLabel) => {
   const handle = await open(keyFile, fsConstants.O_RDONLY | noFollow);
   try {
     const details = await handle.stat();
-    if (!details.isFile() || (details.mode & 0o777) !== 0o600) {
-      throw new Error(`${adapterLabel} provider.keyFile changed after validation; expected a regular mode-0600 file`);
+    if (!details.isFile() || (details.mode & 0o777) !== 0o600 || details.nlink !== 1) {
+      throw new Error(`${adapterLabel} provider.keyFile changed after validation; expected a regular mode-0600 file with one link`);
     }
     const value = (await handle.readFile()).toString('utf8').trim();
     if (!value) throw new Error(`${adapterLabel} provider.keyFile must not be empty`);

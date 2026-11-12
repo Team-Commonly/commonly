@@ -1,23 +1,18 @@
 /**
- * F453, under real sandbox-exec. Seatbelt matches the path the kernel
- * resolves, so a jailed process reads a granted file through any spelling of
- * it: the path as written, the same path in other letter case on a volume that
- * ignores case, and the /System/Volumes/Data firmlink form. The key-file check
- * has to refuse every one of those spellings, or a key placed under a readable
- * root slips past it while the jail can still read it.
+ * F453, under real sandbox-exec: a file the sandbox can read through several
+ * spellings of its path is refused by the key-file check under each of them.
  */
 import { spawnSync } from 'child_process';
 import {
   existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync,
 } from 'fs';
-import { homedir } from 'os';
+import { tmpdir } from 'os';
 import { join } from 'path';
-import { resolveProviderKeyFile } from '../src/lib/provider-proxy.js';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 
 const onMac = process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec');
 const macTest = onMac ? test : test.skip;
-const root = onMac ? realpathSync(mkdtempSync(join(homedir(), '.commonly-keyfile-spellings-'))) : null;
+const root = onMac ? realpathSync(mkdtempSync(join(tmpdir(), 'keyfile-spellings-'))) : null;
 const workspace = root && join(root, 'workspace');
 const state = root && join(root, 'state');
 const keys = root && join(root, 'keys');
@@ -55,8 +50,6 @@ macTest('the jail reads the granted key file through every spelling', () => {
 
 macTest('and the check refuses the key file under every spelling, root as written', async () => {
   for (const [, path] of spellings()) {
-    await expect(resolveProviderKeyFile({ keyFile: path }, workspace, 'T', {}))
-      .resolves.toBeTruthy();
     await expect(import('@commonlyai/seats/wire/provider-proxy').then(({ resolveProviderKeyFile: shared }) => (
       shared({ keyFile: path }, workspace, 'T', { readableRoots: { subpaths: [keys], literals: [] } })
     ))).rejects.toThrow(`move it outside ${keys}`);

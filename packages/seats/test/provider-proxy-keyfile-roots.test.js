@@ -62,6 +62,11 @@ test('resolveProviderKeyFile refuses a key under readableRoots and names the roo
   assert.equal(await resolveProviderKeyFile({ keyFile }, workspace, 'T'), keyFile);
 }));
 
+test('a key file with a second hard link is refused', () => withKey(async ({ root, workspace, keyFile }) => {
+  linkSync(keyFile, join(root, 'second-name'));
+  await assert.rejects(resolveProviderKeyFile({ keyFile }, workspace, 'T'), /exactly one link/);
+}));
+
 test('the workspace check holds for another spelling of the workspace', () => withKey(async ({ root, workspace }) => {
   const inside = join(workspace, 'provider.key');
   writeFileSync(inside, 'k\n', { mode: 0o600 });
