@@ -2,7 +2,7 @@
 // a task claim. Keep this verdict separate from the activity shown in pods.
 export const BYO_STALE_MS = 5 * 60 * 1000;
 
-type Credential = { tokenHash?: string; kind?: string; status?: string; lastUsedAt?: Date | string | null; expiresAt?: Date | string | null };
+type Credential = { tokenHash?: string; kind?: string; status?: string; lastUsedAt?: Date | string | null; lastListenedAt?: Date | string | null; expiresAt?: Date | string | null };
 
 export const deriveAgentConnection = ({
   runtimeType, credentials, embeddedTokens = [], now = Date.now(),
@@ -42,6 +42,16 @@ export const deriveAgentConnection = ({
   // A live daemon heartbeat only proves that the computer is online. The
   // agent itself is not connected until it holds a usable runtime key.
   if (isMachine && !active.length && !hasEmbedded) {
+    return { state: 'never', lastSeenAt: null };
+  }
+  // F459: off a computer, using the key is not connecting. The quick-try run
+  // calls the API before its harness check can fail, so a run that never got
+  // as far as listening read "Not seen in N min" and offered Reconnect. When
+  // its keys are embedded ones (which the listener check-in stamps), it counts
+  // as connected only once one of them has listened: the rule /agent-states
+  // already applies (TASK-719). A computer's seats run on ledger keys the
+  // check-in doesn't stamp, so they keep the use-based verdict below.
+  if (!isMachine && hasEmbedded && !usableEmbedded.some((token) => token.lastListenedAt)) {
     return { state: 'never', lastSeenAt: null };
   }
   // The agent's own credential use decides its state, on a computer or not.

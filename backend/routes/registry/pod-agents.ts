@@ -280,7 +280,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       ? read(() => User.find({ username: { $in: Array.from(usernameSet) } })
         .select([
           'username isBot profilePicture botMetadata',
-          'agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt',
+          'agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt agentRuntimeTokens.expiresAt',
         ].join(' '))
         .lean())
       : Promise.resolve([]);

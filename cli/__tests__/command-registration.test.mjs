@@ -55,7 +55,7 @@ describe('command registration', () => {
     expect(findCommand(registerAll(), ['daemon', 'status']).options.map((option) => option.long))
       .toContain('--verbose');
     expect(findCommand(registerAll(), ['daemon', 'run']).options.map((option) => option.long))
-      .toContain('--foreground');
+      .toEqual(expect.arrayContaining(['--foreground', '--instance']));
   });
 
   test('agent config exposes existing-agent runtime edit controls', () => {
