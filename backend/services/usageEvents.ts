@@ -255,6 +255,36 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
   return true;
 }
 
+// Why recording is off for a signed-in page load, counted per day and nothing
+// else (F399). `recorded` is the denominator, so the off share is readable.
+// The row holds the reason and the day: no user, country, IP, pod or screen,
+// so a count can't be joined back to a person. Our own accounts aren't counted.
+export const USAGE_DROP = 'usage-drop';
+export const USAGE_STATES = [
+  'recorded', 'privacy-signal', 'region-default-off', 'saved-off', 'settings-get-failed',
+] as const;
+export type UsageState = typeof USAGE_STATES[number];
+
+// The state the Settings read hands the app, in usageAllowed's order.
+export const usageState = (req: Headers, preference: unknown): UsageState => {
+  if (privacySignal(req)) return 'privacy-signal';
+  if (preference === true) return 'recorded';
+  if (preference === false) return 'saved-off';
+  return defaultUsageEvents(req) ? 'recorded' : 'region-default-off';
+};
+
+export async function countUsageState(state: UsageState): Promise<void> {
+  if (!USAGE_STATES.includes(state)) return;
+  const dayStart = utcDayStart(new Date());
+  const day = dayStart.toISOString().slice(0, 10);
+  await ensureIndexes();
+  await mongoose.connection.db.collection('ui_daily_counts').updateOne(
+    { _id: `${day}|${USAGE_DROP}|${state}` } as any,
+    { $setOnInsert: { day, dayStart, name: USAGE_DROP, page: '', refTag: '', value: state }, $inc: { n: 1 } },
+    { upsert: true },
+  );
+}
+
 // Account deletion removes the person's rows at once (CTO 6).
 export async function deleteUiEventsFor(userId: string): Promise<void> {
   const ids: unknown[] = [userId];

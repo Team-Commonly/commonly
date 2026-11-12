@@ -1,5 +1,5 @@
 import {
-  SCREENS, forgetUsageEvents, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
+  SCREENS, forgetUsageEvents, reportSettingsReadFailed, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
 } from '../utils/usageEvents';
 
 // D286 (F399): the client sends fixed names and route templates only, waits
@@ -120,6 +120,26 @@ describe('usage events client', () => {
 
   it('a signed-in visitor sends no logged-out counts', () => {
     trackPublic('register-view');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // F399: a failed Settings read is counted from its reason alone.
+  it('reports a failed Settings read with only its reason and the Bearer header', () => {
+    reportSettingsReadFailed();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toMatch(/\/api\/stats\/usage-state$/);
+    expect(init).toMatchObject({ method: 'POST', keepalive: true, credentials: 'omit' });
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer session-token');
+    expect(bodies()).toEqual([{ reason: 'settings-get-failed' }]);
+  });
+
+  it('reports no failed read under Global Privacy Control or when signed out', () => {
+    Object.defineProperty(navigator, 'globalPrivacyControl', { value: true, configurable: true });
+    reportSettingsReadFailed();
+    Object.defineProperty(navigator, 'globalPrivacyControl', { value: false, configurable: true });
+    window.localStorage.removeItem('token');
+    reportSettingsReadFailed();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

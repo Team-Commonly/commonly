@@ -81,7 +81,11 @@ async function buildUsageReport(db, opts = {}) {
     .find({ day: { $gte: utcDay(since), $lt: utcDay(until) } })
     .project({ _id: 0, day: 1, name: 1, page: 1, refTag: 1, value: 1, n: 1 })
     .toArray();
-  const loggedOut = counts.map((row) => ({
+  // F399's per-load recording state lives in the same collection; it is no page hit.
+  const usageStates = counts.filter((row) => row.name === 'usage-drop').map((row) => ({
+    day: row.day, state: row.value || '', loads: row.n,
+  })).sort((a, b) => b.day.localeCompare(a.day) || a.state.localeCompare(b.state));
+  const loggedOut = counts.filter((row) => row.name !== 'usage-drop').map((row) => ({
     day: row.day, name: row.name, page: row.page, ref: row.refTag || 'none', value: row.value || '', hits: row.n,
   })).sort((a, b) => b.day.localeCompare(a.day) || a.name.localeCompare(b.name)
     || a.page.localeCompare(b.page) || a.ref.localeCompare(b.ref) || a.value.localeCompare(b.value));
@@ -98,6 +102,7 @@ async function buildUsageReport(db, opts = {}) {
     activePeople: active.sort((a, b) => b.day.localeCompare(a.day)),
     signedIn,
     loggedOut,
+    usageStates,
   };
 }
 
@@ -123,6 +128,8 @@ function formatUsageReport(report) {
     table(report.signedIn, ['day', 'name', 'screen', 'step', 'events', 'people']),
     '\nLogged-out hits per day, by page\n',
     table(report.loggedOut, ['day', 'name', 'page', 'ref', 'value', 'hits']),
+    '\nSigned-in page loads per day, by whether usage was recorded (our own accounts not counted)\n',
+    table(report.usageStates || [], ['day', 'state', 'loads']),
   ].filter(Boolean).join('');
 }
 

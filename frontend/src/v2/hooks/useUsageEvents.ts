@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
-import { forgetUsageEvents, setUsageEventsEnabled, trackUsage } from '../utils/usageEvents';
+import {
+  forgetUsageEvents, reportSettingsReadFailed, setUsageEventsEnabled, trackUsage,
+} from '../utils/usageEvents';
 
 /**
  * Signed-in usage events (D286): reads the person's Settings choice, then sends
@@ -27,7 +29,8 @@ export const useUsageEvents = (): void => {
     let sentDay: string | null = null;
     try { sentDay = window.localStorage.getItem(openKey(userId)); } catch { sentDay = null; }
     if (sentDay !== day) trackUsage('app-open');
-    axios.get('/api/users/me/usage-events')
+    // count=1: the server adds this load to the day's count for its state (F399).
+    axios.get('/api/users/me/usage-events', { params: { count: '1' } })
       .then(({ data }) => {
         if (!live) return;
         const on = Boolean(data?.usageEvents) && !data?.browserSignal;
@@ -38,7 +41,11 @@ export const useUsageEvents = (): void => {
           try { window.localStorage.setItem(openKey(userId), day); } catch { /* sent again next load */ }
         }
       })
-      .catch(() => { if (live) setUsageEventsEnabled(false); });
+      .catch(() => {
+        if (!live) return;
+        setUsageEventsEnabled(false);
+        reportSettingsReadFailed();
+      });
     return () => { live = false; forgetUsageEvents(); };
   }, [isAuthenticated, userId]);
 

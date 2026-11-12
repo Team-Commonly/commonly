@@ -59,10 +59,23 @@ describe('usage report', () => {
       // Outside the window.
       event(people.ana, 'app-open', day('2026-10-01')),
     ]);
+    // F399's per-load recording state, written into the same collection.
+    const usageState = (value, n) => ({
+      _id: `2026-11-09|usage-drop|${value}`,
+      day: '2026-11-09',
+      dayStart: day('2026-11-09'),
+      name: 'usage-drop',
+      page: '',
+      refTag: '',
+      value,
+      n,
+    });
     await db.collection('ui_daily_counts').insertMany([
       { _id: '2026-11-09|page-view|/|x|', day: '2026-11-09', dayStart: day('2026-11-09'), name: 'page-view', page: '/', refTag: 'x', n: 7 },
       { _id: '2026-11-09|cta-click|/|none|pricing', day: '2026-11-09', dayStart: day('2026-11-09'), name: 'cta-click', page: '/', refTag: 'none', value: 'pricing', n: 2 },
       { _id: '2026-10-01|page-view|/|none|', day: '2026-10-01', dayStart: day('2026-10-01'), name: 'page-view', page: '/', refTag: 'none', n: 99 },
+      usageState('recorded', 5),
+      usageState('privacy-signal', 2),
     ]);
   });
 
@@ -95,6 +108,16 @@ describe('usage report', () => {
       { day: '2026-11-09', name: 'cta-click', page: '/', ref: 'none', value: 'pricing', hits: 2 },
       { day: '2026-11-09', name: 'page-view', page: '/', ref: 'x', value: '', hits: 7 },
     ]);
+  });
+
+  it('reports the per-load recording state on its own, never as a logged-out hit (F399)', async () => {
+    const report = await build();
+    expect(report.usageStates).toEqual([
+      { day: '2026-11-09', state: 'privacy-signal', loads: 2 },
+      { day: '2026-11-09', state: 'recorded', loads: 5 },
+    ]);
+    expect(report.loggedOut.some((row) => row.name === 'usage-drop')).toBe(false);
+    expect(formatUsageReport(report)).toContain('by whether usage was recorded');
   });
 
   it('ignores a prefix shorter than 4 characters, so a slip cannot drop real people', async () => {

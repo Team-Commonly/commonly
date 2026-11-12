@@ -31,7 +31,9 @@ const {
   unfollowUser,
 } = require('../controllers/userController');
 
-const { defaultUsageEvents, privacySignal } = require('../services/usageEvents');
+const {
+  defaultUsageEvents, privacySignal, isInternalUser, usageState, countUsageState,
+} = require('../services/usageEvents');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const agentConnectionReadLimit = rateLimit({
@@ -282,8 +284,14 @@ const usageEventsState = (req: any, preference: unknown) => ({
 
 router.get('/me/usage-events', usageSettingLimit, auth, async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('preferences isBot').lean();
+    const user = await User.findById(req.userId).select('username role preferences isBot').lean();
     if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
+    // The app's own read on each page load (?count=1) adds one to the day's
+    // count for its state; the Settings page's read doesn't (F399).
+    if (req.query?.count === '1' && !isInternalUser(user)) {
+      countUsageState(usageState(req, user.preferences?.usageEvents))
+        .catch((err: Error) => console.warn('[users] usage state count failed:', err.message));
+    }
     return res.json(usageEventsState(req, user.preferences?.usageEvents));
   } catch (error) {
     console.warn('[users] usage setting read failed:', (error as Error).message);

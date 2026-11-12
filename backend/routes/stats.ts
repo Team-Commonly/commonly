@@ -151,7 +151,9 @@ router.post('/byo-step', rateLimit({
 // D286 usage events. Both endpoints answer 204 for anything they choose not to
 // keep (a switched-off person, DNT/GPC, the daily cap), so a client can't
 // probe which rule applied. A 400 names the rule, never the submitted value.
-const { recordUiEvents, countPublicHit, usageAllowed, privacySignal } = require('../services/usageEvents');
+const {
+  recordUiEvents, countPublicHit, usageAllowed, privacySignal, isInternalUser, countUsageState,
+} = require('../services/usageEvents');
 const { authenticatedUserRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 
 const limited = (max: number, keyGenerator: (req: any) => string) => rateLimit({
@@ -190,6 +192,28 @@ router.post(
       console.warn('[usage-events] write failed:', err?.message);
       return res.status(204).end();
     }
+  },
+);
+
+// F399: the app couldn't read the Settings state, so it records nothing for
+// that load. The body is the reason and nothing else; the count is per day.
+router.post(
+  '/usage-state',
+  limited(120, cloudflareIpRateLimitKeyGenerator),
+  auth,
+  limited(60, authenticatedUserRateLimitKeyGenerator),
+  async (req: any, res: any) => {
+    const body = req.body || {};
+    if (Object.keys(body).some((key) => key !== 'reason') || body.reason !== 'settings-get-failed') {
+      return res.status(400).json({ error: 'unknown reason' });
+    }
+    try {
+      const user = await User.findById(req.userId).select('username role isBot').lean();
+      if (user && !user.isBot && !isInternalUser(user) && !privacySignal(req)) await countUsageState('settings-get-failed');
+    } catch (err: any) {
+      console.warn('[usage-events] usage state count failed:', err?.message);
+    }
+    return res.status(204).end();
   },
 );
 
