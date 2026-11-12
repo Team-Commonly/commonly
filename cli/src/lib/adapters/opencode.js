@@ -23,7 +23,7 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import {
   existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
 } from 'fs';
@@ -43,10 +43,10 @@ import { fileURLToPath } from 'url';
 import {
   basename, dirname, isAbsolute, join, relative, resolve as pathResolve,
 } from 'path';
-import { writeCredentialFile } from '../credential-file.js';
+import { armCredentialRelease, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import {
-  prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir, selectedMcpWritesReadyFile,
+  prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
@@ -61,6 +61,7 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { MCP_READY_FILE_ENV, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
@@ -717,14 +718,12 @@ const buildMcpConfig = (servers, ctx = {}) => {
         console.warn(`[opencode] skipping MCP server ${server.name}: its credential declaration has no file-backed delivery`);
         continue;
       }
-      // F421: the shipped Commonly server of a public seat names its ready file,
-      // when the warm build it runs writes one (selectedMcpWritesReadyFile).
-      if (ctx.readyFileDir && isShippedCommonlyMcpCommand(server.command)
-        && (ctx.mcpWritesReadyFile || selectedMcpWritesReadyFile)(command)) {
-        const readyPath = join(ctx.readyFileDir, randomUUID());
-        env[MCP_READY_FILE_ENV] = readyPath;
-        ctx.readyFiles?.push({ name: server.name, path: readyPath });
-      }
+      // F421: the shipped Commonly server of a public seat names its ready file.
+      // F460: a warm build that writes none is refused on a public seat.
+      const readyPath = ctx.readyFiles
+        ? commonlyMcpReadyFile(server, command, ctx, { writesReadyFile: ctx.mcpWritesReadyFile, env })
+        : null;
+      if (readyPath) env[MCP_READY_FILE_ENV] = readyPath;
       mcp[server.name] = {
         type: 'local',
         command: command.map((part) => substitutePublicPlaceholders(part, ctx)),
@@ -975,7 +974,7 @@ export { PUBLIC_TOOL_FAILED_CODE };
 // data home: Seatbelt's statePath, bwrap's write-outside). A turn whose file is
 // missing never had the server, so its reply is withheld and the run loop tells
 // the waiting pod why (turn-failure-notice.js) and retries.
-export const MCP_READY_FILE_ENV = 'COMMONLY_MCP_READY_FILE';
+export { MCP_READY_FILE_ENV };
 
 export const missingReadyFile = (readyFiles, exists = existsSync) => (
   (readyFiles || []).find(({ path }) => !exists(path)) || null
@@ -1410,6 +1409,7 @@ export default {
     let readyFileDir = null;
     const readyFiles = [];
     let providerProxy = null;
+    let credentialRelease = null;
     let instanceProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
@@ -1460,13 +1460,6 @@ export default {
         bearerFileServers,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
-      // A remote server that holds this spawn's credential file can spend
-      // whatever the credential reaches, a connector grant included. The broker
-      // entry that reaches the adapter has passed the daemon's withhold
-      // (grant-broker-guard.js), but buildMcpConfig hands the file to any http
-      // entry declaring `Bearer ${COMMONLY_AGENT_TOKEN}`, whatever its URL, so
-      // the walk's fail-closed rule keys on what was written (CodeRabbit #3487).
-      const carriesGrant = bearerFileServers.length > 0;
       const config = {
         permission: isPublic
           ? publicPermissions(sandboxMode, Object.keys(mcp), ctx)
@@ -1582,6 +1575,27 @@ export default {
         [cmd, ...spawnArgs] = wrapped;
       }
       const credentials = [...spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
+      // F460: a public seat's credential goes at OpenCode's first step, once
+      // its ready files exist, or at the deadline, whichever comes first.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnCall) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnCall);
+        return child;
+      };
+      if (isPublic && credential) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          ownTrigger: true,
+          label: 'public OpenCode seat',
+          // eslint-disable-next-line no-console
+          warn: (text) => console.warn(`[opencode] ${text}`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          fs: { rmSync: ctx._rmSync || rmSync, existsSync: ctx._existsSync || existsSync },
+          ...ctx._credentialRelease,
+        });
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
       const result = await runOpenCode({
         cmd,
         args: spawnArgs,
@@ -1589,10 +1603,9 @@ export default {
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials,
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
-        // CodeRabbit #3487: the walk cannot prove a whole node_modules tree
-        // free of a deep link to the temp root, so a credential handed to a
-        // remote server stops existing once OpenCode has read it. Measured in
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
+        // CodeRabbit #3487, F460: a public seat's credential stops existing
+        // once OpenCode has read it, grant or not. Measured in
         // the 1.19.4 binary: {file:} is expanded once, over the config text at
         // load; every MCP connect (a reconnect included) takes its headers from
         // that cached config; and `run` emits step_start only after tools are
@@ -1600,21 +1613,16 @@ export default {
         // COMMONLY_TOKEN_FILE at startup), has connected. A config reload after
         // this point would fail on the missing file, closed, not open.
         // A delete that fails leaves the credential readable, so the turn ends
-        // rather than run on with it (`force` already ignores a missing file).
-        onFirstStep: isPublic && carriesGrant && credential
+        // rather than run on with it. The ready files and the deadline (F460)
+        // cover a turn that never reaches its first step.
+        onFirstStep: credentialRelease
           ? () => {
-            try {
-              (ctx._rmSync || rmSync)(credential.path, { force: true });
-            } catch (err) {
-              throw new Error(
-                `public OpenCode seat could not delete its connector credential (${credential.path}) once OpenCode `
-                + `had loaded its config: ${err?.message || err}; the turn was stopped so the credential does not `
-                + 'stay readable to its tools',
-              );
-            }
+            const failure = credentialRelease.release('stream');
+            if (failure) throw failure;
           }
           : undefined,
-      });
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
       if (isPublic) {
         const notReady = missingReadyFile(readyFiles, ctx._existsSync);
         if (notReady) throw publicMcpNotReadyError(notReady.name);
@@ -1627,6 +1635,7 @@ export default {
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } finally {
+      credentialRelease?.stop();
       try { await instanceProxy?.close(); } catch { /* ignore */ }
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }

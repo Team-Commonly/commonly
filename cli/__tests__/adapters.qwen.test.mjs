@@ -408,8 +408,10 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
     const versionDir = join(home, '0.3.13');
     const packageDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
     await mkdir(join(packageDir, 'src'), { recursive: true });
+    // A build that writes its ready file (F421); a public seat refuses one
+    // that does not (F460, adapters.qwen.credential-release-f460).
     await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' }, commonly: { readyFile: true },
     }));
     await writeFile(join(packageDir, 'src', 'index.js'), '#!/usr/bin/env node\n');
     await writeFile(join(home, 'current'), '0.3.13\n');
@@ -445,6 +447,8 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
       expect(config.mcpServers.commonly).toMatchObject({
         command: 'node', args: [join(packageDir, 'src', 'index.js')],
       });
+      // F460: its ready file sits in the seat home, the one folder the jail writes.
+      expect(config.mcpServers.commonly.env.COMMONLY_MCP_READY_FILE.startsWith(join(profileOptions.statePath, 'mcp-ready', ''))).toBe(true);
       expect(profileOptions.readOnlyDirectories).toContain(versionDir);
       expect(profileOptions.readOnlyDirectories).not.toContain(home);
       expect(buildSeatbeltProfile(profileOptions)).toContain(`(subpath "${realpathSync(versionDir)}")`);

@@ -4,13 +4,16 @@ import { isPatchAfterNewestTested, probeVersion } from './tested-version.js';
 import * as childProcess from 'child_process';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import {
+  chmod, mkdir, mkdtemp, readFile, rm, writeFile,
+} from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { writeCredentialFile } from '../credential-file.js';
+import { armCredentialRelease, writeCredentialFile } from '../credential-file.js';
+import { MCP_READY_FILE_ENV, bridgeReadyFile, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
@@ -158,6 +161,10 @@ export const buildQwenMcpConfig = (servers, ctx) => {
       const args = command.slice(1).map((part) => substitute(part, ctx));
       const env = Object.fromEntries(Object.entries(delivery.env)
         .map(([name, value]) => [name, substitute(value, ctx)]));
+      // F460: on a public seat our server names the file it writes once it has
+      // read the credential (a path, not a secret). An older warm build refuses.
+      const readyPath = commonlyMcpReadyFile(server, command, ctx, { env });
+      if (readyPath) env[MCP_READY_FILE_ENV] = readyPath;
       const serialized = JSON.stringify({ command: command[0], args, env });
       if (serialized.includes('${COMMONLY_AGENT_TOKEN}')
         || (ctx.runtimeToken && serialized.includes(ctx.runtimeToken))) {
@@ -188,7 +195,12 @@ export const buildQwenMcpConfig = (servers, ctx) => {
         console.warn(`[qwen] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
         continue;
       }
-      mcpServers[server.name] = { command: entry.command, args: entry.args, env: entry.env };
+      const readyPath = bridgeReadyFile(server, ctx);
+      mcpServers[server.name] = {
+        command: entry.command,
+        args: entry.args,
+        env: readyPath ? { ...entry.env, [MCP_READY_FILE_ENV]: readyPath } : entry.env,
+      };
       ctx.mcpReadDirectories?.push(entry.readPath);
       ctx.bridgedBrokers?.push(server.name);
       continue;
@@ -354,10 +366,16 @@ export default {
     const settingsPath = join(tempDir, 'settings.json');
     const mcpPath = join(tempDir, 'mcp.json');
     let proxy;
+    let credentialRelease = null;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
         agentName: ctx.agentName || 'agent', root: tempDir,
       });
+      // F460: the jail writes only the seat's home, so a public seat's MCP
+      // servers write their ready files there.
+      const readyFileDir = isPublic && credential ? join(home, 'mcp-ready') : null;
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
+      const readyFiles = [];
       proxy = await startProviderProxy({
         provider, keyFile, tokenFile: join(tempDir, 'provider-proxy-token'), adapterLabel: 'Qwen',
       });
@@ -377,6 +395,8 @@ export default {
         unavailableMcp,
         mcpReadDirectories,
         bridgedBrokers,
+        readyFileDir,
+        readyFiles,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
       await Promise.all([
@@ -457,13 +477,34 @@ export default {
       const requestedTimeout = Number(ctx.timeoutMs);
       const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
         ? Math.min(requestedTimeout, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
+      // F460: on a public seat the credential goes once every MCP reader has it
+      // (their ready files), or at the deadline. A delete that fails ends the turn.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnArgs) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnArgs);
+        return child;
+      };
+      if (readyFileDir) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          label: 'public Qwen seat',
+          // eslint-disable-next-line no-console
+          warn: (text) => console.warn(`[qwen] ${text}`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          ...ctx._credentialRelease,
+        });
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
       const result = await runQwen({
         cmd, args: spawnArgs, cwd: ctx.cwd, env, timeoutMs,
-        spawnImpl: ctx._spawnImpl,
+        spawnImpl,
         credentials: [...spawnCredentials(ctx, []), proxyWithBearer.bearer],
-      });
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
       return { text: result.text, newSessionId: null };
     } finally {
+      credentialRelease?.stop();
       try { await proxy?.close(); } catch { /* best effort */ }
       await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
     }

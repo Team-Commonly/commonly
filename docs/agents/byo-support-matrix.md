@@ -144,8 +144,9 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     characters. Goose 1.54.0 fills a header from its own environment or a
     literal in the recipe. Neither can read a header from a file. The bridge
     runs inside the jail, is told a url, a header template and a path, and reads
-    the token from the per-spawn credential file for each request. The token
-    is not in argv, in the config or recipe, or in the harness's environment.
+    the token from the per-spawn credential file once, when it starts (F460).
+    The token is not in argv, in the config or recipe, or in the harness's
+    environment.
   - What keeps the model off that file is the tool list, not the jail: the
     bridge and the Commonly MCP server run in the jail and must read it, so code
     in the jail could too. A public turn on either harness has no tool that runs
@@ -204,6 +205,43 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
   public Goose turn had its shell, file-write and extension calls refused, so
   no model-steered code runs there to read it. A Codex shell command can't read
   the file at all (F203, default profile on macOS).
+- **A public seat's credential file lasts only until its readers have it
+  (F460).** Pi has done this since F146. On the other public adapters each
+  reader of the file says when it has read it: the Commonly MCP server and the
+  broker bridge each create the file named in `COMMONLY_MCP_READY_FILE` once
+  they hold the token, and the CLI deletes the credential when every named file
+  exists (`armCredentialRelease`, `cli/src/lib/credential-file.js`).
+  - OpenCode also deletes it at its first `step_start`, which it emits only
+    after every MCP server has connected.
+  - If the files aren't all there 30 seconds after spawn, the credential is
+    deleted anyway, with a warning. A server that hangs costs that turn its
+    tools, never a credential readable for the whole turn.
+  - A delete that fails ends the turn.
+  - The ready files sit in the one folder each jail lets the seat write: the
+    seat home on Qwen and Goose, OpenCode's data home, Claude Code's state
+    folder, and Codex's per-turn folder (its MCP servers run outside the
+    shell's profile). A Claude Code seat on a policy-only Windows host has no
+    state folder and runs its servers unjailed, so it uses a temp folder of the
+    turn's own.
+  - A public seat hands the credential only to servers that report. Another
+    stdio server declaring `COMMONLY_TOKEN_FILE` is refused on a public seat,
+    because the release would not wait for it.
+  - A Commonly server that crashes and is restarted mid-turn can't read the
+    deleted file, so the rest of that turn runs without its tools. Nothing
+    leaks.
+  - A public seat whose Commonly server can't be shown to write a ready file is
+    refused with "update @commonlyai/mcp". That covers a warm build from before
+    ready files and our package run by path from outside the host-prepared MCP
+    home. A private seat keeps its credential for the turn, as before.
+  - Claude Code's fresh-session retry writes the credential again at the path
+    its config names, and deletes it again once that run's servers are ready.
+  - **Not covered:** a Claude Code turn with an HTTP broker keeps the file. Its
+    `headersHelper` reads it on every connect and reconnect, so deleting the
+    file would cost the broker its next reconnect. Moving that helper to a
+    channel that holds the token in memory is a follow-up.
+  - Measured with stub servers that write their ready files, per adapter
+    (`adapters.*.credential-release-f460.test.mjs`), and with the release
+    timing in `credential-release.test.mjs`.
 - **Temp files in a public Codex shell.** The profile denies `$TMPDIR` and
   `/tmp`, so a writable seat's shell gets `TMPDIR` and zsh's `TMPPREFIX` in its
   workspace. Heredocs work (real turn, codex-cli 0.162.1 on macOS, stub model,

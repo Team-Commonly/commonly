@@ -72,7 +72,8 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
-import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_KEY, armCredentialRelease, writeCredentialFile } from '../credential-file.js';
+import { MCP_READY_FILE_ENV, bridgeReadyFile, commonlyMcpReadyFile } from '../mcp-ready.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
@@ -178,6 +179,9 @@ const bridgeGrantBroker = (server, ctx) => {
     console.warn(`[codex] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
     return null;
   }
+  // F460: the bridge reads the credential once and says so in its ready file.
+  const readyPath = bridgeReadyFile(server, ctx);
+  if (readyPath) entry.env = { ...entry.env, [MCP_READY_FILE_ENV]: readyPath };
   return [
     '-c', `mcp_servers.${server.name}.command=${toml(entry.command)}`,
     // The broker parks every write for the owner's approval itself, so codex
@@ -226,7 +230,7 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     // one path by which the value ends up in codex's own environment and from
     // there in every MCP child it spawns (TASK-083, measured on a live codex
     // seat before the change).
-    const declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
+    let declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
       credentialFile: ctx.credentialFile,
       label: 'codex',
     }).env;
@@ -260,6 +264,12 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       );
       continue;
     }
+    // F460: on a public seat our server names the file it writes once it has
+    // read the credential (a path, not a secret). An older warm build refuses,
+    // and so does another server handed the credential path. Named only for an
+    // entry that is wired, so a skipped one is never waited for.
+    const readyPath = commonlyMcpReadyFile(server, spawnCommand, ctx, { env: declaredEnv });
+    if (readyPath) declaredEnv = { ...declaredEnv, [MCP_READY_FILE_ENV]: readyPath };
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
     const versionDir = ctx.publicSeat && selectedMcpVersionDir(spawnCommand);
     if (versionDir) mcpReadDirectories.push(versionDir);
@@ -1537,6 +1547,8 @@ export default {
     });
 
     let providerProxy = null;
+    const readyFiles = [];
+    let credentialRelease = null;
     try {
       // A public seat can't run git from its shell on macOS: Homebrew's git is
       // outside the profile and /usr/bin/git is an xcrun shim that fails there.
@@ -1577,10 +1589,16 @@ export default {
           ...(workspaceGit ? [workspaceGit] : []),
         ];
       }
+      // F460: a public seat's MCP servers name their ready files here; codex
+      // starts them outside the seat's permission profile, beside the credential.
+      const readyFileDir = sandbox?.trust === 'public' && credential ? join(dir, 'mcp-ready') : null;
+      if (readyFileDir) await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
       const mcp = buildMcpOverrideArgs(seatMcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
+        readyFileDir,
+        readyFiles,
         publicSeat: sandbox?.trust === 'public',
         ownerWoken: ctx.ownerWoken,
         commandResolution: { env: ctx.env || process.env, ...ctx._commandResolution },
@@ -1743,7 +1761,27 @@ export default {
       if (ctx.signal?.aborted) {
         throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
       }
-      const { threadId, turnCompleted } = await runCodex({
+      // F460: on a public seat the credential goes once every MCP reader has it
+      // (their ready files), or at the deadline. A delete that fails ends the turn.
+      let releaseFailure = null;
+      let child = null;
+      const spawnImpl = (...spawnArgs) => {
+        child = (ctx._spawnImpl || childSpawn)(...spawnArgs);
+        return child;
+      };
+      if (readyFileDir) {
+        credentialRelease = armCredentialRelease(credential, {
+          readyFiles: readyFiles.map(({ path }) => path),
+          label: 'public codex seat',
+          warn: (text) => process.stderr.write(`[codex] ${text}\n`),
+          onFailure: (err) => { releaseFailure = err; child?.kill?.('SIGKILL'); },
+          ...ctx._credentialRelease,
+        });
+        // A delete that failed at arm time (every reader already ready) ends
+        // the turn before Codex starts.
+        if (credentialRelease.error) throw credentialRelease.error;
+      }
+      const ran = await runCodex({
         args,
         cwd: ctx.cwd,
         env: childEnv,
@@ -1755,7 +1793,7 @@ export default {
         // nothing left to compare a tail against.
         // The per-turn proxy token is one too: codex was handed it in place of the key.
         credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), route?.key, providerProxy?.token].filter(Boolean),
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
+        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
         // A public seat keeps nothing a turn leaves running, whatever the turn
@@ -1763,7 +1801,9 @@ export default {
         // exactly when trust is `public`; workspace trust is refused above.
         confined: publicSandboxMode !== null,
         commandResolution: ctx._commandResolution, // test seam only
-      });
+      }).catch((err) => { throw releaseFailure || err; });
+      if (releaseFailure) throw releaseFailure;
+      const { threadId, turnCompleted } = ran;
 
       let text = '';
       try {
@@ -1801,6 +1841,7 @@ export default {
         text, newSessionId, contextTokens, ...(Object.keys(stats).length ? { stats } : {}),
       };
     } finally {
+      credentialRelease?.stop();
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
