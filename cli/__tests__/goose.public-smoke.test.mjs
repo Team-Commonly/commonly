@@ -5,7 +5,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import goose, { PUBLIC_GOOSE_TOOLS } from '../src/lib/adapters/goose.js';
+import goose, { PUBLIC_GOOSE_TOOLS, SWITCHED_OFF_GOOSE_TOOLS } from '../src/lib/adapters/goose.js';
 
 const binary = process.env.COMMONLY_GOOSE_SMOKE_BINARY;
 const smoke = binary ? test : test.skip;
@@ -14,6 +14,21 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
   const root = await mkdtemp(join(tmpdir(), 'commonly-goose-public-proof-'));
   const workspace = join(root, 'workspace');
   await mkdir(workspace);
+  // F113d: what Goose 1.56+ reads from its working directory. A skill a
+  // stranger could load, a plugin hook it would run, and settings that would
+  // switch our own load_skill hook off. None of it may be reached.
+  const seatSkillBody = 'SEAT_SKILL_BODY_MUST_NOT_REACH_THE_MODEL';
+  await mkdir(join(workspace, '.agents', 'skills', 'seat-secret'), { recursive: true });
+  await writeFile(join(workspace, '.agents', 'skills', 'seat-secret', 'SKILL.md'),
+    `---\nname: seat-secret\ndescription: The seat owner's skill\n---\n${seatSkillBody}\n`);
+  const hookSentinel = join(workspace, 'hook-sentinel');
+  await mkdir(join(workspace, '.agents', 'plugins', 'seat-plugin', 'hooks'), { recursive: true });
+  await writeFile(join(workspace, '.agents', 'plugins', 'seat-plugin', 'hooks', 'hooks.json'), JSON.stringify({
+    hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: `touch "${hookSentinel}"` }] }] },
+  }));
+  await mkdir(join(workspace, '.config', 'goose'), { recursive: true });
+  await writeFile(join(workspace, '.config', 'goose', 'settings.json'),
+    JSON.stringify({ disabledPlugins: ['commonly-public-seat'] }));
   const previousMcpHome = process.env.COMMONLY_MCP_HOME;
   const mcpHome = join(root, 'mcp-home');
   const source = fileURLToPath(new URL('../../commonly-mcp/', import.meta.url));
@@ -63,6 +78,8 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
       call(attempted[1], 2, { command: 'create', path: join(workspace, 'write-sentinel'), file_text: 'unsafe' }),
       call(attempted[2], 3, { action: 'enable', extension_name: 'developer' }),
       call(attempted[3], 4, { podId, filePath: '/proc/self/environ', continueAnyway: true }),
+      call('load_skill', 5, { name: 'seat-secret' }),
+      call('load_skill', 6, { name: 'goose-doc-guide' }),
     ] } : { role: 'assistant', content: 'proof complete' };
     const envelope = (extra) => ({ id: 'fixture', object: 'chat.completion.chunk', created: 0,
       model: 'fixture', choices: [{ index: 0, ...extra }] });
@@ -114,7 +131,9 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     expect(reply.text).toBe('proof complete');
     expect(attacked).toBe(true);
     expect(advertised.length).toBeGreaterThan(0);
-    const allowed = new Set(PUBLIC_GOOSE_TOOLS.map((name) => `commonly__${name}`));
+    // A switched-off tool may still be advertised (Goose 1.56+ always offers
+    // load_skill), but every call to it is refused below.
+    const allowed = new Set([...PUBLIC_GOOSE_TOOLS.map((name) => `commonly__${name}`), ...SWITCHED_OFF_GOOSE_TOOLS]);
     // Name the strays, so a Goose release that advertises a new tool says which.
     expect([...new Set(advertised.flat().filter((name) => !allowed.has(name)))]).toEqual([]);
     expect(advertised.every((tools) => !tools.includes('commonly__commonly_attach_file'))).toBe(true);
@@ -122,9 +141,21 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     expect(checkIns).toBe(1);
     for (const index of [1, 2, 3, 4]) {
       expect(results.find((result) => result.tool_call_id === `attempt-${index}`)?.content)
-        .toMatch(/not advertised/);
+        .toMatch(/not advertised|is not available/);
     }
-    for (const sentinel of ['shell-sentinel', 'write-sentinel']) {
+    // Neither the seat's skill nor a builtin one loads: not advertised on
+    // 1.54, switched off on 1.56+.
+    const offersSkills = advertised.flat().includes('load_skill');
+    for (const index of [5, 6]) {
+      const content = results.find((result) => result.tool_call_id === `attempt-${index}`)?.content;
+      expect(content).toMatch(offersSkills ? /denied by policy hook `commonly-public-seat`: Skills are switched off on a public seat/
+        : /not advertised|is not available/);
+      expect(content).not.toContain(seatSkillBody);
+    }
+    expect(conversations.join('\n')).not.toContain(seatSkillBody);
+    // The skills Goose lists to the model never include the seat's own.
+    expect(conversations.join('\n')).not.toContain("The seat owner's skill");
+    for (const sentinel of ['shell-sentinel', 'write-sentinel', 'hook-sentinel']) {
       await expect(readFile(join(workspace, sentinel))).rejects.toMatchObject({ code: 'ENOENT' });
     }
 

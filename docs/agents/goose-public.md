@@ -1,6 +1,6 @@
 # Goose public seats
 
-TASK-236 admits only smoke-tested Goose versions (today 1.54.0, `TESTED_GOOSE_VERSIONS`) with a prepared Commonly stdio MCP server,
+TASK-236 admits only smoke-tested Goose versions (today 1.54.0 and 1.59.0, `TESTED_GOOSE_VERSIONS`) with a prepared Commonly stdio MCP server,
 a declared model and provider whose `keyFile` is an absolute, regular 0600 file
 (the sandbox check needs the declaration; the spawn checks the file), and an
 enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations other than the grant broker, untested versions
@@ -51,16 +51,41 @@ The filesystem boundary does not promise network destination isolation. Both
 provider and declared Commonly transports need outbound networking; a declared
 restricted network is refused rather than silently weakened.
 
-## Goose 1.56.0 is not admitted
+## Skills are switched off (Goose 1.56 and later)
 
 Goose 1.56.0 moved the CLI to its state-machine agent loop (upstream #12760).
 That loop offers the model a `load_skill` operation on every turn. It is an
 operation, not an extension, so the recipe's extension allowlist cannot remove
-it, and a public turn could read any SKILL.md under the working directory's
-`.agents/skills`, `.goose/skills` or `.claude/skills`, plus Goose's builtin
-skills. The real-binary proof failed on macOS and Linux at the advertised-tool
-check, which now names the stray tool. Public seats keep refusing 1.56.0 until
-skills can be switched off for a public turn and the proof passes.
+it, and the proof first failed on it (F113c). Goose also reads skills, plugins
+and plugin settings from its working directory: `.agents`, `.goose` and
+`.claude` skills, `.agents/plugins`, and `.config/goose/settings.json`. A plugin
+found there is enabled unless a settings file disables it, and its hooks run
+as shell commands.
+
+F113d closes both. A public turn never runs in the seat's workspace. The jail
+and Goose start in an empty folder of the turn's own home, so no skill, plugin
+or settings file of the seat is found. Public Goose has no file tool, so it
+never needed the workspace. It did load the workspace's `.goosehints` and
+`AGENTS.md` into the prompt, and no longer does. Then a hook the adapter owns refuses
+every `load_skill` call, builtin skills included: a `PreToolUse` command that
+exits 2, with `on_failure: block` so a hook that cannot run still refuses. The
+hook sits with the adapter's files, which the jail reads and cannot change, and
+the seat home links to it.
+
+`load_skill` is still advertised, since Goose has no setting to drop it. The
+proof lets it through the advertised-tool check by name
+(`SWITCHED_OFF_GOOSE_TOOLS`) and requires that a forced call, for a skill
+planted in the seat's workspace and for a builtin, comes back as the policy
+denial. Undoing either half fails it on real 1.59.0: without the hook, the
+model gets an answer from Goose's skill loader. Back in the seat's workspace, a
+planted settings file switches our hook off and the planted skill loads in
+full. 1.56.0 through 1.58.x were never proven, so they stay refused.
+
+Two limits. If Goose cannot read `hooks.json` it logs and skips it, and nothing
+checks at run time that the hook loaded, so the per-version proof is the guard.
+A slash command also loads a skill without the hook. A stranger cannot send
+one, because a public turn's prompt always opens with the memory frame, and a
+unit test holds that.
 
 ## Proof
 
@@ -68,7 +93,7 @@ skills can be switched off for a public turn and the proof passes.
 the actual Commonly MCP server, the adapter and OS wrapper with local fixture
 provider/API endpoints. The fixture provider forces shell, file-write and
 extension-enable and local-file-upload calls even though their schemas were withheld.
-All four must return tool errors, neither sentinel file may exist, a Commonly context call
+All four must return tool errors, no sentinel file may exist (a planted workspace hook writes the third), a Commonly context call
 must reach the fixture API, and the turn must end within its timeout. A second
 turn sends template syntax in the message and in saved memory; the model must
 receive it verbatim and never the proxy bearer.

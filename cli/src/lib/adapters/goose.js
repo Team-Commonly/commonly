@@ -1,8 +1,8 @@
-/** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
+/** Goose wrapper (public seats: 1.54.0, 1.59.0). Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
 import { probeVersion } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -27,13 +27,23 @@ import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 // A version enters this list only after a real headless turn with that binary.
 // Each version here is proven by the real-binary smoke test on macOS and Linux
 // (.github/workflows/goose-public-proof.yml carries one pinned row per version).
-// 1.56.0 is NOT admitted (11-04, F113c): its state-machine agent loop offers the
-// model a `load_skill` operation on every turn that the extension allowlist
-// cannot remove, so a stranger could read any skill under the seat's working
-// directory (.agents/.goose/.claude skills) and Goose's builtin skills. The
-// proof failed on both hosts at the allowlist check. Re-admit a version only
-// once skills can be switched off for public turns and the proof is green.
-export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
+// From 1.56.0 the state-machine loop offers the model `load_skill` on every
+// turn, which the extension allowlist cannot remove (F113c), and reads skills,
+// plugin hooks and plugin settings from its working directory. A public turn
+// therefore runs in an empty folder of its own, and a hook the adapter owns
+// refuses every load_skill call (F113d). 1.56.0-1.58.x were never proven.
+export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0', '1.59.0']);
+// Advertised by an admitted Goose but refused on every call of a public turn.
+export const SWITCHED_OFF_GOOSE_TOOLS = Object.freeze(['load_skill']);
+const PUBLIC_HOOK_PLUGIN = 'commonly-public-seat';
+// Goose 1.56+ (hooks/mod.rs) runs a PreToolUse command through `sh -c`: exit 2
+// denies the call with stderr as the reason. `on_failure: block` denies it too
+// when the hook cannot run at all, say because the jail refuses `sh`.
+const publicHookConfig = () => ({ hooks: { PreToolUse: [{
+  matcher: `^(?:${SWITCHED_OFF_GOOSE_TOOLS.join('|')})$`,
+  hooks: [{ type: 'command', on_failure: 'block', timeout: 10,
+    command: "printf '%s' 'Skills are switched off on a public seat' >&2; exit 2" }],
+}] } });
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
 const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';
@@ -398,6 +408,20 @@ export default {
       // the recipe alone, never the credential file.
       const recipeDir = join(tempDir, 'recipe');
       const recipePath = join(recipeDir, 'public-recipe.json');
+      // F113d: Goose reads skills, plugins and plugin settings from its working
+      // directory, and a public Goose has no file tool that needs the seat's
+      // workspace. The jail and Goose start in an empty folder of this turn.
+      const turnWorkspace = isPublic ? join(home, 'workspace') : null;
+      if (turnWorkspace) {
+        await mkdir(turnWorkspace, { mode: 0o700 });
+        // The hook lives with the adapter's files, which the jail only reads;
+        // the user plugin folder in the seat home links to it.
+        const pluginDir = join(tempDir, 'plugins', PUBLIC_HOOK_PLUGIN);
+        await mkdir(join(pluginDir, 'hooks'), { recursive: true, mode: 0o700 });
+        await writeFile(join(pluginDir, 'hooks', 'hooks.json'), JSON.stringify(publicHookConfig()), { mode: 0o600 });
+        await mkdir(join(home, '.agents', 'plugins'), { recursive: true, mode: 0o700 });
+        await symlink(pluginDir, join(home, '.agents', 'plugins', PUBLIC_HOOK_PLUGIN));
+      }
       const args = [
         'run', '--no-session', ...(!isPublic ? ['--no-profile', '--with-builtin', 'developer'] : []),
         ...(isPublic ? ['--recipe', recipePath] : []),
@@ -453,14 +477,16 @@ export default {
             ...ctx.environment, sandbox: { ...sandbox, filesystem: {
               ...(sandbox.filesystem || {}), 'write-outside': [home],
             } },
-          }, { workspacePath: ctx.cwd, homePath: home,
+          }, { workspacePath: turnWorkspace, homePath: home,
             readOnlyPaths: [tempDir, binary, process.execPath, ...mcpReadDirectories] });
         } else {
           if ((ctx._platform || process.platform) !== 'darwin') throw new Error('goose adapter: Seatbelt requires macOS');
           [executable, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
-            workspacePath: ctx.cwd, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
+            // The turn folder sits in the home the jail writes, so read-only mode
+            // no longer narrows anything here (F113d); it is kept for the profile.
+            workspacePath: turnWorkspace, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
             executablePath: binary, statePath: home, mcpConfigDir: tempDir,
-            // Public seat: the CLI made this workspace, so it is pinned (F197).
+            // The adapter made this folder for the turn, so it is pinned (F197).
             pinWorkspace: true,
             loopbackNetworkPorts: [proxy.port], readOnlyDirectories: mcpReadDirectories,
           });
@@ -486,7 +512,7 @@ export default {
         if (credentialRelease.error) throw credentialRelease.error;
       }
       const text = await runGoose({
-        binary: executable, args: spawnArgs, cwd: ctx.cwd, env, timeoutMs,
+        binary: executable, args: spawnArgs, cwd: turnWorkspace || ctx.cwd, env, timeoutMs,
         credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key, env.OPENAI_API_KEY],
         optionalExtensions: brokerExtensions,
         spawnImpl,
