@@ -121,6 +121,19 @@ describe('resolveAttachPath, review follow-ups', () => {
     expect(() => resolveAttachPath('nope.txt', { cwd: join(base, 'work-link'), env: {}, home: '/nonexistent-home' })).toThrow(/no file/i);
   });
 
+  test('a missing file under a missing folder in a symlinked working directory still says it is missing', () => {
+    const { base, work } = tree();
+    symlinkSync(work, join(base, 'work-link'));
+    const opts = { cwd: join(base, 'work-link'), env: {}, home: '/nonexistent-home' };
+    expect(() => resolveAttachPath(join('new', 'deeper', 'nope.txt'), opts)).toThrow(/no file/i);
+  });
+
+  test('with no working-directory root, the error names the folder-holding-home case too', () => {
+    const { base, home } = tree();
+    writeFileSync(join(base, 'top.txt'), 't');
+    expect(() => resolveAttachPath('top.txt', { cwd: base, env: {}, home })).toThrow(/a folder that holds it/);
+  });
+
   test('a directory is refused with a clear message', () => {
     const { work } = tree();
     expect(() => resolveAttachPath('out', { cwd: work, env: {}, home: '/nonexistent-home' })).toThrow(/not a regular file/);

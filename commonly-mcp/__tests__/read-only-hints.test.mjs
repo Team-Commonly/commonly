@@ -39,14 +39,28 @@ test('tools/list marks exactly the read-only tools with readOnlyHint, and no oth
   }
 });
 
+// What a tool's source sends: each request method (either quote style), and an
+// upload as a write, since requestUpload always POSTs a file.
+const sendsIn = (slice) => [
+  ...[...slice.matchAll(/method:\s*(['"])([A-Z]+)\1/g)].map((m) => m[2]),
+  ...[...slice.matchAll(/\brequestUpload\(/g)].map(() => 'UPLOAD'),
+];
+
+test('the derivation reads both quote styles and counts an upload as a write', () => {
+  expect(sendsIn(`request(config, { method: "POST", path })`)).toEqual(['POST']);
+  expect(sendsIn(`request(config, { method:'DELETE' })`)).toEqual(['DELETE']);
+  expect(sendsIn(`await requestUpload(config, { path, file })`)).toEqual(['UPLOAD']);
+  expect(sendsIn(`request(config, { method: 'GET', path })`)).toEqual(['GET']);
+});
+
 test('the hinted set is every tool that sends no request or GETs only', () => {
   const source = readFileSync(new URL('../src/tools.js', import.meta.url), 'utf8');
   const names = buildTools(cfg).map((t) => t.name);
-  const starts = names.map((n) => source.indexOf(`name: '${n}'`));
+  const starts = names.map((n) => source.search(new RegExp(`name:\\s*(['"])${n}\\1`)));
+  expect(starts.every((s) => s >= 0)).toBe(true);
   const derived = names.filter((n, i) => {
     const end = starts.filter((s) => s > starts[i]).sort((a, b) => a - b)[0] ?? source.length;
-    const methods = [...source.slice(starts[i], end).matchAll(/method: '([A-Z]+)'/g)].map((m) => m[1]);
-    return methods.every((m) => m === 'GET');
+    return sendsIn(source.slice(starts[i], end)).every((m) => m === 'GET');
   }).sort();
   expect(derived).toEqual(READ_ONLY);
 });
