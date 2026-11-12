@@ -661,6 +661,7 @@ describe('the owner card: bidi controls and the byte cap (F168)', () => {
   test('the commit message marks them too', () => {
     const summary = prWriteApprovalSummary('github.commit_files', envelope({ message: 'Fix‮daolnwod' }));
     expect(summary.message.text).toBe('Fix⟦U+202E⟧daolnwod');
+    expect(summary.subject).toBe('Fix⟦U+202E⟧daolnwod');
   });
 
   test('a file with no bidi control keeps its card shape', () => {
@@ -674,6 +675,15 @@ describe('the owner card: bidi controls and the byte cap (F168)', () => {
     expect(summary.files[0].content).not.toContain('�');
     expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 1}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 1} of ${CARD_CONTENTS_MAX + 1} bytes\\]$`));
     expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX - 1, totalBytes: CARD_CONTENTS_MAX + 1 });
+  });
+  test('a four-byte character at the cap backs off whole, and the next file gets the bytes it saved', () => {
+    const first = `${'a'.repeat(CARD_CONTENTS_MAX - 2)}😀`;
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({
+      files: [{ path: 'a', content: first }, { path: 'b', content: 'bc' }],
+    }));
+    expect(summary.files[0].content).toMatch(new RegExp(`^a{${CARD_CONTENTS_MAX - 2}}\\n\\[truncated: the card shows ${CARD_CONTENTS_MAX - 2} of ${CARD_CONTENTS_MAX + 2} bytes\\]$`));
+    expect(summary.files[1]).toEqual({ path: 'b', bytes: 2, content: 'bc', truncated: false });
+    expect(summary.contents).toMatchObject({ shownBytes: CARD_CONTENTS_MAX, totalBytes: CARD_CONTENTS_MAX + 4 });
   });
 });
 

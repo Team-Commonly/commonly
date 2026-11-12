@@ -173,7 +173,7 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
       lands: branchExists
         ? `adds to existing branch ${head} at ${shortSha(parentSha)}`
         : `new branch ${head} from ${str(a.base)} at ${shortSha(parentSha)}`,
-      subject: message.split('\n', 1)[0],
+      subject: markBidi(message.split('\n', 1)[0]),
       message: cardMessage(message),
       ...cardFiles(files),
       fileCount: files.length, parentSha, branchExists,
