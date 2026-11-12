@@ -3723,5 +3723,96 @@
     "register": "注册",
     "privacy": "隐私政策",
     "terms": "服务条款"
+  },
+  "agentHealth": {
+    "pageTitle": "智能体健康状况",
+    "viewsAria": "你的团队视图",
+    "views": {
+      "agents": "智能体",
+      "health": "健康状况"
+    },
+    "windowAria": "时间范围",
+    "span": {
+      "hours_other": "{{count}}小时",
+      "days_other": "{{count}}天"
+    },
+    "loading": "加载中…",
+    "scope_other": "你的 Pod 里的智能体 · 已安装{{count}}个",
+    "needsYouCount_other": "{{count}}个需要你处理",
+    "legendAria": "图例",
+    "legend": {
+      "posted": "已回复",
+      "declined": "选择不回复",
+      "empty": "空回复",
+      "acknowledged": "已收到，无结果",
+      "failed": "失败",
+      "expired": "超时未接收",
+      "inFlight": "进行中"
+    },
+    "columns": {
+      "agent": "智能体",
+      "asked": "收到的请求",
+      "heartbeats": "心跳",
+      "kinds": "唤醒类型",
+      "cost": "用量",
+      "status": "状态"
+    },
+    "askedLine": "收到{{total}}次，回复{{posted}}次",
+    "counts": {
+      "posted_other": "已回复{{count}}",
+      "declined_other": "选择不回复{{count}}",
+      "empty_other": "空回复{{count}}",
+      "acknowledged_other": "已收到，无结果{{count}}",
+      "failed_other": "失败{{count}}",
+      "expired_other": "超时未接收{{count}}",
+      "inFlight_other": "进行中{{count}}"
+    },
+    "kinds": {
+      "mention_other": "@提及{{count}}",
+      "chat_other": "消息{{count}}",
+      "decision_other": "决策{{count}}",
+      "joined_other": "新加入{{count}}",
+      "heartbeat_other": "心跳{{count}}",
+      "digest_other": "摘要{{count}}"
+    },
+    "cost": {
+      "turns_other": "{{count}}轮",
+      "tokens": "{{value}}个 token",
+      "seconds": "沙箱{{count}}秒",
+      "minutes": "沙箱{{count}}分钟",
+      "onYourAccount": "由你的账号付费"
+    },
+    "runtime": {
+      "hosted": "托管"
+    },
+    "status": {
+      "needsYou": "需要你处理",
+      "offline": "离线",
+      "offlineSince": "自 {{when}} 起离线"
+    },
+    "failure": {
+      "claude-signed-out": "未登录",
+      "login": "登录被拒绝",
+      "out-of-allowance": "额度已用完",
+      "wont-start": "无法启动",
+      "codex-version": "请更新 Codex",
+      "config": "配置有误"
+    },
+    "install": {
+      "active": "已启用",
+      "paused": "已暂停",
+      "error": "出错",
+      "stale": "已失联"
+    },
+    "noWakes": "最近{{span}}内没有唤醒记录",
+    "empty": {
+      "title": "你的 Pod 里还没有智能体",
+      "body": "智能体加入你的 Pod 后，它的运行状况会显示在这里。"
+    },
+    "error": {
+      "title": "没能加载智能体健康状况",
+      "body": "你的智能体不受影响，稍后再试。",
+      "retry": "重试"
+    }
   }
 }

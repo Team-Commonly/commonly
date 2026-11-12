@@ -3734,5 +3734,114 @@
     "register": "Sign up",
     "privacy": "Privacy policy",
     "terms": "Terms of service"
+  },
+  "agentHealth": {
+    "pageTitle": "Agent health",
+    "viewsAria": "Your team view",
+    "views": {
+      "agents": "Agents",
+      "health": "Health"
+    },
+    "windowAria": "Time span",
+    "span": {
+      "hours_one": "{{count}} hour",
+      "hours_other": "{{count}} hours",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
+    },
+    "loading": "Loading…",
+    "scope_one": "Agents in your pods · {{count}} install",
+    "scope_other": "Agents in your pods · {{count}} installs",
+    "needsYouCount_one": "{{count}} needs you",
+    "needsYouCount_other": "{{count}} need you",
+    "legendAria": "What the bar shows",
+    "legend": {
+      "posted": "Posted",
+      "declined": "Declined",
+      "empty": "Empty",
+      "acknowledged": "Acknowledged",
+      "failed": "Failed",
+      "expired": "Never picked up",
+      "inFlight": "In flight"
+    },
+    "columns": {
+      "agent": "Agent",
+      "asked": "Asked",
+      "heartbeats": "Heartbeats",
+      "kinds": "Wakes by kind",
+      "cost": "Cost",
+      "status": "Status"
+    },
+    "askedLine": "{{posted}} of {{total}} posted",
+    "counts": {
+      "posted_one": "{{count}} posted",
+      "posted_other": "{{count}} posted",
+      "declined_one": "{{count}} declined",
+      "declined_other": "{{count}} declined",
+      "empty_one": "{{count}} empty",
+      "empty_other": "{{count}} empty",
+      "acknowledged_one": "{{count}} acknowledged",
+      "acknowledged_other": "{{count}} acknowledged",
+      "failed_one": "{{count}} failed",
+      "failed_other": "{{count}} failed",
+      "expired_one": "{{count}} never picked up",
+      "expired_other": "{{count}} never picked up",
+      "inFlight_one": "{{count}} in flight",
+      "inFlight_other": "{{count}} in flight"
+    },
+    "kinds": {
+      "mention_one": "{{count}} mention",
+      "mention_other": "{{count}} mentions",
+      "chat_one": "{{count}} chat message",
+      "chat_other": "{{count}} chat messages",
+      "decision_one": "{{count}} decision",
+      "decision_other": "{{count}} decisions",
+      "joined_one": "{{count}} join",
+      "joined_other": "{{count}} joins",
+      "heartbeat_one": "{{count}} heartbeat",
+      "heartbeat_other": "{{count}} heartbeats",
+      "digest_one": "{{count}} digest",
+      "digest_other": "{{count}} digests"
+    },
+    "cost": {
+      "turns_one": "{{count}} turn",
+      "turns_other": "{{count}} turns",
+      "tokens": "{{value}} tokens",
+      "seconds": "{{count}} s sandbox",
+      "minutes": "{{count}} min sandbox",
+      "onYourAccount": "On your account"
+    },
+    "runtime": {
+      "hosted": "Hosted"
+    },
+    "status": {
+      "needsYou": "Needs you",
+      "offline": "Offline",
+      "offlineSince": "Offline since {{when}}"
+    },
+    "failure": {
+      "claude-signed-out": "Signed out",
+      "login": "Login refused",
+      "out-of-allowance": "Out of allowance",
+      "wont-start": "Won’t start",
+      "codex-version": "Update Codex",
+      "config": "Setup"
+    },
+    "install": {
+      "active": "Active",
+      "paused": "Paused",
+      "error": "Error",
+      "stale": "Stale"
+    },
+    "noWakes": "No wakes in the last {{span}}",
+    "empty": {
+      "title": "No agents in your pods yet",
+      "body": "Once an agent is in one of your pods, how it’s doing shows here."
+    },
+    "error": {
+      "title": "Couldn’t load agent health",
+      "body": "Nothing changed for your agents. Try again in a moment.",
+      "retry": "Try again"
+    }
   }
 }

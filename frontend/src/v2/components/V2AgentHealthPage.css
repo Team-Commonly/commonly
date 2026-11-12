@@ -1,0 +1,68 @@
+/* Agent health (/v2/agents/health), from the D115 frame:
+   docs/design/artboards/d115/index.html. Tokens only (--v2-*), so light, dark
+   and auto switch together. The head and body classes are Your team's
+   (.v2-team__head, .v2-team__body); this sheet draws the table, the bar and
+   the phone cards. Scoped to .v2-health. */
+.v2-team__views { margin-left: 4px; }
+.v2-health .v2-health__window { flex: none; }
+.v2-health .v2-health__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.v2-health .v2-health__toolbar--end { justify-content: flex-end; }
+.v2-health .v2-health__scope { margin: 0; font-size: 12.5px; color: var(--v2-text-muted); }
+.v2-health .v2-health__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--v2-text-muted); }
+.v2-health .v2-health__legend li { display: inline-flex; align-items: center; gap: 5px; }
+.v2-health .v2-health__key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.v2-health .v2-health__table { width: 100%; border-collapse: collapse; }
+.v2-health .v2-health__table th { text-align: left; font: 500 12px/16px var(--v2-font); color: var(--v2-text-muted); padding: 6px 10px; border-bottom: 1px solid var(--v2-border-soft); white-space: nowrap; }
+.v2-health .v2-health__table td { padding: 10px; border-bottom: 1px solid var(--v2-border-soft); vertical-align: top; font-size: 13px; color: var(--v2-text-primary); }
+.v2-health .v2-health__row:last-child td { border-bottom: 0; }
+.v2-health .v2-health__agent { min-width: 160px; }
+.v2-health .v2-health__who { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.v2-health .v2-health__name { all: unset; cursor: pointer; font-weight: 600; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2-health .v2-health__name:hover { text-decoration: underline; }
+.v2-health .v2-health__name:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; border-radius: 3px; }
+.v2-health .v2-health__pod { font-size: 12px; color: var(--v2-text-muted); }
+.v2-health .v2-health__chip { margin-top: 3px; font: 500 12px/18px var(--v2-font); color: var(--v2-text-secondary); border-radius: 4px; padding: 0 6px; box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; }
+.v2-health .v2-health__num { display: block; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v2-health .v2-health__sub { display: block; font-size: 12px; line-height: 18px; color: var(--v2-text-muted); }
+.v2-health .v2-health__sub code { font: 11.5px var(--v2-font-mono); }
+.v2-health .v2-health__muted, .v2-health .v2-health__quiet { color: var(--v2-text-muted); }
+.v2-health .v2-health__narrow { display: none; }
+.v2-health .v2-health__bar { display: flex; width: 160px; height: 8px; margin: 6px 0 4px; border-radius: 3px; overflow: hidden; background: var(--v2-border-soft); }
+.v2-health .v2-health__bar i { display: block; height: 100%; }
+/* Segment colours: posted ink, declined grey, empty an ink outline (never a decline),
+   failed danger, never picked up warning, in flight a grey stripe. */
+.v2-health .v2-health__seg--posted { background: var(--v2-text-primary); }
+.v2-health .v2-health__seg--declined { background: var(--v2-border); }
+.v2-health .v2-health__seg--empty { background: var(--v2-surface); box-shadow: inset 0 0 0 1.5px var(--v2-text-primary); }
+.v2-health .v2-health__seg--acknowledged { background: var(--v2-text-muted); }
+.v2-health .v2-health__seg--failed { background: var(--v2-danger); }
+.v2-health .v2-health__seg--expired { background: var(--v2-warning); }
+.v2-health .v2-health__seg--inFlight { background: repeating-linear-gradient(135deg, var(--v2-text-muted) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--v2-border); }
+.v2-health .v2-health__badge { display: inline-block; font: 500 12px/18px var(--v2-font); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.v2-health .v2-health__badge--needs { color: var(--v2-danger-text); background: var(--v2-danger-soft); }
+.v2-health .v2-health__badge--offline { color: var(--v2-warning-text); background: var(--v2-warning-soft); }
+.v2-health .v2-health__notice { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 40px 0; }
+.v2-health .v2-health__notice p { margin: 0; color: var(--v2-text-secondary); }
+@media (max-width: 760px) {
+  /* The switch and the window are keys a thumb hits: 44px tall on phones. */
+  .v2-team__views .v2-seg__option, .v2-health .v2-health__window .v2-seg__option { min-height: 44px; }
+  .v2-health .v2-health__table thead { display: none; }
+  .v2-health .v2-health__table, .v2-health .v2-health__table tbody { display: block; }
+  /* One card per agent: name and status on top, the bar, then the facts. */
+  .v2-health .v2-health__row {
+    display: grid; grid-template-columns: 1fr auto; grid-template-areas: "agent status" "asked asked" "beats cost" "kinds kinds";
+    gap: 6px 12px; margin-bottom: 10px; padding: 12px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: var(--v2-ring-card);
+  }
+  .v2-health .v2-health__table td { display: block; padding: 0; border: 0; }
+  .v2-health .v2-health__agent { grid-area: agent; min-width: 0; }
+  .v2-health .v2-health__status { grid-area: status; text-align: right; }
+  .v2-health .v2-health__asked { grid-area: asked; }
+  .v2-health .v2-health__quiet { grid-column: 1 / -1; }
+  .v2-health .v2-health__beats { grid-area: beats; }
+  .v2-health .v2-health__cost { grid-area: cost; }
+  .v2-health .v2-health__kinds { grid-area: kinds; }
+  .v2-health .v2-health__bar { width: 100%; }
+  .v2-health .v2-health__wide, .v2-health .v2-health__table td.v2-health__beats--none { display: none; }
+  .v2-health .v2-health__narrow { display: block; }
+  .v2-health .v2-health__name { min-height: 44px; display: flex; align-items: center; }
+}

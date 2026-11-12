@@ -57,6 +57,8 @@ const OPAQUE_PLACEHOLDERS = [
   'dep',
   // board.detail.agentFor names the person an agent holding a task belongs to (F402).
   'owner',
+  // agentHealth.status.offlineSince: a formatted time (13:05) or date (11月10日), not a count (D115).
+  'when',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
   // harness.unsupportedInOpenPods names the version that works ("Goose 1.54").
