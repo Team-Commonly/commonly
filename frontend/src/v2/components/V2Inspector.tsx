@@ -239,6 +239,11 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   if (!pod) return null;
 
   const isOwner = Boolean(currentUserId && pod.createdBy?._id === currentUserId);
+  // F370 #5: offered only where Bring your own can select this pod: a member,
+  // in a pod that isn't public or a DM-shaped room (V2AgentBYO's pod filter).
+  const canAddAgent = Boolean(onOpenInvite) && pod.publicRead !== true
+    && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type))
+    && Boolean(currentUserId && detail.members.some((member) => member._id === currentUserId));
   const changeJoinPolicy = async (next: 'open' | 'invite-only') => {
     if (!isOwner || policyBusy || next === joinPolicy) return;
     setPolicyBusy(true);
@@ -473,9 +478,8 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               );
             })}
             {/* F370 #5: the pod is where a person notices an agent is missing,
-                so the add path starts here, with this pod already chosen.
-                Shown where invites are: never in a DM or an agent room. */}
-            {onOpenInvite && (
+                so the add path starts here, with this pod already chosen. */}
+            {canAddAgent && (
               <button
                 type="button"
                 className="v2-workspace-inspector__agent v2-workspace-inspector__add-agent"

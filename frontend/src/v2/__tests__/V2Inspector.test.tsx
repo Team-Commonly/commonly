@@ -427,15 +427,27 @@ describe('V2Inspector', () => {
   });
 
   // F370 #5: the pod's Agents fold adds an agent with this pod already chosen,
-  // and only where people can be invited (never in a DM or an agent room).
-  test('the Agents fold adds an agent to this pod, only where invites are', () => {
-    const view = renderInspector();
+  // and only where Bring your own can select it: a member, invites on, and a
+  // pod that isn't public or DM-shaped.
+  test('the Agents fold adds an agent to this pod, only where Bring your own can pick it', () => {
+    const memberId = 'u1';
+    const withMe = { ...detail, members: [{ _id: memberId, username: 'sam' }] };
+    const view = renderInspector({ currentUserId: memberId, detail: withMe as any });
     fireEvent.click(screen.getByTestId('inspector-add-agent'));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=pod-1');
     expect(screen.getByTestId('inspector-add-agent')).toHaveTextContent('Add an agent');
     view.unmount();
-    renderInspector({ onOpenInvite: undefined });
-    expect(screen.queryByTestId('inspector-add-agent')).toBeNull();
+    const hidden: Array<Partial<React.ComponentProps<typeof V2Inspector>>> = [
+      { currentUserId: memberId, detail: withMe as any, onOpenInvite: undefined },
+      { currentUserId: 'not-a-member', detail: withMe as any },
+      { currentUserId: memberId, detail: { ...withMe, pod: { ...detail.pod, publicRead: true } } as any },
+      { currentUserId: memberId, detail: { ...withMe, pod: { ...detail.pod, type: 'agent-admin' } } as any },
+    ];
+    hidden.forEach((props) => {
+      const next = renderInspector(props);
+      expect(screen.queryByTestId('inspector-add-agent')).toBeNull();
+      next.unmount();
+    });
   });
 
   test('lists this pod\'s own queue rows even when the global slice misses them', async () => {
