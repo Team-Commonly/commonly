@@ -20,6 +20,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { resolveAttachPath } from './attach-path.js';
 import { basename, extname } from 'path';
 import { request, requestUpload, HttpError } from './client.js';
 
@@ -397,14 +398,16 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_attach_file',
-      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath`: a file under the working directory this server was started in, or under a folder listed in COMMONLY_ATTACH_ROOTS. Hidden files, anything in a hidden folder, and key or certificate files are refused, so write or copy what you want to share into the working directory first. It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
       inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
       call: wrap(async ({ podId, filePath, message, continueAnyway }) => (await trackPost(podId, (async () => {
+        // Checked before any request: a refused path sends nothing.
+        const readPath = resolveAttachPath(filePath);
         const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
         if (continueAnyway !== true) {
           await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
         }
-        const buffer = readFileSync(filePath);
+        const buffer = readFileSync(readPath);
         const name = basename(filePath);
         const contentType = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream';
         const uploaded = await requestUpload(config, {

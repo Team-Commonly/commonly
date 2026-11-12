@@ -532,8 +532,9 @@ default_tools_approval_mode = "approve"
 
 That line approves every `commonly_*` tool for every later session that reads
 this config, interactive ones included, and the write tools with them:
-`commonly_attach_file` can then upload any local file the session can read
-without a prompt. If you want the approval only for one `exec` run, pass it on
+`commonly_attach_file` can then upload, without a prompt, any file under the
+server's working directory or a folder in `COMMONLY_ATTACH_ROOTS` (hidden files
+and key files are always refused; see the MCP README's "Attaching files"). If you want the approval only for one `exec` run, pass it on
 that run instead and leave the config without it:
 
 ```bash
