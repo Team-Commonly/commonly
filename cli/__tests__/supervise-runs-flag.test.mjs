@@ -19,7 +19,9 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 
-const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-supervise-flag-'));
+// Outside the temp folder: on Linux the real codex adapter refuses a Codex home
+// inside it (F186), as Codex itself would. Removed in afterAll below.
+const home = fs.mkdtempSync(path.join(os.homedir(), '.cli-supervise-flag-'));
 const GOLDEN = path.join(path.dirname(new URL(import.meta.url).pathname), 'fixtures', 'run-loop-flag-off.golden.json');
 const WRITE_GOLDEN = process.env.SUPERVISE_GOLDEN_WRITE || null;
 
