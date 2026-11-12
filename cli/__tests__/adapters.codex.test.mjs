@@ -30,7 +30,7 @@ import {
   writeFile,
 } from 'fs/promises';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, join, sep } from 'path';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -1729,6 +1729,10 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
   });
 });
 
+// The test homes live under the real temp folder, where Codex refuses its
+// helper (F186), so Linux spawns name a temp root that holds none of them.
+const NOT_CODEX_TEMP = join(sep, 'not-the-codex-temp-root');
+
 // Codex 0.164 runs its file helper from $CODEX_HOME/tmp/arg0-linux inside
 // bwrap, and a denied ancestor always wins, so on Linux a public home under
 // ~/.commonly failed every session at bootstrap. These pin where it lives now.
@@ -1749,6 +1753,7 @@ describe('codex adapter — the public Codex home on Linux', () => {
       _homeDir: fakeHome,
       _platform: platform,
       _codexNativeBinary: () => '/opt/codex-install/bin/codex',
+      _codexTempRoot: NOT_CODEX_TEMP,
       _spawnImpl: impl,
       ...extra,
     });
@@ -1860,6 +1865,50 @@ describe('codex adapter — the public Codex home on Linux', () => {
     await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state } }))
       .rejects.toThrow(/which the public sandbox denies on Linux/);
     expect(existsSync(state)).toBe(false);
+  });
+
+  // F186: Codex refuses to set up its helper under the temp folder it sees.
+  describe('F186: a home inside the temporary folder Codex sees', () => {
+    test('is refused before anything is created, naming the fix', async () => {
+      const state = join(fakeHome, 'state');
+      const calls = publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state }, extra: { _codexTempRoot: fakeHome } });
+      await expect(calls).rejects.toThrow(
+        /the public Codex home \(.+\) is inside the temporary folder .+ Set XDG_STATE_HOME \(or HOME\) to a folder outside/,
+      );
+      await expect(calls).rejects.toMatchObject({ code: 'codex_home_under_temp' });
+      expect(existsSync(state)).toBe(false);
+    });
+
+    test('the temp folder is the TMPDIR Codex is given', async () => {
+      const state = join(fakeHome, 'state');
+      await expect(publicSpawn(fakeHome, {
+        cwd: project, env: { XDG_STATE_HOME: state, TMPDIR: fakeHome }, extra: { _codexTempRoot: undefined },
+      })).rejects.toThrow(/inside the temporary folder/);
+      expect(existsSync(state)).toBe(false);
+    });
+
+    test('with no TMPDIR it is /tmp, as Codex reads it', async () => {
+      const state = join(sep, 'tmp', `commonly-f186-${process.pid}-${Date.now()}`, 'state');
+      await expect(publicSpawn(fakeHome, {
+        cwd: project, env: { XDG_STATE_HOME: state, TMPDIR: undefined }, extra: { _codexTempRoot: undefined },
+      })).rejects.toThrow(/inside the temporary folder \/tmp/);
+      expect(existsSync(state)).toBe(false);
+    });
+
+    test('a home reaching the temp folder through a link is refused too', async () => {
+      const temp = join(fakeHome, 'temp-root');
+      await mkdir(temp);
+      await symlink(temp, join(fakeHome, 'state-link'));
+      await expect(publicSpawn(fakeHome, {
+        cwd: project, env: { XDG_STATE_HOME: join(fakeHome, 'state-link') }, extra: { _codexTempRoot: temp },
+      })).rejects.toThrow(/inside the temporary folder/);
+      expect(readdirSync(temp)).toEqual([]);
+    });
+
+    test('a home beside the temp folder runs', async () => {
+      const calls = await publicSpawn(fakeHome, { cwd: project, extra: { _codexTempRoot: join(fakeHome, 'temp-root') } });
+      expect(calls).toHaveLength(1);
+    });
   });
 
   test('an XDG_STATE_HOME that reaches ~/.commonly through a symlink is refused too', async () => {
@@ -2002,6 +2051,7 @@ describe('codex adapter — the public Codex home on Linux', () => {
       agentName: 'linux-public-seat',
       _homeDir: fakeHome,
       _platform: 'linux',
+      _codexTempRoot: NOT_CODEX_TEMP,
       _spawnImpl: impl,
     })).rejects.toThrow(/contains the agent's own Codex home/);
     expect(calls).toHaveLength(0);
@@ -2502,7 +2552,7 @@ describe('the Codex home a private seat runs with (F444)', () => {
     delete env.COMMONLY_CODEX_TRUSTED_PERIMETER;
     await codex.spawn('hi', {
       sessionId, cwd, environment: { model: 'test-model' }, env, agentName,
-      _platform: 'linux', _homeDir: home, _spawnImpl: impl, ...extraCtx,
+      _platform: 'linux', _homeDir: home, _codexTempRoot: NOT_CODEX_TEMP, _spawnImpl: impl, ...extraCtx,
     });
     const { args, opts } = calls[0];
     const fsFlag = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean)
@@ -2594,6 +2644,12 @@ describe('the Codex home a private seat runs with (F444)', () => {
     expect(await readlink(join(codexHome, 'auth.json'))).toBe(join(home, '.codex', 'auth.json'));
   });
 
+  test('F186: a private seat\'s home inside the temp folder Codex sees is refused before it is made', async () => {
+    await expect(linuxSpawn({ ctx: { _codexTempRoot: home } }))
+      .rejects.toThrow(/the private Codex home \(.+\) is inside the temporary folder/);
+    expect(existsSync(privateHomes())).toBe(false);
+  });
+
   test('an XDG_STATE_HOME under ~/.commonly is refused for a private seat, in its own words', async () => {
     await expect(linuxSpawn({ env: { XDG_STATE_HOME: join(home, '.commonly', 'state') } }))
       .rejects.toThrow(/puts the private Codex home under .*which the private sandbox denies on Linux/);
@@ -2681,7 +2737,7 @@ describe('the Codex home a private seat runs with (F444)', () => {
       await codex.spawn('hi', {
         sessionId: null, cwd: join(root, 'workspace'), env, agentName: 'twin-public',
         environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
-        _platform: 'linux', _homeDir: home, _spawnImpl: impl,
+        _platform: 'linux', _homeDir: home, _codexTempRoot: NOT_CODEX_TEMP, _spawnImpl: impl,
         ...(seatKey ? { seatKey, instanceId: 'some-instance' } : {}),
       });
       return calls[0].opts.env.CODEX_HOME;

@@ -398,6 +398,30 @@ const publicCodexHomesRoot = (ctx) => {
   return root;
 };
 
+// F186: Codex on Linux refuses to create its sandbox helper under the temp
+// folder it sees ("Refusing to create helper binaries under temporary dir"),
+// so a seat whose home lands there (HOME or XDG_STATE_HOME under /tmp, as on
+// a CI box or a throwaway container) failed every turn before the model, and
+// three of those opened the circuit. Codex's temp folder is its own TMPDIR,
+// else /tmp, compared as written; the real paths are compared as well, so a
+// link either way is refused too. `_codexTempRoot` replaces it in tests.
+const codexTempRoot = (ctx, childEnv) => {
+  if (ctx._codexTempRoot !== undefined) return ctx._codexTempRoot;
+  const fromEnv = childEnv?.TMPDIR;
+  return fromEnv && isAbsolute(fromEnv) ? fromEnv : '/tmp';
+};
+
+const refuseCodexHomeUnderTemp = async (ctx, childEnv, home, seat) => {
+  const root = codexTempRoot(ctx, childEnv);
+  const [realRoot, realHome] = await Promise.all([realpathOfNearest(root), realpathOfNearest(home)]);
+  if (!contains(pathResolve(root), pathResolve(home)) && !contains(realRoot, realHome)) return;
+  throw Object.assign(new Error(
+    `the ${seat} Codex home (${home}) is inside the temporary folder ${root}, where Codex refuses to set up `
+    + 'its sandbox helper, so every turn would stop before the model. Set XDG_STATE_HOME (or HOME) to a folder '
+    + `outside ${root} and start the agent again.`,
+  ), { code: 'codex_home_under_temp' });
+};
+
 // An XDG_STATE_HOME under ~/.commonly throws above, and that tree is denied anyway.
 const privatePublicHomesDeny = (ctx) => {
   if ((ctx._platform || process.platform) !== 'linux') return [];
@@ -503,6 +527,7 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
       + `${contains(realSource, realHome) ? `the shared Codex home (${source})` : join(userHome, '.commonly')}, `
       + 'which its sandbox denies on Linux. Point XDG_STATE_HOME elsewhere or unset it.');
   }
+  if (!ctx._privateCodexHome) await refuseCodexHomeUnderTemp(ctx, childEnv, home, 'private');
   await mkdir(home, { recursive: true, mode: 0o700 });
   await chmod(home, 0o700);
   for (const name of PRIVATE_HOME_LINKS) {
@@ -558,6 +583,7 @@ const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
     const home = ctx._homeDir || homedir();
     const [realRoot, realCommonly] = await Promise.all([realpathOfNearest(homesRoot), realpathOfNearest(join(home, '.commonly'))]);
     if (contains(realCommonly, realRoot)) throw stateHomeUnderCommonly(ctx, home);
+    await refuseCodexHomeUnderTemp(ctx, childEnv, publicHome, 'public');
     const workspacePath = pathResolve(ctx.cwd || process.cwd());
     const [workspace, realHome] = await Promise.all([
       // As in realpathOfNearest: only a missing workspace falls back to its own path.

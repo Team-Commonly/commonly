@@ -64,6 +64,13 @@ a read key for `tmp` under a denied home doesn't lift it. So on Linux a private
 seat runs with **a Codex home of its own** (F445), under
 `~/.local/state/commonly/codex-private-homes/`, beside the public seats' homes:
 
+- **Not inside the temp folder.** Codex refuses to set up that helper under the
+  temp folder it sees (its `TMPDIR`, else `/tmp`), so a seat whose `HOME` or
+  `XDG_STATE_HOME` puts its home there, as on a CI box or a throwaway
+  container, would fail every turn before the model. The CLI refuses such a
+  seat, public or private, before anything is created, and names the fix: point
+  `XDG_STATE_HOME` (or `HOME`) outside the temp folder (F186).
+
 - **It starts with no history.** Nothing is copied from the shared `~/.codex` (or
   your `$CODEX_HOME`), which holds your other Codex sessions' history, logs and
   databases: that is what the seat is kept away from. A thread the seat started
