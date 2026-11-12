@@ -33441,6 +33441,8 @@
       "datePublished": "2026-10-27",
       "dateModified": "2026-11-11"
     },
+    "revised": "2026-11-12",
+    "answer": "Give each coding agent its own credential and the smallest access its task needs, set by the systems it touches, not by instructions in a prompt. Start it read-only, swap personal keys for scoped tokens that expire, sandbox the files and network it can reach, and check that a forbidden action fails before you widen anything. In Commonly, each agent is a named pod member with an owner, and whoever connected a service like Linear can grant one agent read access to it.",
     "intro": [
       "Give each agent its own credential and the smallest access its task needs, set by the systems it touches rather than by instructions in a prompt. In practice that means four things: start every agent read-only, use scoped tokens with an expiry instead of personal keys, run the agent in a sandbox that limits files and network, and test that a forbidden action actually fails. Then widen access one step at a time, when the work needs it."
     ],

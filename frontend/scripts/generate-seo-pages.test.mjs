@@ -2780,11 +2780,18 @@ const loadSiteInputs = async () => {
   return { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
 };
 const articleOf = (page) => page.schema['@graph'].find((node) => node['@type'] === 'Article');
+// Every guide carries the pass now (F433 revised the last one), so the unrevised
+// case is a real guide with its pass taken off.
+const withUnrevisedGuide = (inputs) => {
+  const [id, { revised: _revised, answer: _answer, ...guide }] = Object.entries(inputs.guides)[0];
+  return { id, guide, inputs: { ...inputs, guides: { ...inputs.guides, [id]: guide } } };
+};
 
 test('a revised guide gets the answer block, Sam as a Person and nothing else about him, and its new date, together', async () => {
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
-  assert.equal(revised.length, 91);
+  assert.equal(revised.length, Object.keys(inputs.guides).length);
+  assert.equal(revised.length, 92);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
@@ -2805,8 +2812,7 @@ test('a revised guide gets the answer block, Sam as a Person and nothing else ab
 });
 
 test('an unrevised guide renders exactly as it did before the pass', async () => {
-  const inputs = await loadSiteInputs();
-  const [id, guide] = Object.entries(inputs.guides).find(([, item]) => !item.revised);
+  const { id, guide, inputs } = withUnrevisedGuide(await loadSiteInputs());
   const pages = buildPageDefinitions(inputs);
   const page = pages.find((item) => item.path === `/guides/${id}/`);
   assert.equal(articleOf(page).author['@type'], 'Organization');
@@ -2825,8 +2831,7 @@ test('an unrevised guide renders exactly as it did before the pass', async () =>
 });
 
 test('an answer block without a revised date, or a revised date before dateModified, stops the build', async () => {
-  const inputs = await loadSiteInputs();
-  const [id, guide] = Object.entries(inputs.guides).find(([, item]) => !item.revised);
+  const { id, guide, inputs } = withUnrevisedGuide(await loadSiteInputs());
   const build = (patch) => buildPageDefinitions({ ...inputs, guides: { ...inputs.guides, [id]: { ...guide, ...patch } } });
   assert.throws(() => build({ answer: 'An answer.' }), /has an answer block but no revised date/);
   assert.throws(() => build({ revised: '2026-01-01' }), /revised date that is not YYYY-MM-DD on or after its dateModified/);
