@@ -1412,6 +1412,8 @@ describe('performRun', () => {
     await drainMicrotasks();
     stop();
 
+    expect(spawn.mock.calls[0][0]).toContain('Your final text is posted to the pod');
+    expect(spawn.mock.calls[0][0]).not.toContain('your final text is not posted');
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
       reply('The release owner needs to choose a date.'),
@@ -1486,6 +1488,11 @@ describe('performRun', () => {
     stop();
 
     expect(spawn).toHaveBeenCalled();
+    // The turn is told the truth (TASK-293): its final text goes nowhere, the tool is how it speaks.
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('your final text is not posted');
+    expect(prompt).toContain('post it with commonly_post_message, then end with NO_REPLY');
+    expect(prompt).not.toContain('Your final text is posted to the pod');
     expect(replyPosts(mockPost)).toHaveLength(0);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb-narration/ack',
