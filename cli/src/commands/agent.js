@@ -1126,8 +1126,9 @@ export const buildDefaultEnvironment = (adapterName) => {
  * (lib/unconfined-seat-guard.js `seatRunsUnconfined`) attaches only to a pod
  * confirmed private and invite-only; a pod whose visibility cannot be read
  * fails closed, and each turn checks again.
- * dsh is private-only, so it requires a successful visibility read and rejects
- * a public pod even without a sandbox declaration.
+ * A dsh seat without public trust requires a successful visibility read and
+ * rejects a public pod even without a sandbox declaration. A public-trust dsh
+ * seat runs the public tool fence (adapters/dsh.js, F115) and attaches anywhere.
  */
 export const assertSandboxDeclaredForPublicPod = async ({
   client,
@@ -1139,7 +1140,7 @@ export const assertSandboxDeclaredForPublicPod = async ({
 }) => {
   if (!podId || !client) return;
 
-  if (adapterName === 'dsh') {
+  if (adapterName === 'dsh' && effectiveSandboxTrust(environment?.sandbox?.trust) !== 'public') {
     let pod;
     try {
       pod = await client.get(`/api/pods/${podId}`);
@@ -1150,7 +1151,7 @@ export const assertSandboxDeclaredForPublicPod = async ({
       throw new Error('dsh requires confirmed private pod visibility before attach');
     }
     if (pod?.publicRead || pod?.communityListed) {
-      throw new Error('dsh supports private pods only; this pod is publicly readable');
+      throw new Error('This pod is publicly readable. A dsh seat attaches to it only with "sandbox": { "trust": "public" }');
     }
     // dsh's confined shape stops here; an unconfined dsh runs as its owner and
     // meets the invite-only requirement below.

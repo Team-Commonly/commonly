@@ -9,7 +9,7 @@ import { refuseWorkspaceTrust } from '../src/lib/environment.js';
 import codex from '../src/lib/adapters/codex.js';
 import opencode from '../src/lib/adapters/opencode.js';
 import qwen from '../src/lib/adapters/qwen.js';
-import { assertPrivateDsh } from '../src/lib/adapters/dsh.js';
+import { assertEnforceableDsh } from '../src/lib/adapters/dsh.js';
 import { assertSandboxSupported as assertGooseUnsandboxed } from '../src/lib/adapters/goose.js';
 import { assertSandboxSupported as assertPiUnsandboxed } from '../src/lib/adapters/pi.js';
 
@@ -40,7 +40,7 @@ describe('adapters that do not implement the workspace tier refuse it', () => {
   });
 
   test.each([
-    ['dsh', assertPrivateDsh],
+    ['dsh', assertEnforceableDsh],
     ['goose', assertGooseUnsandboxed],
     ['pi', assertPiUnsandboxed],
   ])('%s refuses in its sandbox assertion', (name, assertSandbox) => {

@@ -187,12 +187,20 @@ describe("resolveAttachSandbox — dsh's confined shape", () => {
       { mode: 'workspace', network: { policy: 'open' } },
       { mode: 'workspace', network: { policy: 'restricted' }, extra: 1 },
       { mode: 'read-only', network: { policy: 'restricted' } },
-      { mode: 'workspace', network: { policy: 'restricted' }, trust: 'public' },
       { mode: 'workspace', network: { policy: 'restricted' }, trust: 'workspace' },
+      { trust: 'public', mode: 'bwrap' },
+      { trust: 'public', network: { policy: 'restricted' } },
     ]) {
       expect(() => resolveAttachSandbox({ environment: { sandbox }, adapterName: 'dsh', adapter: dsh }))
         .toThrow(/dsh adapter/);
     }
+  });
+
+  test('a public-trust dsh seat attaches, bare or with the confined shape spelled out (F115)', () => {
+    expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'public' } }, adapterName: 'dsh', adapter: dsh }))
+      .toEqual({ trust: 'public' });
+    expect(resolveAttachSandbox({ environment: { sandbox: { ...confined.sandbox, trust: 'public' } }, adapterName: 'dsh', adapter: dsh }))
+      .toEqual({ mode: 'workspace', trust: 'public' });
   });
 
   test('the same env is still refused for adapters without their own confined shape', () => {
@@ -538,7 +546,7 @@ describe('performAttach', () => {
   test('dsh attach requires confirmed private pod visibility', async () => {
     const client = { get: jest.fn(async () => ({ publicRead: true, communityListed: false })) };
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-public', adapterName: 'dsh' }))
-      .rejects.toThrow(/private pods only/);
+      .rejects.toThrow(/publicly readable\. A dsh seat attaches to it only with "sandbox": \{ "trust": "public" \}/);
     client.get.mockRejectedValueOnce(new Error('visibility unavailable'));
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
       .rejects.toThrow(/confirmed private pod visibility/);
@@ -551,6 +559,15 @@ describe('performAttach', () => {
     await expect(assertSandboxDeclaredForPublicPod({
       client, podId: 'pod-private', adapterName: 'dsh', environment: confined,
     })).resolves.toBeUndefined();
+  });
+
+  test('a public-trust dsh seat attaches to a public pod without a visibility read (F115)', async () => {
+    const client = { get: jest.fn(async () => ({ publicRead: true, communityListed: true })) };
+    for (const sandbox of [{ trust: 'public' }, { trust: 'internal' }]) {
+      await expect(assertSandboxDeclaredForPublicPod({
+        client, podId: 'pod-public', adapterName: 'dsh', environment: { sandbox },
+      })).resolves.toBeUndefined();
+    }
   });
 
   test('an unconfined dsh runs as its owner, so it also needs the pod invite-only', async () => {

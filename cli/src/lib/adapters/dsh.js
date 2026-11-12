@@ -1,6 +1,10 @@
 import { observeSpawn } from '../runtime-observation.js';
 /**
- * DeepSeek Harness 0.2.1-rc.2, private seats only. Configuration is per spawn.
+ * DeepSeek Harness 0.2.1-rc.2. Configuration is per spawn.
+ *
+ * A public seat (F115) runs the confined shape below with dsh's own tools off,
+ * a guard plugin that refuses any call but a Commonly tool it may use, and the
+ * Commonly MCP gated on that guard; see DSH_PUBLIC_DISABLED_PLUGINS.
  *
  * A seat runs plain, or confined: `sandbox: { mode: 'workspace', network:
  * { policy: 'restricted' } }` runs dsh inside one Seatbelt profile that writes
@@ -33,6 +37,33 @@ import { writeCredentialFile } from '../credential-file.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { promptTokens } from '../session-recycle.js';
+import { publicSeatWithheldTools } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_MCP_ENV } from '../public-seat-mcp-flag.js';
+
+/**
+ * F115: what a public seat's turn turns off. These are every headless-profile
+ * plugin that gives the model a tool of its own (shell, files, web, code,
+ * subagents, skills, jobs, workflows, goals, plan mode) or reads the working
+ * directory into the prompt. The guard plugin refuses anything that is still
+ * offered, so this list keeps the advertised set honest rather than being the
+ * only fence.
+ */
+export const DSH_PUBLIC_DISABLED_PLUGINS = Object.freeze([
+  'tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-fs', 'tool-fs-search', 'tool-working-directory',
+  'tool-skill', 'skill', 'skill-filesystem',
+  'tool-subagent', 'tool-subagent-control', 'tool-subagent-list-agents', 'tool-subagent-fork',
+  'subagent', 'subagent-spawn-in-process', 'subagent-fork-in-process',
+  'tool-workflow', 'workflow-ptc', 'ptc-runtime', 'tool-todo', 'tool-goal',
+  'tool-web', 'web', 'web-search-deepseek', 'web-deepseek-api', 'web-fetch-http',
+  'mcp-resources', 'agent-instructions', 'plan-mode', 'goal', 'goal-round-driver', 'command-goal',
+]);
+/** The service dsh-public-guard.mjs provides; the Commonly MCP entry is gated on it. */
+export const DSH_PUBLIC_GUARD_SERVICE = 'commonlyPublicGuard';
+/** A public turn's working directory, emptied before each turn, under the seat home. */
+export const PUBLIC_TURN_DIR = 'public-turn';
+const PUBLIC_GUARD_SOURCE = new URL('./dsh-public-guard.mjs', import.meta.url);
+// dsh layers these from its home onto every run; a public seat holds neither.
+const PUBLIC_HOME_REFUSED = ['cordis.patch.yml', '.env'];
 
 export const TESTED_DSH_VERSIONS = Object.freeze(['0.2.1-rc.2']);
 const PROXY_KEY_ENV = 'COMMONLY_DSH_PROXY_KEY';
@@ -43,11 +74,14 @@ const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CER
 export const isConfinedDsh = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
   refuseWorkspaceTrust(sandbox, 'dsh');
-  if (effectiveSandboxTrust(sandbox.trust) === 'public') {
-    throw new Error('dsh adapter: public-trust seats are not supported; nested Seatbelt fails closed');
-  }
-  if (sandbox.mode === undefined) return false;
-  const { mode, network, ...rest } = sandbox;
+  // F115: public trust always runs the confined shape, with the public tool fence.
+  const isPublic = effectiveSandboxTrust(sandbox.trust) === 'public';
+  const { trust: _trust, ...publicShape } = sandbox;
+  const shape = isPublic ? publicShape : sandbox;
+  if (isPublic && Object.keys(shape).length === 0) return true;
+  // Only a private seat may run plain; a public one with any other key is refused below.
+  if (!isPublic && shape.mode === undefined) return false;
+  const { mode, network, ...rest } = shape;
   const networkKeys = Object.keys(network || {});
   if (mode === 'workspace' && network?.policy === 'restricted'
     && networkKeys.length === 1 && Object.keys(rest).length === 0) return true;
@@ -55,7 +89,11 @@ export const isConfinedDsh = (environment = {}) => {
     + "the one confined shape is { mode: 'workspace', network: { policy: 'restricted' } }");
 };
 
-export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environment); };
+/** True for a public-trust seat (legacy `internal` included). */
+export const isPublicDsh = (environment = {}) => effectiveSandboxTrust(environment?.sandbox?.trust) === 'public';
+
+/** Throws on any sandbox this adapter cannot enforce. */
+export const assertEnforceableDsh = (environment = {}) => { isConfinedDsh(environment); };
 
 /**
  * The macOS developer tools a confined writer needs for git, granted read-only.
@@ -189,7 +227,10 @@ export const resolveCommonlyMcp = (declared, ctx) => {
   const values = { credentialFile: ctx.credentialFile, instanceUrl: ctx.instanceUrl };
   const env = Object.fromEntries(Object.entries(delivery.env)
     .map(([name, value]) => [name, substitute(value, values)]));
-  if (Object.keys(env).some((name) => !['COMMONLY_API_URL', 'COMMONLY_TOKEN_FILE'].includes(name))
+  // A public seat's MCP always carries the public-seat flag, whatever was declared.
+  if (ctx.publicSeat) env[PUBLIC_SEAT_MCP_ENV] = '1';
+  const allowed = ['COMMONLY_API_URL', 'COMMONLY_TOKEN_FILE', ...(ctx.publicSeat ? [PUBLIC_SEAT_MCP_ENV] : [])];
+  if (Object.keys(env).some((name) => !allowed.includes(name))
     || env.COMMONLY_TOKEN_FILE !== ctx.credentialFile || env.COMMONLY_API_URL !== ctx.instanceUrl) {
     throw new Error('dsh adapter: Commonly MCP must use this spawn\'s credential file');
   }
@@ -206,7 +247,7 @@ export const resolveCommonlyMcp = (declared, ctx) => {
 
 /** JSON is valid YAML; a generated patch has no expression or quoting ambiguity. */
 export const buildPatch = ({
-  proxyBaseURL, model, cwd, mcp, effort, deepseekOfficial = false, confined = false,
+  proxyBaseURL, model, cwd, mcp, effort, deepseekOfficial = false, confined = false, publicSeat = null,
 }) => ([
   { id: 'llm-pi-ai', config: { providers: {
     commonly: {
@@ -233,7 +274,13 @@ export const buildPatch = ({
   // Confined, the outer Seatbelt is the sandbox: dsh's own would nest a second
   // one, which macOS refuses, so it is off.
   { id: 'sandbox-policy', config: { mode: confined ? 'danger-full-access' : 'workspace-write', workspaceRoot: cwd } },
-  { insert: [mcp] },
+  // F115: a public turn's native tools are off, the guard refuses whatever is
+  // left, and the Commonly MCP starts only once the guard's service exists.
+  ...(publicSeat ? [
+    ...DSH_PUBLIC_DISABLED_PLUGINS.map((id) => ({ id, disabled: true })),
+    { insert: [{ id: 'commonly-public-guard', name: publicSeat.guardPath, config: { withheld: [...publicSeat.withheld] } }] },
+  ] : []),
+  { insert: [publicSeat ? { ...mcp, inject: [DSH_PUBLIC_GUARD_SERVICE] } : mcp] },
 ]);
 
 export const assertPatchHasNoCredentials = (serialized, credentials) => {
@@ -350,7 +397,7 @@ export default {
   async validateEnvironment(environment, workspacePath) {
     const validation = validateEnvironmentSpec(environment);
     if (!validation.ok) throw new Error(validation.errors.join('; '));
-    assertPrivateDsh(environment);
+    assertEnforceableDsh(environment);
     if (!environment?.provider || !environment?.model) {
       throw new Error('dsh requires environment.provider and environment.model');
     }
@@ -390,9 +437,24 @@ export default {
       throw new Error('dsh requires environment.provider and environment.model');
     }
     if (!ctx.runtimeToken || !ctx.instanceUrl) throw new Error('dsh requires a Commonly runtime token and instance URL');
+    const isPublic = confined && isPublicDsh(ctx.environment);
     const home = seatHome(ctx);
     await mkdir(home, { recursive: true, mode: 0o700 });
     await chmod(home, 0o700);
+    // F115: a public turn runs in an empty folder the adapter owns, so nothing a
+    // seat or a stranger put in the workspace (a .env dsh would load, say)
+    // reaches it, and dsh's home layers must be absent.
+    let workspace = ctx.cwd;
+    if (isPublic) {
+      for (const file of PUBLIC_HOME_REFUSED) {
+        if (existsSync(join(home, file))) {
+          throw new Error(`dsh adapter: a public seat's home holds ${file}, which dsh would load into every turn; remove ${join(home, file)}`);
+        }
+      }
+      workspace = join(home, PUBLIC_TURN_DIR);
+      await rm(workspace, { recursive: true, force: true });
+      await mkdir(workspace, { mode: 0o700 });
+    }
     const binary = ctx._dshBinary || 'dsh';
     const sourceEnv = ctx.env || process.env;
     const version = readVersion(binary, childEnvironment(sourceEnv, home, ''));
@@ -419,9 +481,17 @@ export default {
       const mcpDirectories = [];
       if (confined) {
         relay = await startInstanceProxy({ instanceUrl: ctx.instanceUrl });
-        egress = await (ctx._startEgressProxy || startEgressProxy)();
+        // A public turn has no tool that reaches the network, so it gets no egress at all.
+        if (!isPublic) egress = await (ctx._startEgressProxy || startEgressProxy)();
+      }
+      let publicSeat = null;
+      if (isPublic) {
+        const guardPath = join(tempDir, 'commonly-public-guard.mjs');
+        await writeFile(guardPath, await readFile(PUBLIC_GUARD_SOURCE), { mode: 0o600 });
+        publicSeat = { guardPath, withheld: publicSeatWithheldTools(ctx) };
       }
       const mcp = resolveCommonlyMcp(ctx.environment?.mcp, {
+        publicSeat: isPublic,
         credentialFile: credential.path,
         instanceUrl: confined ? relay.url : ctx.instanceUrl,
         ...(confined ? {
@@ -438,7 +508,7 @@ export default {
       });
       const patchData = buildPatch({
         proxyBaseURL: proxy.baseURL, model: seatModel,
-        cwd: ctx.cwd, mcp, effort: ctx.environment.effort, confined,
+        cwd: workspace, mcp, effort: ctx.environment.effort, confined, publicSeat,
         deepseekOfficial: new URL(ctx.environment.provider.baseURL).hostname === 'api.deepseek.com',
       });
       const patch = JSON.stringify(patchData, null, 2);
@@ -463,22 +533,24 @@ export default {
         const tempWork = join(home, 'tmp');
         await mkdir(tempWork, { recursive: true, mode: 0o700 });
         env.TMPDIR = tempWork;
-        for (const name of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) env[name] = egress.url;
-        env.NO_PROXY = '127.0.0.1,localhost';
-        env.no_proxy = env.NO_PROXY;
+        if (egress) {
+          for (const name of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) env[name] = egress.url;
+          env.NO_PROXY = '127.0.0.1,localhost';
+          env.no_proxy = env.NO_PROXY;
+        }
         const developerDir = (ctx._developerToolsDir || developerToolsDir)({ env: sourceEnv });
         if (developerDir) {
           env.DEVELOPER_DIR = developerDir;
           env.PATH = systemToolsFirst(env.PATH);
         }
         [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
-          workspacePath: ctx.cwd,
+          workspacePath: workspace,
           workspaceAccess: 'write',
           executablePath: process.execPath,
           statePath: home,
           mcpConfigDir: tempDir,
           network: 'loopback',
-          loopbackNetworkPorts: [proxy.port, relay.port, egress.port],
+          loopbackNetworkPorts: [proxy.port, relay.port, ...(egress ? [egress.port] : [])],
           readOnlyDirectories: [packages, ...mcpDirectories, ...(developerDir ? [developerDir] : [])],
         });
       }
@@ -487,7 +559,7 @@ export default {
       let failure;
       try {
         result = await runDsh({
-          binary: command, args: commandArgs, cwd: ctx.cwd, env, timeoutMs, credentials,
+          binary: command, args: commandArgs, cwd: workspace, env, timeoutMs, credentials,
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, ownGroup: wantsOwnProcessGroup(ctx),
           controls: { model: passedModel || null, effort: passedProvider.reasoning || null },
         });
@@ -496,7 +568,7 @@ export default {
       }
       // A broken pin is the reason a turn failed, whatever dsh said about it.
       if (confined) {
-        const { refusals } = egress.stats();
+        const refusals = egress ? egress.stats().refusals : [];
         // eslint-disable-next-line no-console
         if (refusals.length) console.warn(`[dsh] egress refused: ${refusals.map((r) => `${r.target} (${r.reason})`).join(', ')}`);
         assertServedModel(proxy.modelCheck(), credentials);

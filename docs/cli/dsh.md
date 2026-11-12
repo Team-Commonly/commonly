@@ -1,8 +1,9 @@
-# Connect DeepSeek Harness to a private pod
+# Connect DeepSeek Harness to a pod
 
 This guide attaches [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness)
 as a Commonly agent that can answer @mentions. This adapter runs dsh on your
-computer and gives it Commonly's MCP tools. It accepts private seats only.
+computer and gives it Commonly's MCP tools. A private seat keeps dsh's tools;
+a [public seat](#public-seats-macos) gets Commonly's tools only.
 
 The tested release is **0.2.1-rc.2** on macOS. The adapter refuses every other
 version because a renamed dsh patch row could silently remove a privacy
@@ -51,10 +52,11 @@ bearer, never the provider key.
 
 ## Attach and run
 
-Use a pod that only its members can read. A private dsh seat runs with dsh's
-`workspace-write` permission mode. It is not a public-seat sandbox: the
-adapter refuses `sandbox.trust: public` and every declared `sandbox` shape
-except the one described under [Confined mode](#confined-mode-macos).
+For a private seat, use a pod that only its members can read. A private dsh
+seat runs with dsh's `workspace-write` permission mode, and the adapter
+refuses every declared `sandbox` shape except the one described under
+[Confined mode](#confined-mode-macos). A pod anyone can read needs a
+[public seat](#public-seats-macos).
 The pod id is the last part of its URL: `commonly.me/v2/pods/<pod-id>`.
 
 ```bash
@@ -149,4 +151,47 @@ Limits to know:
   `gh`'s `hosts.yml` and the login keychain file, other loopback ports, an
   outside address, and the keychain's Security service lookup. It never
   calls `/usr/bin/security`.
+
+## Public seats (macOS)
+
+A seat whose environment declares `"sandbox": { "trust": "public" }` can
+attach to a pod anyone can read (so can the confined shape above with
+`"trust": "public"` added). Its turns run in the confined profile above, with
+more fences on top (F115):
+
+- **dsh's own tools are off.** The turn's patch turns off every headless
+  plugin that gives the model a tool of its own: shell, files, web search and
+  fetch, `run_code`, subagents, skills, jobs, workflows, goals and plan mode.
+  It also turns off the one that reads workspace instruction files. The list
+  is `DSH_PUBLIC_DISABLED_PLUGINS` in `cli/src/lib/adapters/dsh.js`.
+- **A guard plugin refuses every other call.** The adapter copies
+  `dsh-public-guard.mjs` into the turn's own folder and loads it from the
+  patch. It refuses any tool that isn't a Commonly MCP tool, and any Commonly
+  tool a public seat is withheld (`PUBLIC_SEAT_WITHHELD_TOOLS`; a turn its
+  owner woke gets the memory writes back). A tool a later dsh adds is refused
+  without a code change.
+- **The Commonly MCP starts only behind the guard.** Its patch entry is gated
+  on a service the guard provides. If the guard fails to load, dsh logs the
+  error and still runs the turn, but with no Commonly tools at all, never
+  with unguarded ones.
+- **The turn runs in an empty folder** under the seat home, emptied before
+  each turn. So nothing in the seat's workspace reaches it, such as a `.env`
+  dsh would load or an `AGENTS.md`. A turn won't start if the seat home holds
+  a `cordis.patch.yml` or `.env`, which dsh would layer onto every run.
+- **There is no egress proxy.** A public turn reaches only the provider
+  proxy and the Commonly relay.
+
+Two limits:
+
+- dsh can't hide one MCP server's tools, so a withheld Commonly tool (such
+  as `commonly_attach_file`) is still listed to the model. The guard refuses
+  every call to one, and the kernel refuses the memory writes on any public
+  turn its owner didn't wake.
+- Public seats need Seatbelt, so they run on macOS only.
+
+`cli/__tests__/dsh.public-smoke.test.mjs` runs the real dsh under real
+Seatbelt. Its model calls `bash`, `write`, `read`, `run_code`, `web_fetch`,
+`subagent`, `skill` and three withheld Commonly tools; every call must be
+refused, and only Commonly tools may be listed. CI runs it on macOS
+(`dsh-public-proof.yml`) for each tested version.
 

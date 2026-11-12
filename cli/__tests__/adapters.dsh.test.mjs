@@ -8,7 +8,7 @@ import { join } from 'path';
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMock, spawn: jest.fn() }));
 const {
-  default: dsh, TESTED_DSH_VERSIONS, assertPrivateDsh, buildPatch,
+  default: dsh, TESTED_DSH_VERSIONS, assertEnforceableDsh, buildPatch,
   childEnvironment, resolveCommonlyMcp, runDsh, sessionExists,
 } = await import('../src/lib/adapters/dsh.js');
 
@@ -52,14 +52,16 @@ beforeEach(() => {
   spawnSyncMock.mockReturnValue({ status: 0, stdout: `dsh ${TESTED_DSH_VERSIONS[0]}\n` });
 });
 
-test('public and any declared sandbox mode refuse before a child starts', async () => {
-  expect(() => assertPrivateDsh({ sandbox: { trust: 'internal' } })).toThrow(/public-trust/);
-  expect(() => assertPrivateDsh({ sandbox: { trust: 'public' } })).toThrow(/public-trust/);
-  expect(() => assertPrivateDsh({ sandbox: { mode: 'none' } })).toThrow(/sandbox.mode/);
+test('a declared sandbox mode dsh cannot enforce refuses; a public seat off macOS refuses before a child starts', async () => {
+  expect(() => assertEnforceableDsh({ sandbox: { trust: 'internal' } })).not.toThrow();
+  expect(() => assertEnforceableDsh({ sandbox: { trust: 'public' } })).not.toThrow();
+  expect(() => assertEnforceableDsh({ sandbox: { mode: 'none' } })).toThrow(/sandbox.mode/);
   await withSeat(async (ctx) => {
     const spawn = jest.fn();
-    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment, sandbox: { trust: 'public' } }, _spawnImpl: spawn }))
-      .rejects.toThrow(/public-trust/);
+    // F115: public trust is always the confined shape, which needs Seatbelt.
+    await expect(dsh.spawn('hi', {
+      ...ctx, environment: { model: 'test-model', ...ctx.environment, sandbox: { trust: 'public' } }, _platform: 'linux', _spawnImpl: spawn,
+    })).rejects.toThrow(/needs Seatbelt, which is macOS only/);
     expect(spawn).not.toHaveBeenCalled();
   });
 });
