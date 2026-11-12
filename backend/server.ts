@@ -287,6 +287,7 @@ app.use('/api/agent-computer', require('./routes/agentComputer')); // Staging-on
 // Mounted before the runtime router so the path is unambiguous.
 app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
 app.use('/api/agents/seat-activity', require('./routes/agentSeatActivity')); // Member-gated seat logs for `agent logs`
+app.use('/api/agents/health', require('./routes/agentHealth')); // D115: own-pods agent health, counts only
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/activity', activityRoutes); // Activity feed
