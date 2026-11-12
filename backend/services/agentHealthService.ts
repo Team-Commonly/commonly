@@ -48,6 +48,8 @@ const KIND_BY_TYPE: Record<string, WakeKind> = {
 // Codes a person has to fix. Everything else counts as failed, not needs-you.
 const BYO_NEEDS_YOU = new Set(['claude-signed-out', 'login', 'out-of-allowance', 'wont-start', 'codex-version']);
 const HOSTED_NEEDS_YOU = new Set(['config']);
+// How far back the latest finished run is looked for, whatever the window.
+const NEEDS_YOU_LOOKBACK_MS = 30 * 24 * 3600 * 1000;
 
 export type OutcomeBucket = 'posted' | 'declined' | 'empty' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
 type Buckets = Record<OutcomeBucket, number> & { total: number };
@@ -214,9 +216,18 @@ export async function readAgentHealth(
       },
     ]),
     // Needs you reads the latest finished run only: a config error the agent
-    // has since run cleanly past is history (a count), not an action.
+    // has since run cleanly past is history (a count), not an action. It is the
+    // agent's state, not a count, so it looks past the chosen window (bounded at
+    // NEEDS_YOU_LOOKBACK_MS so the scan stays small).
     AgentRun.aggregate([
-      { $match: { ...runMatch, status: { $in: ['succeeded', 'failed', 'interrupted'] } } },
+      {
+        $match: {
+          podId: { $in: podIds },
+          agentName: { $in: agentNames },
+          startedAt: { $gte: new Date(now.getTime() - NEEDS_YOU_LOOKBACK_MS) },
+          status: { $in: ['succeeded', 'failed', 'interrupted'] },
+        },
+      },
       { $sort: { startedAt: -1 } },
       {
         $group: {

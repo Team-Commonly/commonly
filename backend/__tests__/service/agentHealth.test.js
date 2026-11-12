@@ -151,6 +151,12 @@ describe('GET /api/agents/health', () => {
       errorKind: 'config',
       errorMessage: SECRET,
     });
+    // kite: a config failure 30 hours ago and nothing since. It is still the
+    // agent's state, so the default 24-hour view says needs you.
+    await install('kite', shared._id, { runtimeType: 'native' });
+    await AgentRun.create({
+      podId: shared._id, agentName: 'kite', instanceId: 'default', trigger: 'mention', status: 'failed', errorKind: 'config', startedAt: new Date(Date.now() - 30 * 3600 * 1000),
+    });
     // heron: a config failure, then a clean run. The latest finished run decides
     // needs-you, so the fixed config is a count in errorKinds, not an action.
     await install('heron', shared._id, { runtimeType: 'native' });
@@ -198,6 +204,10 @@ describe('GET /api/agents/health', () => {
     const heron = res.body.agents.find((row) => row.agentName === 'heron');
     expect(heron.runs.errorKinds).toEqual({ config: 1 });
     expect(heron.needsYou).toBeNull();
+    // An unresolved config failure older than the window still asks; its count stays out of the window.
+    const kite = res.body.agents.find((row) => row.agentName === 'kite');
+    expect(kite.needsYou).toBe('config');
+    expect(kite.runs).toBeNull();
   });
 
   it('reads BYO liveness and its fixed failure code', async () => {
@@ -218,7 +228,7 @@ describe('GET /api/agents/health', () => {
   it('never lists another pod\'s agent, an uninstalled one, or a co-member\'s agent-dm', async () => {
     const res = await request(app).get('/api/agents/health').set('Authorization', `Bearer ${token(viewer)}`);
     const names = res.body.agents.map((row) => `${row.agentName}@${row.pod.id}`);
-    expect(names.sort()).toEqual([`heron@${shared._id}`, `otter@${shared._id}`, `scribe@${shared._id}`].sort());
+    expect(names.sort()).toEqual([`heron@${shared._id}`, `kite@${shared._id}`, `otter@${shared._id}`, `scribe@${shared._id}`].sort());
   });
 
   it('gives a global admin who is a member of nothing an empty list', async () => {
