@@ -603,8 +603,15 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence ${literal(executablePath)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(executablePath)}"))`,
   ].join('\n') : '';
+  // The config folder is usually under the temp folder, which resolves through
+  // /private; a realpath of a file there (dsh's plugin preflight on the public
+  // guard) stats each ancestor. Metadata only, as for the read-only folders: no
+  // read or write on an ancestor or a file beside it (F115 prod walk, 11-12).
   const mcpRule = resolvedMcpConfig
-    ? `(allow file-read* file-test-existence ${subpath(resolvedMcpConfig)})`
+    ? [
+      `(allow file-read* file-test-existence ${subpath(resolvedMcpConfig)})`,
+      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedMcpConfig)}"))`,
+    ].join('\n')
     : '';
   const readOnlyRules = resolvedReadOnlyPaths.map((path) => (
     `(allow file-read* file-test-existence ${literal(path)})`

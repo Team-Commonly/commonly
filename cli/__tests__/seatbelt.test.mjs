@@ -55,6 +55,13 @@ describe('macOS Seatbelt profile', () => {
     expect(profile).toContain(
       `(allow file-read* file-test-existence (subpath "${resolvedMcp}"))`,
     );
+    // F115: its ancestors get metadata only, so a realpath of a file in it works
+    // under /private; no rule reads or writes an ancestor.
+    expect(profile).toContain(
+      `(allow file-read-metadata file-test-existence (path-ancestors "${resolvedMcp}"))`,
+    );
+    expect(profile.split('\n').filter((line) => line.includes(`path-ancestors "${resolvedMcp}"`)))
+      .toEqual([`(allow file-read-metadata file-test-existence (path-ancestors "${resolvedMcp}"))`]);
     expect(profile).toContain(
       `(deny file-read* file-write* (subpath "${join(resolvedWorkspace, '.commonly')}"))`,
     );
