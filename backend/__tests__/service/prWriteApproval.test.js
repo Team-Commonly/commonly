@@ -461,7 +461,7 @@ describe('the owner\'s card carries a summary, never the payload', () => {
     expect(card.toolCall.canonicalArgs).toBeUndefined();
     expect(card.toolCall.summary).toEqual({
       repo: 'Team-Commonly/commonly', base: 'main', head: head(), title: 'Fix #12',
-      draft: false, bodyPreview: 'x'.repeat(2000), bodyLength: 5000,
+      draft: false, bodyPreview: 'x'.repeat(2000), bodyShown: 2000, bodyLength: 5000,
     });
   });
 

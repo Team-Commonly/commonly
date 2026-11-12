@@ -154,9 +154,12 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
   const repo = `${str(a.owner)}/${str(a.repo)}`;
   if (tool === 'github.create_pull_request') {
     const body = str(a.body);
+    const shown = body.slice(0, BODY_PREVIEW);
     return {
-      repo, base: str(a.base), head: str(a.head), title: str(a.title), draft: a.draft === true,
-      bodyPreview: body.slice(0, BODY_PREVIEW), bodyLength: body.length,
+      repo, base: str(a.base), head: str(a.head), title: markBidi(str(a.title)), draft: a.draft === true,
+      // The preview is marked, so it can run longer than what it shows:
+      // bodyShown counts the body characters it carries.
+      bodyPreview: markBidi(shown), bodyShown: shown.length, bodyLength: body.length,
     };
   }
   if (tool === 'github.commit_files') {

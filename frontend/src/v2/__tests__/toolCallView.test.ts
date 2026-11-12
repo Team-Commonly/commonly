@@ -214,6 +214,17 @@ describe('a PR write summary', () => {
     expect(prWriteView('github.create_pull_request', { bodyPreview: 'abc', bodyLength: 3 }).notices).toEqual([]);
   });
 
+  // F464: the server marks bidi controls in the preview, so the preview runs
+  // longer than the body it shows; bodyShown carries the real count.
+  test('a marked PR body counts what it shows from bodyShown, which is not a row', () => {
+    const marked = '⟦U+202E⟧'.repeat(300);
+    const cut = prWriteView('github.create_pull_request', { bodyPreview: marked, bodyShown: 300, bodyLength: 2500 });
+    expect(cut.notices).toEqual([{ key: 'approvalCard.toolCall.notice.bodyCut', vars: { shown: '300', total: '2500' } }]);
+    expect(cut.rows.map((row) => row.keys[0])).not.toContain('bodyShown');
+    const whole = prWriteView('github.create_pull_request', { bodyPreview: marked, bodyShown: 300, bodyLength: 300 });
+    expect(whole.notices).toEqual([]);
+  });
+
   test('a push always says its contents are not shown', () => {
     const view = prWriteView('github.push_branch', {
       repo: 'a/b', head: 'x', baseOid: sha, newOid: sha, bundleBytes: 2048,
