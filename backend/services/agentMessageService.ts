@@ -3,6 +3,7 @@ import type { DecisionRelayCard } from './decisionCardRelay';
 import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
 import { reopenIfClosed } from './agentRoomCloseService';
+import { contentWithCardOutcome } from './approvalCardOutcome';
 
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
@@ -2672,10 +2673,17 @@ class AgentMessageService {
     // the whole pod as if it were the thread, the Mongo read throws — an agent
     // that asked for a thread must never mistake the pod for it.
     threadRootId?: string,
+    // F290: true where the text is shown to an agent, so a decided card reads
+    // "[approval declined] …" instead of its stored "[approval needed] …".
+    // Off for the internal checks (the duplicate guard compares stored text).
+    { cardOutcome = false }: { cardOutcome?: boolean } = {},
   ): Promise<MessageNormalized[]> {
     if (!podId) {
       throw new Error('podId is required');
     }
+    const shown = (row: Record<string, unknown>): string => (
+      cardOutcome ? contentWithCardOutcome(row) : row.content as string
+    );
     if (beforeMs !== undefined
       && (typeof beforeMs !== 'number'
         || !Number.isFinite(beforeMs)
@@ -2722,7 +2730,7 @@ class AgentMessageService {
         return {
           _id: msg.id,
           id: msg.id,
-          content: msg.content as string,
+          content: shown(msg),
           messageType: (msg.message_type as string) || 'text',
           userId: {
             _id: msg.user_id,
@@ -2781,7 +2789,7 @@ class AgentMessageService {
       return {
         _id: msg._id,
         id: msg._id,
-        content: msg.content as string,
+        content: shown(msg),
         messageType: (msg.messageType as string) || 'text',
         userId: userId || { username: 'Unknown' },
         username,

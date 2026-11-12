@@ -1780,7 +1780,7 @@ router.get(
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
       // Same server-computed `self` flag as the runtime-token route (#757).
       const readStartedAt = await AgentSendFreshness.readStart(podId);
-      const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
+      const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id, undefined, undefined, { cardOutcome: true });
       if (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres') {
         await AgentSendFreshness.recordRead(
           user._id, podId, readStartedAt,
@@ -2111,7 +2111,7 @@ router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent cannot view this pod' });
     }
     const start = await AgentSendFreshness.readStart(podId);
-    const messages = await AgentMessageService.getRecentMessages(podId, 20, agentUser._id);
+    const messages = await AgentMessageService.getRecentMessages(podId, 20, agentUser._id, undefined, undefined, { cardOutcome: true });
     if (process.env.PG_HOST && (messages as typeof messages & { readSource?: string }).readSource !== 'postgres') {
       return res.status(503).json({ message: 'PostgreSQL tail unavailable; catch-up was not applied' });
     }
@@ -2224,7 +2224,7 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // silently swallow this agent's reply in any multi-agent pod (#757).
     const readStartedAt = await AgentSendFreshness.readStart(podId);
     const messages = await AgentMessageService.getRecentMessages(
-      podId, limit + 1, req.agentUser?._id, beforeMs, rawThreadRootId,
+      podId, limit + 1, req.agentUser?._id, beforeMs, rawThreadRootId, { cardOutcome: true },
     );
     const hasMore = messages.length > limit;
     // getRecentMessages returns chronological order. The data query selected

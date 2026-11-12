@@ -508,7 +508,7 @@ describe('explicit catch-up', () => {
     }
     expect(AgentSendFreshness.readStart.mock.invocationCallOrder[0])
       .toBeLessThan(AgentMessageService.getRecentMessages.mock.invocationCallOrder[0]);
-    expect(AgentMessageService.getRecentMessages).toHaveBeenCalledWith('pod-1', 20, 'bot-1');
+    expect(AgentMessageService.getRecentMessages).toHaveBeenCalledWith('pod-1', 20, 'bot-1', undefined, undefined, { cardOutcome: true });
     expect(AgentSendFreshness.recordCatchUp).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Object), ['1']);
     expect(res.json).toHaveBeenCalledWith({ messages: [{ id: '1', content: 'tail' }],
       catchUp: { skippedCount: 14000, through: expect.any(Object) } });
