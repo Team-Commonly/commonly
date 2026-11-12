@@ -494,7 +494,9 @@ export default {
     } finally {
       credentialRelease?.stop();
       try { await proxy?.close(); } finally {
-        await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
+        // Best effort: a folder that will not go (the same fault that failed a
+        // credential delete, say) must not replace the error the turn ends with.
+        await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true }).catch(() => {})));
       }
     }
   },

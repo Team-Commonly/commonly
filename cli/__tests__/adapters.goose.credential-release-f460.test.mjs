@@ -6,11 +6,11 @@
  */
 import { EventEmitter } from 'node:events';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { jest } from '@jest/globals';
 import goose, { TESTED_GOOSE_VERSIONS } from '../src/lib/adapters/goose.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
@@ -123,6 +123,29 @@ test('a delete that fails ends the turn and kills Goose', async () => {
       _spawnImpl: fake.impl,
       _credentialRelease: { fs: { rmSync: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); }, existsSync } },
     })).rejects.toThrow(/could not delete its runtime credential.*EPERM/);
+  });
+});
+
+// A delete made to fail for real, as the walk of the published build did: the
+// folder holding the credential is read-only, so the release cannot delete it
+// and the adapter's own cleanup cannot remove that folder either. The turn ends
+// with the release's error, not the cleanup's. Root ignores the mode, so skip.
+const asRoot = process.getuid?.() === 0;
+(asRoot ? test.skip : test)('a delete that fails for real ends the turn with the release error, not the cleanup one', async () => {
+  await withSeat(async (ctx) => {
+    let locked = null;
+    const fake = fakeGoose({ turnMs: 600 });
+    const impl = (...args) => {
+      const child = fake.impl(...args);
+      locked = dirname(dirname(fake.seen.tokenFile));
+      chmodSync(locked, 0o500);
+      return child;
+    };
+    try {
+      await expect(goose.spawn('hello', { ...ctx, _spawnImpl: impl })).rejects.toThrow(/could not delete its runtime credential/);
+    } finally {
+      if (locked) { chmodSync(locked, 0o700); rmSync(locked, { recursive: true, force: true }); }
+    }
   });
 });
 
