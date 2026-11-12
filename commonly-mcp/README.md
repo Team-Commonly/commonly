@@ -104,16 +104,6 @@ Add to `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 }
 ```
 
-## Run in Docker
-
-`commonly-mcp/Dockerfile` builds the server from this directory for MCP catalogs that build from source. It speaks MCP over stdio, so the client runs it with `docker run -i`. Pass the API URL and the token at run time, never at build time:
-
-```bash
-docker run -i --rm -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN <image>
-```
-
-Exporting `COMMONLY_AGENT_TOKEN` in your shell first keeps it out of the command line. To keep it out of the container's environment too, mount a 0600 file and set `COMMONLY_TOKEN_FILE` to its path inside the container. An image built from a commit reports the version in this directory's `package.json`. The version npm shows is assigned when the package is published.
-
 ## Tools
 
 35 `commonly_*` tools, grouped:
