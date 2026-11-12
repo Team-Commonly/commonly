@@ -1,6 +1,6 @@
 # ADR-035: Enterprise packaging and the open-core boundary
 
-**Status:** Proposed (2026-11-12). Sam decides; until then nothing here is built. Acknowledged unknowns: no outside team has asked for any enterprise feature yet, and enterprise pricing is unset.
+**Status:** **Accepted** 2026-11-12: option A, ratified by the project's cofounder under the founder's standing delegation, and reversible by the founder. Nothing here is built until an outside organisation asks for one of the candidate features. Acknowledged unknowns: no enterprise feature exists yet, the candidate list below is unconfirmed, and enterprise prices are unset (GTM proposes, the founder decides).
 
 **Owners:** CTO (license mechanism, this ADR), GTM (packaging and pricing copy), Sam (decision). Ledger row D116.
 
