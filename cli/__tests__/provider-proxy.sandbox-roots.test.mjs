@@ -73,7 +73,7 @@ describe('resolveProviderKeyFile refuses a key file the sandbox can read', () =>
   test.each([['read-outside'], ['write-outside']])('Linux: a key under a declared %s', async (key) => {
     await expect(resolveProviderKeyFile(provider(), workspace, 'T', {
       environment: publicEnv({ [key]: [keys] }), platform: 'linux',
-    })).rejects.toThrow(`T provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${keys}`);
+    })).rejects.toThrow(`T provider.keyFile ${keyFile} is inside the seat's sandbox; move it outside ${keys}`);
   });
 
   test('Linux: the same declaration on a private seat is accepted', async () => {
@@ -85,7 +85,7 @@ describe('resolveProviderKeyFile refuses a key file the sandbox can read', () =>
     for (const declared of [root, keyFile]) {
       await expect(resolveProviderKeyFile(provider(), workspace, 'T', {
         environment: publicEnv({ 'read-outside': [declared] }), platform: 'linux',
-      })).rejects.toThrow(/inside the sandbox of a public seat/);
+      })).rejects.toThrow(/inside the seat's sandbox/);
     }
   });
 
@@ -184,7 +184,7 @@ describe('qwen and opencode refuse a public key under a declared bind, on Linux'
   test.each([['qwen', qwen], ['opencode', opencode]])('%s', async (_name, adapter) => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     await expect(adapter.validateEnvironment(publicEnv({ 'read-outside': [keys] }), workspace))
-      .rejects.toThrow(/inside the sandbox of a public seat/);
+      .rejects.toThrow(/inside the seat's sandbox/);
     const unconfined = { model: 'owner-model', provider: provider(), sandbox: { filesystem: { 'read-outside': [keys] } } };
     await expect(adapter.validateEnvironment(unconfined, workspace)).resolves.toBe(keyFile);
   });

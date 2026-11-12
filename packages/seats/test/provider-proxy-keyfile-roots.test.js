@@ -57,7 +57,7 @@ test('inodes past 2^53 are compared exactly (macOS sealed volume)', { skip: !exi
 test('resolveProviderKeyFile refuses a key under readableRoots and names the root', () => withKey(async ({ keys, workspace, keyFile }) => {
   await assert.rejects(
     resolveProviderKeyFile({ keyFile }, workspace, 'T', { readableRoots: { subpaths: [keys], literals: [] } }),
-    { message: `T provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${keys}` },
+    { message: `T provider.keyFile ${keyFile} is inside the seat's sandbox; move it outside ${keys}` },
   );
   assert.equal(await resolveProviderKeyFile({ keyFile }, workspace, 'T'), keyFile);
 }));

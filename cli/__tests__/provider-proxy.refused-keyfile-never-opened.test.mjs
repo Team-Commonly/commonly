@@ -123,6 +123,6 @@ test.each([
   const keys = join(root, 'keys');
   const keyFile = await placeKey(keys);
   await expect(resolveProviderKeyFile({ keyFile }, workspace, 'T', options(keys)))
-    .rejects.toThrow(`T provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${keys}`);
+    .rejects.toThrow(`T provider.keyFile ${keyFile} is inside the seat's sandbox; move it outside ${keys}`);
   expect(opens).toBe(0);
 });

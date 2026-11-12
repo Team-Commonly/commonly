@@ -214,7 +214,7 @@ export const resolveProviderKeyFile = async (
   const readableRoot = readableRoots ? keyFileReadableRoot(realKeyFile, readableRoots) : null;
   if (readableRoot) {
     throw new Error(
-      `${adapterLabel} provider.keyFile ${realKeyFile} is inside the sandbox of a public seat; move it outside ${readableRoot}`,
+      `${adapterLabel} provider.keyFile ${realKeyFile} is inside the seat's sandbox; move it outside ${readableRoot}`,
     );
   }
   return realKeyFile;
