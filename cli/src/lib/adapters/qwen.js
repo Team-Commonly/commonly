@@ -367,6 +367,8 @@ export default {
     const mcpPath = join(tempDir, 'mcp.json');
     let proxy;
     let credentialRelease = null;
+    let reply = null;
+    let cleanupFailure = null;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
         agentName: ctx.agentName || 'agent', root: tempDir,
@@ -502,12 +504,19 @@ export default {
         credentials: [...spawnCredentials(ctx, []), proxyWithBearer.bearer],
       }).catch((err) => { throw releaseFailure || err; });
       if (releaseFailure) throw releaseFailure;
-      return { text: result.text, newSessionId: null };
+      reply = { text: result.text, newSessionId: null };
     } finally {
       credentialRelease?.stop();
       try { await proxy?.close(); } catch { /* best effort */ }
-      await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
+      const removed = await Promise.allSettled([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
+      cleanupFailure = removed.find((outcome) => outcome.status === 'rejected')?.reason || null;
     }
+    // Reached only when the turn worked. A cleanup failure is then the turn's
+    // error: on a private seat that rm is the one delete of the credential, so
+    // the turn must not report success over it. When another error ended the
+    // turn (a failed release, say), it propagates past this and is kept.
+    if (cleanupFailure) throw cleanupFailure;
+    return reply;
   },
 };
 
