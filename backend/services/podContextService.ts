@@ -465,7 +465,7 @@ class PodContextService {
     }> = [];
     let recentMessagesRead = false;
     try {
-      const recent = await AgentMessageService.getRecentMessages(podId, 12);
+      const recent = await AgentMessageService.getRecentMessages(podId, 12, undefined, undefined, undefined, { cardOutcome: true });
       recentMessagesRead = !process.env.PG_HOST
         || (recent as typeof recent & { readSource?: string }).readSource === 'postgres';
       const withMention = await AgentMessageService.withMentionHandles(

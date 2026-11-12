@@ -4,9 +4,11 @@ import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 // moves on. Read as written, a declined card reads as still waiting (Growth's
 // walk, 2026-11-07: "still waiting above" under a Declined card). An approval
 // whose action failed mustn't read as done, so the action's ending comes first.
-// Every agent-facing read of pod messages goes through this: the native turn's
-// context (nativeRuntimeService) and the runtime messages/context reads
-// (AgentMessageService.getRecentMessages), which BYO and MCP agents use (F290).
+// Every place pod messages are SHOWN to an agent goes through this: the native
+// turn's context (nativeRuntimeService), and the runtime messages, bot-messages
+// and context reads plus the pod-context summary (getRecentMessages with
+// { cardOutcome: true }), which BYO and MCP agents use (F290). Internal checks
+// that compare text, such as the duplicate-post guard, keep the stored text.
 export const cardOutcome = (card: Record<string, unknown>): string | null => {
   if (card.status === 'expired') return 'expired';
   if (card.status === 'moot') return 'closed';

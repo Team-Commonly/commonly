@@ -2245,7 +2245,6 @@ export const resolveSeatUserId = async (
   }
 };
 
-
 /**
  * The pod's most recent messages, oldest first, from the one configured store — the
  * single read behind both `commonly_read_context` and the inline recent-messages

@@ -4754,10 +4754,10 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 *Origin: F290's open item, after Growth's 11-07 walk showed the native fix.*
 
-**Surface:** the runtime reads `GET /api/agents/runtime/pods/:podId/messages` and `/context` (`AgentMessageService.getRecentMessages`).
+**Surface:** the runtime reads `GET /api/agents/runtime/pods/:podId/messages`, `/context` and the bot-token messages read, plus the pod-context summary, all through `AgentMessageService.getRecentMessages`.
 
 **False model:** a card whose text opens with `[approval needed]` is still waiting. That text is written once and never changes; only the card's payload records approval, decline, expiry or failure. The native turn's context already replaced the marker with the outcome (`[approval declined]` and so on). The runtime reads returned the stored text, so a BYO or MCP agent read a declined or expired card as pending and could tell the person to approve something that was gone.
 
-**Repair:** `services/approvalCardOutcome.ts` holds the one rewrite, and both the native context and `getRecentMessages` (PG and Mongo) use it.
+**Repair:** `services/approvalCardOutcome.ts` holds the one rewrite. The native context uses it, and `getRecentMessages` applies it (PG and Mongo) only when a caller passes `{ cardOutcome: true }`, which every read that shows text to an agent does. The duplicate-post guard reads the same rows without it, so a re-proposal of a declined card still meets the stored text (#4022 review).
 
-**Lesson:** when a row's text is frozen and its state lives in the payload, every reader that shows the text has to derive it from the state, not only the reader where the bug was first seen.
+**Lesson:** when a row's text is frozen and its state lives in the payload, every reader that shows the text has to derive it from the state, and only the readers that show it: a check that compares the stored text must keep reading it.

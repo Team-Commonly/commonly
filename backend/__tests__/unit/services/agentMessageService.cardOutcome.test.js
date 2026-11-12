@@ -15,7 +15,7 @@ jest.mock('../../../models/pg/Message', () => ({ findByPodId: jest.fn() }));
 const POD = 'pod-1';
 const card = (payload) => ({
   id: '7', pod_id: POD, user_id: 'scout', username: 'Scout', is_bot: true,
-  content: '[approval needed] Connect your agent', message_type: 'system',
+  content: '[approval needed] Connect your agent', message_type: 'card',
   created_at: new Date('2026-11-12T00:00:00Z'), payload: { kind: 'approval-card', ...payload },
 });
 
@@ -45,25 +45,45 @@ describe('getRecentMessages names a decided card', () => {
   ])('PG read: %j', async (payload, expected) => {
     process.env.PG_HOST = 'localhost';
     PGMessage.findByPodId.mockResolvedValue([card(payload)]);
-    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent');
+    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent', undefined, undefined, { cardOutcome: true });
     expect(message.content).toBe(expected);
+  });
+
+  test('PG read without cardOutcome keeps the stored text (internal checks compare it)', async () => {
+    process.env.PG_HOST = 'localhost';
+    PGMessage.findByPodId.mockResolvedValue([card({ status: 'resolved', decision: 'declined' })]);
+    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent');
+    expect(message.content).toBe('[approval needed] Connect your agent');
+  });
+
+  // The review of #4022: a re-proposal of a declined card must still meet the
+  // duplicate guard, which compares against the stored text.
+  test('the duplicate guard still sees a declined card as the same text', async () => {
+    process.env.PG_HOST = 'localhost';
+    PGMessage.findByPodId.mockResolvedValue([{
+      ...card({ status: 'resolved', decision: 'declined' }), created_at: new Date(),
+    }]);
+    const hit = await AgentMessageService.findRecentDuplicate({
+      podId: POD, userId: 'scout', content: '[approval needed] Connect your agent',
+    });
+    expect(hit).not.toBeNull();
   });
 
   test('PG read: a non-card message keeps its text, even one opening with the marker', async () => {
     process.env.PG_HOST = 'localhost';
     PGMessage.findByPodId.mockResolvedValue([{ ...card({}), payload: null }]);
-    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent');
+    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent', undefined, undefined, { cardOutcome: true });
     expect(message.content).toBe('[approval needed] Connect your agent');
   });
 
   test('Mongo read: a declined card reads as declined', async () => {
     delete process.env.PG_HOST;
     mockMongoChain([{
-      _id: 'm1', content: '[approval needed] Connect your agent', messageType: 'system',
+      _id: 'm1', content: '[approval needed] Connect your agent', messageType: 'card',
       userId: { _id: 'scout', username: 'Scout', isBot: true }, createdAt: new Date(),
       payload: { kind: 'approval-card', status: 'resolved', decision: 'declined' },
     }]);
-    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent');
+    const [message] = await AgentMessageService.getRecentMessages(POD, 20, 'agent', undefined, undefined, { cardOutcome: true });
     expect(message.content).toBe('[approval declined] Connect your agent');
   });
 });
