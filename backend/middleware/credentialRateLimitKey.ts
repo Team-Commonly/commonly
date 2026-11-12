@@ -16,19 +16,28 @@ export function humanAuthCredential(req: WithHeader): string {
   return req.header('Authorization')?.replace('Bearer ', '') || req.header('x-auth-token') || '';
 }
 
-const tokenKey = (credential: string, req: HeaderRequest): string => (credential
-  ? `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`
+const tokenKey = (credential: string, req: HeaderRequest, prefix = 'tok'): string => (credential
+  ? `${prefix}:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`
   : cloudflareIpRateLimitKeyGenerator(req as never));
 
 /** For a route behind `auth` alone: the bucket is the token auth.ts verifies,
- * so a header that verifier never reads cannot move it (F455). */
+ * so a header that verifier never reads cannot move it (F455), and a person on
+ * x-auth-token is not left on the shared address bucket (F456). */
 export const humanCredentialRateLimitKey = (req: HeaderRequest): string => tokenKey(
   req.header ? humanAuthCredential(req as WithHeader) : '',
   req,
 );
 
+/** For a route behind dualAuth: the bucket is the credential dualAuth chose,
+ * whichever header carried it (F141, F456). */
+export const dualCredentialRateLimitKey = (req: HeaderRequest, prefix = 'tok'): string => tokenKey(
+  req.header ? resolveDualAuthCredential(req as WithHeader).token : '',
+  req,
+  prefix,
+);
+
 /** POST /api/messages/:podId is behind `auth`; DELETE /api/messages/:id is
  * behind dualAuth. They share one limiter, each keyed by its own verifier. */
 export const messageWriteRateLimitKey = (req: HeaderRequest): string => (req.method === 'DELETE'
-  ? tokenKey(req.header ? resolveDualAuthCredential(req as WithHeader).token : '', req)
+  ? dualCredentialRateLimitKey(req)
   : humanCredentialRateLimitKey(req));
