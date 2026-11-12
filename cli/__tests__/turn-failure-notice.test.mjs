@@ -39,7 +39,7 @@ describe('cantAnswerNotice', () => {
     test.each([
       ['as Claude Code prints it', 'claude exited with code 1: Not logged in · Please run /login'],
       ['after a stderr line', 'claude exited with code 1: ⚠ connectors are disabled | Not logged in · Please run /login'],
-      ['with the Seatbelt seat\'s own hint after it', 'claude exited with code 1: Not logged in · Please run /login. Sign in with `claude` in your own terminal on this Mac, or set ANTHROPIC_API_KEY (in the service env for daemon seats)'],
+      ['with the Seatbelt seat\'s own hint after it', 'claude exited with code 1: Not logged in · Please run /login. Sign in with `claude` in your own terminal on this Mac, or run the agent with ANTHROPIC_API_KEY set (`commonly agent run` from a shell that has it; the background daemon does not carry it)'],
     ])('%s', (_name, message) => {
       const error = new Error(message);
       expect(cantAnswerNotice(error)).toEqual({ cause: 'claude-signed-out', text: CLAUDE_SIGNED_OUT_NOTICE });

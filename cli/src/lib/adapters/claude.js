@@ -1998,9 +1998,14 @@ export default {
       }
       // F153: a Seatbelt seat with no key signs in only through the keychain.
       // When that fails, say how to give it a key instead, as bwrap does.
+      // F171: `commonly daemon install` carries no ANTHROPIC_API_KEY (claude
+      // declares no providerKeyEnv), so the key route is a seat run from a
+      // shell that has it; the hint must not send a daemon operator to a
+      // service file that never receives the key.
       if (publicNativeSandbox && !providerProxy && /not logged in/i.test(String(err?.message))) {
         err.message = `${err.message}. Sign in with \`claude\` in your own terminal on this Mac, `
-          + 'or set ANTHROPIC_API_KEY (in the service env for daemon seats)';
+          + `or run the agent with ANTHROPIC_API_KEY set (\`${CLI} agent run\` from a shell that has it; `
+          + 'the background daemon does not carry it)';
       }
       throw err;
     } finally {
