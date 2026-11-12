@@ -25,9 +25,11 @@ save and the actual adapter launch must agree. A declared supported choice
 must never be silently replaced with another value.
 
 The daemon probes each walked harness with `<id> --version` on the PATH it
-starts with, refreshes the full report every five minutes, and probes a missing
-harness again every 25 seconds, so an install shows up within a heartbeat or
-two. While the chosen harness shows as missing, the BYO page re-reads the
+starts with (Claude Code also looks in `~/.local/bin`), refreshes the full
+report every five minutes, and probes a missing harness again every 25
+seconds, so an install shows up within a heartbeat or two. Probes are
+synchronous, so a re-probe that takes over a second (a binary that's there
+but hangs) waits for the full refresh instead. While the chosen harness shows as missing, the BYO page re-reads the
 computer's report every 10 seconds and says what the daemon ran; a harness the
 computer doesn't check reads "Not checked here", never as missing (F370 #8).
 

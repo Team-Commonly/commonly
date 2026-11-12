@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { createInventoryCache, INVENTORY_MISSING_MS, INVENTORY_FULL_MS } from '../src/lib/runtime-inventory.js';
+import { createInventoryCache, INVENTORY_MISSING_MS, INVENTORY_FULL_MS, INVENTORY_SLOW_MS } from '../src/lib/runtime-inventory.js';
 
 const row = (harness, installed) => ({ harness, installed, version: installed ? '1.0' : null, models: null, efforts: [] });
 
@@ -19,9 +19,10 @@ describe('createInventoryCache', () => {
     codexThere = true;
     clock += 2;
     const next = await inventory();
-    expect(collect).toHaveBeenCalledTimes(2);
-    expect(collect.mock.calls[1][0]).not.toContain('claude');
-    expect(collect.mock.calls[1][0]).toContain('codex');
+    const reprobes = collect.mock.calls.length - 1;
+    expect(reprobes).toBeGreaterThan(0);
+    expect(collect.mock.calls.slice(1).flatMap(([harnesses]) => harnesses)).not.toContain('claude');
+    expect(collect.mock.calls.slice(1).flatMap(([harnesses]) => harnesses)).toContain('codex');
     expect(next.find((r) => r.harness === 'codex').installed).toBe(true);
     expect(next.map((r) => r.harness)).toEqual(collect.mock.calls[0][0]);
   });
@@ -37,5 +38,25 @@ describe('createInventoryCache', () => {
     clock += 1;
     await inventory();
     expect(collect).toHaveBeenCalledTimes(2);
+  });
+
+  // Review of #3980: a harness that's there but hangs on --version blocks the
+  // daemon each probe, so after one slow re-probe it waits for the full refresh.
+  test('a slow re-probe goes back to the five-minute refresh', async () => {
+    let clock = 0;
+    const collect = jest.fn(async (harnesses) => {
+      if (harnesses.length === 1 && harnesses[0] === 'hermes') clock += INVENTORY_SLOW_MS + 1;
+      return harnesses.map((h) => row(h, h !== 'hermes' && h !== 'codex'));
+    });
+    const inventory = createInventoryCache(collect, { now: () => clock });
+    await inventory();
+    const probed = () => collect.mock.calls.slice(1).flatMap(([harnesses]) => harnesses);
+    clock += INVENTORY_MISSING_MS + 1;
+    await inventory();
+    expect(probed().filter((h) => h === 'hermes')).toHaveLength(1);
+    clock += INVENTORY_MISSING_MS + 1;
+    await inventory();
+    expect(probed().filter((h) => h === 'hermes')).toHaveLength(1);
+    expect(probed().filter((h) => h === 'codex')).toHaveLength(2);
   });
 });
