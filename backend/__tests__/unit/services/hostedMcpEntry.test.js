@@ -35,6 +35,7 @@ const ATLASSIAN_REPINNED_1104 = [
 ];
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
+const LINEAR_AS_CAPTURE = require('../../fixtures/hostedMcp/linear-authorization-server-2026-11-12.json');
 // Three Sentry captures, from rows consented with different skills. The 10-19 row
 // had Triage, so its list carries update_issue. The 11-01 and 11-04 lists come
 // from one row with neither Triage nor Seer. 11-01 backs find_organizations and
@@ -999,7 +1000,35 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.description).toBe('Issues, projects, cycles and releases in your own Linear workspace.');
   });
 
-  test('the shipped Linear entry pins approval-required writers and names a revoke page', () => {
+  // F228, 2026-11-12. Removal sends the token only to the revocation_endpoint the
+  // issuer advertises, compared exactly at call time; this capture pins that the
+  // pin is that endpoint, and records the live revoke it was added on.
+  test('the Linear revoke pin is the advertised endpoint, and a revoke there ended a real grant', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear');
+    const { url, metadata, revokeMeasure } = LINEAR_AS_CAPTURE;
+    expect(url).toBe('https://mcp.linear.app/.well-known/oauth-authorization-server');
+    expect(metadata.issuer).toBe(entry.issuer);
+    // One URL for both: the token endpoint answers RFC 7009 when the body carries
+    // `token` and no grant_type (the controls show the grant path refusing).
+    expect(metadata.revocation_endpoint).toBe(entry.revoke.endpoint);
+    expect(metadata.token_endpoint).toBe(entry.revoke.endpoint);
+    // A CIMD client authenticates with client_id alone, which Linear accepts.
+    expect(entry.client).toBe('cimd');
+    expect(metadata.client_id_metadata_document_supported).toBe(true);
+    expect(metadata.token_endpoint_auth_methods_supported).toContain('none');
+    expect(revokeMeasure.revoke).toMatchObject({ tokenTypeHint: 'refresh_token', status: 200 });
+    expect(revokeMeasure.beforeRevoke.mcpInitializeWithAccessToken).toBe(200);
+    expect(revokeMeasure.afterRevoke).toEqual({
+      mcpInitializeWithAccessToken: 401,
+      refreshGrant: { status: 400, error: 'invalid_grant' },
+    });
+    // A token Linear never issued answers 200 too (RFC 7009 §2.2), so a removal
+    // whose grant is already gone at Linear finishes rather than holding the row.
+    expect(Object.values(revokeMeasure.neverIssuedToken).filter((v) => typeof v === 'number'))
+      .toEqual([200, 200, 200]);
+  });
+
+  test('the shipped Linear entry pins approval-required writers, a revoke page and its revocation endpoint', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
     // 68 captured tools minus two external fetches and four excluded writers.
     expect(entry.tools).toHaveLength(62);
@@ -1017,7 +1046,11 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // The person's own "Authorized applications" list, where the grant shows as
     // "MCP · Read · Revoke" (fresh-account walk, 2026-10-15). `/settings/security`
     // is the workspace admin page and has no per-person app list.
-    expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/account/security' });
+    // F228: plus the RFC 7009 endpoint, so removal ends the grant at Linear too.
+    expect(hostedMcpRevokeTarget(entry)).toEqual({
+      page: 'https://linear.app/settings/account/security',
+      endpoint: 'https://mcp.linear.app/token',
+    });
     // With no separate audience, `resource` is the RFC 8707 value every
     // authorization and token request carries; `issuer` is what the
     // callback checks a returned `iss` against (RFC 9207), and `client: 'cimd'`
