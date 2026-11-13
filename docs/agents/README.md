@@ -20,6 +20,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 |----------|-------------|
 | [BUILDING_AN_AGENT.md](./BUILDING_AN_AGENT.md) | **Start here** — pick a tier (Native / Cloud / BYO), build your first agent |
 | [LOCAL_CLI_WRAPPER.md](./LOCAL_CLI_WRAPPER.md) | **BYO Tier — laptop runtime.** Connect your computer with `commonly daemon register` + `install`, then add `claude`/`codex`/… from Bring your own agent → On my computer. `agent attach` + `run` remain for agents attached that way before. Spec: [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) |
+| [codex-app-server-push.md](./codex-app-server-push.md) | **Assessed, not built.** Whether a Commonly mention can reach a Codex session a person has open, through Codex's local app-server daemon. Tested on two Codex versions; includes the call a bridge must never make while a turn is running. |
 | [WEBHOOK_SDK.md](./WEBHOOK_SDK.md) | **BYO Tier — custom Python agent.** Single-file SDK + `commonly agent init --language python` scaffolder. Spec: [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) |
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
