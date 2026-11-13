@@ -1535,7 +1535,8 @@ const V2AgentBYO: React.FC = () => {
     : '';
   // Pasted into PowerShell, each line ends with a newline and runs, so without a
   // final one the fourth line, the one that starts the agent, sits at the prompt
-  // until Enter: candidate 3 in the 11-13 Windows desk check. The Copy button
+  // until Enter. A windows-latest probe (Win11, PS 5.1, 11-13) showed exactly
+  // that: lines 1-3 ran and the run line sat typed, token unused. The Copy button
   // adds one on Windows. connectSnippet stays as it is, since the Windows smoke
   // lifts it from this file and runs its exact lines.
   const listenCopyText = listenSnippet && setupOs === 'windows' ? `${listenSnippet}\n` : listenSnippet;

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { V2Message } from '../hooks/useV2PodDetail';
 
 type HandoffOs = 'mac' | 'linux' | 'windows';
@@ -14,15 +13,6 @@ const ADAPTER_GUIDES: Record<string, string> = {
   opencode: 'https://github.com/Team-Commonly/commonly/blob/main/docs/cli/opencode.md',
   dsh: 'https://github.com/Team-Commonly/commonly/blob/main/docs/cli/dsh.md',
 };
-
-// Claude Code and Codex on native Windows connect from the Bring your own page,
-// not from these lines. PowerShell runs the .ps1 shim for a bare `npm` or
-// `commonly`, which Windows 11's default script policy refuses (F342), and
-// `agent attach` refuses a sandboxed seat on Windows by design, pointing at that
-// page. The page issues the key and the PowerShell lines that run with
-// --unsandboxed, beside the note on what that means. A stored card may still
-// carry Windows commands from before this, so the card never shows them.
-const CONNECT_PAGE_ON_WINDOWS = new Set(['claude', 'codex']);
 
 const browserOs = (): HandoffOs => {
   if (typeof navigator === 'undefined') return 'mac';
@@ -60,12 +50,6 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
   const adapter = payload.adapter || 'local';
   const adapterLabel = t(`byoHandoff.adapters.${adapter}`, { defaultValue: adapter });
   const adapterGuide = ADAPTER_GUIDES[adapter];
-  const connectPage = os === 'windows' && CONNECT_PAGE_ON_WINDOWS.has(adapter);
-  const connectPageHref = `/v2/agents/byo?${new URLSearchParams({
-    ...(payload.podId ? { pod: String(payload.podId) } : {}),
-    ...(payload.agentName ? { name: String(payload.agentName) } : {}),
-    adapter,
-  }).toString()}`;
 
   const copyCommand = async () => {
     if (!command) return;
@@ -99,7 +83,7 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
         </div>
         <div className="v2-byo-handoff__title">{t('byoHandoff.title')}</div>
         <div className="v2-byo-handoff__body">
-          {t(connectPage ? 'byoHandoff.bodyConnectPage' : 'byoHandoff.body', { adapter: adapterLabel })}
+          {t('byoHandoff.body', { adapter: adapterLabel })}
         </div>
         {availableOs.length > 1 && (
           <div className="v2-byo-handoff__os" role="group" aria-label={t('byoHandoff.osLabel')}>
@@ -116,27 +100,16 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
             ))}
           </div>
         )}
-        {connectPage ? (
-          <div className="v2-byo-handoff__note" data-testid="byo-handoff-windows">
-            <Trans
-              i18nKey="byoHandoff.windowsConnectPage"
-              components={{ adapter: <>{adapterLabel}</>, page: <Link to={connectPageHref} /> }}
-            />
-          </div>
-        ) : (
-          <>
-            <pre className="v2-byo-handoff__command" data-testid="byo-handoff-command">{command}</pre>
-            <button
-              type="button"
-              className="v2-byo-handoff__copy"
-              data-testid="byo-handoff-copy"
-              onClick={copyCommand}
-              disabled={!command}
-            >
-              {copied ? t('byoHandoff.copied') : t('byoHandoff.copy')}
-            </button>
-          </>
-        )}
+        <pre className="v2-byo-handoff__command" data-testid="byo-handoff-command">{command}</pre>
+        <button
+          type="button"
+          className="v2-byo-handoff__copy"
+          data-testid="byo-handoff-copy"
+          onClick={copyCommand}
+          disabled={!command}
+        >
+          {copied ? t('byoHandoff.copied') : t('byoHandoff.copy')}
+        </button>
         {availableOs.length === 1 && (
           <div className="v2-byo-handoff__note">
             {t('byoHandoff.availableOn')}

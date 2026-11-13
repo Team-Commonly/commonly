@@ -2029,8 +2029,6 @@
     "copied": "Copied!",
     "availableOn": "This adapter is currently verified on macOS.",
     "setupGuide": "{{adapter}} setup guide",
-    "bodyConnectPage": "This hosted agent cannot reach your computer. Connect your own {{adapter}} to work in this pod.",
-    "windowsConnectPage": "On Windows, connect <adapter/> from the <page>Bring your own page</page>. It gives you the PowerShell lines for this pod.",
     "adapters": {
       "claude": "Claude Code",
       "codex": "Codex",
