@@ -692,7 +692,7 @@ describe('messageExists', () => {
   // `thread.commentId`, and no seat claims a comment today (thread.mention isn't
   // in the CLI's CLAIMABLE_EVENT_TYPES). The shape stays accepted for a future
   // producer, because refusing an id the route can't place does not fail
-  // closed: enforcement.js:414 turns the non-2xx into `{failOpen: true}`, so
+  // closed: enforcement.js:433 turns the non-2xx into `{failOpen: true}`, so
   // that caller would run unguarded (connector-ops 71952, vera 71956).
   test('a post-comment ObjectId is claimable when its comment exists, so a future comment claim is checked instead of failing open', async () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
@@ -767,7 +767,8 @@ describe('messageExists', () => {
     // 24 hex digits is a legal ObjectId AND far outside int4, which is the one
     // input where the arm order changes the answer: written digits-first, the
     // natural shape returns false from the range test and this id is refused,
-    // costing a real comment wake its dedupe (wren 71962 — order matters).
+    // which fails open for a caller that claims a comment id (none does today,
+    // F246) (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
     // Answered by the comment store, never by the range test above it.
     expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['p1', null] }, 'comments._id': '123456789012345678901234' });

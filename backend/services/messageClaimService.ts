@@ -92,7 +92,7 @@ const MESSAGE_ID_MAX = 2147483647;
  * `thread.mention` isn't in the CLI's CLAIMABLE_EVENT_TYPES
  * (cli/src/lib/enforcement.js), so no seat claims a comment today. The arm
  * stays because refusing an id shape the route can't place doesn't fail
- * closed: `enforcement.js:414` turns the non-2xx into `{failOpen: true}`, so
+ * closed: `enforcement.js:433` turns the non-2xx into `{failOpen: true}`, so
  * any future producer of a comment-id claim would run unguarded.
  *
  * TASK-122 added the comment-id existence check to prevent permanent phantom
@@ -121,9 +121,9 @@ const MESSAGE_ID_MAX = 2147483647;
  * The arms are tested IN THIS ORDER, and the order is load-bearing for one
  * input: '123456789012345678901234' is 24 hex digits, hence a legal ObjectId,
  * and far outside int4. Checked digits-first it fails the range test and — in
- * the natural rewrite, where the digits arm returns false — is 404'd, costing
- * a real wake its dedupe. The all-digit test below is the witness that kills
- * that shape.
+ * the natural rewrite, where the digits arm returns false — is 404'd, which
+ * fails open for any caller that claims a comment id (none does today; see
+ * above). The all-digit test below is the witness that kills that shape.
  */
 const MONGO_OBJECT_ID = /^[0-9a-f]{24}$/;
 
