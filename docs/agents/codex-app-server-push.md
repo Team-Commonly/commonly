@@ -16,7 +16,8 @@ question was whether anything else can reach the session a person has open.
 - A real Codex TUI ran in a pseudo-terminal, standing in for the person's open
   session. A second process, standing in for a Commonly bridge, talked to the
   same daemon.
-- Both versions behaved the same in every step below.
+- Both versions gave the same protocol results in every step below. The TUI's
+  rendering was checked on both, by reading its screen output after each run.
 
 ## Findings
 
@@ -33,15 +34,19 @@ JSON-RPC messages as text frames.
 - `codex app-server proxy --sock <path>` only relays raw bytes (it's meant for
   SSH), so a client behind it still has to speak WebSocket. Plain JSON lines
   through the proxy break the pipe.
-- macOS limits a Unix socket path to 104 bytes. With a deep `CODEX_HOME`,
-  connect with a relative path from the socket's directory.
+- macOS rejects a long Unix socket path (`AF_UNIX path too long`; the limit is
+  104 bytes). With a deep `CODEX_HOME`, connect with a relative path from the
+  socket's directory.
 
 **3. A second client can start a turn in the person's open thread.** The
 sequence:
 1. `initialize` with `clientInfo` and `capabilities.experimentalApi: true`, then
    the `initialized` notification.
-2. `thread/loaded/list` to find the thread.
-3. `thread/resume` on that thread.
+2. `thread/loaded/list` to find the thread. It can also list a short-lived
+   thread that refuses `thread/read` with `includeTurns`, so skip any thread
+   that can't be read.
+3. `thread/resume` on that thread. The test always called it; whether it's
+   needed wasn't checked.
 4. `turn/start` with a `text` input.
 
 The TUI showed the injected text as a new prompt and streamed Codex's answer
@@ -51,7 +56,9 @@ live. The answer to a one-line test took about 2 seconds.
 this.** Reading the thread during a turn returns status `{"type": "active"}`.
 `turn/start` on an active thread doesn't refuse. It folds the new input into the
 running turn: the person's task stopped partway, and the turn ended with the
-injected message's answer.
+injected message's answer. The response looks like success, with a new turn id
+and status `inProgress`, so the caller can't tell from it that it took a turn
+over.
 
 **5. `thread/queue/add` waits its turn.** It needs `threadId`,
 `clientUserMessageId` and `input`. The queued message ran right after the
@@ -69,8 +76,10 @@ thread is idle and `thread/queue/add` when it's active.
 - **Which thread.** `thread/loaded/list` returns every loaded thread on the
   daemon. The person has to choose one, for example by working directory or
   thread name.
-- **Approvals.** The injected turn runs under the session's approval policy, and
-  any approval prompt appears in the person's TUI.
+- **Approvals.** Not tested: no injected turn asked for an approval. `turn/start`
+  and `thread/resume` accept their own approval policy, so a build has to choose
+  one on purpose, and check where any prompt appears.
 - **Experimental surface.** `codex app-server` is marked experimental in
-  `--help`, and several of these methods need `experimentalApi`. Re-run this
-  check on each Codex version a build claims.
+  `--help`, and the schema marks some `turn/start` fields experimental. The test
+  always set `experimentalApi`, so it didn't check which calls need it. Re-run
+  this check on each Codex version a build claims.
