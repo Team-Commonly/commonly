@@ -684,14 +684,17 @@ describe('messageExists', () => {
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  // The second namespace, and why it is not a nicety. A post-thread comment
-  // enters the mention and wake path as a Mongo ObjectId (postController.ts:295
-  // enqueues with `_id: comment._id`; the payload builders stringify it into
-  // `messageId`). Refusing that shape does not fail closed: enforcement.js:414
-  // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
-  // unguarded and the race stops deduping — measured against this route's own
-  // head before it shipped (connector-ops 71952, vera 71956).
-  test('a post-comment ObjectId is claimable when its comment exists, so the wake race dedupes', async () => {
+  // The second namespace, and why it is not a nicety. This was written for a
+  // post-thread comment arriving as a Mongo ObjectId, and that premise was wrong
+  // (F246): addComment enqueues no `_id` (#3569), and before that it passed
+  // `_id: comment._id` from a plain object Mongoose never gave an id, so the
+  // value was undefined at runtime. A comment's id travels as
+  // `thread.commentId`, and no seat claims a comment today (thread.mention isn't
+  // in the CLI's CLAIMABLE_EVENT_TYPES). The shape stays accepted for a future
+  // producer, because refusing an id the route can't place does not fail
+  // closed: enforcement.js:433 turns the non-2xx into `{failOpen: true}`, so
+  // that caller would run unguarded (connector-ops 71952, vera 71956).
+  test('a post-comment ObjectId is claimable when its comment exists, so a future comment claim is checked instead of failing open', async () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
     // The id is asked of the comment's own store, by the path the comment
     // actually lives under — `comments._id`, a subdocument of Post.
@@ -764,7 +767,8 @@ describe('messageExists', () => {
     // 24 hex digits is a legal ObjectId AND far outside int4, which is the one
     // input where the arm order changes the answer: written digits-first, the
     // natural shape returns false from the range test and this id is refused,
-    // costing a real comment wake its dedupe (wren 71962 — order matters).
+    // which fails open for a caller that claims a comment id (none does today,
+    // F246) (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
     // Answered by the comment store, never by the range test above it.
     expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['p1', null] }, 'comments._id': '123456789012345678901234' });

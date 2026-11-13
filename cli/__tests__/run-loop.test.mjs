@@ -1624,8 +1624,9 @@ describe('performRun', () => {
       _id: 'evt-comment',
       type: 'thread.mention',
       ...overrides,
+      // No messageId: addComment enqueues no _id, so the server never sends one
+      // for a comment (F246). The comment's id is thread.commentId.
       payload: {
-        messageId: 'comment-1',
         content: '[Author: alice]\n\n@seat what does this mean?',
         rawContent: '@seat what does this mean?',
         username: 'alice',

@@ -83,15 +83,17 @@ const MESSAGE_ID_MAX = 2147483647;
  *   comment id  24 hex, canonical case  verified against Mongo in its pod
  *   anything else                       refused, no query
  *
- * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
- * `postController.ts:295` enqueues with `_id: comment._id`, and every payload
- * builder stringifies that into `messageId` (`message?._id || message?.id`,
- * agentMentionService.ts:1417/1481/1674/1722/1793/1861/2145). The wake race
- * dedupes BY that id — several seats are woken for one comment, the first
- * lease wins, the rest stand down — so refusing the shape does not fail closed,
- * it fails open: `enforcement.js:414` catches the throw and returns
- * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
- * regression this arm exists to prevent.
+ * This arm was written on the premise that a post-thread comment enters the
+ * mention and wake path as a Mongo ObjectId, and that the wake race dedupes by
+ * it. Both were wrong (F246, AX audit entry 134). addComment enqueues no `_id`
+ * (#3569); before that it passed `_id: comment._id` from a plain object
+ * Mongoose never gave an id, so the value was undefined. A comment's id
+ * travels as `thread.commentId`, never as payload `messageId`, and
+ * `thread.mention` isn't in the CLI's CLAIMABLE_EVENT_TYPES
+ * (cli/src/lib/enforcement.js), so no seat claims a comment today. The arm
+ * stays because refusing an id shape the route can't place doesn't fail
+ * closed: `enforcement.js:433` turns the non-2xx into `{failOpen: true}`, so
+ * any future producer of a comment-id claim would run unguarded.
  *
  * TASK-122 added the comment-id existence check to prevent permanent phantom
  * leases. TASK-213 also scopes that check to the stored Post.podId, or to any
@@ -119,9 +121,9 @@ const MESSAGE_ID_MAX = 2147483647;
  * The arms are tested IN THIS ORDER, and the order is load-bearing for one
  * input: '123456789012345678901234' is 24 hex digits, hence a legal ObjectId,
  * and far outside int4. Checked digits-first it fails the range test and — in
- * the natural rewrite, where the digits arm returns false — is 404'd, costing
- * a real wake its dedupe. The all-digit test below is the witness that kills
- * that shape.
+ * the natural rewrite, where the digits arm returns false — is 404'd, which
+ * fails open for any caller that claims a comment id (none does today; see
+ * above). The all-digit test below is the witness that kills that shape.
  */
 const MONGO_OBJECT_ID = /^[0-9a-f]{24}$/;
 
