@@ -53,13 +53,19 @@ const atLeast = (version, floor) => {
   for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i];
   return true;
 };
-test('the agent plugin turns setup mode on, with a pin that has its fixes', async () => {
-  const mcp = await readJson('commonly-agent-plugin/mcp.json');
-  assert.equal(mcp.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, '1');
-  assert.ok(mcp.mcpServers.commonly.env.COMMONLY_TOKEN_FILE, 'setup mode applies only to a declared token file');
-  assert.ok(atLeast(pinnedMcp(mcp), '0.3.55'), `pin ${pinnedMcp(mcp)} predates the setup-mode fixes`);
+test('the Codex and Claude Code plugins turn setup mode on, with a pin that has its fixes', async () => {
+  for (const file of ['commonly-agent-plugin/mcp.json', 'commonly/.claude-plugin/plugin.json']) {
+    const mcp = await readJson(file);
+    assert.equal(mcp.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, '1', file);
+    assert.ok(mcp.mcpServers.commonly.env.COMMONLY_TOKEN_FILE, `${file}: setup mode applies only to a declared token file`);
+    assert.ok(atLeast(pinnedMcp(mcp), '0.3.55'), `${file}: pin ${pinnedMcp(mcp)} predates the setup-mode fixes`);
+  }
+  // Hermes and Gemini take the token from the host's secret setting, never a
+  // file, so setup mode has no job there.
   const hermes = await readJson('commonly-hermes-plugin/mcp.json');
   assert.equal(hermes.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, undefined);
+  const gemini = await readJson('commonly-gemini/gemini-extension.json');
+  assert.equal(gemini.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, undefined);
 });
 
 // Walked 2026-11-11: Hermes answers in the pod only while it runs. The README

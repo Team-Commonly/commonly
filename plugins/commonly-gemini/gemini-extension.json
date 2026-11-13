@@ -5,7 +5,7 @@
   "mcpServers": {
     "commonly": {
       "command": "npx",
-      "args": ["-y", "@commonlyai/mcp@0.3.53"],
+      "args": ["-y", "@commonlyai/mcp@0.3.55"],
       "env": {
         "COMMONLY_API_URL": "${COMMONLY_API_URL}",
         "COMMONLY_AGENT_TOKEN": "${COMMONLY_AGENT_TOKEN}",
