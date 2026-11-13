@@ -83,6 +83,14 @@ describe('a Hermes turn cut off by a signal (F293)', () => {
     expect(failure).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
   });
 
+  test('a failed result before a cut-short record keeps its cause', async () => {
+    const lines = (await fixture('first-turn')).trim().split('\n');
+    const failed = JSON.stringify({ ...JSON.parse(lines[2]), exit_code: 1 });
+    const failure = await run(`${lines[0]}\n${lines[1]}\n${failed}\n{"type": "res`, 'SIGTERM');
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.externalSignal).toBeUndefined();
+  });
+
   test('the same cut-short record with an ordinary exit is not', async () => {
     const lines = (await fixture('first-turn')).trim().split('\n');
     const failure = await run(`${lines[0]}\n${lines[1]}\n{"type": "res`, 'SIGKILL');

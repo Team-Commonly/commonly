@@ -620,7 +620,9 @@ const stoppedTurnFailure = (reply, {
   else if (upstream) failure.status ??= upstream.status;
   // A cut-off with no error on the stream came from outside (F293): the
   // timeout and a hook's kill return before this is built.
-  const ownCause = reply.errors.length || failure.status !== undefined || failure.providerCode !== undefined;
+  // The text above drops stderr on a kill, so a status stderr named is read here.
+  const ownCause = reply.errors.length || failure.status !== undefined || failure.providerCode !== undefined
+    || namesFailureCause(stderr, { credentials });
   return ownCause ? failure : markExternalSignal(failure, { code, signal });
 };
 

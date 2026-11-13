@@ -213,6 +213,17 @@ test('an outside SIGTERM is marked; this adapter\'s own parse-failure and timeou
     ...base, timeoutMs: 1000, spawnImpl: () => signalledChild({ stdout: `${session}{"type":"fin`, closeWith: 'SIGTERM' }),
   }).catch((err) => err);
   expect(truncated).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
+  // A sandbox runner that wouldn't start is a cause of its own.
+  const sandbox = await runDsh({
+    ...base, timeoutMs: 1000, spawnImpl: () => {
+      const child = signalledChild({ stdout: session });
+      setTimeout(() => child.stderr.emit('data', Buffer.from('SANDBOX_UNAVAILABLE\n')), 0);
+      setTimeout(() => child.emit('close', null, 'SIGTERM'), 5);
+      return child;
+    },
+  }).catch((err) => err);
+  expect(sandbox.message).toMatch(/sandbox runner unavailable/);
+  expect(sandbox.externalSignal).toBeUndefined();
 });
 
 test('helpers keep the native route disabled and child env closed', () => {

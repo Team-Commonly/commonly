@@ -175,7 +175,8 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials, 
       // A protocol error found mid-stream settled above; one here is a trailing
       // record, which an outside signal may have cut short mid-write (F293).
       try { readHermesJsonl(buffer.trim(), state); } catch (error) {
-        return finish(markExternalSignal(error, { code, signal }));
+        const failedResult = state.result && (state.result.error || state.result.exit_code !== 0);
+        return finish(failedResult ? error : markExternalSignal(error, { code, signal }));
       }
     }
     const result = state.result;

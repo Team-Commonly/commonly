@@ -399,6 +399,12 @@ describe('spawn', () => {
       expect(classifySpawnFailure(failure)).toBe('rate_limit');
     });
 
+    test('a status stderr named keeps its class after an interim message too', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim, stderr: 'request failed with status 429\n', code: 143 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.externalSignal).toBeUndefined();
+    });
+
     test('a cut-off before pi said anything is marked too', async () => {
       const { impl } = makeSpawnImpl({ stdout: '', code: null, signal: 'SIGTERM' });
       const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);

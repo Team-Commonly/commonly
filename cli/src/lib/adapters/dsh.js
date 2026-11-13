@@ -392,14 +392,15 @@ export const runDsh = ({
     if (state.buffer.trim() && !parseFailure) {
       try { parseEvent(state.buffer.trim(), state); } catch (error) { parseFailure = error; }
     }
+    const sandboxDown = /SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(stderr);
     const failure = parseFailure?.message || state.error || (timedOut ? `timeout after ${timeoutMs}ms` : null)
-      || (/SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(stderr) ? 'sandbox runner unavailable' : null)
+      || (sandboxDown ? 'sandbox runner unavailable' : null)
       || (code !== 0 ? stderr.trim() || `exit ${code}` : null)
       || (state.final === null ? 'no final event' : null);
     // A parse failure mid-stream and a timeout are this adapter's own SIGTERM,
     // and a stream error names its cause: only a bare cut-off came from outside.
     // A trailing event that won't parse at close is a write the signal cut short.
-    const ownCause = Boolean(ownKill || state.error || timedOut);
+    const ownCause = Boolean(ownKill || state.error || timedOut || sandboxDown);
     if (failure) {
       return finish(adapterFailure('dsh', failure, {
         credentials, exitCode: code, limit: 500, ...(ownCause ? {} : { signal }),
