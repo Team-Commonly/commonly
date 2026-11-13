@@ -244,6 +244,35 @@ describe('a bare binary name', () => {
   });
 });
 
+// F262: a shim (asdf, mise, a wrapper script) never changes when the harness
+// behind it does, so its mtime can't say the version moved. An entry ages out.
+describe('a shim in front of the harness', () => {
+  const parse = (out) => String(out).trim().match(/\d+\.\d+\.\d+/)?.[0] || null;
+
+  test('a version that changes behind an unchanged shim is read again once the entry ages out', async () => {
+    const current = join(root, 'current-version');
+    await writeFile(current, '0.160.0\n');
+    const shim = join(root, 'bin', 'codex');
+    await mkdir(join(root, 'bin'), { recursive: true });
+    await writeFile(shim, [
+      `#!${process.execPath}`,
+      `process.stdout.write(require("fs").readFileSync(${JSON.stringify(current)}, "utf8"));`,
+      '',
+    ].join('\n'));
+    await chmod(shim, 0o755);
+    const cache = new Map();
+    let clock = 1_000_000;
+    const ask = () => probeVersion(shim, { env: {}, parse, cache, now: () => clock });
+
+    expect(await ask()).toBe('0.160.0');
+    await writeFile(current, '0.149.1\n');
+    clock += 60_000;
+    expect(await ask()).toBe('0.160.0');
+    clock += 5 * 60_000;
+    expect(await ask()).toBe('0.149.1');
+  });
+});
+
 describe('meetsMinimumVersion', () => {
   test.each([
     ['0.159.3', true],

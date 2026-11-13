@@ -73,7 +73,13 @@ export const publicCodexVersionError = ({ found, required, seat = 'public seat' 
 // `args` come before `--version`, for a launch that is an interpreter and a
 // script (a Windows npm shim). The interpreter's path says nothing about which
 // script it would run, so that probe is never cached.
+//
+// An entry also ages out after VERSION_CACHE_MAX_AGE_MS. A shim on PATH (asdf,
+// mise, a wrapper script) keeps its mtime while the harness behind it changes,
+// so an upgrade, or a downgrade under a version floor, would otherwise go
+// unseen until the daemon restarted (F262).
 const versionCache = new Map();
+export const VERSION_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const resolveBinary = (binary, env) => {
   const name = String(binary || '');
@@ -90,17 +96,18 @@ const resolveBinary = (binary, env) => {
 
 export const probeVersion = async (binary, {
   args = [], env, timeoutMs = 30000, parse, execFileImpl = childProcess.execFile, cache = versionCache,
+  now = Date.now,
 } = {}) => {
   const resolved = args.length ? null : resolveBinary(binary, env);
   const key = resolved?.key || null;
   const hit = key ? cache.get(key) : null;
-  if (hit && hit.mtimeMs === resolved.mtimeMs) return hit.version;
+  if (hit && hit.mtimeMs === resolved.mtimeMs && now() - hit.at < VERSION_CACHE_MAX_AGE_MS) return hit.version;
   const stdout = await new Promise((resolve) => {
     execFileImpl(key || binary, [...args, '--version'], { encoding: 'utf8', env, timeout: timeoutMs }, (error, out) => {
       resolve(error ? null : out);
     });
   });
   const version = stdout === null ? null : parse(stdout);
-  if (version && key) cache.set(key, { mtimeMs: resolved.mtimeMs, version });
+  if (version && key) cache.set(key, { mtimeMs: resolved.mtimeMs, version, at: now() });
   return version;
 };
