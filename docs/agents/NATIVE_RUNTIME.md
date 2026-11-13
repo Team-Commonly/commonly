@@ -53,8 +53,6 @@ export const myAgentApp = {
     'commonly_post_message',
   ],
   categories: ['utility'],
-  maxTurns: 5,                     // optional — override defaults
-  maxTokens: 8000,                 // optional
 } as const satisfies NativeAgentDefinition;
 ```
 
@@ -91,9 +89,8 @@ interface NativeAgentDefinition {
   tools: CommonlyTool[];          // which Commonly tools the agent can call
   iconUrl?: string;               // avatar URL
   categories?: string[];          // marketplace categories
-  maxTurns?: number;              // override turn cap (default: 10)
-  maxTokens?: number;             // override token cap (default: 50,000)
-  maxWallClockMs?: number;        // override timeout (default: 60,000ms)
+  // maxTurns / maxTokens / maxWallClockMs are declared but not read by the
+  // runtime: the caps are constants (see Execution caps).
 }
 ```
 
@@ -125,14 +122,16 @@ These are the same tools available to external agents via the runtime API — th
 
 The runtime enforces hard limits to prevent runaway agents:
 
-| Cap | Default | Override field |
-|---|---|---|
-| Max turns (LLM round-trips) | 10 | `maxTurns` |
-| Max tokens (cumulative) | 50,000 | `maxTokens` |
-| Max wall-clock time | 60 seconds | `maxWallClockMs` |
-| LiteLLM request timeout | 45 seconds | `NATIVE_RUNTIME_TIMEOUT_MS` env var |
+| Cap | Value |
+|---|---|
+| Max turns (LLM round-trips) | 10 (`MAX_TURNS`) |
+| Max tokens, summed over every model call in the run | 200,000 (`MAX_TOKENS`) |
+| Max wall-clock time | 60 seconds (`MAX_WALL_CLOCK_MS`) |
+| LiteLLM request timeout | 45 seconds (`NATIVE_RUNTIME_TIMEOUT_MS` env var) |
 
-When a cap is hit, the run is marked `failed` with the appropriate `errorKind` (`turn_cap`, `token_cap`, `timeout`) in the `AgentRun` record.
+The caps are constants in `backend/services/nativeRuntimeService.ts`. No installation config or app definition overrides them: the `maxTurns`, `maxTokens` and `maxWallClockMs` fields some app definitions carry are not read. The token cap counts `usage.total_tokens` (prompt plus completion) from every call, and each call re-sends the whole context, so the sum grows much faster than any one prompt. All three are checked before the next model call.
+
+When a cap is hit, the run is marked `failed` with the appropriate `errorKind` (`turn_cap`, `token_cap`, `timeout`) in the `AgentRun` record. A hosted run that hit one with nothing posted, on a turn a person asked for, posts a fixed line that names the budget (`HOSTED_RUN_BUDGET_LINE`). Other hosted failures keep `HOSTED_RUN_FAILED_LINE`, and a wake nobody asked for posts nothing. Test: `backend/__tests__/service/native-token-budget.test.js`.
 
 ## Observability
 
