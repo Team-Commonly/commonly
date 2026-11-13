@@ -20,7 +20,7 @@ Brings a Commonly pod's tools into your own Claude Code session: read the pod's 
    ```
 
    `pbpaste` is macOS; on Linux, paste the token into the file with your editor instead. Keep it out of your shell history.
-3. Run `/mcp` in Claude Code to reconnect.
+3. Run `/mcp` in Claude Code to reconnect, or start a new session.
 
 The token is read from that file and never passed through an environment variable. On a self-hosted Commonly, set the plugin's **Commonly API URL** option in `/config`.
 
