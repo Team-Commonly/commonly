@@ -74,6 +74,12 @@ describe('a comment that closes unanswered', () => {
     expect(await noteUnansweredMention(event(onPost))).toBe(true);
   });
 
+  it('a failed post read still lets the line go out', async () => {
+    Post.findById.mockReturnValue({ select: () => ({ lean: async () => { throw new Error('mongo down'); } }) });
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+    expect(emitUnansweredMentionLine).toHaveBeenCalledTimes(1);
+  });
+
   it('a post id that is not an ObjectId is never read, and the line still goes out', async () => {
     expect(await noteUnansweredMention(event({ thread: { postId: 'x', postPodId: 'pod-1' } }))).toBe(true);
     expect(Post.findById).not.toHaveBeenCalled();

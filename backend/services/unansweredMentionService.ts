@@ -23,9 +23,14 @@ export async function agentCommentedOnPostSince(
   askingCommentId?: unknown,
 ): Promise<boolean> {
   if (!agentId || !Types.ObjectId.isValid(String(postId ?? ''))) return false;
-  const post = await Post.findById(postId).select('comments.userId comments.createdAt comments.replyTo').lean() as {
-    comments?: Array<{ userId?: unknown; createdAt?: Date | string; replyTo?: unknown }>;
-  } | null;
+  type Comments = { comments?: Array<{ userId?: unknown; createdAt?: Date | string; replyTo?: unknown }> } | null;
+  let post: Comments;
+  try {
+    post = await Post.findById(postId).select('comments.userId comments.createdAt comments.replyTo').lean() as Comments;
+  } catch {
+    // A failed read is not an answer: fall through so the notice still goes out.
+    return false;
+  }
   return (post?.comments || []).some((comment) => String(comment.userId) === String(agentId)
     && new Date(comment.createdAt || 0).getTime() >= since.getTime()
     && (!comment.replyTo || (askingCommentId != null && String(comment.replyTo) === String(askingCommentId))));
