@@ -239,7 +239,8 @@ retires a `chat.mention`, `thread.mention` or `dm.message` that a person sent, t
 gets one kernel line in the person's thread saying the agent didn't answer and may be
 offline (`unansweredMentionService`). The line is skipped for kernel and agent senders,
 and whenever the agent has posted since the message where an answer to it would sit
-(top level, the message's thread, or a reply to it), because it may have answered
+(top level, a reply to it, or the thread of any message the retired row carries, read
+from the message's own row), because it may have answered
 without acking. A post in another thread doesn't count: it was the agent answering
 someone else, and counting it left the person with no line (F237). It is at most once: the event is retired before the line is
 written, so a failed write logs and posts nothing rather than risking a second line.

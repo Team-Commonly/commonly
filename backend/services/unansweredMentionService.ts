@@ -139,11 +139,12 @@ export async function agentPostedSince(
 
 // The Postgres row ids a retired row carries, for `answering`: every carried
 // message and the row's thread. Null when any carried id isn't one (a Mongo
-// fallback id, or digits too long for an int), which keeps the old reading:
-// any post since counts. The 10-digit cap matches answerRootOfWake's.
+// fallback id, or a number past a Postgres int), which keeps the old reading:
+// any post since counts; an out-of-range id would make the query throw.
 const answeringIds = (event: RetiredEvent): number[] | null => {
   const payload = (event.payload || {}) as Record<string, unknown>;
-  const asId = (value: unknown) => (/^\d{1,10}$/.test(String(value ?? '')) ? Number(value) : null);
+  const asId = (value: unknown) => (
+    /^\d{1,10}$/.test(String(value ?? '')) && Number(value) <= 2147483647 ? Number(value) : null);
   const ids = carriedMessages(event).map((message) => asId(message.messageId));
   if (ids.length === 0 || ids.some((id) => id === null)) return null;
   const root = payload.threadRootId === undefined || payload.threadRootId === null ? null : asId(payload.threadRootId);
