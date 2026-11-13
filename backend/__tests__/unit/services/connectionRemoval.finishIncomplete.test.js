@@ -225,7 +225,54 @@ describe('finishIncompleteRemovals (F477)', () => {
     expect(await secretsOf(row)).toBe(2);
   });
 
-  it('the guarded write keeps the removal\'s first revokedAt and fences a lapsed reconnect', async () => {
+  // A reconnect's callback consumes `pendingAuth` and then spends seconds at the
+  // vendor before its retire write. Through that window the row matches this
+  // pass. If the pass wins, the callback's retire write misses on the
+  // generation, and `lostToRemoval` (routes/hostedMcpConnect.ts) decides
+  // whether the grant just issued is revoked: it reads a `revokedAt` that
+  // differs from the one the callback consumed as "a removal fenced me". So the
+  // pass must stamp a fresh `revokedAt`, or the new grant stays live with no
+  // stored copy and no page shown (review HOLD on #F477).
+  it('stamps a fresh revokedAt, so a callback it fenced mid-exchange revokes its new grant', async () => {
+    const row = await leftRow();
+    const consumedRevokedAt = row.revokedAt;
+    // The callback has consumed its state: no pendingAuth, generation moved.
+    await Integration.updateOne({ _id: row._id }, { $inc: { 'config.authGeneration': 1 } });
+    const { result } = run({ revokeAtVendor: jest.fn(async () => { throw new Error('vendor 503'); }) });
+
+    expect(await result).toMatchObject({ unfinished: 1 });
+    const after = await Integration.findById(row._id).lean();
+    expect(after.config.authGeneration).toBe(5);
+    expect(after.revokedAt).not.toBeNull();
+    expect(new Date(after.revokedAt).getTime()).not.toBe(new Date(consumedRevokedAt).getTime());
+    expect(new Date(after.revokedAt).getTime()).toBe(NOW.getTime());
+  });
+
+  it('a row the vendor keeps refusing waits another grace window, behind newer rows', async () => {
+    const stuck = await leftRow();
+    const refusing = jest.fn(async () => { throw new Error('vendor 503'); });
+    await run({ revokeAtVendor: refusing }).result;
+    expect(refusing).toHaveBeenCalledTimes(1);
+
+    // The next pass, five minutes on, leaves it alone.
+    const again = jest.fn(async () => { throw new Error('vendor 503'); });
+    const next = await finishIncompleteRemovals({
+      now: new Date(NOW.getTime() + 5 * 60000),
+      removedBy: 'system',
+      revokeGrants: jest.fn(async () => 0),
+      deps: {
+        now: () => new Date(NOW.getTime() + 5 * 60000),
+        revokeAtVendor: again,
+        clientIdFor: () => 'commonly-client',
+        clientSecretFor: () => undefined,
+      },
+    });
+    expect(next).toMatchObject({ finished: 0, unfinished: 0 });
+    expect(again).not.toHaveBeenCalled();
+    expect(await secretsOf(stuck)).toBe(2);
+  });
+
+  it('the guarded write fences a lapsed reconnect', async () => {
     const row = await leftRow({
       entryId: 'atlassian',
       config: {
@@ -241,7 +288,7 @@ describe('finishIncompleteRemovals (F477)', () => {
     const written = await markIncompleteRemovalDisconnected(row._id, NOW);
 
     expect(written).toMatchObject({ status: 'disconnected' });
-    expect(new Date(written.revokedAt).getTime()).toBe(LONG_AGO.getTime());
+    expect(new Date(written.revokedAt).getTime()).toBe(NOW.getTime());
     expect(written.config.pendingAuth).toBeUndefined();
     expect(written.config.authGeneration).toBe(4);
   });

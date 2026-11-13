@@ -778,13 +778,22 @@ const reconnectNotInFlight = (now: Date) => ({
 });
 
 /**
- * The finishing pass's step 2. It is `markDisconnected` with two differences.
- * It moves only a row a removal left (`disconnected` with `revokedAt`) and that
- * no reconnect has claimed since the pass read it, so a `/start` landing in
- * between wins and the row is left alone. And it keeps the removal's own
- * `revokedAt`: the broker already refuses the row, and the first time is the
- * one worth keeping. A lapsed pending authorization is cleared and the
- * generation moved, as the person's removal does, so its callback can't land.
+ * The finishing pass's step 2: `markDisconnected`, but it moves only a row a
+ * removal left (`disconnected` with `revokedAt`) that no reconnect has claimed
+ * since the pass read it, so a `/start` landing in between wins and the row is
+ * left alone.
+ *
+ * It stamps a fresh `revokedAt`, exactly as a person's removal does, and that
+ * is load-bearing. A reconnect's callback consumes `pendingAuth` and then
+ * spends seconds at the vendor before its retire write; the row matches this
+ * pass in that window. When the pass wins, the retire write misses on the
+ * generation, and the callback's `lostToRemoval` (routes/hostedMcpConnect.ts)
+ * reads a `revokedAt` that differs from the one it consumed as "a removal
+ * fenced me" and revokes the grant it was just issued. Keep the old value and
+ * that grant stays live with no stored copy and no page shown. The stamp also
+ * spaces retries: a row the vendor keeps refusing waits another grace window
+ * and sorts behind newer rows. A lapsed pending authorization is cleared and
+ * the generation moved, so its callback can't land.
  */
 export const markIncompleteRemovalDisconnected = (id: unknown, now: Date) => Integration.findOneAndUpdate(
   {
@@ -795,6 +804,7 @@ export const markIncompleteRemovalDisconnected = (id: unknown, now: Date) => Int
     ...reconnectNotInFlight(now),
   },
   {
+    $set: { revokedAt: now },
     $inc: { 'config.authGeneration': 1 },
     $unset: { 'config.pendingAuth': '' },
   },
@@ -812,7 +822,13 @@ export const markIncompleteRemovalDisconnected = (id: unknown, now: Date) => Int
  * Each row goes through `removeConnection` again, so the order holds: a marked
  * row skips the vendor, a failed vendor revoke is retried with the token still
  * held, and a page-only entry sends nothing and sweeps its copy. A row the
- * vendor still refuses stays, and the next pass tries again.
+ * vendor still refuses stays, and a pass at least one grace window later tries
+ * again.
+ *
+ * `removeConnection` revokes grants (and, for github-mcp, retires Connect
+ * repositories) before its disconnect write, so those run even when the
+ * guarded write then refuses to a reconnect. That is harmless: the first
+ * removal already ended them, and nothing mints on a row that isn't connected.
  */
 export const finishIncompleteRemovals = async (options: {
   removedBy: string;
