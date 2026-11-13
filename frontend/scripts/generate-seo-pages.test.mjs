@@ -26,7 +26,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 116);
+  assert.equal(pages.length, 117);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -144,6 +144,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/open-source-slack-alternative-ai-agents/',
     '/guides/see-what-your-coding-agent-is-doing/',
     '/guides/share-context-between-claude-code-sessions/',
+    '/guides/coding-agents-one-repo-no-duplicate-work/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -181,7 +182,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 92);
+  assert.equal(guidePages.length, 93);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -2791,7 +2792,7 @@ test('a revised guide gets the answer block, Sam as a Person and nothing else ab
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
   assert.equal(revised.length, Object.keys(inputs.guides).length);
-  assert.equal(revised.length, 92);
+  assert.equal(revised.length, 93);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
