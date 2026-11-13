@@ -5264,11 +5264,13 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     const claims = [];
     const releases = [];
     const limits = [];
+    const polls = [];
     const messages = pages.flat().filter((event) => !offSnapshot.includes(event._id))
       .map((event) => ({ _id: event.payload.messageId, isBot: agentRows.includes(event._id) }));
     const get = jest.fn(async (route, params) => {
       if (route === '/api/agents/runtime/events') {
         limits.push(params?.limit);
+        polls.push(params);
         return { events: queue.length ? queue.shift() : [] };
       }
       if (route.endsWith('/messages')) return { messages: snapshot ? messages : [] };
@@ -5296,7 +5298,7 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
       return {};
     });
     createClient.mockReturnValue({ get, post, del: jest.fn(async () => ({})) });
-    return { acks, renewals, claims, releases, limits, ackedIds: () => acks.map(({ id }) => id) };
+    return { acks, renewals, claims, releases, limits, polls, ackedIds: () => acks.map(({ id }) => id) };
   };
 
   const startRun = ({ spawn, limit, ...options }) => {
@@ -5952,6 +5954,59 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     await drainMicrotasks();
     expect(server.renewals).toEqual([]);
     expect(server.ackedIds()).not.toContain('b');
+  });
+
+  // F237 item 2: in an outage a full carry claims nothing new. Each row claimed
+  // then would ride the carry past the cap, be released after five failed turns
+  // and be claimed again, an attempt each time, until the requeue retired it
+  // unrun. The poll names the carried rows so the server returns only those it
+  // requeued; `limit` keeps its old value for a server that ignores onlyIds.
+  describe('a full carry in an outage claims nothing new (F237)', () => {
+    const failing = () => jest.fn().mockRejectedValue(new Error('claude exited with code 1:'));
+
+    test('one failed turn still claims, so a person can join the retry', async () => {
+      const server = fakeServer({ pages: [[inbox('a'), inbox('b')], [], []] });
+      const run = startRun({ spawn: failing(), limit: 2 });
+      await drainMicrotasks();
+      await run.nextTick();
+      expect(server.polls[1]).toMatchObject({ limit: 1 });
+      expect(server.polls[1].onlyIds).toBeUndefined();
+      run.handle.stop();
+    });
+
+    test('from the second failure in a row, the poll names the carried rows', async () => {
+      const server = fakeServer({ pages: [[inbox('a'), inbox('b')], [], []] });
+      const run = startRun({ spawn: failing(), limit: 2 });
+      await drainMicrotasks();
+      await run.nextTick();
+      await run.nextTick();
+      expect(server.polls.length).toBeGreaterThanOrEqual(3);
+      expect(server.polls[2]).toMatchObject({ limit: 1, onlyIds: 'a,b' });
+      run.handle.stop();
+    });
+
+    // A failure that opens the circuit at once (won't start, quota, signed out)
+    // reaches the circuit-wait check after one failure: that check is the outage.
+    test('the check during an open circuit names the carried rows from the first failure', async () => {
+      const server = fakeServer({ pages: [[inbox('a'), inbox('b')], [], []] });
+      const spawn = jest.fn().mockRejectedValue(new Error('spawn pi ENOENT'));
+      const run = startRun({ spawn, limit: 2 });
+      await drainMicrotasks();
+      await run.nextTick();
+      expect(server.polls[1]).toMatchObject({ limit: 1, onlyIds: 'a,b' });
+      run.handle.stop();
+    });
+
+    test('a carry with room never sends onlyIds, however many failures', async () => {
+      const server = fakeServer({ pages: [[inbox('a')], [], []] });
+      const run = startRun({ spawn: failing(), limit: 2 });
+      await drainMicrotasks();
+      await run.nextTick();
+      await run.nextTick();
+      expect(server.polls.every((params) => params.onlyIds === undefined)).toBe(true);
+      expect(server.polls.slice(1).every((params) => params.limit === 1)).toBe(true);
+      run.handle.stop();
+    });
   });
 
   test('a failed carry plus a person on the short page the server really sends: nothing is dropped', async () => {

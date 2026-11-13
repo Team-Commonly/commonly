@@ -816,6 +816,13 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     // does not). Best-effort and throttled; see agentListenerCheckIn.ts.
     recordListenerCheckIn(agentUser?._id, req.agentTokenHash);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    // F237: a driver whose carry fills its prompt names the rows it carries,
+    // and gets back only those the server requeued (agentEventService
+    // claimPage). Anything that isn't a list of ids claims as before, the
+    // direction a malformed request should fail in.
+    const onlyIds = typeof req.query.onlyIds === 'string'
+      ? req.query.onlyIds.split(',').map((id: string) => id.trim()).filter((id: string) => /^[a-f0-9]{24}$/i.test(id))
+      : [];
     const installationPodIds = (req.agentInstallations || [])
       .map((item: any) => item?.podId)
       .filter(Boolean);
@@ -852,6 +859,7 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       podId: fallbackPodId,
       podIds,
       limit,
+      ...(onlyIds.length ? { onlyIds } : {}),
     });
 
     // Fire the typing indicator now — at gateway-fetch time, not
