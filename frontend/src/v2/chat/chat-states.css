@@ -1362,6 +1362,18 @@
   line-height: 1.45;
 }
 
+/* A link in the note (the Windows Bring your own page, an adapter's setup guide)
+   reads as a link, as in the profile note. */
+.v2-root .v2-byo-handoff__note a {
+  color: var(--v2-accent-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v2-root .v2-byo-handoff__note a:hover {
+  text-decoration: underline;
+}
+
 .v2-byo-handoff__os {
   display: flex;
   gap: 6px;

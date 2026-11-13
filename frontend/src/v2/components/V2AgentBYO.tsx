@@ -1533,6 +1533,13 @@ const V2AgentBYO: React.FC = () => {
       instanceId: issued.instanceId,
     })
     : '';
+  // Pasted into PowerShell, each line ends with a newline and runs, so without a
+  // final one the fourth line, the one that starts the agent, sits at the prompt
+  // until Enter. A windows-latest probe (Win11, PS 5.1, 11-13) showed exactly
+  // that: lines 1-3 ran and the run line sat typed, token unused. The Copy button
+  // adds one on Windows. connectSnippet stays as it is, since the Windows smoke
+  // lifts it from this file and runs its exact lines.
+  const listenCopyText = listenSnippet && setupOs === 'windows' ? `${listenSnippet}\n` : listenSnippet;
 
   const cursorSnippet = issued
     ? JSON.stringify({
@@ -2337,7 +2344,7 @@ const V2AgentBYO: React.FC = () => {
                 <button
                   type="button"
                   ref={listenCopyRef}
-                  onClick={() => copy('listen', listenSnippet)}
+                  onClick={() => copy('listen', listenCopyText)}
                   className={`v2-byo__copy${listenState === 'listening' ? '' : ' v2-byo__copy--next'}`}
                 >
                   {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
