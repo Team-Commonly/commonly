@@ -718,6 +718,23 @@ describe('Connectors page: tools', () => {
       expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
     });
 
+    // F475 (CodeRabbit on #4072): steps 4-5 failed after the vendor revoked.
+    // For the person it is removed: the row is disconnected, its grants are
+    // revoked and the page no longer lists it (the catalog reads only
+    // `connected` rows), so there is no retry to offer and no page to visit.
+    it('a 502 incomplete removal the provider revoked says it was revoked, with no page to go and check', async () => {
+      mockTools({ entries: [atlassian], grants: [grantAtl] });
+      axios.delete.mockRejectedValue({ response: { status: 502, data: { code: 'provider_revoked_removal_incomplete', revokeAt: 'https://id.atlassian.com/manage-profile/apps', providerRevoked: true } } });
+      renderPage();
+
+      const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+      fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+      expect(await screen.findByText(/Connection removed, and Atlassian revoked Commonly's access\./)).toBeInTheDocument();
+      expect(screen.queryByText(/still lists Commonly/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Open provider settings' })).toBeNull();
+    });
+
     // TASK-339: this code follows a step 3 that may never have called the vendor
     // (a page-only entry), so the body's providerRevoked decides the copy.
     it('a 502 incomplete removal the provider never revoked says the app is still listed', async () => {
@@ -1263,6 +1280,23 @@ describe('Connectors page: tools', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
     await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-hidden', expect.anything()));
     expect(await screen.findByText(/Connection removed. Review its access at Airtable/)).toBeInTheDocument();
+  });
+
+  it('a hidden entry\'s removal the provider revoked says so, with no page to go and check (F475)', async () => {
+    mockTools({
+      entries: [],
+      grants: [],
+      hidden: [{ connectionId: 'conn-hidden', entryId: 'airtable', label: 'Airtable', status: 'connected', revokePage: 'https://airtable.com/account' }],
+    });
+    axios.delete.mockResolvedValue({ data: { message: 'removed', providerRevoked: true } });
+    renderPage();
+
+    await settle();
+    await expandOff('Tools');
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
+    expect(await screen.findByText(/Connection removed, and Airtable revoked Commonly's access\./)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open provider settings' })).toBeNull();
   });
 
   it('a hidden connection the provider did not revoke says the app is still listed there', async () => {
