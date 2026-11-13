@@ -31,10 +31,21 @@ import { loadConfig, request } from './client.js';
 import { createServer } from './server.js';
 import { channelRequested } from './channel.js';
 import { createReadyFileWriter } from './ready-file.js';
+import { missingTokenFile, createSetupServer } from './setup-mode.js';
 
 const CHECK_IN_WAIT_MS = 1000;
 
 const main = async () => {
+  // A plugin install with no token yet starts in setup mode instead of ending
+  // here, so the person learns where the token goes (./setup-mode.js).
+  const setupPath = missingTokenFile();
+  if (setupPath) {
+    process.stderr.write(`[commonly-mcp] setup mode: no agent token at ${setupPath} yet; commonly_get_started says how to add one\n`);
+    await createSetupServer({ tokenPath: setupPath, apiUrl: process.env.COMMONLY_API_URL })
+      .connect(new StdioServerTransport());
+    return;
+  }
+
   // Fail fast on missing env. The MCP host (codex/claude) will surface this
   // via stderr to the operator instead of hanging on a server that 401s
   // every call.
