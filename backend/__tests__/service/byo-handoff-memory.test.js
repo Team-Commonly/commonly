@@ -207,6 +207,7 @@ describe('hosted memory copied into a local agent', () => {
         config: { runtime: { host: 'byo', runtimeType: 'wrapper', adapter: 'stub' } } });
     expect(result.status).toBe(503);
     expect(result.body.error).toMatch(/name claim could not be released/);
+    expect(result.body.code).toBe('memory_handoff_retry');
     expect(await AgentRegistry.countDocuments({ agentName: name })).toBe(1);
     expect(await AgentMemory.findOne({ agentName: name })).toBeNull();
   });

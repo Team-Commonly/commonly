@@ -1243,7 +1243,7 @@ const V2AgentBYO: React.FC = () => {
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
         // A refused memory copy from a handoff link: the server's text is the
         // CLI's ("retry attach"), so the page says it in its own words.
-        : code && MEMORY_HANDOFF_ERRORS[code]
+        : code && Object.prototype.hasOwnProperty.call(MEMORY_HANDOFF_ERRORS, code)
           ? t(MEMORY_HANDOFF_ERRORS[code], { name: cleanName, agent: prefill.memoryFrom })
           : e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
