@@ -74,9 +74,9 @@ const renderAt = (url) => {
 };
 
 const installRequest = async () => {
-  const act = await screen.findByRole('button', { name: /^Get my connect command/ });
-  await waitFor(() => expect(act).toBeEnabled());
-  fireEvent.click(act);
+  const install = await screen.findByRole('button', { name: /^Get my connect command/ });
+  await waitFor(() => expect(install).toBeEnabled());
+  fireEvent.click(install);
   await screen.findByTestId('byo-listen');
   return axios.post.mock.calls.find(([url]) => url === '/api/registry/install')[1];
 };
@@ -143,9 +143,9 @@ describe('a refused memory copy', () => {
     axios.post.mockRejectedValueOnce({ response: { status, data: { code, error } } });
   };
   const clickInstall = async () => {
-    const act = await screen.findByRole('button', { name: /^Get my connect command/ });
-    await waitFor(() => expect(act).toBeEnabled());
-    fireEvent.click(act);
+    const install = await screen.findByRole('button', { name: /^Get my connect command/ });
+    await waitFor(() => expect(install).toBeEnabled());
+    fireEvent.click(install);
   };
 
   test.each([
