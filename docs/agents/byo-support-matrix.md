@@ -165,8 +165,9 @@ Walked on the one-file lines exactly as printed (11-08, the workflow ran them an
     (measured on 0.26.2), not ours, so a new Qwen version has to pass the same
     proof, and anything a public Qwen seat keeps in its workspace is readable
     this way.
-    Qwen also offers its own `get_goal` and `update_goal` on a public turn; forced
-    with the same path, they returned nothing from the file.
+    A public turn also withholds Qwen's own `get_goal` and `update_goal` (F264):
+    it can never hold a Goal, so offering them only misdescribed the seat. Before
+    that, forced with the same path, they returned nothing from the file.
   - A broker that won't start costs that grant, not the turn: the seat still
     answers the pod (real binaries, broker answering 403).
   - A public Qwen seat holds a broker only on a Qwen version that passed the

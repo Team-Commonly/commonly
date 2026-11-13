@@ -36,9 +36,11 @@ const ALL_BUILTIN_TOOLS = [
   'omni_extract_keyframes', 'omni_extract_audio', 'omni_clip_video', 'omni_convert_image', 'omni_transcribe_audio',
   'omni_clip_image', 'omni_clip_audio', 'omni_caption_image', 'omni_caption_audio', 'omni_ocr_image',
   'omni_understand_video_segments', 'omni_recall_media_memory', 'propose_goal', 'display_image',
+  // Offered on a public turn until F264 withheld them; a public turn holds no Goal.
+  'get_goal', 'update_goal',
 ];
-// The two Qwen offers on a public turn. They answer, so only the token check applies.
-const OFFERED_BUILTINS = ['get_goal', 'update_goal'];
+// Built-ins a public turn still offers. They answer, so only the token check applies.
+const OFFERED_BUILTINS = [];
 const ATTEMPTED_TOOLS = [...ALL_BUILTIN_TOOLS, ...OFFERED_BUILTINS];
 const REFUSED = /permission was declined|not found in registry|not listed in the active core tools|bridge refused/;
 const SENTINEL_FILE = 'write-sentinel';

@@ -53,6 +53,11 @@ const EXCLUDED_TOOLS = [
 // Qwen can read its own config directory. That directory also contains the
 // per-spawn MCP credential file, so public turns cannot expose OS read tools.
 const PUBLIC_READ_TOOLS = ['read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp'];
+// A public turn can never hold a Goal: setting one needs /goal or an approved
+// propose_goal in a trusted folder, and QWEN_HOME is fresh every turn. Offered
+// anyway, the two tools only show up in the seat's account of what it can do
+// (F264; a public Codex seat turns goals off the same way, #3571).
+const PUBLIC_GOAL_TOOLS = ['get_goal', 'update_goal'];
 
 // What a public turn adds to --exclude-tools. Both spellings of a Commonly MCP
 // tool, under the usual server name and any this turn declares, as with the
@@ -62,6 +67,7 @@ export const publicExcludedTools = (serverNames, ctx) => {
   const names = [...new Set(['commonly', ...serverNames])];
   return [
     ...PUBLIC_READ_TOOLS,
+    ...PUBLIC_GOAL_TOOLS,
     ...publicSeatWithheldTools(ctx).flatMap((tool) => [tool, ...names.map((name) => `mcp__${name}__${tool}`)]),
   ];
 };

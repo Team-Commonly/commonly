@@ -731,6 +731,14 @@ describe('F145: memory writes on a turn the owner woke', () => {
     expect(publicExcludedTools(['commonly_dev'], {})).toContain('mcp__commonly_dev__commonly_attach_file');
   });
 
+  // F264: a public turn can never hold a Goal (no trusted folder, no /goal, a
+  // fresh QWEN_HOME each turn), so the two Goal tools only misdescribe the seat.
+  test('a public turn withholds the Goal tools, owner-woken or not', () => {
+    for (const ctx of [{}, { ownerWoken: true }]) {
+      expect(publicExcludedTools(['commonly'], ctx)).toEqual(expect.arrayContaining(['get_goal', 'update_goal']));
+    }
+  });
+
   test('a public turn says so on the real spawn, with its prompt to match', async () => {
     await withSeat(async (ctx) => {
       const argsOf = async (extra) => {
@@ -743,6 +751,7 @@ describe('F145: memory writes on a turn the owner woke', () => {
       };
       const owner = await argsOf({ ownerWoken: true });
       expect(owner[owner.indexOf('--exclude-tools') + 1].split(',')).not.toContain('commonly_save_my_memory');
+      expect(owner[owner.indexOf('--exclude-tools') + 1].split(',')).toEqual(expect.arrayContaining(['get_goal', 'update_goal']));
       expect(owner[owner.indexOf('-p') + 1]).toContain('commonly_save_my_memory');
       const stranger = await argsOf({});
       expect(stranger[stranger.indexOf('--exclude-tools') + 1].split(',')).toContain('commonly_save_my_memory');
