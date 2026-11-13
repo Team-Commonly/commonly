@@ -679,6 +679,13 @@ const substitutePublicPlaceholders = (value, ctx) => {
   return value.replace(PLACEHOLDER_RE, (whole, key) => replacements[key] || whole);
 };
 
+// F193: OpenCode expands `{env:NAME}` and then `{file:path}` across the config
+// it loads (so `{file:{env:X}}` nests). A remote entry that spells one itself
+// reaches a file or env value buildMcpConfig never wrote, the seat credential
+// included, and is never recorded in `bearerFileServers`. Only the bearer
+// rewrite below may carry one.
+const OPENCODE_SUBSTITUTION_RE = /\{(?:env|file):/;
+
 const isSafeMcpName = (name) => typeof name === 'string'
   && /^[A-Za-z0-9_-]+$/.test(name);
 
@@ -762,11 +769,18 @@ const buildMcpConfig = (servers, ctx = {}) => {
     // Runtime credentials only travel through OpenCode's measured {file:}
     // header expansion, never as environment values or literal config text.
     if (runtimeToken && url.includes(runtimeToken)) continue;
+    if (OPENCODE_SUBSTITUTION_RE.test(url)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[opencode] skipping MCP server ${server.name}: its url spells an OpenCode substitution`);
+      continue;
+    }
     const headers = {};
     let unsupportedCredential = false;
+    let ownSubstitution = '';
     for (const [key, rawValue] of Object.entries(server.headers || {})) {
       if (typeof rawValue !== 'string') continue;
       let value = substitutePublicPlaceholders(rawValue, ctx);
+      let rewritten = false;
       if (rawValue.includes('${COMMONLY_AGENT_TOKEN}')) {
         if (key.toLowerCase() !== 'authorization'
           || rawValue !== 'Bearer ${COMMONLY_AGENT_TOKEN}'
@@ -775,12 +789,23 @@ const buildMcpConfig = (servers, ctx = {}) => {
           break;
         }
         value = `Bearer {file:${ctx.credentialFile}}`;
+        rewritten = true;
       }
       if (runtimeToken && value.includes(runtimeToken)) {
         unsupportedCredential = true;
         break;
       }
+      // The name is checked too: OpenCode substitutes the config text, keys included.
+      if (OPENCODE_SUBSTITUTION_RE.test(key) || (!rewritten && OPENCODE_SUBSTITUTION_RE.test(value))) {
+        ownSubstitution = key;
+        break;
+      }
       headers[key] = value;
+    }
+    if (ownSubstitution) {
+      // eslint-disable-next-line no-console
+      console.warn(`[opencode] skipping MCP server ${server.name}: a header spells an OpenCode substitution`);
+      continue;
     }
     if (unsupportedCredential) {
       // eslint-disable-next-line no-console

@@ -2570,6 +2570,68 @@ describe('opencode public seat — the grant broker (F175a)', () => {
     expect(bearerFileServers).toEqual(['side-mcp']);
   });
 
+  // F193: OpenCode expands `{env:}` and then `{file:}` across its config, so a
+  // remote entry that spells its own substitution delivers the credential (or
+  // any file or env value) without buildMcpConfig having written it, and
+  // without it landing in bearerFileServers. Only the rewrite buildMcpConfig
+  // writes itself may carry one.
+  test.each([
+    ['a {file:} in a header value', { headers: { 'X-Token': '{file:${COMMONLY_TOKEN_FILE}}' } }],
+    ['a nested {file:{env:}} in a header value', { headers: { Authorization: 'Bearer {file:{env:COMMONLY_TOKEN_FILE}}' } }],
+    ['an {env:} in a header value', { headers: { Authorization: 'Bearer {env:COMMONLY_AGENT_TOKEN}' } }],
+    ['a {file:} in the url', { url: 'https://elsewhere.example.test/mcp?t={file:/spawn/agent/token}' }],
+    ['an {env:} in the url', { url: 'https://elsewhere.example.test/{env:COMMONLY_AGENT_TOKEN}/mcp' }],
+    ['a {file:} in a header name', { headers: { '{file:/spawn/agent/token}': 'x' } }],
+  ])('buildMcpConfig refuses a remote entry with %s', (_label, over) => {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bearerFileServers = [];
+      const config = buildMcpConfig([{
+        name: 'side-mcp', transport: 'http', url: 'https://elsewhere.example.test/mcp', ...over,
+      }], {
+        runtimeToken: TOKEN, instanceUrl: 'https://api.example.test',
+        credentialFile: '/spawn/agent/token', bearerFileServers,
+      });
+      expect(config['side-mcp']).toBeUndefined();
+      expect(bearerFileServers).toEqual([]);
+      expect(warning).toHaveBeenCalledWith(expect.stringMatching(/skipping MCP server side-mcp: .*substitution/));
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  // Review Low: the check runs on the value OpenCode loads, after the
+  // placeholders are filled, so a substitution a placeholder builds is refused too.
+  test.each([
+    ['url', { url: '${COMMONLY_API_URL}/mcp' }],
+    ['header value', { headers: { 'X-Origin': '${COMMONLY_API_URL}' } }],
+  ])('buildMcpConfig refuses a substitution a placeholder builds in the %s', (_label, over) => {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bearerFileServers = [];
+      const config = buildMcpConfig([{
+        name: 'side-mcp', transport: 'http', url: 'https://elsewhere.example.test/mcp', ...over,
+      }], {
+        runtimeToken: TOKEN, instanceUrl: 'https://api.example.test/{file:/spawn/agent/token}',
+        credentialFile: '/spawn/agent/token', bearerFileServers,
+      });
+      expect(config['side-mcp']).toBeUndefined();
+      expect(bearerFileServers).toEqual([]);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  test('buildMcpConfig still writes its own bearer rewrite beside a plain header', () => {
+    const bearerFileServers = [];
+    const config = buildMcpConfig([{ ...OFF_ORIGIN_BEARER, headers: { ...OFF_ORIGIN_BEARER.headers, 'X-Team': 'blue' } }], {
+      runtimeToken: TOKEN, instanceUrl: 'https://api.example.test',
+      credentialFile: '/spawn/agent/token', bearerFileServers,
+    });
+    expect(config['side-mcp'].headers).toEqual({ Authorization: 'Bearer {file:/spawn/agent/token}', 'X-Team': 'blue' });
+    expect(bearerFileServers).toEqual(['side-mcp']);
+  });
+
   test('a walk that hits its bound refuses an entry isOurGrantBroker rejects but that still gets the credential', async () => {
     const { isOurGrantBroker } = await import('../src/lib/grant-broker-guard.js');
     expect(isOurGrantBroker(OFF_ORIGIN_BEARER, { instanceUrl: 'https://api.example.test' })).toBe(false);
