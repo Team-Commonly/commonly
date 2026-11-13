@@ -63,10 +63,12 @@ export type StalledConnectCopyEvidence = {
  * all of them: it may not answer there yet. On Windows,
  * Claude Code answered an @mention on prod from the page's PowerShell lines
  * (D164, byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
- * release with the Windows npm fix), and Codex isn't walked there. The server
- * never learns which adapter the copied command named, so the Windows copy
- * says both, and points at the page's lines rather than at --unsandboxed,
- * which Codex doesn't take.
+ * release with the Windows npm fix). Codex answered there too, in an
+ * invite-only pod from the page's lines, on the published CLI 0.1.273
+ * (byo-windows.yml run 42175092787, 2026-11-06; the support matrix's Windows
+ * column). An open pod refuses it at start. The server never learns which
+ * adapter the copied command named, so the Windows copy says both, and points
+ * at the page's lines rather than at --unsandboxed.
  *
  * It hedges, unlike the rest of this file. Since #3388 the page also shows the
  * listener command for Windows (opt-in) and for Claude Code in a private
@@ -77,7 +79,7 @@ export type StalledConnectCopyEvidence = {
 const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
 const LISTENER_PLATFORM_NOTE = "is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.";
 const WINDOWS_LISTENER_FACTS = 'Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. '
-  + 'Codex hasn’t been tested on Windows yet.';
+  + 'Codex does too in an invite-only pod, with CLI 0.1.273 or newer.';
 const WINDOWS_LISTENER_NOTE = `On Windows, ${WINDOWS_LISTENER_FACTS}`;
 const HOSTED_FALLBACK = 'choose “Run it here” on the Bring your own page for a hosted agent.';
 

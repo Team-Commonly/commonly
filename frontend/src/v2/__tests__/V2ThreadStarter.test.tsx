@@ -315,6 +315,25 @@ describe('V2Thread agent-room liveness', () => {
     expect(screen.queryByRole('button', { name: 'Copy command' })).not.toBeInTheDocument();
   });
 
+  test('from a Windows browser, the direct seat\'s command is the line PowerShell runs (F342)', async () => {
+    const realUserAgent = window.navigator.userAgent;
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', configurable: true });
+    try {
+      axios.get.mockResolvedValue({
+        data: {
+          agents: [{
+            agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run aria',
+          }],
+        },
+      });
+      renderChat(makeAgentRoom());
+      await screen.findByTestId('agent-room-liveness');
+      expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly.cmd agent run aria');
+    } finally {
+      Object.defineProperty(window.navigator, 'userAgent', { value: realUserAgent, configurable: true });
+    }
+  });
+
   test('a never-connected direct seat says so and shows the owner the command to run', async () => {
     axios.get.mockResolvedValue({
       data: {

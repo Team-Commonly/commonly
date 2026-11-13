@@ -95,6 +95,24 @@ describe('Your Team (direction C)', () => {
     expect(within(cardOf('Local')).getByRole('button', { name: 'Talk to Local one-to-one' })).toBeInTheDocument();
   });
 
+  test('from a Windows browser, the card\'s run command is the line PowerShell runs (F342)', async () => {
+    const realUserAgent = window.navigator.userAgent;
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', configurable: true });
+    try {
+      renderPage({ p1Agents: [
+        { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',
+          runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+          fixCommand: 'commonly agent run local' },
+      ] });
+      await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+      expect(within(cardOf('Local')).getByTestId('team-card-fix-command')).toHaveTextContent('commonly.cmd agent run local');
+      // Connect still shows: it keys off the server's command, not the rewritten line.
+      expect(within(cardOf('Local')).getByTestId('team-card-connect')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window.navigator, 'userAgent', { value: realUserAgent, configurable: true });
+    }
+  });
+
   test('a never-connected card shows the run command when the server sends one, and not otherwise', async () => {
     renderPage({ p1Agents: [
       { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',

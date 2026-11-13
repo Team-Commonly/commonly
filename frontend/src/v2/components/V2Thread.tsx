@@ -28,6 +28,7 @@ import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { useDocumentTitleText } from '../hooks/useDocumentTitle';
 import { podTabName } from '../utils/podTabName';
+import { runCommandForThisComputer } from '../utils/agentConnection';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -1682,7 +1683,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     ? 'podChat.agentRoomLiveness.neverConnected'
     : 'podChat.agentRoomLiveness.goneDark';
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
-    ? directAgent.state.fixCommand || ''
+    ? runCommandForThisComputer(directAgent.state.fixCommand || '')
     : '';
   const directAgentConnectLink = directAgentFixCommand ? agentConnectLink(directAgent?.state) : '';
   // Group pods name each agent that isn't running, so nobody waits on a reply

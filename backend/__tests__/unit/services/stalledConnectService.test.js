@@ -265,13 +265,13 @@ describe('stalledConnectService.scan', () => {
   // D164: the published CLI (0.1.243) answered an @mention from the page's
   // Windows lines with Claude Code. Codex isn't walked there, and the server
   // can't tell which adapter was copied, so the copy says both.
-  it('from a Windows browser, says Claude Code answers there with CLI 0.1.243 or newer and Codex is untested', async () => {
+  it('from a Windows browser, says Claude Code answers there with CLI 0.1.243 or newer and Codex in an invite-only pod', async () => {
     setup();
     copiedListenerOn('windows');
     await scan({ now: NOW });
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain('If you ran it on Windows: Claude Code answers @mentions there with CLI 0.1.243 or newer, '
-      + 'from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.');
+      + 'from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.');
     expect(content).toContain('Check yours with `commonly.cmd --version`, and run all of the page’s lines again in one PowerShell window');
     expect(content).toContain('Or choose “Run it here” on the Bring your own page for a hosted agent');
     expect(content).not.toContain('may not answer @mentions yet');
@@ -454,7 +454,7 @@ describe('stalledConnectService.scan', () => {
     await scan({ now: NOW });
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain(os === 'windows'
-      ? 'CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.'
+      ? 'CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.'
       : 'may not answer @mentions yet');
     // The server can't tell Claude Code from Codex, and Codex takes no
     // --unsandboxed, so the copy points at the page's lines, not the flag.
@@ -902,7 +902,7 @@ describe('keeping the forward promise', () => {
     expect(r.resolved).toHaveLength(1);
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain(os === 'windows'
-      ? 'that takes the listener. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.'
+      ? 'that takes the listener. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.'
       : '`commonly agent run ai1-agent`, which is tested on a Mac. On Linux it may not answer @mentions yet');
     expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
     expect(content).toContain('Run it here');

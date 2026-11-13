@@ -96,6 +96,25 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(warning.textContent).toContain('commonly agent run sam-agent');
   });
 
+  test('from a Windows browser, the owner\'s fix is the line PowerShell runs (F342)', async () => {
+    const realUserAgent = window.navigator.userAgent;
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', configurable: true });
+    try {
+      mockStates([{
+        agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',
+      }]);
+      renderChat(makeDetail());
+      await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+      fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+        target: { value: 'hey @sam-agent can you look' },
+      });
+      const warning = await screen.findByTestId('mention-state-warning');
+      expect(warning.textContent).toContain('commonly.cmd agent run sam-agent');
+    } finally {
+      Object.defineProperty(window.navigator, 'userAgent', { value: realUserAgent, configurable: true });
+    }
+  });
+
   test('an agent Bring your own can connect offers Connect, not a command that can\'t run', async () => {
     mockStates([{
       agentName: 'sam-agent',

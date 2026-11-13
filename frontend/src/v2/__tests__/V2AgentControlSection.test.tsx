@@ -17,6 +17,35 @@ const showFix = (fixCommand?: string, state: 'never' | 'connected' = 'never', ru
     connection={{ state, lastSeenAt: null }} fixCommand={fixCommand} /></MemoryRouter>,
 );
 
+// A bare `commonly` in PowerShell runs the .ps1 shim, which Windows 11's default
+// script policy refuses (F342), so a Windows owner is shown commonly.cmd.
+describe('a never-connected agent on Settings, from a Windows browser', () => {
+  const realUserAgent = window.navigator.userAgent;
+  const setUserAgent = (value: string) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+  beforeEach(() => setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'));
+  afterEach(() => setUserAgent(realUserAgent));
+
+  test('shows and copies the line PowerShell runs', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    showFix('commonly agent run maple');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly.cmd agent run maple');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('commonly.cmd agent run maple');
+  });
+
+  test('keeps a second instance\'s flag', () => {
+    showFix('commonly agent run maple --instance-id nova');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly.cmd agent run maple --instance-id nova');
+  });
+
+  test('leaves a webhook\'s sentence alone', () => {
+    showFix('Run the program behind your webhook URL. A webhook agent has no `commonly` run command.');
+    expect(screen.getByText(/Run the program behind your webhook URL/)).toBeInTheDocument();
+    expect(screen.queryByText(/commonly\.cmd/)).not.toBeInTheDocument();
+  });
+});
+
 describe('a never-connected agent on Settings', () => {
   test('shows its owner the command, with a way to copy it', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
