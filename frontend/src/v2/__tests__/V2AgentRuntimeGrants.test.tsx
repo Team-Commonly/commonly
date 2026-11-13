@@ -31,6 +31,9 @@ const response = {
 
 // The settings page renders the two halves apart: the Connectors row in the
 // Identity & access list, the runtime body inside How it runs.
+// managed: true is only what prod sends when the agent is bound to a computer
+// (manage-settings: runtimeManaged = Boolean(botMetadata.machineId)), so the
+// default placement below is bound too.
 const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' }) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
@@ -46,7 +49,7 @@ const grantsRegion = () => screen.getByRole('region', { name: 'Connector grants'
 beforeEach(() => {
   jest.clearAllMocks();
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
-    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, activeMachines: [] }
     : response }));
   axios.post.mockResolvedValue({ data: { revoked: 1 } });
   saveRuntime.mockResolvedValue(undefined);
@@ -140,6 +143,19 @@ test('on a Windows browser, the setup hint is the npx.cmd line with --unsandboxe
   } finally {
     platform.mockRestore();
   }
+});
+
+// An agent with no computer bound arrives as managed: false (a `commonly agent
+// run` listener, or one whose computer was removed): no computer row, no hint.
+test('an agent with no computer bound shows no computer row and no setup hint', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : response }));
+  renderSection({ runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: false });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/agent-binding/placement', expect.anything()));
+  await screen.findByRole('button', { name: 'Connector grants' });
+  expect(screen.queryByTestId('agent-machine-placement')).not.toBeInTheDocument();
+  expect(screen.queryByText(/daemon setup/)).not.toBeInTheDocument();
 });
 
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {
