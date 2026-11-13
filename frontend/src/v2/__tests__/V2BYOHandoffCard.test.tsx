@@ -128,7 +128,7 @@ describe('V2BYOHandoffCard', () => {
     expect(screen.queryByTestId('byo-handoff-command')).toBeNull();
     expect(screen.queryByTestId('byo-handoff-copy')).toBeNull();
     const link = screen.getByRole('link', { name: 'Bring your own page' });
-    expect(link).toHaveAttribute('href', `/v2/agents/byo?pod=6a00000000000000000000aa&name=sam-agent&adapter=${adapter}`);
+    expect(link).toHaveAttribute('href', `/v2/agents/byo?pod=6a00000000000000000000aa&name=sam-agent&adapter=${adapter}&os=windows`);
     expect(screen.getByTestId('byo-handoff-windows').textContent).toContain('PowerShell');
     expect(screen.getByTestId('byo-handoff-windows').textContent).toMatch(/^On Windows, connect (Claude Code|Codex) from the Bring your own page\./);
     expect(screen.getByTestId('byo-handoff-card').textContent).not.toContain('Run the commands below');

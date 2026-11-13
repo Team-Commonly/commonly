@@ -115,3 +115,21 @@ describe('a handoff card link that carries the hosted agent\'s memory', () => {
     expect(body.config.runtime).not.toHaveProperty('host');
   });
 });
+
+// A Mac or Linux browser can pick the card's Windows tab. The link says so, and
+// the page sets up for Windows instead of the browser's own OS.
+describe('the OS a handoff card link names', () => {
+  test('a Mac browser following a Windows link gets the PowerShell lines', async () => {
+    renderAt('/v2/agents/byo?pod=aaa111&name=sam-claude&adapter=claude&os=windows&memoryFrom=scout');
+    await installRequest();
+    expect(screen.getByTestId('byo-listen')).toHaveTextContent('npm.cmd i -g @commonlyai/cli@latest');
+    expect(screen.getByTestId('byo-listen')).toHaveTextContent('$env:COMMONLY_AGENT_TOKEN');
+  });
+
+  test('without an OS, or with one the page does not offer, it keeps the browser\'s', async () => {
+    renderAt('/v2/agents/byo?pod=aaa111&name=sam-codex&adapter=codex&os=solaris');
+    await installRequest();
+    expect(screen.getByTestId('byo-listen')).not.toHaveTextContent('npm.cmd');
+    expect(screen.getByTestId('byo-listen')).toHaveTextContent('export COMMONLY_AGENT_TOKEN');
+  });
+});

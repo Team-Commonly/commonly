@@ -298,6 +298,9 @@ const V2AgentBYO: React.FC = () => {
       // where the card links here instead of showing `agent attach --memory-from`.
       // The install copies that agent's long-term memory; the server checks the
       // person owns both agents. Same shapes the handoff service accepts.
+      // ?os= comes from the same card: the person picked its Windows tab, which
+      // may not be the computer they browse on. Only the page's own three.
+      os: ((o): SetupOs | null => (o === 'mac' || o === 'linux' || o === 'windows' ? o : null))(params.get('os')),
       ...((source: string, instance: string) => (
         /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(source) && /^[a-z0-9][a-z0-9_-]*$/.test(instance)
           ? { memoryFrom: source, memoryInstance: instance }
@@ -371,7 +374,8 @@ const V2AgentBYO: React.FC = () => {
   const listenTool = harnessLabel(harnessCatalog, listenAdapter);
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
-  const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
+  // A handoff card's link names the OS its person picked there.
+  const [setupOs, setSetupOs] = useState<SetupOs>(() => prefill.os || browserOs());
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   const neverConnected = existingConnection?.connection.state === 'never';
   const listenerAvailable = listenerRunsOn(setupOs, listenAdapter, repoPod ? podIsConfirmedPrivate(repoPod) : undefined);

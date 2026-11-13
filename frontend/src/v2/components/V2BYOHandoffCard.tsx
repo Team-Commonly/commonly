@@ -82,6 +82,9 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
     ...(payload.podId ? { pod: String(payload.podId) } : {}),
     ...(payload.agentName ? { name: String(payload.agentName) } : {}),
     adapter,
+    // The link shows only on the Windows tab, which a Mac or Linux browser can
+    // pick too; the page would otherwise set up for the browser's own OS.
+    os: 'windows',
     ...(memorySource(payload) || {}),
   }).toString()}`;
 
