@@ -295,6 +295,9 @@ jobs:
           SMOKE_PW: ${{ secrets.STAGING_SMOKE_PW }}
           SMOKE_FRESH_EMAIL: ${{ secrets.STAGING_SMOKE_FRESH_EMAIL }}
           SMOKE_FRESH_PW: ${{ secrets.STAGING_SMOKE_FRESH_PW }}
+          # F437: provision + tear down one hosted agent. Advisory (a warning, not a red)
+          # until it has passed on a few deploys; then set SMOKE_HOSTED_BLOCKING: '1'.
+          SMOKE_HOSTED: '1'
         run: |
           set -euo pipefail
           if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ] || [ -z "${SMOKE_FRESH_EMAIL:-}" ] || [ -z "${SMOKE_FRESH_PW:-}" ]; then
@@ -310,7 +313,7 @@ jobs:
           docker run --rm --ipc=host \
             -v "$PWD/scripts/staging-smoke:/smoke" -w /smoke \
             -e SMOKE_BASE -e SMOKE_API -e SMOKE_EMAIL -e SMOKE_PW \
-            -e SMOKE_FRESH_EMAIL -e SMOKE_FRESH_PW \
+            -e SMOKE_FRESH_EMAIL -e SMOKE_FRESH_PW -e SMOKE_HOSTED -e SMOKE_HOSTED_BLOCKING \
             mcr.microsoft.com/playwright:v1.48.2-noble@sha256:c43809dabac73ac46b136409daa0a7d5411fb3ccc1e7d0fad1be5383a7a0f6ef \
             sh -c 'want=$(node -p "require(\"./package.json\").dependencies.playwright"); if [ "$want" != "1.48.2" ]; then echo "::error::scripts/staging-smoke pins playwright $want but the smoke image is v1.48.2; bump the image tag and digest in deploy-staging.yml"; exit 1; fi; npm install --no-audit --no-fund --silent && node staging-smoke.mjs'
 
