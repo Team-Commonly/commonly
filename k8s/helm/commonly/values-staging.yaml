@@ -155,6 +155,11 @@ backend:
     # prompt-injection block. Restore the pair only after a real OpenAI moderation key
     # lands in the staging api-keys secret. Guard test: litellmStagingEnabled.test.js.
     nativeRuntimeGuardrails: "injection-guard"
+    # F437: new "Run it here" installs run on the native engine, as in prod
+    # (values-dev, TASK-265). Unset, they fell back to the Durable Object, and
+    # staging has no HOSTED_RUNTIME_URL, so every hosted provision returned 503.
+    # Guard test: stagingHostedEngine.test.js.
+    hostedEngine: "native"
     agentComputerEnabled: "true"
     # TASK-284: on here only, for the supervised seat-push walk (PR #2546/#3244).
     seatGithubPushEnabled: "true"
