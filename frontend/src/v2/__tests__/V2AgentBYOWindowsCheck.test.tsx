@@ -158,6 +158,23 @@ describe('Copy on the Windows tab', () => {
   });
 });
 
+describe('Windows Terminal paste prompt', () => {
+  test('on Windows, a line under Copy says to choose Paste anyway', async () => {
+    setUserAgent(WINDOWS);
+    await issue();
+    const hint = screen.getByTestId('byo-listen-windows-paste');
+    expect(hint).toHaveTextContent('If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.');
+    const lines = screen.getByTestId('byo-listen').querySelector('.v2-byo__pre');
+    expect(lines.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('is absent on Mac', async () => {
+    setUserAgent(MAC);
+    await issue();
+    expect(screen.queryByTestId('byo-listen-windows-paste')).toBeNull();
+  });
+});
+
 describe('Why isn’t it answering?', () => {
   test('is hidden until the listen line was copied and the missed window is over', async () => {
     jest.useFakeTimers();
