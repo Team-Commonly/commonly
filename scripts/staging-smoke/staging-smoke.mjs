@@ -237,7 +237,11 @@ async function checkHosted(token, authH) {
       agentName: HOSTED_AGENT, podId, displayName: HOSTED_AGENT,
       config: { runtime: { runtimeType: 'hosted' } }, scopes: [],
     });
-    if (ins.status >= 400) { rec(name, false, `install ${ins.status} ${ins.body?.code || ''}`); return; }
+    // Deprovision keeps the installation (identity continuity), so every run after the first
+    // finds it already in this pod: install.ts answers 400 'Agent already installed in this pod'.
+    // That is the expected steady state; provision below is idempotent on it.
+    const already = ins.status === 400 && /already installed/i.test(ins.body?.error || '');
+    if (ins.status >= 400 && !already) { rec(name, false, `install ${ins.status} ${ins.body?.code || ins.body?.error || ''}`); return; }
     const prov = await post('/api/hosted/provision', { agentName: HOSTED_AGENT });
     if (prov.status !== 200 || !prov.body?.provisioned) {
       rec(name, false, `provision ${prov.status} ${prov.body?.code || ''}`);
