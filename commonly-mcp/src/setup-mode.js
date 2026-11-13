@@ -35,13 +35,17 @@ const blank = (value) => value === undefined || String(value).trim() === '';
  * The declared token file's absolute path when setup mode is on and the file is
  * absent or holds nothing; otherwise null, and the normal start runs (and fails
  * as it always did). A missing COMMONLY_API_URL is not a fresh install either:
- * a token alone would not fix it, so that start stays loud too. A relative path
- * is resolved the way the server reads it, so the steps name the file it reads.
+ * a token alone would not fix it, so that start stays loud too (it ends on the
+ * normal start's own error). A relative path is resolved the way the server's
+ * reader resolves it, against the working directory, so the steps name the file
+ * it reads. The working directory is read only for a relative path in setup
+ * mode: a seat started from a directory since removed must still start.
  */
-export const missingTokenFile = (env = process.env, { readImpl = readFileSync, cwd = process.cwd() } = {}) => {
+export const missingTokenFile = (env = process.env, { readImpl = readFileSync, cwd } = {}) => {
   if (String(env[SETUP_MODE_ENV] ?? '').trim() !== '1') return null;
   if (!blank(env.COMMONLY_TOKEN_FD) || blank(env.COMMONLY_TOKEN_FILE) || blank(env.COMMONLY_API_URL)) return null;
-  const tokenPath = resolve(cwd, String(env.COMMONLY_TOKEN_FILE).trim());
+  const declared = String(env.COMMONLY_TOKEN_FILE).trim();
+  const tokenPath = cwd ? resolve(cwd, declared) : resolve(declared);
   try {
     return String(readImpl(tokenPath, 'utf8') ?? '').trim() ? null : tokenPath;
   } catch (err) {

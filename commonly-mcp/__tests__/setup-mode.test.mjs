@@ -12,8 +12,9 @@
  * It is opt-in because the CLI's own seats pass their token through the same
  * file variable, and a seat whose file is missing must still fail loudly.
  */
+import { jest } from '@jest/globals';
 import { spawn } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, realpathSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -58,8 +59,20 @@ describe('missingTokenFile', () => {
     expect(missingTokenFile(env, { cwd: dir })).toBe(path.join(dir, 'plugin', 'token'));
   });
 
-  test('is null without COMMONLY_API_URL, so that start still fails on the missing URL', () => {
+  test('is null without COMMONLY_API_URL, so that start still fails loudly', () => {
     expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: path.join(dir, 'token') })).toBeNull();
+  });
+
+  test('never reads the working directory outside setup mode or for an absolute path', () => {
+    const cwd = jest.spyOn(process, 'cwd').mockImplementation(() => { throw new Error('ENOENT: uv_cwd'); });
+    try {
+      expect(missingTokenFile({ COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: 'token' })).toBeNull();
+      const file = path.join(dir, 'token');
+      expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file })).toBe(file);
+      expect(cwd).not.toHaveBeenCalled();
+    } finally {
+      cwd.mockRestore();
+    }
   });
 
   test('is null when the file exists but cannot be read, so that error stays loud', () => {
@@ -133,8 +146,9 @@ describe('the setup server', () => {
 });
 
 describe('the entry point', () => {
-  const start = (env) => {
+  const start = (env, opts = {}) => {
     const child = spawn(process.execPath, [ENTRY], {
+      ...opts,
       env: { PATH: process.env.PATH, COMMONLY_API_URL: 'http://127.0.0.1:9', ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -165,6 +179,13 @@ describe('the entry point', () => {
     expect(reply.result.content[0].text).toContain(file);
     expect(out.stderr).toContain(file);
     expect(out.code).toBeNull();
+    child.kill();
+  });
+
+  test('a relative token file is named by the path the server reads, from the directory it started in', async () => {
+    const { child, out } = start({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: 'token' }, { cwd: dir });
+    expect(await waitFor(() => out.stderr.includes('setup mode'))).toBe(true);
+    expect(out.stderr).toContain(path.join(realpathSync(dir), 'token'));
     child.kill();
   });
 
