@@ -766,7 +766,13 @@ export const revokeConnectionGrants = async (options: {
     config?: { installationId?: unknown };
   } | null;
   revokedBy: string;
-  /** Only grants this person minted (F174: an old owner's sweep never reaches a new owner's grants). */
+  /**
+   * Only grants this person minted, plus grants minted before grants carried
+   * an owner (F174: an old owner's sweep never reaches a new owner's grants).
+   * An unowned grant predates every takeover, and each takeover ends all the
+   * grants older than it, so one still live belongs to the current owner's era
+   * (F176: a per-repository delete left them live).
+   */
   ownerId?: string;
   /** Only grants minted before this moment (F174: a takeover never sweeps the new owner's grants). */
   createdBefore?: Date;
@@ -807,7 +813,8 @@ export const revokeConnectionGrants = async (options: {
   }
   const grants = await RoomGrant.find({
     $or: clauses,
-    ...(options.ownerId ? { ownerId: options.ownerId } : {}),
+    // `null` in `$in` also matches a grant with no `ownerId` field at all.
+    ...(options.ownerId ? { ownerId: { $in: [options.ownerId, null] } } : {}),
     ...(options.createdBefore ? { createdAt: { $lt: options.createdBefore } } : {}),
   }).select('grantId').lean() as Array<{ grantId?: string }>;
 

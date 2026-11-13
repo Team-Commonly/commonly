@@ -76,7 +76,7 @@ jest.mock('../../services/brokerRecordService', () => ({
 const User = require('../../models/User');
 const Integration = require('../../models/Integration');
 const RoomGrant = require('../../models/RoomGrant');
-const { createGrant } = require('../../services/roomGrantService');
+const { createGrant, attenuateGrant } = require('../../services/roomGrantService');
 const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
 const { hostedVendorFetch } = require('../../services/hostedVendorFetch');
 
@@ -715,6 +715,112 @@ describe('F174: takeover and delete act only on the row as it is now', () => {
     expect(res.status).toBe(200);
     expect(await Integration.findById(row._id).lean()).toBeNull();
     expect((await grantRow(alicesGrant)).revokedAt).toBeTruthy();
+  });
+});
+
+describe('F176: delete and revival end every grant the row\'s past left behind', () => {
+  const WIDGET = { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' };
+  const grantFor = (row, user) => createGrant({
+    connectionId: String(row._id),
+    connectionRowId: String(row._id),
+    installationId: INSTALL,
+    target: { kind: 'pod', id: '6a8f6de2a1dccf2e02f31499' },
+    tools: ['github.get_issue'],
+    writeMode: 'read',
+    audience: [String(bot._id)],
+    expiresAt: new Date(Date.now() + 86400000),
+    brokerId: GRANT_BROKER_ID,
+    ...(user ? { ownerId: String(user._id) } : {}),
+  });
+  const isRevoked = async (g) => Boolean((await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt);
+
+  beforeEach(async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+  });
+
+  test('the owner\'s delete ends a grant minted before grants carried an owner', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const unowned = await grantFor(row, null);
+    const alicesGrant = await grantFor(row, alice);
+    expect((await RoomGrant.findOne({ grantId: unowned.grantId }).lean()).ownerId).toBeNull();
+
+    const res = await request(app).delete(`/api/integrations/${row._id}`).set('x-test-user', String(alice._id));
+
+    expect(res.status).toBe(200);
+    expect(await Integration.findById(row._id).lean()).toBeNull();
+    expect(await isRevoked(alicesGrant)).toBe(true);
+    expect(await isRevoked(unowned)).toBe(true);
+  });
+
+  test('an administrator\'s delete of a per-repository row ends its owner\'s grants', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(row, alice);
+    const unowned = await grantFor(row, null);
+
+    const res = await request(app).delete(`/api/integrations/${row._id}`).set('x-test-user', String(admin._id));
+
+    expect(res.status).toBe(200);
+    expect(await Integration.findById(row._id).lean()).toBeNull();
+    expect(await isRevoked(alicesGrant)).toBe(true);
+    expect(await isRevoked(unowned)).toBe(true);
+    const { revokedBy } = await RoomGrant.findOne({ grantId: alicesGrant.grantId }).lean();
+    expect(revokedBy).toBe(String(admin._id));
+  });
+
+  test('a takeover ends the old owner\'s grant and the child an agent attenuated from it', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const parent = await grantFor(row, alice);
+    const child = await attenuateGrant({ parentGrantId: parent.grantId, tools: ['github.get_issue'] });
+    expect(String(child.ownerId)).toBe(String(alice._id));
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+
+    expect((await connectRepo(bob, WIDGET)).status).toBe(200);
+
+    expect(await isRevoked(parent)).toBe(true);
+    expect(await isRevoked(child)).toBe(true);
+  });
+
+  test('a revival whose grant revoke fails leaves the row dead, so the retry ends the old grants', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesOld = await grantFor(row, alice);
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+    // The grant store fails once, on the revoke's read.
+    const original = RoomGrant.find.bind(RoomGrant);
+    let failed = false;
+    const spy = jest.spyOn(RoomGrant, 'find').mockImplementation((...args) => {
+      if (!failed) {
+        failed = true;
+        throw new Error('grant store unavailable');
+      }
+      return original(...args);
+    });
+    let first;
+    try { first = await connectRepo(alice, WIDGET); } finally { spy.mockRestore(); }
+
+    expect(failed).toBe(true);
+    expect(first.status).toBe(500);
+    // Nothing revived: the broker serves a Connect grant only on a connected
+    // row, so the old grant stays unusable while the row is dead.
+    expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+
+    expect((await connectRepo(alice, WIDGET)).status).toBe(200);
+    expect((await Integration.findById(row._id).lean()).status).toBe('connected');
+    expect(await isRevoked(alicesOld)).toBe(true);
+  });
+
+  test('a revival ends the owner\'s grants from before it, and keeps one minted after', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesOld = await grantFor(row, alice);
+    const unowned = await grantFor(row, null);
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+
+    expect((await connectRepo(alice, WIDGET)).status).toBe(200);
+    const alicesNew = await grantFor(row, alice);
+
+    expect(await isRevoked(alicesOld)).toBe(true);
+    expect(await isRevoked(unowned)).toBe(true);
+    expect(await isRevoked(alicesNew)).toBe(false);
   });
 });
 
