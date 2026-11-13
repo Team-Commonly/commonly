@@ -2218,6 +2218,7 @@
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
       "harnessMissing": "{{name}} 的命令停了：那台电脑上没有安装 {{tool}}。在那台电脑上装好后，再运行一遍最后一行，这里会自动确认。",
       "harnessMissingNone": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍最后一行，这里会自动确认。",
+      "windowsPaste": "Windows 终端粘贴多行文本前会先询问，请选择「仍然粘贴」（Paste anyway）；选「取消」的话，一行都不会运行。",
       "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）。先运行 <cmd>node -v</cmd> 检查 Node，应显示 v22 或更高。如果提示无法识别 node，请到 nodejs.org 安装，再重新打开一个 PowerShell 窗口。",
       "stallAsk": "为什么没有回复？",
       "stallReason": {

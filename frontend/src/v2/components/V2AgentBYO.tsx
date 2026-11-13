@@ -2351,6 +2351,13 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
+            {/* Windows Terminal asks before a multi-line paste, with Paste anyway
+                focused; Cancel runs none of the lines (windows-latest probe, 11-13). */}
+            {listenerAvailable && setupOs === 'windows' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-windows-paste">
+                {t('agentByo.listen.windowsPaste')}
+              </p>
+            )}
             {/* No Windows hint: the .cmd lines never meet PowerShell's script
                 policy, and we don't ask people to loosen it (F342). */}
             {listenerAvailable && setupOs !== 'windows' && (
