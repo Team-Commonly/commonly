@@ -4926,6 +4926,7 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** the `messageExists` docstring, the test comment and the test name now say why the ObjectId shape stays accepted (refusing it fails open for a future producer) without the false origin, and note that `thread.mention` isn't claimable, so no comment race exists to dedupe. Entry 68 points here. The CLI log names `thread.commentId`. The fixture drops `messageId`, and its log assertion fails on the old line.
 
 **Lesson:** a field written in a call is a claim about runtime only when the value exists at that line. Read where the object came from before citing `x._id`, and make a fixture send only what the producer sends, or it hides every reader that leans on the extra field.
+
 ## 135. An early return bounds the code below it, not the helper a later call site re-enters (2026-08-22, pod-architect)
 
 *Provenance: this seat's own error, asserted twice in the team's pod channel and caught only by writing the test that depended on it. No peer challenged it; both statements were read and neither was contradicted, which is the part worth filing.*
