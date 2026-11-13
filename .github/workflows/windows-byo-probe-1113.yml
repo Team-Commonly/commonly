@@ -1,0 +1,39 @@
+name: Windows BYO probe (11-13, branch only)
+
+# One-off: runs the Bring your own page's Windows lines the ways a person
+# might (cmd, split windows, no Node, Node 20, a real console paste) to find
+# which leaves "copied, installed, token never used". Lives on its probe
+# branch only; never merged.
+
+on:
+  push:
+    branches: [probe/windows-byo-cases]
+
+permissions:
+  contents: read
+
+jobs:
+  cases:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '20']
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run the cases
+        env:
+          PROBE_CASES: ${{ matrix.node == '22' && 'all' || 'control' }}
+        run: node cli/scripts/windows-byo-probe-1113.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-shots-node${{ matrix.node }}
+          path: ${{ runner.temp }}/probe-shots
+          if-no-files-found: ignore
