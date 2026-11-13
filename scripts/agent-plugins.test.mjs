@@ -126,3 +126,30 @@ test('the Gemini README does not promise that an @mention wakes Gemini CLI', asy
   assert.match(readme, /nothing wakes Gemini CLI when someone @mentions/);
   assert.doesNotMatch(readme, /answers? (?:when|on) (?:an )?@?mention/i);
 });
+
+// The Hermes catalog installs from Team-Commonly/commonly-hermes-plugin, a
+// copy of this folder that a daily job in that repository refreshes, file by
+// file, from main. Its validator clones the pinned repo and refuses any
+// symlink that leaves it, so the copy exists to keep the monorepo's tooling
+// links out of the pin. A file added here reaches the copy only once the
+// copy's sync.yml lists it, so this list and that one change together.
+const HERMES_MIRRORED = ['README.md', 'mcp.json', 'plugin.json', 'skills/commonly/SKILL.md'];
+test('the Hermes folder holds exactly the files its published copy syncs, none a symlink', async () => {
+  const { readdir, lstat } = await import('node:fs/promises');
+  const root = resolve(plugins, 'commonly-hermes-plugin');
+  const found = [];
+  const walk = async (dir, prefix) => {
+    for (const entry of await readdir(dir)) {
+      const full = resolve(dir, entry);
+      const stat = await lstat(full);
+      assert.ok(!stat.isSymbolicLink(), `${prefix}${entry} is a symlink`);
+      if (stat.isDirectory()) await walk(full, `${prefix}${entry}/`);
+      else found.push(`${prefix}${entry}`);
+    }
+  };
+  await walk(root, '');
+  assert.deepEqual(found.sort(), [...HERMES_MIRRORED].sort());
+  const readme = await readFile(resolve(root, 'README.md'), 'utf8');
+  assert.match(readme, /hermes plugins install https:\/\/github\.com\/Team-Commonly\/commonly-hermes-plugin --enable/);
+  assert.doesNotMatch(readme, /in this repository/);
+});
