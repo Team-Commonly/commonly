@@ -14,6 +14,8 @@ export const BYO_HANDOFF_ADAPTERS: readonly ByoHandoffAdapter[] = [
   'claude', 'codex', 'opencode', 'dsh',
 ];
 export const BYO_HANDOFF_OSES: readonly ByoHandoffOs[] = ['mac', 'linux', 'windows'];
+// Adapters whose Windows setup is the Bring your own page, not the card's lines.
+export const CONNECT_PAGE_ON_WINDOWS: ReadonlySet<ByoHandoffAdapter> = new Set<ByoHandoffAdapter>(['claude', 'codex']);
 
 export const CLI_INSTALL = 'npm i -g @commonlyai/cli@latest';
 const DSH_INSTALL = `${CLI_INSTALL} @deepseek-ai/dsh@0.2.1-rc.2`;
@@ -99,6 +101,8 @@ export interface ByoHandoffPayload {
   os: ByoHandoffOs;
   commands: Partial<Record<ByoHandoffOs, string>>;
   supportedOs: ByoHandoffOs[];
+  memoryFrom?: string;
+  memoryInstance?: string;
 }
 
 export const buildByoHandoffPayload = ({
@@ -137,6 +141,11 @@ export const buildByoHandoffPayload = ({
   const selectedOs = supportedOs.includes(os) ? os : supportedOs[0];
   const commands: Partial<Record<ByoHandoffOs, string>> = {};
   for (const supported of supportedOs) {
+    // Claude Code and Codex on native Windows connect from the Bring your own
+    // page, which the card links to: a bare `npm`/`commonly` in PowerShell is the
+    // .ps1 shim Windows 11's default policy refuses (F342), and `agent attach`
+    // refuses a sandboxed seat on Windows by design. The tab stays, with no lines.
+    if (supported === 'windows' && CONNECT_PAGE_ON_WINDOWS.has(adapter)) continue;
     commands[supported] = buildByoHandoffCommand({
       adapter, os: supported, podId: normalizedPodId, agentName: normalizedName,
       memoryFrom, memoryInstance, apiOrigin,
@@ -150,6 +159,9 @@ export const buildByoHandoffPayload = ({
     os: selectedOs,
     commands,
     supportedOs,
+    // The card's Windows link carries these to the Bring your own page, whose
+    // install copies the memory the other tabs' `--memory-from` would.
+    ...(memoryFrom !== undefined ? { memoryFrom, memoryInstance } : {}),
   };
 };
 

@@ -234,6 +234,24 @@ describe('hosted memory copied into a local agent', () => {
     expect((await AgentMemory.findOne({ agentName: name }).lean()).content).toContain('remember-X-468');
   });
 
+  // A handoff card on Windows links to the Bring your own page, whose install
+  // carries the source: a webhook-typed polling seat that names host 'byo'.
+  it('copies memory for the Bring your own page\'s own install request', async () => {
+    const name = 'page-selfserve-handoff';
+    jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({ id: 'fixture-greeting' });
+    const result = await request(base).post('/api/registry/install')
+      .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`)
+      .send({ agentName: name, podId: String(pod._id), displayName: name,
+        scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+        memoryFrom: { agentName: 'hosted-handoff', instanceId: 'default' },
+        config: { runtime: { runtimeType: 'webhook', adapter: 'codex', host: 'byo' } } });
+    expect(result.status).toBe(200);
+    expect(result.body.memoryCopy.copied).toBe(true);
+    expect((await AgentMemory.findOne({ agentName: name }).lean()).content).toContain('remember-X-468');
+    expect((await AgentInstallation.findOne({ agentName: name }).lean()).config.runtime)
+      .toMatchObject({ runtimeType: 'webhook', adapter: 'codex', host: 'byo' });
+  });
+
   it('records the residual memory when a real human username blocks identity creation', async () => {
     const name = 'identity-refusal-handoff';
     await User.create({ username: name, email: `${name}@test.com`, password: 'password123' });

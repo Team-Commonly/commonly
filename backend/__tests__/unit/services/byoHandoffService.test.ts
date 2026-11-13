@@ -73,11 +73,28 @@ describe('byoHandoffService', () => {
     for (const command of Object.values(payload.commands)) {
       expect(command).toContain('--memory-from scout --memory-instance hosted-123');
     }
+    // The card's Windows link has no command to carry it, so the payload does.
+    expect(payload).toMatchObject({ memoryFrom: 'scout', memoryInstance: 'hosted-123' });
+    const plain = buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1', agentName: 'new-local' });
+    expect(plain).not.toHaveProperty('memoryFrom');
+    expect(plain).not.toHaveProperty('memoryInstance');
     expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
       agentName: 'new-local', memoryFrom: 'scout; echo secret' })).toEqual({ error: 'invalid source memory identity' });
     expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
       agentName: 'new-local', memoryFrom: 'scout', memoryInstance: 'default; echo secret' }))
       .toEqual({ error: 'invalid source memory identity' });
+  });
+
+  it('gives Claude Code and Codex a Windows tab with no lines, since Windows connects from the Bring your own page', () => {
+    for (const adapter of ['claude', 'codex']) {
+      const payload = buildByoHandoffPayload({ adapter, os: 'windows', podId: 'pod-1', agentName: 'my-agent' });
+      if ('error' in payload) throw new Error(payload.error);
+      expect(payload.supportedOs).toEqual(['mac', 'linux', 'windows']);
+      expect(payload.os).toBe('windows');
+      expect(payload.commands.windows).toBeUndefined();
+      expect(payload.commands.mac).toContain(`commonly agent attach ${adapter}`);
+      expect(payload.commands.linux).toContain(`commonly agent attach ${adapter}`);
+    }
   });
 
   it('creates a safe default name from the account handle', () => {
@@ -115,7 +132,7 @@ describe('byoHandoffService', () => {
 
     it('names the server origin on every OS when BACKEND_URL is set', () => {
       process.env.BACKEND_URL = 'http://localhost:5000';
-      for (const os of ['mac', 'linux', 'windows']) {
+      for (const os of ['mac', 'linux']) {
         expect(loginLineFor(os)).toBe('commonly login --instance http://localhost:5000');
       }
     });

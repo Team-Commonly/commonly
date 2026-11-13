@@ -104,4 +104,100 @@ describe('V2BYOHandoffCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Linux' }));
     expect(screen.getByTestId('byo-handoff-command').textContent).toBe(linux);
   });
+
+  it.each(['claude', 'codex'])('sends a Windows %s setup to the Bring your own page, even from a stored card with Windows lines', (adapter) => {
+    const windowsLine = 'npm i -g @commonlyai/cli@latest\ncommonly login';
+    render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{
+            ...message({ mac: command, windows: windowsLine }),
+            payload: {
+              ...message({ mac: command, windows: windowsLine }).payload,
+              adapter,
+              agentName: 'sam-agent',
+              podId: '6a00000000000000000000aa',
+              os: 'windows',
+              supportedOs: ['mac', 'linux', 'windows'],
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('byo-handoff-command')).toBeNull();
+    expect(screen.queryByTestId('byo-handoff-copy')).toBeNull();
+    const link = screen.getByRole('link', { name: 'Bring your own page' });
+    expect(link).toHaveAttribute('href', `/v2/agents/byo?pod=6a00000000000000000000aa&name=sam-agent&adapter=${adapter}&os=windows`);
+    expect(screen.getByTestId('byo-handoff-windows').textContent).toContain('PowerShell');
+    expect(screen.getByTestId('byo-handoff-windows').textContent).toMatch(/^On Windows, connect (Claude Code|Codex) from the Bring your own page\./);
+    expect(screen.getByTestId('byo-handoff-card').textContent).not.toContain('Run the commands below');
+
+    fireEvent.click(screen.getByRole('button', { name: 'macOS' }));
+    expect(screen.getByTestId('byo-handoff-command').textContent).toBe(command);
+    expect(screen.getByTestId('byo-handoff-card').textContent).toContain('Run the commands below');
+  });
+
+  const windowsCard = (extra) => render(
+    <MemoryRouter>
+      <V2MessageRow
+        message={{
+          ...message({ mac: command }),
+          payload: {
+            ...message({ mac: command }).payload,
+            adapter: 'codex',
+            agentName: 'sam-agent',
+            podId: '6a00000000000000000000aa',
+            os: 'windows',
+            supportedOs: ['mac', 'linux', 'windows'],
+            ...extra,
+          },
+        }}
+      />
+    </MemoryRouter>,
+  );
+  const linkParams = () => new URLSearchParams(
+    screen.getByRole('link', { name: 'Bring your own page' }).getAttribute('href').split('?')[1],
+  );
+
+  it('carries the hosted agent whose memory the local one starts with through the Windows link', () => {
+    windowsCard({ memoryFrom: 'scout', memoryInstance: 'hosted-123' });
+    const params = linkParams();
+    expect(params.get('memoryFrom')).toBe('scout');
+    expect(params.get('memoryInstance')).toBe('hosted-123');
+  });
+
+  it('reads the memory source from an older card\'s attach line when the payload has no field', () => {
+    windowsCard({ commands: { mac: 'commonly agent attach codex --pod p --name sam-agent --memory-from scout --memory-instance default\ncommonly agent run sam-agent' } });
+    const params = linkParams();
+    expect(params.get('memoryFrom')).toBe('scout');
+    expect(params.get('memoryInstance')).toBe('default');
+  });
+
+  it('adds no memory to the link when the card names none', () => {
+    windowsCard({});
+    expect(linkParams().has('memoryFrom')).toBe(false);
+  });
+
+  it('drops a memory source the handoff service would refuse', () => {
+    windowsCard({ memoryFrom: 'scout&admin=1', memoryInstance: 'default' });
+    expect(linkParams().has('memoryFrom')).toBe(false);
+    expect(linkParams().has('admin')).toBe(false);
+  });
+
+  it('keeps the Windows lines for an adapter the Bring your own page does not cover', () => {
+    const windowsLine = 'npm i -g @commonlyai/cli@latest opencode-ai';
+    render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{
+            ...message({ mac: command, windows: windowsLine }),
+            payload: { ...message({ mac: command, windows: windowsLine }).payload, os: 'windows', supportedOs: ['mac', 'windows'] },
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('byo-handoff-command').textContent).toBe(windowsLine);
+    expect(screen.queryByTestId('byo-handoff-windows')).toBeNull();
+  });
 });

@@ -134,6 +134,9 @@ export interface V2Message {
     os?: 'mac' | 'linux' | 'windows' | string;
     commands?: Partial<Record<'mac' | 'linux' | 'windows', string>>;
     supportedOs?: Array<'mac' | 'linux' | 'windows' | string>;
+    /** The hosted agent whose long-term memory the local one starts with. */
+    memoryFrom?: string;
+    memoryInstance?: string;
     toolCallEnding?: 'ran' | 'failed' | 'refused' | 'declined' | 'expired';
     toolCallCode?: string;
     toolCallTrailId?: string;

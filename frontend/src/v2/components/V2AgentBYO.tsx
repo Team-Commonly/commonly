@@ -294,6 +294,18 @@ const V2AgentBYO: React.FC = () => {
       reconnect: params.get('reconnect') === '1',
       machine: params.get('mode') === 'machine',
       adapter: ((a): string | null => (a && KNOWN_HARNESS_IDS.includes(a) ? a : null))(params.get('adapter')),
+      // ?memoryFrom=&memoryInstance= come from a pod's handoff card on Windows,
+      // where the card links here instead of showing `agent attach --memory-from`.
+      // The install copies that agent's long-term memory; the server checks the
+      // person owns both agents. Same shapes the handoff service accepts.
+      // ?os= comes from the same card: the person picked its Windows tab, which
+      // may not be the computer they browse on. Only the page's own three.
+      os: ((o): SetupOs | null => (o === 'mac' || o === 'linux' || o === 'windows' ? o : null))(params.get('os')),
+      ...((source: string, instance: string) => (
+        /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(source) && /^[a-z0-9][a-z0-9_-]*$/.test(instance)
+          ? { memoryFrom: source, memoryInstance: instance }
+          : { memoryFrom: null as string | null, memoryInstance: 'default' }
+      ))(params.get('memoryFrom') || '', params.get('memoryInstance') || 'default'),
     };
   })();
   // 2026-09-01: persona deep links carry context into this otherwise
@@ -362,7 +374,8 @@ const V2AgentBYO: React.FC = () => {
   const listenTool = harnessLabel(harnessCatalog, listenAdapter);
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
-  const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
+  // A handoff card's link names the OS its person picked there.
+  const [setupOs, setSetupOs] = useState<SetupOs>(() => prefill.os || browserOs());
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   const neverConnected = existingConnection?.connection.state === 'never';
   const listenerAvailable = listenerRunsOn(setupOs, listenAdapter, repoPod ? podIsConfirmedPrivate(repoPod) : undefined);
@@ -902,6 +915,13 @@ const V2AgentBYO: React.FC = () => {
     if (existingConnection) return existingConnection.connection.state === 'connected' ? 'live' : 'waiting';
     return 'draft';
   })();
+  // A handoff card's link names the agent whose memory this one starts with.
+  // Shown only where the install that copies it runs.
+  const memoryNote = prefill.memoryFrom && mode === 'byo' ? (
+    <p className="v2-byo__hint" data-testid="byo-memory-handoff">
+      {t('agentByo.memoryHandoff', { name: prefill.memoryFrom })}
+    </p>
+  ) : null;
   const previewDisplayName = hosted?.agentName || placed?.agentName || issued?.agentName || previewName;
 
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
@@ -1111,12 +1131,17 @@ const V2AgentBYO: React.FC = () => {
           // Any adapter besides Claude Code and Codex must be declared here, or
           // `agent run` refuses to start it.
           config: { runtime: { runtimeType: 'webhook', adapter: listenAdapter,
+            // The memory copy reads the request's own runtime, before the
+            // server stamps host on a polling seat, so a handoff names it.
+            ...(prefill.memoryFrom ? { host: 'byo' } : {}),
             ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) },
           ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
           ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
+          ...(prefill.memoryFrom
+            ? { memoryFrom: { agentName: prefill.memoryFrom, instanceId: prefill.memoryInstance } } : {}),
         });
       } catch (installErr) {
         const narrowing = installNarrowingFromError(installErr);
@@ -1852,6 +1877,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
           )}
+          {memoryNote}
           {error && <div className="v2-byo__error">{error}</div>}
           {existingConnection && (
             <div className="v2-byo__hint" data-testid="byo-connection-state">
@@ -2042,6 +2068,7 @@ const V2AgentBYO: React.FC = () => {
           {/* The act sits right under the fields it acts on. Below "Add a computer" it
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}
+          {memoryNote}
           {error && <div className="v2-byo__error">{error}</div>}
           {existingConnection && mode !== 'hosted' && (
             <div className="v2-byo__hint" data-testid="byo-connection-state">
