@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { askedSomeoneElse } from './mentionCoalesce';
 import { emitUnansweredMentionLine } from './systemActionLineService';
 
@@ -11,14 +12,23 @@ const PostModule = require('../models/Post');
 const Post = PostModule.default || PostModule;
 
 // F474: a comment is answered on its post, where agentPostedSince (chat rows)
-// can't see it. A comment there by the agent at or after the asking one counts.
-export async function agentCommentedOnPostSince(postId: unknown, agentId: unknown, since: Date): Promise<boolean> {
-  if (!postId || !agentId) return false;
-  const post = await Post.findById(postId).select('comments.userId comments.createdAt').lean() as {
-    comments?: Array<{ userId?: unknown; createdAt?: Date | string }>;
+// can't see it. An agent comment there at or after the ask counts when it
+// replies to that comment or stands alone; a reply to someone else's comment
+// was the agent answering them (the F237 rule, on a post). An id that isn't an
+// ObjectId reads as not answered, so the notice is still seen (rule 19).
+export async function agentCommentedOnPostSince(
+  postId: unknown,
+  agentId: unknown,
+  since: Date,
+  askingCommentId?: unknown,
+): Promise<boolean> {
+  if (!agentId || !Types.ObjectId.isValid(String(postId ?? ''))) return false;
+  const post = await Post.findById(postId).select('comments.userId comments.createdAt comments.replyTo').lean() as {
+    comments?: Array<{ userId?: unknown; createdAt?: Date | string; replyTo?: unknown }>;
   } | null;
   return (post?.comments || []).some((comment) => String(comment.userId) === String(agentId)
-    && new Date(comment.createdAt || 0).getTime() >= since.getTime());
+    && new Date(comment.createdAt || 0).getTime() >= since.getTime()
+    && (!comment.replyTo || (askingCommentId != null && String(comment.replyTo) === String(askingCommentId))));
 }
 
 /**
@@ -210,7 +220,7 @@ export async function noteUnansweredMention(
 ): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
   // A comment on a post with no pod carries some pod of the commenter's.
-  const comment = payload.thread as { postPodId?: unknown; postId?: unknown } | null | undefined;
+  const comment = payload.thread as { postPodId?: unknown; postId?: unknown; commentId?: unknown } | null | undefined;
   if (comment && !comment.postPodId) return false;
   const waiting = await messagesFromPeople(event);
   if (waiting.length === 0) return false;
@@ -235,7 +245,7 @@ export async function noteUnansweredMention(
   const answering = answeringIds(event);
   for (const { messageId, since } of waiting) {
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
-    if (comment && await agentCommentedOnPostSince(comment.postId, agent._id, since)) continue;
+    if (comment && await agentCommentedOnPostSince(comment.postId, agent._id, since, comment.commentId)) continue;
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
     if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop

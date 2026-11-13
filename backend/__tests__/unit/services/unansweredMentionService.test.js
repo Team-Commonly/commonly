@@ -43,21 +43,40 @@ describe('a comment that closes unanswered', () => {
   });
 
   // F474: a comment is answered on its post, which no chat row shows.
-  it('stays quiet when the agent commented on that post since', async () => {
+  const POST = 'b'.repeat(24);
+  const ASKED = 'c'.repeat(24);
+  const onPost = { thread: { postId: POST, postPodId: 'pod-1', commentId: ASKED } };
+
+  it('stays quiet when the agent commented on that post since, standing alone', async () => {
     Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5) }] }));
-    expect(await noteUnansweredMention(event({ thread: { postId: 'p1', postPodId: 'pod-1' } }))).toBe(false);
-    expect(Post.findById).toHaveBeenCalledWith('p1');
+    expect(await noteUnansweredMention(event(onPost))).toBe(false);
+    expect(Post.findById).toHaveBeenCalledWith(POST);
     expect(emitUnansweredMentionLine).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the agent replied to that comment', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5), replyTo: ASKED }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(false);
+  });
+
+  it('still tells them when the agent replied only to someone else\'s comment', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5), replyTo: 'd'.repeat(24) }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
   });
 
   it('still tells them when the agent\'s only comment there came before theirs', async () => {
     Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(-5) }] }));
-    expect(await noteUnansweredMention(event({ thread: { postId: 'p1', postPodId: 'pod-1' } }))).toBe(true);
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
   });
 
   it('still tells them when someone else commented there since', async () => {
     Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-2', createdAt: new Date(5) }] }));
-    expect(await noteUnansweredMention(event({ thread: { postId: 'p1', postPodId: 'pod-1' } }))).toBe(true);
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+  });
+
+  it('a post id that is not an ObjectId is never read, and the line still goes out', async () => {
+    expect(await noteUnansweredMention(event({ thread: { postId: 'x', postPodId: 'pod-1' } }))).toBe(true);
+    expect(Post.findById).not.toHaveBeenCalled();
   });
 
   it('never reads a post for a chat message', async () => {
