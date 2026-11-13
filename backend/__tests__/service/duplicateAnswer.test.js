@@ -298,6 +298,73 @@ describe('a person has an open ask of this agent since its copy', () => {
   });
 });
 
+// F284: the person, alone with the seat, carries on under its answer with no
+// @. Routing makes that an adjacency row (ADR-018 D6.4). Its previous-message
+// read is Postgres, which this tier doesn't run, so that one read is stubbed to
+// name the seat's post; everything else is the real route and mention path.
+describe('a person carrying on under the seat\'s answer, with no @ (F284)', () => {
+  const PGMessage = require('../../models/pg/Message');
+  let previous;
+  beforeEach(() => {
+    previous = jest.spyOn(PGMessage, 'findPreviousTopLevel')
+      .mockImplementation(async () => ({ user_id: String(seat._id), created_at: new Date(), message_type: 'text' }));
+  });
+  afterEach(() => previous.mockRestore());
+
+  const carryOn = async () => {
+    await post(seatToken, 'Blue');
+    const followUp = await say(person, 'and the river near it?');
+    const row = await askRow(followUp);
+    expect(row?.payload).toMatchObject({ adjacentReply: true });
+    return followUp;
+  };
+
+  test('the turn holding that row answers with the same word, and it lands', async () => {
+    await carryOn();
+    const [event] = await claim();
+    expect(event.payload.adjacentReply).toBe(true);
+
+    const repeat = await post(seatToken, 'Blue');
+
+    expect(repeat.body.skipped).toBeUndefined();
+    expect(await copies('Blue')).toBe(2);
+  });
+
+  test('one follow-up buys one repeat', async () => {
+    await carryOn();
+    await claim();
+    await post(seatToken, 'Blue');
+
+    const third = await post(seatToken, 'Blue');
+
+    expect(third.body).toMatchObject({ skipped: true, reason: 'duplicate_recent' });
+    expect(await copies('Blue')).toBe(2);
+  });
+
+  test('a post from no turn holding it is still held: the row is waiting', async () => {
+    await carryOn();
+
+    const repeat = await post(seatToken, 'Blue');
+
+    expect(repeat.body).toMatchObject({ skipped: true, reason: 'duplicate_recent' });
+    expect(await copies('Blue')).toBe(1);
+  });
+
+  test('a post after that turn ended is still held', async () => {
+    const followUp = await carryOn();
+    const [event] = await claim();
+    expect((await ack(event, CHECKPOINT)).status).toBe(200);
+    await AgentEvent.updateOne(
+      { 'payload.messageId': String(followUp._id) },
+      { $set: { deliveredAt: new Date(Date.now() - 60 * 1000) } },
+    );
+
+    const repeat = await post(seatToken, 'Blue');
+
+    expect(repeat.body).toMatchObject({ skipped: true, reason: 'duplicate_recent' });
+  });
+});
+
 describe('the guard still holds', () => {
   const expectSkipped = async () => {
     const repeat = await post(seatToken, 'Blue');
