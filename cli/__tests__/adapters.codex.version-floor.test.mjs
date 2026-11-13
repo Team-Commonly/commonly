@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import codex, { PUBLIC_CODEX_MIN_VERSION } from '../src/lib/adapters/codex.js';
 import { PUBLIC_CODEX_VERSION_CODE } from '../src/lib/adapters/tested-version.js';
-import { cantAnswerNotice, WONT_START_NOTICE } from '../src/lib/turn-failure-notice.js';
+import { cantAnswerNotice, spawnFailureReason, WONT_START_NOTICE } from '../src/lib/turn-failure-notice.js';
 import { currentJsShim, fakeFs } from './fixtures/windows-shims.cjs';
 
 const PUBLIC = { trust: 'public', mode: 'workspace' };
@@ -216,6 +216,8 @@ describe('a Windows launch that cannot be resolved', () => {
     });
     expect(error?.code).toBe('ENOENT');
     expect(error?.message).toMatch(/^cannot launch codex on Windows without a shell: /);
+    expect(cantAnswerNotice(error)).toEqual({ cause: 'wont-start', text: WONT_START_NOTICE });
+    expect(spawnFailureReason(error)).toBe('wont-start');
     expect(calls).toEqual([]);
   });
 });

@@ -48,6 +48,9 @@ const CLAUDE_SIGNED_OUT_WORDINGS = [
 ];
 const WONT_START_WORDINGS = [
   /^spawn \S+ ENOENT/,
+  // windows-command.js resolveLaunch: not on PATH, or a .cmd/.ps1 that only a
+  // shell can run. The harness never started, as with ENOENT (F262).
+  /^cannot launch \S+ on Windows without a shell: /,
   /^\w+ adapter: \S+ (?:is not set|is missing)/, // the seat has no provider key
 ];
 // The vendors' credit wordings open at the adapter's own label or the claude
