@@ -854,11 +854,18 @@ class AgentIdentityService {
    * the receipt is caught by the deletion's own UPDATE.
    */
   static async keepDeletedAccountAnonymous(userId: string): Promise<void> {
-    if (!dbPg || !(await isAccountDeleting(userId))) return;
-    await dbPg.pool.query(
-      'UPDATE users SET username = $2, profile_picture = NULL, updated_at = $3 WHERE _id = $1',
-      [userId, 'Deleted user', new Date()],
-    );
+    // Best effort: the write it follows already succeeded, and the deletion
+    // sweep re-anonymizes every receipt's row each minute, so a failed check
+    // logs rather than reporting the mirror write as failed.
+    try {
+      if (!dbPg || !(await isAccountDeleting(userId))) return;
+      await dbPg.pool.query(
+        'UPDATE users SET username = $2, profile_picture = NULL, updated_at = $3 WHERE _id = $1',
+        [userId, 'Deleted user', new Date()],
+      );
+    } catch (error) {
+      console.error('Failed to keep a deleted account anonymous in PostgreSQL:', error);
+    }
   }
 
   /**
@@ -900,6 +907,9 @@ class AgentIdentityService {
           isBot,
           new Date(),
         ]);
+        // The lazy sync's UPDATE has no tombstone guard: a deletion that
+        // anonymized the row between our SELECT and this write lost it.
+        await AgentIdentityService.keepDeletedAccountAnonymous(user._id.toString());
         return true;
       }
 
