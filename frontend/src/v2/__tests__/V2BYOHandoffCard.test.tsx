@@ -130,6 +130,7 @@ describe('V2BYOHandoffCard', () => {
     const link = screen.getByRole('link', { name: 'Bring your own page' });
     expect(link).toHaveAttribute('href', `/v2/agents/byo?pod=6a00000000000000000000aa&name=sam-agent&adapter=${adapter}`);
     expect(screen.getByTestId('byo-handoff-windows').textContent).toContain('PowerShell');
+    expect(screen.getByTestId('byo-handoff-windows').textContent).toMatch(/^On Windows, connect (Claude Code|Codex) from the Bring your own page\./);
     expect(screen.getByTestId('byo-handoff-card').textContent).not.toContain('Run the commands below');
 
     fireEvent.click(screen.getByRole('button', { name: 'macOS' }));

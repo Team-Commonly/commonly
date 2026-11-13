@@ -120,8 +120,7 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
           <div className="v2-byo-handoff__note" data-testid="byo-handoff-windows">
             <Trans
               i18nKey="byoHandoff.windowsConnectPage"
-              values={{ adapter: adapterLabel }}
-              components={{ page: <Link to={connectPageHref} /> }}
+              components={{ adapter: <>{adapterLabel}</>, page: <Link to={connectPageHref} /> }}
             />
           </div>
         ) : (
