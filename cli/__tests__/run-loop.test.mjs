@@ -663,7 +663,7 @@ describe('performRun', () => {
 
     test('a turn silenced this way acks as no_action', async () => {
       await turn(makeEvent({ _id: 'evt-hb3', type: 'heartbeat', payload: {} }), `${REASONING}\n\nNO_REPLY`);
-      const { post } = createClient();
+      const { post } = createClient.mock.results.at(-1).value;
       expect(post).toHaveBeenCalledWith(
         '/api/agents/runtime/events/evt-hb3/ack',
         { result: expect.objectContaining({ outcome: 'no_action' }) },
@@ -5432,6 +5432,44 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
       run.handle.stop();
       expect(server.renewals.some((ids) => ids.includes('b'))).toBe(false);
       expect(run.logs.some((line) => line.includes('renewal of the later pods\' rows stopped'))).toBe(true);
+    });
+
+    // Three pods: the first turn overruns, so the third pod's rows are skipped
+    // then; the second pod's turn restarts the clock and renews them again.
+    test('after one turn overruns, the next turn renews the pod behind it again', async () => {
+      const server = fakeServer({ pages: [[inbox('a'), inbox('b', { podId: 'pod-xyz' }), inbox('c', { podId: 'pod-zzz' })]] });
+      const started = Date.now();
+      let run;
+      const fireAll = async () => {
+        for (const timer of [...run.intervals]) {
+          // eslint-disable-next-line no-await-in-loop
+          await timer.callback();
+        }
+      };
+      const spawn = jest.fn(async () => {
+        if (spawn.mock.calls.length === 1) {
+          const now = jest.spyOn(Date, 'now').mockReturnValue(started + 16 * 60 * 1000);
+          try { await fireAll(); } finally { now.mockRestore(); }
+        } else if (spawn.mock.calls.length === 2) {
+          run.renewalsBeforeSecondTurn = server.renewals.length;
+          await fireAll();
+        }
+        return { text: 'answered' };
+      });
+      // A cleared timer must stop firing here, so a stop shows as a stop.
+      const clearIntervalImpl = (timer) => {
+        const at = run.intervals.indexOf(timer);
+        if (at >= 0) run.intervals.splice(at, 1);
+      };
+      run = startRun({ spawn, limit: 3, clearIntervalImpl });
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      const duringFirst = server.renewals.slice(0, run.renewalsBeforeSecondTurn);
+      const duringSecond = server.renewals.slice(run.renewalsBeforeSecondTurn);
+      expect(duringFirst.some((ids) => ids.includes('b') || ids.includes('c'))).toBe(false);
+      expect(duringSecond.some((ids) => ids.includes('c'))).toBe(true);
+      expect(server.ackedIds()).toEqual(['a', 'b', 'c']);
     });
   });
 

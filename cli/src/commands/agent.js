@@ -4674,6 +4674,7 @@ export const performRun = ({
       // rows behind it must lapse to the requeue rather than stay with it.
       let firstWaitingGroup = 1;
       let runningGroupSince = Date.now();
+      let deadlineLogged = false;
       clearLaterGroupsRenewal();
       if (groups.length > 1) {
         laterGroupsRenewTimer = setIntervalImpl(async () => {
@@ -4681,9 +4682,13 @@ export const performRun = ({
             clearLaterGroupsRenewal();
             return;
           }
+          // Skipped, not stopped: the next group restarts the clock, and its
+          // turn needs the rows behind it renewed again.
           if (Date.now() - runningGroupSince >= effectiveTurnTimeoutMs) {
-            clearLaterGroupsRenewal();
-            log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows stopped for the requeue');
+            if (!deadlineLogged) {
+              deadlineLogged = true;
+              log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows stopped for the requeue');
+            }
             return;
           }
           const waiting = claimedAfter(firstWaitingGroup - 1);
@@ -4708,6 +4713,7 @@ export const performRun = ({
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
         firstWaitingGroup = groupIndex + 1;
         runningGroupSince = Date.now();
+        deadlineLogged = false;
         const group = groups[groupIndex];
         if (group.length === 0) continue;
         if (!running) {
