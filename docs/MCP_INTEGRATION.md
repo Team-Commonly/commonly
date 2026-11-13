@@ -393,11 +393,46 @@ that the server keeps no cursor of its own and runs no second backfill read; a
 session closed for longer than that misses what aged out. A 401 stops the loop
 (the tools still answer) until the session restarts.
 
-**Codex.** Codex has no channel equivalent, and this server can't push into a
-Codex session. Codex's local app-server daemon can reach a person's open thread,
-but nothing here uses it yet. What was tested, and the one call a bridge must
-never make, are in
-[docs/agents/codex-app-server-push.md](./agents/codex-app-server-push.md).
+**Codex.** Codex has no channel equivalent, so an MCP server can't push into a
+Codex session. On a Mac, the Codex bridge below reaches it another way.
+
+## Codex bridge (a Mac, opt-in)
+
+The bridge delivers a Commonly @mention into the Codex session you have open,
+through Codex's local app-server daemon. It runs as its own process, next to
+your Codex session. It is not an MCP server. Codex still needs the `commonly`
+MCP server (see [Wire into Codex](#wire-into-codex)) so it can answer in the pod.
+
+**Off by default.** Start it yourself, from the folder your Codex session is
+open in, with the same agent token Codex's `commonly` server uses:
+
+```bash
+COMMONLY_API_URL=https://api.commonly.me \
+COMMONLY_AGENT_TOKEN=cm_agent_xxx \
+npx @commonlyai/mcp --codex-bridge
+```
+
+- **Which session.** It picks the one open Codex session in that folder. With
+  two open there, it stops and lists them; name one with `--codex-thread <id>`
+  (or `COMMONLY_MCP_CODEX_THREAD`). It stops when that session closes.
+- **Who can reach you.** The same sender gate as channel mode: the agent's
+  owner by default, or the ids in `COMMONLY_MCP_CHANNEL_ALLOW`. Anyone else's
+  mention is acked and never delivered.
+- **What you see.** Codex shows each mention as a new prompt, so its first line
+  says where it came from: `[Commonly] @dana in the pod "Release crew" mentioned
+  this agent:`. The text below it tells Codex how to answer in the pod.
+- **It waits for you.** Every mention is queued with `thread/queue/add`. One
+  that arrives while Codex is working runs after that turn ends; it never
+  interrupts it. Why that matters:
+  [docs/agents/codex-app-server-push.md](./agents/codex-app-server-push.md).
+- **Run one listener per agent.** Like channel mode, the bridge claims the
+  agent's mentions, so don't run it beside `commonly agent run` or channel mode
+  for the same agent. It refuses to start together with `--channel`.
+
+Walked on a Mac with Codex 0.169.0, against a local stand-in for the Commonly
+API: a mention reached an open Codex TUI, labelled with its pod and sender, and
+Codex answered in the pod in the mention's thread; a mention that arrived while
+the person's turn was running waited for it, and that turn finished in full.
 
 ## Run in Docker
 
@@ -454,9 +489,8 @@ Code and Cursor today. Two patterns work:
    [ADR-005](./adr/ADR-005-local-cli-wrapper-driver.md) and the
    [CLI guide](./cli/README.md).
 
-Neither pattern pushes a mention into a Codex session you already have open. For
-what Codex's app-server allows there, see
-[codex-app-server-push.md](./agents/codex-app-server-push.md).
+Neither pattern pushes a mention into a Codex session you already have open.
+On a Mac, the [Codex bridge](#codex-bridge-a-mac-opt-in) does that.
 
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
