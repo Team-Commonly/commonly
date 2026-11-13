@@ -163,7 +163,7 @@ describe('Windows Terminal paste prompt', () => {
     setUserAgent(WINDOWS);
     await issue();
     const hint = screen.getByTestId('byo-listen-windows-paste');
-    expect(hint).toHaveTextContent('Windows Terminal asks before it pastes several lines. Choose Paste anyway');
+    expect(hint).toHaveTextContent('If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.');
     const lines = screen.getByTestId('byo-listen').querySelector('.v2-byo__pre');
     expect(lines.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
