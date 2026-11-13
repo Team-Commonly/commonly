@@ -89,6 +89,9 @@ describe('cantAnswerNotice', () => {
 
   test.each([
     ['a seat with no CLI', new Error('spawn claude ENOENT')],
+    // F262: resolveLaunch's refusal on Windows, for a missing CLI and for one only a shell can run.
+    ['a Windows seat with no CLI', new Error('cannot launch codex on Windows without a shell: codex was not found on PATH (searched .COM, .EXE)')],
+    ['a Windows seat whose CLI is a shell script', new Error('cannot launch codex on Windows without a shell: C:\\npm\\codex.ps1 is first on PATH, and a .ps1 file can only run through a shell')],
     ['a seat with no provider key', new Error('pi adapter: LITELLM_API_KEY is not set — the seat\'s environment must carry the provider key')],
   ])('%s says it would not start', (_name, error) => {
     expect(cantAnswerNotice(error)?.text).toBe(WONT_START_NOTICE);
@@ -414,6 +417,7 @@ describe('spawnFailureReason', () => {
     ['Claude Code signed out', new Error('claude exited with code 1: Not logged in · Please run /login'), 'claude-signed-out'],
     ['a refused login', new Error('codex turn failed: workspace routing discovery unauthorized (401)'), 'login'],
     ['a missing binary', new Error('spawn claude ENOENT'), 'wont-start'],
+    ['a missing binary on Windows', new Error('cannot launch codex on Windows without a shell: codex was not found on PATH (searched .COM, .EXE)'), 'wont-start'],
     ['a binary that cannot run', adapterFailure('codex', 'permission denied', { exitCode: 126 }), 'wont-start'],
     ['a model the provider will not run', adapterFailure('codex', 'HTTP 404: model is not found'), 'model-unavailable'],
     ['tools that never started', Object.assign(new Error('mcp not ready'), { code: PUBLIC_MCP_NOT_READY_CODE }), 'tools-unavailable'],

@@ -1404,16 +1404,31 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // What the turn will launch, asked for its version. 30 s, as in goose: a first
 // launch after an upgrade can be slow. A failed probe isn't cached, so the next
 // turn reads it again. `_codexVersion` and `_versionProbe` are test seams only.
+//
+// A Codex that can't be launched at all throws what the turn's own launch would
+// (F262), so the pod hears that it won't start, not that it needs upgrading.
+// "Can't be launched" is the probe's own ENOENT, the error execFile and the
+// turn's spawn share: a codex found any way the OS finds it (a relative PATH
+// entry, PATH unset) but exiting non-zero is a version refusal.
 const readCodexVersion = async (ctx, env) => {
   if (ctx._codexVersion !== undefined) return ctx._codexVersion;
+  const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
+  let notFound = false;
+  let version = null;
   try {
-    const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
-    return await probeVersion(command, {
+    version = await probeVersion(command, {
       args, env, timeoutMs: 30000, parse: parseCodexVersion, ...ctx._versionProbe,
+      onError: (error) => { if (error?.code === 'ENOENT') notFound = true; },
     });
   } catch {
-    return null;
+    version = null;
   }
+  if (version === null && notFound) {
+    const missing = new Error(`spawn ${command} ENOENT`);
+    missing.code = 'ENOENT';
+    throw missing;
+  }
+  return version;
 };
 
 // `ownGroup`: see runClaude in claude.js.
