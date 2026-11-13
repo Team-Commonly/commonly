@@ -162,6 +162,18 @@ describe('the version comes from the binary on the seat\'s PATH', () => {
     expect(calls).toEqual([]);
   });
 
+  // CodeRabbit on #4074: the OS can run a codex that a PATH walk misses (a
+  // relative entry, or PATH unset). Only the launch's own ENOENT is "missing".
+  test('a codex the PATH walk misses but the OS runs, exiting 1, is still a version refusal', async () => {
+    const { error, calls } = await runSeat({
+      _versionProbe: {
+        execFileImpl: (_file, _args, _options, done) => done(Object.assign(new Error('Command failed'), { code: 1 }), ''),
+      },
+    });
+    expect(error?.code).toBe(PUBLIC_CODEX_VERSION_CODE);
+    expect(calls).toEqual([]);
+  });
+
   test('a probe that hangs is timed out, and runs no turn', async () => {
     const { path } = await fakeCodex('exec sleep 20');
     const started = Date.now();

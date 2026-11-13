@@ -43,7 +43,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './tested-version.js';
-import { spawn as childSpawn, spawnSync } from 'child_process';
+import { execFile, spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
   accessSync, constants, existsSync, readFileSync, readdirSync, realpathSync, statSync,
@@ -91,7 +91,6 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
-import { resolveOnPath } from '../resolve-on-path.js';
 import { codexContextTokens, codexHomeFor, codexRolloutPath } from '../session-recycle.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -1408,20 +1407,27 @@ const CODEX_PROVIDER_KEY_ENVS = [
 //
 // A Codex that can't be launched at all throws what the turn's own launch would
 // (F262), so the pod hears that it won't start, not that it needs upgrading.
-// Only when the probe failed too: a bare name on a relative PATH entry is missed
-// by resolveOnPath but still run by execFile, and that version counts.
+// "Can't be launched" is the probe's own ENOENT, the error execFile and the
+// turn's spawn share: a codex found any way the OS finds it (a relative PATH
+// entry, PATH unset) but exiting non-zero is a version refusal.
 const readCodexVersion = async (ctx, env) => {
   if (ctx._codexVersion !== undefined) return ctx._codexVersion;
   const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
+  const execFileImpl = ctx._versionProbe?.execFileImpl || execFile;
+  let notFound = false;
   let version = null;
   try {
     version = await probeVersion(command, {
       args, env, timeoutMs: 30000, parse: parseCodexVersion, ...ctx._versionProbe,
+      execFileImpl: (file, argv, options, done) => execFileImpl(file, argv, options, (error, out) => {
+        if (error?.code === 'ENOENT') notFound = true;
+        done(error, out);
+      }),
     });
   } catch {
     version = null;
   }
-  if (version === null && !args.length && basename(command) === command && !resolveOnPath(command, env?.PATH)) {
+  if (version === null && notFound) {
     const missing = new Error(`spawn ${command} ENOENT`);
     missing.code = 'ENOENT';
     throw missing;
