@@ -2600,6 +2600,28 @@ describe('opencode public seat — the grant broker (F175a)', () => {
     }
   });
 
+  // Review Low: the check runs on the value OpenCode loads, after the
+  // placeholders are filled, so a substitution a placeholder builds is refused too.
+  test.each([
+    ['url', { url: '${COMMONLY_API_URL}/mcp' }],
+    ['header value', { headers: { 'X-Origin': '${COMMONLY_API_URL}' } }],
+  ])('buildMcpConfig refuses a substitution a placeholder builds in the %s', (_label, over) => {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bearerFileServers = [];
+      const config = buildMcpConfig([{
+        name: 'side-mcp', transport: 'http', url: 'https://elsewhere.example.test/mcp', ...over,
+      }], {
+        runtimeToken: TOKEN, instanceUrl: 'https://api.example.test/{file:/spawn/agent/token}',
+        credentialFile: '/spawn/agent/token', bearerFileServers,
+      });
+      expect(config['side-mcp']).toBeUndefined();
+      expect(bearerFileServers).toEqual([]);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   test('buildMcpConfig still writes its own bearer rewrite beside a plain header', () => {
     const bearerFileServers = [];
     const config = buildMcpConfig([{ ...OFF_ORIGIN_BEARER, headers: { ...OFF_ORIGIN_BEARER.headers, 'X-Team': 'blue' } }], {
