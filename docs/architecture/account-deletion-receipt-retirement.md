@@ -1,14 +1,15 @@
 # Account-deletion receipt retirement investigation
 
 Status: investigation for TASK-004, 2026-10-25. No receipt retirement is
-implemented or approved by this document. The deletion implementation under
-review is [PR #2721](https://github.com/Team-Commonly/commonly/pull/2721), measured
-at `ddb363c74b17f50d3c913b1f56587330961d4e91`. This audit branch starts from
-merged main `0fc405cbedda207d5c897845381129e6c5abcac0`; it does not carry that PR.
+implemented or approved by this document. The deletion implementation it
+measured was [PR #2721](https://github.com/Team-Commonly/commonly/pull/2721) at
+`ddb363c74b17f50d3c913b1f56587330961d4e91`, then under review; it merged on
+2026-10-25 as `931b8ff8`. Links below point at the measured head.
 
 ## Two jobs currently share one record
 
-`AccountDeletion` retains only an opaque user ID and sweep timestamps. It is
+`AccountDeletion` retains three fields: the opaque user ID (`_id`), `createdAt`
+(set when deletion begins) and `lastSweptAt` (the last sweep attempt). It is
 both a cleanup retry item and a durable refusal witness after the User row is
 removed. Those jobs have different retirement requirements.
 
@@ -41,7 +42,8 @@ Both cases reached the post-sweep byte assertion and failed: two MediaObject
 rows remained where one unrelated user's object was expected. The deleted
 user's late bytes remained. The metadata-failure case had no File row to locate
 them. Restoring the test file restored the reviewed tree. The unmodified cases
-were previously green within the 100-case integration run at this head.
+passed in a service-suite run at this head before the probe; that run's output
+was not kept.
 
 This demonstrates that a successful deletion response is not a safe retirement
 boundary. The upload can already have passed its first owner check. Its later
@@ -107,10 +109,12 @@ values increased deterministically by one millisecond per batch. There were no
 cleanup operations, scheduler waits or concurrent arrivals in that probe. It is
 not an end-to-end sweep or a production database latency benchmark.
 
-Under an idealized fixed queue of N receipts, successful ticks and negligible
-work duration, a full revisit takes `ceil(N / 100)` minutes: 100 minutes at
-10,000 receipts and 1,000 minutes at 100,000. This is a calculation from the
-scheduler and selection policy, not a measured service-level latency bound.
+Under an idealized fixed queue of N receipts, a full revisit takes
+`ceil(N / 100)` sweep invocations: 100 at 10,000 receipts and 1,000 at 100,000.
+The scheduler starts one sweep a minute (`schedulerService.ts`, `* * * * *`), so
+with every invocation succeeding and negligible work duration that is the same
+number of minutes. This is a calculation from the scheduler and selection
+policy, not a measured service-level latency bound.
 Failures, storage latency, lease loss and new arrivals can extend it. Retaining
 successful historical receipts in this queue makes retry latency grow with
 lifetime deletions.
