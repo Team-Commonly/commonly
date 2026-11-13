@@ -444,16 +444,15 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
       // connected row is never taken.
       const stale = existing.status !== 'connected' || Boolean(existing.revokedAt);
       if (stale) {
-        // F176: its owner reviving it ends the row's old grants BEFORE it goes
-        // live. The broker refuses a former owner's grant on a taken row
-        // (connection_owner_changed), but it serves its own owner's, so a
-        // revoke that failed after the write would bring them back to life.
-        // Here a failure answers 500 with the row still dead, and the retry
-        // ends them. Only grants older than this request's read are reached,
-        // so a revival that raced this one keeps what it minted since.
-        if (own) {
-          await revokeConnectionGrants({ connection: existing, revokedBy: SYSTEM_REVOKER, createdBefore: readAt });
-        }
+        // F176: the row's old grants end BEFORE it goes live. The broker serves
+        // a Connect grant to the row's current owner, so a revoke that failed
+        // after the write would bring back the grants of whoever takes it:
+        // its owner reviving it, or a former owner taking it back. Here a
+        // failure answers 500 with the row still dead, and the retry ends them.
+        // Only grants older than this request's read are reached, and the row
+        // was dead then. A request that loses the write below therefore only
+        // revoked grants the winner's own revoke ends too.
+        await revokeConnectionGrants({ connection: existing, revokedBy: SYSTEM_REVOKER, createdBefore: readAt });
         // Win the row first, conditionally on it still being dead and still
         // held by the owner this request read (F174). A request that read a
         // row its owner has since revived loses here and revokes nothing.

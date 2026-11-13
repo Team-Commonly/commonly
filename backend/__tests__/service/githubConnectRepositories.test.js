@@ -640,12 +640,28 @@ describe('F174: takeover and delete act only on the row as it is now', () => {
   test('item 3: a takeover that read a stale row loses to the owner\'s revival, and revokes nothing', async () => {
     const row = (await connectRepo(alice, WIDGET)).body.integration;
     // Alice's row looked disconnected when Bob's request read it, but she has
-    // revived it since and minted a fresh grant.
+    // revived it since and minted a fresh grant. The grant is minted as Bob's
+    // read answers, so it is newer than that read, as a grant on a row revived
+    // after the read must be (F176: the revoke-first reaches only older ones).
     const stale = { ...(await Integration.findById(row._id).lean()), status: 'disconnected' };
-    const alicesFresh = await grantFor(row, alice);
-    const spy = staleOnce('find', stale, ([q]) => q?.type === 'github-app');
+    let alicesFresh;
+    const original = Integration.find.bind(Integration);
+    let used = false;
+    const spy = jest.spyOn(Integration, 'find').mockImplementation((...args) => {
+      if (!used && args[0]?.type === 'github-app') {
+        used = true;
+        return {
+          lean: async () => {
+            alicesFresh = await grantFor(row, alice);
+            return [stale];
+          },
+        };
+      }
+      return original(...args);
+    });
     let res;
     try { res = await connectRepo(bob, WIDGET); } finally { spy.mockRestore(); }
+    expect(alicesFresh).toBeDefined();
     expect(res.status).toBe(409);
     expect((await grantRow(alicesFresh)).revokedAt).toBeFalsy();
     expect(String((await Integration.findById(row._id).lean()).createdBy)).toBe(String(alice._id));
@@ -806,6 +822,35 @@ describe('F176: delete and revival end every grant the row\'s past left behind',
 
     expect((await connectRepo(alice, WIDGET)).status).toBe(200);
     expect((await Integration.findById(row._id).lean()).status).toBe('connected');
+    expect(await isRevoked(alicesOld)).toBe(true);
+  });
+
+  // Review Low: a former owner taking a row back passes the broker's owner
+  // check again, so its leftover grants must end before the row goes live too.
+  test('a former owner\'s take-back whose revoke fails leaves the row dead; the retry ends old grants', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesOld = await grantFor(row, alice);
+    // Bob took it over once and that revoke failed, then the row died again.
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: bob._id, status: 'disconnected' } });
+    const original = RoomGrant.find.bind(RoomGrant);
+    let failed = false;
+    const spy = jest.spyOn(RoomGrant, 'find').mockImplementation((...args) => {
+      if (!failed) {
+        failed = true;
+        throw new Error('grant store unavailable');
+      }
+      return original(...args);
+    });
+    let first;
+    try { first = await connectRepo(alice, WIDGET); } finally { spy.mockRestore(); }
+
+    expect(first.status).toBe(500);
+    const dead = await Integration.findById(row._id).lean();
+    expect(dead.status).toBe('disconnected');
+    expect(String(dead.createdBy)).toBe(String(bob._id));
+
+    expect((await connectRepo(alice, WIDGET)).status).toBe(200);
+    expect(String((await Integration.findById(row._id).lean()).createdBy)).toBe(String(alice._id));
     expect(await isRevoked(alicesOld)).toBe(true);
   });
 
