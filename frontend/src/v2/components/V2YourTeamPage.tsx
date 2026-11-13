@@ -5,7 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
 import './V2YourTeamPage.css';
-import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel, runCommandForThisComputer } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
 import V2TeamViewSwitch from './V2TeamViewSwitch';
@@ -460,7 +460,7 @@ const V2YourTeamPage: React.FC = () => {
             </div>
             {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{connectionLabel(a.connection!, t)}</div>}
             {a.connection?.state === 'never' && a.fixCommand && (
-              <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
+              <code className="v2-team-card__fix" data-testid="team-card-fix-command">{runCommandForThisComputer(a.fixCommand)}</code>
             )}
           </div>
           {where && (

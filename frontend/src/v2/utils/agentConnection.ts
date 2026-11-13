@@ -1,3 +1,13 @@
+import { browserIsWindows } from './daemonSetupCommand';
+
+// The server's run line names `commonly`. On Windows that is the .ps1 shim
+// PowerShell refuses under the default script policy (F342), so the computer
+// reading the page gets commonly.cmd. Anything else (a webhook's sentence) is
+// shown as sent.
+export const runCommandForThisComputer = (command: string, windows: boolean = browserIsWindows()): string => (
+  windows ? command.replace(/^commonly /, 'commonly.cmd ') : command
+);
+
 export type AgentConnection = {
   state: 'connected' | 'available' | 'revoked' | 'stale' | 'never' | 'stopped';
   lastSeenAt: string | null;

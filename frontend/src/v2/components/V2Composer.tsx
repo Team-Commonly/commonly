@@ -5,6 +5,7 @@ import V2Avatar from './V2Avatar';
 import { ShellGlyph } from '../icons/glyphs';
 import type { V2Message } from '../hooks/useV2PodDetail';
 import { trackUsageOnce } from '../utils/usageEvents';
+import { runCommandForThisComputer } from '../utils/agentConnection';
 
 export interface V2ComposerMention {
   id: string;
@@ -254,11 +255,11 @@ const V2Composer: React.FC<V2ComposerProps> = ({
               )}
               {!warning.connectLink && (warning.state === 'never-connected'
                 ? (warning.fixCommand
-                  ? t('podChat.mentionState.neverOwner', { handle: warning.agentName, command: warning.fixCommand })
+                  ? t('podChat.mentionState.neverOwner', { handle: warning.agentName, command: runCommandForThisComputer(warning.fixCommand) })
                   : t('podChat.mentionState.neverPeer', { handle: warning.agentName }))
                 : (warning.fixCommand
                   ? t(warning.webhookFailed ? 'podChat.mentionState.webhookOwner' : 'podChat.mentionState.darkOwner',
-                    { handle: warning.agentName, command: warning.fixCommand })
+                    { handle: warning.agentName, command: runCommandForThisComputer(warning.fixCommand) })
                   : t(warning.webhookFailed ? 'podChat.mentionState.webhookPeer' : 'podChat.mentionState.darkPeer',
                     { handle: warning.agentName })))}
             </span>
