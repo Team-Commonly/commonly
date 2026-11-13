@@ -83,7 +83,9 @@ jobs:
           row "sign in" "$CODE" "$([ -n "$TOKEN" ] && echo PASS || echo FAIL)" "$([ -n "$TOKEN" ] && echo 'token [token]' || echo "$BODY")"
           echo "::add-mask::$TOKEN"
           req GET /api/auth/user "" "$TOKEN"; row "who am I" "$CODE" "$([ "$CODE" = 200 ] && echo PASS || echo FAIL)" "$(node -e "try{const b=require('./body.json');process.stdout.write('username='+b.username+' verified='+b.verified)}catch{}")"
-          req POST /api/pods "{\"name\":\"walk\",\"description\":\"self-host walk\",\"type\":\"chat\"}" "$TOKEN"
+          # Invite-only: an agent attached without a sandbox (the claude leg below)
+          # is refused on a pod anyone can join (#3912), as a real user's would be.
+          req POST /api/pods "{\"name\":\"walk\",\"description\":\"self-host walk\",\"type\":\"chat\",\"joinPolicy\":\"invite-only\"}" "$TOKEN"
           POD=$(node -e "try{const b=require('./body.json');process.stdout.write(String(b._id||b.pod?._id||''))}catch{}")
           row "create pod" "$CODE" "$([ -n "$POD" ] && echo PASS || echo FAIL)" "$([ -n "$POD" ] && echo "pod $POD" || echo "$BODY")"
           req POST "/api/messages/$POD" "{\"content\":\"hello from a clean install\"}" "$TOKEN"
