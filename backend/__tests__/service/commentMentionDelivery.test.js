@@ -124,3 +124,21 @@ describe('a comment @mention on a pod post', () => {
     expect(comment.payload.messageId).toBeUndefined();
   });
 });
+
+// F474: the unanswered line reads a comment's answer off the post. A unit test
+// mocks Post, so this is where a real subdocument's ObjectId userId is matched.
+describe('a comment answered on its post', () => {
+  const { agentCommentedOnPostSince } = require('../../services/unansweredMentionService');
+
+  test("counts the agent's own comment after the ask, and nobody else's", async () => {
+    const agent = await User.findOne({ isBot: true, 'botMetadata.agentName': 'alice' });
+    const post = await Post.create({ userId: person._id, content: 'We shipped it.', podId: pod._id, comments: [] });
+    const asked = new Date();
+    await commentOn(post, '@alice what does this mean?');
+    expect(await agentCommentedOnPostSince(post._id, agent._id, asked)).toBe(false);
+
+    await Post.updateOne({ _id: post._id }, { $push: { comments: { userId: agent._id, text: 'It means X.', createdAt: new Date(asked.getTime() + 1000) } } });
+    expect(await agentCommentedOnPostSince(post._id, agent._id, asked)).toBe(true);
+    expect(await agentCommentedOnPostSince(post._id, person._id, new Date(asked.getTime() + 2000))).toBe(false);
+  });
+});

@@ -5,6 +5,21 @@ import { emitUnansweredMentionLine } from './systemActionLineService';
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentIdentityService = require('./agentIdentityService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PostModule = require('../models/Post');
+
+const Post = PostModule.default || PostModule;
+
+// F474: a comment is answered on its post, where agentPostedSince (chat rows)
+// can't see it. A comment there by the agent at or after the asking one counts.
+export async function agentCommentedOnPostSince(postId: unknown, agentId: unknown, since: Date): Promise<boolean> {
+  if (!postId || !agentId) return false;
+  const post = await Post.findById(postId).select('comments.userId comments.createdAt').lean() as {
+    comments?: Array<{ userId?: unknown; createdAt?: Date | string }>;
+  } | null;
+  return (post?.comments || []).some((comment) => String(comment.userId) === String(agentId)
+    && new Date(comment.createdAt || 0).getTime() >= since.getTime());
+}
 
 /**
  * TASK-656. The event types that mean a person is waiting on this agent: the
@@ -91,6 +106,8 @@ export async function messagesFromPeople(
  *   message, so a row retired here does get this line, but a native turn that
  *   runs on one and fails posts nothing (personAddressedThisTurn);
  * - it was a comment on a post with no pod: there is no room to tell them in;
+ * - it was a comment, and the agent has commented on that post since: that is
+ *   where a comment is answered, and no chat row shows it (F474);
  * - the agent has posted since the message where an answer to it would sit:
  *   at top level, in the message's thread, or as a reply to it. It was alive
  *   and may have answered without acknowledging, and a line claiming silence
@@ -193,7 +210,7 @@ export async function noteUnansweredMention(
 ): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
   // A comment on a post with no pod carries some pod of the commenter's.
-  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  const comment = payload.thread as { postPodId?: unknown; postId?: unknown } | null | undefined;
   if (comment && !comment.postPodId) return false;
   const waiting = await messagesFromPeople(event);
   if (waiting.length === 0) return false;
@@ -217,6 +234,8 @@ export async function noteUnansweredMention(
   let posted = false;
   const answering = answeringIds(event);
   for (const { messageId, since } of waiting) {
+    // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
+    if (comment && await agentCommentedOnPostSince(comment.postId, agent._id, since)) continue;
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
     if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop
