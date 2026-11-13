@@ -94,9 +94,11 @@ const resolveBinary = (binary, env) => {
   }
 };
 
+// `onError` sees the launch's own error when the probe fails, so a caller can
+// tell a binary that isn't there (ENOENT) from one that ran and refused.
 export const probeVersion = async (binary, {
   args = [], env, timeoutMs = 30000, parse, execFileImpl = childProcess.execFile, cache = versionCache,
-  now = Date.now,
+  now = Date.now, onError,
 } = {}) => {
   const resolved = args.length ? null : resolveBinary(binary, env);
   const key = resolved?.key || null;
@@ -104,6 +106,7 @@ export const probeVersion = async (binary, {
   if (hit && hit.mtimeMs === resolved.mtimeMs && now() - hit.at < VERSION_CACHE_MAX_AGE_MS) return hit.version;
   const stdout = await new Promise((resolve) => {
     execFileImpl(key || binary, [...args, '--version'], { encoding: 'utf8', env, timeout: timeoutMs }, (error, out) => {
+      if (error && onError) onError(error);
       resolve(error ? null : out);
     });
   });

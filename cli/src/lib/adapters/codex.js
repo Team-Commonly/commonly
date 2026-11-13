@@ -43,7 +43,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './tested-version.js';
-import { execFile, spawn as childSpawn, spawnSync } from 'child_process';
+import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
   accessSync, constants, existsSync, readFileSync, readdirSync, realpathSync, statSync,
@@ -1413,16 +1413,12 @@ const CODEX_PROVIDER_KEY_ENVS = [
 const readCodexVersion = async (ctx, env) => {
   if (ctx._codexVersion !== undefined) return ctx._codexVersion;
   const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
-  const execFileImpl = ctx._versionProbe?.execFileImpl || execFile;
   let notFound = false;
   let version = null;
   try {
     version = await probeVersion(command, {
       args, env, timeoutMs: 30000, parse: parseCodexVersion, ...ctx._versionProbe,
-      execFileImpl: (file, argv, options, done) => execFileImpl(file, argv, options, (error, out) => {
-        if (error?.code === 'ENOENT') notFound = true;
-        done(error, out);
-      }),
+      onError: (error) => { if (error?.code === 'ENOENT') notFound = true; },
     });
   } catch {
     version = null;
