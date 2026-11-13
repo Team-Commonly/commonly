@@ -67,6 +67,8 @@ const telegramIntegration = (config = {}) => ({
     liveRelay: true,
     chatType: 'private',
     chatId: 'telegram-chat',
+    // Every write that switches liveRelay on records who did.
+    linkedUserId: 'owner-1',
     gates: { 'pod-1': { enabled: true } },
     ...config,
   },

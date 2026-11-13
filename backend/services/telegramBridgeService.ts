@@ -272,10 +272,14 @@ const podForSend = async (podId: string): Promise<{ name?: string; members?: unk
   }
 };
 
-// The chat is a private one with the person who linked it; a row written
-// before linking recorded them falls back to its creator.
-const chatPersonOf = (integration: TelegramIntegrationDoc): unknown => (
-  integration.config?.linkedUserId || integration.createdBy || null
+// Who must still be a member for the chat to receive the pod. The private
+// chat is whoever redeemed the connect code, which Commonly never records; the
+// code is minted for the row's creator, so `createdBy` stands for them.
+// `linkedUserId` is whoever switched live relay on, and on a pod-scoped row that
+// can be the pod's creator or an admin rather than the chat's person. Both must
+// be members: either leaving ends the relay.
+const relayPeopleOf = (integration: TelegramIntegrationDoc): unknown[] => (
+  [integration.createdBy, integration.config?.linkedUserId].filter(Boolean)
 );
 
 // Outbound: agent message → Telegram, attributed, with a deep link back into
@@ -297,10 +301,10 @@ export const telegramRelayAdapter: ChatRelayAdapter<TelegramIntegrationDoc> = {
     if (!botToken || !chatId) return null;
     const pod = await podForSend(podId);
     if (!pod) return null;
-    const person = chatPersonOf(integration);
-    if (!person || !isListedPodMember(pod, person)) {
+    const people = relayPeopleOf(integration);
+    if (!people.length || !people.every((person) => isListedPodMember(pod, person))) {
       console.warn(`[tg-bridge] outbound skipped integration=${String(integration._id)}: `
-        + 'the chat\'s person left the pod');
+        + 'its creator or linked user left the pod');
       return null;
     }
     const body = escapeHtml(String(content).slice(0, OUTBOUND_TEXT_CAP));

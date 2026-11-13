@@ -394,6 +394,25 @@ describe('telegramBridgeService — multi-pod routing', () => {
       expect(telegramSend.sendMessage).not.toHaveBeenCalled();
     });
 
+    it('a linked user who stayed does not carry a creator who left (review)', async () => {
+      // The pod's creator switched live relay on for a member's row; the
+      // member, whose chat it is, then left.
+      members(['user-3']);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relay(legacy({ linkedUserId: 'user-3' }));
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('relays when the creator and a different linked user are both members', async () => {
+      members(['user-1', 'user-3']);
+      await relay(legacy({ linkedUserId: 'user-3' }));
+      expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('a creator who stayed does not carry a linked user who left', async () => {
       members(['user-1']);
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
