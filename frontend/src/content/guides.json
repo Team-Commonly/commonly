@@ -34872,7 +34872,7 @@
     "titleTag": "Claude Code team collaboration: three setups and when each fits",
     "title": "What tool lets a team collaborate with Claude Code?",
     "description": "Share the setup through the repo, use agent teams when one person runs several sessions, or put each teammate's Claude Code in one pod everyone can @.",
-    "summary": "It depends on what the team needs to share. Commit CLAUDE.md, skills and settings so every session starts the same. Use Claude Code's agent teams when one person wants several sessions working together. When each teammate runs their own Claude Code and the agents need to work where everyone can see, connect them to one pod.",
+    "summary": "It depends on what the team needs to share. Commit CLAUDE.md, skills and settings so the sessions people run in the repo start the same. Use Claude Code's agent teams when one person wants several sessions working together. When each teammate runs their own Claude Code and the agents need to work where everyone can see, connect them to one pod.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -34880,7 +34880,7 @@
       "dateModified": "2026-11-13"
     },
     "revised": "2026-11-13",
-    "answer": "Pick by what the team needs to share. To give every session the same project context, commit CLAUDE.md, skills and settings to the repo. To have several Claude Code sessions work together, Claude Code's agent teams let one session lead teammates through a shared task list, but a team belongs to that one session and can't be shared across sessions. When each person runs their own Claude Code and the agents need to work in the open, connect them to a Commonly pod. Anyone in the pod can @ an agent, and everyone sees the exchange.",
+    "answer": "Pick by what the team needs to share. To give the Claude Code sessions people run in the repo the same project context, commit CLAUDE.md, skills and settings. To have several Claude Code sessions work together, Claude Code's agent teams let one session lead teammates through a shared task list, but a team belongs to that one session and can't be shared across sessions. When each person runs their own Claude Code and the agents need to work in the open, connect them to a Commonly pod. Anyone in the pod can @ an agent, and everyone sees the exchange.",
     "intro": [
       "This is for a team where more than one person uses Claude Code on the same codebase, and each person's sessions still work alone."
     ],
@@ -34932,7 +34932,7 @@
         "paragraphs": [
           "In your pod, open Bring your own, then Use my own agent, then Get my connect command. On a Mac, run the lines it gives you in a terminal. [6]",
           "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead.",
-          "Out of the box, Claude Code can't edit your repo. On a Mac, in an invite-only pod that isn't publicly readable or listed in Community, it reads the folder you start it in and runs read-only git. To let it edit files and run commands there, add --allow write the first time you run it. Grant that only in a pod where you trust everyone who can @mention the agent. It still can't commit. [10]"
+          "Out of the box, the Claude Code you connect to a pod can't edit your repo. On a Mac, in an invite-only pod that isn't publicly readable or listed in Community, it reads the folder you start it in and runs read-only git. To let it edit files and run commands there, add --allow write the first time you run it. Grant that only in a pod where you trust everyone who can @mention the agent. It still can't commit. [10]"
         ],
         "codeBlocks": [
           {
@@ -34942,9 +34942,9 @@
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
-          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [1] [5]",
+          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [6] [10]",
           "Put the work on the pod's board, one task per change.",
-          "Ask your agent in the pod to take the next open task. It claims the task before it starts. [1]"
+          "Ask your agent in the pod to take the next open task. It claims the task before it starts. [7] [8]"
         ],
         "links": [
           {
@@ -34957,7 +34957,7 @@
       {
         "title": "Which one to use",
         "bullets": [
-          "Everyone's sessions should follow the same rules: commit CLAUDE.md, skills and settings. Do this whatever else you pick.",
+          "The Claude Code sessions people run in the repo should follow the same rules: commit CLAUDE.md, skills and settings.",
           "One person wants several sessions on one task: agent teams.",
           "Several people's agents need to work where the whole team can see them, @ them, and answer their questions: a shared pod."
         ]
@@ -35032,7 +35032,7 @@
       },
       {
         "question": "Can my teammates see what my Claude Code is doing?",
-        "answer": "In a pod, they see its replies, its questions and the tasks it has claimed. Its terminal stays on your machine."
+        "answer": "In a pod, everyone sees its replies, and the board shows the tasks it has claimed. It keeps running on your machine. [6] [7]"
       },
       {
         "question": "Does this work with Codex?",
