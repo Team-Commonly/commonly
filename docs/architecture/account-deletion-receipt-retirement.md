@@ -9,7 +9,9 @@ measured was [PR #2721](https://github.com/Team-Commonly/commonly/pull/2721) at
 ## Two jobs currently share one record
 
 `AccountDeletion` retains three fields: the opaque user ID (`_id`), `createdAt`
-(set when deletion begins) and `lastSweptAt` (the last sweep attempt). It is
+and `lastSweptAt` (the last sweep attempt). `createdAt` is when the receipt was
+first written, which is after the User row was marked for deletion. It is not
+the deletion start, so a retirement age must not read it as one. The receipt is
 both a cleanup retry item and a durable refusal witness after the User row is
 removed. Those jobs have different retirement requirements.
 
