@@ -3867,13 +3867,16 @@ export const performRun = ({
   // are just as claimed, so they ride along without a strike. `pastCap` events
   // were left out of a turn, which is no failure of theirs: no strike, and
   // PAST_CAP_MAX_CARRIES bounds them instead. A later group's hold in the same
-  // tick adds to the carry, never replaces it.
-  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
+  // tick adds to the carry, never replaces it. A turn an outside signal cut off
+  // inside its grace (F293) is no failure of the event's either: `strike: false`
+  // carries it without one, or the third kill would release it to the server's
+  // requeue and the answer would wait 10–20 minutes. The grace bounds this.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true } = {}) => {
     const released = [];
     let part = null;
     const carry = [];
     const seen = new Set();
-    for (const event of failedEvents) {
+    for (const event of strike ? failedEvents : []) {
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
@@ -3889,7 +3892,7 @@ export const performRun = ({
         }
       }
     }
-    for (const event of untriedEvents) {
+    for (const event of strike ? untriedEvents : [...failedEvents, ...untriedEvents]) {
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
@@ -4700,6 +4703,7 @@ export const performRun = ({
               attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
+              { strike: !externalSignal },
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
@@ -4840,7 +4844,7 @@ export const performRun = ({
               // eslint-disable-next-line no-await-in-loop
               if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
-              const hold = await holdForRetry([event], untriedAfter(groupIndex));
+              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !externalSignal });
               keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `

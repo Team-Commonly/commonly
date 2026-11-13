@@ -2734,8 +2734,15 @@ describe('performRun', () => {
   // the next ask waited minutes. An outside signal isn't the provider failing.
   test('the first three outside signals retry at the poll interval and never open the circuit; a fourth counts', async () => {
     const event = makeEvent({ _id: 'evt-signal' });
+    // Served once: every retry after that is the wrapper's own carry, so a
+    // graced kill that struck the event would release it and stop the retries.
+    let served = false;
     const mockGet = jest.fn(async (route) => {
-      if (route === '/api/agents/runtime/events') return { events: [event] };
+      if (route === '/api/agents/runtime/events') {
+        if (served) return { events: [] };
+        served = true;
+        return { events: [event] };
+      }
       if (route === '/api/agents/runtime/memory') return { sections: {} };
       if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
@@ -2781,6 +2788,11 @@ describe('performRun', () => {
       ['runtime', 2, false, 10000],
       ['runtime', 3, true, 60000],
     ]);
+    // Carried through all three graced kills and two counted failures; the
+    // third counted failure is the event's third strike and releases it.
+    expect(spawn).toHaveBeenCalledTimes(6);
+    expect(retries[2].message).not.toMatch(/releasing/);
+    expect(retries[5].message).toMatch(/releasing 1 event after 3 failed attempts/);
   });
 
   test('an outside signal after a real failure does not add to its count', async () => {
