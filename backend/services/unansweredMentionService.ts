@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { askedSomeoneElse } from './mentionCoalesce';
 import { emitUnansweredMentionLine } from './systemActionLineService';
 
@@ -5,6 +6,35 @@ import { emitUnansweredMentionLine } from './systemActionLineService';
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentIdentityService = require('./agentIdentityService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PostModule = require('../models/Post');
+
+const Post = PostModule.default || PostModule;
+
+// F474: a comment is answered on its post, where agentPostedSince (chat rows)
+// can't see it. An agent comment there at or after the ask counts when it
+// replies to that comment or stands alone; a reply to someone else's comment
+// was the agent answering them (the F237 rule, on a post). An id that isn't an
+// ObjectId reads as not answered, so the notice is still seen (rule 19).
+export async function agentCommentedOnPostSince(
+  postId: unknown,
+  agentId: unknown,
+  since: Date,
+  askingCommentId?: unknown,
+): Promise<boolean> {
+  if (!agentId || !Types.ObjectId.isValid(String(postId ?? ''))) return false;
+  type Comments = { comments?: Array<{ userId?: unknown; createdAt?: Date | string; replyTo?: unknown }> } | null;
+  let post: Comments;
+  try {
+    post = await Post.findById(postId).select('comments.userId comments.createdAt comments.replyTo').lean() as Comments;
+  } catch {
+    // A failed read is not an answer: fall through so the notice still goes out.
+    return false;
+  }
+  return (post?.comments || []).some((comment) => String(comment.userId) === String(agentId)
+    && new Date(comment.createdAt || 0).getTime() >= since.getTime()
+    && (!comment.replyTo || (askingCommentId != null && String(comment.replyTo) === String(askingCommentId))));
+}
 
 /**
  * TASK-656. The event types that mean a person is waiting on this agent: the
@@ -91,6 +121,8 @@ export async function messagesFromPeople(
  *   message, so a row retired here does get this line, but a native turn that
  *   runs on one and fails posts nothing (personAddressedThisTurn);
  * - it was a comment on a post with no pod: there is no room to tell them in;
+ * - it was a comment, and the agent has commented on that post since: that is
+ *   where a comment is answered, and no chat row shows it (F474);
  * - the agent has posted since the message where an answer to it would sit:
  *   at top level, in the message's thread, or as a reply to it. It was alive
  *   and may have answered without acknowledging, and a line claiming silence
@@ -193,7 +225,7 @@ export async function noteUnansweredMention(
 ): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
   // A comment on a post with no pod carries some pod of the commenter's.
-  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  const comment = payload.thread as { postPodId?: unknown; postId?: unknown; commentId?: unknown } | null | undefined;
   if (comment && !comment.postPodId) return false;
   const waiting = await messagesFromPeople(event);
   if (waiting.length === 0) return false;
@@ -217,6 +249,8 @@ export async function noteUnansweredMention(
   let posted = false;
   const answering = answeringIds(event);
   for (const { messageId, since } of waiting) {
+    // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
+    if (comment && await agentCommentedOnPostSince(comment.postId, agent._id, since, comment.commentId)) continue;
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
     if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop

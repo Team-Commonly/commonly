@@ -5,11 +5,13 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
+jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 
 const { noteUnansweredMention } = require('../../../services/unansweredMentionService');
 const { coalescedEntry } = require('../../../services/mentionCoalesce');
 const { emitUnansweredMentionLine } = require('../../../services/systemActionLineService');
 const User = require('../../../models/User');
+const Post = require('../../../models/Post');
 const { pool } = require('../../../config/db-pg');
 
 const lean = (value) => ({ select: () => ({ lean: async () => value }) });
@@ -26,6 +28,7 @@ beforeEach(() => {
   User.findById.mockReturnValue(lean({ isBot: false }));
   User.findOne.mockReturnValue(lean({ _id: 'bot-1', username: 'nova' }));
   pool.query.mockResolvedValue({ rows: [] });
+  Post.findById.mockReturnValue(lean({ comments: [] }));
 });
 
 describe('a comment that closes unanswered', () => {
@@ -37,6 +40,54 @@ describe('a comment that closes unanswered', () => {
   it('tells them when the post is in a pod', async () => {
     expect(await noteUnansweredMention(event({ thread: { postId: 'p1', postPodId: 'pod-1' } }))).toBe(true);
     expect(emitUnansweredMentionLine).toHaveBeenCalledTimes(1);
+  });
+
+  // F474: a comment is answered on its post, which no chat row shows.
+  const POST = 'b'.repeat(24);
+  const ASKED = 'c'.repeat(24);
+  const onPost = { thread: { postId: POST, postPodId: 'pod-1', commentId: ASKED } };
+
+  it('stays quiet when the agent commented on that post since, standing alone', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5) }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(false);
+    expect(Post.findById).toHaveBeenCalledWith(POST);
+    expect(emitUnansweredMentionLine).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the agent replied to that comment', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5), replyTo: ASKED }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(false);
+  });
+
+  it('still tells them when the agent replied only to someone else\'s comment', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(5), replyTo: 'd'.repeat(24) }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+  });
+
+  it('still tells them when the agent\'s only comment there came before theirs', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-1', createdAt: new Date(-5) }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+  });
+
+  it('still tells them when someone else commented there since', async () => {
+    Post.findById.mockReturnValue(lean({ comments: [{ userId: 'bot-2', createdAt: new Date(5) }] }));
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+  });
+
+  it('a failed post read still lets the line go out', async () => {
+    Post.findById.mockReturnValue({ select: () => ({ lean: async () => { throw new Error('mongo down'); } }) });
+    expect(await noteUnansweredMention(event(onPost))).toBe(true);
+    expect(emitUnansweredMentionLine).toHaveBeenCalledTimes(1);
+  });
+
+  it('a post id that is not an ObjectId is never read, and the line still goes out', async () => {
+    expect(await noteUnansweredMention(event({ thread: { postId: 'x', postPodId: 'pod-1' } }))).toBe(true);
+    expect(Post.findById).not.toHaveBeenCalled();
+  });
+
+  it('never reads a post for a chat message', async () => {
+    await noteUnansweredMention(event({ messageId: '900' }));
+    expect(Post.findById).not.toHaveBeenCalled();
   });
 });
 
