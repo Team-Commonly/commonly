@@ -95,6 +95,58 @@ export async function messagesFromPeople(
  *   have answered without acknowledging, and a line claiming silence would
  *   then be false. Missing a line is better than a wrong one.
  */
+/**
+ * Whether the agent has posted in the pod after `since`. A platform line stored
+ * under the agent's id (`system`) is not the agent posting. With `excludeKernel`,
+ * neither is a kernel notice stored as text under it (`author_kind = 'kernel'`,
+ * e.g. a failed-turn notice): it answers nobody, so it must not tell the model
+ * an earlier turn may have answered. Postgres only: with no pool there is no
+ * answer, and each caller says what that means for it.
+ */
+export async function agentPostedSince(
+  pool: PgPool, agentUserId: unknown, podId: unknown, since: Date,
+  { excludeKernel = false }: { excludeKernel?: boolean } = {},
+): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM messages
+     WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
+     ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
+     LIMIT 1`,
+    [String(podId), String(agentUserId), since],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * F242: the delivered rows whose agent has posted in their pod since their
+ * newest message was sent. Ids of the rows to mark; empty without Postgres or
+ * when the agent has no user. A failed read throws, and the caller delivers
+ * unmarked: a lost turn is worse than a missing mark.
+ */
+export async function rowsPostedSince(
+  agentName: string, instanceId: string,
+  rows: Array<{ _id?: unknown; podId?: unknown; since: Date }>,
+): Promise<Set<string>> {
+  const marked = new Set<string>();
+  if (rows.length === 0) return marked;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { pool } = require('../config/db-pg') as { pool: PgPool | null };
+  if (!pool) return marked;
+  const agent = await User.findOne({
+    isBot: true,
+    'botMetadata.agentName': AgentIdentityService.resolveAgentType(String(agentName || '')),
+    'botMetadata.instanceId': String(instanceId || 'default'),
+  }).select('_id').lean() as { _id: unknown } | null;
+  if (!agent) return marked;
+  for (const row of rows) {
+    // eslint-disable-next-line no-await-in-loop -- one delivered page, bounded by its limit
+    if (await agentPostedSince(pool, agent._id, row.podId, row.since, { excludeKernel: true })) {
+      marked.add(String(row._id));
+    }
+  }
+  return marked;
+}
+
 export async function noteUnansweredMention(
   event: RetiredEvent,
   { stillPending = false }: { stillPending?: boolean } = {},
@@ -125,13 +177,7 @@ export async function noteUnansweredMention(
   let posted = false;
   for (const { messageId, since } of waiting) {
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
-    const { rows } = await pool.query(
-      `SELECT 1 FROM messages
-       WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
-       LIMIT 1`,
-      [podId, String(agent._id), since],
-    );
-    if (rows.length === 0) {
+    if (!await agentPostedSince(pool, agent._id, podId, since)) {
       // eslint-disable-next-line no-await-in-loop
       await emitUnansweredMentionLine({
         podId,

@@ -427,7 +427,7 @@ pass:
    (the 30-minute stranded close and 168-hour retention key on `createdAt`),
    than a row of its own would get.
 2. **Row claimed: own row, marked.** The mention keeps its own durable row, and
-   its `content` opens with an inline mark: that turn could not see this, check
+   its `content` opens with an inline mark: this was not in that turn's prompt, check
    what you posted, and do not answer twice. On a polled agent the row is
    pending until the running turn ends, so several mentions during one turn join
    it and cost one follow-up turn.
@@ -444,6 +444,14 @@ D6.2's serial order. It costs one turn. Whether a reply already covers a message
 reading of both, so the kernel leaves that to the model and gives it the order
 of events and the exit: `NO_REPLY` when covered, only the new part otherwise. To
 a different person the mark says the opposite first: answer them.
+
+*(Later, F242, 2026-11-12: a turn can read ahead through
+`commonly_get_messages` and answer a mention that is still queued, so a row
+delivered after its agent has posted in the pod gets the same kind of mark at
+delivery: what happened in which order, the same `NO_REPLY` exit, and, since
+the post may have gone to someone else, answer this person if nothing posted
+answers them. The mark claims nothing about what the model read. Detail is in
+`docs/agents/AGENT_RUNTIME.md` §Second mention.)*
 
 **What "same asker" means, and why it is not "anyone".** A person and an agent
 they installed in this pod are one asker. Different people, and agents with

@@ -178,11 +178,54 @@ export const midTurnFrame = ({ earlier, sameAsker, username }: {
   earlier: Payload; sameAsker: boolean; username: unknown;
 }): string => {
   const place = `your turn on message ${asText(earlier.messageId)} from @${asHandle(earlier.username)}`;
+  // "Not in that turn's prompt", not "could not see it": a turn can read the
+  // pod mid-turn and answer what it finds there (F242).
   return sameAsker
-    ? `[This message reached you while ${place} was running. That turn could not see it. Check what you `
+    ? `[This message reached you while ${place} was running. It was not in that turn's prompt. Check what you `
       + 'posted before you act. Do not answer twice, and do not retract or repost: if your reply covers this, '
       + 'return NO_REPLY; if this adds something, answer only that. If that turn posted nothing, answer normally.]'
-    : `[@${asHandle(username)} wrote this while ${place} was running. That turn could not see it, `
+    : `[@${asHandle(username)} wrote this while ${place} was running. It was not in that turn's prompt, `
       + 'and this is a different person, so answer them. Check what you posted first so you do not repeat it. '
       + 'Return NO_REPLY only if that reply already answers them.]';
+};
+
+/**
+ * F242: the mark on a mention this agent has posted in the pod since. A turn
+ * may have read it ahead through commonly_get_messages and answered it. The
+ * kernel cannot know whether it did: the read cursor moves on the wrapper's own
+ * reads too. So, like midTurnFrame, it states only the order and leaves the
+ * reading to the model.
+ */
+export const postedSinceFrame = (): string => '[You have posted in this pod since this message was sent. '
+  + 'An earlier turn may have read it and answered it already. Check what you posted before you act. '
+  + 'Do not answer twice, and do not retract or repost: if your reply covers this, return NO_REPLY; '
+  + 'if this adds something, answer only that. What you posted may have answered someone else: '
+  + 'if nothing you posted answers this person, answer them.]';
+
+/**
+ * Whether a delivered row of a type someone waits on (PERSON_WAITING_EVENT_TYPES,
+ * checked by the caller) gets the posted-since mark. Kernel wakes don't (a board change,
+ * assigned work, a newcomer's welcome), and a row marked mid-turn already
+ * tells the model to check what it posted.
+ */
+export const takesPostedSinceMark = (payload: Payload | undefined): boolean => (
+  Boolean(payload?.messageId)
+  && !payload?.triggerAuthor
+  && !payload?.welcomeWake
+  && !payload?.assignedTaskWake
+  && !payload?.boardWake
+  && !payload?.arrivedMidTurn
+);
+
+/**
+ * When a row's newest message was sent: the row's own creation, or a joined
+ * message's, whichever is later. A post before the newest one may not have
+ * covered it.
+ */
+export const newestCarriedAt = (rowCreatedAt: unknown, payload: Payload | undefined): Date => {
+  const times = [rowCreatedAt, ...entriesOf(payload).map((entry) => entry?.createdAt)]
+    .map((value) => new Date(value as string | Date))
+    .filter((at) => !Number.isNaN(at.getTime()))
+    .map((at) => at.getTime());
+  return new Date(times.length ? Math.max(...times) : Date.now());
 };
