@@ -6,6 +6,7 @@ const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const { installationIdentityFilter, IDENTITY_COLLATION } = require('../../services/agentInstallationIdentity');
 const {
   provisionAgentRuntime,
   removeOpenClawAccount,
@@ -37,10 +38,13 @@ const { cloudRuntimeMayRun } = require('../../services/cloudRuntimeOwnership');
 
 // A token issued here reaches a seat only through the provisioner. A seat outside
 // it has no way to learn the new one, so revoking its token takes it offline.
+// The row is provisioned by its type's runtime but may store another, so both
+// have to receive the token (F250).
 const keepsItsOwnToken = (installation: any, typeRuntime?: string) => {
   const runtime = normalizeConfigMap(installation?.config)?.runtime || {};
   if (String(runtime.host || '').trim().toLowerCase() === 'byo') return true;
-  return !runtimeReceivesToken(runtime.runtimeType || typeRuntime);
+  const runtimes = [runtime.runtimeType, typeRuntime].filter(Boolean);
+  return !runtimes.length || runtimes.some((value) => !runtimeReceivesToken(value));
 };
 
 const reprovisionInstallation = async ({
@@ -79,10 +83,14 @@ const reprovisionInstallation = async ({
   if (!runtimeType) return skipped('unknown_runtime');
   await assertAgentRuntimeMayJoinPod(podId, runtimeType, hostedEngineInEffect(installation));
 
-  // A revoke reaches every install of this identity, not only this row.
+  // A revoke reaches every install of this identity, not only this row: the
+  // identity's User, which a legacy alias name shares, and on the default
+  // instance a row stored with no instance id (installationIdentityFilter).
   const sameIdentity = await AgentInstallation.find({
-    agentName: name, instanceId: normalizedInstanceId, status: { $in: ['active', 'paused'] },
-  }).collation({ locale: 'en', strength: 2 }).select('config').lean();
+    ...installationIdentityFilter(name, normalizedInstanceId),
+    agentName: { $in: AgentIdentityService.identityNames(name) },
+    status: { $in: ['active', 'paused'] },
+  }).collation(IDENTITY_COLLATION).select('config').lean();
   if (sameIdentity.some((row: any) => keepsItsOwnToken(row, runtimeType))) {
     return skipped('shares_identity_with_external_seat');
   }

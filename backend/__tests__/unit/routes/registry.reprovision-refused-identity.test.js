@@ -7,6 +7,7 @@ const TYPE_RUNTIMES = {
 
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(),
+  identityNames: jest.fn((name) => [name]),
   getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'agent-user' }),
   ensureAgentInPod: jest.fn().mockResolvedValue(null),
 }));

@@ -1,5 +1,6 @@
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(() => ({ runtime: 'moltbot' })),
+  identityNames: jest.fn((name) => [name]),
   getOrCreateAgentUser: jest.fn(),
   ensureAgentInPod: jest.fn(),
 }));
