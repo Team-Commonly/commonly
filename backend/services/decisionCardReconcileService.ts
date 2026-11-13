@@ -92,6 +92,11 @@ const canSendClosingLine = (
   if (mutedUntil && new Date(mutedUntil).getTime() > now.getTime()) return false;
   const linkedUserId = memberIdFor(integration);
   if (!linkedUserId || !isListedPodMember(pod, linkedUserId)) return false;
+  // F488: linkedUserId is whoever switched live relay on, which on a pod-scoped
+  // row can be the pod's creator or an admin. The chat itself is the person who
+  // redeemed the connect code, minted for the row's creator, so the creator
+  // must still be a listed member too (the outbound relay's rule, F158).
+  if (integration.createdBy && !isListedPodMember(pod, integration.createdBy)) return false;
   if (!integration.config.chatId) return false;
   if (integration.type === 'telegram') {
     return integration.config.chatType === 'private' && Boolean(process.env.TELEGRAM_BOT_TOKEN);
