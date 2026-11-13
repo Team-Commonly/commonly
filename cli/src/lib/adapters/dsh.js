@@ -386,7 +386,7 @@ export const runDsh = ({
   });
   proc.stderr?.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-8192); });
   proc.on('error', (error) => finish(error));
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     if (state.buffer.trim() && !parseFailure) {
       try { parseEvent(state.buffer.trim(), state); } catch (error) { parseFailure = error; }
     }
@@ -394,7 +394,14 @@ export const runDsh = ({
       || (/SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(stderr) ? 'sandbox runner unavailable' : null)
       || (code !== 0 ? stderr.trim() || `exit ${code}` : null)
       || (state.final === null ? 'no final event' : null);
-    if (failure) return finish(adapterFailure('dsh', failure, { credentials, exitCode: code, limit: 500 }));
+    // A parse failure and a timeout are this adapter's own SIGTERM, and a
+    // stream error names its cause: only a bare cut-off came from outside.
+    const ownCause = Boolean(parseFailure || state.error || timedOut);
+    if (failure) {
+      return finish(adapterFailure('dsh', failure, {
+        credentials, exitCode: code, limit: 500, ...(ownCause ? {} : { signal }),
+      }));
+    }
     return finish(null, { text: state.final.trim(), newSessionId: state.sessionId, contextTokens: state.contextTokens });
   });
 });

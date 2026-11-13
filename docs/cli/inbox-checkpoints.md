@@ -144,6 +144,19 @@ the pod's line says to sign in to Claude Code on that computer. The seat's log
 says the same. The circuit doesn't open, so the next message spawns at once,
 and that spawn is the re-probe.
 
+A turn cut off from outside the wrapper is not a failure either (F293). If the
+child closes on SIGTERM, SIGHUP or SIGINT (or exit 143, 129 or 130 from a shell
+in between) and the failure carries no cause of its own, the adapter marks it
+`externalSignal` (`markExternalSignal` in `@commonlyai/seats`). Such a cause
+would be a stream error, or one of the adapter's own kills (timeout, stall,
+overflow, parse failure). The run loop retries a marked turn at the poll
+interval as `signaled`, without adding to the failure count, so the circuit
+stays shut. A walk had opened it on its third kill, and the next ask waited
+3.5 minutes. The grace ends after `EXTERNAL_SIGNAL_GRACE` (3) such signals in
+a row with no good spawn. After that, a child killed on every spawn backs the
+seat off like any fault. SIGKILL is never marked, because the OOM killer sends
+it.
+
 A new wording goes in a list once a seat has logged it or the vendor publishes
 it, and anything unmatched stays silent in the pod, as it was before. An API key
 out of credit uses the allowance line as it stands, since whoever runs the seat

@@ -306,7 +306,7 @@ const runGoose = ({
     stderr = (stderr + received).slice(-8192);
   });
   child.on('error', (error) => finish(error));
-  child.on('close', (code) => {
+  child.on('close', (code, signal) => {
     stdout += stdoutDecoder.end();
     if (timedOut) return finish(new Error(`goose adapter: timed out after ${timeoutMs}ms`));
     if (streamOverflow) return finish(new Error('goose adapter: stream exceeded 2 MiB'));
@@ -315,8 +315,10 @@ const runGoose = ({
     // lets the model answer without that tool. A Commonly seat cannot silently
     // lose its only path back to the pod.
     if (code !== 0 || result.error || !result.complete || extensionFailure) {
+      // Only a bare cut-off: an extension or stream error keeps its own class.
+      const ownCause = Boolean(extensionFailure || result.error);
       return finish(adapterFailure('goose', extensionFailure || result.error || stderr.trim() || `exit ${code}; incomplete stream`, {
-        credentials, exitCode: code, limit: 500,
+        credentials, exitCode: code, limit: 500, ...(ownCause ? {} : { signal }),
       }));
     }
     return finish(null, result.text);

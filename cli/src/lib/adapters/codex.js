@@ -1451,7 +1451,7 @@ const runCodex = ({
     clearTimeout(timer);
     reject(err);
   });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimeout(timer);
     const reaped = describeTurnReap(turn.reap(proc));
     // eslint-disable-next-line no-console
@@ -1472,7 +1472,9 @@ const runCodex = ({
       }));
     }
     if (code !== 0) {
-      return reject(adapterFailure('codex', stderr.trim(), { credentials, exitCode: code, limit: 500 }));
+      return reject(adapterFailure('codex', stderr.trim(), {
+        credentials, exitCode: code, limit: 500, signal,
+      }));
     }
     resolve({ threadId: events.threadId, turnCompleted: events.turnCompleted });
   });

@@ -1073,7 +1073,7 @@ const runOpenCode = ({
     clearTimers();
     reject(err);
   });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimers();
     events.flush();
     if (stepHookError) return reject(stepHookError);
@@ -1087,7 +1087,7 @@ const runOpenCode = ({
     }
     if (code !== 0) {
       const err = adapterFailure('opencode', stderr.trim(), {
-        credentials, exitCode: code, limit: 500,
+        credentials, exitCode: code, limit: 500, signal,
       });
       err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
       return reject(err);

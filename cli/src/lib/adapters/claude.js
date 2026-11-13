@@ -1015,7 +1015,7 @@ const runClaude = ({
     watchdog.stop();
     reject(err);
   });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimeout(timer);
     clearTimeout(stallKill);
     watchdog.stop();
@@ -1046,6 +1046,7 @@ const runClaude = ({
         credentials,
         exitCode: code,
         limit: 2000,
+        signal,
       }));
     }
     resolve(stdout);

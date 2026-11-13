@@ -59,6 +59,7 @@ import { fileURLToPath } from 'url';
 import {
   adapterFailure,
   describeUpstreamRefusal,
+  markExternalSignal,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
@@ -616,7 +617,9 @@ const stoppedTurnFailure = (reply, {
   );
   if (upstream && cleanExit) failure.status = upstream.status;
   else if (upstream) failure.status ??= upstream.status;
-  return failure;
+  // A cut-off with no error on the stream came from outside (F293): the
+  // timeout and a hook's kill return before this is built.
+  return reply.errors.length ? failure : markExternalSignal(failure, { code, signal });
 };
 
 /**
@@ -710,7 +713,8 @@ const runPi = ({
         }));
       }
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
-      return reject(new Error(`pi exited ${code}: ${tail}`));
+      const exited = new Error(`pi exited ${code}: ${tail}`);
+      return reject(reply.errors.length ? exited : markExternalSignal(exited, { code, signal }));
     }
     // A refused turn exits 0 too, so here the stream is what says the text was
     // interim. Posting it would answer with half a turn (F258). The last stop

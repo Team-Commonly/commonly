@@ -381,7 +381,34 @@ export const providerCodeFrom = (text, { credentials = [] } = {}) => {
   return null;
 };
 
-export const adapterFailure = (label, text, { credentials = [], exitCode = null, limit } = {}) => {
+// A child that closed on a polite signal: a person's Ctrl-C, a supervisor's
+// stop, a walk harness cutting a turn short. The adapter knows which kills are
+// its own (timeout, stall, overflow) and returns before it builds a failure, so
+// reaching here with one of these means someone outside the wrapper sent it.
+// SIGKILL stays out: the kernel's OOM killer sends it, and a child that keeps
+// running out of memory should back the seat off like any other fault. A shell
+// in between reports the signal as 128 + its number, so the codes count too.
+const EXTERNAL_SIGNALS = new Set(['SIGTERM', 'SIGHUP', 'SIGINT']);
+const EXTERNAL_SIGNAL_CODES = new Map([[143, 'SIGTERM'], [129, 'SIGHUP'], [130, 'SIGINT']]);
+
+/**
+ * Mark `error` as a turn cut off by a signal from outside the wrapper (F293),
+ * so the run loop retries it without counting it as the provider failing.
+ * Call it only on a path whose failure has no cause of its own: a stream that
+ * named an error keeps that error's class.
+ */
+export const markExternalSignal = (error, { code = null, signal = null } = {}) => {
+  const name = EXTERNAL_SIGNALS.has(signal) ? signal : EXTERNAL_SIGNAL_CODES.get(code);
+  if (name) {
+    error.signal = name;
+    error.externalSignal = true;
+  }
+  return error;
+};
+
+export const adapterFailure = (label, text, {
+  credentials = [], exitCode = null, limit, signal,
+} = {}) => {
   const { status, detail } = scrubAdapterFailure(text, { credentials, limit });
   const code = exitCode === null ? '' : ` exited with code ${exitCode}`;
   const named = status === null ? '' : ` (upstream ${status})`;
@@ -389,7 +416,9 @@ export const adapterFailure = (label, text, { credentials = [], exitCode = null,
   if (status !== null) error.status = status;
   const providerCode = providerCodeFrom(text, { credentials });
   if (providerCode !== null) error.providerCode = providerCode;
-  return error;
+  // Only when the caller passed `signal`, so a path that must keep its own
+  // cause (a stream's error, the adapter's own kill) never gets the mark.
+  return signal === undefined ? error : markExternalSignal(error, { code: exitCode, signal });
 };
 
 /**

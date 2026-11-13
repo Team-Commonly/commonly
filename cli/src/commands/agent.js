@@ -134,7 +134,9 @@ import {
   writeHooksConfig,
 } from '../lib/hooks-config.js';
 import {
+  EXTERNAL_SIGNAL_GRACE,
   formatRetryDelay,
+  isExternalSignal,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
@@ -2305,6 +2307,16 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
+  // F293: turns cut off by an outside signal since the last good spawn. The
+  // first EXTERNAL_SIGNAL_GRACE of them retry without counting as failures, so
+  // a walk that kills three turns doesn't open the circuit on the fourth ask.
+  let externalSignalStreak = 0;
+  const countSpawnFailure = (err) => {
+    const graced = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
+    if (isExternalSignal(err)) externalSignalStreak += 1;
+    if (!graced) consecutiveSpawnFailures += 1;
+    return graced;
+  };
   let pollStalled = false;
   const pollLiveness = createPollLiveness({
     limitMs: resolvePollLivenessMs(pollLivenessMs),
@@ -4668,12 +4680,13 @@ export const performRun = ({
           // The unacked items are carried to the retry, not left to the
           // requeue sweep, so the delay below is when they run again.
           const scheduleBatchRetry = async (err, failedEvents) => {
-            consecutiveSpawnFailures += 1;
+            const externalSignal = countSpawnFailure(err);
             const retry = spawnRetryPolicy({
               error: err,
               consecutiveFailures: consecutiveSpawnFailures,
               intervalMs,
               jitterRatio: spawnJitterRatio,
+              externalSignal,
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
@@ -4739,6 +4752,7 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
+            externalSignalStreak = 0;
             // Notices arriving mid-turn get one bounded collection window.
             // Idle polls and batches with no model turn keep their cadence.
             completedModelTurn = true;
@@ -4808,12 +4822,13 @@ export const performRun = ({
               // at-least-once delivery. Stop this fetched batch immediately —
               // continuing could launch every one of the 10 returned events
               // into the same provider outage before the next poll (#782).
-              consecutiveSpawnFailures += 1;
+              const externalSignal = countSpawnFailure(err);
               const retry = spawnRetryPolicy({
                 error: err,
                 consecutiveFailures: consecutiveSpawnFailures,
                 intervalMs,
                 jitterRatio: spawnJitterRatio,
+                externalSignal,
               });
               nextPollDelayMs = retry.delayMs;
               retryScheduled = true;
@@ -4882,7 +4897,10 @@ export const performRun = ({
           // and neither may an enforcement stand-down (cascade cap, lost
           // claim), which returns before any spawn happens.
           const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
-          if (eventWillSpawn && !stoodDown) consecutiveSpawnFailures = 0;
+          if (eventWillSpawn && !stoodDown) {
+            consecutiveSpawnFailures = 0;
+            externalSignalStreak = 0;
+          }
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.
