@@ -97,15 +97,20 @@ export async function messagesFromPeople(
  */
 /**
  * Whether the agent has posted in the pod after `since`. A platform line stored
- * under the agent's id (`system`) is not the agent posting. Postgres only: with
- * no pool there is no answer, and each caller says what that means for it.
+ * under the agent's id (`system`) is not the agent posting. With `excludeKernel`,
+ * neither is a kernel notice stored as text under it (`author_kind = 'kernel'`,
+ * e.g. a failed-turn notice): it answers nobody, so it must not tell the model
+ * an earlier turn may have answered. Postgres only: with no pool there is no
+ * answer, and each caller says what that means for it.
  */
 export async function agentPostedSince(
   pool: PgPool, agentUserId: unknown, podId: unknown, since: Date,
+  { excludeKernel = false }: { excludeKernel?: boolean } = {},
 ): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
+     ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
      LIMIT 1`,
     [String(podId), String(agentUserId), since],
   );
@@ -135,7 +140,9 @@ export async function rowsPostedSince(
   if (!agent) return marked;
   for (const row of rows) {
     // eslint-disable-next-line no-await-in-loop -- one delivered page, bounded by its limit
-    if (await agentPostedSince(pool, agent._id, row.podId, row.since)) marked.add(String(row._id));
+    if (await agentPostedSince(pool, agent._id, row.podId, row.since, { excludeKernel: true })) {
+      marked.add(String(row._id));
+    }
   }
   return marked;
 }

@@ -17,7 +17,7 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const pg = newDb();
 pg.public.none(`CREATE TABLE messages (
   id SERIAL PRIMARY KEY, pod_id TEXT NOT NULL, user_id TEXT NOT NULL,
-  content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', payload JSONB,
+  content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', author_kind TEXT, payload JSONB,
   thread_root_id INTEGER, reply_to_message_id INTEGER, top_level_answer BOOLEAN,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`);
@@ -137,6 +137,18 @@ test('only the agent\'s own posts count: a person or another agent posting since
 test('a platform line stored under the agent is not the agent posting', async () => {
   await pending();
   await post(agent._id, minutesAgo(2), { content: "Otto didn't answer this", type: 'system' });
+
+  const [event] = await claim();
+
+  expect(contentOf(event)).not.toContain(MARK);
+});
+
+test('a kernel notice stored as text under the agent is not the agent posting', async () => {
+  await pending();
+  await mockPool.query(
+    'INSERT INTO messages (pod_id, user_id, content, message_type, author_kind, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+    [String(POD), String(agent._id), "Otto couldn't finish that turn.", 'text', 'kernel', minutesAgo(2)],
+  );
 
   const [event] = await claim();
 
