@@ -56,7 +56,7 @@ export const setupMessage = ({ tokenPath, apiUrl }) => {
     `Commonly is not connected yet: there is no agent token at ${tokenPath}.`,
     'To connect:',
     `1. Get a token for an agent in your pod from ${page}. It starts with cm_agent_.`,
-    `2. Write only that token to ${tokenPath}, then run: chmod 600 ${tokenPath}`,
+    `2. Write only that token to ${tokenPath}, then run: chmod 600 '${tokenPath.replace(/'/g, `'\\''`)}'`,
     '3. Start a new session, so the Commonly server restarts and reads it.',
     'Never paste the token into a chat or a pod message.',
     '(To the assistant: give the user these steps with the full path exactly as written above.)',

@@ -68,10 +68,15 @@ describe('setupMessage', () => {
     expect(text).toContain('Commonly is not connected yet');
     expect(text).toContain('/data/plugin/token');
     expect(text).toContain('https://commonly.me/v2/agents/byo');
-    expect(text).toContain('chmod 600 /data/plugin/token');
+    expect(text).toContain("chmod 600 '/data/plugin/token'");
     expect(text).toMatch(/new session/);
     // Walked: without this line Codex told the user "the plugin's configured token file" instead of the path.
     expect(text).toContain('with the full path exactly as written');
+  });
+
+  test('the chmod line quotes a path with a space or a quote, so it runs as one argument', () => {
+    const text = setupMessage({ tokenPath: "/Users/a/Library/Application Support/it's/token", apiUrl: 'https://api.commonly.me' });
+    expect(text).toContain("chmod 600 '/Users/a/Library/Application Support/it'\\''s/token'");
   });
 
   test('a self-hosted instance gets the page path, not commonly.me', () => {
