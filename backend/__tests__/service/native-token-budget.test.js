@@ -190,14 +190,12 @@ test('a wake nobody asked for that hits the budget still posts nothing', async (
 });
 
 test('a failure that is not a budget keeps the generic line', async () => {
-  // The model answers with nothing usable: a 500 on the only call.
-  script = [];
+  // The model ends the turn on an empty completion (F56): a tool_error with no
+  // model failure, so the generic line's own branch decides.
+  script = [textRound('', 10, 1)];
 
   const result = await runAgent(install(), mention());
 
-  expect(result.status).toBe('failed');
-  expect(['token_cap', 'turn_cap', 'timeout']).not.toContain(result.errorKind);
-  const posts = await agentPosts();
-  expect(posts).toHaveLength(1);
-  expect(posts[0]).toContain(HOSTED_RUN_FAILED_LINE);
+  expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+  expect(await agentPosts()).toEqual([HOSTED_RUN_FAILED_LINE]);
 });

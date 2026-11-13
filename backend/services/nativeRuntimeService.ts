@@ -3625,9 +3625,8 @@ export async function runAgent(
   // A hosted turn that failed (a guard stop or an error) and posted nothing
   // costs the person no turn. Model failures name the model, with a safe reason
   // on native turns; a hosted run past its budget says so (F479); other hosted
-  // failures keep the fixed line. A turn
-  // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
-  // never reaches this. The per-user spend ceiling still counts the run.
+  // failures keep the fixed line. A turn that declined (NO_REPLY, a silent
+  // group-pod turn) ended succeeded and never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason || personAsked) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
     // A native agent's model-failure line carries the provider's reason, so a

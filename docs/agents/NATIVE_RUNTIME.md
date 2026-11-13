@@ -129,7 +129,7 @@ The runtime enforces hard limits to prevent runaway agents:
 | Max wall-clock time | 60 seconds (`MAX_WALL_CLOCK_MS`) |
 | LiteLLM request timeout | 45 seconds (`NATIVE_RUNTIME_TIMEOUT_MS` env var) |
 
-The caps are constants in `backend/services/nativeRuntimeService.ts`. No installation config or app definition overrides them: the `maxTurns`, `maxTokens` and `maxWallClockMs` fields some app definitions carry are not read. The token cap counts `usage.total_tokens` (prompt plus completion) from every call, and each call re-sends the whole context, so the sum grows much faster than any one prompt. All three are checked before the next model call.
+The caps are constants in `backend/services/nativeRuntimeService.ts`. No installation config or app definition overrides them: the `maxTurns`, `maxTokens` and `maxWallClockMs` fields some app definitions carry are not read (the seed script still copies them into the registry config, where nothing reads them). The token cap counts `usage.total_tokens` (prompt plus completion) from every call, and each call re-sends the whole context, so the sum grows much faster than any one prompt. All three are checked before the next model call.
 
 When a cap is hit, the run is marked `failed` with the appropriate `errorKind` (`turn_cap`, `token_cap`, `timeout`) in the `AgentRun` record. A hosted run that hit one with nothing posted, on a turn a person asked for, posts a fixed line that names the budget (`HOSTED_RUN_BUDGET_LINE`). Other hosted failures keep `HOSTED_RUN_FAILED_LINE`, and a wake nobody asked for posts nothing. Test: `backend/__tests__/service/native-token-budget.test.js`.
 
