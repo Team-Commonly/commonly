@@ -236,11 +236,16 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
       await expect(check(rows)).resolves.toMatchObject({ id: 11 });
     });
 
-    it('a joined entry that is no ask for another reason stays out, held or not', async () => {
+    it('a joined adjacent reply that @\'d someone else stays out, even held', async () => {
       eventRows([joined({
         status: 'delivered',
         deliveredAt: secondsAgo(20),
-        payload: { messageId: '9', coalesced: [{ messageId: '12', notAnAsk: true, askedSomeoneElse: true }] },
+        payload: {
+          messageId: '9',
+          coalesced: [{
+            messageId: '12', notAnAsk: true, adjacentReply: true, askedSomeoneElse: true,
+          }],
+        },
       })]);
       await expect(check(rows)).resolves.toMatchObject({ id: 11 });
     });
