@@ -45,7 +45,9 @@ interface AskRow {
   delivery?: { outcome?: string };
   payload?: {
     messageId?: unknown;
-    coalesced?: Array<{ messageId?: unknown; notAnAsk?: boolean }>;
+    coalesced?: Array<{
+      messageId?: unknown; notAnAsk?: boolean; adjacentReply?: boolean; askedSomeoneElse?: boolean;
+    }>;
     [flag: string]: unknown;
   };
 }
@@ -82,11 +84,14 @@ const askRowHeldNow = (row: AskRow): boolean => {
  * itself after a "thanks" is the crowding the guard is for (F284).
  */
 const asksOnRow = (row: AskRow): string[] => {
-  const lead = asksThisAgent(row.payload)
-    || (row.payload?.adjacentReply === true && askRowHeldNow(row));
+  const held = askRowHeldNow(row);
+  const lead = asksThisAgent(row.payload) || (row.payload?.adjacentReply === true && held);
+  // A joined adjacent reply counts the same way: the turn holding the row holds it.
+  const joinedAsks = (row.payload?.coalesced || []).filter((entry) => !entry.notAnAsk
+    || (entry.adjacentReply === true && entry.askedSomeoneElse !== true && held));
   return [
     ...(lead ? [String(row.payload?.messageId)] : []),
-    ...(row.payload?.coalesced || []).filter((entry) => !entry.notAnAsk).map((entry) => String(entry.messageId)),
+    ...joinedAsks.map((entry) => String(entry.messageId)),
   ];
 };
 

@@ -119,6 +119,8 @@ export const coalescedEntry = (payload: Payload): Payload => ({
   rawContent: payload.rawContent,
   createdAt: payload.createdAt,
   ...(payload.handoffCue ? { handoffCue: payload.handoffCue } : {}),
+  // An adjacent reply is no ask, but a turn holding it is answering it (F284).
+  ...(payload.adjacentReply === true ? { adjacentReply: true } : {}),
   // The flags that say so stay behind on the row this joins, so say it here.
   ...(asksThisAgent(payload) ? {} : { notAnAsk: true }),
   ...(askedSomeoneElse(payload) ? { askedSomeoneElse: true } : {}),

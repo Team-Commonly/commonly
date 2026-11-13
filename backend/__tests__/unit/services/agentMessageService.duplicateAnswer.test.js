@@ -219,6 +219,32 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
       await expect(check(rows)).resolves.toMatchObject({ id: 11 });
     });
 
+    // The adjacent reply joined an earlier row of the same person's, whose own
+    // message the seat's copy already answered (CodeRabbit on #4048).
+    const joined = (over) => ({
+      payload: { messageId: '9', coalesced: [{ messageId: '12', notAnAsk: true, adjacentReply: true }] },
+      ...over,
+    });
+
+    it('counts a held adjacent reply that joined another row', async () => {
+      eventRows([joined({ status: 'delivered', deliveredAt: secondsAgo(20) })]);
+      await expect(check(rows)).resolves.toBeNull();
+    });
+
+    it('keeps the guard for a joined adjacent reply on a row no turn holds', async () => {
+      eventRows([joined({ status: 'pending' })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
+    it('a joined entry that is no ask for another reason stays out, held or not', async () => {
+      eventRows([joined({
+        status: 'delivered',
+        deliveredAt: secondsAgo(20),
+        payload: { messageId: '9', coalesced: [{ messageId: '12', notAnAsk: true, askedSomeoneElse: true }] },
+      })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
     it('an agent following the agent opens nothing, held or not', async () => {
       eventRows([adjacent({ status: 'delivered', deliveredAt: secondsAgo(20) })]);
       User.exists.mockResolvedValue(null);

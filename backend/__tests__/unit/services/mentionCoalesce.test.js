@@ -135,6 +135,13 @@ describe('a joined entry keeps whether it asked this agent', () => {
     expect(coalescedEntry(mention(extra))).toMatchObject({ notAnAsk: true });
   });
 
+  // F284: a held adjacent reply opens the duplicate guard, joined or not.
+  it('keeps that a joined message was an adjacent reply', () => {
+    expect(coalescedEntry(mention({ adjacentReply: true, implicitReply: true })))
+      .toMatchObject({ notAnAsk: true, adjacentReply: true });
+    expect(coalescedEntry(mention({}))).not.toHaveProperty('adjacentReply');
+  });
+
   it('marks a reply that @s someone else as asking them', () => {
     expect(coalescedEntry(mention({ implicitReply: true, mentions: ['bob'] }))).toMatchObject({ askedSomeoneElse: true });
   });
