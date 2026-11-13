@@ -32,13 +32,13 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 describe('missingTokenFile', () => {
   test('names the declared file when setup mode is on and the file is absent', () => {
     const file = path.join(dir, 'token');
-    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: file })).toBe(file);
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file })).toBe(file);
   });
 
   test('names the declared file when it is empty or only whitespace', () => {
     const file = path.join(dir, 'token');
     writeFileSync(file, ' \n');
-    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: file })).toBe(file);
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file })).toBe(file);
   });
 
   test('is null with setup mode off, so a seat whose file is missing still fails at start', () => {
@@ -49,8 +49,17 @@ describe('missingTokenFile', () => {
   test('is null when the file holds a token, or when a pipe is declared', () => {
     const file = path.join(dir, 'token');
     writeFileSync(file, 'cm_agent_present\n');
-    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: file })).toBeNull();
-    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FD: '3', COMMONLY_TOKEN_FILE: path.join(dir, 'none') })).toBeNull();
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file })).toBeNull();
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FD: '3', COMMONLY_TOKEN_FILE: path.join(dir, 'none') })).toBeNull();
+  });
+
+  test('names a relative file by the absolute path the server reads, from its own directory', () => {
+    const env = { [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: 'plugin/token' };
+    expect(missingTokenFile(env, { cwd: dir })).toBe(path.join(dir, 'plugin', 'token'));
+  });
+
+  test('is null without COMMONLY_API_URL, so that start still fails on the missing URL', () => {
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: path.join(dir, 'token') })).toBeNull();
   });
 
   test('is null when the file exists but cannot be read, so that error stays loud', () => {
@@ -58,7 +67,7 @@ describe('missingTokenFile', () => {
     const file = path.join(dir, 'token');
     writeFileSync(file, 'cm_agent_present\n');
     chmodSync(file, 0o000);
-    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: file })).toBeNull();
+    expect(missingTokenFile({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file })).toBeNull();
   });
 });
 
@@ -147,7 +156,7 @@ describe('the entry point', () => {
 
   test('with setup mode on and no token file, it starts, answers, and says where the token goes', async () => {
     const file = path.join(dir, 'token');
-    const { child, out } = start({ [SETUP_MODE_ENV]: '1', COMMONLY_TOKEN_FILE: file });
+    const { child, out } = start({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FILE: file });
     rpc(child, 1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
     rpc(child, 2, 'tools/call', { name: 'commonly_get_started', arguments: {} });
@@ -157,6 +166,14 @@ describe('the entry point', () => {
     expect(out.stderr).toContain(file);
     expect(out.code).toBeNull();
     child.kill();
+  });
+
+  test('with setup mode on but no COMMONLY_API_URL, it ends at start instead of serving steps a token cannot fix', async () => {
+    const { out } = start({ [SETUP_MODE_ENV]: '1', COMMONLY_API_URL: '', COMMONLY_TOKEN_FILE: path.join(dir, 'token') });
+    expect(await waitFor(() => out.code !== null)).toBe(true);
+    expect(out.code).toBe(1);
+    expect(out.stderr).toContain('[commonly-mcp] fatal:');
+    expect(out.stderr).not.toContain('setup mode');
   });
 
   test('with setup mode off, a missing token file still ends the server at start', async () => {

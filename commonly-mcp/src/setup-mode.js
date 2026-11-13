@@ -18,6 +18,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
@@ -31,14 +32,16 @@ const HOSTED_PAGE = 'https://commonly.me/v2/agents/byo';
 const blank = (value) => value === undefined || String(value).trim() === '';
 
 /**
- * The declared token file's path when setup mode is on and the file is absent
- * or holds nothing; otherwise null, and the normal start runs (and fails as it
- * always did).
+ * The declared token file's absolute path when setup mode is on and the file is
+ * absent or holds nothing; otherwise null, and the normal start runs (and fails
+ * as it always did). A missing COMMONLY_API_URL is not a fresh install either:
+ * a token alone would not fix it, so that start stays loud too. A relative path
+ * is resolved the way the server reads it, so the steps name the file it reads.
  */
-export const missingTokenFile = (env = process.env, { readImpl = readFileSync } = {}) => {
+export const missingTokenFile = (env = process.env, { readImpl = readFileSync, cwd = process.cwd() } = {}) => {
   if (String(env[SETUP_MODE_ENV] ?? '').trim() !== '1') return null;
-  if (!blank(env.COMMONLY_TOKEN_FD) || blank(env.COMMONLY_TOKEN_FILE)) return null;
-  const tokenPath = String(env.COMMONLY_TOKEN_FILE).trim();
+  if (!blank(env.COMMONLY_TOKEN_FD) || blank(env.COMMONLY_TOKEN_FILE) || blank(env.COMMONLY_API_URL)) return null;
+  const tokenPath = resolve(cwd, String(env.COMMONLY_TOKEN_FILE).trim());
   try {
     return String(readImpl(tokenPath, 'utf8') ?? '').trim() ? null : tokenPath;
   } catch (err) {
