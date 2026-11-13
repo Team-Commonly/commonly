@@ -2,6 +2,7 @@ import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
+import { JUST_ACKED_MS } from './agentAnswerService';
 import { reopenIfClosed } from './agentRoomCloseService';
 import { contentWithCardOutcome } from './approvalCardOutcome';
 
@@ -54,6 +55,39 @@ const askRowIsOpen = (row: AskRow): boolean => {
   return row.status === 'acked'
     && (row.delivery?.outcome ?? 'acknowledged') === 'acknowledged'
     && Date.now() - new Date(row.deliveredAt ?? 0).valueOf() < RUNNING_TURN_WINDOW_MS;
+};
+
+/**
+ * F284: whether the turn posting now holds this row. A live driver renews
+ * `deliveredAt`, so a delivered row inside the window is a running turn's; an
+ * acknowledged ack in the last JUST_ACKED_MS is that turn's checkpoint landing
+ * just before its post (F292). A pending row is no turn's, and a turn that has
+ * ended holds nothing. Known limit: a turn that died leaves its row delivered,
+ * and that reads as held until the window ends, as it does for askRowIsOpen and
+ * threadOfRunningTurn. That costs at most one repeat per adjacent message.
+ */
+const askRowHeldNow = (row: AskRow): boolean => {
+  const age = Date.now() - new Date(row.deliveredAt ?? 0).valueOf();
+  if (row.status === 'delivered') return age < RUNNING_TURN_WINDOW_MS;
+  return row.status === 'acked'
+    && (row.delivery?.outcome ?? 'acknowledged') === 'acknowledged'
+    && age < JUST_ACKED_MS;
+};
+
+/**
+ * The messages on an open row that count as asks of this agent. A person
+ * carrying on under the agent's post with no @ (adjacency) counts only while
+ * the posting turn holds the row: then this post is answering that person,
+ * which is what a native turn's personWaiting says. Any other turn repeating
+ * itself after a "thanks" is the crowding the guard is for (F284).
+ */
+const asksOnRow = (row: AskRow): string[] => {
+  const lead = asksThisAgent(row.payload)
+    || (row.payload?.adjacentReply === true && askRowHeldNow(row));
+  return [
+    ...(lead ? [String(row.payload?.messageId)] : []),
+    ...(row.payload?.coalesced || []).filter((entry) => !entry.notAnAsk).map((entry) => String(entry.messageId)),
+  ];
 };
 
 // Upper bound on how many File rows we fetch per phantom-directive
@@ -1086,7 +1120,12 @@ class AgentMessageService {
    * at send through aliases, display slugs and reply edges and stored nowhere
    * else, so a second parser here would drift from routing. Only a chat or
    * thread mention row counts, by the rule the wrapper's "a person addressed
-   * this to you" line uses (answersAPerson, cli/src/commands/agent.js).
+   * this to you" line uses (answersAPerson, cli/src/commands/agent.js), with
+   * one addition: an adjacent reply (a person carrying on under the agent's
+   * post with no @) counts while the posting turn holds its row (asksOnRow,
+   * F284). That line keeps NO_REPLY open for adjacency, since a "thanks" needs
+   * no answer, but an answer the seat does give must not be skipped. A native
+   * turn already lets it through (personWaiting).
    * `message.posted` never does, not even stamped `addressed`: that stamp means
    * "you wrote in this thread or this names your task", which a person's @ to
    * someone else also earns. A reply under the agent's message counts unless it
@@ -1164,10 +1203,7 @@ class AgentMessageService {
         createdAt: { $gte: new Date(oldestAskAt - JOINABLE_ROW_AGE_MS) },
         $or: [{ 'payload.messageId': { $in: ids } }, { 'payload.coalesced.messageId': { $in: ids } }],
       }).select('status deliveredAt delivery.outcome payload').lean() as AskRow[];
-      const asked = new Set(rows.filter(askRowIsOpen).flatMap((row) => [
-        ...(asksThisAgent(row.payload) ? [String(row.payload?.messageId)] : []),
-        ...(row.payload?.coalesced || []).filter((entry) => !entry.notAnAsk).map((entry) => String(entry.messageId)),
-      ]));
+      const asked = new Set(rows.filter(askRowIsOpen).flatMap(asksOnRow));
       const authors = since.filter((message) => asked.has(String(message.id ?? message._id))).map(authorOf);
       if (authors.length === 0) return false;
       return Boolean(await User.exists({ _id: { $in: [...new Set(authors)] }, isBot: { $ne: true } }));

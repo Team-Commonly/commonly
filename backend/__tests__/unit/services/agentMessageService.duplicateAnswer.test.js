@@ -171,13 +171,59 @@ describe('findRecentDuplicate and a person\'s open ask', () => {
 
   it.each([
     ['a welcome wake', { welcomeWake: true }],
-    ['a person following the agent with no @', { adjacentReply: true, implicitReply: true }],
     ['a kernel wake', { triggerAuthor: 'kernel' }],
     ['a reply that @s someone else', { implicitReply: true, mentions: ['bob'] }],
   ])('keeps the guard for %s', async (_name, payload) => {
     eventRows([{ status: 'delivered', payload: { messageId: '12', ...payload } }]);
     User.exists.mockResolvedValue({ _id: PERSON });
     await expect(check([row(11, SEAT, 'Blue', 2), row(12, PERSON, 'text', 1)])).resolves.toMatchObject({ id: 11 });
+  });
+
+  // F284: a person carrying on under the agent's post, with no @. Native turns
+  // let the answer through (personWaiting); a seat's post comes over HTTP and
+  // can't say so. What the kernel can see is whether the turn posting holds
+  // that person's row: then this post is answering it.
+  describe('a person following the agent with no @ (adjacency, F284)', () => {
+    const adjacent = (over) => ({ payload: { messageId: '12', adjacentReply: true, implicitReply: true }, ...over });
+    const secondsAgo = (n) => new Date(Date.now() - n * 1000);
+    const rows = [row(11, SEAT, 'Blue', 2), row(12, PERSON, 'and the other one?', 1)];
+    beforeEach(() => User.exists.mockResolvedValue({ _id: PERSON }));
+
+    it('lets the repeat through while the turn posting holds the row', async () => {
+      eventRows([adjacent({ status: 'delivered', deliveredAt: secondsAgo(20) })]);
+      await expect(check(rows)).resolves.toBeNull();
+    });
+
+    it('lets it through when the checkpoint reached the kernel just before the post', async () => {
+      eventRows([adjacent({ status: 'acked', delivery: { outcome: 'acknowledged' }, deliveredAt: secondsAgo(2) })]);
+      await expect(check(rows)).resolves.toBeNull();
+    });
+
+    it('keeps the guard while the row waits: no turn has it, so this post is not answering it', async () => {
+      eventRows([adjacent({ status: 'pending' })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
+    it('keeps the guard for a row held past the running-turn window: no turn holds it now', async () => {
+      eventRows([adjacent({ status: 'delivered', deliveredAt: secondsAgo(11 * 60) })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
+    it('keeps the guard once that turn is over: a later turn repeating itself crowds the room', async () => {
+      eventRows([adjacent({ status: 'acked', delivery: { outcome: 'acknowledged' }, deliveredAt: secondsAgo(60) })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
+    it('keeps the guard when the turn declined it', async () => {
+      eventRows([adjacent({ status: 'acked', delivery: { outcome: 'declined' }, deliveredAt: secondsAgo(2) })]);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
+
+    it('an agent following the agent opens nothing, held or not', async () => {
+      eventRows([adjacent({ status: 'delivered', deliveredAt: secondsAgo(20) })]);
+      User.exists.mockResolvedValue(null);
+      await expect(check(rows)).resolves.toMatchObject({ id: 11 });
+    });
   });
 
   it('counts a plain reply to the agent, with no @ in it', async () => {
