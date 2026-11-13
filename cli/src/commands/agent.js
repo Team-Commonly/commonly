@@ -4675,6 +4675,10 @@ export const performRun = ({
       let firstWaitingGroup = 1;
       let runningGroupSince = Date.now();
       let deadlineLogged = false;
+      // One renewal at a time. A group's turn waits for one still out, so the
+      // groups it names have not started when its answer is applied
+      // (CodeRabbit on #4067).
+      let renewingLater = null;
       clearLaterGroupsRenewal();
       if (groups.length > 1) {
         laterGroupsRenewTimer = setIntervalImpl(async () => {
@@ -4682,6 +4686,7 @@ export const performRun = ({
             clearLaterGroupsRenewal();
             return;
           }
+          if (renewingLater) return;
           // Skipped, not stopped: the next group restarts the clock, and its
           // turn needs the rows behind it renewed again.
           if (Date.now() - runningGroupSince >= effectiveTurnTimeoutMs) {
@@ -4691,26 +4696,31 @@ export const performRun = ({
             }
             return;
           }
-          const waiting = claimedAfter(firstWaitingGroup - 1);
-          const confirmed = await renewHeldDeliveries(waiting);
-          if (confirmed === null) return;
-          // A group that started meanwhile renews its own leases.
-          let lost = 0;
-          for (let later = firstWaitingGroup; later < groups.length; later += 1) {
-            const kept = groups[later].filter((event) => stillHeld(event, confirmed));
-            lost += groups[later].length - kept.length;
-            groups[later] = kept;
-          }
-          if (lost) {
-            log(
-              `[inbox.batch] ${countEvents(lost)} no longer held by this runner on the server while `
-              + 'another pod\'s turn ran — not run; the server redelivers it',
-            );
-          }
+          const from = firstWaitingGroup;
+          renewingLater = (async () => {
+            const confirmed = await renewHeldDeliveries(claimedAfter(from - 1));
+            if (confirmed === null) return;
+            let lost = 0;
+            for (let later = from; later < groups.length; later += 1) {
+              const kept = groups[later].filter((event) => stillHeld(event, confirmed));
+              lost += groups[later].length - kept.length;
+              groups[later] = kept;
+            }
+            if (lost) {
+              log(
+                `[inbox.batch] ${countEvents(lost)} no longer held by this runner on the server while `
+                + 'another pod\'s turn ran — not run; the server redelivers it',
+              );
+            }
+          })().finally(() => { renewingLater = null; });
+          await renewingLater;
         }, DELIVERY_RENEW_INTERVAL_MS);
         laterGroupsRenewTimer?.unref?.();
       }
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        // renewHeldDeliveries never throws: a failed renewal resolves null.
+        // eslint-disable-next-line no-await-in-loop
+        if (renewingLater) await renewingLater;
         firstWaitingGroup = groupIndex + 1;
         runningGroupSince = Date.now();
         deadlineLogged = false;

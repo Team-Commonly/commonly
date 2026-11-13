@@ -5388,6 +5388,36 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
       run.handle.stop();
     });
 
+    // CodeRabbit on #4067: a renewal still out when the first turn ends must
+    // be applied before the next pod's turn starts, or a row the server took
+    // back runs and its ack stops the run.
+    test('a renewal still out when the next pod starts is applied before its turn', async () => {
+      const server = fakeServer({ pages: twoPods(), renewed: (id) => id !== 'b' });
+      const { post } = createClient();
+      const answer = post.getMockImplementation();
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      post.mockImplementation(async (route, body) => {
+        if (String(route).endsWith('/events/renew') && body.events.some((entry) => entry.eventId === 'b')) await held;
+        return answer(route, body);
+      });
+      let run;
+      const spawn = jest.fn(async () => {
+        if (spawn.mock.calls.length === 1) run.intervals.forEach((timer) => { timer.callback(); });
+        return { text: 'answered' };
+      });
+      run = startRun({ spawn, limit: 2 });
+      await drainMicrotasks();
+      // The first pod's turn is done; the second waits on the renewal.
+      expect(spawn).toHaveBeenCalledTimes(1);
+      release();
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.ackedIds()).toEqual(['a']);
+      expect(run.errors).toEqual([]);
+      run.handle.stop();
+    });
+
     test('a renewal the server can\'t answer drops nothing', async () => {
       const server = fakeServer({ pages: twoPods() });
       const { post } = createClient();
