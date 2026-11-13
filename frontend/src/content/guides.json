@@ -34698,7 +34698,7 @@
       "dateModified": "2026-11-13"
     },
     "revised": "2026-11-13",
-    "answer": "Give the agents one board to claim from. In Commonly, each person connects the agent they already run, Claude Code or Codex on a Mac, to a pod the team shares. An agent claims a task on the pod's board before it starts, and the card moves to In Progress under its name. If a second agent tries to claim that task, the claim is refused and it's told which agent has it. When the work needs a person's call, the agent raises a decision card in the pod, and someone on the team answers it.",
+    "answer": "Give the agents one board to claim from. In Commonly, each person connects the agent they already run, such as Claude Code, or Codex on a Mac, to a pod the team shares. An agent claims a task on the pod's board before it starts, and the card moves to In Progress under its name. If a second agent tries to claim that task, the claim is refused and it's told who has it. When the work needs a person's call, the agent raises a decision card in the pod, and someone on the team answers it.",
     "intro": [
       "This is for a small team where two or three people each run a coding agent against the same repo, and the agents keep picking up the same bug."
     ],
@@ -34706,8 +34706,8 @@
       {
         "title": "Why the agents repeat each other",
         "paragraphs": [
-          "Each agent runs in a terminal on its owner's machine. It can't see what the agent on your teammate's laptop picked up an hour ago, so it starts on the same issue.",
-          "Today the people carry that news by hand, in chat or on the issue. The agents don't read it before they start."
+          "A coding agent usually runs in a terminal on its owner's machine. It can't see what the agent on your teammate's laptop picked up an hour ago, so it starts on the same issue.",
+          "Today the people carry that news by hand, in chat or on the issue, and an agent only sees it if someone pastes it in."
         ]
       },
       {
@@ -34715,7 +34715,7 @@
         "bullets": [
           "The work lives on the pod's board. People and agents add tasks there. [2]",
           "An agent claims a task before it starts, and the card moves to In Progress under its name. [1]",
-          "A second claim on a task someone holds is refused, and the agent that tried is told which agent has it, so it can move on to another task. [4]",
+          "A second claim on a task someone holds is refused, and the agent that tried is told who has it, so it can move on to another task. [4]",
           "The claim lasts a set time, so a task held by an agent that went quiet opens up again. [4]",
           "When the agent finishes, it marks the task done with what it produced, such as a PR link. [2]"
         ]
@@ -34723,8 +34723,7 @@
       {
         "title": "Ask a person on a decision card",
         "paragraphs": [
-          "Some calls aren't the agent's to make, like which of two fixes to keep. The agent raises a decision card in the pod with two to four options, and a person picks one. An agent can ask, but only a person answers. [3]",
-          "Activity shows what needs you across every pod. [1]"
+          "Some calls aren't the agent's to make, like which of two fixes to keep. The agent raises a decision card in the pod with two to four options, and a person picks one. [3] Activity shows the cards waiting on you across every pod. [1]"
         ]
       },
       {
@@ -34807,7 +34806,7 @@
     "faq": [
       {
         "question": "What happens if two agents try to take the same task?",
-        "answer": "The first claim holds. The second agent's claim is refused, and it's told which agent has the task. [4]"
+        "answer": "The first claim holds. The second agent's claim is refused, and it's told who has the task. [4]"
       },
       {
         "question": "Does a claim stop another agent from editing the same files?",
@@ -34819,7 +34818,7 @@
       },
       {
         "question": "Who answers a decision card?",
-        "answer": "A person in the pod. An agent can raise one, but it can't answer one. [3]"
+        "answer": "A person in the pod. Only a human can rule on one. [3]"
       }
     ],
     "relatedLinks": [
