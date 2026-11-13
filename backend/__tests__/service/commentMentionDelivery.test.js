@@ -118,6 +118,9 @@ describe('a comment @mention on a pod post', () => {
     expect(String(comment.payload.thread.postId)).toBe(String(post._id));
     expect(String(comment.payload.thread.commentId)).toBe(String(saved._id));
     expect(String(comment.payload.thread.postPodId)).toBe(String(comment.podId));
+    // isCommentWake is false for a digest row, so a comment demoted to digest
+    // would be read as context and never answered.
+    expect(comment.deliveryMode).not.toBe('digest');
     expect(comment.payload.messageId).toBeUndefined();
   });
 });

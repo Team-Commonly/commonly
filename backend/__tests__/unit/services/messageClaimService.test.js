@@ -689,12 +689,12 @@ describe('messageExists', () => {
   // (F246): addComment enqueues no `_id` (#3569), and before that it passed
   // `_id: comment._id` from a plain object Mongoose never gave an id, so the
   // value was undefined at runtime. A comment's id travels as
-  // `thread.commentId`. The shape stays accepted, because refusing an id the
-  // route can't place does not fail closed: enforcement.js:414
-  // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
-  // unguarded and the race stops deduping — measured against this route's own
-  // head before it shipped (connector-ops 71952, vera 71956).
-  test('a post-comment ObjectId is claimable when its comment exists, so the wake race dedupes', async () => {
+  // `thread.commentId`, and no seat claims a comment today (thread.mention isn't
+  // in the CLI's CLAIMABLE_EVENT_TYPES). The shape stays accepted for a future
+  // producer, because refusing an id the route can't place does not fail
+  // closed: enforcement.js:414 turns the non-2xx into `{failOpen: true}`, so
+  // that caller would run unguarded (connector-ops 71952, vera 71956).
+  test('a post-comment ObjectId is claimable when its comment exists, so a future comment claim is checked instead of failing open', async () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
     // The id is asked of the comment's own store, by the path the comment
     // actually lives under — `comments._id`, a subdocument of Post.
