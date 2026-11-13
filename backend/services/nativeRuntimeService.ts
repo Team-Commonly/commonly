@@ -253,6 +253,12 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 // on any agent. Fixed text, so it carries nothing the turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
+// F479: the same moment when a hosted turn ran out of its per-run budget
+// (steps, tokens or time). That is a reason the person can act on, so the line
+// names it. A wake nobody asked for posts no line at all.
+export const HOSTED_RUN_BUDGET_LINE = 'I ran out of this turn\'s working budget before I could reply, and it '
+  + 'didn\'t count against today\'s turns. You can ask again, or ask for a smaller piece.';
+const BUDGET_ERROR_KINDS: ReadonlySet<string> = new Set(['token_cap', 'turn_cap', 'timeout']);
 // The same for a native agent that is not hosted: it has no daily turns, so
 // the line makes no claim about them.
 export const NATIVE_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this. You can ask again, or ask it a different way.';
@@ -3618,9 +3624,9 @@ export async function runAgent(
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
   // costs the person no turn. Model failures name the model, with a safe reason
-  // on native turns; other hosted failures keep the fixed line. A turn
-  // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
-  // never reaches this. The per-user spend ceiling still counts the run.
+  // on native turns; a hosted run past its budget says so (F479); other hosted
+  // failures keep the fixed line. A turn that declined (NO_REPLY, a silent
+  // group-pod turn) ended succeeded and never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason || personAsked) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
     // A native agent's model-failure line carries the provider's reason, so a
@@ -3642,7 +3648,9 @@ export async function runAgent(
             ? (hostedNative
               ? `${MODEL_DISPLAY_NAMES[model] || model} could not answer just now. ${HOSTED_RUN_FAILED_LINE}`
               : `Model ${model} could not answer (${modelFailureReason}). Please try again.`)
-            : (hostedNative ? HOSTED_RUN_FAILED_LINE : NATIVE_RUN_FAILED_LINE),
+            : (hostedNative
+              ? (BUDGET_ERROR_KINDS.has(String(run.errorKind)) ? HOSTED_RUN_BUDGET_LINE : HOSTED_RUN_FAILED_LINE)
+              : NATIVE_RUN_FAILED_LINE),
           messageType: 'text',
           displayName,
           installationConfig: cfg,
