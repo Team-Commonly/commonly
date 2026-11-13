@@ -1,4 +1,6 @@
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { descendantsOf, killProcessTree, readProcessTable } from '@commonlyai/seats/process-group';
+import { killStallSurvivors } from '../first-output-watchdog.js';
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
@@ -1028,6 +1030,7 @@ const publicToolFailedError = ({ tool, error }) => {
 
 const runOpenCode = ({
   cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {}, onFirstStep,
+  terminationGraceMs = TERMINATION_GRACE_MS,
 }) => new Promise((resolve, reject) => {
   let proc;
   try {
@@ -1041,10 +1044,26 @@ const runOpenCode = ({
   let timedOut = false;
   let killTimer = null;
   const events = makeEventParser();
+  // A timed-out turn is killed as a tree (F257): a child of OpenCode (a
+  // launcher's real binary, an MCP server) that ignores SIGTERM would keep the
+  // turn's stdout open, so close never fired and the turn never settled. The
+  // descendants are snapshotted at SIGTERM, because one whose parent exits is
+  // reparented and no tree walk from the spawn finds it again; any still alive
+  // is SIGKILLed on close and at the grace (as claude.js does). At the grace,
+  // dropping our ends of the pipes bounds the turn even if a holder was missed.
+  let survivors = [];
+  const sweepSurvivors = () => { if (survivors.length) killStallSurvivors(survivors); };
   const timer = setTimeout(() => {
     timedOut = true;
-    proc.kill('SIGTERM');
-    killTimer = setTimeout(() => proc.kill('SIGKILL'), TERMINATION_GRACE_MS);
+    const table = Number.isInteger(proc.pid) ? readProcessTable() : null;
+    if (table) survivors = descendantsOf(table, proc.pid);
+    killProcessTree(proc, 'SIGTERM', { table: () => table });
+    killTimer = setTimeout(() => {
+      killProcessTree(proc, 'SIGKILL');
+      sweepSurvivors();
+      proc.stdout?.destroy?.();
+      proc.stderr?.destroy?.();
+    }, terminationGraceMs);
   }, timeoutMs);
   const clearTimers = () => {
     clearTimeout(timer);
@@ -1073,8 +1092,9 @@ const runOpenCode = ({
     clearTimers();
     reject(err);
   });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimers();
+    if (timedOut) sweepSurvivors();
     events.flush();
     if (stepHookError) return reject(stepHookError);
     if (timedOut) return reject(new Error(`opencode timed out after ${timeoutMs}ms`));
@@ -1086,7 +1106,9 @@ const runOpenCode = ({
       return reject(err);
     }
     if (code !== 0) {
-      const err = adapterFailure('opencode', stderr.trim(), {
+      // A signal exit has no code, so without its name a quiet death read as
+      // just "opencode" (F257).
+      const err = adapterFailure(code === null && signal ? `opencode ended on ${signal}` : 'opencode', stderr.trim(), {
         credentials, exitCode: code, limit: 500,
       });
       err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
@@ -1619,6 +1641,7 @@ export default {
         cwd: ctx.cwd,
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        ...(ctx._terminationGraceMs ? { terminationGraceMs: ctx._terminationGraceMs } : {}),
         credentials,
         spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
         // CodeRabbit #3487, F460: a public seat's credential stops existing
