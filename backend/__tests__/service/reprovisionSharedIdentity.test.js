@@ -112,6 +112,14 @@ describe('reprovision of an in-process row and the seats its revoke reaches', ()
     expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
   });
 
+  it('spares a wrapper seat stored with no instance id, which the revoke reads as the default instance', async () => {
+    const installation = await seedAs('commonly-bot', 'default', { runtimeType: 'internal' });
+    await seedAs('commonly-bot', null, { runtimeType: 'claude-code', host: 'byo' });
+    const result = await reprovisionInstallation({ installation, force: true });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'shares_identity_with_external_seat' });
+    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
+  });
+
   it('spares a row whose type runs outside the provisioner, even when the row stores an in-process runtime', async () => {
     AgentIdentityService.getAgentTypeConfig.mockImplementation(() => ({ runtime: 'webhook' }));
     const installation = await seedAs('commonly-bot', 'default', { runtimeType: 'internal' });
