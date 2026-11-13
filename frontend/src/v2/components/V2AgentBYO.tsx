@@ -185,6 +185,13 @@ type MachineAdapter = string;
 // the page says so (D245). PowerShell has no `export`, so a Windows visitor
 // gets PowerShell lines for both commands (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
+// The install route's memory-handoff refusal codes (installHandoffMemory.ts).
+const MEMORY_HANDOFF_ERRORS: Record<string, string> = {
+  memory_handoff_invalid: 'agentByo.errors.memoryHandoffInvalid',
+  memory_handoff_not_owner: 'agentByo.errors.memoryHandoffNotOwner',
+  memory_handoff_target_has_memory: 'agentByo.errors.memoryHandoffTargetHasMemory',
+  memory_handoff_retry: 'agentByo.errors.memoryHandoffRetry',
+};
 const browserOs = (): SetupOs => {
   if (typeof navigator === 'undefined') return 'mac';
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
@@ -1231,9 +1238,14 @@ const V2AgentBYO: React.FC = () => {
       }
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
-      setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
+      const code = e.response?.data?.code;
+      setError(code === IN_PROCESS_NAME_CODE
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
-        : e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
+        // A refused memory copy from a handoff link: the server's text is the
+        // CLI's ("retry attach"), so the page says it in its own words.
+        : code && Object.prototype.hasOwnProperty.call(MEMORY_HANDOFF_ERRORS, code)
+          ? t(MEMORY_HANDOFF_ERRORS[code], { name: cleanName, agent: prefill.memoryFrom })
+          : e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }

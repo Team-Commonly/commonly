@@ -2133,6 +2133,10 @@
       "importing": "Importing…"
     },
     "errors": {
+      "memoryHandoffInvalid": "This link’s memory copy couldn’t start. Open the link from the pod again.",
+      "memoryHandoffNotOwner": "Only the person who owns both {{agent}} and {{name}} can copy {{agent}}’s memory.",
+      "memoryHandoffTargetHasMemory": "{{name}} already has its own memory, so {{agent}}’s wasn’t copied. Choose a new agent name.",
+      "memoryHandoffRetry": "The memory copy was interrupted. Try again.",
       "nameRequired": "Agent name must contain at least one letter or digit.",
       "nameLookupFailed": "Couldn't check existing agent names. Try again.",
       "podRequired": "Pick a pod to install into.",
