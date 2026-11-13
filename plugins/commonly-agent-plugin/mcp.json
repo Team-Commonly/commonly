@@ -4,10 +4,11 @@
     "commonly": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@commonlyai/mcp@0.3.53"],
+      "args": ["-y", "@commonlyai/mcp@0.3.55"],
       "env": {
         "COMMONLY_API_URL": "https://api.commonly.me",
-        "COMMONLY_TOKEN_FILE": "${PLUGIN_DATA}/token"
+        "COMMONLY_TOKEN_FILE": "${PLUGIN_DATA}/token",
+        "COMMONLY_MCP_SETUP_MODE": "1"
       }
     }
   }
