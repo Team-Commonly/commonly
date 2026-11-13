@@ -3155,6 +3155,7 @@
     "disconnectPartial": "Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.",
     "disconnected": "Disconnected {{label}}.",
     "reviewProviderAccess": "Review access at {{label}}",
+    "removedRevokedAtProvider": "Connection removed, and {{label}} revoked Commonly's access.",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
     "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
     "multiGrantPodPostingBlocked": "{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.",

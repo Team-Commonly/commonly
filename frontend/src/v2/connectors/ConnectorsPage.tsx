@@ -687,7 +687,11 @@ const ConnectorsPage: React.FC = () => {
       )}
       {m.removedHiddenNotice && (
         <p className="v2-cx-note" role="status">
-          {m.removedHiddenNotice.revokePage
+          {/* F475: a vendor that revoked needs no visit. Linear's own list
+              never names Commonly, so a pointer there finds nothing. */}
+          {m.removedHiddenNotice.revokePage && m.removedHiddenNotice.revoked && !m.removedHiddenNotice.stillListed
+            ? t('tools.removedRevokedAtProvider', { defaultValue: 'Connection removed, and {{label}} revoked Commonly\'s access.', label: m.removedHiddenNotice.label })
+            : m.removedHiddenNotice.revokePage
             ? <>{m.removedHiddenNotice.stillListed
               ? t('tools.removedStillListed', { defaultValue: 'Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.', label: m.removedHiddenNotice.label })
               : t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
