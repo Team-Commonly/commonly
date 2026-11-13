@@ -2,7 +2,8 @@
 // Tier-1 staging smoke — fast, gates prod promotion. Run after a deploy-staging rollout.
 // Env: SMOKE_BASE (default https://staging.commonly.me), SMOKE_API (default https://api-staging.commonly.me),
 //      SMOKE_EMAIL + SMOKE_PW (non-admin test creds; from a 0600 file / CI secrets, NEVER printed),
-//      SMOKE_HOSTED=1 to also check a hosted-agent reply (skip until staging has an LLM key).
+//      SMOKE_HOSTED=1 to also provision and tear down one hosted agent (F437); it only warns
+//      unless SMOKE_HOSTED_BLOCKING=1, so a first soak can't block prod promotion on day one.
 // Exit 0 = all green; non-zero = a blocking check failed (caller must block prod promotion).
 import { chromium } from 'playwright';
 
@@ -10,11 +11,13 @@ const BASE = process.env.SMOKE_BASE || 'https://staging.commonly.me';
 const API  = process.env.SMOKE_API  || 'https://api-staging.commonly.me';
 const EMAIL = process.env.SMOKE_EMAIL, PW = process.env.SMOKE_PW;
 const CHECK_HOSTED = process.env.SMOKE_HOSTED === '1';
+const HOSTED_BLOCKING = process.env.SMOKE_HOSTED_BLOCKING === '1';
 const UA = { 'User-Agent': 'commonly-smoke/0.1' };
 const CONSOLE_ALLOW = [/favicon/i, /manifest\.json/i, /\/api\/pg\/status/i, /ResizeObserver loop/i, /Download the React DevTools/i];
 
 const results = [];
-const rec = (name, ok, detail='') => { results.push({ name, ok }); console.log(`${ok?'PASS':'FAIL'}  ${name}${detail?'  — '+detail:''}`); };
+const recResult = (name, ok, detail='') => { results.push({ name, ok }); console.log(`${ok?'PASS':'FAIL'}  ${name}${detail?'  — '+detail:''}`); };
+const rec = recResult;
 const norm = p => (p || '').replace(/\/+$/,'') || '/';
 
 async function api(path, opts={}) {
@@ -189,13 +192,64 @@ async function main() {
     } catch (e) { rec('connectors: fresh user sees a tool row outside the fold', false, e.message.slice(0,100)); }
   }
 
-  // 7) hosted agent answers (skip until staging has an LLM key)
-  if (CHECK_HOSTED) rec('hosted agent answers', false, 'TODO once staging LLM key is set');
-  else console.log('SKIP  hosted agent answers — staging has no LLM key yet (SMOKE_HOSTED!=1)');
+  // 7) hosted agent provisions and tears down (F437). Staging once left HOSTED_ENGINE unset and
+  //    every provision 503'd hosted_runtime_unconfigured with nothing red. The agent name is FIXED:
+  //    reinstalling a hosted agent the user already holds passes the per-user hosted cap
+  //    (install.ts findHeldHostedInstallation), so repeat runs reuse one row instead of tripping the
+  //    cap on the second deploy. No reply is awaited: this gates the engine wiring, not the model.
+  if (CHECK_HOSTED) await checkHosted(token, authH);
+  else console.log('SKIP  hosted agent provisions — SMOKE_HOSTED!=1');
 
   await browser.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\nSMOKE ${failed.length===0?'GREEN':'RED'} — ${results.length-failed.length}/${results.length} passed` + (failed.length?`; failing: ${failed.map(f=>f.name).join(', ')}`:''));
   process.exit(failed.length===0 ? 0 : 1);
 }
+const HOSTED_AGENT = 'staging-smoke-hosted';
+const DM_TYPES = ['agent-room', 'agent-dm', 'agent-admin'];
+
+async function checkHosted(token, authH) {
+  const name = 'hosted agent provisions and tears down';
+  const rec = (n, ok, detail = '') => {
+    if (ok || HOSTED_BLOCKING) { recResult(n, ok, detail); return; }
+    console.log(`WARN  ${n}  — ${detail} (advisory: SMOKE_HOSTED_BLOCKING!=1)`);
+    console.log(`::warning title=staging hosted smoke::${n}: ${detail}`);
+  };
+  if (!token) { rec(name, false, 'no login token'); return; }
+  const json = { ...authH, 'Content-Type': 'application/json' };
+  const post = (path, body) => api(path, { method: 'POST', headers: json, body: JSON.stringify(body) });
+  try {
+    const avail = await api('/api/hosted/availability', { headers: authH });
+    if (avail.status !== 200 || avail.body?.configured !== true) {
+      rec(name, false, `availability ${avail.status} ${avail.body?.code || ''} configured=${avail.body?.configured}`);
+      return;
+    }
+    const pr = await api('/api/pods', { headers: authH });
+    const pods = Array.isArray(pr.body) ? pr.body : (pr.body?.pods || []);
+    let pod = pods.find(p => !p.publicRead && !DM_TYPES.includes(p.type || ''));
+    if (!pod) {
+      const cp = await post('/api/pods', { name: 'Smoke hosted pod', type: 'team' });
+      pod = cp.body?.pod || cp.body;
+    }
+    const podId = pod?._id || pod?.id;
+    if (!podId) { rec(name, false, 'no pod to install into'); return; }
+    const ins = await post('/api/registry/install', {
+      agentName: HOSTED_AGENT, podId, displayName: HOSTED_AGENT,
+      config: { runtime: { runtimeType: 'hosted' } }, scopes: [],
+    });
+    // Deprovision keeps the installation (identity continuity), so every run after the first
+    // finds it already in this pod: install.ts answers 400 'Agent already installed in this pod'.
+    // That is the expected steady state; provision below is idempotent on it.
+    const already = ins.status === 400 && /already installed/i.test(ins.body?.error || '');
+    if (ins.status >= 400 && !already) { rec(name, false, `install ${ins.status} ${ins.body?.code || ins.body?.error || ''}`); return; }
+    const prov = await post('/api/hosted/provision', { agentName: HOSTED_AGENT });
+    if (prov.status !== 200 || !prov.body?.provisioned) {
+      rec(name, false, `provision ${prov.status} ${prov.body?.code || ''}`);
+      return;
+    }
+    const dep = await post('/api/hosted/deprovision', { agentName: HOSTED_AGENT });
+    rec(name, dep.status === 200, `provision 200, deprovision ${dep.status}`);
+  } catch (e) { rec(name, false, e.message); }
+}
+
 main().catch(e => { console.error('SMOKE_HARNESS_ERROR', e.message); process.exit(2); });
