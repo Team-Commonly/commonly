@@ -42,6 +42,26 @@ test('each plugin package pins an exact @commonlyai/mcp version, and the Hermes 
   assert.deepEqual([...new Set([...readme.matchAll(/@commonlyai\/mcp@([\w.-]+)/g)].map((m) => m[1]))], [hermes]);
 });
 
+// Walked 2026-11-13 in Codex: a plugin install with no token file yet ended the
+// server at start, and the person saw only that the Commonly tools were missing.
+// Setup mode (opt-in) starts it with commonly_get_started, which names the file.
+// 0.3.54 shipped setup mode before its fixes (relative path, no-URL start, cwd
+// read on every start), so the pin is 0.3.55 or later. The Hermes package takes
+// its token from a Hermes secret, never a file, so setup mode has no job there.
+const atLeast = (version, floor) => {
+  const [a, b] = [version, floor].map((v) => v.split('.').map(Number));
+  for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+};
+test('the agent plugin turns setup mode on, with a pin that has its fixes', async () => {
+  const mcp = await readJson('commonly-agent-plugin/mcp.json');
+  assert.equal(mcp.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, '1');
+  assert.ok(mcp.mcpServers.commonly.env.COMMONLY_TOKEN_FILE, 'setup mode applies only to a declared token file');
+  assert.ok(atLeast(pinnedMcp(mcp), '0.3.55'), `pin ${pinnedMcp(mcp)} predates the setup-mode fixes`);
+  const hermes = await readJson('commonly-hermes-plugin/mcp.json');
+  assert.equal(hermes.mcpServers.commonly.env.COMMONLY_MCP_SETUP_MODE, undefined);
+});
+
 // Walked 2026-11-11: Hermes answers in the pod only while it runs. The README
 // must not promise mention-driven replies the plugin does not provide.
 test('the Hermes README does not promise that an @mention wakes Hermes', async () => {
