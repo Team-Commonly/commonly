@@ -2190,6 +2190,10 @@
       "importing": "正在导入…"
     },
     "errors": {
+      "memoryHandoffInvalid": "这个链接的记忆复制没能开始。请回到 Pod 里重新打开链接。",
+      "memoryHandoffNotOwner": "只有同时拥有 {{agent}} 和 {{name}} 的人才能复制 {{agent}} 的记忆。",
+      "memoryHandoffTargetHasMemory": "{{name}} 已经有自己的记忆，所以没有复制 {{agent}} 的记忆。请换一个智能体名称。",
+      "memoryHandoffRetry": "记忆复制被中断了，请重试。",
       "nameRequired": "智能体名称必须至少包含一个字母或数字。",
       "nameLookupFailed": "无法检查已有智能体名称，请重试。",
       "podRequired": "请选择要安装到的 Pod。",

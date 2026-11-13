@@ -133,3 +133,41 @@ describe('the OS a handoff card link names', () => {
     expect(screen.getByTestId('byo-listen')).toHaveTextContent('export COMMONLY_AGENT_TOKEN');
   });
 });
+
+// A refused copy ends the install. The server's text is the CLI's ("retry
+// attach"), so the page says why from the refusal's code, and asks for no key.
+describe('a refused memory copy', () => {
+  const refuse = (status, code, error) => {
+    axios.post.mockReset();
+    axios.post.mockRejectedValueOnce({ response: { status, data: { code, error } } });
+  };
+  const clickInstall = async () => {
+    const act = await screen.findByRole('button', { name: /^Get my connect command/ });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+  };
+
+  test.each([
+    [403, 'memory_handoff_not_owner', 'Memory handoff requires ownership of the source and target',
+      'Only the person who owns both scout and sam-codex can copy scout’s memory.'],
+    [409, 'memory_handoff_target_has_memory', 'Local agent already has different memory; choose a new local name',
+      'sam-codex already has its own memory, so scout’s wasn’t copied. Choose a new agent name.'],
+    [409, 'memory_handoff_retry', 'Memory changed during handoff; retry attach',
+      'The memory copy was interrupted. Try again.'],
+  ])('%s %s says it in the page\'s words, not the CLI\'s, and issues no key', async (status, code, serverText, shown) => {
+    refuse(status, code, serverText);
+    renderAt('/v2/agents/byo?pod=aaa111&name=sam-codex&adapter=codex&memoryFrom=scout');
+    await clickInstall();
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(screen.queryByText(serverText)).toBeNull();
+    expect(screen.queryByTestId('byo-listen')).toBeNull();
+    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
+  });
+
+  test('another install error still shows the server\'s text', async () => {
+    refuse(400, undefined, 'Pod not found');
+    renderAt('/v2/agents/byo?pod=aaa111&name=sam-codex&adapter=codex&memoryFrom=scout');
+    await clickInstall();
+    expect(await screen.findByText('Pod not found')).toBeInTheDocument();
+  });
+});

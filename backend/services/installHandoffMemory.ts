@@ -5,12 +5,21 @@ const AgentMemory = require('../models/AgentMemory');
 const { keptOwnershipInstallations, ownsIdentityCountingPaused } = require('./runtimeIdentityOwnership');
 const { stampSectionsForWrite, decorateSectionsWithProvenance } = require('./agentMemoryService');
 
-class HandoffRefusal extends Error {
+// `code` lets a page say why in the person's language; `message` stays the
+// CLI's text. One code per thing the person can do about it.
+export type HandoffRefusalCode =
+  | 'memory_handoff_invalid' | 'memory_handoff_not_owner'
+  | 'memory_handoff_target_has_memory' | 'memory_handoff_retry';
+
+export class HandoffRefusal extends Error {
   status: number;
 
-  constructor(status: number, message: string) {
+  code: HandoffRefusalCode;
+
+  constructor(status: number, message: string, code: HandoffRefusalCode) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -24,7 +33,7 @@ export async function copyInstallHandoffMemory({
   if (runtime?.host !== 'byo' || !runtime?.adapter
     || typeof source?.agentName !== 'string' || !source.agentName.trim()
     || typeof source?.instanceId !== 'string' || !source.instanceId.trim()) {
-    throw new HandoffRefusal(400, 'A BYO adapter and source agent and instance are required for memory handoff');
+    throw new HandoffRefusal(400, 'A BYO adapter and source agent and instance are required for memory handoff', 'memory_handoff_invalid');
   }
   const sourceIdentity = {
     agentName: source.agentName.trim().toLowerCase(), instanceId: source.instanceId.trim(),
@@ -37,7 +46,7 @@ export async function copyInstallHandoffMemory({
   if (!sourceOwnership.owned
     || targetInstalls.some((row: any) => String(row.installedBy) !== String(userId))
     || (!targetInstalls.length && String(registryOwner) !== String(userId))) {
-    throw new HandoffRefusal(403, 'Memory handoff requires ownership of the source and target');
+    throw new HandoffRefusal(403, 'Memory handoff requires ownership of the source and target', 'memory_handoff_not_owner');
   }
   const resolvedType = AgentIdentityService.resolveAgentType(agentName);
   const username = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
@@ -47,7 +56,7 @@ export async function copyInstallHandoffMemory({
     || (!principal.botMetadata?.ownerUserId && !targetInstalls.length)
     || (principal.botMetadata?.agentName && principal.botMetadata.agentName !== resolvedType)
     || (principal.botMetadata?.instanceId && principal.botMetadata.instanceId !== instanceId))) {
-    throw new HandoffRefusal(403, 'Memory handoff target identity belongs to another owner');
+    throw new HandoffRefusal(403, 'Memory handoff target identity belongs to another owner', 'memory_handoff_not_owner');
   }
   const hosted = await AgentMemory.findOne(sourceIdentity).select('content sections.long_term').lean();
   const content = hosted?.sections?.long_term?.content ?? hosted?.content ?? '';
@@ -57,7 +66,7 @@ export async function copyInstallHandoffMemory({
   const before = target?.sections?.long_term;
   const priorContent = before?.content ?? target?.content ?? '';
   if (before?.visibility && before.visibility !== 'private') {
-    throw new HandoffRefusal(409, 'Local long-term memory must be private before copying hosted memory');
+    throw new HandoffRefusal(409, 'Local long-term memory must be private before copying hosted memory', 'memory_handoff_target_has_memory');
   }
   // Both mirrors must agree: a legacy writer can change content without
   // updating the section revision or section text.
@@ -65,7 +74,7 @@ export async function copyInstallHandoffMemory({
     return { copied: false, reason: 'already-copied' };
   }
   if (priorContent || target?.content) {
-    throw new HandoffRefusal(409, 'Local agent already has different memory; choose a new local name');
+    throw new HandoffRefusal(409, 'Local agent already has different memory; choose a new local name', 'memory_handoff_target_has_memory');
   }
   const incoming = stampSectionsForWrite({ long_term: { content, visibility: 'private' } });
   const decorated = decorateSectionsWithProvenance(target?.sections, incoming, { via: 'memory-owner' });
@@ -80,10 +89,10 @@ export async function copyInstallHandoffMemory({
       $set: { content, 'sections.long_term': decorated.long_term, schemaVersion: 2 },
       $unset: { lastSyncKey: 1, lastSyncAt: 1 },
     }, { new: true, upsert: !target, runValidators: true });
-    if (!saved) throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach');
+    if (!saved) throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach', 'memory_handoff_retry');
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach');
+      throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach', 'memory_handoff_retry');
     }
     throw error;
   }

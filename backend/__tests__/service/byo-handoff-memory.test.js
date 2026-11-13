@@ -104,6 +104,7 @@ describe('hosted memory copied into a local agent', () => {
         ...('memoryFrom' in override ? { memoryFrom: override.memoryFrom } : {}),
         config: { runtime: override.runtime || { host: 'byo', runtimeType: 'stub', adapter: 'stub' } } });
     expect(result.status).toBe(400);
+    expect(result.body.code).toBe('memory_handoff_invalid');
     expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(0);
     expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
   });
@@ -115,6 +116,8 @@ describe('hosted memory copied into a local agent', () => {
       const result = await attach();
       expect(result.status).toBe(403);
       expect(result.body.error).toMatch(/ownership of the source and target/);
+      // The page says it in the person's language from the code; the CLI keeps the text.
+      expect(result.body.code).toBe('memory_handoff_not_owner');
       expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(0);
       expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
     } finally {
@@ -271,6 +274,14 @@ describe('hosted memory copied into a local agent', () => {
     expect((await User.findOne({ username: name }).lean()).isBot).toBe(false);
   });
 
+  it('names a target that already has memory with its own code', async () => {
+    await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
+    await appendLongTermMemory({ agentName: 'local-handoff', instanceId: 'default', content: 'local note' });
+    const refused = await attach();
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'memory_handoff_target_has_memory', error: expect.stringMatching(/different memory/) });
+  });
+
   it('a memory collision leaves no installation, pod join or greeting', async () => {
     await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
     await appendLongTermMemory({ agentName: 'local-handoff', instanceId: 'default', content: 'local note' });
@@ -289,7 +300,9 @@ describe('hosted memory copied into a local agent', () => {
     await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
     await AgentInstallation.updateOne({ agentName: 'hosted-handoff' }, { $set: { installedBy: outsider._id } });
     const post = jest.spyOn(AgentMessageService, 'postMessage');
-    expect((await attach()).status).toBe(403);
+    const refused = await attach();
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('memory_handoff_not_owner');
     expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(0);
     expect(post).not.toHaveBeenCalled();
     expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();

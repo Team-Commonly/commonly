@@ -439,7 +439,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           _id: agent._id,
           ...(handoffRegistryClaim ? { __v: handoffRegistryClaim.version } : {}),
         }, { $inc: { __v: 1 } }, { new: true }).select('__v').lean();
-        if (!claimed) throw Object.assign(new Error('Agent name claim changed; retry attach'), { status: 409 });
+        if (!claimed) {
+          throw Object.assign(new Error('Agent name claim changed; retry attach'), { status: 409, code: 'memory_handoff_retry' });
+        }
         if (handoffRegistryClaim) handoffRegistryClaim.version = claimed.__v;
       }
       return copyInstallHandoffMemory({
@@ -1311,14 +1313,22 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       } catch (cleanupError) {
         console.error('[install] handoff claim cleanup failed:', (cleanupError as Error).message);
         return res.status(503).json({
+          code: 'memory_handoff_retry',
           error: 'Memory handoff failed and its name claim could not be released; retry attach',
         });
       }
     }
     console.error('Error installing agent:', error);
     const status = (error as { status?: number }).status;
+    // A memory-handoff refusal names its kind, so a page can say it in the
+    // person's language. Only these string codes: a driver's numeric code
+    // (Mongo's 11000) is not a reason.
+    const code = (error as { code?: unknown }).code;
     res.status(status === 400 || status === 403 || status === 409 ? status : 500)
-      .json({ error: (error as Error).message || 'Failed to install agent' });
+      .json({
+        ...(typeof code === 'string' && code.startsWith('memory_handoff_') ? { code } : {}),
+        error: (error as Error).message || 'Failed to install agent',
+      });
   }
 };
 
