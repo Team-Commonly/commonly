@@ -50,8 +50,10 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import {
   prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
+import { CLI } from '../cli-hint.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
+  effectiveSandboxTrust,
   isLegacySandboxTrust,
   normalizeSandboxTrust,
   refuseWorkspaceTrust,
@@ -854,6 +856,13 @@ const qualifiedProviderModel = (provider, model) => (
   provider ? `${provider.id}/${model}` : model
 );
 
+// The OpenCode provider package for each shared `provider.api`.
+const OPENCODE_PROVIDER_PACKAGES = Object.freeze({
+  'openai-chat': '@ai-sdk/openai-compatible',
+  'anthropic-messages': '@ai-sdk/anthropic',
+  google: '@ai-sdk/google',
+});
+
 const buildProviderConfig = (provider, model, keyFile) => {
   if (!provider) return undefined;
   if (!model) throw new Error('OpenCode provider configuration requires environment.model');
@@ -868,10 +877,16 @@ const buildProviderConfig = (provider, model, keyFile) => {
   }
   // anthropic-messages: provider.baseURL is the host (as for Claude Code's
   // ANTHROPIC_BASE_URL); @ai-sdk/anthropic appends /messages to a /v1 base.
+  // google: provider.baseURL is the API root with its version
+  // (https://generativelanguage.googleapis.com/v1beta); @ai-sdk/google posts
+  // models/<id>:streamGenerateContent there and sends the key as
+  // x-goog-api-key. It replays Gemini 3's thought signatures, which
+  // @ai-sdk/openai-compatible drops (the second tool call is refused).
+  const npm = OPENCODE_PROVIDER_PACKAGES[provider.api || 'openai-chat'];
   const anthropic = provider.api === 'anthropic-messages';
   return {
     [provider.id]: {
-      npm: anthropic ? '@ai-sdk/anthropic' : '@ai-sdk/openai-compatible',
+      npm,
       options: {
         baseURL: anthropic ? `${provider.baseURL.replace(/\/+$/, '')}/v1` : provider.baseURL,
         apiKey: `{file:${keyFile}}`,
@@ -879,6 +894,35 @@ const buildProviderConfig = (provider, model, keyFile) => {
       models,
     },
   };
+};
+
+// Gemini's OpenAI-compatible endpoint, where Gemini 3 tool calls fail.
+const isGeminiCompatEndpoint = (provider) => {
+  try {
+    const url = new URL(provider.baseURL);
+    return url.hostname.toLowerCase() === 'generativelanguage.googleapis.com'
+      && /\/openai\/?$/.test(url.pathname);
+  } catch { return false; }
+};
+
+// The rule OpenCode adds to the shared provider check (environment.js
+// providerRefusal), at config, attach, run and the daemon's adapter swap.
+const openCodeProviderVerdict = (environment) => {
+  const provider = environment?.provider;
+  if (!provider || typeof provider !== 'object') return undefined;
+  // A public seat reaches its provider only through the local proxy, whose
+  // routes cover the OpenAI-compatible and Anthropic wires. Gemini's own API
+  // needs routes the proxy doesn't carry.
+  if (provider.api === 'google' && effectiveSandboxTrust(environment?.sandbox?.trust) === 'public') {
+    return 'provider.api "google" is for private OpenCode seats; a public seat reaches its provider through the local proxy, which does not carry Gemini\'s API. '
+      + `A seat a computer's daemon runs is made public, so run a Gemini seat with \`${CLI} agent run <name>\``;
+  }
+  if ((provider.api || 'openai-chat') === 'openai-chat' && isGeminiCompatEndpoint(provider)) {
+    return 'Gemini\'s OpenAI-compatible endpoint drops the thought signatures Gemini 3 needs for a second tool call; '
+      + 'in the environment file set provider.api to "google" and provider.baseURL to https://generativelanguage.googleapis.com/v1beta, '
+      + `then run \`${CLI} agent config <name> --env <file>\` (the agent starts a fresh session)`;
+  }
+  return undefined;
 };
 
 const validateProviderEnvironment = async (environment, workspacePath, options = {}) => {
@@ -1312,9 +1356,11 @@ export default {
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,
-  // `provider.api`: an OpenAI-compatible endpoint, or Anthropic's Messages API
-  // through OpenCode's own @ai-sdk/anthropic provider.
-  providerApis: ['openai-chat', 'anthropic-messages'],
+  // `provider.api`: an OpenAI-compatible endpoint, Anthropic's Messages API
+  // through OpenCode's own @ai-sdk/anthropic provider, or Gemini's own API
+  // through @ai-sdk/google (private seats only).
+  providerApis: Object.keys(OPENCODE_PROVIDER_PACKAGES),
+  providerVerdict: openCodeProviderVerdict,
 
   async validateEnvironment(environment, workspacePath) {
     return validateProviderEnvironment(environment, workspacePath);
@@ -1364,6 +1410,10 @@ export default {
     }
 
     const provider = ctx.environment?.provider;
+    // Attach and config refuse these first; a turn refuses them too, for a
+    // record written by an older CLI.
+    const providerVerdict = openCodeProviderVerdict(ctx.environment);
+    if (providerVerdict) throw new Error(providerVerdict);
     if (isPublic && !provider) {
       throw new Error('public OpenCode seats require environment.provider; the implicit public tier and operator auth.json are unsupported for public trust');
     }
@@ -1384,16 +1434,6 @@ export default {
       : childSourceEnv;
     const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
     const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
-    // Trusted seats otherwise allow old binaries. Gemini requires a stable
-    // release with native signature replay now that the proxy shim is gone.
-    if (provider && new URL(provider.baseURL).hostname.toLowerCase() === 'generativelanguage.googleapis.com'
-      && (!installedVersion || isOpenCodePrerelease(installedVersion)
-        || compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSIONS[0]) < 0)) {
-      throw new Error(
-        `Gemini requires stable OpenCode ${TESTED_OPENCODE_VERSIONS[0]} or later for native thought-signature replay; `
-        + `installed version is ${installedVersion || 'unknown'}`,
-      );
-    }
     if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';

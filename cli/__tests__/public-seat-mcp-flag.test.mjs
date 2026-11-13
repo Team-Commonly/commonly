@@ -24,7 +24,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun, updateAgentConfiguration } = await import('../src/commands/agent.js');
 const { PUBLIC_SEAT_MCP_ENV, withPublicSeatMcpFlag } = await import('../src/lib/public-seat-mcp-flag.js');
 const { ANSWERABLE_API_STATUSES } = await import('../src/lib/public-tool-error.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
@@ -162,6 +162,23 @@ describe('the spawn', () => {
   test('a workspace seat placed public for the turn is flagged', async () => {
     const spawned = await spawnedEnvironment({ model: 'm', sandbox: { trust: 'workspace' }, mcp: [COMMONLY] }, []);
     expect(spawned.sandbox.trust).toBe('public');
+    expect(spawned.mcp[0].env[PUBLIC_SEAT_MCP_ENV]).toBe('1');
+  });
+
+  // `agent config --env` re-adds the Commonly server a replacement spec left
+  // out. The flag is added at spawn, not stored, so a public seat configured
+  // that way must still spawn flagged.
+  test('a public seat configured with agent config --env spawns with the flag on its re-added Commonly server', async () => {
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-abc' })), patch: jest.fn(async () => ({ success: true })) };
+    const { environment } = await updateAgentConfiguration({
+      client,
+      record: { agentName: 'quill', podId: 'pod-abc', instanceId: 'default', runtimeToken: 'cm_agent_q', adapter: 'claude' },
+      envPath: '/tmp/env.json',
+      parseEnv: jest.fn(async () => ({ model: 'm', sandbox: { trust: 'public' } })),
+    });
+    expect(environment.mcp.map((server) => server.name)).toEqual(['commonly']);
+    expect(environment.mcp[0].env[PUBLIC_SEAT_MCP_ENV]).toBeUndefined();
+    const spawned = await spawnedEnvironment(environment);
     expect(spawned.mcp[0].env[PUBLIC_SEAT_MCP_ENV]).toBe('1');
   });
 
