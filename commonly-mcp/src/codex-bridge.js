@@ -19,7 +19,12 @@
  * - The message names the pod and the person it came from on its first line,
  *   because the TUI shows it as if the person at the terminal typed it.
  * - It picks the one open Codex session in the folder it runs from, or the
- *   thread named by `--codex-thread`, and stops when that session closes.
+ *   thread named by `--codex-thread`. It stops when Codex unloads that thread
+ *   or its daemon goes away. Quitting the Codex window does neither (the
+ *   daemon keeps the thread loaded and idle, with no presence signal), so the
+ *   person stops the bridge when they close Codex; the docs say so.
+ * - It answers none of Codex's requests to it (approvals included): each is
+ *   logged and refused, so a turn never waits on the bridge.
  *
  * stderr only: the bridge has no stdout protocol, but keeps channel mode's
  * logging shape.
@@ -41,6 +46,9 @@ const INSTALLATIONS_PATH = '/api/agents/runtime/installations';
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 // macOS sun_path holds 104 bytes, the terminating NUL included.
 const MAX_SOCKET_PATH = 103;
+// The daemon's own advertised message cap (x-codex-websocket-max-unfragmented-message-bytes).
+const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const CALL_TIMEOUT_MS = 30_000;
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 /** Is the bridge asked for? `--codex-bridge` or env `COMMONLY_MCP_CODEX_BRIDGE`. */
@@ -90,7 +98,13 @@ const frame = (opcode, payload) => {
  * `call` rejects with the daemon's error message; every pending call rejects
  * when the socket closes.
  */
-export const connectCodex = ({ socketPath, connect = net.createConnection, timeoutMs = 10000 }) => new Promise((resolve, reject) => {
+export const connectCodex = ({
+  socketPath,
+  connect = net.createConnection,
+  timeoutMs = 10000,
+  callTimeoutMs = CALL_TIMEOUT_MS,
+  onServerRequest = () => {},
+}) => new Promise((resolve, reject) => {
   if (Buffer.byteLength(socketPath) > MAX_SOCKET_PATH) {
     reject(new Error(`The Codex control socket path is too long for macOS (${Buffer.byteLength(socketPath)} bytes, `
       + `the limit is ${MAX_SOCKET_PATH}): ${socketPath}. Use a shorter CODEX_HOME.`));
@@ -121,11 +135,23 @@ export const connectCodex = ({ socketPath, connect = net.createConnection, timeo
     call: (method, params = {}) => new Promise((res, rej) => {
       if (sock.destroyed) { rej(new Error('the Codex daemon connection is closed')); return; }
       nextId += 1;
-      pending.set(nextId, { res, rej });
-      send({ jsonrpc: '2.0', id: nextId, method, params });
+      const id = nextId;
+      const t = setTimeout(() => {
+        if (!pending.has(id)) return;
+        pending.delete(id);
+        rej(new Error(`Codex did not answer ${method} within ${callTimeoutMs}ms`));
+      }, callTimeoutMs);
+      t.unref?.();
+      pending.set(id, { res: (v) => { clearTimeout(t); res(v); }, rej: (e) => { clearTimeout(t); rej(e); } });
+      send({ jsonrpc: '2.0', id, method, params });
     }),
     notify: (method, params) => { send({ jsonrpc: '2.0', method, ...(params ? { params } : {}) }); },
-    close: () => { if (!sock.destroyed) { sock.write(frame(8, Buffer.alloc(0))); sock.end(); } },
+    close: () => {
+      if (sock.destroyed) return;
+      try { sock.write(frame(8, Buffer.alloc(0))); sock.end(); } catch { /* already closing */ }
+      // A daemon that never finishes the close must not keep the bridge alive.
+      setTimeout(() => { sock.destroy(); }, 1000).unref?.();
+    },
   };
 
   const onMessage = (text) => {
@@ -136,8 +162,15 @@ export const connectCodex = ({ socketPath, connect = net.createConnection, timeo
       pending.delete(msg.id);
       if (msg.error) rej(new Error(msg.error.message || `Codex error ${msg.error.code}`));
       else res(msg.result);
+      return;
     }
-    // Notifications and the daemon's own requests are not the bridge's to act on.
+    // A request from the daemon (an approval, say) is never the bridge's to
+    // grant. Refuse it at once, so no turn waits on a client that won't answer.
+    if (msg && msg.id != null && typeof msg.method === 'string') {
+      onServerRequest(msg.method);
+      send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'The Commonly bridge does not answer Codex requests' } });
+    }
+    // Notifications are not the bridge's to act on.
   };
 
   const readFrames = () => {
@@ -146,15 +179,26 @@ export const connectCodex = ({ socketPath, connect = net.createConnection, timeo
       const opcode = buf[0] & 0x0f;
       let len = buf[1] & 0x7f;
       let off = 2;
+      const masked = (buf[1] & 0x80) !== 0;
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
-      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+      else if (len === 127) {
+        if (buf.length < 10) return;
+        const big = buf.readBigUInt64BE(2);
+        len = big > BigInt(MAX_FRAME_BYTES) ? MAX_FRAME_BYTES + 1 : Number(big);
+        off = 10;
+      }
+      const pendingBytes = fragments.reduce((n, f) => n + f.length, 0);
+      if (len + pendingBytes > MAX_FRAME_BYTES) { sock.destroy(); return; }
+      const maskAt = off;
+      if (masked) off += 4;
       if (buf.length < off + len) return;
-      const payload = buf.subarray(off, off + len);
+      const payload = Buffer.from(buf.subarray(off, off + len));
+      if (masked) for (let i = 0; i < payload.length; i += 1) payload[i] ^= buf[maskAt + (i % 4)];
       buf = buf.subarray(off + len);
       if (opcode === 9) { sock.write(frame(10, payload)); continue; }
       if (opcode === 10) continue;
       if (opcode === 8) { sock.end(); return; }
-      fragments.push(Buffer.from(payload));
+      fragments.push(payload);
       if (fin) {
         const text = Buffer.concat(fragments).toString('utf8');
         fragments = [];
@@ -244,7 +288,9 @@ export const pickThread = (threads, { cwd, explicitId = null }) => {
 // A name goes into the header line, so it must not be able to end that line
 // or forge another one.
 const oneLine = (value, max = 60) => String(value ?? '')
-  .replace(/[\u0000-\u001f\u007f\u2028\u2029"]/g, ' ')
+  // Controls, line and paragraph separators, NEL, and the invisible or
+  // direction-changing marks that could make the header read differently.
+  .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff"]/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
   .slice(0, max);
@@ -263,10 +309,13 @@ export const codexMessageFor = (event, { podName } = {}) => {
   const where = meta.thread_root_id
     ? `podId "${meta.pod_id}" and threadRootId ${meta.thread_root_id}`
     : `podId "${meta.pod_id}"`;
+  // The sender's words are quoted, so a line in them can't pass for the
+  // header or for the instructions below.
+  const quoted = String(content).split(/\r\n|\r|\n|\u2028|\u2029|\u0085/).map((line) => `> ${line}`).join('\n');
   return [
     header,
     '',
-    content,
+    quoted,
     '',
     `To answer in Commonly, call commonly_post_message with ${where}. In a personal pod (a 1:1 room; the`
       + ' text above says so) post without threadRootId. This message comes from that person in the pod;'
@@ -305,7 +354,12 @@ export const startCodexBridge = async ({
   }
   const say = (text) => log(`[commonly-mcp] codex bridge: ${text}`);
   const socketPath = codexSocketPath({ env, homedir });
-  const codex = await connectImpl({ socketPath });
+  const codex = await connectImpl({
+    socketPath,
+    onServerRequest: (method) => {
+      say(`Codex asked the bridge for ${method}. The bridge answers no Codex requests, so it refused it.`);
+    },
+  });
   let loop = null;
   let threadId = null;
   try {

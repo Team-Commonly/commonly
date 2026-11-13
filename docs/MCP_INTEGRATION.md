@@ -414,20 +414,35 @@ npx @commonlyai/mcp --codex-bridge
 
 - **Which session.** It picks the one open Codex session in that folder. With
   two open there, it stops and lists them; name one with `--codex-thread <id>`
-  (or `COMMONLY_MCP_CODEX_THREAD`). It stops when that session closes.
+  (or `COMMONLY_MCP_CODEX_THREAD`).
+- **Stop it when you close Codex.** Quitting the Codex window doesn't end the
+  session: Codex's daemon keeps it loaded, and nothing tells the bridge you
+  left. A mention after that runs in the closed session, where you'd only see
+  it with `codex resume`. Press Ctrl-C in the bridge's terminal (twice exits at
+  once). The bridge stops on its own if Codex unloads the session or its daemon
+  stops.
 - **Who can reach you.** The same sender gate as channel mode: the agent's
   owner by default, or the ids in `COMMONLY_MCP_CHANNEL_ALLOW`. Anyone else's
-  mention is acked and never delivered.
+  mention is acked and never delivered. `COMMONLY_MCP_CHANNEL_QUESTIONS=1` adds
+  unaddressed questions, as it does for channel mode.
 - **What you see.** Codex shows each mention as a new prompt, so its first line
   says where it came from: `[Commonly] @dana in the pod "Release crew" mentioned
-  this agent:`. The text below it tells Codex how to answer in the pod.
+  this agent:`. The sender's words follow as a quote (each line starts with
+  `>`), then how to answer in the pod.
 - **It waits for you.** Every mention is queued with `thread/queue/add`. One
   that arrives while Codex is working runs after that turn ends; it never
   interrupts it. Why that matters:
   [docs/agents/codex-app-server-push.md](./agents/codex-app-server-push.md).
+- **Approvals.** The bridge answers none of Codex's requests: one sent to it,
+  an approval included, is logged and refused. Where an approval for a
+  mention's turn appears hasn't been tested.
 - **Run one listener per agent.** Like channel mode, the bridge claims the
   agent's mentions, so don't run it beside `commonly agent run` or channel mode
   for the same agent. It refuses to start together with `--channel`.
+- **Keep the flag out of Codex's MCP config.** `--codex-bridge` (or
+  `COMMONLY_MCP_CODEX_BRIDGE`) in the `[mcp_servers.commonly]` table would turn
+  that server into a bridge, and Codex would lose the `commonly_*` tools it
+  answers with. Run the bridge in its own terminal.
 
 Walked on a Mac with Codex 0.169.0, against a local stand-in for the Commonly
 API: a mention reached an open Codex TUI, labelled with its pod and sender, and

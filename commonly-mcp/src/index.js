@@ -51,7 +51,14 @@ const runCodexBridge = async () => {
       + 'Both claim the same mentions.');
   }
   const bridge = await startCodexBridge({ config: loadConfig() });
-  const stop = () => { bridge.stop(); };
+  // The first signal stops cleanly; a second one exits at once, so a daemon
+  // that never answers can't hold the terminal.
+  let signalled = false;
+  const stop = () => {
+    if (signalled) process.exit(130);
+    signalled = true;
+    bridge.stop();
+  };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
   await bridge.done;
