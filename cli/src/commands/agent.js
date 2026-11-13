@@ -1341,7 +1341,11 @@ export const updateAgentConfiguration = async ({
   if (Object.keys(runtime).length) config.runtime = runtime;
   let environment = null;
   if (envPath) {
-    environment = await parseEnv(envPath);
+    // As at attach: a replacement spec keeps the Commonly kernel server, so a
+    // seat run in the foreground (which applies no daemon baseline) keeps its
+    // commonly_* tools.
+    environment = withDefaultMcpServer(await parseEnv(envPath),
+      String(runtime.adapter || record.adapter || '').trim().toLowerCase());
   } else if (record.environment && typeof record.environment === 'object' && !Array.isArray(record.environment)) {
     environment = { ...record.environment };
   }
@@ -2294,14 +2298,17 @@ export const performRun = ({
     .catch(() => ({ models: null, efforts: [] })) : Promise.resolve(null);
   let seatEnvironment = requestedSeatEnvironment;
   let lastSavedControls = null;
-  // OpenCode retains tool-call IDs in its resumed history. A Gemini proxy
-  // marks those IDs with signature references, so changing providers must
-  // start a fresh session before another upstream can receive them.
+  // OpenCode retains tool calls in its resumed history, and Gemini's carry
+  // signatures only one upstream can read, so changing providers, or the API
+  // a provider is spoken through, starts a fresh session. The default API is
+  // left out so a seat that never set one keeps its session across upgrades.
+  const providerApi = seatEnvironment?.provider?.api;
   const sessionBinding = adapter?.name === 'opencode'
     ? createHash('sha256').update(JSON.stringify([
       seatEnvironment?.provider?.id || null,
       seatEnvironment?.provider?.baseURL || null,
       seatEnvironment?.provider?.keyFile || null,
+      ...(providerApi && providerApi !== 'openai-chat' ? [providerApi] : []),
     ])).digest('hex')
     : null;
   let running = true;

@@ -49,7 +49,7 @@ const {
   assertSandboxDeclaredForPublicPod,
 } = await import('../src/commands/agent.js');
 const {
-  ADAPTERS_WITH_DEFAULT_SANDBOX, ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_SANDBOX_ENFORCEMENT, seatBaseline,
+  ADAPTERS_WITH_DEFAULT_SANDBOX, ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_SANDBOX_ENFORCEMENT, commonlyMcpServer, seatBaseline,
 } = await import('../src/lib/default-environment.js');
 const { windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 
@@ -347,8 +347,26 @@ describe('updateAgentConfiguration', () => {
       envPath: '/tmp/provider-env.json',
       parseEnv: jest.fn(async () => environment),
     });
-    expect(client.patch.mock.calls[0][1].config.environment).toEqual({ model: 'gpt-5.4' });
-    expect(result.environment).toEqual(environment);
+    // The provider stays local; the kernel server is added, as at attach.
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({ model: 'gpt-5.4', mcp: [commonlyMcpServer()] });
+    expect(result.environment).toEqual({ ...environment, mcp: [commonlyMcpServer()] });
+  });
+
+  // A replacement spec keeps the Commonly kernel server, as attach does: a
+  // foreground `agent run` applies no daemon baseline, so a spec without it
+  // ran the seat with no commonly_* tools at all.
+  test('agent config --env keeps the commonly MCP server; a declared one is left as written', async () => {
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
+    const bare = { model: 'gemini-3.6-flash' };
+    const added = await updateAgentConfiguration({
+      client, record: { ...record, adapter: 'opencode' }, envPath: '/tmp/env.json', parseEnv: jest.fn(async () => bare),
+    });
+    expect(added.environment.mcp).toEqual([commonlyMcpServer()]);
+    const pinned = { model: 'm', mcp: [{ name: 'commonly', transport: 'stdio', command: ['node', '/opt/mcp.js'] }] };
+    const kept = await updateAgentConfiguration({
+      client, record: { ...record, adapter: 'opencode' }, envPath: '/tmp/env.json', parseEnv: jest.fn(async () => pinned),
+    });
+    expect(kept.environment.mcp).toEqual(pinned.mcp);
   });
 
   test('refuses provider configuration when the local token record is not OpenCode-bound', async () => {
