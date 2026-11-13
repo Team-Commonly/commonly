@@ -1109,7 +1109,7 @@ const runOpenCode = ({
       // A signal exit has no code, so without its name a quiet death read as
       // just "opencode" (F257).
       const err = adapterFailure(code === null && signal ? `opencode ended on ${signal}` : 'opencode', stderr.trim(), {
-        credentials, exitCode: code, limit: 500,
+        credentials, exitCode: code, limit: 500, signal,
       });
       err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
       return reject(err);

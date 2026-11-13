@@ -7,7 +7,7 @@ import { join } from 'path';
 import { StringDecoder } from 'string_decoder';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { requireSeatModel } from '../seat-model.js';
-import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { adapterFailure, markExternalSignal, spawnCredentials } from '../upstream-refusal.js';
 
 export const SUPPORTED_HERMES_VERSION_RANGE = '>=0.22.5 <0.23.0';
 const supportsHermesVersion = (version) => {
@@ -165,20 +165,29 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials, 
   child.stderr.on('data', (chunk) => {
     stderr = `${stderr}${chunk.toString()}`.slice(-MAX_STDERR_CHARS);
   });
-  child.on('close', (code) => {
+  child.on('close', (code, signal) => {
     closed = true;
     clearTimeout(killTimer);
     if (settled) return;
     if (timedOut) return finish(new Error(`Hermes timed out after ${timeoutMs}ms`));
     buffer += decoder.end();
     if (buffer.trim()) {
-      try { readHermesJsonl(buffer.trim(), state); } catch (error) { return finish(error); }
+      // A protocol error found mid-stream settled above; one here is a trailing
+      // record, which an outside signal may have cut short mid-write (F293).
+      try { readHermesJsonl(buffer.trim(), state); } catch (error) {
+        const failedResult = state.result && (state.result.error || state.result.exit_code !== 0);
+        return finish(failedResult ? error : markExternalSignal(error, { code, signal }));
+      }
     }
     const result = state.result;
-    if (!result || !state.started) return finish(new Error('Hermes exited without a complete JSONL result'));
+    // `settled` above covers this adapter's own stop(), so a signal here is outside.
+    if (!result || !state.started) {
+      return finish(markExternalSignal(new Error('Hermes exited without a complete JSONL result'), { code, signal }));
+    }
     if (code !== 0 || result.exit_code !== 0) {
       return finish(adapterFailure('Hermes', result.error || stderr || `exit ${code}`, {
-        credentials, exitCode: code,
+        // A result that reported its own failure keeps it as the cause.
+        credentials, exitCode: code, ...(result.error || result.exit_code !== 0 ? {} : { signal }),
       }));
     }
     if (typeof result.text !== 'string' || !result.session_id) {

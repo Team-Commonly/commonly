@@ -354,6 +354,7 @@ export const runDsh = ({
   let stderr = '';
   let timedOut = false;
   let parseFailure = null;
+  let ownKill = false;
   let settled = false;
   let killTimer;
   const finish = (error, result) => {
@@ -372,6 +373,7 @@ export const runDsh = ({
     state.buffer += chunk.toString();
     if (state.buffer.length > 1024 * 1024) {
       parseFailure = new Error('dsh event exceeded 1 MiB');
+      ownKill = true;
       proc.kill('SIGTERM');
       return;
     }
@@ -380,21 +382,30 @@ export const runDsh = ({
       const line = state.buffer.slice(0, end).trim();
       state.buffer = state.buffer.slice(end + 1);
       if (line && !parseFailure) {
-        try { parseEvent(line, state); } catch (error) { parseFailure = error; proc.kill('SIGTERM'); }
+        try { parseEvent(line, state); } catch (error) { parseFailure = error; ownKill = true; proc.kill('SIGTERM'); }
       }
     }
   });
   proc.stderr?.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-8192); });
   proc.on('error', (error) => finish(error));
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     if (state.buffer.trim() && !parseFailure) {
       try { parseEvent(state.buffer.trim(), state); } catch (error) { parseFailure = error; }
     }
+    const sandboxDown = /SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(stderr);
     const failure = parseFailure?.message || state.error || (timedOut ? `timeout after ${timeoutMs}ms` : null)
-      || (/SANDBOX_UNAVAILABLE|sandbox_apply: Operation not permitted/.test(stderr) ? 'sandbox runner unavailable' : null)
+      || (sandboxDown ? 'sandbox runner unavailable' : null)
       || (code !== 0 ? stderr.trim() || `exit ${code}` : null)
       || (state.final === null ? 'no final event' : null);
-    if (failure) return finish(adapterFailure('dsh', failure, { credentials, exitCode: code, limit: 500 }));
+    // A parse failure mid-stream and a timeout are this adapter's own SIGTERM,
+    // and a stream error names its cause: only a bare cut-off came from outside.
+    // A trailing event that won't parse at close is a write the signal cut short.
+    const ownCause = Boolean(ownKill || state.error || timedOut || sandboxDown);
+    if (failure) {
+      return finish(adapterFailure('dsh', failure, {
+        credentials, exitCode: code, limit: 500, ...(ownCause ? {} : { signal }),
+      }));
+    }
     return finish(null, { text: state.final.trim(), newSessionId: state.sessionId, contextTokens: state.contextTokens });
   });
 });

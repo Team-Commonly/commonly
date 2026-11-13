@@ -134,7 +134,9 @@ import {
   writeHooksConfig,
 } from '../lib/hooks-config.js';
 import {
+  EXTERNAL_SIGNAL_GRACE,
   formatRetryDelay,
+  isExternalSignal,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
@@ -2305,6 +2307,16 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
+  // F293: turns cut off by an outside signal since the last good spawn. The
+  // first EXTERNAL_SIGNAL_GRACE of them retry without counting as failures, so
+  // a walk that kills three turns doesn't open the circuit on the fourth ask.
+  let externalSignalStreak = 0;
+  const countSpawnFailure = (err) => {
+    const graced = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
+    if (isExternalSignal(err)) externalSignalStreak += 1;
+    if (!graced) consecutiveSpawnFailures += 1;
+    return graced;
+  };
   let pollStalled = false;
   const pollLiveness = createPollLiveness({
     limitMs: resolvePollLivenessMs(pollLivenessMs),
@@ -3855,13 +3867,16 @@ export const performRun = ({
   // are just as claimed, so they ride along without a strike. `pastCap` events
   // were left out of a turn, which is no failure of theirs: no strike, and
   // PAST_CAP_MAX_CARRIES bounds them instead. A later group's hold in the same
-  // tick adds to the carry, never replaces it.
-  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
+  // tick adds to the carry, never replaces it. A turn an outside signal cut off
+  // inside its grace (F293) is no failure of the event's either: `strike: false`
+  // carries it without one, or the third kill would release it to the server's
+  // requeue and the answer would wait 10–20 minutes. The grace bounds this.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true } = {}) => {
     const released = [];
     let part = null;
     const carry = [];
     const seen = new Set();
-    for (const event of failedEvents) {
+    for (const event of strike ? failedEvents : []) {
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
@@ -3877,7 +3892,7 @@ export const performRun = ({
         }
       }
     }
-    for (const event of untriedEvents) {
+    for (const event of strike ? untriedEvents : [...failedEvents, ...untriedEvents]) {
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
@@ -4668,12 +4683,13 @@ export const performRun = ({
           // The unacked items are carried to the retry, not left to the
           // requeue sweep, so the delay below is when they run again.
           const scheduleBatchRetry = async (err, failedEvents) => {
-            consecutiveSpawnFailures += 1;
+            const externalSignal = countSpawnFailure(err);
             const retry = spawnRetryPolicy({
               error: err,
               consecutiveFailures: consecutiveSpawnFailures,
               intervalMs,
               jitterRatio: spawnJitterRatio,
+              externalSignal,
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
@@ -4687,6 +4703,7 @@ export const performRun = ({
               attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
+              { strike: !externalSignal },
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
@@ -4739,6 +4756,7 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
+            externalSignalStreak = 0;
             // Notices arriving mid-turn get one bounded collection window.
             // Idle polls and batches with no model turn keep their cadence.
             completedModelTurn = true;
@@ -4808,12 +4826,13 @@ export const performRun = ({
               // at-least-once delivery. Stop this fetched batch immediately —
               // continuing could launch every one of the 10 returned events
               // into the same provider outage before the next poll (#782).
-              consecutiveSpawnFailures += 1;
+              const externalSignal = countSpawnFailure(err);
               const retry = spawnRetryPolicy({
                 error: err,
                 consecutiveFailures: consecutiveSpawnFailures,
                 intervalMs,
                 jitterRatio: spawnJitterRatio,
+                externalSignal,
               });
               nextPollDelayMs = retry.delayMs;
               retryScheduled = true;
@@ -4825,7 +4844,7 @@ export const performRun = ({
               // eslint-disable-next-line no-await-in-loop
               if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
-              const hold = await holdForRetry([event], untriedAfter(groupIndex));
+              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !externalSignal });
               keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
@@ -4882,7 +4901,10 @@ export const performRun = ({
           // and neither may an enforcement stand-down (cascade cap, lost
           // claim), which returns before any spawn happens.
           const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
-          if (eventWillSpawn && !stoodDown) consecutiveSpawnFailures = 0;
+          if (eventWillSpawn && !stoodDown) {
+            consecutiveSpawnFailures = 0;
+            externalSignalStreak = 0;
+          }
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.

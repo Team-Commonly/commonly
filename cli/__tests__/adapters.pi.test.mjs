@@ -382,6 +382,45 @@ describe('spawn', () => {
       expect(failure.message).not.toMatch(/No project session/);
     });
 
+    // F293: a signal the adapter didn't send is someone outside cutting the
+    // turn short, so the run loop retries it without counting a failure.
+    test.each([
+      [null, 'SIGTERM', 'SIGTERM'], [143, null, 'SIGTERM'], [129, null, 'SIGHUP'], [null, 'SIGINT', 'SIGINT'],
+    ])('a cut-off (exit %s, signal %s) is marked as an outside %s', async (code, signal, named) => {
+      const { impl } = makeSpawnImpl({ stdout: interim, code, signal });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure).toMatchObject({ externalSignal: true, signal: named });
+    });
+
+    test('a status stderr named keeps its class, though pi then exits 143', async () => {
+      const { impl } = makeSpawnImpl({ stdout: '', stderr: 'request failed with status 429\n', code: 143 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.externalSignal).toBeUndefined();
+      expect(classifySpawnFailure(failure)).toBe('rate_limit');
+    });
+
+    test('a status stderr named keeps its class after an interim message too', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim, stderr: 'request failed with status 429\n', code: 143 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.externalSignal).toBeUndefined();
+    });
+
+    test('a cut-off before pi said anything is marked too', async () => {
+      const { impl } = makeSpawnImpl({ stdout: '', code: null, signal: 'SIGTERM' });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
+    });
+
+    test.each([
+      ['SIGKILL, which the OOM killer sends', { stdout: interim, code: null, signal: 'SIGKILL' }],
+      ['an ordinary crash', { stdout: interim, code: 1 }],
+      ['a signal after an error event, which keeps its cause', { stdout: interim + event({ type: 'error', message: 'boom crash' }), code: 143 }],
+    ])('%s is not marked', async (_name, out) => {
+      const { impl } = makeSpawnImpl(out);
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.externalSignal).toBeUndefined();
+    });
+
     test('a long crash keeps a cause at the end of stderr', async () => {
       const stack = Array.from({ length: 12 }, (_, i) => `    at frame${i} (file.js:${i}:1)`).join('\n');
       const { impl } = makeSpawnImpl({ stdout: interim, stderr: `${stack}\nError: quota exceeded: out of credits`, code: 1 });

@@ -5,12 +5,13 @@ import {
   SPAWN_RETRY_MAX_MS,
   classifySpawnFailure,
   formatRetryDelay,
+  isExternalSignal,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../src/lib/spawn-retry.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
-import { adapterFailure } from '../src/lib/upstream-refusal.js';
+import { adapterFailure, markExternalSignal } from '../src/lib/upstream-refusal.js';
 
 const publicToolFailure = () => Object.assign(new Error('model: gpt-9'), {
   code: PUBLIC_TOOL_FAILED_CODE, status: 404, providerCode: 'model_not_found',
@@ -423,5 +424,48 @@ describe('a public seat refused for its Codex version', () => {
   test('so is one whose version could not be read', () => {
     expect(classifySpawnFailure(publicCodexVersionError({ found: null, required: '0.159.3' })))
       .toBe(SPAWN_FAILURE_CLASS.CONFIGURATION);
+  });
+});
+
+// F293: a turn someone outside the wrapper cut short.
+describe('an outside signal', () => {
+  test.each([
+    [{ signal: 'SIGTERM' }, 'SIGTERM'], [{ signal: 'SIGHUP' }, 'SIGHUP'], [{ signal: 'SIGINT' }, 'SIGINT'],
+    [{ code: 143 }, 'SIGTERM'], [{ code: 129 }, 'SIGHUP'], [{ code: 130 }, 'SIGINT'],
+  ])('%j is marked as %s', (closed, named) => {
+    const error = markExternalSignal(new Error('cut off'), closed);
+    expect(error).toMatchObject({ signal: named, externalSignal: true });
+    expect(isExternalSignal(error)).toBe(true);
+  });
+
+  test.each([
+    [{ signal: 'SIGKILL' }], [{ code: 137 }], [{ code: 1 }], [{ code: 0 }], [{}],
+  ])('%j is not', (closed) => {
+    expect(isExternalSignal(markExternalSignal(new Error('x'), closed))).toBe(false);
+  });
+
+  test('adapterFailure marks only when the caller passes the signal', () => {
+    expect(isExternalSignal(adapterFailure('codex', '', { exitCode: 143 }))).toBe(false);
+    expect(isExternalSignal(adapterFailure('codex', '', { exitCode: 143, signal: null }))).toBe(true);
+    expect(isExternalSignal(adapterFailure('codex', '', { exitCode: null, signal: 'SIGTERM' }))).toBe(true);
+  });
+
+  test('a status the text named is a cause, so it is never marked', () => {
+    const failure = adapterFailure('claude', 'request failed with status 429', { exitCode: 143, signal: null });
+    expect(failure.status).toBe(429);
+    expect(isExternalSignal(failure)).toBe(false);
+  });
+
+  test('the policy retries a graced one at the poll interval with the circuit shut', () => {
+    const error = markExternalSignal(new Error('quota exceeded'), { signal: 'SIGTERM' });
+    expect(spawnRetryPolicy({
+      error, consecutiveFailures: 0, intervalMs: 5000, jitterRatio: 0.1, externalSignal: true,
+    })).toEqual({ failureClass: SPAWN_FAILURE_CLASS.SIGNALED, circuitOpen: false, delayMs: 5500 });
+  });
+
+  test('past the grace the run loop passes no flag and the error classes as usual', () => {
+    const error = markExternalSignal(new Error('claude exited with code null:'), { signal: 'SIGTERM' });
+    expect(spawnRetryPolicy({ error, consecutiveFailures: 3, intervalMs: 5000 }))
+      .toMatchObject({ failureClass: SPAWN_FAILURE_CLASS.RUNTIME, circuitOpen: true });
   });
 });

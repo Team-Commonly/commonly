@@ -288,12 +288,12 @@ const runQwen = ({ cmd, args, cwd, env, timeoutMs, spawnImpl, credentials }) => 
   });
   child.stderr?.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-8192); });
   child.on('error', (error) => finish(error));
-  child.on('close', (code) => {
+  child.on('close', (code, signal) => {
     if (state.buffer) parseStream(state.buffer, state);
     if (timedOut) return finish(new Error(`qwen timed out after ${timeoutMs}ms`));
     if (code !== 0 || state.error) {
       return finish(adapterFailure('qwen', state.error || stderr.trim() || `exit ${code}`, {
-        credentials, exitCode: code, limit: 500,
+        credentials, exitCode: code, limit: 500, ...(state.error ? {} : { signal }),
       }));
     }
     return finish(null, { text: state.text.trim() });

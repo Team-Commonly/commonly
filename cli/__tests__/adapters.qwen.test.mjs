@@ -174,6 +174,34 @@ test('a bwrap seat launches the real package entry, not npm\'s .bin symlink', as
   });
 });
 
+// F293: a turn cut off from outside is retried without counting a failure.
+const closingChild = (output, code, signal) => {
+  const proc = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.kill = jest.fn();
+  setTimeout(() => {
+    if (output) proc.stdout.emit('data', Buffer.from(output));
+    proc.emit('close', code, signal);
+  }, 0);
+  return proc;
+};
+
+test.each([
+  ['an outside SIGTERM', '', null, 'SIGTERM', true],
+  ['exit 143 from a shell between', '', 143, null, true],
+  ['SIGKILL', '', null, 'SIGKILL', false],
+  ['a stream error, which keeps its cause', '{"type":"result","is_error":true,"result":"boom"}\n', null, 'SIGTERM', false],
+])('qwen: %s', async (_name, output, code, signal, marked) => {
+  await withSeat(async (ctx) => {
+    const failure = await qwen.spawn('hello', {
+      environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => closingChild(output, code, signal),
+    }).catch((err) => err);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.externalSignal === true).toBe(marked);
+  });
+});
+
 test('records every smoke-tested Qwen version', () => {
   expect(TESTED_QWEN_VERSIONS).toEqual(['0.25.1', '0.26.2']);
 });

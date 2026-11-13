@@ -42,10 +42,62 @@ const recordedSpawn = (recording, onSpawn = () => {}, exitCode = 0) => (command,
   return child;
 };
 
+// F293: a child that closes on a signal, after writing `recording`.
+const signalledSpawn = (recording, signal) => () => {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = jest.fn();
+  queueMicrotask(() => {
+    child.stdout.end(recording);
+    child.stderr.end();
+    setTimeout(() => child.emit('close', null, signal), 0);
+  });
+  return child;
+};
+
 const withHome = async (run) => {
   const home = await mkdtemp(join(tmpdir(), 'commonly-hermes-test-'));
   try { return await run(home); } finally { await rm(home, { recursive: true, force: true }); }
 };
+
+describe('a Hermes turn cut off by a signal (F293)', () => {
+  const run = (recording, signal) => withHome((home) => hermes.spawn('Reply PONG', {
+    environment: { model: 'test-model' }, cwd: home, agentName: 'f293-test', env: { OPENROUTER_API_KEY: 'fixture-only' },
+    _hermesHome: home, _spawnSyncImpl: versionProbe('0.22.5'), _spawnImpl: signalledSpawn(recording, signal),
+  }).catch((err) => err));
+
+  test('a failed terminal result keeps its own cause, though SIGTERM followed', async () => {
+    const lines = (await fixture('first-turn')).trim().split('\n');
+    const result = JSON.parse(lines[2]);
+    lines[2] = JSON.stringify({ ...result, exit_code: 1 });
+    const failure = await run(`${lines.join('\n')}\n`, 'SIGTERM');
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.externalSignal).toBeUndefined();
+  });
+
+  test('a trailing record the signal cut short mid-write is marked as outside', async () => {
+    const lines = (await fixture('first-turn')).trim().split('\n');
+    const failure = await run(`${lines[0]}\n${lines[1]}\n{"type": "res`, 'SIGTERM');
+    expect(failure).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
+  });
+
+  test('a failed result before a cut-short record keeps its cause', async () => {
+    const lines = (await fixture('first-turn')).trim().split('\n');
+    const failed = JSON.stringify({ ...JSON.parse(lines[2]), exit_code: 1 });
+    const failure = await run(`${lines[0]}\n${lines[1]}\n${failed}\n{"type": "res`, 'SIGTERM');
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.externalSignal).toBeUndefined();
+  });
+
+  test('the same cut-short record with an ordinary exit is not', async () => {
+    const lines = (await fixture('first-turn')).trim().split('\n');
+    const failure = await run(`${lines[0]}\n${lines[1]}\n{"type": "res`, 'SIGKILL');
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.externalSignal).toBeUndefined();
+  });
+});
 
 test('the walked 0.22.2 capture still parses, though the adapter refuses that release', async () => {
   const events = (await fixture('first-turn', '0.22.2')).trim().split('\n').map(JSON.parse);

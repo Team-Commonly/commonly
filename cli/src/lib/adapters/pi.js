@@ -59,6 +59,8 @@ import { fileURLToPath } from 'url';
 import {
   adapterFailure,
   describeUpstreamRefusal,
+  markExternalSignal,
+  namesFailureCause,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
@@ -590,7 +592,7 @@ export const extractReply = (stdout) => {
 
 // A turn that printed an interim message and then ended without finishing. A
 // crash keeps its cause, so a quota line in stderr or a refusal on the stream
-// still classifies. A signal (143, 129, or a null code) has neither: stderr then
+// still classifies. A signal (143, 129, 130, or a null code) has neither: stderr then
 // holds pi's startup warnings, and a refusal on the stream may be one pi was
 // recovering from, like an overflow's 400. A clean exit that ended on an error
 // has only the stream: its stderr is those warnings too, and the refusal stands.
@@ -601,7 +603,7 @@ export const extractReply = (stdout) => {
 const stoppedTurnFailure = (reply, {
   code, signal, stderr, credentials,
 }) => {
-  const killed = Boolean(signal) || code === 143 || code === 129;
+  const killed = Boolean(signal) || code === 143 || code === 129 || code === 130;
   const cleanExit = code === 0;
   const upstream = killed ? null : reply.upstream;
   const failure = adapterFailure(
@@ -616,7 +618,12 @@ const stoppedTurnFailure = (reply, {
   );
   if (upstream && cleanExit) failure.status = upstream.status;
   else if (upstream) failure.status ??= upstream.status;
-  return failure;
+  // A cut-off with no error on the stream came from outside (F293): the
+  // timeout and a hook's kill return before this is built.
+  // The text above drops stderr on a kill, so a status stderr named is read here.
+  const ownCause = reply.errors.length || failure.status !== undefined || failure.providerCode !== undefined
+    || namesFailureCause(stderr, { credentials });
+  return ownCause ? failure : markExternalSignal(failure, { code, signal });
 };
 
 /**
@@ -710,7 +717,10 @@ const runPi = ({
         }));
       }
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
-      return reject(new Error(`pi exited ${code}: ${tail}`));
+      const exited = new Error(`pi exited ${code}: ${tail}`);
+      // A status stderr named (a 429, say) is a cause too, so it keeps its class.
+      const ownCause = reply.errors.length || namesFailureCause(tail, { credentials });
+      return reject(ownCause ? exited : markExternalSignal(exited, { code, signal }));
     }
     // A refused turn exits 0 too, so here the stream is what says the text was
     // interim. Posting it would answer with half a turn (F258). The last stop

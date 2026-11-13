@@ -2730,6 +2730,119 @@ describe('performRun', () => {
     expect(errors[2].message).toMatch(/circuit open; releasing 1 event after 3 failed attempts .*; next poll in 1m/);
   });
 
+  // F293: a walk cut three pi turns short and the third opened the circuit, so
+  // the next ask waited minutes. An outside signal isn't the provider failing.
+  test('the first three outside signals retry at the poll interval and never open the circuit; a fourth counts', async () => {
+    const event = makeEvent({ _id: 'evt-signal' });
+    // Served once: every retry after that is the wrapper's own carry, so a
+    // graced kill that struck the event would release it and stop the retries.
+    let served = false;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        if (served) return { events: [] };
+        served = true;
+        return { events: [event] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const cutOff = () => Object.assign(new Error('pi exited with code 143: the turn stopped before it finished'), {
+      signal: 'SIGTERM', externalSignal: true,
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw cutOff(); });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    await drainMicrotasks();
+    for (let i = 0; i < 5; i += 1) {
+      scheduled.shift().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+    handle.stop();
+
+    const retries = errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
+    expect(retries.map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen, e.retryAfterMs])).toEqual([
+      ['signaled', 0, false, 5000],
+      ['signaled', 0, false, 5000],
+      ['signaled', 0, false, 5000],
+      // Past the grace, a child killed on every spawn backs off as a fault does.
+      ['runtime', 1, false, 5000],
+      ['runtime', 2, false, 10000],
+      ['runtime', 3, true, 60000],
+    ]);
+    // Carried through all three graced kills and two counted failures; the
+    // third counted failure is the event's third strike and releases it.
+    expect(spawn).toHaveBeenCalledTimes(6);
+    expect(retries[2].message).not.toMatch(/releasing/);
+    expect(retries[5].message).toMatch(/releasing 1 event after 3 failed attempts/);
+  });
+
+  test('an outside signal after a real failure does not add to its count', async () => {
+    const event = makeEvent({ _id: 'evt-signal-mixed' });
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') return { events: [event] };
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(new Error('claude exited with code 1:'))
+      .mockRejectedValueOnce(Object.assign(new Error('claude exited with code null:'), {
+        signal: 'SIGTERM', externalSignal: true,
+      }))
+      .mockRejectedValue(new Error('claude exited with code 1:'));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    await drainMicrotasks();
+    for (let i = 0; i < 2; i += 1) {
+      scheduled.shift().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+    handle.stop();
+
+    expect(errors.map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen])).toEqual([
+      ['runtime', 1, false],
+      ['signaled', 1, false],
+      ['runtime', 2, false],
+    ]);
+  });
+
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
     const event = makeEvent({ _id: 'evt-quota' });
     const mockGet = jest.fn().mockResolvedValue({ events: [event] });

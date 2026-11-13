@@ -24,7 +24,20 @@ export const SPAWN_FAILURE_CLASS = Object.freeze({
   // first-output window (lib/first-output-watchdog.js). A host condition such as
   // a locked console, so the circuit opens at once and the probe waits.
   STALLED: 'stalled',
+  // F293: the child closed on a signal from outside the wrapper (a person, a
+  // supervisor, a walk). The provider never refused anything, so the retry
+  // comes at the normal poll interval and the circuit stays shut.
+  SIGNALED: 'signaled',
 });
+
+// How many outside signals in a row go uncounted before they count again. A
+// walk that cuts three turns short is a walk; a child killed on every spawn is
+// a fault, and after this many the usual schedule backs the seat off.
+export const EXTERNAL_SIGNAL_GRACE = 3;
+
+// Set by the adapter (`markExternalSignal`), only on a failure with no cause of
+// its own: a stream's error or the adapter's own kill never carries it.
+export const isExternalSignal = (error) => error?.externalSignal === true;
 
 // A stalled probe costs one first-output window, so the wait starts short and
 // doubles to the usual ceiling: 2, 4, 8, then 15 minutes.
@@ -228,9 +241,18 @@ export const spawnRetryPolicy = ({
   consecutiveFailures,
   intervalMs,
   jitterRatio = 0,
+  // The run loop's call: an outside signal still inside its grace (F293).
+  externalSignal = false,
 }) => {
-  const failureClass = classifySpawnFailure(error);
   const safeIntervalMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5000;
+  if (externalSignal) {
+    return {
+      failureClass: SPAWN_FAILURE_CLASS.SIGNALED,
+      circuitOpen: false,
+      delayMs: applyJitter(safeIntervalMs, jitterRatio),
+    };
+  }
+  const failureClass = classifySpawnFailure(error);
   const failureCount = Number.isInteger(consecutiveFailures) && consecutiveFailures > 0
     ? consecutiveFailures
     : 1;
