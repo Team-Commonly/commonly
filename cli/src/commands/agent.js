@@ -4122,7 +4122,9 @@ export const performRun = ({
       }
       if (isCommentWake(entry.event) && !commentTargetOf(entry.event)) {
         entry.result = { outcome: 'no_action', reason: COMMENT_OUTSIDE_POD_REASON };
-        log(`[${entry.event.type}] comment ${entry.event.payload?.messageId} is not on a post in pod ${eventPodId}`
+        // A comment's payload has no messageId (postController sends no _id); its id
+        // is thread.commentId.
+        log(`[${entry.event.type}] comment ${entry.event.payload?.thread?.commentId} is not on a post in pod ${eventPodId}`
           + ' — acked without a spawn, so nobody is answered on a surface this seat was not placed for');
         continue;
       }

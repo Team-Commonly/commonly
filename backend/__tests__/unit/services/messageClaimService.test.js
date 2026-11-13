@@ -684,10 +684,13 @@ describe('messageExists', () => {
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  // The second namespace, and why it is not a nicety. A post-thread comment
-  // enters the mention and wake path as a Mongo ObjectId (postController.ts:295
-  // enqueues with `_id: comment._id`; the payload builders stringify it into
-  // `messageId`). Refusing that shape does not fail closed: enforcement.js:414
+  // The second namespace, and why it is not a nicety. This was written for a
+  // post-thread comment arriving as a Mongo ObjectId, and that premise was wrong
+  // (F246): addComment enqueues no `_id` (#3569), and before that it passed
+  // `_id: comment._id` from a plain object Mongoose never gave an id, so the
+  // value was undefined at runtime. A comment's id travels as
+  // `thread.commentId`. The shape stays accepted, because refusing an id the
+  // route can't place does not fail closed: enforcement.js:414
   // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
   // unguarded and the race stops deduping — measured against this route's own
   // head before it shipped (connector-ops 71952, vera 71956).

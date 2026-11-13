@@ -4761,3 +4761,15 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** `services/approvalCardOutcome.ts` holds the one rewrite. The native context uses it, and `getRecentMessages` applies it (PG and Mongo) only when a caller passes `{ cardOutcome: true }`, which every read that shows text to an agent does. The duplicate-post guard reads the same rows without it, so a re-proposal of a declined card still meets the stored text (#4022 review).
 
 **Lesson:** when a row's text is frozen and its state lives in the payload, every reader that shows the text has to derive it from the state, and only the readers that show it: a check that compares the stored text must keep reading it.
+
+## 134. `_id: comment._id` in a call read as a comment ObjectId reaching the claim path, and the value was undefined (2026-11-13, F246)
+
+*Origin: F244's diagnosis, carried as F246 item 1. Corrects the premise of entry 68.*
+
+**Surface:** `postController.addComment`'s call to `AgentMentionService.enqueueMentions`, the comment above `messageClaimService.test.js`'s ObjectId test, and entry 68 here.
+
+**False model:** a post-thread comment enters the mention and wake path as a Mongo ObjectId, so a claim id can be one. The source said `_id: comment._id`, and the test and entry 68 both cited it. But `comment` was a plain object pushed into `post.comments`. Mongoose gives the subdocument it creates an id, not the object it was built from, so `comment._id` was `undefined` at runtime and no comment ever reached a claim as an ObjectId. Since #3569 the call sends no `_id` at all (a payload `messageId` means a Postgres chat row to its readers), and a comment's id travels as `thread.commentId`. Two other readers had the same blind spot: the CLI logged `comment undefined` for a comment outside the seat's pod, and the run-loop fixture gave comment events a `messageId` the server never sends, which hid that log.
+
+**Repair:** the test comment now says why the ObjectId shape stays accepted (refusing it fails open) without the false origin. The CLI log names `thread.commentId`. The fixture drops `messageId`, and its log assertion fails on the old line.
+
+**Lesson:** a field written in a call is a claim about runtime only when the value exists at that line. Read where the object came from before citing `x._id`, and make a fixture send only what the producer sends, or it hides every reader that leans on the extra field.
