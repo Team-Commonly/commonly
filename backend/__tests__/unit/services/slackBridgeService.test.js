@@ -90,6 +90,8 @@ describe('Slack installable bridge', () => {
     });
     expect(SlackApi).not.toHaveBeenCalled();
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    // A refused send never reads the bot token (CodeRabbit on #4094).
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
   });
 
   test('sends nothing when the pod is gone', async () => {

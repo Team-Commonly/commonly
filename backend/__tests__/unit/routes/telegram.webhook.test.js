@@ -435,6 +435,16 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(text).toContain('Mode: <b>');
   });
 
+  it('/status withholds the name when only the linked user has stayed', async () => {
+    // The creator (who redeemed the code) left; whoever switched relay on stayed.
+    Integration.findOne = jest.fn().mockResolvedValue(linked({ linkedUserId: 'user-3' }));
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Secret Pod', members: ['user-3'] }) });
+
+    await post('/status');
+
+    expect(telegramService.sendMessage.mock.calls[0][2]).not.toContain('Secret Pod');
+  });
+
   it('/status still names the pod for its members', async () => {
     Integration.findOne = jest.fn().mockResolvedValue(linked());
     Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Team Pod', members: ['user-1'] }) });
