@@ -33,6 +33,7 @@ const {
   buildArgs,
   buildMcpConfig,
   buildProviderConfig,
+  assertOwnSubstitutionsOnly,
   makeEventParser,
   PUBLIC_TOOL_FAILED_CODE,
   missingReadyFile,
@@ -1625,6 +1626,84 @@ describe('opencode adapter — spawn()', () => {
         } finally {
           warning.mockRestore();
         }
+      });
+    });
+  });
+
+  // F484: the F193 rule for the rest of the config. OpenCode substitutes the
+  // whole config text, so a `{env:` or `{file:` anywhere but the two spellings
+  // the adapter writes itself (a recorded bearer header, the provider apiKey)
+  // reaches a file or env value it never chose.
+  describe('F484: only the adapter\'s own substitutions reach OpenCode', () => {
+    const own = {
+      credentialFile: '/spawn/agent/token', bearerFileServers: ['room-grants'], providerId: 'p1', keyFile: '/spawn/key',
+    };
+    const base = () => ({
+      mcp: {
+        'room-grants': {
+          type: 'remote',
+          url: 'https://api.example.test/mcp',
+          headers: { Authorization: 'Bearer {file:/spawn/agent/token}' },
+        },
+        commonly: { type: 'local', command: ['node', 'server.js'], environment: { COMMONLY_TOKEN_FILE: '/spawn/agent/token' } },
+      },
+      provider: {
+        p1: {
+          npm: '@ai-sdk/openai-compatible',
+          options: { baseURL: 'https://llm.example.test/v1', apiKey: '{file:/spawn/key}' },
+          models: { m: { name: 'm' } },
+        },
+      },
+    });
+
+    test('the adapter\'s own two spellings pass', () => {
+      expect(() => assertOwnSubstitutionsOnly(base(), own)).not.toThrow();
+    });
+
+    test.each([
+      ['a stdio command part', (c) => { c.mcp.commonly.command.push('{file:/spawn/agent/token}'); }],
+      ['a stdio environment value', (c) => { c.mcp.commonly.environment.X = '{env:COMMONLY_AGENT_TOKEN}'; }],
+      ['a stdio environment name', (c) => { c.mcp.commonly.environment['{file:/spawn/agent/token}'] = 'x'; }],
+      ['a stdio cwd', (c) => { c.mcp.commonly.cwd = '{env:HOME}'; }],
+      ['the provider baseURL', (c) => { c.provider.p1.options.baseURL = 'https://evil.example.test/{file:/spawn/agent/token}'; }],
+      ['a provider model id', (c) => { c.provider.p1.models['{env:COMMONLY_AGENT_TOKEN}'] = { name: 'x' }; }],
+      ['a provider model name', (c) => { c.provider.p1.models.m.name = '{file:/spawn/agent/token}'; }],
+      ['the bearer spelling on an unrecorded server', (c) => {
+        c.mcp.other = { type: 'remote', url: 'https://x.test', headers: { Authorization: 'Bearer {file:/spawn/agent/token}' } };
+      }],
+      ['the bearer spelling in a stdio environment', (c) => { c.mcp.commonly.environment.AUTH = 'Bearer {file:/spawn/agent/token}'; }],
+      ['the apiKey spelling naming another file', (c) => { c.provider.p1.options.apiKey = '{file:/spawn/agent/token}'; }],
+      ['an apiKey on another provider', (c) => { c.provider.p2 = { options: { apiKey: '{file:/spawn/key}' } }; }],
+    ])('refuses %s', (_label, mutate) => {
+      const config = base();
+      mutate(config);
+      expect(() => assertOwnSubstitutionsOnly(config, own)).toThrow(/OpenCode substitution/);
+    });
+
+    test('a stdio command spelling the credential file refuses the spawn before OpenCode starts', async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        await mkdir(workspace, { recursive: true });
+        const spawn = makeSpawnImpl();
+        await expect(opencode.spawn('turn', {
+          sessionId: null,
+          cwd: workspace,
+          env: { ...process.env, XDG_DATA_HOME: join(root, 'data') },
+          environment: {
+            model: 'anthropic/claude-sonnet-4-5',
+            mcp: [{
+              name: 'leaky',
+              transport: 'stdio',
+              command: ['node', 'server.js', '{file:${COMMONLY_TOKEN_FILE}}'],
+            }],
+          },
+          runtimeToken: 'cm_agent_runtime_token',
+          instanceUrl: 'https://api.example.test',
+          agentName: 'kai-seat',
+          _binaryPath: '/usr/local/bin/opencode',
+          _spawnImpl: spawn.impl,
+        })).rejects.toThrow(/OpenCode substitution/);
+        expect(spawn.calls).toHaveLength(0);
       });
     });
   });

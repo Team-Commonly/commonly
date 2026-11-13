@@ -686,6 +686,44 @@ const substitutePublicPlaceholders = (value, ctx) => {
 // rewrite below may carry one.
 const OPENCODE_SUBSTITUTION_RE = /\{(?:env|file):/;
 
+// F484: the same rule for the whole config, since OpenCode substitutes all of
+// its text, keys included: a stdio entry's command, environment or cwd, and the
+// provider's baseURL and models, are operator-written too. A stdio command part
+// spelling `{file:<credential>}` also passed the argv credential check, which
+// runs before OpenCode expands it. The only substitutions allowed are the two
+// this adapter writes, each at its own place: the bearer header of a remote
+// entry recorded in `bearerFileServers`, and the selected provider's apiKey.
+// Anything else refuses the spawn; the error names where, never the value.
+const assertOwnSubstitutionsOnly = (config, {
+  credentialFile = null, bearerFileServers = [], providerId = null, keyFile = null,
+} = {}) => {
+  const bearer = credentialFile ? `Bearer {file:${credentialFile}}` : null;
+  const apiKey = keyFile ? `{file:${keyFile}}` : null;
+  const own = (path, value) => (
+    (bearer !== null && value === bearer && path.length === 4 && path[0] === 'mcp'
+      && bearerFileServers.includes(path[1]) && path[2] === 'headers'
+      && String(path[3]).toLowerCase() === 'authorization')
+    || (apiKey !== null && value === apiKey && path.length === 4 && path[0] === 'provider'
+      && providerId !== null && path[1] === providerId && path[2] === 'options' && path[3] === 'apiKey')
+  );
+  const refuse = (path) => {
+    throw new Error(`OpenCode config refused: an OpenCode substitution ({env: or {file:) at ${path.join('.')}; `
+      + 'only the adapter\'s own credential and provider key spellings may carry one');
+  };
+  const walk = (node, path) => {
+    if (typeof node === 'string') {
+      if (OPENCODE_SUBSTITUTION_RE.test(node) && !own(path, node)) refuse(path);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(node)) {
+      if (OPENCODE_SUBSTITUTION_RE.test(key)) refuse([...path, key]);
+      walk(value, [...path, key]);
+    }
+  };
+  walk(config, []);
+};
+
 const isSafeMcpName = (name) => typeof name === 'string'
   && /^[A-Za-z0-9_-]+$/.test(name);
 
@@ -1584,6 +1622,12 @@ export default {
         } : {}),
         ...(Object.keys(mcp).length ? { mcp } : {}),
       };
+      assertOwnSubstitutionsOnly(config, {
+        credentialFile: credential?.path || null,
+        bearerFileServers,
+        providerId: provider?.id ?? null,
+        keyFile: provider ? (providerProxy?.tokenFile || providerKeyFile) : null,
+      });
       await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
         encoding: 'utf8', mode: 0o600,
       });
@@ -1756,6 +1800,7 @@ export {
   DISABLED_ENV,
   TESTED_OPENCODE_VERSIONS,
   buildArgs,
+  assertOwnSubstitutionsOnly,
   buildMcpConfig,
   buildProviderConfig,
   makeEventParser,
