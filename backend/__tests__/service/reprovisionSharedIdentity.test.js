@@ -7,6 +7,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 
 jest.mock('../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(() => ({ runtime: 'moltbot' })),
+  identityNames: (name) => jest.requireActual('../../services/agentIdentityService').identityNames(name),
   getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'agent-user' }),
   ensureAgentInPod: jest.fn().mockResolvedValue(null),
 }));
@@ -66,6 +67,56 @@ describe('reprovision and the rows a revoke reaches', () => {
     await seed('other', { runtimeType: 'claude-code', host: 'byo' });
     const result = await reprovisionInstallation({ installation, force: true });
     expect(result).toMatchObject({ skipped: true, skipReason: 'runtime_retired' });
+    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
+  });
+});
+
+// F250: the revoke reaches the identity's User, which a legacy alias shares
+// (commonly-summarizer is commonly-bot), and the row is provisioned by its
+// type's runtime, whatever runtime the row itself stores.
+describe('reprovision of an in-process row and the seats its revoke reaches', () => {
+  const AgentIdentityService = require('../../services/agentIdentityService');
+  const seedAs = (agentName, instanceId, runtime) => AgentInstallation.create({
+    agentName,
+    instanceId,
+    podId: new mongoose.Types.ObjectId(),
+    installedBy: new mongoose.Types.ObjectId(),
+    displayName: agentName,
+    version: '1.0.0',
+    status: 'active',
+    config: { runtime },
+  });
+
+  beforeAll(setupMongoDb);
+  afterAll(closeMongoDb);
+  beforeEach(() => {
+    AgentIdentityService.getAgentTypeConfig.mockImplementation(() => ({ runtime: 'internal' }));
+  });
+  afterEach(async () => {
+    await clearMongoDb();
+    jest.clearAllMocks();
+    AgentIdentityService.getAgentTypeConfig.mockImplementation(() => ({ runtime: 'moltbot' }));
+  });
+
+  it('with no outside seat on the identity, it rotates the token', async () => {
+    const installation = await seedAs('commonly-bot', 'default', { runtimeType: 'internal' });
+    await reprovisionInstallation({ installation, force: true });
+    expect(revokeRuntimeTokensForAgent).toHaveBeenCalled();
+  });
+
+  it('spares a wrapper seat that sits under the legacy alias name', async () => {
+    const installation = await seedAs('commonly-bot', 'default', { runtimeType: 'internal' });
+    await seedAs('commonly-summarizer', 'default', { runtimeType: 'claude-code', host: 'byo' });
+    const result = await reprovisionInstallation({ installation, force: true });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'shares_identity_with_external_seat' });
+    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
+  });
+
+  it('spares a row whose type runs outside the provisioner, even when the row stores an in-process runtime', async () => {
+    AgentIdentityService.getAgentTypeConfig.mockImplementation(() => ({ runtime: 'webhook' }));
+    const installation = await seedAs('commonly-bot', 'default', { runtimeType: 'internal' });
+    const result = await reprovisionInstallation({ installation, force: true });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'keeps_its_own_token' });
     expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
   });
 });
