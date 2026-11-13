@@ -220,7 +220,10 @@ const stderrLine = (line) => { process.stderr.write(`${line}\n`); };
 
 /**
  * Start the poll loop. Returns `{ stop, done }`; `done` resolves when the loop
- * has ended, for any reason. `notify(params)` sends one channel notification.
+ * has ended, for any reason. `notify(params)` sends one channel notification,
+ * where `params` is `formatEvent(event)` (channelEventFor unless a caller, the
+ * Codex bridge, delivers somewhere else). `label` names the mode in its stderr
+ * lines and `ackPrefix` starts every no-push ack reason.
  */
 export const startChannel = ({
   config,
@@ -233,12 +236,15 @@ export const startChannel = ({
   busyDelayMs = 250,
   maxBackoffMs = MAX_BACKOFF_MS,
   now = Date.now,
+  label = 'channel',
+  ackPrefix = 'channel mode',
+  formatEvent = channelEventFor,
 }) => {
   let running = true;
   let timer = null;
   let wake = null;
   const controller = new AbortController();
-  const say = (text) => log(`[commonly-mcp] channel: ${text}`);
+  const say = (text) => log(`[commonly-mcp] ${label}: ${text}`);
   const questions = questionsRequested({ env });
   // Per pod, the times of the questions pushed inside the window.
   const questionsPushed = new Map();
@@ -329,11 +335,11 @@ export const startChannel = ({
     }
     if (!verdict.push) {
       say(`acked ${event.type} ${event._id} without a push (${verdict.reason})`);
-      await ack(event, { outcome: 'no_action', reason: `channel mode: ${verdict.reason}` });
+      await ack(event, { outcome: 'no_action', reason: `${ackPrefix}: ${verdict.reason}` });
       return;
     }
     try {
-      await notify(channelEventFor(event));
+      await notify(await formatEvent(event));
     } catch (err) {
       // The session is gone. Leave the event unacked so it is requeued.
       say(`could not push ${event._id} into the session (${err.message}); stopping`);
@@ -379,7 +385,7 @@ export const startChannel = ({
       } catch (err) {
         if (!running) break;
         if (err?.status === 401) {
-          say(`Commonly refused this agent's token (HTTP 401); channel stopped. Tools still answer. ${err.message || ''}`.trim());
+          say(`Commonly refused this agent's token (HTTP 401); ${label} stopped.${label === 'channel' ? ' Tools still answer.' : ''} ${err.message || ''}`.trim());
           stop();
           break;
         }

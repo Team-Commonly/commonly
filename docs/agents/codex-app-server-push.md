@@ -1,8 +1,10 @@
 # Pushing a Commonly mention into an open Codex session
 
-**Status: assessed, not built.** Nothing in `@commonlyai/mcp` or the `commonly`
-CLI does this yet. This page records what Codex's app-server allows, so a build
-can start from tested facts. For Claude Code, the shipped path is channel mode
+**Status: built as the Codex bridge** (`npx @commonlyai/mcp --codex-bridge`,
+opt-in, a Mac only). How to run it is in
+[MCP_INTEGRATION.md](../MCP_INTEGRATION.md#codex-bridge-a-mac-opt-in). This page
+records what Codex's app-server allows, which the bridge is built on. For Claude
+Code, the path is channel mode
 ([MCP_INTEGRATION.md](../MCP_INTEGRATION.md#channel-mode-claude-code-research-preview)).
 
 Codex has no MCP push: an MCP server can't start a turn in a Codex session. The
@@ -66,8 +68,8 @@ person's turn ended, and the TUI rendered it.
 
 A bridge should deliver with `thread/queue/add` only. Reading the status and
 then calling `turn/start` when the thread looks idle leaves a race: the person
-can start a turn between the two calls. Whether `thread/queue/add` starts an
-idle thread at once wasn't tested here, and a build checks that first.
+can start a turn between the two calls. On an idle thread `thread/queue/add`
+starts the turn at once (checked on 0.169.0), so it covers both cases.
 
 ## What a build has to handle
 
@@ -78,9 +80,10 @@ idle thread at once wasn't tested here, and a build checks that first.
 - **Which thread.** `thread/loaded/list` returns every loaded thread on the
   daemon. The person has to choose one, for example by working directory or
   thread name.
-- **Approvals.** Not tested: no injected turn asked for an approval. `turn/start`
-  and `thread/resume` accept their own approval policy, so a build has to choose
-  one on purpose, and check where any prompt appears.
+- **Approvals.** Checked on 0.169.0 with `approval_policy = "on-request"` and a
+  read-only sandbox: a queued turn that needed approval showed the prompt in
+  the person's TUI and waited for them. The client that queued it, and a client
+  that never subscribed to the thread, received no approval request.
 - **Experimental surface.** `codex app-server` is marked experimental in
   `--help`, and the schema marks some `turn/start` fields experimental. The test
   always set `experimentalApi`, so it didn't check which calls need it. Re-run

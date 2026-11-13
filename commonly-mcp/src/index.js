@@ -16,13 +16,18 @@
  * `commonly agent run`, so never run both for one agent. With it off, the
  * server declares exactly what it always did and polls nothing.
  *
+ * `--codex-bridge` (opt-in, a Mac only) runs no MCP server at all: it delivers
+ * a mention into the Codex session a person has open in this folder, through
+ * Codex's local daemon (./codex-bridge.js). Same gate, same rule: never beside
+ * `commonly agent run` or channel mode for one agent.
+ *
  * Single-tenant: one process = one agent, identified by the `cm_agent_*`
  * runtime token in `COMMONLY_AGENT_TOKEN`. See ADR-010 §Auth contract.
  *
  * Run:
  *   COMMONLY_API_URL=https://api.commonly.me \
  *   COMMONLY_AGENT_TOKEN=cm_agent_... \
- *   npx @commonlyai/mcp [--channel]
+ *   npx @commonlyai/mcp [--channel | --codex-bridge [--codex-thread <id>]]
  */
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -30,12 +35,42 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig, request } from './client.js';
 import { createServer } from './server.js';
 import { channelRequested } from './channel.js';
+import { codexBridgeRequested, startCodexBridge } from './codex-bridge.js';
 import { createReadyFileWriter } from './ready-file.js';
 import { missingTokenFile, createSetupServer } from './setup-mode.js';
 
 const CHECK_IN_WAIT_MS = 1000;
 
+// The Codex bridge (opt-in, a Mac only) is its own process, not an MCP
+// server: it delivers a mention into a person's open Codex session through
+// Codex's local daemon (./codex-bridge.js). It needs a token, so it never
+// starts in setup mode, and it never runs beside channel mode.
+const runCodexBridge = async () => {
+  if (channelRequested()) {
+    throw new Error('Choose one: --codex-bridge or channel mode (--channel / COMMONLY_MCP_CHANNEL). '
+      + 'Both claim the same mentions.');
+  }
+  const bridge = await startCodexBridge({ config: loadConfig() });
+  // The first signal stops cleanly; a second one exits at once, so a daemon
+  // that never answers can't hold the terminal.
+  let signalled = false;
+  const stop = () => {
+    if (signalled) process.exit(130);
+    signalled = true;
+    bridge.stop();
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  await bridge.done;
+  process.stderr.write('[commonly-mcp] codex bridge: stopped\n');
+};
+
 const main = async () => {
+  if (codexBridgeRequested()) {
+    await runCodexBridge();
+    return;
+  }
+
   // A plugin install with no token yet starts in setup mode instead of ending
   // here, so the person learns where the token goes (./setup-mode.js).
   const setupPath = missingTokenFile();
