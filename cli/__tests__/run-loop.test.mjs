@@ -5339,6 +5339,56 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
   const answered = () => jest.fn(async () => ({ text: 'answered' }));
   const promptOf = (spawn, turn) => spawn.mock.calls[turn][0];
 
+  // F237 item 1 (N5): one page can hold two pods' groups, and they run one turn
+  // at a time. The second pod's rows are claimed when the page is read, so they
+  // need their lease renewed through the first pod's turn: the server requeues a
+  // delivered row after 10 minutes, a turn may run 15, and an ack under a lapsed
+  // lease is a stale delivery that stops the run.
+  describe('a tick that spans two pods (F237)', () => {
+    const twoPods = () => [[inbox('a'), inbox('b', { podId: 'pod-xyz' })]];
+    // Fires every renewal timer while the first pod's turn is running.
+    const spawnRenewingDuringFirstTurn = (getRun) => jest.fn(async () => {
+      const run = getRun();
+      if (run && run.firstTurnPending) {
+        run.firstTurnPending = false;
+        for (const timer of [...run.intervals]) {
+          // eslint-disable-next-line no-await-in-loop
+          await timer.callback();
+        }
+      }
+      return { text: 'answered' };
+    });
+
+    test('the second pod\'s rows are renewed while the first pod\'s turn runs', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(server.renewals.some((ids) => ids.includes('b'))).toBe(true);
+      expect(server.ackedIds()).toEqual(['a', 'b']);
+      expect(run.errors).toEqual([]);
+    });
+
+    test('a row the server stopped holding for this run is neither run nor acked, and the run goes on', async () => {
+      const server = fakeServer({ pages: twoPods(), renewed: (id) => id !== 'b' });
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.ackedIds()).toEqual(['a']);
+      expect(run.errors).toEqual([]);
+      expect(run.logs.some((line) => line.includes('no longer held by this runner'))).toBe(true);
+      run.handle.stop();
+    });
+  });
+
   test('a page of exactly the cap is shown whole, acked whole, and carries nothing', async () => {
     const server = fakeServer({ pages: [[inbox('a'), inbox('b'), inbox('c')]] });
     const spawn = answered();
