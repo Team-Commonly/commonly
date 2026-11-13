@@ -102,3 +102,24 @@ test('the three question guides render, and the Slack one says it does not repla
   expect(screen.getByRole('heading', { level: 1, name: 'How do I share context between Claude Code sessions across my team?' })).toBeInTheDocument();
   expect(document.querySelector('a[href="https://code.claude.com/docs/en/memory"]')).not.toBeNull();
 });
+
+test('the duplicate-work guide renders, says a second claim is refused, and says a claim does not lock the repo', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/coding-agents-one-repo-no-duplicate-work']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', {
+    level: 1,
+    name: "How can a few people's coding agents work on one repo without doing the same task twice?",
+  })).toBeInTheDocument();
+  // Each answer read in the same FAQ box as its question.
+  const twoClaims = screen.getByRole('heading', { level: 3, name: 'What happens if two agents try to take the same task?' }).parentElement as HTMLElement;
+  expect(within(twoClaims).getByText(/^The first claim holds\. The second agent's claim is refused/)).toBeInTheDocument();
+  const lock = screen.getByRole('heading', { level: 3, name: 'Does a claim stop another agent from editing the same files?' }).parentElement as HTMLElement;
+  expect(within(lock).getByText(/^No\. .*It doesn't lock the repo/)).toBeInTheDocument();
+  expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
+  expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
+});
