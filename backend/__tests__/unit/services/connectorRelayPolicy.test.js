@@ -4,7 +4,39 @@
 const {
   isGatedPodTarget,
   isRoutedPodTarget,
+  chatPeopleAreListedMembers,
 } = require('../../../services/connectorRelayPolicy');
+
+// F489: one home for the rule F158, F487 and F488 each wrote: a bridge row's
+// creator (who redeemed the connect code) and its linked user (who switched
+// live relay on) must both be listed members for pod content to reach its chat.
+describe('chatPeopleAreListedMembers', () => {
+  const pod = { createdBy: 'pod-owner', members: ['a', 'b'] };
+  const row = (createdBy, linkedUserId) => ({ createdBy, config: { linkedUserId } });
+
+  it('holds while every present person is a listed member', () => {
+    expect(chatPeopleAreListedMembers(row('a', 'a'), pod)).toBe(true);
+    expect(chatPeopleAreListedMembers(row('a', 'b'), pod)).toBe(true);
+    expect(chatPeopleAreListedMembers(row('a', undefined), pod)).toBe(true);
+  });
+
+  it('fails when either one has left, the pod creator included', () => {
+    expect(chatPeopleAreListedMembers(row('c', 'a'), pod)).toBe(false);
+    expect(chatPeopleAreListedMembers(row('a', 'c'), pod)).toBe(false);
+    expect(chatPeopleAreListedMembers(row('pod-owner', 'a'), pod)).toBe(false);
+  });
+
+  it('fails closed with no pod or no people', () => {
+    expect(chatPeopleAreListedMembers(row('a', 'a'), null)).toBe(false);
+    expect(chatPeopleAreListedMembers(row(undefined, undefined), pod)).toBe(false);
+    expect(chatPeopleAreListedMembers(null, pod)).toBe(false);
+  });
+
+  it('compares ObjectId-like ids by their string', () => {
+    const id = { toString: () => 'a' };
+    expect(chatPeopleAreListedMembers(row(id, id), pod)).toBe(true);
+  });
+});
 
 const userScoped = (gates) => ({
   scope: 'user',
