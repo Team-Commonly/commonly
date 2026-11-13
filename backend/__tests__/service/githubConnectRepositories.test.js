@@ -637,7 +637,7 @@ describe('F174: takeover and delete act only on the row as it is now', () => {
     await giveUserToken(bob, 'bob-user-token');
   });
 
-  test('item 3: a takeover that read a stale row loses to the owner\'s revival, and revokes nothing', async () => {
+  test('item 3: a takeover that read a stale row loses to the owner\'s revival, and revokes nothing she minted since', async () => {
     const row = (await connectRepo(alice, WIDGET)).body.integration;
     // Alice's row looked disconnected when Bob's request read it, but she has
     // revived it since and minted a fresh grant. The grant is minted as Bob's

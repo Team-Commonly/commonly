@@ -453,12 +453,11 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
         // was dead then. A request that loses the write below therefore only
         // revoked grants the winner's own revoke ends too.
         await revokeConnectionGrants({ connection: existing, revokedBy: SYSTEM_REVOKER, createdBefore: readAt });
-        // Win the row first, conditionally on it still being dead and still
+        // Then win the row, conditionally on it still being dead and still
         // held by the owner this request read (F174). A request that read a
-        // row its owner has since revived loses here and revokes nothing.
-        // Grants minted before the takeover then end, as the system: the
-        // broker already refuses them, because a Connect grant runs only for
-        // the row's current owner (connection_owner_changed).
+        // row its owner has since revived loses here and revokes nothing newer
+        // than its read. Grants minted between the read and the write then
+        // end, as the system.
         const takenAt = new Date();
         const taken = await Integration.findOneAndUpdate(
           {
