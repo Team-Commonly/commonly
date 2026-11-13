@@ -5431,7 +5431,7 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
       await run.nextTick();
       run.handle.stop();
       expect(server.renewals.some((ids) => ids.includes('b'))).toBe(false);
-      expect(run.logs.some((line) => line.includes('renewal of the later pods\' rows stopped'))).toBe(true);
+      expect(run.logs.some((line) => line.includes('renewal of the later pods\' rows paused'))).toBe(true);
     });
 
     // Three pods: the first turn overruns, so the third pod's rows are skipped

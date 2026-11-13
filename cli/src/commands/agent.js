@@ -4687,7 +4687,7 @@ export const performRun = ({
           if (Date.now() - runningGroupSince >= effectiveTurnTimeoutMs) {
             if (!deadlineLogged) {
               deadlineLogged = true;
-              log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows stopped for the requeue');
+              log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows paused while this turn overruns');
             }
             return;
           }
