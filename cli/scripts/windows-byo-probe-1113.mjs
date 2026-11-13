@@ -79,7 +79,12 @@ const uiScript = psFile('ui.ps1', `
 param([string]$Action, [string]$Arg, [int]$TargetPid)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
-function Focus($id) { [Microsoft.VisualBasic.Interaction]::AppActivate($id) | Out-Null; Start-Sleep -Milliseconds 800 }
+function Focus($id) {
+  # Windows 11 hands a new console to Windows Terminal, so the started pid can be gone: fall back to the tab's title.
+  try { [Microsoft.VisualBasic.Interaction]::AppActivate($id) | Out-Null } catch {
+    $ok = (New-Object -ComObject WScript.Shell).AppActivate('Windows PowerShell'); Write-Output "focus by title: $ok" }
+  Start-Sleep -Milliseconds 800
+}
 switch ($Action) {
   'open'  { $p = Start-Process powershell.exe -ArgumentList '-NoExit','-NoProfile' -PassThru; Start-Sleep 6; Write-Output $p.Id }
   'ctrlv' { Set-Clipboard -Value (Get-Content -Raw $Arg); Focus $TargetPid; [System.Windows.Forms.SendKeys]::SendWait('^v') }

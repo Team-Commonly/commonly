@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '20']
+        node: ['22']
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -29,7 +29,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Run the cases
         env:
-          PROBE_CASES: ${{ matrix.node == '22' && 'all' || 'control' }}
+          PROBE_CASES: ui-ctrlv
         run: node cli/scripts/windows-byo-probe-1113.mjs
       - uses: actions/upload-artifact@v4
         if: always()
