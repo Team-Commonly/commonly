@@ -34,7 +34,9 @@ const chatPeopleStillMembers = (integration: any, pod: any): boolean => {
   return Boolean(pod) && people.length > 0 && people.every((person) => isListedPodMember(pod, person));
 };
 
-const POD_SUMMARY_LEFT = "This pod's summary isn't sent here any more: whoever connected this chat has left the pod.";
+const POD_SUMMARY_LEFT = "This chat no longer gets this pod's summary because the person who connected it has left "
+  + 'the pod. Rejoin the pod and reconnect the chat to get it again.';
+const POD_GONE = 'The pod this chat was connected to no longer exists.';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
@@ -356,6 +358,10 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
   }
 
   const pod = await Pod.findById(integration.podId).lean();
+  if (!pod) {
+    await telegramService.sendMessage(botToken, chatId, POD_GONE);
+    return;
+  }
   if (!chatPeopleStillMembers(integration, pod)) {
     await telegramService.sendMessage(botToken, chatId, POD_SUMMARY_LEFT);
     return;

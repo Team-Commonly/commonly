@@ -487,7 +487,9 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
       await post('/tldr');
       expect(Summary.findOne).not.toHaveBeenCalled();
-      expect(telegramService.sendMessage.mock.calls[0][2]).not.toContain('pod secrets');
+      const text = telegramService.sendMessage.mock.calls[0][2];
+      expect(text).not.toContain('pod secrets');
+      expect(text).toMatch(/no longer exists/i);
     });
   });
 
@@ -533,6 +535,25 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       Integration.findOne = jest.fn().mockResolvedValue(groupRow('creator-1'));
       await groupPost();
       expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
+
+    // F487 review: the membership check now runs before F143's authority check.
+    it('still sends it to a group an instance admin bound while a member', async () => {
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ name: 'Pod', createdBy: 'creator-1', members: ['creator-1', 'admin-1'] }),
+      });
+      User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('admin-1'));
+      await groupPost();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
+
+    it('refuses a group bound by an admin who has since left the pod', async () => {
+      User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('admin-1'));
+      await groupPost();
+      expect(Summary.findOne).not.toHaveBeenCalled();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/left the pod/i);
     });
   });
 
