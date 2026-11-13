@@ -80,6 +80,18 @@ describe('byoHandoffService', () => {
       .toEqual({ error: 'invalid source memory identity' });
   });
 
+  it('gives Claude Code and Codex a Windows tab with no lines, since Windows connects from the Bring your own page', () => {
+    for (const adapter of ['claude', 'codex']) {
+      const payload = buildByoHandoffPayload({ adapter, os: 'windows', podId: 'pod-1', agentName: 'my-agent' });
+      if ('error' in payload) throw new Error(payload.error);
+      expect(payload.supportedOs).toEqual(['mac', 'linux', 'windows']);
+      expect(payload.os).toBe('windows');
+      expect(payload.commands.windows).toBeUndefined();
+      expect(payload.commands.mac).toContain(`commonly agent attach ${adapter}`);
+      expect(payload.commands.linux).toContain(`commonly agent attach ${adapter}`);
+    }
+  });
+
   it('creates a safe default name from the account handle', () => {
     expect(defaultByoHandoffName('Sam Xu', 'claude')).toBe('sam-xu-claude');
     expect(defaultByoHandoffName(undefined, 'codex')).toBe('my-codex');
@@ -115,7 +127,7 @@ describe('byoHandoffService', () => {
 
     it('names the server origin on every OS when BACKEND_URL is set', () => {
       process.env.BACKEND_URL = 'http://localhost:5000';
-      for (const os of ['mac', 'linux', 'windows']) {
+      for (const os of ['mac', 'linux']) {
         expect(loginLineFor(os)).toBe('commonly login --instance http://localhost:5000');
       }
     });

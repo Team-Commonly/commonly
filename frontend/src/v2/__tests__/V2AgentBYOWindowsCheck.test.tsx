@@ -136,6 +136,28 @@ describe('Windows check line before the paste', () => {
   });
 });
 
+describe('Copy on the Windows tab', () => {
+  test('ends the copied lines with a newline, so the fourth line runs on paste', async () => {
+    setUserAgent(WINDOWS);
+    await issue();
+    await copyListen();
+    const copied = navigator.clipboard.writeText.mock.calls[0][0];
+    const shown = screen.getByTestId('byo-listen').querySelector('.v2-byo__pre').textContent;
+    expect(copied).toBe(`${shown}\n`);
+    expect(copied.split('\n')[3]).toMatch(/^commonly\.cmd agent run .* --unsandboxed$/);
+    expect(copied.endsWith('\n\n')).toBe(false);
+  });
+
+  test('copies the Mac lines as shown, with no newline added', async () => {
+    setUserAgent(MAC);
+    await issue();
+    await copyListen();
+    const copied = navigator.clipboard.writeText.mock.calls[0][0];
+    expect(copied).toBe(screen.getByTestId('byo-listen').querySelector('.v2-byo__pre').textContent);
+    expect(copied.endsWith('\n')).toBe(false);
+  });
+});
+
 describe('Why isn’t it answering?', () => {
   test('is hidden until the listen line was copied and the missed window is over', async () => {
     jest.useFakeTimers();

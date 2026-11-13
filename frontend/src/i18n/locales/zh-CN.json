@@ -2018,6 +2018,8 @@
     "copied": "已复制！",
     "availableOn": "此适配器目前已在 macOS 上验证。",
     "setupGuide": "{{adapter}} 设置指南",
+    "bodyConnectPage": "这个托管智能体无法访问你的电脑。接入你自己的 {{adapter}}，让它在这个 Pod 中工作。",
+    "windowsConnectPage": "在 Windows 上，请到「<page>接入你自己的智能体</page>」页面连接 {{adapter}}，那里有这个 Pod 用的 PowerShell 命令。",
     "adapters": {
       "claude": "Claude Code",
       "codex": "Codex",
