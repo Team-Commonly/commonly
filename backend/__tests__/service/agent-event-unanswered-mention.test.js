@@ -203,12 +203,26 @@ describe('which of the agent\'s posts may have answered (F237)', () => {
       .toHaveLength(0);
   });
 
-  test.each(['123456789012345678901234', '2147483648'])('an id past a Postgres int (%s) keeps the old reading', async (id) => {
+  // An id that isn't a Postgres row id can't be matched to a thread, so it fails
+  // toward the notice (rule 19): only a top-level post still silences it.
+  test.each(['123456789012345678901234', '2147483648'])('an id past a Postgres int (%s) leaves the line for a post in another thread', async (id) => {
     await exhausted({
       createdAt: HOUR_AGO(),
       payload: { messageId: id, userId: String(person._id), content: '@otto?' },
     });
     await agentPosts({ thread: 99 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(1);
+  });
+
+  test('an id past a Postgres int is still silenced by a top-level post', async () => {
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: { messageId: '123456789012345678901234', userId: String(person._id), content: '@otto?' },
+    });
+    await agentPosts({});
 
     await collect();
 

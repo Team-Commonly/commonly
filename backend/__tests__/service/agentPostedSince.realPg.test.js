@@ -107,6 +107,10 @@ real('agentPostedSince on real PostgreSQL (F242)', () => {
     await expect(agentPost(elsewhere, null)).resolves.toBe(false);
     // Without it, the post elsewhere still counts, as noteUnansweredMention read it before.
     await expect(agentPostedSince(pool, AGENT, POD, since())).resolves.toBe(true);
+    // Scoped with no usable id (every carried id invalid): only a top-level post counts.
+    await expect(agentPostedSince(pool, AGENT, POD, since(), { answering: [] })).resolves.toBe(false);
+    await agentPost(null, null);
+    await expect(agentPostedSince(pool, AGENT, POD, since(), { answering: [] })).resolves.toBe(true);
   });
 
   it('counts nothing before the cutoff, nothing system, and nothing in another pod', async () => {

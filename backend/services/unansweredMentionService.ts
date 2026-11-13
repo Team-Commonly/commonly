@@ -119,18 +119,23 @@ export async function agentPostedSince(
     answering?: number[] | null;
   } = {},
 ): Promise<boolean> {
-  const ids = Array.isArray(answering) ? answering : [];
+  const scoped = Array.isArray(answering);
+  const ids = scoped ? answering : [];
   // One placeholder per id, not `= ANY($4::int[])`: pg-mem matches nothing for
   // an array parameter and says nothing, so its tests would read a false result.
   const list = ids.map((_, index) => `$${index + 4}`).join(', ');
+  // Scoped with no usable id still scopes: only a top-level post counts.
+  const scopeClause = ids.length
+    ? `AND (thread_root_id IS NULL
+          OR thread_root_id IN (${list}) OR reply_to_message_id IN (${list})
+          OR thread_root_id IN (SELECT asked.thread_root_id FROM messages asked
+                                WHERE asked.id IN (${list}) AND asked.thread_root_id IS NOT NULL))`
+    : 'AND thread_root_id IS NULL';
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
      ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
-     ${ids.length ? `AND (thread_root_id IS NULL
-          OR thread_root_id IN (${list}) OR reply_to_message_id IN (${list})
-          OR thread_root_id IN (SELECT asked.thread_root_id FROM messages asked
-                                WHERE asked.id IN (${list}) AND asked.thread_root_id IS NOT NULL))` : ''}
+     ${scoped ? scopeClause : ''}
      LIMIT 1`,
     [String(podId), String(agentUserId), since, ...ids],
   );
@@ -138,17 +143,18 @@ export async function agentPostedSince(
 }
 
 // The Postgres row ids a retired row carries, for `answering`: every carried
-// message and the row's thread. Null when any carried id isn't one (a Mongo
-// fallback id, or a number past a Postgres int), which keeps the old reading:
-// any post since counts; an out-of-range id would make the query throw.
-const answeringIds = (event: RetiredEvent): number[] | null => {
+// message and the row's thread. An id that isn't one (a Mongo fallback id, or a
+// number past a Postgres int, which would make the query throw) is left out, not
+// guessed at: its thread can't be matched, so only a top-level post or another
+// carried message's thread silences the line. A guard on unexpected input fails
+// toward the notice being seen (review-checklist rule 19).
+const answeringIds = (event: RetiredEvent): number[] => {
   const payload = (event.payload || {}) as Record<string, unknown>;
   const asId = (value: unknown) => (
     /^\d{1,10}$/.test(String(value ?? '')) && Number(value) <= 2147483647 ? Number(value) : null);
-  const ids = carriedMessages(event).map((message) => asId(message.messageId));
-  if (ids.length === 0 || ids.some((id) => id === null)) return null;
-  const root = payload.threadRootId === undefined || payload.threadRootId === null ? null : asId(payload.threadRootId);
-  return [...new Set([...ids as number[], ...(root === null ? [] : [root])])];
+  const ids = [...carriedMessages(event).map((message) => message.messageId), payload.threadRootId]
+    .map(asId).filter((id): id is number => id !== null);
+  return [...new Set(ids)];
 };
 
 /**
