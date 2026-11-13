@@ -1506,6 +1506,29 @@ export default {
 
   inventory: codexRuntimeInventory,
 
+  // Read once when `agent run` starts. A Codex below the floor is refused on
+  // every public and private-profile turn, so the person hears it in the seat
+  // log's first lines, not on the first mention (F262). A warning, not a
+  // refusal: the floor skips a cloud-codex pod and an operator-unconfined seat,
+  // exactly as spawn does. A Codex that can't be launched gives no notice here;
+  // the run's detect() has already refused that. The probe is cached, so the
+  // first turn doesn't ask again. `opts` carries spawn's version test seams.
+  async startNotice({ env = process.env, unconfined = false, ...opts } = {}) {
+    if (unconfined || codexTrustedPerimeter(env)) return null;
+    let version;
+    try {
+      version = await readCodexVersion(opts, env);
+    } catch {
+      return null;
+    }
+    if (meetsMinimumVersion(version, PUBLIC_CODEX_MIN_VERSION)) return null;
+    return version
+      ? `Codex ${version} is older than ${PUBLIC_CODEX_MIN_VERSION}, so every turn will be refused. `
+        + `Upgrade Codex to at least ${PUBLIC_CODEX_MIN_VERSION} and start the agent again.`
+      : 'could not read the Codex version, so turns may be refused. Check that `codex --version` works '
+        + `for this agent; this seat needs Codex ${PUBLIC_CODEX_MIN_VERSION} or later.`;
+  },
+
   // `opts` is a test seam only: `_commandResolution` overrides the Windows
   // resolver's platform/env/fs. Production calls detect() with no argument.
   async detect(opts = {}) {

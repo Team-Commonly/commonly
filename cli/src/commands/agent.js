@@ -5984,6 +5984,11 @@ Docs:
         installedVersion: installedCliVersion(),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
+      // F262: a harness the seat's turns would refuse is named now, not on the
+      // first mention. Fired, not awaited, like the update notice above.
+      Promise.resolve(adapter.startNotice?.({ unconfined: hostUnconfined || codexUnconfined }))
+        .then((notice) => { if (notice) console.warn(`${stamp()} [${name}] ${notice}`); })
+        .catch(() => {});
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
