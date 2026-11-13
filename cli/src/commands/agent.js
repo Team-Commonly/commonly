@@ -1022,6 +1022,13 @@ const PAST_CAP_MAX_CARRIES = 5;
 // is unchanged, and the can't-answer limit (once per cause per pod per hour)
 // still decides who hears it.
 const CIRCUIT_NOTICE_CHECK_MS = 60 * 1000;
+// F237: failed turns in a row after which a full carry stops claiming new rows.
+// One failure keeps the claim, so a person's new message still joins the retry
+// ahead of carried agent rows; past it the outage looks real, and every row
+// claimed then rides the carry past the prompt cap, is released after
+// PAST_CAP_MAX_CARRIES failed turns and claimed again, an attempt each time,
+// until the requeue cap retires it without its ever being tried.
+const FULL_CARRY_CLAIM_FAILURES = 2;
 
 // Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
 // only a row the snapshot and the kernel's stamp both can't place reads so, and
@@ -3861,6 +3868,25 @@ export const performRun = ({
     confirmed === null || !deliveryIdOf(event) || confirmed.has(String(event._id))
   );
 
+  // What an inbox read asks for. A carry that fills the prompt during an
+  // outage names its rows (`onlyIds`), and a current server returns only those
+  // it requeued, with their live delivery ids, and claims nothing new (F237).
+  // `limit` keeps today's value, so a server that predates onlyIds claims as
+  // before. `inOutage`: the circuit-wait check, which runs only while the
+  // circuit is open.
+  const inboxQuery = ({ inOutage = false } = {}) => {
+    const carried = [...heldRetry, ...heldGreeting];
+    const carriedCount = carried.filter((event) => event.deliveryMode !== 'digest').length;
+    const full = carriedCount >= batchLimit
+      && (inOutage || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
+    return {
+      agentName,
+      instanceId,
+      limit: Math.max(1, batchLimit - carriedCount),
+      ...(full ? { onlyIds: [...new Set(carried.map((event) => String(event._id)))].join(',') } : {}),
+      ...(adapter?.name ? { reportedCli: adapter.name } : {}),
+    };
+  };
   // Decide what a failed turn's retry carries. `failedEvents` were attempted
   // and count toward HELD_RETRY_MAX_FAILURES; `untriedEvents` are later groups
   // from the same page that the failure stopped before they ran (#782), and
@@ -4533,12 +4559,8 @@ export const performRun = ({
       // #3511). The overflow pass below stays as the backstop.
       // Only wake events count: the server's page cap is on wakes, and a
       // carried digest row takes no body (CodeRabbit on #3511).
-      const carriedCount = [...heldRetry, ...heldGreeting]
-        .filter((event) => event.deliveryMode !== 'digest').length;
-      const page = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
-        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
-      });
+      // F237: a full carry in an outage claims nothing new (inboxQuery).
+      const page = await client.get('/api/agents/runtime/events', inboxQuery());
       pollLiveness.arm();
       // A stall fired while this request hung: the loop has already given up on
       // it, and `agent run` exits in onStall, so its page is left to the requeue.
@@ -4990,12 +5012,9 @@ export const performRun = ({
     const wait = circuitNotice;
     try {
       pollLiveness.arm();
-      const carriedCount = [...heldRetry, ...heldGreeting]
-        .filter((event) => event.deliveryMode !== 'digest').length;
-      const page = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
-        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
-      });
+      // A full carry here claims nothing new (F237): a pod whose first message
+      // arrives then is told once the carry has room, not by this check.
+      const page = await client.get('/api/agents/runtime/events', inboxQuery({ inOutage: true }));
       pollLiveness.arm();
       if (pollStalled) return;
       const fetched = page?.events || [];

@@ -311,6 +311,13 @@ interface ListOptions {
   podIds?: unknown[];
   limit?: number;
   instanceId?: string;
+  /**
+   * F237: the rows a driver already carries, sent when they fill its prompt.
+   * The claim is then only those of them the server requeued (their delivery
+   * ids changed), never a new row that couldn't fit the turn. `limit` is
+   * ignored for it. Undefined claims as before.
+   */
+  onlyIds?: string[];
 }
 
 interface InboxPage {
@@ -2954,7 +2961,7 @@ class AgentEventService {
   }
 
   private static async claimPage({
-    agentName, podId, podIds, limit = 20, instanceId = 'default',
+    agentName, podId, podIds, limit = 20, instanceId = 'default', onlyIds,
   }: ListOptions, { onePod = false, includeInboxCount = false } = {}): Promise<InboxPage> {
     // Coerce caller-supplied identifiers to plain strings before they reach
     // any Mongo query — guards against NoSQL-injection-shaped inputs (e.g.
@@ -3023,10 +3030,19 @@ class AgentEventService {
       inboxCount = await AgentEvent.countDocuments(batchQuery);
     }
 
-    const wakeQuery = { ...batchQuery, deliveryMode: { $ne: 'digest' } };
+    // F237: a full carry claims only its own requeued rows, in any of the
+    // caller's pods (the driver already holds them, grouped), so no new row
+    // rides the carry past the prompt cap and spends attempts unrun. The
+    // header count above still describes the head pod's inbox.
+    const carriedOnly = Array.isArray(onlyIds)
+      ? onlyIds.map((id) => String(id)).filter((id) => Types.ObjectId.isValid(id)).slice(0, 50)
+      : null;
+    const wakeQuery = carriedOnly
+      ? { ...query, _id: { $in: carriedOnly }, deliveryMode: { $ne: 'digest' } }
+      : { ...batchQuery, deliveryMode: { $ne: 'digest' } };
     const wakeCandidates = await AgentEvent.find(wakeQuery)
       .sort({ createdAt: 1 })
-      .limit(limit)
+      .limit(carriedOnly ? 50 : limit)
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
     // Digest rows are only claimed alongside a wake in the same pod.
@@ -3039,14 +3055,27 @@ class AgentEventService {
     // carries them settles everything up to this snapshot when it is consumed.
     const digestSlots = limit - wakeCandidates.length || 1;
     const digestSnapshotAt = new Date();
-    const digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
-      ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest', createdAt: { $lte: digestSnapshotAt } })
-        .sort({ createdAt: -1 })
-        .limit(digestSlots)
-        .select({ _id: 1 })
-        .lean() as Array<{ _id: unknown }>
-      : [];
-    if (limit > 1 && wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
+    let digestCandidates: Array<{ _id: unknown }> = [];
+    if (carriedOnly) {
+      // Only the carried digest rows, and only beside a carried wake: no new
+      // context is claimed for a turn that can't take it.
+      digestCandidates = wakeCandidates.length > 0
+        ? await AgentEvent.find({ ...query, _id: { $in: carriedOnly }, deliveryMode: 'digest' })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .select({ _id: 1 })
+          .lean() as Array<{ _id: unknown }>
+        : [];
+    } else {
+      digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
+        ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest', createdAt: { $lte: digestSnapshotAt } })
+          .sort({ createdAt: -1 })
+          .limit(digestSlots)
+          .select({ _id: 1 })
+          .lean() as Array<{ _id: unknown }>
+        : [];
+      if (limit > 1 && wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
+    }
     digestCandidates.reverse(); // the newest page, served in the order it happened
     const candidates = [...wakeCandidates, ...digestCandidates];
 
