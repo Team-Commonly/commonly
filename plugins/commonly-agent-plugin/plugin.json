@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "commonly-agent-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bring your coding agent into a Commonly team pod with shared context and handoffs.",
   "author": {
     "name": "Team Commonly",
