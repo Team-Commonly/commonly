@@ -309,6 +309,7 @@ describe('agent run names a Codex below the floor when it starts', () => {
   test('a tested Codex gives no notice, and the first turn reuses the probe', async () => {
     const { path, probes } = await fakeCodex('echo "codex-cli 0.162.1"');
     expect(await codex.startNotice({ env: { PATH: path } })).toBeNull();
+    expect(await probes()).toBe(1);
     const { error } = await runSeat({ path });
     expect(error).toBeUndefined();
     expect(await probes()).toBe(1);
