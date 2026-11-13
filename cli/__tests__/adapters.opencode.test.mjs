@@ -1674,6 +1674,14 @@ describe('opencode adapter — spawn()', () => {
       ['the bearer spelling in a stdio environment', (c) => { c.mcp.commonly.environment.AUTH = 'Bearer {file:/spawn/agent/token}'; }],
       ['the apiKey spelling naming another file', (c) => { c.provider.p1.options.apiKey = '{file:/spawn/agent/token}'; }],
       ['an apiKey on another provider', (c) => { c.provider.p2 = { options: { apiKey: '{file:/spawn/key}' } }; }],
+      // Review Low: each remaining part of the allowed places, loosened alone.
+      ['the bearer spelling on a recorded server outside its headers', (c) => {
+        c.mcp['room-grants'].foo = { Authorization: 'Bearer {file:/spawn/agent/token}' };
+      }],
+      ['the bearer spelling under another header on a recorded server', (c) => {
+        c.mcp['room-grants'].headers['X-Auth'] = 'Bearer {file:/spawn/agent/token}';
+      }],
+      ['the key spelling in the provider baseURL', (c) => { c.provider.p1.options.baseURL = '{file:/spawn/key}'; }],
     ])('refuses %s', (_label, mutate) => {
       const config = base();
       mutate(config);

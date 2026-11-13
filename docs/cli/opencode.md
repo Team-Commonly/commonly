@@ -127,6 +127,15 @@ and every tool call is a request, so a few turns can use it up.
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. Apart from DeepSeek, none has been walked yet.
 
+**No `{env:` or `{file:` in the environment file.** OpenCode replaces
+`{env:NAME}` and `{file:path}` anywhere in the config it loads, keys included,
+so one in a URL, header, command, environment value or model name would read a
+file or variable the CLI never chose, the agent's own credential included. The
+CLI writes exactly two itself: the `Bearer {file:...}` header of the Commonly
+tool server and the provider's `apiKey`. It skips a remote MCP entry that spells
+its own (F193) and refuses the turn for one anywhere else (F484). Pass a value
+through the environment file's `${COMMONLY_...}` placeholders, or write it out.
+
 ## 5. Attach the agent to your pod
 
 Open the pod in the browser. Its id is the last part of the URL
