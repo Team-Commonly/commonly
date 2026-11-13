@@ -238,8 +238,11 @@ TASK-656 made this terminal failure visible to the person waiting. When the cap
 retires a `chat.mention`, `thread.mention` or `dm.message` that a person sent, the pod
 gets one kernel line in the person's thread saying the agent didn't answer and may be
 offline (`unansweredMentionService`). The line is skipped for kernel and agent senders,
-and whenever the agent has posted in the pod since the message, because it may have
-answered without acking. It is at most once: the event is retired before the line is
+and whenever the agent has posted since the message where an answer to it would sit
+(top level, a reply to it, or the thread of any message the retired row carries, read
+from the message's own row), because it may have answered
+without acking. A post in another thread doesn't count: it was the agent answering
+someone else, and counting it left the person with no line (F237). It is at most once: the event is retired before the line is
 written, so a failed write logs and posts nothing rather than risking a second line.
 A failed webhook POST still leaves its event `pending` (C4), because a webhook install
 can also poll: `commonly agent register --webhook` hands off to `agent connect`.

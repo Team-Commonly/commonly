@@ -91,31 +91,71 @@ export async function messagesFromPeople(
  *   message, so a row retired here does get this line, but a native turn that
  *   runs on one and fails posts nothing (personAddressedThisTurn);
  * - it was a comment on a post with no pod: there is no room to tell them in;
- * - the agent has posted in the pod since the message. It was alive and may
- *   have answered without acknowledging, and a line claiming silence would
- *   then be false. Missing a line is better than a wrong one.
+ * - the agent has posted since the message where an answer to it would sit:
+ *   at top level, in the message's thread, or as a reply to it. It was alive
+ *   and may have answered without acknowledging, and a line claiming silence
+ *   would then be false. Missing a line is better than a wrong one. A post in
+ *   another thread was the agent answering someone else (F237), so it doesn't.
  */
 /**
  * Whether the agent has posted in the pod after `since`. A platform line stored
  * under the agent's id (`system`) is not the agent posting. With `excludeKernel`,
  * neither is a kernel notice stored as text under it (`author_kind = 'kernel'`,
  * e.g. a failed-turn notice): it answers nobody, so it must not tell the model
- * an earlier turn may have answered. Postgres only: with no pool there is no
- * answer, and each caller says what that means for it.
+ * an earlier turn may have answered. With `answering` (F237), the ids of the
+ * messages a row carries, a post in some unrelated thread doesn't count either.
+ * An answer sits at top level, replies to one of them, or lands in the thread
+ * of one of them: the message's own (D278) or the thread it sits in, read from
+ * its row, since a payload can leave that out (a welcome wake inside someone's
+ * thread). Any carried message counts, because a joined row is answered once,
+ * in one of their threads. A post elsewhere was the agent answering someone
+ * else. Postgres only: with no pool there is no answer, and each caller says
+ * what that means for it.
  */
 export async function agentPostedSince(
   pool: PgPool, agentUserId: unknown, podId: unknown, since: Date,
-  { excludeKernel = false }: { excludeKernel?: boolean } = {},
+  { excludeKernel = false, answering = null }: {
+    excludeKernel?: boolean;
+    answering?: number[] | null;
+  } = {},
 ): Promise<boolean> {
+  const scoped = Array.isArray(answering);
+  const ids = scoped ? answering : [];
+  // One placeholder per id, not `= ANY($4::int[])`: pg-mem matches nothing for
+  // an array parameter and says nothing, so its tests would read a false result.
+  const list = ids.map((_, index) => `$${index + 4}`).join(', ');
+  // Scoped with no usable id still scopes: only a top-level post counts.
+  const scopeClause = ids.length
+    ? `AND (thread_root_id IS NULL
+          OR thread_root_id IN (${list}) OR reply_to_message_id IN (${list})
+          OR thread_root_id IN (SELECT asked.thread_root_id FROM messages asked
+                                WHERE asked.id IN (${list}) AND asked.thread_root_id IS NOT NULL))`
+    : 'AND thread_root_id IS NULL';
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
      ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
+     ${scoped ? scopeClause : ''}
      LIMIT 1`,
-    [String(podId), String(agentUserId), since],
+    [String(podId), String(agentUserId), since, ...ids],
   );
   return rows.length > 0;
 }
+
+// The Postgres row ids a retired row carries, for `answering`: every carried
+// message and the row's thread. An id that isn't one (a Mongo fallback id, or a
+// number past a Postgres int, which would make the query throw) is left out, not
+// guessed at: its thread can't be matched, so only a top-level post or another
+// carried message's thread silences the line. A guard on unexpected input fails
+// toward the notice being seen (review-checklist rule 19).
+const answeringIds = (event: RetiredEvent): number[] => {
+  const payload = (event.payload || {}) as Record<string, unknown>;
+  const asId = (value: unknown) => (
+    /^\d{1,10}$/.test(String(value ?? '')) && Number(value) <= 2147483647 ? Number(value) : null);
+  const ids = [...carriedMessages(event).map((message) => message.messageId), payload.threadRootId]
+    .map(asId).filter((id): id is number => id !== null);
+  return [...new Set(ids)];
+};
 
 /**
  * F242: the delivered rows whose agent has posted in their pod since their
@@ -175,9 +215,10 @@ export async function noteUnansweredMention(
   if (!pool) return false;
   const podId = String(event.podId || '');
   let posted = false;
+  const answering = answeringIds(event);
   for (const { messageId, since } of waiting) {
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
-    if (!await agentPostedSince(pool, agent._id, podId, since)) {
+    if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop
       await emitUnansweredMentionLine({
         podId,
