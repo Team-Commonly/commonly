@@ -663,6 +663,18 @@ describe('approve: a crash between the call and the marker', () => {
     expect(stored.toolCallCode).toBeUndefined();
     expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran' });
     expect(broker.executeApprovedToolCall).toHaveBeenCalledTimes(1);
+    // F206: the late ending leaves the sweep's claim time standing.
+    expect(stored.expiryRetryNextAt.getTime()).toBeGreaterThanOrEqual(expiryRetryDueAt(stored).getTime());
+  });
+
+  it('F206: an approved call that ran is retried after the grace, not after the settle', async () => {
+    const row = await park();
+    brokerRuns(row);
+    failWakeOnce();
+    await withLogsMuted(() => decide(row, 'approved'));
+    const stored = await reread(row);
+    expect(stored.toolCallEnding).toBe('ran');
+    expect(stored.expiryRetryNextAt.getTime()).toBe(stored.resolvedAt.getTime() + EXPIRY_RETRY_GRACE_MS);
   });
 
   it('a late live ending reopens the row, so a closure failing after the sweep stamped it is still retried', async () => {

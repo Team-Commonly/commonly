@@ -1468,18 +1468,37 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       // replaces the guess, and the closure below stays retryable.
       transitioned.markModified?.('toolCallCode');
       transitioned.markModified?.('expirySideEffectsDoneAt');
-      // F206: with its ending known the row no longer waits out the settle,
-      // so its next attempt moves up to the plain backoff.
-      transitioned.expiryRetryNextAt = expiryRetryDueAt(transitioned);
       // The durable marker: the call's ending, on the row, before anything
       // else. If this write fails the call still ran, so the side effects go
       // on from memory, the trail step's save tries it again, and otherwise
       // the sweep reads the ending from the trail (`settleApprovedCall`).
+      let endingSaved = false;
       try {
         await transitioned.save();
+        endingSaved = true;
       } catch (error) {
         console.error(`[approval] tool-call ending not saved approval=${String(transitioned._id)}; `
           + 'the sweep recovers it from the trail:', (error as Error).message);
+      }
+      // F206: with its ending known the row no longer waits out the settle, so
+      // its next attempt moves up to the plain backoff. Only while no sweep
+      // claimed it during the call: a claim stored its own time, from a newer
+      // count, and this read would put it back before the row is due.
+      if (endingSaved) {
+        try {
+          await ApprovalAction.updateOne(
+            {
+              _id: transitioned._id,
+              expiryRetryCount: transitioned.expiryRetryCount ?? 0,
+              expiryRetryClaimedAt: transitioned.expiryRetryClaimedAt || null,
+            },
+            { $set: { expiryRetryNextAt: expiryRetryDueAt(transitioned) } },
+          );
+        } catch (error) {
+          // The stored time stays at the settle wait: a later retry, never an early one.
+          console.warn(`[approval] next retry time not moved up approval=${String(transitioned._id)}:`,
+            (error as Error).message);
+        }
       }
     } else {
       await transitioned.save();
