@@ -26,7 +26,7 @@ const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
-  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, chatPeopleAreListedMembers,
 } = require('./connectorRelayPolicy');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
@@ -272,16 +272,6 @@ const podForSend = async (podId: string): Promise<{ name?: string; members?: unk
   }
 };
 
-// Who must still be a member for the chat to receive the pod. The private
-// chat is whoever redeemed the connect code, which Commonly never records; the
-// code is minted for the row's creator, so `createdBy` stands for them.
-// `linkedUserId` is whoever switched live relay on, and on a pod-scoped row that
-// can be the pod's creator or an admin rather than the chat's person. Both must
-// be members: either leaving ends the relay.
-const relayPeopleOf = (integration: TelegramIntegrationDoc): unknown[] => (
-  [integration.createdBy, integration.config?.linkedUserId].filter(Boolean)
-);
-
 // Outbound: agent message → Telegram, attributed, with a deep link back into
 // the pod. The hold/mute/escalate ladder and the relayMap write are the shared
 // core's (chatRelay/chatRelayCore); this adapter owns what only Telegram knows:
@@ -301,8 +291,8 @@ export const telegramRelayAdapter: ChatRelayAdapter<TelegramIntegrationDoc> = {
     if (!botToken || !chatId) return null;
     const pod = await podForSend(podId);
     if (!pod) return null;
-    const people = relayPeopleOf(integration);
-    if (!people.length || !people.every((person) => isListedPodMember(pod, person))) {
+    // The row's creator and linked user must both still be listed members (F158).
+    if (!chatPeopleAreListedMembers(integration, pod)) {
       console.warn(`[tg-bridge] outbound skipped integration=${String(integration._id)}: `
         + 'its creator or linked user left the pod');
       return null;

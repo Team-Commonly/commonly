@@ -23,20 +23,12 @@ import { applyRelayCommand, parseRelayCommand } from '../../services/chatRelay/c
 import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { isListedPodMember } = require('../../services/connectorRelayPolicy');
-
-// F487: who must still be a listed member for a chat to get the pod's content,
-// the outbound relay's rule (F158). The private chat is whoever redeemed the
-// connect code, minted for the row's creator; `linkedUserId` is whoever
-// switched live relay on. Either leaving ends it.
-const chatPeopleStillMembers = (integration: any, pod: any): boolean => {
-  const people = [integration.createdBy, integration.config?.linkedUserId].filter(Boolean);
-  return Boolean(pod) && people.length > 0 && people.every((person) => isListedPodMember(pod, person));
-};
+const { chatPeopleAreListedMembers } = require('../../services/connectorRelayPolicy');
 
 const POD_SUMMARY_LEFT = "This chat no longer gets this pod's summary because the person who connected it has left "
   + 'the pod. Rejoin the pod and reconnect the chat to get it again.';
 const POD_GONE = 'The pod this chat was connected to no longer exists.';
+const POD_NAME_WITHHELD = 'not shown: the person who connected this chat has left the pod';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
@@ -362,7 +354,8 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
     await telegramService.sendMessage(botToken, chatId, POD_GONE);
     return;
   }
-  if (!chatPeopleStillMembers(integration, pod)) {
+  // F487: the row's creator and linked user must both still be listed members.
+  if (!chatPeopleAreListedMembers(integration, pod)) {
     await telegramService.sendMessage(botToken, chatId, POD_SUMMARY_LEFT);
     return;
   }
@@ -479,7 +472,9 @@ const handleRelayCommand = async (chat: any, integration: any, command: RelayCom
   const outcome = applyRelayCommand(command, integration);
   if ('update' in outcome) await Integration.findByIdAndUpdate(integration._id, outcome.update);
   const pod = outcome.kind === 'status' ? await Pod.findById(integration.podId).lean() : null;
-  return sendToChat(chatId, telegramCommandReply(outcome, pod?.name));
+  // F489: the pod's name stays in Commonly once the chat's people have left it.
+  const podName = pod && !chatPeopleAreListedMembers(integration, pod) ? POD_NAME_WITHHELD : pod?.name;
+  return sendToChat(chatId, telegramCommandReply(outcome, podName));
 };
 
 // Dedup TTL: Telegram redelivers an unacked update for well under this window;

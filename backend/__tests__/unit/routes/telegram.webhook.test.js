@@ -404,7 +404,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       },
     });
     Pod.findById.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>chat</b>' }),
+      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>chat</b>', members: ['user-1'] }),
     });
 
     const res = await post('/status');
@@ -419,6 +419,39 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(text).not.toContain('<a href');
     // The formatting the route itself writes is untouched by the escaping.
     expect(text).toContain('Pod: <b>');
+  });
+
+  // F489: /status names the active pod. Once the chat's people have left it,
+  // the name stays in Commonly; mode and mute still answer.
+  it('/status withholds the pod name once the chat\'s people have left the pod', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(linked());
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Secret Pod', members: ['user-2'] }) });
+
+    await post('/status');
+
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).not.toContain('Secret Pod');
+    expect(text).toMatch(/left the pod/i);
+    expect(text).toContain('Mode: <b>');
+  });
+
+  it('/status withholds the name when only the linked user has stayed', async () => {
+    // The creator (who redeemed the code) left; whoever switched relay on stayed.
+    Integration.findOne = jest.fn().mockResolvedValue(linked({ linkedUserId: 'user-3' }));
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Secret Pod', members: ['user-3'] }) });
+
+    await post('/status');
+
+    expect(telegramService.sendMessage.mock.calls[0][2]).not.toContain('Secret Pod');
+  });
+
+  it('/status still names the pod for its members', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(linked());
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Team Pod', members: ['user-1'] }) });
+
+    await post('/status');
+
+    expect(telegramService.sendMessage.mock.calls[0][2]).toContain('Pod: <b>Team Pod</b>');
   });
 
   it('/tldr escapes the summary title and body, which are generated from pod text', async () => {

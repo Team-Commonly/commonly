@@ -148,6 +148,24 @@ export const isRoutedPodTarget = (opts: {
     && isConnectorTargetPod(pod, userId);
 };
 
+// May pod content reach this connector row's chat? The chat is whoever
+// redeemed the connect code. Commonly doesn't record who that was; the code is
+// minted for the row's creator (a re-mint can hand it to the pod's creator or
+// an admin), so `createdBy` stands for them. `config.linkedUserId` is whoever
+// switched live relay on, which on a pod-scoped row can be the pod's creator or
+// an admin. Every present one must be a listed member, so either leaving ends
+// it, and a row with neither, or no pod, fails closed. One home for the rule
+// the outbound relay (F158), /tldr (F487) and the card closing line (F488)
+// each wrote (F489).
+export const chatPeopleAreListedMembers = (
+  row: { createdBy?: unknown; config?: { linkedUserId?: unknown } | null } | null | undefined,
+  pod: any,
+): boolean => {
+  if (!row || !pod) return false;
+  const people = [row.createdBy, row.config?.linkedUserId].filter(Boolean);
+  return people.length > 0 && people.every((person) => isListedPodMember(pod, person));
+};
+
 module.exports = {
   ESCALATION_MARKERS,
   shouldEscalate,
@@ -155,4 +173,5 @@ module.exports = {
   isRoutedPodTarget,
   isConnectorTargetPod,
   isListedPodMember,
+  chatPeopleAreListedMembers,
 };

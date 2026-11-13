@@ -36,21 +36,26 @@ const {
   isInboundRelayableIntegration,
 } = require('../../../services/slackBridgeService');
 
+// A user-scoped Slack projection: its installer is both creator and linked user.
 const integration = {
   _id: 'integration-1',
   podId: 'pod-1',
   type: 'slack',
   isActive: true,
+  createdBy: 'user-1',
   config: {
     teamId: 'T1', chatId: 'D1', chatType: 'im', botTokenRef: 'secret-ref', liveRelay: true,
-    relayAllAgentMessages: true,
+    relayAllAgentMessages: true, linkedUserId: 'user-1',
   },
 };
+const podNamed = (name, members = ['user-1']) => (
+  { select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name, members }) }) }
+);
 
 describe('Slack installable bridge', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    Pod.findById.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Launch' }) }) });
+    Pod.findById.mockReturnValue(podNamed('Launch'));
     connectorSecrets.get.mockResolvedValue('xoxb-secret');
     SlackApi.mockImplementation(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '171234.0001' }) }));
     Integration.findByIdAndUpdate.mockResolvedValue(undefined);
@@ -61,7 +66,7 @@ describe('Slack installable bridge', () => {
     // field it is handed through the renderer, and this fall-through interpolated
     // three of them raw. mrkdwn reads `<url|label>` as a link, so a pod name an
     // agent can choose becomes a link the bot appears to have posted.
-    Pod.findById.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: '<Evil|pod>' }) }) });
+    Pod.findById.mockReturnValue(podNamed('<Evil|pod>'));
     await relayAgentMessageToSlack({
       podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: '<https://evil.example|click> <!channel>',
       podMessageId: 'message-1', integration,
@@ -72,6 +77,30 @@ describe('Slack installable bridge', () => {
       'D1',
       '[&lt;Evil|pod&gt;] Kai: &lt;https://evil.example|click&gt; &lt;!channel&gt;',
     );
+  });
+
+  // F489 (review of the shared rule): Slack's send asked no membership, and its
+  // fallback lookup selects by podId alone. A DM whose installer left the pod
+  // kept getting the pod's agent lines.
+  test('sends nothing to a DM whose installer has left the pod', async () => {
+    Pod.findById.mockReturnValue(podNamed('Launch', ['user-2']));
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: 'Hello from the pod',
+      podMessageId: 'message-1', integration,
+    });
+    expect(SlackApi).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    // A refused send never reads the bot token (CodeRabbit on #4094).
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+  });
+
+  test('sends nothing when the pod is gone', async () => {
+    Pod.findById.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }) });
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: 'Hello from the pod',
+      podMessageId: 'message-1', integration,
+    });
+    expect(SlackApi).not.toHaveBeenCalled();
   });
 
   test('uses the selected Slack row, secret reference, and generic D11 map', async () => {

@@ -10,7 +10,7 @@ const connectorSecrets = require('./connectorSecrets');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
-  isGatedPodTarget, isRoutedPodTarget,
+  isGatedPodTarget, isRoutedPodTarget, chatPeopleAreListedMembers,
 } = require('./connectorRelayPolicy');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
@@ -219,10 +219,16 @@ export const slackRelayAdapter: ChatRelayAdapter<SlackIntegrationDoc> = {
   send: async ({
     integration, podId, agentUsername, displayName, content, card, link,
   }) => {
-    const [pod, token] = await Promise.all([
-      Pod.findById(podId).select('name').lean(),
-      connectorSecrets.get(String(integration.config!.botTokenRef)),
-    ]);
+    const pod = await Pod.findById(podId).select('name members').lean();
+    // F489: the DM's installer (creator and linked user) must still be a listed
+    // member. The fallback lookup selects by podId alone, so nothing upstream
+    // asks on that path. A missing pod sends nothing.
+    if (!chatPeopleAreListedMembers(integration, pod)) {
+      console.warn(`[slack-bridge] outbound skipped integration=${String(integration._id)}: `
+        + 'its installer left the pod, or the pod is gone');
+      return null;
+    }
+    const token = await connectorSecrets.get(String(integration.config!.botTokenRef));
     const podName = String(pod?.name || 'Commonly');
     const text = card
       ? renderSlackDecisionCard({ card, displayName, agentUsername, link })

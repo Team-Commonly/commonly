@@ -79,10 +79,13 @@ const slackIntegration = (config = {}) => ({
   installationId: 'install-slack',
   podId: 'pod-1',
   scope: 'user',
+  // The installer is creator and linked user; the send checks both (F489).
+  createdBy: 'owner-1',
   type: 'slack',
   isActive: true,
   config: {
     liveRelay: true,
+    linkedUserId: 'owner-1',
     chatType: 'im',
     chatId: 'slack-chat',
     teamId: 'T1',
