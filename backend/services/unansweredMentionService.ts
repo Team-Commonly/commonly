@@ -102,40 +102,52 @@ export async function messagesFromPeople(
  * under the agent's id (`system`) is not the agent posting. With `excludeKernel`,
  * neither is a kernel notice stored as text under it (`author_kind = 'kernel'`,
  * e.g. a failed-turn notice): it answers nobody, so it must not tell the model
- * an earlier turn may have answered. With `answering` (F237), a post in some
- * other thread doesn't count either: under D278 an answer to that message sits
- * at top level, in its thread, or replies to it, so a post elsewhere was the
- * agent talking to someone else. Postgres only: with no pool there is no
- * answer, and each caller says what that means for it.
+ * an earlier turn may have answered. With `answering` (F237), the ids of the
+ * messages a row carries, a post in some unrelated thread doesn't count either.
+ * An answer sits at top level, replies to one of them, or lands in the thread
+ * of one of them: the message's own (D278) or the thread it sits in, read from
+ * its row, since a payload can leave that out (a welcome wake inside someone's
+ * thread). Any carried message counts, because a joined row is answered once,
+ * in one of their threads. A post elsewhere was the agent answering someone
+ * else. Postgres only: with no pool there is no answer, and each caller says
+ * what that means for it.
  */
 export async function agentPostedSince(
   pool: PgPool, agentUserId: unknown, podId: unknown, since: Date,
   { excludeKernel = false, answering = null }: {
     excludeKernel?: boolean;
-    answering?: { messageId: number; threadRootId: number } | null;
+    answering?: number[] | null;
   } = {},
 ): Promise<boolean> {
+  const ids = Array.isArray(answering) ? answering : [];
+  // One placeholder per id, not `= ANY($4::int[])`: pg-mem matches nothing for
+  // an array parameter and says nothing, so its tests would read a false result.
+  const list = ids.map((_, index) => `$${index + 4}`).join(', ');
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
      ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
-     ${answering ? 'AND (thread_root_id IS NULL OR thread_root_id = $4 OR reply_to_message_id = $5)' : ''}
+     ${ids.length ? `AND (thread_root_id IS NULL
+          OR thread_root_id IN (${list}) OR reply_to_message_id IN (${list})
+          OR thread_root_id IN (SELECT asked.thread_root_id FROM messages asked
+                                WHERE asked.id IN (${list}) AND asked.thread_root_id IS NOT NULL))` : ''}
      LIMIT 1`,
-    [String(podId), String(agentUserId), since,
-      ...(answering ? [answering.threadRootId, answering.messageId] : [])],
+    [String(podId), String(agentUserId), since, ...ids],
   );
   return rows.length > 0;
 }
 
-// The message's conversation, for `answering`: its thread, or the message
-// itself when it sits at top level. Null when either id isn't a Postgres row
-// id, which keeps the old reading (any post since counts).
-const conversationOf = (messageId: unknown, threadRootId: unknown) => {
-  const asId = (value: unknown) => (/^\d+$/.test(String(value ?? '')) ? Number(value) : null);
-  const message = asId(messageId);
-  if (message === null) return null;
-  const root = threadRootId === undefined || threadRootId === null ? message : asId(threadRootId);
-  return root === null ? null : { messageId: message, threadRootId: root };
+// The Postgres row ids a retired row carries, for `answering`: every carried
+// message and the row's thread. Null when any carried id isn't one (a Mongo
+// fallback id, or digits too long for an int), which keeps the old reading:
+// any post since counts. The 10-digit cap matches answerRootOfWake's.
+const answeringIds = (event: RetiredEvent): number[] | null => {
+  const payload = (event.payload || {}) as Record<string, unknown>;
+  const asId = (value: unknown) => (/^\d{1,10}$/.test(String(value ?? '')) ? Number(value) : null);
+  const ids = carriedMessages(event).map((message) => asId(message.messageId));
+  if (ids.length === 0 || ids.some((id) => id === null)) return null;
+  const root = payload.threadRootId === undefined || payload.threadRootId === null ? null : asId(payload.threadRootId);
+  return [...new Set([...ids as number[], ...(root === null ? [] : [root])])];
 };
 
 /**
@@ -196,8 +208,8 @@ export async function noteUnansweredMention(
   if (!pool) return false;
   const podId = String(event.podId || '');
   let posted = false;
+  const answering = answeringIds(event);
   for (const { messageId, since } of waiting) {
-    const answering = conversationOf(messageId, payload.threadRootId);
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
     if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop

@@ -72,8 +72,8 @@ real('agentPostedSince on real PostgreSQL (F242)', () => {
     await expect(agentPostedSince(pool, AGENT, POD, since(), { excludeKernel: true })).resolves.toBe(true);
   });
 
-  // F237: with `answering`, only a post where an answer to that message would
-  // sit counts: top level, its thread, or a reply to it.
+  // F237: with `answering`, only a post where an answer to those messages would
+  // sit counts: top level, a reply to one, or the thread of one.
   it('with answering, counts top level, the thread and a reply, and not another thread', async () => {
     const [{ id: root }] = (await pool.query(
       "INSERT INTO messages (pod_id, user_id, content, created_at) VALUES ($1, $2, 'root', now() - interval '20 minutes') RETURNING id",
@@ -88,7 +88,9 @@ real('agentPostedSince on real PostgreSQL (F242)', () => {
       "INSERT INTO messages (pod_id, user_id, content, created_at) VALUES ($1, $2, 'other', now() - interval '20 minutes') RETURNING id",
       [POD, OWNER],
     )).rows;
-    const answering = { messageId: asked, threadRootId: root };
+    // Only the asked message's id: its thread is read from its row, as for a
+    // welcome wake whose payload names no thread.
+    const answering = [asked];
     const agentPost = async (threadRootId, replyTo) => {
       await pool.query('DELETE FROM messages WHERE user_id = $1', [AGENT]);
       await pool.query(

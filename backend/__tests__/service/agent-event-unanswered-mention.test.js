@@ -163,6 +163,58 @@ describe('which of the agent\'s posts may have answered (F237)', () => {
     expect(await lines()).toHaveLength(0);
   });
 
+  // A joined row is answered once, in one of its messages' threads (review HOLD).
+  test('a joined row answered in one message\'s thread is silent for all of them', async () => {
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: {
+        messageId: '41',
+        userId: String(person._id),
+        content: '@otto first?',
+        coalesced: [{
+          messageId: '45', userId: String(person._id), username: 'x', rawContent: 'second?', createdAt: HOUR_AGO(),
+        }],
+      },
+    });
+    await agentPosts({ thread: 45 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(0);
+  });
+
+  // A welcome wake can name a reply inside someone's thread with no threadRootId.
+  test('a message inside a thread the payload leaves out is answered in that thread', async () => {
+    await mockPool.query(
+      'INSERT INTO messages (id, pod_id, user_id, content, thread_root_id) VALUES ($1, $2, $3, $4, $5)',
+      [41, String(POD), String(person._id), 'hi, new here', 40],
+    );
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: {
+        messageId: '41', userId: String(person._id), welcomeWake: true, content: 'hi, new here',
+      },
+    });
+    await agentPosts({ thread: 40 });
+
+    await collect();
+
+    expect((await lines()).filter((line) => line.user_id === String(agent._id) && line.message_type === 'system'))
+      .toHaveLength(0);
+  });
+
+  test('an id too long for a Postgres row keeps the old reading', async () => {
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: { messageId: '123456789012345678901234', userId: String(person._id), content: '@otto?' },
+    });
+    await agentPosts({ thread: 99 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(0);
+  });
+
   test('for a top-level message, a post in another thread leaves the line', async () => {
     await exhausted({
       createdAt: HOUR_AGO(),
