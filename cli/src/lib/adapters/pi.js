@@ -591,7 +591,7 @@ export const extractReply = (stdout) => {
 
 // A turn that printed an interim message and then ended without finishing. A
 // crash keeps its cause, so a quota line in stderr or a refusal on the stream
-// still classifies. A signal (143, 129, or a null code) has neither: stderr then
+// still classifies. A signal (143, 129, 130, or a null code) has neither: stderr then
 // holds pi's startup warnings, and a refusal on the stream may be one pi was
 // recovering from, like an overflow's 400. A clean exit that ended on an error
 // has only the stream: its stderr is those warnings too, and the refusal stands.
@@ -602,7 +602,7 @@ export const extractReply = (stdout) => {
 const stoppedTurnFailure = (reply, {
   code, signal, stderr, credentials,
 }) => {
-  const killed = Boolean(signal) || code === 143 || code === 129;
+  const killed = Boolean(signal) || code === 143 || code === 129 || code === 130;
   const cleanExit = code === 0;
   const upstream = killed ? null : reply.upstream;
   const failure = adapterFailure(

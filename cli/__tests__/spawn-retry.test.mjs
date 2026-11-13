@@ -450,6 +450,12 @@ describe('an outside signal', () => {
     expect(isExternalSignal(adapterFailure('codex', '', { exitCode: null, signal: 'SIGTERM' }))).toBe(true);
   });
 
+  test('a status the text named is a cause, so it is never marked', () => {
+    const failure = adapterFailure('claude', 'request failed with status 429', { exitCode: 143, signal: null });
+    expect(failure.status).toBe(429);
+    expect(isExternalSignal(failure)).toBe(false);
+  });
+
   test('the policy retries a graced one at the poll interval with the circuit shut', () => {
     const error = markExternalSignal(new Error('quota exceeded'), { signal: 'SIGTERM' });
     expect(spawnRetryPolicy({

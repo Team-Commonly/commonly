@@ -179,6 +179,36 @@ test('exit zero without final, an error event, and a sandbox runner failure all 
     .rejects.toThrow(/\[redacted\] refused/);
 });
 
+// F293: only a cut-off this adapter didn't cause is marked as an outside signal.
+// `proc.kill` closes the child on the signal it was sent, as a real child does.
+const signalledChild = ({ stdout = '', closeWith = null } = {}) => {
+  const proc = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.kill = jest.fn((signal) => setTimeout(() => proc.emit('close', null, signal), 0));
+  setTimeout(() => {
+    if (stdout) proc.stdout.emit('data', Buffer.from(stdout));
+    if (closeWith) proc.emit('close', null, closeWith);
+  }, 0);
+  return proc;
+};
+
+test('an outside SIGTERM is marked; this adapter\'s own parse-failure and timeout kills are not', async () => {
+  const base = { binary: 'dsh', args: [], cwd: '/tmp', env: {}, credentials: [] };
+  const session = event({ type: 'session', sessionId: 'session-11111111-1111-1111-1111-111111111111' });
+  const outside = await runDsh({ ...base, timeoutMs: 1000, spawnImpl: () => signalledChild({ stdout: session, closeWith: 'SIGTERM' }) })
+    .catch((err) => err);
+  expect(outside).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
+  const parse = await runDsh({ ...base, timeoutMs: 1000, spawnImpl: () => signalledChild({ stdout: '{not json\n' }) })
+    .catch((err) => err);
+  expect(parse).toBeInstanceOf(Error);
+  expect(parse.externalSignal).toBeUndefined();
+  const timeout = await runDsh({ ...base, timeoutMs: 5, spawnImpl: () => signalledChild({ stdout: session }) })
+    .catch((err) => err);
+  expect(timeout.message).toMatch(/timeout after 5ms/);
+  expect(timeout.externalSignal).toBeUndefined();
+});
+
 test('helpers keep the native route disabled and child env closed', () => {
   const env = childEnvironment({ PATH: '/bin', DEEPSEEK_API_KEY: 'shadow', DSH_HOME: '/tmp/shadow' }, '/tmp/seat', 'bearer');
   expect(env.DEEPSEEK_API_KEY).toBeUndefined();

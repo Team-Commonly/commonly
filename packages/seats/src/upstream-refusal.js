@@ -417,8 +417,10 @@ export const adapterFailure = (label, text, {
   const providerCode = providerCodeFrom(text, { credentials });
   if (providerCode !== null) error.providerCode = providerCode;
   // Only when the caller passed `signal`, so a path that must keep its own
-  // cause (a stream's error, the adapter's own kill) never gets the mark.
-  return signal === undefined ? error : markExternalSignal(error, { code: exitCode, signal });
+  // cause (a stream's error, the adapter's own kill) never gets the mark, and
+  // never over a status or provider code the text named: that is a cause too.
+  if (signal === undefined || status !== null || providerCode !== null) return error;
+  return markExternalSignal(error, { code: exitCode, signal });
 };
 
 /**
