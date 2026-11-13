@@ -295,11 +295,14 @@ describe('Telegram webhook routes', () => {
 });
 
 describe('bridge command surface (/mode /status /mute /help)', () => {
-  const linked = () => ({
+  const linked = (overrides = {}) => ({
     _id: 'integration-1',
     podId: 'pod-1',
     type: 'telegram',
-    config: { chatId: '42', chatType: 'private', liveRelay: true, relayAllAgentMessages: true },
+    createdBy: 'user-1',
+    config: {
+      chatId: '42', chatType: 'private', liveRelay: true, relayAllAgentMessages: true, linkedUserId: 'user-1', ...overrides,
+    },
   });
 
   const post = (text) => telegramPost()
@@ -420,6 +423,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
 
   it('/tldr escapes the summary title and body, which are generated from pod text', async () => {
     Integration.findOne = jest.fn().mockResolvedValue(linked());
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Pod', members: ['user-1'] }) });
     Summary.findOne.mockReturnValue({
       sort: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue({
@@ -436,6 +440,57 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(text).not.toContain('<script>');
     expect(text).toContain('Agent said &lt;b&gt;ship it&lt;/b&gt; &amp; left');
+  });
+
+  // F487: /tldr sends the pod's latest summary. A private chat bound to a pod
+  // its people have since left must not keep getting it, by the rule the
+  // outbound relay uses (F158): the row's creator, who redeemed the connect
+  // code, and its linked user, who switched live relay on, must both still be
+  // listed members.
+  describe('/tldr in a private chat (F487)', () => {
+    const podWith = (members) => Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Pod', createdBy: 'creator-1', members }),
+    });
+    beforeEach(() => {
+      Summary.findOne.mockReturnValue({
+        sort: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ title: 'T', content: 'pod secrets' }) }),
+      });
+    });
+    const refused = () => {
+      expect(Summary.findOne).not.toHaveBeenCalled();
+      const text = telegramService.sendMessage.mock.calls[0][2];
+      expect(text).not.toContain('pod secrets');
+      expect(text).toMatch(/left the pod/i);
+    };
+
+    it('sends the summary while the chat\'s people are members', async () => {
+      podWith(['user-1']);
+      await post('/tldr');
+      expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
+
+    it('withholds it once the creator has left', async () => {
+      Integration.findOne = jest.fn().mockResolvedValue(linked({ linkedUserId: 'user-3' }));
+      podWith(['user-3']);
+      await post('/tldr');
+      refused();
+    });
+
+    it('withholds it once the linked user has left', async () => {
+      Integration.findOne = jest.fn().mockResolvedValue(linked({ linkedUserId: 'user-3' }));
+      podWith(['user-1']);
+      await post('/tldr');
+      refused();
+    });
+
+    it('withholds it when the pod is gone', async () => {
+      Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+      await post('/tldr');
+      expect(Summary.findOne).not.toHaveBeenCalled();
+      const text = telegramService.sendMessage.mock.calls[0][2];
+      expect(text).not.toContain('pod secrets');
+      expect(text).toMatch(/no longer exists/i);
+    });
   });
 
   // F143: what a group binding still sends OUT is /tldr — the pod's latest
@@ -480,6 +535,25 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       Integration.findOne = jest.fn().mockResolvedValue(groupRow('creator-1'));
       await groupPost();
       expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
+
+    // F487 review: the membership check now runs before F143's authority check.
+    it('still sends it to a group an instance admin bound while a member', async () => {
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ name: 'Pod', createdBy: 'creator-1', members: ['creator-1', 'admin-1'] }),
+      });
+      User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('admin-1'));
+      await groupPost();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
+
+    it('refuses a group bound by an admin who has since left the pod', async () => {
+      User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('admin-1'));
+      await groupPost();
+      expect(Summary.findOne).not.toHaveBeenCalled();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/left the pod/i);
     });
   });
 

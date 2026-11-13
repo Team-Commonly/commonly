@@ -21,6 +21,22 @@ const {
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 import { applyRelayCommand, parseRelayCommand } from '../../services/chatRelay/chatRelayCore';
 import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isListedPodMember } = require('../../services/connectorRelayPolicy');
+
+// F487: who must still be a listed member for a chat to get the pod's content,
+// the outbound relay's rule (F158). The private chat is whoever redeemed the
+// connect code, minted for the row's creator; `linkedUserId` is whoever
+// switched live relay on. Either leaving ends it.
+const chatPeopleStillMembers = (integration: any, pod: any): boolean => {
+  const people = [integration.createdBy, integration.config?.linkedUserId].filter(Boolean);
+  return Boolean(pod) && people.length > 0 && people.every((person) => isListedPodMember(pod, person));
+};
+
+const POD_SUMMARY_LEFT = "This chat no longer gets this pod's summary because the person who connected it has left "
+  + 'the pod. Rejoin the pod and reconnect the chat to get it again.';
+const POD_GONE = 'The pod this chat was connected to no longer exists.';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
@@ -341,11 +357,20 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
     return;
   }
 
+  const pod = await Pod.findById(integration.podId).lean();
+  if (!pod) {
+    await telegramService.sendMessage(botToken, chatId, POD_GONE);
+    return;
+  }
+  if (!chatPeopleStillMembers(integration, pod)) {
+    await telegramService.sendMessage(botToken, chatId, POD_SUMMARY_LEFT);
+    return;
+  }
+
   // F143: /tldr is what a group binding sends OUT — the pod's summary, to
   // everyone in the chat. A shared chat bound before the rule by someone without
   // authority over the pod gets nothing until the pod's creator reconnects it.
   if (surfaceAudienceOf('telegram', integration.config) === 'shared-surface') {
-    const pod = await Pod.findById(integration.podId).lean();
     try {
       await assertCanBindSurface({
         userId: integration.createdBy, pod, type: 'telegram', config: integration.config,
