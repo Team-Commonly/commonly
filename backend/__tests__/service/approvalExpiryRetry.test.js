@@ -144,6 +144,92 @@ beforeEach(async () => {
   attention.resolve.mockImplementation(async () => undefined);
 });
 
+// F206: the retry read used to take the 500 oldest closed rows by resolvedAt
+// and filter the due ones in JS, so after a mass outage 500 rows backing off
+// hourly hid every newer row that was due. Each row now stores when its next
+// attempt may run (`expiryRetryNextAt`, written by the close and by every
+// claim), and the read selects on it, in that order.
+describe('F206: the retry read selects by the stored next attempt', () => {
+  const stuckRows = async (count, now) => {
+    const claimedAt = new Date(now.getTime() - MINUTE);
+    const docs = Array.from({ length: count }, (_, i) => ({
+      podId,
+      messageId: `stuck-${i}`,
+      runId: new mongoose.Types.ObjectId(),
+      ownerUserId: owner._id,
+      agentName: 'alice',
+      agentUserId: String(new mongoose.Types.ObjectId()),
+      actionType: 'tool_call',
+      summary: 'Stuck',
+      toolCall: { grantId: 'grant-1', tool: 'github.create_issue', argsDigest: 'a'.repeat(64) },
+      toolCallSlot: 0,
+      status: 'expired',
+      resolvedAt: new Date(now.getTime() - (6 * 60 * MINUTE) - i),
+      toolCallEnding: 'expired',
+      // Six retries in, the last a minute ago: the next waits 64 minutes.
+      expiryRetryCount: 6,
+      expiryRetryClaimedAt: claimedAt,
+      expiryRetryNextAt: new Date(claimedAt.getTime() + 64 * MINUTE),
+    }));
+    await ApprovalAction.insertMany(docs);
+  };
+
+  it('a newer due row is retried though 500 older rows are backing off', async () => {
+    const start = new Date();
+    const row = await park();
+    failWakeOnce();
+    await sweepExpiredToolCallApprovals(start);
+    const due = new Date(start.getTime() + EXPIRY_RETRY_GRACE_MS + MINUTE);
+    await stuckRows(500, due);
+
+    await sweepExpiredToolCallApprovals(due);
+
+    const stored = await reread(row);
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    expect(await eventsFor(row)).toHaveLength(1);
+    // None of the backing-off rows was claimed early.
+    expect(await ApprovalAction.countDocuments({ messageId: /^stuck-/, expiryRetryCount: 6 })).toBe(500);
+  });
+
+  it('the close and every claim store the next attempt', async () => {
+    const start = new Date();
+    const row = await park();
+    failWakeOnce();
+    await sweepExpiredToolCallApprovals(start);
+    let stored = await reread(row);
+    expect(stored.expiryRetryNextAt.getTime()).toBe(stored.resolvedAt.getTime() + EXPIRY_RETRY_GRACE_MS);
+
+    failWakeOnce();
+    const retryAt = new Date(stored.expiryRetryNextAt.getTime() + 1000);
+    await sweepExpiredToolCallApprovals(retryAt);
+    stored = await reread(row);
+    expect(stored.expiryRetryCount).toBe(1);
+    expect(stored.expiryRetryNextAt.getTime()).toBe(retryAt.getTime() + 2 * EXPIRY_RETRY_GRACE_MS);
+    expect(stored.expiryRetryNextAt.getTime()).toBe(expiryRetryDueAt(stored).getTime());
+  });
+
+  it('a decline stores its next attempt in the closing write', async () => {
+    const row = await park({ expiresAt: new Date(Date.now() + 60 * MINUTE) });
+    failWakeOnce();
+    await resolveApproval({ approvalId: String(row._id), decision: 'declined', callerUserId: owner._id }).catch(() => {});
+    const stored = await reread(row);
+    expect(stored.status).toBe('resolved');
+    expect(stored.expiryRetryNextAt.getTime()).toBe(stored.resolvedAt.getTime() + EXPIRY_RETRY_GRACE_MS);
+  });
+
+  it('a row closed before F206, with no stored next attempt, is still retried when due', async () => {
+    const start = new Date();
+    const row = await park();
+    failWakeOnce();
+    await sweepExpiredToolCallApprovals(start);
+    await ApprovalAction.updateOne({ _id: row._id }, { $unset: { expiryRetryNextAt: 1 } });
+
+    await sweepExpiredToolCallApprovals(new Date(start.getTime() + EXPIRY_RETRY_GRACE_MS + MINUTE));
+
+    expect((await reread(row)).expirySideEffectsDoneAt).toBeInstanceOf(Date);
+  });
+});
+
 describe('F202: expiry side effects survive a failure after the status flip', () => {
   it('the next sweep past the grace completes a failed expiry: one trail, card, one wake, marker', async () => {
     const row = await park();

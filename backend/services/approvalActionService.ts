@@ -1329,14 +1329,16 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   // the decide path itself so a decision racing the sweeper cannot execute a
   // stale call or leave its canonical arguments behind.
   if (parkedCall && row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+    const expiredAt = new Date();
     const expired = await ApprovalAction.findOneAndUpdate(
       { _id: row._id, status: 'flagged' },
       {
         $set: {
-          status: 'expired', resolvedAt: new Date(),
+          status: 'expired', resolvedAt: expiredAt,
           decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
           expiryRetryCount: 0,
+          expiryRetryNextAt: expiryRetryDueAt({ resolvedAt: expiredAt, expiryRetryCount: 0 }),
         },
         $unset: { 'toolCall.canonicalArgs': 1 },
       },
@@ -1370,6 +1372,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
 
   // Atomic transition — the status filter makes a concurrent double-resolve
   // lose cleanly instead of double-executing.
+  const resolvedAt = new Date();
   const transitioned = await ApprovalAction.findOneAndUpdate(
     { _id: row._id, status: 'flagged' },
     {
@@ -1377,13 +1380,20 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         status: 'resolved',
         decision,
         resolvedBy: callerUserId,
-        resolvedAt: new Date(),
+        resolvedAt,
         // The owner check above makes the caller the connection owner.
         ...(parkedCall ? { decidedBy: String(callerUserId), decidedByRole: 'credential-owner' } : {}),
         ...(parkedCall && decision === 'declined'
           ? { toolCallEnding: 'declined', toolCallCode: 'approval_declined' } : {}),
         // Opts the row into the sweep's retry (F202), in the write that closes it.
-        ...(parkedCall ? { expiryRetryCount: 0 } : {}),
+        ...(parkedCall ? {
+          expiryRetryCount: 0,
+          // An approval has no ending yet, so this also waits out the settle.
+          expiryRetryNextAt: expiryRetryDueAt({
+            resolvedAt, expiryRetryCount: 0, status: 'resolved', decision,
+            toolCallEnding: decision === 'declined' ? 'declined' : null,
+          }),
+        } : {}),
         ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
       },
       ...(parkedCall ? { $unset: { 'toolCall.canonicalArgs': 1 } } : {}),
@@ -1458,6 +1468,9 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       // replaces the guess, and the closure below stays retryable.
       transitioned.markModified?.('toolCallCode');
       transitioned.markModified?.('expirySideEffectsDoneAt');
+      // F206: with its ending known the row no longer waits out the settle,
+      // so its next attempt moves up to the plain backoff.
+      transitioned.expiryRetryNextAt = expiryRetryDueAt(transitioned);
       // The durable marker: the call's ending, on the row, before anything
       // else. If this write fails the call still ran, so the side effects go
       // on from memory, the trail step's save tries it again, and otherwise
@@ -1794,6 +1807,7 @@ const expireToolCallApproval = async (
         decidedBy: 'policy', decidedByRole: 'policy',
         toolCallEnding: 'expired', toolCallCode: 'approval_expired',
         expiryRetryCount: 0,
+        expiryRetryNextAt: expiryRetryDueAt({ resolvedAt: now, expiryRetryCount: 0 }),
       },
       $unset: { 'toolCall.canonicalArgs': 1 },
     },
@@ -1872,12 +1886,22 @@ const retryIncompleteToolCallClosures = async (now: Date): Promise<number> => {
     expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES },
     expirySideEffectsDoneAt: null,
   };
-  // The first wait is the shortest, so nothing closed inside it can be due.
+  // F206: select on the stored next attempt, soonest first, so rows backing
+  // off never fill the batch ahead of due ones. A row closed before F206 has
+  // none and is read by resolvedAt: the first wait is the shortest, so nothing
+  // closed inside it can be due. Missing values sort first.
   const candidates = await ApprovalAction.find({
-    ...incomplete, resolvedAt: { $lte: new Date(now.getTime() - EXPIRY_RETRY_GRACE_MS) },
+    ...incomplete,
+    $or: [
+      { expiryRetryNextAt: { $lte: now } },
+      { expiryRetryNextAt: null, resolvedAt: { $lte: new Date(now.getTime() - EXPIRY_RETRY_GRACE_MS) } },
+    ],
   }).select('_id status decision toolCallEnding resolvedAt expiryRetryClaimedAt expiryRetryCount')
-    .sort({ resolvedAt: 1 }).limit(500)
-    .lean() as Array<{ _id: unknown; resolvedAt: Date; expiryRetryClaimedAt?: Date; expiryRetryCount: number }>;
+    .sort({ expiryRetryNextAt: 1, resolvedAt: 1 }).limit(500)
+    .lean() as Array<{
+      _id: unknown; resolvedAt: Date; expiryRetryClaimedAt?: Date; expiryRetryCount: number;
+      status?: string; decision?: string; toolCallEnding?: string;
+    }>;
   const rows = candidates.filter((one) => expiryRetryDueAt(one).getTime() <= now.getTime());
   let completed = 0;
   for (const one of rows) {
@@ -1889,7 +1913,15 @@ const retryIncompleteToolCallClosures = async (now: Date): Promise<number> => {
         expiryRetryCount: one.expiryRetryCount,
         expiryRetryClaimedAt: one.expiryRetryClaimedAt || null,
       },
-      { $inc: { expiryRetryCount: 1 }, $set: { expiryRetryClaimedAt: now } },
+      {
+        $inc: { expiryRetryCount: 1 },
+        $set: {
+          expiryRetryClaimedAt: now,
+          expiryRetryNextAt: expiryRetryDueAt({
+            ...one, expiryRetryClaimedAt: now, expiryRetryCount: Number(one.expiryRetryCount) + 1,
+          }),
+        },
+      },
       { new: true },
     );
     if (!claimed) continue;
