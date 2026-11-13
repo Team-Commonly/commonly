@@ -113,6 +113,69 @@ test('stays silent when the agent has posted in the pod since the message', asyn
   expect(await lines()).toHaveLength(0);
 });
 
+// F237: a post in another thread is the agent talking to someone else. Under
+// D278 an answer lands in the asker's own thread (or top level), so only those
+// say the agent may have answered; the person's line still posts otherwise.
+describe('which of the agent\'s posts may have answered (F237)', () => {
+  const agentPosts = (columns) => mockPool.query(
+    'INSERT INTO messages (pod_id, user_id, content, thread_root_id, reply_to_message_id) VALUES ($1, $2, $3, $4, $5)',
+    [String(POD), String(agent._id), 'something', columns.thread ?? null, columns.replyTo ?? null],
+  );
+
+  test('a post in another thread leaves the person their line', async () => {
+    await exhausted({ createdAt: HOUR_AGO() });
+    await agentPosts({ thread: 99 });
+
+    await collect();
+
+    const posted = await lines();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].content).toContain("Otto didn't answer this");
+  });
+
+  test('a post in the person\'s own thread stays silent', async () => {
+    await exhausted({ createdAt: HOUR_AGO() });
+    await agentPosts({ thread: 40 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(0);
+  });
+
+  test('a reply to the message stays silent, wherever it sits', async () => {
+    await exhausted({ createdAt: HOUR_AGO() });
+    await agentPosts({ thread: 99, replyTo: 41 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(0);
+  });
+
+  test('for a top-level message, a post in that message\'s own thread stays silent', async () => {
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: { messageId: '41', userId: String(person._id), content: '@otto can you review this?' },
+    });
+    await agentPosts({ thread: 41 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(0);
+  });
+
+  test('for a top-level message, a post in another thread leaves the line', async () => {
+    await exhausted({
+      createdAt: HOUR_AGO(),
+      payload: { messageId: '41', userId: String(person._id), content: '@otto can you review this?' },
+    });
+    await agentPosts({ thread: 99 });
+
+    await collect();
+
+    expect(await lines()).toHaveLength(1);
+  });
+});
+
 test('stays silent for a kernel wake and for a message an agent sent', async () => {
   // A board wake can name the person whose edit caused it; it is still the kernel's.
   const kernel = await exhausted({

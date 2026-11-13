@@ -91,31 +91,52 @@ export async function messagesFromPeople(
  *   message, so a row retired here does get this line, but a native turn that
  *   runs on one and fails posts nothing (personAddressedThisTurn);
  * - it was a comment on a post with no pod: there is no room to tell them in;
- * - the agent has posted in the pod since the message. It was alive and may
- *   have answered without acknowledging, and a line claiming silence would
- *   then be false. Missing a line is better than a wrong one.
+ * - the agent has posted since the message where an answer to it would sit:
+ *   at top level, in the message's thread, or as a reply to it. It was alive
+ *   and may have answered without acknowledging, and a line claiming silence
+ *   would then be false. Missing a line is better than a wrong one. A post in
+ *   another thread was the agent answering someone else (F237), so it doesn't.
  */
 /**
  * Whether the agent has posted in the pod after `since`. A platform line stored
  * under the agent's id (`system`) is not the agent posting. With `excludeKernel`,
  * neither is a kernel notice stored as text under it (`author_kind = 'kernel'`,
  * e.g. a failed-turn notice): it answers nobody, so it must not tell the model
- * an earlier turn may have answered. Postgres only: with no pool there is no
+ * an earlier turn may have answered. With `answering` (F237), a post in some
+ * other thread doesn't count either: under D278 an answer to that message sits
+ * at top level, in its thread, or replies to it, so a post elsewhere was the
+ * agent talking to someone else. Postgres only: with no pool there is no
  * answer, and each caller says what that means for it.
  */
 export async function agentPostedSince(
   pool: PgPool, agentUserId: unknown, podId: unknown, since: Date,
-  { excludeKernel = false }: { excludeKernel?: boolean } = {},
+  { excludeKernel = false, answering = null }: {
+    excludeKernel?: boolean;
+    answering?: { messageId: number; threadRootId: number } | null;
+  } = {},
 ): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type <> 'system'
      ${excludeKernel ? "AND (author_kind IS NULL OR author_kind <> 'kernel')" : ''}
+     ${answering ? 'AND (thread_root_id IS NULL OR thread_root_id = $4 OR reply_to_message_id = $5)' : ''}
      LIMIT 1`,
-    [String(podId), String(agentUserId), since],
+    [String(podId), String(agentUserId), since,
+      ...(answering ? [answering.threadRootId, answering.messageId] : [])],
   );
   return rows.length > 0;
 }
+
+// The message's conversation, for `answering`: its thread, or the message
+// itself when it sits at top level. Null when either id isn't a Postgres row
+// id, which keeps the old reading (any post since counts).
+const conversationOf = (messageId: unknown, threadRootId: unknown) => {
+  const asId = (value: unknown) => (/^\d+$/.test(String(value ?? '')) ? Number(value) : null);
+  const message = asId(messageId);
+  if (message === null) return null;
+  const root = threadRootId === undefined || threadRootId === null ? message : asId(threadRootId);
+  return root === null ? null : { messageId: message, threadRootId: root };
+};
 
 /**
  * F242: the delivered rows whose agent has posted in their pod since their
@@ -176,8 +197,9 @@ export async function noteUnansweredMention(
   const podId = String(event.podId || '');
   let posted = false;
   for (const { messageId, since } of waiting) {
+    const answering = conversationOf(messageId, payload.threadRootId);
     // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
-    if (!await agentPostedSince(pool, agent._id, podId, since)) {
+    if (!await agentPostedSince(pool, agent._id, podId, since, { answering })) {
       // eslint-disable-next-line no-await-in-loop
       await emitUnansweredMentionLine({
         podId,

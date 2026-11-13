@@ -72,6 +72,41 @@ real('agentPostedSince on real PostgreSQL (F242)', () => {
     await expect(agentPostedSince(pool, AGENT, POD, since(), { excludeKernel: true })).resolves.toBe(true);
   });
 
+  // F237: with `answering`, only a post where an answer to that message would
+  // sit counts: top level, its thread, or a reply to it.
+  it('with answering, counts top level, the thread and a reply, and not another thread', async () => {
+    const [{ id: root }] = (await pool.query(
+      "INSERT INTO messages (pod_id, user_id, content, created_at) VALUES ($1, $2, 'root', now() - interval '20 minutes') RETURNING id",
+      [POD, OWNER],
+    )).rows;
+    const [{ id: asked }] = (await pool.query(
+      `INSERT INTO messages (pod_id, user_id, content, thread_root_id, created_at)
+       VALUES ($1, $2, '@otto?', $3, now() - interval '10 minutes') RETURNING id`,
+      [POD, OWNER, root],
+    )).rows;
+    const [{ id: elsewhere }] = (await pool.query(
+      "INSERT INTO messages (pod_id, user_id, content, created_at) VALUES ($1, $2, 'other', now() - interval '20 minutes') RETURNING id",
+      [POD, OWNER],
+    )).rows;
+    const answering = { messageId: asked, threadRootId: root };
+    const agentPost = async (threadRootId, replyTo) => {
+      await pool.query('DELETE FROM messages WHERE user_id = $1', [AGENT]);
+      await pool.query(
+        `INSERT INTO messages (pod_id, user_id, content, thread_root_id, reply_to_message_id, created_at)
+         VALUES ($1, $2, 'a post', $3, $4, now() - interval '1 minute')`,
+        [POD, AGENT, threadRootId, replyTo],
+      );
+      return agentPostedSince(pool, AGENT, POD, since(), { answering });
+    };
+
+    await expect(agentPost(null, null)).resolves.toBe(true);
+    await expect(agentPost(root, null)).resolves.toBe(true);
+    await expect(agentPost(elsewhere, asked)).resolves.toBe(true);
+    await expect(agentPost(elsewhere, null)).resolves.toBe(false);
+    // Without it, the post elsewhere still counts, as noteUnansweredMention read it before.
+    await expect(agentPostedSince(pool, AGENT, POD, since())).resolves.toBe(true);
+  });
+
   it('counts nothing before the cutoff, nothing system, and nothing in another pod', async () => {
     await insert(POD, AGENT, 'an older answer', { minutesAgo: 9 });
     await insert(POD, AGENT, "Otto didn't answer this", { type: 'system', minutesAgo: 2 });
