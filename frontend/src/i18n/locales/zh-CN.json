@@ -3152,6 +3152,7 @@
     "disconnectPartial": "已在此处断开 {{label}}，但 {{label}} 未确认。请在其已连接的应用中移除 Commonly。",
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
+    "removedRevokedAtProvider": "连接已移除，{{label}} 也已撤销 Commonly 的授权。",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
     "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "multiGrantPodPostingBlocked": "{{agents}} 所在的多个 Pod 都有连接器授权，因此暂时无法在任何 Pod 发消息。结束多余的授权，最多只留一个 Pod 可用连接器。只要还有一个 Pod 有授权，它们就只能在那个 Pod 发消息。",

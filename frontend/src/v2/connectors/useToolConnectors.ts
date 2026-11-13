@@ -97,7 +97,7 @@ export const useToolConnectors = (
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
   // `stillListed`: the provider was never told (TASK-339), so its own page
   // still lists Commonly and the notice must say so.
-  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null; stillListed?: boolean } | null>(null);
+  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null; stillListed?: boolean; revoked?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
@@ -883,7 +883,12 @@ export const useToolConnectors = (
       const res = await api.del<{ providerRevoked?: boolean }>(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
       setConfirmHiddenRemoval(null);
       if (connection.revokePage) {
-        setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage, stillListed: res?.providerRevoked === false });
+        setRemovedHiddenNotice({
+          label: connection.label,
+          revokePage: connection.revokePage,
+          stillListed: res?.providerRevoked === false,
+          revoked: res?.providerRevoked === true,
+        });
       }
       await load();
     } catch {
@@ -913,6 +918,7 @@ export const useToolConnectors = (
         label: entry.label,
         revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null,
         stillListed: res?.providerRevoked === false,
+        revoked: res?.providerRevoked === true,
       });
       await load();
     } catch (err) {
@@ -937,6 +943,7 @@ export const useToolConnectors = (
             label: entry.label,
             revokePage: response?.data?.revokeAt as string,
             stillListed: response?.data?.code === 'provider_revoke_failed' || response?.data?.providerRevoked === false,
+            revoked: response?.data?.providerRevoked === true,
           });
         } else {
           setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));

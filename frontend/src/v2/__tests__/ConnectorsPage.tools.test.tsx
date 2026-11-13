@@ -671,7 +671,10 @@ describe('Connectors page: tools', () => {
       expect(screen.getByRole('link', { name: 'Open provider settings' })).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/apps');
     });
 
-    it('a removal the provider revoked keeps the review copy', async () => {
+    // F475: Linear's own list never names Commonly (only shared "MCP" entries),
+    // so a removal the vendor revoked says so instead of sending the person
+    // to look for an entry they can't find.
+    it('a removal the provider revoked says so, with no page to go and check', async () => {
       mockTools({ entries: [atlassian], grants: [grantAtl] });
       axios.delete.mockResolvedValue({ data: { message: 'ok', revokeAt: 'https://id.atlassian.com/manage-profile/apps', providerRevoked: true } });
       renderPage();
@@ -679,7 +682,9 @@ describe('Connectors page: tools', () => {
       const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
       fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
       fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
-      expect(await screen.findByText(/Connection removed. Review its access at Atlassian/)).toBeInTheDocument();
+      expect(await screen.findByText(/Connection removed, and Atlassian revoked Commonly's access\./)).toBeInTheDocument();
+      expect(screen.queryByText(/Review its access/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Open provider settings' })).toBeNull();
       expect(screen.queryByText(/still lists Commonly/)).not.toBeInTheDocument();
     });
 
