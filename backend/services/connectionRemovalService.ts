@@ -760,13 +760,119 @@ export const removeConnection = async (options: {
   }
 };
 
+/**
+ * F477. How old a removal must be before the server finishes it. A person's own
+ * removal holds its lease for `REMOVAL_LEASE_MS`, so anything older than this
+ * stopped, rather than is still running.
+ */
+export const INCOMPLETE_REMOVAL_GRACE_MS = 15 * 60 * 1000;
+const INCOMPLETE_REMOVAL_BATCH = 25;
+
+/** No reconnect is in flight: no pending authorization, or one that has lapsed. */
+const reconnectNotInFlight = (now: Date) => ({
+  $or: [
+    { 'config.pendingAuth': { $exists: false } },
+    { 'config.pendingAuth': null },
+    { 'config.pendingAuth.expiresAt': { $lte: now } },
+  ],
+});
+
+/**
+ * The finishing pass's step 2. It is `markDisconnected` with two differences.
+ * It moves only a row a removal left (`disconnected` with `revokedAt`) and that
+ * no reconnect has claimed since the pass read it, so a `/start` landing in
+ * between wins and the row is left alone. And it keeps the removal's own
+ * `revokedAt`: the broker already refuses the row, and the first time is the
+ * one worth keeping. A lapsed pending authorization is cleared and the
+ * generation moved, as the person's removal does, so its callback can't land.
+ */
+export const markIncompleteRemovalDisconnected = (id: unknown, now: Date) => Integration.findOneAndUpdate(
+  {
+    _id: id,
+    type: HOSTED_MCP_TYPE,
+    status: 'disconnected',
+    revokedAt: { $ne: null },
+    ...reconnectNotInFlight(now),
+  },
+  {
+    $inc: { 'config.authGeneration': 1 },
+    $unset: { 'config.pendingAuth': '' },
+  },
+  { new: true },
+).lean() as unknown as Promise<RemovableConnection | null>;
+
+/**
+ * F477. Finishes hosted removals that stopped part-way. Such a row is
+ * `disconnected` with `revokedAt` set. The page lists only connected rows, so
+ * its owner has no Disconnect left to press, and its stored token outlives it:
+ * the orphan sweep keeps it, because removal leaves `isActive` alone on purpose
+ * (see the header). For a page-only entry, or a vendor revoke that failed, that
+ * stored copy is of a token still live at the vendor.
+ *
+ * Each row goes through `removeConnection` again, so the order holds: a marked
+ * row skips the vendor, a failed vendor revoke is retried with the token still
+ * held, and a page-only entry sends nothing and sweeps its copy. A row the
+ * vendor still refuses stays, and the next pass tries again.
+ */
+export const finishIncompleteRemovals = async (options: {
+  removedBy: string;
+  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
+  now?: Date;
+  deps?: Partial<RemovalDeps>;
+}): Promise<{ finished: number; unfinished: number; skipped: number }> => {
+  const now = options.now || new Date();
+  const rows = await Integration.find({
+    type: HOSTED_MCP_TYPE,
+    status: 'disconnected',
+    revokedAt: { $lte: new Date(now.getTime() - INCOMPLETE_REMOVAL_GRACE_MS) },
+    ...reconnectNotInFlight(now),
+  }).sort({ revokedAt: 1 }).limit(INCOMPLETE_REMOVAL_BATCH).lean() as unknown as RemovableConnection[];
+
+  const counts = { finished: 0, unfinished: 0, skipped: 0 };
+  for (const connection of rows) {
+    let lostToReconnect = false;
+    const markDisconnected: RemovalDeps['markDisconnected'] = async (id, at) => {
+      const row = await markIncompleteRemovalDisconnected(id, at);
+      if (!row) lostToReconnect = true;
+      return row;
+    };
+    try {
+      // eslint-disable-next-line no-await-in-loop -- one batch, each row its own vendor call
+      const result = await removeConnection({
+        connection,
+        removedBy: options.removedBy,
+        revokeGrants: options.revokeGrants,
+        deps: { ...options.deps, markDisconnected },
+      });
+      if (lostToReconnect) counts.skipped += 1;
+      else if (result.removed) counts.finished += 1;
+      else {
+        counts.unfinished += 1;
+        console.warn(
+          `[connection-removal] incomplete removal ${String(connection._id)} still unfinished: ${result.code}`,
+        );
+      }
+    } catch (error) {
+      counts.unfinished += 1;
+      console.warn(
+        `[connection-removal] incomplete removal ${String(connection._id)} failed:`,
+        (error as Error)?.message,
+      );
+    }
+  }
+  return counts;
+};
+
 module.exports = {
   HOSTED_MCP_TYPE,
   PROVIDER_REVOKED_MARK,
   REVOKE_PAGE_KEY,
   REMOVAL_LEASE_MS,
   WRITER_LEASE_OVERRUN_MS,
+  INCOMPLETE_REMOVAL_GRACE_MS,
   defaultDeps,
   removeConnection,
+  finishIncompleteRemovals,
+  markIncompleteRemovalDisconnected,
   revokeTokenAtVendor,
 };
