@@ -29,7 +29,8 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Run the cases
         env:
-          PROBE_CASES: ui-ctrlv
+          PROBE_CASES: ui-ctrlv,ui-typed
+          PROBE_TRAIL: '1'
         run: node cli/scripts/windows-byo-probe-1113.mjs
       - uses: actions/upload-artifact@v4
         if: always()

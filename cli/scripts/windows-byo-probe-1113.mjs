@@ -107,7 +107,12 @@ const sendKeysEscape = (text) => text.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`)
 
 const uiCase = async (name, mode) => {
   const token = `cm_agent_probe_${name}`;
-  const block = pageLines(token).join('\r\n'); // as copied: no trailing newline
+  // PROBE_TRAIL=1: the text #4052's Windows Copy writes (listenCopyText): the
+  // lines joined by \n plus one trailing \n. Otherwise the block as mkjlong
+  // copied it, with no trailing newline.
+  const block = process.env.PROBE_TRAIL === '1'
+    ? `${pageLines(token).join('\n')}\n`
+    : pageLines(token).join('\r\n');
   const blockFile = psFile(`${name}.txt`, mode === 'ctrlv' ? block : sendKeysEscape(block));
   const opened = await ui('open');
   const pid = Number(String(opened.out).trim().split(/\s+/).pop());
@@ -115,6 +120,14 @@ const uiCase = async (name, mode) => {
   const notes = [];
   const sent = await ui(mode === 'ctrlv' ? 'ctrlv' : 'type', blockFile, pid);
   notes.push(`send ${mode}: exit ${sent.code} ${sent.out.trim().slice(0, 300)}`);
+  if (mode === 'ctrlv') {
+    // Windows Terminal asks before a multi-line paste; Enter takes the focused
+    // "Paste anyway". This Enter goes to the dialog, never to the shell.
+    await sleep(5_000);
+    await ui('shot', join(SHOTS, `${name}-0-dialog.png`));
+    const confirmed = await ui('enter', '', pid);
+    notes.push(`paste anyway: exit ${confirmed.code} ${confirmed.out.trim().slice(0, 200)}`);
+  }
   await sleep(150_000);
   await ui('shot', join(SHOTS, `${name}-1-after-paste.png`));
   notes.push(`after paste, before any Enter (150 s): token ${tokenUse(token)}`);
