@@ -46,7 +46,8 @@ const INSTALLATIONS_PATH = '/api/agents/runtime/installations';
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 // macOS sun_path holds 104 bytes, the terminating NUL included.
 const MAX_SOCKET_PATH = 103;
-// The daemon's own advertised message cap (x-codex-websocket-max-unfragmented-message-bytes).
+// 16 MiB, the cap 0.162.1 and 0.169.0 announced in their handshake
+// (x-codex-websocket-max-unfragmented-message-bytes). Not read from it.
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const CALL_TIMEOUT_MS = 30_000;
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';

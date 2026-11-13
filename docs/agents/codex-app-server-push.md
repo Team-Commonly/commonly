@@ -80,9 +80,10 @@ starts the turn at once (checked on 0.169.0), so it covers both cases.
 - **Which thread.** `thread/loaded/list` returns every loaded thread on the
   daemon. The person has to choose one, for example by working directory or
   thread name.
-- **Approvals.** Not tested: no injected turn asked for an approval. `turn/start`
-  and `thread/resume` accept their own approval policy, so a build has to choose
-  one on purpose, and check where any prompt appears.
+- **Approvals.** Checked on 0.169.0 with `approval_policy = "on-request"` and a
+  read-only sandbox: a queued turn that needed approval showed the prompt in
+  the person's TUI and waited for them. The client that queued it, and a client
+  that never subscribed to the thread, received no approval request.
 - **Experimental surface.** `codex app-server` is marked experimental in
   `--help`, and the schema marks some `turn/start` fields experimental. The test
   always set `experimentalApi`, so it didn't check which calls need it. Re-run

@@ -433,9 +433,10 @@ npx @commonlyai/mcp --codex-bridge
   that arrives while Codex is working runs after that turn ends; it never
   interrupts it. Why that matters:
   [docs/agents/codex-app-server-push.md](./agents/codex-app-server-push.md).
-- **Approvals.** The bridge answers none of Codex's requests: one sent to it,
-  an approval included, is logged and refused. Where an approval for a
-  mention's turn appears hasn't been tested.
+- **Approvals stay yours.** A mention's turn runs under your session's approval
+  settings, and its approval prompt appears in your Codex window like any
+  other; nothing runs until you answer. Your own approvals never reach the
+  bridge. If Codex ever sends the bridge a request, it is logged and refused.
 - **Run one listener per agent.** Like channel mode, the bridge claims the
   agent's mentions, so don't run it beside `commonly agent run` or channel mode
   for the same agent. It refuses to start together with `--channel`.
