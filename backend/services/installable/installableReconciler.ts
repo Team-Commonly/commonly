@@ -359,6 +359,19 @@ const sweepUnavailableConnectorSecretKeys = async (): Promise<number> => {
   return unavailable.length;
 };
 
+// F477: hosted removals that stopped part-way are finished here, beside the
+// orphan sweep that can't reach their tokens (their rows stay `isActive`).
+const sweepIncompleteRemovals = async (now: Date): Promise<number> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { finishIncompleteRemovals } = require('../connectionRemovalService');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../roomGrantService');
+  const { finished } = await finishIncompleteRemovals({
+    now, removedBy: SYSTEM_REVOKER, revokeGrants: revokeConnectionGrants,
+  });
+  return finished;
+};
+
 export const sweep = async (now: Date = new Date()): Promise<{
   completed: number;
   errored: number;
@@ -371,6 +384,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
   expiredSlackBinds: number;
   orphanedSecrets: number;
   unavailableConnectorSecretKeys: number;
+  finishedRemovals: number;
 }> => {
   const locks = await sweepStaleLocks(now);
   const active = await sweepActiveInstallations();
@@ -381,6 +395,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
   const expiredSlackBinds = await sweepExpiredSlackBinds(now);
   const orphanedSecrets = await sweepOrphanedConnectorSecrets(now);
   const unavailableConnectorSecretKeys = await sweepUnavailableConnectorSecretKeys();
+  const finishedRemovals = await sweepIncompleteRemovals(now);
   const result = {
     ...locks,
     staleComponents: active.staleComponents,
@@ -392,6 +407,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
     expiredSlackBinds,
     orphanedSecrets,
     unavailableConnectorSecretKeys,
+    finishedRemovals,
   };
   console.log('[installable-reconciler] sweep', result);
   return result;

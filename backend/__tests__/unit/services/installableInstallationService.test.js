@@ -11,6 +11,7 @@ const InstallableInstallation = require('../../../models/InstallableInstallation
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const ConnectorSecret = require('../../../models/ConnectorSecret');
+const RoomGrant = require('../../../models/RoomGrant');
 const {
   install,
   uninstall,
@@ -23,7 +24,7 @@ const { sweep } = require('../../../services/installable/installableReconciler')
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
 const {
-  DISCORD_WEBHOOK_URL, HOSTED_MCP_DCR_CLIENT_SECRET, SLACK_BOT_TOKEN,
+  DISCORD_WEBHOOK_URL, HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_DCR_CLIENT_SECRET, SLACK_BOT_TOKEN,
 } = require('../../../services/connectorSecretKinds');
 const HostedMcpDcrRegistration = require('../../../models/HostedMcpDcrRegistration');
 const telegramService = require('../../../services/telegramService');
@@ -855,6 +856,96 @@ describe('installable connector projection', () => {
     const expired = await sweep(now);
     expect(expired.orphanedSecrets).toBe(1);
     expect(await ConnectorSecret.findById(ref)).toBeNull();
+  });
+
+  // F477: the orphan sweep keeps a half-removed hosted row's token (the row
+  // stays isActive), so the reconciler finishes the removal itself.
+  it('finishes a hosted removal that stopped part-way, sweeping the token the orphan sweep keeps', async () => {
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      scope: 'user',
+      status: 'disconnected',
+      createdBy: new mongoose.Types.ObjectId(),
+      revokedAt: new Date(Date.now() - (16 * 60000)),
+      config: { entryId: 'atlassian', clientId: 'commonly-client', authGeneration: 1 },
+    });
+    const credentialRef = await put(String(row._id), HOSTED_MCP_ACCESS_TOKEN, 'access-token');
+    await Integration.updateOne({ _id: row._id }, { $set: { 'config.credentialRef': credentialRef } });
+    await ConnectorSecret.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(credentialRef) },
+      { $set: { createdAt: new Date(Date.now() - (60 * 60000)) } },
+    );
+
+    const swept = await sweep(new Date());
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(swept.finishedRemovals).toBe(1);
+    expect(await Integration.findById(row._id)).toBeNull();
+    expect(await ConnectorSecret.findById(credentialRef)).toBeNull();
+  });
+
+  // F477, end to end on the real models: the reconciler's sweep, the real
+  // grant revoke, the real secret store. Only the clock is chosen.
+  const hostedRowWithGrant = async ({ status, revokedAt }) => {
+    const owner = new mongoose.Types.ObjectId();
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      scope: 'user',
+      status,
+      createdBy: owner,
+      ...(revokedAt ? { revokedAt } : {}),
+      config: { entryId: 'atlassian', clientId: 'commonly-client', authGeneration: 1 },
+    });
+    const credentialRef = await put(String(row._id), HOSTED_MCP_ACCESS_TOKEN, 'access-token');
+    await Integration.updateOne({ _id: row._id }, { $set: { 'config.credentialRef': credentialRef } });
+    const grantId = new mongoose.Types.ObjectId().toString();
+    await RoomGrant.create({
+      grantId,
+      connectionId: String(row._id),
+      installationId: `hosted-${String(row._id)}`,
+      target: { kind: 'pod', id: new mongoose.Types.ObjectId().toString() },
+      tools: ['atlassian.search'],
+      writeMode: 'read',
+      audience: [String(owner)],
+      expiresAt: new Date(Date.now() + (60 * 60000)),
+      brokerId: 'hosted-mcp',
+      ownerId: String(owner),
+    });
+    return { row, credentialRef, grantId };
+  };
+
+  it('finishes a stopped hosted removal on real queries: its grant ends and its token is swept', async () => {
+    const { row, credentialRef, grantId } = await hostedRowWithGrant({
+      status: 'disconnected', revokedAt: new Date(Date.now() - (16 * 60000)),
+    });
+
+    const swept = await sweep(new Date());
+
+    expect(swept.finishedRemovals).toBe(1);
+    expect((await RoomGrant.findOne({ grantId }).lean()).revokedAt).not.toBeNull();
+    expect(await ConnectorSecret.findById(credentialRef)).toBeNull();
+    expect(await Integration.findById(row._id)).toBeNull();
+  });
+
+  it('leaves a row reconnected before the pass whole: its new grant and token survive', async () => {
+    const { row, credentialRef, grantId } = await hostedRowWithGrant({
+      status: 'disconnected', revokedAt: new Date(Date.now() - (16 * 60000)),
+    });
+    // The owner reconnects before the pass runs: the publish writes connected
+    // and clears revokedAt (routes/hostedMcpConnect.ts), and a new grant is minted.
+    await Integration.updateOne(
+      { _id: row._id },
+      { $set: { status: 'connected' }, $unset: { revokedAt: 1 }, $inc: { 'config.authGeneration': 1 } },
+    );
+
+    const swept = await sweep(new Date());
+
+    expect(swept.finishedRemovals).toBe(0);
+    expect((await RoomGrant.findOne({ grantId }).lean()).revokedAt).toBeNull();
+    expect(await ConnectorSecret.findById(credentialRef)).not.toBeNull();
+    const after = await Integration.findById(row._id).lean();
+    expect(after.status).toBe('connected');
+    expect(after.config.authGeneration).toBe(2);
   });
 
   it('keeps a Slack projection visible but error-gated when its secret key disappears from the ring', async () => {
