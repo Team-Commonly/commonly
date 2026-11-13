@@ -853,6 +853,17 @@ export const finishIncompleteRemovals = async (options: {
       return row;
     };
     try {
+      // The batch was read once, and each row before this one had its own vendor
+      // calls, so this row may have been reconnected since. The guarded write
+      // runs FIRST, before `removeConnection` revokes grants or retires Connect
+      // repositories: a row it refuses is left whole, and the generation it
+      // moves fences any callback still in flight. `removeConnection`'s own
+      // step 2 is the same guarded write again, for a `/start` between the two.
+      // eslint-disable-next-line no-await-in-loop -- one batch, each row its own vendor call
+      if (!await markDisconnected(connection._id, now)) {
+        counts.skipped += 1;
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop -- one batch, each row its own vendor call
       const result = await removeConnection({
         connection,

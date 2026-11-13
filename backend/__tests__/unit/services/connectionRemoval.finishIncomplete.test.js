@@ -242,7 +242,8 @@ describe('finishIncompleteRemovals (F477)', () => {
 
     expect(await result).toMatchObject({ unfinished: 1 });
     const after = await Integration.findById(row._id).lean();
-    expect(after.config.authGeneration).toBe(5);
+    // Past the generation the callback's retire write expects (4), so it misses.
+    expect(after.config.authGeneration).toBeGreaterThan(4);
     expect(after.revokedAt).not.toBeNull();
     expect(new Date(after.revokedAt).getTime()).not.toBe(new Date(consumedRevokedAt).getTime());
     expect(new Date(after.revokedAt).getTime()).toBe(NOW.getTime());
@@ -270,6 +271,38 @@ describe('finishIncompleteRemovals (F477)', () => {
     expect(next).toMatchObject({ finished: 0, unfinished: 0 });
     expect(again).not.toHaveBeenCalled();
     expect(await secretsOf(stuck)).toBe(2);
+  });
+
+  // CodeRabbit on #4077: the batch is read once and worked one row at a time,
+  // each with its own vendor calls, so a later row can be reconnected in full
+  // before its turn. Nothing may then run against it: not the grant revoke,
+  // and for github-mcp not the Connect repositories' retirement.
+  it('a row reconnected after the batch read keeps its grants and Connect repositories', async () => {
+    const first = await leftRow({ revokedAt: new Date(LONG_AGO.getTime() - 60000) });
+    const second = await leftRow({ entryId: 'github-mcp', secrets: false });
+    const repo = await Integration.create({
+      type: 'github-app',
+      scope: 'user',
+      status: 'connected',
+      createdBy: second.createdBy,
+      config: { app: 'connect' },
+    });
+    // While the first row is at its vendor, the second row's owner finishes a reconnect.
+    const revokeAtVendor = jest.fn(async () => {
+      await Integration.updateOne(
+        { _id: second._id },
+        { $set: { status: 'connected' }, $unset: { revokedAt: 1 }, $inc: { 'config.authGeneration': 1 } },
+      );
+    });
+    const { revokeGrants, result } = run({ revokeAtVendor });
+
+    expect(await result).toMatchObject({ finished: 1, skipped: 1 });
+    expect(await Integration.findById(first._id)).toBeNull();
+    expect(revokeGrants.mock.calls.map(([input]) => String(input.connection._id))).toEqual([String(first._id)]);
+    const after = await Integration.findById(second._id).lean();
+    expect(after.status).toBe('connected');
+    expect(after.config.authGeneration).toBe(4);
+    expect((await Integration.findById(repo._id).lean()).status).toBe('connected');
   });
 
   it('the guarded write fences a lapsed reconnect', async () => {
