@@ -207,6 +207,12 @@ test('an outside SIGTERM is marked; this adapter\'s own parse-failure and timeou
     .catch((err) => err);
   expect(timeout.message).toMatch(/timeout after 5ms/);
   expect(timeout.externalSignal).toBeUndefined();
+  // A trailing event cut short mid-write by the outside signal is not this
+  // adapter's kill: the parse failure only happens at close.
+  const truncated = await runDsh({
+    ...base, timeoutMs: 1000, spawnImpl: () => signalledChild({ stdout: `${session}{"type":"fin`, closeWith: 'SIGTERM' }),
+  }).catch((err) => err);
+  expect(truncated).toMatchObject({ externalSignal: true, signal: 'SIGTERM' });
 });
 
 test('helpers keep the native route disabled and child env closed', () => {

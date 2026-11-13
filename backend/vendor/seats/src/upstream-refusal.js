@@ -406,6 +406,15 @@ export const markExternalSignal = (error, { code = null, signal = null } = {}) =
   return error;
 };
 
+/**
+ * Whether the failure text names a cause: an upstream status or a provider
+ * code. Such a failure keeps its own class and is never marked as an outside
+ * signal (F293), however the child then exited.
+ */
+export const namesFailureCause = (text, { credentials = [] } = {}) => (
+  scrubAdapterFailure(text, { credentials }).status !== null || providerCodeFrom(text, { credentials }) !== null
+);
+
 export const adapterFailure = (label, text, {
   credentials = [], exitCode = null, limit, signal,
 } = {}) => {

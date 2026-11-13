@@ -6,7 +6,9 @@ export {
   trackSupervisedGroup, killSupervisedGroups, armSupervisedGroupDeadline,
   readProcessTable, readProcess, descendantsOf, killDescendants,
 } from './process-group.js';
-export { adapterFailure, markExternalSignal, spawnCredentials } from './upstream-refusal.js';
+export {
+  adapterFailure, markExternalSignal, namesFailureCause, spawnCredentials,
+} from './upstream-refusal.js';
 export { default as stub } from './adapters/stub.js';
 export { createHermesAdapter } from './adapters/hermes.js';
 export { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';

@@ -172,7 +172,11 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials, 
     if (timedOut) return finish(new Error(`Hermes timed out after ${timeoutMs}ms`));
     buffer += decoder.end();
     if (buffer.trim()) {
-      try { readHermesJsonl(buffer.trim(), state); } catch (error) { return finish(error); }
+      // A protocol error found mid-stream settled above; one here is a trailing
+      // record, which an outside signal may have cut short mid-write (F293).
+      try { readHermesJsonl(buffer.trim(), state); } catch (error) {
+        return finish(markExternalSignal(error, { code, signal }));
+      }
     }
     const result = state.result;
     // `settled` above covers this adapter's own stop(), so a signal here is outside.
@@ -181,7 +185,8 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials, 
     }
     if (code !== 0 || result.exit_code !== 0) {
       return finish(adapterFailure('Hermes', result.error || stderr || `exit ${code}`, {
-        credentials, exitCode: code, ...(result.error ? {} : { signal }),
+        // A result that reported its own failure keeps it as the cause.
+        credentials, exitCode: code, ...(result.error || result.exit_code !== 0 ? {} : { signal }),
       }));
     }
     if (typeof result.text !== 'string' || !result.session_id) {
