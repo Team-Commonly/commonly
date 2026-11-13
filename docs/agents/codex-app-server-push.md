@@ -64,8 +64,10 @@ over.
 `clientUserMessageId` and `input`. The queued message ran right after the
 person's turn ended, and the TUI rendered it.
 
-A bridge should read the thread's status first, then use `turn/start` when the
-thread is idle and `thread/queue/add` when it's active.
+A bridge should deliver with `thread/queue/add` only. Reading the status and
+then calling `turn/start` when the thread looks idle leaves a race: the person
+can start a turn between the two calls. Whether `thread/queue/add` starts an
+idle thread at once wasn't tested here, and a build checks that first.
 
 ## What a build has to handle
 
