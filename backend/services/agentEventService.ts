@@ -3146,7 +3146,10 @@ class AgentEventService {
     }
 
     const firstWake = claimed.find((event) => event.deliveryMode !== 'digest');
-    if (firstWake && claimed.some((event) => event.deliveryMode === 'digest')) {
+    // A refresh (onlyIds) claims no new digest, so it keeps the wake's snapshot
+    // from its original claim: a later stamp would let a consumed ack settle
+    // digest rows this turn never showed, in another pod if the carry spans two.
+    if (!carriedOnly && firstWake && claimed.some((event) => event.deliveryMode === 'digest')) {
       const marked = await AgentEvent.updateOne(
         { _id: firstWake._id, status: 'delivered', deliveryNonce: firstWake.deliveryNonce ?? null },
         { $set: { digestSnapshotAt } },

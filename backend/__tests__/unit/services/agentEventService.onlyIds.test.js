@@ -130,6 +130,30 @@ describe('listInboxPage with onlyIds (a full carry)', () => {
     expect((await row(elsewhere)).status).toBe('pending');
   });
 
+  // Review HOLD: the refresh claims no new digest, so it must not re-stamp the
+  // wake's digest snapshot. A consumed ack settles every digest row up to that
+  // snapshot, and the turn never saw rows written after the original claim.
+  test('a refresh keeps the wake\'s snapshot, so a consumed ack leaves digest it never showed', async () => {
+    const original = at(20);
+    const wake = await make({
+      status: 'pending', attempts: 1, createdAt: at(30), digestSnapshotAt: original, 
+    });
+    const carriedDigest = await make({
+      status: 'pending', deliveryMode: 'digest', type: 'message.posted', createdAt: at(31),
+    });
+    // Context written during the outage, after the original claim.
+    const unseen = await make({
+      status: 'pending', deliveryMode: 'digest', type: 'message.posted', createdAt: at(5),
+    });
+
+    const result = await page({ onlyIds: [String(wake._id), String(carriedDigest._id)] });
+    const refreshed = result.events.find((event) => String(event._id) === String(wake._id));
+    expect((await row(wake)).digestSnapshotAt).toEqual(original);
+
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE, { outcome: 'posted' }, refreshed.payload.deliveryId);
+    expect((await row(unseen)).status).toBe('pending');
+  });
+
   test('an empty list claims nothing', async () => {
     await make({ status: 'pending', createdAt: at(40) });
     const result = await page({ onlyIds: [] });
