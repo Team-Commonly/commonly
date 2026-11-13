@@ -3838,6 +3838,13 @@ export const performRun = ({
   // The arguments of the turn that just threw, for noticeCutOff.
   let failedTurn = null;
   let heldRenewTimer = null;
+  // Renews the rows a tick claimed for its later pods while an earlier pod's
+  // turn runs (F237). Cleared when the tick's groups are done.
+  let laterGroupsRenewTimer = null;
+  const clearLaterGroupsRenewal = () => {
+    if (laterGroupsRenewTimer !== null) clearIntervalImpl(laterGroupsRenewTimer);
+    laterGroupsRenewTimer = null;
+  };
   const clearHeldRenewal = () => {
     if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
     heldRenewTimer = null;
@@ -4662,8 +4669,70 @@ export const performRun = ({
       // alongside a wake on the same page, and a private wake groups apart
       // from it, so a digest-only group here can be `delivered` to this run.
       const claimedAfter = (groupIndex) => groups.slice(groupIndex + 1).flat();
+      // F237 item 1: the page's groups run one turn at a time, and a later
+      // group's rows were claimed when the page was read. A turn may run 15
+      // minutes and the server requeues a delivered row after 10, so they are
+      // renewed while an earlier group runs. A row the server says is no
+      // longer this runner's is taken out before its group starts: its ack
+      // would be a stale delivery, which stops the run, and the requeue
+      // redelivers it.
+      // Bounded by the running turn's deadline, as processEventBatch bounds
+      // its own renewal: a turn whose child ignores SIGTERM can hang, and the
+      // rows behind it must lapse to the requeue rather than stay with it.
+      let firstWaitingGroup = 1;
+      let runningGroupSince = Date.now();
+      let deadlineLogged = false;
+      // One renewal at a time. A group's turn waits for one still out, so the
+      // groups it names have not started when its answer is applied
+      // (CodeRabbit on #4067).
+      let renewingLater = null;
+      clearLaterGroupsRenewal();
+      if (groups.length > 1) {
+        laterGroupsRenewTimer = setIntervalImpl(async () => {
+          if (!running) {
+            clearLaterGroupsRenewal();
+            return;
+          }
+          if (renewingLater) return;
+          // Skipped, not stopped: the next group restarts the clock, and its
+          // turn needs the rows behind it renewed again.
+          if (Date.now() - runningGroupSince >= effectiveTurnTimeoutMs) {
+            if (!deadlineLogged) {
+              deadlineLogged = true;
+              log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows paused while this turn overruns');
+            }
+            return;
+          }
+          const from = firstWaitingGroup;
+          renewingLater = (async () => {
+            const confirmed = await renewHeldDeliveries(claimedAfter(from - 1));
+            if (confirmed === null) return;
+            let lost = 0;
+            for (let later = from; later < groups.length; later += 1) {
+              const kept = groups[later].filter((event) => stillHeld(event, confirmed));
+              lost += groups[later].length - kept.length;
+              groups[later] = kept;
+            }
+            if (lost) {
+              log(
+                `[inbox.batch] ${countEvents(lost)} no longer held by this runner on the server while `
+                + 'another pod\'s turn ran — not run; the server redelivers it',
+              );
+            }
+          })().finally(() => { renewingLater = null; });
+          await renewingLater;
+        }, DELIVERY_RENEW_INTERVAL_MS);
+        laterGroupsRenewTimer?.unref?.();
+      }
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        // renewHeldDeliveries never throws: a failed renewal resolves null.
+        // eslint-disable-next-line no-await-in-loop
+        if (renewingLater) await renewingLater;
+        firstWaitingGroup = groupIndex + 1;
+        runningGroupSince = Date.now();
+        deadlineLogged = false;
         const group = groups[groupIndex];
+        if (group.length === 0) continue;
         if (!running) {
           // Claimed by this tick's poll (or carried into it) and never run:
           // a stop that arrived mid-poll or mid-page (F182). Handed back when
@@ -5001,6 +5070,7 @@ export const performRun = ({
       }
       onError?.(err);
     }
+    clearLaterGroupsRenewal();
     // Notices landing during a turn share one three-second collection window
     // before the next inbox read, independent of the idle polling cadence. A
     // retry scheduled in the same tick keeps its own delay: the failure report

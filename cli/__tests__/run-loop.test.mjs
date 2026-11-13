@@ -5385,6 +5385,170 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
   const answered = () => jest.fn(async () => ({ text: 'answered' }));
   const promptOf = (spawn, turn) => spawn.mock.calls[turn][0];
 
+  // F237 item 1 (N5): one page can hold two pods' groups, and they run one turn
+  // at a time. The second pod's rows are claimed when the page is read, so they
+  // need their lease renewed through the first pod's turn: the server requeues a
+  // delivered row after 10 minutes, a turn may run 15, and an ack under a lapsed
+  // lease is a stale delivery that stops the run.
+  describe('a tick that spans two pods (F237)', () => {
+    const twoPods = () => [[inbox('a'), inbox('b', { podId: 'pod-xyz' })]];
+    // Fires every renewal timer while the first pod's turn is running.
+    const spawnRenewingDuringFirstTurn = (getRun) => jest.fn(async () => {
+      const run = getRun();
+      if (run && run.firstTurnPending) {
+        run.firstTurnPending = false;
+        for (const timer of [...run.intervals]) {
+          // eslint-disable-next-line no-await-in-loop
+          await timer.callback();
+        }
+      }
+      return { text: 'answered' };
+    });
+
+    test('the second pod\'s rows are renewed while the first pod\'s turn runs', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(server.renewals.some((ids) => ids.includes('b'))).toBe(true);
+      expect(server.ackedIds()).toEqual(['a', 'b']);
+      expect(run.errors).toEqual([]);
+    });
+
+    test('a row the server stopped holding for this run is neither run nor acked, and the run goes on', async () => {
+      const server = fakeServer({ pages: twoPods(), renewed: (id) => id !== 'b' });
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.ackedIds()).toEqual(['a']);
+      expect(run.errors).toEqual([]);
+      expect(run.logs.some((line) => line.includes('no longer held by this runner'))).toBe(true);
+      run.handle.stop();
+    });
+
+    // CodeRabbit on #4067: a renewal still out when the first turn ends must
+    // be applied before the next pod's turn starts, or a row the server took
+    // back runs and its ack stops the run.
+    test('a renewal still out when the next pod starts is applied before its turn', async () => {
+      const server = fakeServer({ pages: twoPods(), renewed: (id) => id !== 'b' });
+      const { post } = createClient();
+      const answer = post.getMockImplementation();
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      post.mockImplementation(async (route, body) => {
+        if (String(route).endsWith('/events/renew') && body.events.some((entry) => entry.eventId === 'b')) await held;
+        return answer(route, body);
+      });
+      let run;
+      const spawn = jest.fn(async () => {
+        if (spawn.mock.calls.length === 1) run.intervals.forEach((timer) => { timer.callback(); });
+        return { text: 'answered' };
+      });
+      run = startRun({ spawn, limit: 2 });
+      await drainMicrotasks();
+      // The first pod's turn is done; the second waits on the renewal.
+      expect(spawn).toHaveBeenCalledTimes(1);
+      release();
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(server.ackedIds()).toEqual(['a']);
+      expect(run.errors).toEqual([]);
+      run.handle.stop();
+    });
+
+    test('a renewal the server can\'t answer drops nothing', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      const { post } = createClient();
+      const answer = post.getMockImplementation();
+      post.mockImplementation(async (route, body) => (String(route).endsWith('/events/renew')
+        ? {} : answer(route, body)));
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(server.ackedIds()).toEqual(['a', 'b']);
+    });
+
+    // A child that ignores SIGTERM can hold its turn open. The rows behind it
+    // lapse to the requeue, as the turn's own rows do, rather than stay with a
+    // process that may never finish.
+    test('stops renewing the later pod\'s rows once the running turn passes its deadline', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      const started = Date.now();
+      let run;
+      const spawn = jest.fn(async () => {
+        if (run.firstTurnPending) {
+          run.firstTurnPending = false;
+          const now = jest.spyOn(Date, 'now').mockReturnValue(started + 16 * 60 * 1000);
+          try {
+            for (const timer of [...run.intervals]) {
+              // eslint-disable-next-line no-await-in-loop
+              await timer.callback();
+            }
+          } finally { now.mockRestore(); }
+        }
+        return { text: 'answered' };
+      });
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(server.renewals.some((ids) => ids.includes('b'))).toBe(false);
+      expect(run.logs.some((line) => line.includes('renewal of the later pods\' rows paused'))).toBe(true);
+    });
+
+    // Three pods: the first turn overruns, so the third pod's rows are skipped
+    // then; the second pod's turn restarts the clock and renews them again.
+    test('after one turn overruns, the next turn renews the pod behind it again', async () => {
+      const server = fakeServer({ pages: [[inbox('a'), inbox('b', { podId: 'pod-xyz' }), inbox('c', { podId: 'pod-zzz' })]] });
+      const started = Date.now();
+      let run;
+      const fireAll = async () => {
+        for (const timer of [...run.intervals]) {
+          // eslint-disable-next-line no-await-in-loop
+          await timer.callback();
+        }
+      };
+      const spawn = jest.fn(async () => {
+        if (spawn.mock.calls.length === 1) {
+          const now = jest.spyOn(Date, 'now').mockReturnValue(started + 16 * 60 * 1000);
+          try { await fireAll(); } finally { now.mockRestore(); }
+        } else if (spawn.mock.calls.length === 2) {
+          run.renewalsBeforeSecondTurn = server.renewals.length;
+          await fireAll();
+        }
+        return { text: 'answered' };
+      });
+      // A cleared timer must stop firing here, so a stop shows as a stop.
+      const clearIntervalImpl = (timer) => {
+        const at = run.intervals.indexOf(timer);
+        if (at >= 0) run.intervals.splice(at, 1);
+      };
+      run = startRun({ spawn, limit: 3, clearIntervalImpl });
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      const duringFirst = server.renewals.slice(0, run.renewalsBeforeSecondTurn);
+      const duringSecond = server.renewals.slice(run.renewalsBeforeSecondTurn);
+      expect(duringFirst.some((ids) => ids.includes('b') || ids.includes('c'))).toBe(false);
+      expect(duringSecond.some((ids) => ids.includes('c'))).toBe(true);
+      expect(server.ackedIds()).toEqual(['a', 'b', 'c']);
+    });
+  });
+
   test('a page of exactly the cap is shown whole, acked whole, and carries nothing', async () => {
     const server = fakeServer({ pages: [[inbox('a'), inbox('b'), inbox('c')]] });
     const spawn = answered();
