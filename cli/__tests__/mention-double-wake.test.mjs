@@ -109,10 +109,10 @@ describe('two mentions of one agent', () => {
   });
 
   test('the second landing while the first runs is a second turn, and the kernel\'s mark reaches it', async () => {
-    const marked = '[This message reached you while your turn on message 1 was running. That turn could not see it.]\nthe smoke check failed';
+    const marked = "[This message reached you while your turn on message 1 was running. It was not in that turn's prompt.]\nthe smoke check failed";
     const prompts = await run([[mention(3, 'please review')], [mention(4, marked)]]);
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain('smoke check');
-    expect(prompts[1]).toContain('That turn could not see it.');
+    expect(prompts[1]).toContain("It was not in that turn's prompt.");
   });
 });

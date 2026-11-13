@@ -5,7 +5,7 @@ import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agen
 import { postToPublicAddress, RESPONSE_TOO_LARGE } from './outboundUrlGuard';
 import { webhookUrlHash } from './agentStateService';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
-import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
+import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES, rowsPostedSince } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
 import { prependGrantRemovalCue as prependGrantRemovalLines } from './grantRemovalCueService';
 import {
@@ -17,7 +17,10 @@ import {
   coalescedEntry,
   isCoalescibleMention,
   midTurnFrame,
+  newestCarriedAt,
+  postedSinceFrame,
   samePlaceFilter,
+  takesPostedSinceMark,
   withCoalesced,
 } from './mentionCoalesce';
 
@@ -2473,7 +2476,11 @@ class AgentEventService {
         // A hosted row is born claimed, so nothing joins it, and a claimed row
         // is never joined again. One enqueued during a drain or a failed routing
         // lookup is born pending, though, and is joined until this turn claims it.
-        const turnPayload = withCoalesced(event.payload);
+        const postedSince = await this.postedSinceMarks([event], agentName, instanceId);
+        const ownPayload = withCoalesced(event.payload);
+        const turnPayload = postedSince.has(String(event._id))
+          ? this.withPostedSinceMark(ownPayload || {}, true)
+          : ownPayload;
         const folded = await this.attachFoldedDigest(event).catch((digestErr: Error) => {
           console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
           return null;
@@ -2584,6 +2591,36 @@ class AgentEventService {
 
   static enqueue(options: EnqueueOptions): Promise<EventDoc> {
     return this.trackInProcessWork(() => this.enqueueEvent(options));
+  }
+
+  /**
+   * F242: which of these delivered rows' agent has posted in the pod since the
+   * row's newest message. The mark rides the delivery only; the stored row keeps
+   * its content, so a requeue reads the order again at its own delivery.
+   */
+  private static async postedSinceMarks(
+    rows: EventDoc[], agentName: string, instanceId: string,
+  ): Promise<Set<string>> {
+    const candidates = rows
+      .filter((row) => row.deliveryMode !== 'digest'
+        && PERSON_WAITING_EVENT_TYPES.includes(String(row.type))
+        && takesPostedSinceMark(row.payload))
+      .map((row) => ({ _id: row._id, podId: row.podId, since: newestCarriedAt(row.createdAt, row.payload) }));
+    return rowsPostedSince(agentName, instanceId, candidates).catch((err: Error) => {
+      console.warn('[agent-event] posted-since lookup failed, delivering unmarked:', err.message);
+      return new Set<string>();
+    });
+  }
+
+  private static withPostedSinceMark(
+    payload: Record<string, unknown>, marked: boolean,
+  ): Record<string, unknown> {
+    if (!marked) return payload;
+    return {
+      ...payload,
+      content: `${postedSinceFrame()}\n${String(payload.content ?? '')}`,
+      postedSinceArrival: true,
+    };
   }
 
   /**
@@ -3096,9 +3133,13 @@ class AgentEventService {
         return null;
       })
       : null;
+    const postedSince = await this.postedSinceMarks(claimed, safeAgentName, safeInstanceId);
     const events = claimed.map((event) => {
       const messageId = event?.payload?.messageId;
-      const basePayload = withCoalesced(event?.payload) || {};
+      const basePayload = this.withPostedSinceMark(
+        withCoalesced(event?.payload) || {},
+        postedSince.has(String(event._id)),
+      );
       // Spread digest bundle into payload. Each sub-field is undefined when
       // empty so JSON.stringify omits it — agents on un-adopted runtimes see
       // a payload that's structurally unchanged.

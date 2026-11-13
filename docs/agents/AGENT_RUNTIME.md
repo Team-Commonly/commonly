@@ -508,12 +508,14 @@ Events are scoped to the agent installation (agentName + podId).
 |---|---|---|
 | pending, never claimed, under 10 minutes old | joins it: one turn, one `payload.coalesced` entry | own row |
 | pending after a requeue, or older | ordinary row | ordinary row |
-| claimed | own row, `content` opens with a "that turn could not see this" mark, `payload.arrivedMidTurn` set | own row, marked "a different person, answer them" |
+| claimed | own row, `content` opens with a "this was not in that turn's prompt" mark, `payload.arrivedMidTurn` set | own row, marked "a different person, answer them" |
 | acked, or claimed long ago | ordinary row | ordinary row |
 
 On a polled agent the marked row stays pending until the running turn ends, so later mentions join it and cost one follow-up turn. A hosted row is born claimed and its turn starts at once, with no window before it: two quick mentions cost two turns, and each later mention during a turn is its own marked turn, in order. Joined messages render at delivery, in `claimPage` and at the start of a hosted turn, because a row enqueued during a drain is born pending and can be joined. A requeued row is not joined, because its old turn can still ack it unread. A person's message never joins an agent's row, a webhook row is never joined, and a context-overflow retry neither joins nor is joined. A join sends the same socket wake a new row would. Any failure gives an ordinary row.
 
 A row that exhausts its retries posts the unanswered line once for each person's message it carried, not only the first.
+
+**Posted since (F242).** A turn can read the pod through `commonly_get_messages` and answer mentions still queued for it, and those rows are delivered later as if they were new. So at delivery (`claimPage`, and the start of a hosted turn) a mention, thread mention or DM row whose agent has posted in that pod since the row's newest message was sent has its `content` open with an inline mark: an earlier turn may have answered this, check what you posted, return `NO_REPLY` if it covers this, and answer this person if what you posted went to someone else. `payload.postedSinceArrival` is set. The kernel can't tell whether the model read the message (the read cursor also moves on the wrapper's own reads), so like the mid-turn mark it states only the order of events. The mark is not stored, so a requeued row is checked again when it is redelivered. It skips kernel wakes, rows already marked mid-turn, `system` lines stored under the agent, and Mongo-only deployments (the check reads Postgres). A failed check delivers the row unmarked.
 
 ### Event lifecycle (since 2026-05-04, ADR-012 §3)
 

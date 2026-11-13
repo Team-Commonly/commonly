@@ -1,6 +1,6 @@
 // A person and their own agent @mention the same agent back to back: the target
 // answers once, seeing both, when the turn has not started; when it has, the
-// later mention wakes it again, marked as something that turn could not see.
+// later mention wakes it again, marked as something that was not in that turn's prompt.
 //
 // Everything real except the model and Postgres: enqueueMentions and
 // enqueueDmEvent, AgentEventService, and Mongo. A second mention is the whole
@@ -408,7 +408,7 @@ describe('a polled target', () => {
     expect(rows[0].payload.content).not.toContain('the failing step');
     expect(rows[1].payload.messageId).toBe(second.id);
     expect(rows[1].payload.arrivedMidTurn).toEqual(expect.objectContaining({ messageId: first.id }));
-    expect(rows[1].payload.content).toContain('could not see');
+    expect(rows[1].payload.content).toContain('was not in that turn');
     expect(rows[1].payload.content).toContain('NO_REPLY');
     expect(rows[1].payload.content).toContain('the failing step is the smoke check');
   });
@@ -449,7 +449,7 @@ describe('a polled target', () => {
     const rows = await targetRows();
     expect(rows).toHaveLength(2);
     expect(rows[1].payload.arrivedMidTurn).toBeUndefined();
-    expect(rows[1].payload.content).not.toContain('could not see');
+    expect(rows[1].payload.content).not.toContain('was not in that turn');
   });
 
   test('a retry of an answered mention is a fresh turn, not one already carried', async () => {
@@ -729,7 +729,7 @@ describe('a hosted target, whose row is claimed at creation', () => {
 
     expect(runAgent).toHaveBeenCalledTimes(2);
     expect(prompts()[0]).not.toContain('smoke check');
-    expect(prompts()[1]).toContain('could not see');
+    expect(prompts()[1]).toContain('was not in that turn');
     expect(prompts()[1]).toContain(`message ${first.id}`);
     expect(prompts()[1]).toContain('NO_REPLY');
     expect(prompts()[1]).toContain('the failing step is the smoke check');
@@ -757,8 +757,8 @@ describe('a hosted target, whose row is claimed at creation', () => {
     expect(prompts()[1]).toContain('first addition');
     expect(prompts()[1]).not.toContain('second addition');
     expect(prompts()[2]).toContain('second addition');
-    expect(prompts()[1]).toContain('could not see');
-    expect(prompts()[2]).toContain('could not see');
+    expect(prompts()[1]).toContain('was not in that turn');
+    expect(prompts()[2]).toContain('was not in that turn');
   });
 
   test('a different person during a turn is a separate turn, in order, and it knows', async () => {
@@ -787,7 +787,7 @@ describe('a hosted target, whose row is claimed at creation', () => {
     await fromOwnAgent('@codex a new question');
     await waitFor(() => runAgent.mock.calls.length === 2);
     await flush();
-    expect(prompts()[1]).not.toContain('could not see');
+    expect(prompts()[1]).not.toContain('was not in that turn');
   });
 
   // A hosted row is pending from birth when the drain or a failed routing
