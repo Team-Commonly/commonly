@@ -1,5 +1,6 @@
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
-import { killProcessTree } from '@commonlyai/seats/process-group';
+import { descendantsOf, killProcessTree, readProcessTable } from '@commonlyai/seats/process-group';
+import { killStallSurvivors } from '../first-output-watchdog.js';
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
@@ -1045,14 +1046,21 @@ const runOpenCode = ({
   const events = makeEventParser();
   // A timed-out turn is killed as a tree (F257): a child of OpenCode (a
   // launcher's real binary, an MCP server) that ignores SIGTERM would keep the
-  // turn's stdout open, so close never fired and the turn never settled. At the
-  // grace, SIGKILL the tree and drop our ends of the pipes, which bounds the
-  // turn at its timeout plus the grace even if a holder was missed.
+  // turn's stdout open, so close never fired and the turn never settled. The
+  // descendants are snapshotted at SIGTERM, because one whose parent exits is
+  // reparented and no tree walk from the spawn finds it again; any still alive
+  // is SIGKILLed on close and at the grace (as claude.js does). At the grace,
+  // dropping our ends of the pipes bounds the turn even if a holder was missed.
+  let survivors = [];
+  const sweepSurvivors = () => { if (survivors.length) killStallSurvivors(survivors); };
   const timer = setTimeout(() => {
     timedOut = true;
-    killProcessTree(proc, 'SIGTERM');
+    const table = Number.isInteger(proc.pid) ? readProcessTable() : null;
+    if (table) survivors = descendantsOf(table, proc.pid);
+    killProcessTree(proc, 'SIGTERM', { table: () => table });
     killTimer = setTimeout(() => {
       killProcessTree(proc, 'SIGKILL');
+      sweepSurvivors();
       proc.stdout?.destroy?.();
       proc.stderr?.destroy?.();
     }, terminationGraceMs);
@@ -1086,6 +1094,7 @@ const runOpenCode = ({
   });
   proc.on('close', (code, signal) => {
     clearTimers();
+    if (timedOut) sweepSurvivors();
     events.flush();
     if (stepHookError) return reject(stepHookError);
     if (timedOut) return reject(new Error(`opencode timed out after ${timeoutMs}ms`));

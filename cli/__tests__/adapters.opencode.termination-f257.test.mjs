@@ -13,8 +13,22 @@ import { join } from 'path';
 import opencode from '../src/lib/adapters/opencode.js';
 
 let root;
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'opencode-f257-')); });
-afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+let started = [];
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'opencode-f257-'));
+  started = [];
+});
+// A failing run would leave these alive, ignoring SIGTERM, so kill them here.
+afterEach(async () => {
+  for (const file of ['grandchild.pid']) {
+    const pid = Number(await readFile(join(root, file), 'utf8').catch(() => ''));
+    if (pid) started.push(pid);
+  }
+  for (const pid of started) {
+    try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+  }
+  await rm(root, { recursive: true, force: true });
+});
 
 const contextWith = (spawnImpl, extra = {}) => ({
   sessionId: null,
@@ -26,6 +40,38 @@ const contextWith = (spawnImpl, extra = {}) => ({
   _spawnImpl: spawnImpl,
   ...extra,
 });
+
+// A launcher that starts a grandchild ignoring SIGTERM. `holdOutput`: the
+// grandchild shares the turn's stdout. `launcherIgnoresTerm`: the launcher
+// stays up through SIGTERM, so it is still the grandchild's parent at SIGKILL.
+const writeLauncher = async ({ holdOutput, launcherIgnoresTerm }) => {
+  const pidFile = join(root, 'grandchild.pid');
+  const launcher = join(root, 'launcher.cjs');
+  await writeFile(launcher, [
+    ...(launcherIgnoresTerm ? ["for (const s of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(s, () => {});"] : []),
+    "const { spawn } = require('child_process');",
+    "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\"],",
+    `  { stdio: ${holdOutput ? "['ignore', 'inherit', 'inherit']" : "'ignore'"} });`,
+    `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
+    'setInterval(() => {}, 1000);',
+    '',
+  ].join('\n'));
+  const spawnImpl = (cmd, args, options) => {
+    const proc = childSpawn(process.execPath, [launcher], options);
+    started.push(proc.pid);
+    return proc;
+  };
+  return { pidFile, spawnImpl };
+};
+
+const deadWithin = async (pid, ms) => {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (!isAlive(pid)) return true;
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+  }
+  return !isAlive(pid);
+};
 
 const isAlive = (pid) => {
   try {
@@ -49,23 +95,19 @@ test('a turn that ends on a signal names the signal', async () => {
 });
 
 test('a timed-out turn kills a child that ignores SIGTERM and holds the output open', async () => {
-  const pidFile = join(root, 'grandchild.pid');
-  const launcher = join(root, 'launcher.cjs');
-  await writeFile(launcher, [
-    "for (const s of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(s, () => {});",
-    "const { spawn } = require('child_process');",
-    "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\"],",
-    "  { stdio: ['ignore', 'inherit', 'inherit'] });",
-    `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
-    'setInterval(() => {}, 1000);',
-    '',
-  ].join('\n'));
-  const spawnImpl = (cmd, args, options) => childSpawn(process.execPath, [launcher], options);
-  const started = Date.now();
+  const { pidFile, spawnImpl } = await writeLauncher({ holdOutput: true, launcherIgnoresTerm: true });
+  const begun = Date.now();
   await expect(opencode.spawn('hi', contextWith(spawnImpl, { timeoutMs: 1500, _terminationGraceMs: 300 })))
     .rejects.toThrow(/opencode timed out after 1500ms/);
-  expect(Date.now() - started).toBeLessThan(6000);
-  const grandchild = Number(await readFile(pidFile, 'utf8'));
-  await new Promise((resolve) => { setTimeout(resolve, 200); });
-  expect(isAlive(grandchild)).toBe(false);
+  expect(Date.now() - begun).toBeLessThan(6000);
+  expect(await deadWithin(Number(await readFile(pidFile, 'utf8')), 2000)).toBe(true);
+}, 15000);
+
+// The launcher exits on SIGTERM, so the grandchild is reparented and a tree
+// walk from the launcher can't find it at SIGKILL. The SIGTERM-time snapshot can.
+test('a timed-out turn kills a child left behind when its parent exits on SIGTERM', async () => {
+  const { pidFile, spawnImpl } = await writeLauncher({ holdOutput: false, launcherIgnoresTerm: false });
+  await expect(opencode.spawn('hi', contextWith(spawnImpl, { timeoutMs: 1500, _terminationGraceMs: 300 })))
+    .rejects.toThrow(/opencode timed out after 1500ms/);
+  expect(await deadWithin(Number(await readFile(pidFile, 'utf8')), 2000)).toBe(true);
 }, 15000);
