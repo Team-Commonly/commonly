@@ -92,6 +92,13 @@ const canSendClosingLine = (
   if (mutedUntil && new Date(mutedUntil).getTime() > now.getTime()) return false;
   const linkedUserId = memberIdFor(integration);
   if (!linkedUserId || !isListedPodMember(pod, linkedUserId)) return false;
+  // F488: linkedUserId is whoever switched live relay on, which on a pod-scoped
+  // row can be the pod's creator or an admin. The chat itself is whoever
+  // redeemed the connect code. It is minted for the row's creator; a re-mint can
+  // hand it to the pod's creator or an admin, and Commonly doesn't record who
+  // redeemed it. So the creator must still be a listed member too, failing
+  // closed (the outbound relay's rule, F158 #4090).
+  if (integration.createdBy && !isListedPodMember(pod, integration.createdBy)) return false;
   if (!integration.config.chatId) return false;
   if (integration.type === 'telegram') {
     return integration.config.chatType === 'private' && Boolean(process.env.TELEGRAM_BOT_TOKEN);

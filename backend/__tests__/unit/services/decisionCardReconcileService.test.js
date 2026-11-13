@@ -348,6 +348,40 @@ describe('decision card closure fan-out', () => {
     expect((await Integration.findById(leftCreator._id)).config.cards[0].closedAt).toEqual(expect.any(Date));
   });
 
+  test('F488: a linked user who stayed does not carry a creator who left', async () => {
+    // linkedUserId is whoever switched live relay on; the chat is the person
+    // who redeemed the connect code, minted for the row's creator. Both must
+    // still be listed members (the outbound relay's rule, F158). The listed
+    // row is the control.
+    const thirdId = new mongoose.Types.ObjectId();
+    const leftId = new mongoose.Types.ObjectId();
+    Pod.findById.mockImplementation(() => chain({ createdBy: ownerId, members: [ownerId, thirdId] }));
+    const creatorLeft = await Integration.create({
+      podId, scope: 'pod', type: 'telegram', createdBy: leftId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(ownerId), chatType: 'private', chatId: 'creator-left',
+        cards: [{ podMessageId: cardId, tgMessageId: '21', sentAt: new Date() }],
+      },
+    });
+    await Integration.create({
+      podId, scope: 'user', type: 'telegram', createdBy: thirdId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(thirdId), chatType: 'private', chatId: 'listed',
+        gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, tgMessageId: '22', sentAt: new Date() }],
+      },
+    });
+
+    await fanoutDecisionClosure(
+      { _id: new mongoose.Types.ObjectId(), podId, messageId: cardId, ruling: { value: 'Now', byUsername: 'Sam' } },
+      { via: 'workspace' },
+    );
+
+    expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+    expect(telegramSend.sendMessage.mock.calls[0][1]).toBe('listed');
+    expect((await Integration.findById(creatorLeft._id)).config.cards[0].closedAt).toEqual(expect.any(Date));
+  });
+
   test('returns after durable closure while a sibling provider send is still pending', async () => {
     let releaseSend;
     const pendingSend = new Promise((resolve) => { releaseSend = resolve; });
