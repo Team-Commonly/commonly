@@ -429,6 +429,9 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
       throw error;
     }
     const repoKey = `${proven.owner}/${proven.repo}`.toLowerCase();
+    // Before the read: a grant minted after this moment was minted on a row
+    // that was live after the read, so it is not the dead row's to end.
+    const readAt = new Date();
     const existing = await findGithubAppRepositoryRow('connect', proven.installationId, repoKey);
     if (existing) {
       // Only its owner learns which row it is.
@@ -441,12 +444,20 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
       // connected row is never taken.
       const stale = existing.status !== 'connected' || Boolean(existing.revokedAt);
       if (stale) {
-        // Win the row first, conditionally on it still being dead and still
+        // F176: the row's old grants end BEFORE it goes live. The broker serves
+        // a Connect grant to the row's current owner, so a revoke that failed
+        // after the write would bring back the grants of whoever takes it:
+        // its owner reviving it, or a former owner taking it back. Here a
+        // failure answers 500 with the row still dead, and the retry ends them.
+        // Only grants older than this request's read are reached, and the row
+        // was dead then. A request that loses the write below therefore only
+        // revoked grants the winner's own revoke ends too.
+        await revokeConnectionGrants({ connection: existing, revokedBy: SYSTEM_REVOKER, createdBefore: readAt });
+        // Then win the row, conditionally on it still being dead and still
         // held by the owner this request read (F174). A request that read a
-        // row its owner has since revived loses here and revokes nothing.
-        // Grants minted before the takeover then end, as the system: the
-        // broker already refuses them, because a Connect grant runs only for
-        // the row's current owner (connection_owner_changed).
+        // row its owner has since revived loses here and revokes nothing newer
+        // than its read. Grants minted between the read and the write then
+        // end, as the system.
         const takenAt = new Date();
         const taken = await Integration.findOneAndUpdate(
           {
