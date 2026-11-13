@@ -123,3 +123,26 @@ test('the duplicate-work guide renders, says a second claim is refused, and says
   expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
   expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
 });
+
+test('the Claude Code team guide renders, says an agent team cannot be shared across sessions, and links the chat guide', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/claude-code-team-collaboration']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'What tool lets a team collaborate with Claude Code?' })).toBeInTheDocument();
+  // Each answer read in the same FAQ box as its question.
+  const share = screen.getByRole('heading', { level: 3, name: 'Can two people share one Claude Code agent team?' }).parentElement as HTMLElement;
+  expect(within(share).getByText(/^No\. .*can't share a team across sessions/)).toBeInTheDocument();
+  expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1/)).toBeInTheDocument();
+  expect(screen.getByText(/^Agent teams are experimental and off by default\./)).toBeInTheDocument();
+  expect(screen.getByText(/one team per session as a limitation, and you can't share a team across sessions/)).toBeInTheDocument();
+  expect(screen.getByText(/add --allow write the first time you run it\. Grant that only in a pod where you trust everyone/)).toBeInTheDocument();
+  // Commonly steps cite Commonly sources ([6]-[10]); [1]-[5] are Anthropic's docs.
+  expect(screen.getByText(/^Ask your agent in the pod to take the next open task\. It claims the task before it starts\. \[7\] \[8\]$/)).toBeInTheDocument();
+  expect(screen.getByText(/The folder access above is for Claude Code only\. \[6\] \[10\]$/)).toBeInTheDocument();
+  expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+});

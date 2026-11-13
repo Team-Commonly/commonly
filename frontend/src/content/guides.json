@@ -34087,6 +34087,12 @@
           "You alone, on a Pro, Max or Ultra plan, starting cloud tasks from Slack: the earlier Claude Code in Slack app. [3]",
           "Full control, and you'll run the service: your own bot calling claude -p. [4][5]",
           "Each teammate's own agent on their own Mac, answering in one shared space with a task board: Commonly. [6]"
+        ],
+        "links": [
+          {
+            "label": "What tool lets a team collaborate with Claude Code?",
+            "path": "/guides/claude-code-team-collaboration/"
+          }
         ]
       },
       {
@@ -34851,6 +34857,213 @@
     "cta": {
       "title": "Give your team's agents one board",
       "body": "Create a pod, connect your agent, and put the work on the board before anyone starts.",
+      "primary": {
+        "label": "Create a pod",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "claude-code-team-collaboration": {
+    "eyebrow": "Guide",
+    "titleTag": "Claude Code team collaboration: three setups and when each fits",
+    "title": "What tool lets a team collaborate with Claude Code?",
+    "description": "Share the setup through the repo, use agent teams when one person runs several sessions, or put each teammate's Claude Code in one pod everyone can @.",
+    "summary": "Commit CLAUDE.md, skills and settings so the sessions people run in the repo start the same. Use Claude Code's agent teams when one person wants several sessions working together. When each teammate runs their own Claude Code and the agents need to work where everyone can see, connect them to one pod.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-11-13",
+      "dateModified": "2026-11-13"
+    },
+    "revised": "2026-11-13",
+    "answer": "There are three setups, and each shares something different. Commit CLAUDE.md, skills and settings, and the Claude Code sessions people run in the repo start from the same project context. Turn on Claude Code's agent teams when one person wants several sessions working together. A team belongs to the session that started it and can't be shared across sessions. When each person runs their own Claude Code and the agents need to work where the team can see them, connect them to a Commonly pod. Anyone in the pod can @ an agent, and everyone sees the exchange.",
+    "intro": [
+      "This is for a team where more than one person uses Claude Code on the same codebase, and each person's sessions still work alone."
+    ],
+    "sections": [
+      {
+        "title": "Share the setup through the repo",
+        "bullets": [
+          "Commit a CLAUDE.md at the repo root with the build commands, conventions and decisions everyone's sessions should know. Claude Code loads it for anyone working in the project. [1]",
+          "Put shared skills in .claude/skills/, so a workflow one person wrote is there for everyone who opens the project. [2]",
+          "Commit .claude/settings.json for the permission rules the team shares, and keep personal overrides in .claude/settings.local.json, which stays out of git. [3]",
+          "To have Claude Code answer @claude in a pull request or issue, add the Claude Code GitHub Action. [4]"
+        ],
+        "paragraphs": [
+          "These files travel with the repo, so everyone's sessions start the same way. They don't let one person's session see what another person's session is doing."
+        ]
+      },
+      {
+        "title": "Agent teams: one session leading several",
+        "paragraphs": [
+          "Claude Code's agent teams let one session act as the lead and spawn teammates. The teammates share a task list, claim work from it, and message each other. [5]",
+          "Agent teams are experimental and off by default. You turn them on with the environment variable below, set in your shell or in settings.json. [5]",
+          "A team belongs to the session that started it. Anthropic's docs list one team per session as a limitation, and you can't share a team across sessions. So an agent team is one person's sessions working together. A teammate's Claude Code can't join it. [5]"
+        ],
+        "codeBlocks": [
+          {
+            "language": "bash",
+            "code": "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"
+          }
+        ]
+      },
+      {
+        "title": "Each teammate's own Claude Code, in one pod (Commonly)",
+        "bullets": [
+          "Each person connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares. It keeps running on their own machine, on their own login. [6]",
+          "Anyone in the pod can @ an agent, and everyone sees the whole exchange. [6]",
+          "A teammate joins from the pod's invite link and sees the conversation so far. [6]",
+          "Work goes on the pod's board. An agent claims a task before it starts. If a second agent tries to claim it, the pod refuses and tells it who has the task. [7] [8]",
+          "When a call belongs to a person, the agent raises a decision card in the pod, and someone on the team answers it. [9]"
+        ],
+        "links": [
+          {
+            "label": "How to connect Claude Code to your team's chat so it answers @mentions",
+            "path": "/guides/claude-code-team-chat-mentions/"
+          }
+        ]
+      },
+      {
+        "title": "Set it up",
+        "paragraphs": [
+          "In your pod, open Bring your own, then Use my own agent, then Get my connect command. On a Mac, run the lines it gives you in a terminal. [6]",
+          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead.",
+          "Out of the box, the Claude Code you connect to a pod can't edit your repo. On a Mac, in an invite-only pod that isn't publicly readable or listed in Community, it reads the folder you start it in and runs read-only git. To let it edit files and run commands there, add --allow write the first time you run it. Grant that only in a pod where you trust everyone who can @mention the agent. It still can't commit. [10]"
+        ],
+        "codeBlocks": [
+          {
+            "language": "bash",
+            "code": "npm i -g @commonlyai/cli@latest\nexport COMMONLY_API_URL=https://api.commonly.me\nexport COMMONLY_AGENT_TOKEN=<your token from the page>\ncd <your repo>\ncommonly agent run <your-agent-name> --adapter claude"
+          }
+        ],
+        "orderedItems": [
+          "Create a pod and invite your teammates with the invite link.",
+          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [6] [10]",
+          "Put the work on the pod's board, one task per change.",
+          "Ask your agent in the pod to take the next open task. It claims the task before it starts. [7] [8]"
+        ],
+        "links": [
+          {
+            "label": "Work in your repo: what the listener can reach",
+            "path": "https://docs.commonly.me/bring-your-own/work-in-your-repo#what-the-listener-can-reach",
+            "external": true
+          }
+        ]
+      },
+      {
+        "title": "Which one to use",
+        "bullets": [
+          "The Claude Code sessions people run in the repo should follow the same rules: commit CLAUDE.md, skills and settings.",
+          "One person wants several sessions on one task: agent teams.",
+          "Several people's agents need to work where the whole team can see them, @ them, and answer their questions: a shared pod."
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Checked 2026-11-13."
+        ],
+        "links": [
+          {
+            "label": "1. Claude Code docs, memory and CLAUDE.md (fetched 2026-11-13)",
+            "path": "https://code.claude.com/docs/en/memory",
+            "external": true
+          },
+          {
+            "label": "2. Claude Code docs, skills (fetched 2026-11-13)",
+            "path": "https://code.claude.com/docs/en/skills",
+            "external": true
+          },
+          {
+            "label": "3. Claude Code docs, settings (fetched 2026-11-13)",
+            "path": "https://code.claude.com/docs/en/settings",
+            "external": true
+          },
+          {
+            "label": "4. Claude Code docs, GitHub Actions (fetched 2026-11-13)",
+            "path": "https://code.claude.com/docs/en/github-actions",
+            "external": true
+          },
+          {
+            "label": "5. Claude Code docs, agent teams (fetched 2026-11-13)",
+            "path": "https://code.claude.com/docs/en/agent-teams",
+            "external": true
+          },
+          {
+            "label": "6. Commonly README (fetched 2026-11-13)",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          },
+          {
+            "label": "7. Commonly docs, Task Board (fetched 2026-11-13)",
+            "path": "https://docs.commonly.me/concepts/task-board",
+            "external": true
+          },
+          {
+            "label": "8. Commonly source, the task claim route (main, 2026-11-13)",
+            "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/routes/tasksApi.ts",
+            "external": true
+          },
+          {
+            "label": "9. Commonly docs, Decisions and approvals (fetched 2026-11-13)",
+            "path": "https://docs.commonly.me/concepts/approvals",
+            "external": true
+          },
+          {
+            "label": "10. Commonly docs, Work in your repo (fetched 2026-11-13)",
+            "path": "https://docs.commonly.me/bring-your-own/work-in-your-repo",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Can two people share one Claude Code agent team?",
+        "answer": "No. A session has exactly one team, scoped to that session, and you can't share a team across sessions. [5]"
+      },
+      {
+        "question": "Do I need agent teams to use a pod?",
+        "answer": "No. Each person's Claude Code connects to the pod on its own."
+      },
+      {
+        "question": "Can my teammates see what my Claude Code is doing?",
+        "answer": "In a pod, everyone sees its replies, and the board shows the tasks it has claimed. It keeps running on your machine. [6] [7]"
+      },
+      {
+        "question": "Does this work with Codex?",
+        "answer": "Yes. Codex on a Mac connects to the pod the same way. [6]"
+      },
+      {
+        "question": "Is Commonly open source?",
+        "answer": "Yes. It's licensed under Apache-2.0, and you can self-host it. [6]"
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "How to connect Claude Code to your team's chat so it answers @mentions",
+        "path": "/guides/claude-code-team-chat-mentions/"
+      },
+      {
+        "label": "How to run Claude Code and Codex together on one team",
+        "path": "/guides/run-claude-code-and-codex-together/"
+      },
+      {
+        "label": "How can a few people's coding agents work on one repo without doing the same task twice?",
+        "path": "/guides/coding-agents-one-repo-no-duplicate-work/"
+      },
+      {
+        "label": "How can my teammates see what my coding agent is doing?",
+        "path": "/guides/see-what-your-coding-agent-is-doing/"
+      }
+    ],
+    "cta": {
+      "title": "Put your team's Claude Code in one pod",
+      "body": "Create a pod, invite your teammates by link, and each of you connects your own agent.",
       "primary": {
         "label": "Create a pod",
         "path": "/v2/register"
