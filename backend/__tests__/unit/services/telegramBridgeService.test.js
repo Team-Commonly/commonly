@@ -324,6 +324,101 @@ describe('telegramBridgeService — multi-pod routing', () => {
     expect(telegramSend.sendMessage).not.toHaveBeenCalled();
   });
 
+  // F158: a legacy pod-scoped row is selected by its podId alone, so the
+  // selector never asks whether the person whose private chat it is still
+  // belongs to the pod. The send does, as Discord's does (F132 review).
+  describe('F158: the chat\'s person must still be a listed member', () => {
+    const legacy = (overrides = {}) => ({
+      _id: 'legacy-1',
+      podId: GATED_POD,
+      type: 'telegram',
+      isActive: true,
+      status: 'connected',
+      createdBy: 'user-1',
+      config: {
+        liveRelay: true,
+        chatType: 'private',
+        chatId: 'chat-1',
+        linkedUserId: 'user-1',
+        relayAllAgentMessages: true,
+        ...overrides,
+      },
+    });
+    const members = (list) => Pod.findById.mockImplementation(() => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(podDoc({ name: 'Launch', members: list })),
+      }),
+    }));
+    const send = {
+      podId: GATED_POD, agentUsername: 'kai', displayName: 'Kai', content: 'deploy is green',
+    };
+    const relay = (integration) => relayAgentMessageToTelegram({ ...send, integration });
+
+    it('still relays to a linked user who is a member', async () => {
+      await relay(legacy());
+      expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends nothing once the linked user has left the pod', async () => {
+      members(['user-2']);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relay(legacy());
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+      expect(IntegrationModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing to a row the Telegram fallback found, once its user left', async () => {
+      members(['user-2']);
+      IntegrationModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(legacy()) });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relayAgentMessageToTelegram(send);
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('a row with no linked user is held to its creator', async () => {
+      members(['user-2']);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relay(legacy({ linkedUserId: undefined }));
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('a creator who stayed does not carry a linked user who left', async () => {
+      members(['user-1']);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relay(legacy({ linkedUserId: 'user-3' }));
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('a failed pod read sends nothing', async () => {
+      Pod.findById.mockImplementation(() => ({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('mongo down')) }),
+      }));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await relay(legacy());
+      } finally {
+        warn.mockRestore();
+      }
+      expect(telegramSend.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
   it('posts a quote-reply into the quoted pod, not the active one', async () => {
     const result = await inbound(userScoped(), { reply_to_message: { message_id: 101 } });
 

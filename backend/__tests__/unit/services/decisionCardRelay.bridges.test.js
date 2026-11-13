@@ -60,6 +60,7 @@ const telegramIntegration = (config = {}) => ({
   installationId: 'install-telegram',
   podId: 'pod-1',
   scope: 'user',
+  createdBy: 'owner-1',
   type: 'telegram',
   isActive: true,
   config: {
@@ -107,7 +108,10 @@ describe('decision-card outbound bridges', () => {
     telegramSend.sendMessage.mockResolvedValue({ messageId: 42 });
     connectorSecrets.get.mockResolvedValue('xoxb-token');
     SlackApi.mockImplementation(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '1700.0001' }) }));
-    Pod.findById.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Launch week' }) }) });
+    // The Telegram send checks the chat's person is still a listed member (F158).
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Launch week', members: ['owner-1'] }) }),
+    });
     Integration.findByIdAndUpdate.mockResolvedValue(undefined);
     verdicts.record.mockResolvedValue(undefined);
   });

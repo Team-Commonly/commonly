@@ -26,7 +26,7 @@ const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
-  shouldEscalate, isGatedPodTarget, isRoutedPodTarget,
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
 } = require('./connectorRelayPolicy');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
@@ -56,6 +56,7 @@ interface TelegramIntegrationDoc {
   _id: unknown;
   installationId?: unknown;
   podId: unknown;
+  createdBy?: unknown;
   scope?: 'pod' | 'user';
   type?: string;
   isActive?: boolean;
@@ -254,21 +255,28 @@ const replyRoutedPodRefused = async (
 };
 
 // The pod tag is cosmetic (ADR-025 D10): it tells a reader which pod a line came
-// from once more than one pod reaches this chat. Slack has carried it since its
-// bridge shipped; Telegram did not, which is half of what D10 names. A lookup
-// failure must not cost the relay, so it degrades to the id rather than to a
-// name that was never read — never to silence.
-const podNameForTag = async (podId: string): Promise<string> => {
+// from once more than one pod reaches this chat.
+// F158: the pod read a send needs: its name for the tag, and its listed
+// members, because the person whose private chat this is must still be one. A
+// legacy pod-scoped row is selected by its podId alone, so nothing upstream
+// asks. A failed read returns null and the send fails closed: the line stays
+// in the pod.
+const podForSend = async (podId: string): Promise<{ name?: string; members?: unknown[] } | null> => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const Pod = require('../models/Pod');
-    const pod = await Pod.findById(podId).select('name').lean();
-    return String(pod?.name || podId);
+    return await Pod.findById(podId).select('name members').lean();
   } catch (error) {
-    console.warn('[tg-bridge] pod name lookup failed, tagging with the id:', (error as Error).message);
-    return podId;
+    console.warn('[tg-bridge] pod lookup failed, line not sent:', (error as Error).message);
+    return null;
   }
 };
+
+// The chat is a private one with the person who linked it; a row written
+// before linking recorded them falls back to its creator.
+const chatPersonOf = (integration: TelegramIntegrationDoc): unknown => (
+  integration.config?.linkedUserId || integration.createdBy || null
+);
 
 // Outbound: agent message → Telegram, attributed, with a deep link back into
 // the pod. The hold/mute/escalate ladder and the relayMap write are the shared
@@ -287,10 +295,18 @@ export const telegramRelayAdapter: ChatRelayAdapter<TelegramIntegrationDoc> = {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = integration.config?.chatId;
     if (!botToken || !chatId) return null;
+    const pod = await podForSend(podId);
+    if (!pod) return null;
+    const person = chatPersonOf(integration);
+    if (!person || !isListedPodMember(pod, person)) {
+      console.warn(`[tg-bridge] outbound skipped integration=${String(integration._id)}: `
+        + 'the chat\'s person left the pod');
+      return null;
+    }
     const body = escapeHtml(String(content).slice(0, OUTBOUND_TEXT_CAP));
     const text = card
       ? renderTelegramDecisionCard({ card, displayName, agentUsername, link })
-      : `[${escapeHtml(await podNameForTag(podId))}] <b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
+      : `[${escapeHtml(String(pod.name || podId))}] <b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
         + `\n\n<a href="${link}">open in Commonly</a>`;
     const result = await telegramSend.sendMessage(botToken, chatId, text);
     // A missing id used to return with no trace at all, so a blocked bot left
