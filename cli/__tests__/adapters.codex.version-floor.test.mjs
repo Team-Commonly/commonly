@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import codex, { PUBLIC_CODEX_MIN_VERSION } from '../src/lib/adapters/codex.js';
 import { PUBLIC_CODEX_VERSION_CODE } from '../src/lib/adapters/tested-version.js';
+import { cantAnswerNotice, WONT_START_NOTICE } from '../src/lib/turn-failure-notice.js';
 import { currentJsShim, fakeFs } from './fixtures/windows-shims.cjs';
 
 const PUBLIC = { trust: 'public', mode: 'workspace' };
@@ -144,8 +145,19 @@ describe('the version comes from the binary on the seat\'s PATH', () => {
     }
   });
 
-  test('no codex on PATH runs no turn', async () => {
+  // F262: no Codex at all is a launch that fails, not a version to upgrade, so
+  // the pod hears the won't-start line the turn's own spawn would have earned.
+  test('no codex on PATH runs no turn, and says it would not start', async () => {
     const { error, calls } = await runSeat({});
+    expect(error?.code).toBe('ENOENT');
+    expect(error?.message).toBe('spawn codex ENOENT');
+    expect(cantAnswerNotice(error)).toEqual({ cause: 'wont-start', text: WONT_START_NOTICE });
+    expect(calls).toEqual([]);
+  });
+
+  test('a codex that is on PATH but will not say its version is still a version refusal', async () => {
+    const { path } = await fakeCodex('exit 1');
+    const { error, calls } = await runSeat({ path });
     expect(error?.code).toBe(PUBLIC_CODEX_VERSION_CODE);
     expect(calls).toEqual([]);
   });
@@ -197,12 +209,13 @@ describe('the version comes from the binary on the seat\'s PATH', () => {
 });
 
 describe('a Windows launch that cannot be resolved', () => {
-  test('is an unread version, not a turn', async () => {
+  test('is the launch error the turn would hit, not a version, and runs no turn', async () => {
     const { error, calls } = await runSeat({
       _platform: 'win32',
       _commandResolution: { platform: 'win32', env: { Path: 'C:\\empty' }, ...fakeFs({}) },
     });
-    expect(error?.code).toBe(PUBLIC_CODEX_VERSION_CODE);
+    expect(error?.code).toBe('ENOENT');
+    expect(error?.message).toMatch(/^cannot launch codex on Windows without a shell: /);
     expect(calls).toEqual([]);
   });
 });

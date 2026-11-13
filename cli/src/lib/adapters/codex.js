@@ -91,6 +91,7 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
+import { resolveOnPath } from '../resolve-on-path.js';
 import { codexContextTokens, codexHomeFor, codexRolloutPath } from '../session-recycle.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -1404,16 +1405,28 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // What the turn will launch, asked for its version. 30 s, as in goose: a first
 // launch after an upgrade can be slow. A failed probe isn't cached, so the next
 // turn reads it again. `_codexVersion` and `_versionProbe` are test seams only.
+//
+// A Codex that can't be launched at all throws what the turn's own launch would
+// (F262), so the pod hears that it won't start, not that it needs upgrading.
+// Only when the probe failed too: a bare name on a relative PATH entry is missed
+// by resolveOnPath but still run by execFile, and that version counts.
 const readCodexVersion = async (ctx, env) => {
   if (ctx._codexVersion !== undefined) return ctx._codexVersion;
+  const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
+  let version = null;
   try {
-    const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
-    return await probeVersion(command, {
+    version = await probeVersion(command, {
       args, env, timeoutMs: 30000, parse: parseCodexVersion, ...ctx._versionProbe,
     });
   } catch {
-    return null;
+    version = null;
   }
+  if (version === null && !args.length && basename(command) === command && !resolveOnPath(command, env?.PATH)) {
+    const missing = new Error(`spawn ${command} ENOENT`);
+    missing.code = 'ENOENT';
+    throw missing;
+  }
+  return version;
 };
 
 // `ownGroup`: see runClaude in claude.js.
