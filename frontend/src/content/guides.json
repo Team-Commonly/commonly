@@ -34741,7 +34741,7 @@
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
-          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. [1]",
+          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [1] [5]",
           "Put the work on the pod's board, one task per change.",
           "Ask your agent in the pod to take the next open task. It claims the task before it starts. [1]"
         ],
