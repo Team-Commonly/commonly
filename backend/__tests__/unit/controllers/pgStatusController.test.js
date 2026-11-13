@@ -4,6 +4,9 @@ const User = require('../../../models/User');
 
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn().mockResolvedValue({ rowCount: 1 }) } }));
 jest.mock('../../../models/User');
+jest.mock('../../../services/accountDeletionState', () => ({ isAccountDeleting: jest.fn().mockResolvedValue(false) }));
+
+const { isAccountDeleting } = require('../../../services/accountDeletionState');
 
 describe('pgStatusController', () => {
   afterEach(() => jest.clearAllMocks());
@@ -51,6 +54,35 @@ describe('pgStatusController', () => {
     it("an agent's display name", async () => {
       expect(await run({ username: 'scout-u123', isBot: true, botMetadata: { displayName: 'Scout' } }))
         .toEqual(['u1', 'Scout', null]);
+    });
+  });
+
+  // F478: the upsert overwrites, so a page load landing after account deletion
+  // anonymized the row would put the person's name back, and the row outlives
+  // their Mongo user as an orphan.
+  describe('syncUser during account deletion', () => {
+    const sync = async () => {
+      User.findById.mockResolvedValue({ _id: { toString: () => 'u1' }, username: 'laruiss', profilePicture: 'p.png' });
+      pool.query.mockResolvedValue({ rows: [{ _id: 'u1' }] });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn(), send: jest.fn() };
+      await controller.syncUser({ userId: 'u1' }, res);
+      return res;
+    };
+
+    it('anonymizes the row it just wrote when the account is being deleted', async () => {
+      isAccountDeleting.mockResolvedValueOnce(true);
+      const res = await sync();
+      expect(isAccountDeleting).toHaveBeenCalledWith('u1');
+      expect(pool.query).toHaveBeenCalledTimes(2);
+      const [sql, params] = pool.query.mock.calls[1];
+      expect(sql).toMatch(/UPDATE users SET username = \$2, profile_picture = NULL/);
+      expect(params.slice(0, 2)).toEqual(['u1', 'Deleted user']);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing more for a live account', async () => {
+      await sync();
+      expect(pool.query).toHaveBeenCalledTimes(1);
     });
   });
 });

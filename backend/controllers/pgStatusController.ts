@@ -52,6 +52,9 @@ exports.syncUser = async (req: Request & { userId?: string }, res: Response): Pr
       AgentIdentityService.chatUsernameFor(user),
       user.profilePicture || null,
     ]);
+    // A page load during account deletion must not put the name back on the
+    // row deletion anonymized, or create one after it (F478).
+    await AgentIdentityService.keepDeletedAccountAnonymous(user._id.toString());
 
     console.log(
       `User ${user.username} synchronized with PostgreSQL for chat functionality`,

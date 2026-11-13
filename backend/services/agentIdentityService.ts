@@ -4,6 +4,7 @@ import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
+import { isAccountDeleting } from './accountDeletionState';
 import { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 import { FIRST_PARTY_DISPLAY_NAMES, isFirstPartyAgentName } from '../constants/firstPartyDisplayNames';
 
@@ -843,6 +844,24 @@ class AgentIdentityService {
   }
 
   /**
+   * After a write that can create a PG users row: if the account is being
+   * deleted, anonymize the row we just wrote (F478). Account deletion
+   * anonymizes PG with an UPDATE, which matches nothing when the row does not
+   * exist yet, so a row inserted after that UPDATE would otherwise keep the
+   * deleted person's name and picture, as an orphan, forever. The deletion
+   * receipt is written before that UPDATE (establishCleanupReceipt), so this
+   * check sees every insert that lands after it; an insert that lands before
+   * the receipt is caught by the deletion's own UPDATE.
+   */
+  static async keepDeletedAccountAnonymous(userId: string): Promise<void> {
+    if (!dbPg || !(await isAccountDeleting(userId))) return;
+    await dbPg.pool.query(
+      'UPDATE users SET username = $2, profile_picture = NULL, updated_at = $3 WHERE _id = $1',
+      [userId, 'Deleted user', new Date()],
+    );
+  }
+
+  /**
    * `keepTombstone` (the nightly mirror repair only): the UPDATE leaves an
    * anonymized row ("Deleted user", no picture) alone, in the same statement,
    * so an account deletion landing mid-repair is never un-anonymized. The app's
@@ -897,6 +916,7 @@ class AgentIdentityService {
         user.createdAt,
         new Date(),
       ]);
+      await AgentIdentityService.keepDeletedAccountAnonymous(user._id.toString());
       return true;
     } catch (error) {
       console.error('Failed to sync agent user to PostgreSQL:', error);
