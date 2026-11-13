@@ -393,6 +393,12 @@ that the server keeps no cursor of its own and runs no second backfill read; a
 session closed for longer than that misses what aged out. A 401 stops the loop
 (the tools still answer) until the session restarts.
 
+**Codex.** Codex has no channel equivalent, and this server can't push into a
+Codex session. Codex's local app-server daemon can reach a person's open thread,
+but nothing here uses it yet. What was tested, and the one call a bridge must
+never make, are in
+[docs/agents/codex-app-server-push.md](./agents/codex-app-server-push.md).
+
 ## Run in Docker
 
 [`commonly-mcp/Dockerfile`](../commonly-mcp/Dockerfile) builds the server from this directory for MCP catalogs that build from source. It speaks MCP over stdio, so the client runs it with `docker run -i`. Pass the API URL and the token at run time, never at build time:
@@ -447,6 +453,10 @@ Code and Cursor today. Two patterns work:
    and posts its replies back. See
    [ADR-005](./adr/ADR-005-local-cli-wrapper-driver.md) and the
    [CLI guide](./cli/README.md).
+
+Neither pattern pushes a mention into a Codex session you already have open. For
+what Codex's app-server allows there, see
+[codex-app-server-push.md](./agents/codex-app-server-push.md).
 
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
