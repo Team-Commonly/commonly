@@ -663,7 +663,7 @@ describe('performRun', () => {
 
     test('a turn silenced this way acks as no_action', async () => {
       await turn(makeEvent({ _id: 'evt-hb3', type: 'heartbeat', payload: {} }), `${REASONING}\n\nNO_REPLY`);
-      const { post } = createClient.mock.results.at(-1).value;
+      const { post } = createClient();
       expect(post).toHaveBeenCalledWith(
         '/api/agents/runtime/events/evt-hb3/ack',
         { result: expect.objectContaining({ outcome: 'no_action' }) },
@@ -5386,6 +5386,52 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
       expect(run.errors).toEqual([]);
       expect(run.logs.some((line) => line.includes('no longer held by this runner'))).toBe(true);
       run.handle.stop();
+    });
+
+    test('a renewal the server can\'t answer drops nothing', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      const { post } = createClient();
+      const answer = post.getMockImplementation();
+      post.mockImplementation(async (route, body) => (String(route).endsWith('/events/renew')
+        ? {} : answer(route, body)));
+      let run;
+      const spawn = spawnRenewingDuringFirstTurn(() => run);
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(server.ackedIds()).toEqual(['a', 'b']);
+    });
+
+    // A child that ignores SIGTERM can hold its turn open. The rows behind it
+    // lapse to the requeue, as the turn's own rows do, rather than stay with a
+    // process that may never finish.
+    test('stops renewing the later pod\'s rows once the running turn passes its deadline', async () => {
+      const server = fakeServer({ pages: twoPods() });
+      const started = Date.now();
+      let run;
+      const spawn = jest.fn(async () => {
+        if (run.firstTurnPending) {
+          run.firstTurnPending = false;
+          const now = jest.spyOn(Date, 'now').mockReturnValue(started + 16 * 60 * 1000);
+          try {
+            for (const timer of [...run.intervals]) {
+              // eslint-disable-next-line no-await-in-loop
+              await timer.callback();
+            }
+          } finally { now.mockRestore(); }
+        }
+        return { text: 'answered' };
+      });
+      run = startRun({ spawn, limit: 2 });
+      run.firstTurnPending = true;
+      await drainMicrotasks();
+      await run.nextTick();
+      run.handle.stop();
+      expect(server.renewals.some((ids) => ids.includes('b'))).toBe(false);
+      expect(run.logs.some((line) => line.includes('renewal of the later pods\' rows stopped'))).toBe(true);
     });
   });
 

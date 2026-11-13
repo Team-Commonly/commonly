@@ -4669,12 +4669,21 @@ export const performRun = ({
       // longer this runner's is taken out before its group starts: its ack
       // would be a stale delivery, which stops the run, and the requeue
       // redelivers it.
+      // Bounded by the running turn's deadline, as processEventBatch bounds
+      // its own renewal: a turn whose child ignores SIGTERM can hang, and the
+      // rows behind it must lapse to the requeue rather than stay with it.
       let firstWaitingGroup = 1;
+      let runningGroupSince = Date.now();
       clearLaterGroupsRenewal();
       if (groups.length > 1) {
         laterGroupsRenewTimer = setIntervalImpl(async () => {
           if (!running) {
             clearLaterGroupsRenewal();
+            return;
+          }
+          if (Date.now() - runningGroupSince >= effectiveTurnTimeoutMs) {
+            clearLaterGroupsRenewal();
+            log('[inbox.batch] turn deadline reached; renewal of the later pods\' rows stopped for the requeue');
             return;
           }
           const waiting = claimedAfter(firstWaitingGroup - 1);
@@ -4698,6 +4707,7 @@ export const performRun = ({
       }
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
         firstWaitingGroup = groupIndex + 1;
+        runningGroupSince = Date.now();
         const group = groups[groupIndex];
         if (group.length === 0) continue;
         if (!running) {
