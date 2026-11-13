@@ -102,7 +102,9 @@ export const askedSomeoneElse = (payload: Payload | undefined): boolean => Boole
  * Whether a mention row's own message asked this agent something: the wrapper's
  * "a person addressed this to you" rule (answersAPerson, cli/src/commands/agent.js).
  * The agent still reads it; this only decides what it can open
- * (AgentMessageService.personAskStillOpen).
+ * (AgentMessageService.personAskStillOpen). An adjacent reply, which this
+ * leaves out, can still open an ask while the posting turn holds its row
+ * (asksOnRow there, F284).
  */
 export const asksThisAgent = (payload: Payload | undefined): boolean => Boolean(payload)
   && !payload?.adjacentReply
@@ -117,6 +119,8 @@ export const coalescedEntry = (payload: Payload): Payload => ({
   rawContent: payload.rawContent,
   createdAt: payload.createdAt,
   ...(payload.handoffCue ? { handoffCue: payload.handoffCue } : {}),
+  // An adjacent reply is no ask, but a turn holding it is answering it (F284).
+  ...(payload.adjacentReply === true ? { adjacentReply: true } : {}),
   // The flags that say so stay behind on the row this joins, so say it here.
   ...(asksThisAgent(payload) ? {} : { notAnAsk: true }),
   ...(askedSomeoneElse(payload) ? { askedSomeoneElse: true } : {}),
