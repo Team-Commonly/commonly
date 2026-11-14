@@ -48,6 +48,14 @@ real('mention email stores on real PostgreSQL (F512)', () => {
     expect(claim.previous.getTime()).toBe(first.getTime());
   });
 
+  it('allows a claim whose window starts exactly at the last email', async () => {
+    const first = new Date(Date.now() - 6 * HOUR);
+    await repo.claimWindow(USER, POD, 'a', first, new Date(first.getTime() - 6 * HOUR));
+    const now = new Date(first.getTime() + 6 * HOUR);
+    const claim = await repo.claimWindow(USER, POD, 'b', now, first);
+    expect(claim.previous.getTime()).toBe(first.getTime());
+  });
+
   it('gives a refused send back the earlier window, and only the window it claimed', async () => {
     const earlier = new Date(Date.now() - 7 * HOUR);
     await repo.claimWindow(USER, POD, 'a', earlier, new Date(earlier.getTime() - 6 * HOUR));

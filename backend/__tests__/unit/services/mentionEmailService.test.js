@@ -105,6 +105,18 @@ test('a mention the person has not looked at in 15 minutes sends them one email,
   expect(mockSendEmail).toHaveBeenCalledTimes(1);
 });
 
+// CodeRabbit (#4135): a platform-authored row is stored under an account
+// that did not write it, so its @handle must not become that account's
+// mention. Both stores mark it kernel: author_kind on PG, authorKind on Mongo.
+test('a platform-authored row creates no mention and no email', async () => {
+  const { ana, pod } = await team();
+  const at = new Date(Date.now() - 16 * MIN);
+  await recordMentionedUsers({ _id: 9001, podId: pod._id, userId: ana._id, content: '@bo welcome', author_kind: 'kernel', createdAt: at });
+  await recordMentionedUsers({ _id: 9002, podId: pod._id, userId: ana._id, content: '@bo welcome', authorKind: 'kernel', createdAt: at });
+  expect(await AttentionItem.countDocuments({ kind: 'mention' })).toBe(0);
+  expect((await sweep(new Date())).sent).toBe(0);
+});
+
 test('before 15 minutes nothing goes; the pass after the mark sends it', async () => {
   const { ana, pod } = await team();
   const at = new Date(Date.now() - 5 * MIN);

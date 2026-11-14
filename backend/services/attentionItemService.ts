@@ -210,6 +210,9 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
     // reads on the common no-mention path; every valid @mention contains this
     // sentinel, so the guard cannot hide a recipient.
     if (!content.includes('@')) return;
+    // A platform-authored row (author_kind on PG, authorKind on Mongo) sits
+    // under an account that did not write it; its @handle is no one's mention.
+    if (message?.author_kind === 'kernel' || message?.authorKind === 'kernel') return;
     const members = await currentHumanMembers(podId);
     const recipients = members.filter((member) => {
       const handle = String(member.username || '').trim();
