@@ -250,7 +250,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
         const minted = await mintConnectCode({ agentUserId: agentUser._id, rawToken: issued.token });
         return res.json({ ...issued, connectCode: minted.code, connectCodeExpiresAt: minted.expiresAt });
       } catch (error) {
-        console.warn('Connect code mint failed:', (error as Error).message);
+        console.warn('Connect code mint failed:', (error as { code?: string; message?: string }).code || (error as Error).message);
       }
     }
     return res.json(issued);

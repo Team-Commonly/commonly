@@ -11,8 +11,9 @@
  */
 import crypto from 'crypto';
 
+// ADR-034 D4: the codes are a Postgres table (0015_agent_connect_codes.sql).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const AgentConnectCode = require('../models/AgentConnectCode');
+const codes = require('../repositories/agentConnectCodeRepository');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AuditLog = require('../models/AuditLog');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -43,22 +44,22 @@ export const mintConnectCode = async (
   const cipher = crypto.createCipheriv('aes-256-gcm', sealKey(code), iv, { authTagLength: TAG_BYTES });
   cipher.setAAD(sealAad(agentUserId, tokenHash));
   const sealed = Buffer.concat([cipher.update(rawToken, 'utf8'), cipher.final()]);
-  const expiresAt = new Date(Date.now() + CONNECT_CODE_TTL_MS);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + CONNECT_CODE_TTL_MS);
   // One live code per agent: a new one replaces the older.
-  await AgentConnectCode.deleteMany({ agentUserId });
-  await AgentConnectCode.create({
+  await codes.replaceForAgent({
     codeHash: hash(code),
-    agentUserId,
+    agentUserId: String(agentUserId),
     tokenHash,
     sealed: sealed.toString('base64'),
     iv: iv.toString('base64'),
     tag: cipher.getAuthTag().toString('base64'),
     expiresAt,
-  });
+  }, now);
   return { code, expiresAt };
 };
 
-export type RedeemOutcome = 'redeemed' | 'unknown' | 'used' | 'revoked' | 'rate_limited';
+export type RedeemOutcome = 'redeemed' | 'unknown' | 'used' | 'revoked' | 'rate_limited' | 'unavailable';
 // The route's answer for each refusal, kept beside the outcomes so a new one
 // can't silently fall through to a 404.
 export const CONNECT_CODE_REFUSALS: Record<Exclude<RedeemOutcome, 'redeemed'>, [number, string]> = {
@@ -66,6 +67,7 @@ export const CONNECT_CODE_REFUSALS: Record<Exclude<RedeemOutcome, 'redeemed'>, [
   used: [410, 'connect_code_used'],
   revoked: [410, 'connect_code_revoked'],
   rate_limited: [429, 'connect_code_rate_limited'],
+  unavailable: [503, 'connect_code_unavailable'],
 };
 
 const record = async (outcome: RedeemOutcome, agentUserId: unknown, ip?: string): Promise<void> => {
@@ -90,23 +92,22 @@ export const redeemConnectCode = async (
 ): Promise<{ outcome: RedeemOutcome; token?: string }> => {
   const codeHash = hash(code);
   const now = new Date();
-  const row = await AgentConnectCode.findOneAndUpdate(
-    { codeHash, expiresAt: { $gt: now }, redeems: { $lt: CONNECT_CODE_MAX_REDEEMS } },
-    { $inc: { redeems: 1 } },
-    { new: true },
-  ).lean();
+  if (!codes.isAvailable()) {
+    await record('unavailable', null, ip);
+    return { outcome: 'unavailable' };
+  }
+  const row = await codes.claimRedeem(codeHash, now, CONNECT_CODE_MAX_REDEEMS);
   if (!row) {
-    const capped = await AgentConnectCode.findOne({ codeHash, expiresAt: { $gt: now } })
-      .select('agentUserId').lean();
+    const capped = await codes.liveAgentFor(codeHash, now);
     const outcome: RedeemOutcome = capped ? 'rate_limited' : 'unknown';
-    await record(outcome, capped?.agentUserId, ip);
+    await record(outcome, capped, ip);
     return { outcome };
   }
   const agent = await User.findById(row.agentUserId).select('agentRuntimeTokens').lean();
   const live = (agent?.agentRuntimeTokens || []).find((entry: { tokenHash?: string }) => entry?.tokenHash === row.tokenHash);
   if (!live || live.lastListenedAt) {
     const outcome: RedeemOutcome = live ? 'used' : 'revoked';
-    await AgentConnectCode.deleteOne({ _id: row._id });
+    await codes.remove(row.codeHash);
     await record(outcome, row.agentUserId, ip);
     return { outcome };
   }

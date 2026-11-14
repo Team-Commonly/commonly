@@ -1,12 +1,22 @@
 // F525: the connect page's one pasted line carries a short-lived connect code,
 // not the agent's lasting key, so shell history keeps nothing that still
 // works. The CLI trades the code for the key on POST
-// /api/agents/runtime/connect-code. Real models: the code row, the agent's
-// token record and the audit log are read back from Mongo.
+// /api/agents/runtime/connect-code. The agent's token record and the audit log
+// are real Mongo; the codes are a Postgres table (ADR-034 D4), built from the
+// shipped migration on pg-mem.
+jest.mock('../../config/db-pg', () => {
+  // eslint-disable-next-line global-require
+  const { newDb } = require('pg-mem');
+  const { Pool } = newDb().adapters.createPg();
+  return { pool: new Pool() };
+});
+
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const express = require('express');
+const { pool } = require('../../config/db-pg');
 const User = require('../../models/User');
-const AgentConnectCode = require('../../models/AgentConnectCode');
 const AuditLog = require('../../models/AuditLog');
 const { hash } = require('../../utils/secret');
 const {
@@ -18,14 +28,22 @@ describe('agent connect codes', () => {
   let app;
   let seq = 0;
 
+  const MIGRATION = fs.readFileSync(path.join(__dirname, '../../config/migrations/0015_agent_connect_codes.sql'), 'utf8');
+  const storedCodes = async () => (await pool.query('SELECT * FROM agent_connect_codes')).rows;
+
   beforeAll(async () => {
     await setupMongoDb();
+    await pool.query(MIGRATION);
     app = express();
     app.use(express.json());
+    // eslint-disable-next-line global-require
     app.use('/api/agents/runtime', require('../../routes/agentsRuntime'));
   });
   afterAll(async () => { await closeMongoDb(); });
-  afterEach(async () => { await clearMongoDb(); });
+  afterEach(async () => {
+    await clearMongoDb();
+    await pool.query('DELETE FROM agent_connect_codes');
+  });
 
   const agentWithToken = async () => {
     seq += 1;
@@ -46,14 +64,15 @@ describe('agent connect codes', () => {
     const { agent, raw } = await agentWithToken();
     const { code, expiresAt } = await mintConnectCode({ agentUserId: agent._id, rawToken: raw });
     expect(code).toMatch(/^cmc_[A-Za-z0-9_-]{22}$/);
-    expect(expiresAt.getTime() - Date.now()).toBeGreaterThan(CONNECT_CODE_TTL_MS - 5_000);
+    expect(expiresAt.getTime() - Date.now()).toBeGreaterThan(CONNECT_CODE_TTL_MS - 5000);
 
-    const stored = await AgentConnectCode.find({}).lean();
+    const stored = await storedCodes();
     expect(stored).toHaveLength(1);
     const dump = JSON.stringify(stored);
     expect(dump).not.toContain(code);
     expect(dump).not.toContain(raw);
-    expect(stored[0].codeHash).toBe(hash(code));
+    expect(stored[0].code_hash).toBe(hash(code));
+    expect(stored[0].agent_user_id).toBe(String(agent._id));
 
     const response = await redeem(code);
     expect(response.status).toBe(200);
@@ -90,7 +109,7 @@ describe('agent connect codes', () => {
   it('is refused after its window', async () => {
     const { agent, raw } = await agentWithToken();
     const { code } = await mintConnectCode({ agentUserId: agent._id, rawToken: raw });
-    await AgentConnectCode.updateOne({}, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    await pool.query('UPDATE agent_connect_codes SET expires_at = $1', [new Date(Date.now() - 1000)]);
     const response = await redeem(code);
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ code: 'connect_code_unknown' });
@@ -133,7 +152,7 @@ describe('agent connect codes', () => {
     const one = await agentWithToken();
     const two = await agentWithToken();
     const { code } = await mintConnectCode({ agentUserId: one.agent._id, rawToken: one.raw });
-    await AgentConnectCode.updateOne({}, { $set: { agentUserId: two.agent._id } });
+    await pool.query('UPDATE agent_connect_codes SET agent_user_id = $1', [String(two.agent._id)]);
     await User.updateOne({ _id: two.agent._id }, { $set: { 'agentRuntimeTokens.0.tokenHash': hash(one.raw) } });
     const response = await redeem(code);
     expect(response.status).toBe(503);
@@ -158,5 +177,46 @@ describe('agent connect codes', () => {
     const second = await mintConnectCode({ agentUserId: agent._id, rawToken: raw });
     expect((await redeem(first.code)).status).toBe(404);
     expect((await redeem(second.code)).status).toBe(200);
+    expect(await storedCodes()).toHaveLength(1);
+  });
+
+  it('mints at once for one agent still leave one live code, and it starts its own redeem count', async () => {
+    const { agent, raw } = await agentWithToken();
+    const first = await mintConnectCode({ agentUserId: agent._id, rawToken: raw });
+    await redeem(first.code);
+    const minted = await Promise.all(Array.from({ length: 5 }, () => mintConnectCode({ agentUserId: agent._id, rawToken: raw })));
+    const rows = await storedCodes();
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].redeems)).toBe(0);
+    expect(minted.map(({ code }) => hash(code))).toContain(rows[0].code_hash);
+  });
+
+  it('a mint clears other agents\' expired codes, and leaves their live ones', async () => {
+    const one = await agentWithToken();
+    const two = await agentWithToken();
+    const three = await agentWithToken();
+    await mintConnectCode({ agentUserId: one.agent._id, rawToken: one.raw });
+    await pool.query('UPDATE agent_connect_codes SET expires_at = $1', [new Date(Date.now() - 1000)]);
+    const live = await mintConnectCode({ agentUserId: two.agent._id, rawToken: two.raw });
+    await mintConnectCode({ agentUserId: three.agent._id, rawToken: three.raw });
+    const owners = (await storedCodes()).map((row) => row.agent_user_id).sort();
+    expect(owners).toEqual([String(two.agent._id), String(three.agent._id)].sort());
+    expect((await redeem(live.code)).status).toBe(200);
+  });
+
+  it('without PostgreSQL answers 503 on redeem, and a mint throws so the route returns the key alone', async () => {
+    // The repository reads the pool on each call, as db-pg leaves it null without PG_HOST.
+    // eslint-disable-next-line global-require
+    const dbPg = require('../../config/db-pg');
+    dbPg.pool = null;
+    try {
+      const response = await redeem(`cmc_${'q'.repeat(22)}`);
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({ code: 'connect_code_unavailable' });
+      await expect(mintConnectCode({ agentUserId: 'a'.repeat(24), rawToken: 'cm_agent_x' }))
+        .rejects.toMatchObject({ code: 'connect_code_unavailable' });
+    } finally {
+      dbPg.pool = pool;
+    }
   });
 });
