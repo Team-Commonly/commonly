@@ -15,7 +15,8 @@ let mockAuthed = false;
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ isAuthenticated: mockAuthed, loading: false, token: mockAuthed ? 'jwt' : null, currentUser: mockAuthed ? { _id: 'b1' } : null }),
 }));
-jest.mock('../hooks/useV2Api', () => ({ useV2Api: () => mockApi }));
+let mockApiCurrent = mockApi;
+jest.mock('../hooks/useV2Api', () => ({ useV2Api: () => mockApiCurrent }));
 jest.mock('axios', () => {
   const mock = { get: jest.fn(), post: jest.fn(), defaults: { headers: { common: {} } }, interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } } };
   return { __esModule: true, default: mock, ...mock };
@@ -34,6 +35,7 @@ const renderAt = (path = `/v2/invite/${TOKEN}`) => render(
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockApiCurrent = mockApi;
   sessionStorage.clear();
   axios.get.mockResolvedValue({ data: { pod: { name: 'Launch', memberCount: 3 } } });
   mockApi.get.mockResolvedValue({ token: TOKEN, pod: { _id: 'pod-9', name: 'Launch', type: 'chat', memberCount: 3 }, alreadyMember: false });
@@ -89,4 +91,38 @@ test('a failed automatic join leaves the Join button and the reason', async () =
   expect(await screen.findByText('This invite has expired.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Join Launch' })).toBeInTheDocument();
   expect(sessionStorage.getItem('v2.inviteJoin.pending')).toBeNull();
+});
+
+test('a failed lookup with the join armed clears it', async () => {
+  mockAuthed = true;
+  sessionStorage.setItem('v2.inviteJoin.pending', TOKEN);
+  mockApi.get.mockRejectedValueOnce({ response: { status: 404, data: { msg: 'Invite not found.' } } });
+  renderAt();
+  expect(await screen.findByText('Invite not found.')).toBeInTheDocument();
+  expect(sessionStorage.getItem('v2.inviteJoin.pending')).toBeNull();
+  expect(mockApi.post).not.toHaveBeenCalled();
+});
+
+test('after a failed automatic join, a fresh lookup does not redeem again', async () => {
+  mockAuthed = true;
+  sessionStorage.setItem('v2.inviteJoin.pending', TOKEN);
+  mockApi.post.mockRejectedValueOnce({ response: { status: 410, data: { msg: 'This invite has expired.' } } });
+  // A fresh object per lookup, as the network gives, so the invite state really changes.
+  mockApi.get.mockImplementation(() => Promise.resolve({ token: TOKEN, pod: { _id: 'pod-9', name: 'Launch', type: 'chat', memberCount: 3 }, alreadyMember: false }));
+  const tree = () => (
+    <MemoryRouter initialEntries={[`/v2/invite/${TOKEN}`]}>
+      <Routes>
+        <Route path="/v2/invite/:token" element={<V2InviteRedeem />} />
+        <Route path="*" element={<Where />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  const { rerender } = render(tree());
+  expect(await screen.findByText('This invite has expired.')).toBeInTheDocument();
+  // A new api instance re-runs the lookup and sets the invite again.
+  mockApiCurrent = { ...mockApi };
+  rerender(tree());
+  await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
+  await new Promise((r) => setTimeout(r, 50));
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
 });

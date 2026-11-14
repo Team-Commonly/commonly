@@ -115,6 +115,7 @@ const V2InviteRedeem: React.FC = () => {
         }
       } catch (err) {
         if (cancelled) return;
+        takeArmedJoin(token); // a lookup that failed spends the armed join too
         const e = err as { response?: { data?: { msg?: string } }; message?: string };
         setError(e.response?.data?.msg || e.message || t('inviteRedeem.errors.invalid'));
       } finally {

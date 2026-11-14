@@ -570,7 +570,7 @@
         "checkEmailTitle": "欢迎加入",
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
-        "checkEmailMessageInvite": "验证邮箱后就能加入邀请你的 Pod，链接已发到 {{email}}。",
+        "checkEmailMessageInvite": "验证邮箱后就能加入你受邀的 Pod，链接已发到 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"

@@ -98,3 +98,22 @@ test('signing in before verifying says to verify, not that the instance is team-
   expect(await screen.findByText(/Verify your email first/)).toBeInTheDocument();
   expect(screen.queryByText(/limited to the team/)).toBeNull();
 });
+
+test.each([
+  [`?next=${ENC}`, `/v2/register?next=${ENC}#invite=CM-WALK1`],
+  ['?next=%2F%2Fevil.example', '/v2/register#invite=CM-WALK1'],
+])('the code step itself sends %s on as %s', async (search, dest) => {
+  render(
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={[`/v2/register/invite-required${search}`]}>
+        <Routes>
+          <Route path="/v2/register/invite-required" element={<RegistrationInviteRequired />} />
+          <Route path="*" element={<Here />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+  fireEvent.change(await screen.findByLabelText(/invitation code/i), { target: { value: 'CM-WALK1' } });
+  fireEvent.click(screen.getByRole('button', { name: /continue to registration/i }));
+  expect(await screen.findByTestId('here')).toHaveTextContent(dest);
+});
