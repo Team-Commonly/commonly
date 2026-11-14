@@ -5,6 +5,9 @@
  * a CLI user can't act on, and the CLI had no flag to send it.
  */
 import { describe, expect, test } from '@jest/globals';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   NARROWING_CONFIRM_CODE, explainNarrowing, narrowingConfirmBody,
 } from '../src/lib/install-narrowing.js';
@@ -47,4 +50,16 @@ describe('install narrowing (F167)', () => {
     const plain = new Error('fetch failed');
     expect(explainNarrowing(plain)).toBe(plain);
   });
+});
+
+// The code and the advice sentence are copies of the backend's. If either moves
+// there, the reword silently stops (the flag still works), so pin them here.
+test('the mirrored code and advice match the backend source', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const backend = fs.readFileSync(
+    path.join(here, '..', '..', 'backend', 'services', 'outsiderGrantNarrowingPreview.ts'), 'utf8',
+  );
+  expect(backend).toContain(`export const NARROWING_CONFIRM_CODE = '${NARROWING_CONFIRM_CODE}';`);
+  const advice = backend.match(/'Send confirmNarrowing: true to install anyway\.'/g) || [];
+  expect(advice).toHaveLength(2);
 });

@@ -141,10 +141,6 @@ import {
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
 import { explainNarrowing, narrowingConfirmBody } from '../lib/install-narrowing.js';
-
-// F167: shared by attach, init and register.
-const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
-  + '(the install says which pods first)';
 import {
   CONTENT_REFUSED_REASON,
   composeRefusalHandoff,
@@ -182,6 +178,10 @@ import {
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 import { CLI } from '../lib/cli-hint.js';
+
+// F167: shared by attach, init and register.
+const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
+  + '(the install says which pods first)';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
