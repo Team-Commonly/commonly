@@ -74,12 +74,27 @@ describe('a workspace swapped for a link after the check', () => {
   maybe('the jail holds no descriptor to the host folder', () => {
     const fd = openHeldPath(inner, { directory: true });
     try {
-      const res = jail(['sh', '-c', 'readlink /proc/$$/fd/3 || echo none'], {
+      const res = jail(['sh', '-c', 'if [ -e /proc/$$/fd/3 ]; then echo held; else echo none; fi'], {
         workspaceReadOnly: true, bindFds: { workspace: 3 },
       }, [fd]);
       expect(res.stdout.trim().split('\n').pop()).toBe('none');
     } finally {
       closeHeldPaths([fd]);
+    }
+  });
+
+  // A worktree's .git is a file naming its gitdir; it is held the same way.
+  maybe('a file entry is mounted read-only from its descriptor', () => {
+    fs.writeFileSync(path.join(inner, '.git'), 'gitdir: /elsewhere\n');
+    const ws = openHeldPath(inner, { directory: true });
+    const entry = openHeldPath(path.join(inner, '.git'));
+    try {
+      const res = jail(['sh', '-c', 'cat .git; echo x >> .git && echo wrote || echo refused'], {
+        readOnlyWorkspaceEntries: ['.git'], bindFds: { workspace: 3, entries: { '.git': 4 } },
+      }, [ws, entry]);
+      expect(res.stdout).toBe('gitdir: /elsewhere\nrefused\n');
+    } finally {
+      closeHeldPaths([ws, entry]);
     }
   });
 

@@ -5,6 +5,7 @@
  * would report, found by inode, so the open and the check run for real.
  */
 
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -68,6 +69,18 @@ describe('openHeldPath', () => {
   test('a missing path throws ENOENT with nothing open', () => {
     expect(() => openHeldPath(path.join(root, 'missing'), { fdPath: () => '' }))
       .toThrow(expect.objectContaining({ code: 'ENOENT' }));
+  });
+
+  // The outer seat, in F211's model, can put a FIFO where a .git was. A
+  // blocking open would hang the seat before its turn timer starts.
+  test('a FIFO is refused at once, not waited on', () => {
+    const fifo = path.join(root, 'fifo');
+    const made = spawnSync('mkfifo', [fifo]);
+    if (made.status !== 0) return;
+    let opened;
+    expect(() => openHeldPath(fifo, { fdPath: (fd) => { opened = fd; return fifo; } }))
+      .toThrow(expect.objectContaining({ code: BIND_SOURCE_MOVED }));
+    expect(opened).toBeUndefined();
   });
 
   test('closeHeldPaths tolerates a descriptor already closed', () => {

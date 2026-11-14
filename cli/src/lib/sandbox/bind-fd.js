@@ -19,7 +19,9 @@
  * Linux only, like bwrap. `/proc/self/fd/N` names the open file.
  */
 
-import { closeSync, constants, openSync, readlinkSync } from 'fs';
+import {
+  closeSync, constants, fstatSync, openSync, readlinkSync,
+} from 'fs';
 
 export const BIND_SOURCE_MOVED = 'bind_source_moved';
 
@@ -27,19 +29,32 @@ const procFdPath = (fd) => readlinkSync(`/proc/self/fd/${fd}`);
 
 /**
  * Open `path` (the last component never a link) and confirm the descriptor
- * names exactly `path`. Returns the descriptor; the caller closes it once the
- * child has it. Throws the open's own error (ENOENT, ELOOP, ENOTDIR) or a
- * `bind_source_moved` error, with nothing left open.
+ * names exactly `path`, a folder or a regular file. Returns the descriptor;
+ * the caller closes it once the child has it. Throws the open's own error
+ * (ENOENT, ELOOP, ENOTDIR, EACCES) or a `bind_source_moved` error, with
+ * nothing left open.
  */
 export const openHeldPath = (path, {
   directory = false,
   open = openSync,
   close = closeSync,
+  stat = fstatSync,
   fdPath = procFdPath,
 } = {}) => {
-  const flags = constants.O_RDONLY | constants.O_NOFOLLOW | (directory ? constants.O_DIRECTORY : 0);
+  // O_NONBLOCK: a FIFO swapped in at the path would otherwise hold the open,
+  // and the seat's run loop with it, before any turn timer starts. It changes
+  // nothing for a folder or a regular file.
+  const flags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    | (directory ? constants.O_DIRECTORY : 0);
   const fd = open(path, flags);
   try {
+    const kind = stat(fd);
+    if (!kind.isDirectory() && !kind.isFile()) {
+      throw Object.assign(
+        new Error(`refusing a workspace turn: ${path} is neither a folder nor a file`),
+        { code: BIND_SOURCE_MOVED },
+      );
+    }
     const actual = fdPath(fd);
     if (actual !== path) {
       throw Object.assign(

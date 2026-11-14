@@ -1466,8 +1466,11 @@ const proxyPort = (proxy) => {
 // F211: the held workspace and its .git, opened and checked, to hand bwrap as
 // descriptors. Child fd 3 is the workspace and 4 the .git (stdio is 0-2). A
 // writable workspace needs its .git (checked before this), so failing to hold
-// it refuses the turn. A read-only one without a plain .git keeps the path
-// bind for it, which is -try there.
+// it refuses the turn. A read-only one whose .git is missing, a link or
+// unreadable keeps the path bind for it, which is -try there.
+// The .git is opened by its path, not under the workspace descriptor: a swap
+// between the two opens gains nothing, since whoever can make it can already
+// write that .git.
 const holdBindSources = (realpath, { write, fdPath }) => {
   const passFds = [openHeldPath(realpath, { directory: true, ...(fdPath ? { fdPath } : {}) })];
   const bindFds = { workspace: 3, entries: {} };
@@ -1475,7 +1478,7 @@ const holdBindSources = (realpath, { write, fdPath }) => {
     passFds.push(openHeldPath(join(realpath, '.git'), fdPath ? { fdPath } : {}));
     bindFds.entries['.git'] = 4;
   } catch (error) {
-    if (write || !['ENOENT', 'ELOOP'].includes(error?.code)) {
+    if (write || !['ENOENT', 'ELOOP', 'EACCES'].includes(error?.code)) {
       closeHeldPaths(passFds);
       throw error;
     }

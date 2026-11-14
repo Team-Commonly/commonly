@@ -555,6 +555,21 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
       expect(() => fs.fstatSync(opened[0])).toThrow(/EBADF/);
     });
 
+    test('a read-only workspace without a .git holds only the workspace, and keeps -try for the entry', async () => {
+      fs.rmSync(path.join(cwd, '.git'), { recursive: true });
+      const { impl, calls } = recorder();
+      await fdTurn(impl, cwd, {
+        environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust: 'workspace', allow: [] } },
+      });
+      expect(calls).toHaveLength(1);
+      const { args, opts } = calls[0];
+      expect(bindTriples(args)).toContainEqual(['--ro-bind-fd', '3', cwd]);
+      expect(args.flatMap((arg, i) => (arg === '--ro-bind-try' ? [[args[i + 1], args[i + 2]]] : [])))
+        .toContainEqual([path.join(cwd, '.git'), path.join(cwd, '.git')]);
+      expect(opts.stdio).toHaveLength(4);
+      expect(() => fs.fstatSync(opts.stdio[3])).toThrow(/EBADF/);
+    });
+
     test('a bwrap without descriptor binds keeps the path binds', async () => {
       const { impl, calls } = recorder();
       await turn(impl);
