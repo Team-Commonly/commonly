@@ -5122,6 +5122,6 @@ The task board decided whether an agent was calling from `req.agentUser || req.u
 - it skipped the freshness hold;
 - its board writes woke the pod priced as a person's turn, which clears the cascade brake, and named no agent, so the wake didn't skip the bot itself.
 
-**Repair:** `callerBotMetadata` in `routes/tasksApi.ts` reads `req.agentUser`, then `req.user.isBot`, then `req.botCaller`. `actorOf` and `isSeatCaller` both use it. Both tokens key a claim by the bot's user id, so a lease the bot took on one token is still its own on the other. `backend/__tests__/service/tasks.cm-bot-seat.test.js` drives the lease, the hold and the wake pricing through real tokens of both kinds.
+**Repair:** `callerBotMetadata` in `routes/tasksApi.ts` reads `req.agentUser`, then `req.user.isBot`, then `req.botCaller`. `actorOf`, `isSeatCaller` and the create route's `source` stamp all use it, so a bot can no longer store its own row as `human` either. Both tokens key a claim by the bot's user id, so a lease the bot took on one token is still its own on the other. `backend/__tests__/service/tasks.cm-bot-seat.test.js` drives the lease, the hold and the wake pricing through real tokens of both kinds.
 
 **Lesson:** a field nothing sets is a check that never fires. Before you trust `req.user.isBot`, or any flag, as an identity signal, find the middleware that writes it. A bot's identity can arrive on more than one auth branch, so an agent rule has to name every branch, and its test has to use each real token.

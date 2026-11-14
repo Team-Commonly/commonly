@@ -37,6 +37,7 @@ const {
 const PEER_RUNTIME = 'cm_agent_cm_bot_seat_peer_test';
 const BOT_RUNTIME = 'cm_agent_cm_bot_seat_bot_test';
 const BOT_USER = 'cm_cmbotseatusertoken00000000000000001';
+const OWNER_USER = 'cm_cmbotseatownertoken0000000000000001';
 const HOLD = { error: 'There are pod messages you have not read', code: 'unseen_messages' };
 
 describe('F501: a member bot on a cm_ user token is a seat on the board', () => {
@@ -72,6 +73,7 @@ describe('F501: a member bot on a cm_ user token is a seat on the board', () => 
     bot = await seat('cm-bot', BOT_RUNTIME);
     peer = await seat('peer-seat', PEER_RUNTIME);
     await User.updateOne({ _id: bot._id }, { $set: { apiTokenHash: hash(BOT_USER) } });
+    await User.updateOne({ _id: owner._id }, { $set: { apiTokenHash: hash(OWNER_USER) } });
     pod = await Pod.create({
       name: 'Board', type: 'team', createdBy: owner._id, members: [owner._id, bot._id, peer._id], 
     });
@@ -161,5 +163,38 @@ describe('F501: a member bot on a cm_ user token is a seat on the board', () => 
     const actor = notifyPodAgents.mock.calls.at(-1)[3];
     expect(actor).toEqual(expect.objectContaining({ isAgent: false }));
     expect(actor.agentName).toBeUndefined();
+  });
+
+  test('a lease taken on its cm_ token is its own on the runtime token, and a peer is refused over it', async () => {
+    expect((await claim(BOT_USER)).status).toBe(200);
+    expect((await request(app).patch(base()).set(as(PEER_RUNTIME)).send({ status: 'pending' })).status).toBe(409);
+    const done = await request(app).post(`${base()}/complete`).set(as(BOT_RUNTIME)).send({});
+    expect(done.status).toBe(200);
+  });
+
+  test('a person on a cm_ user token is still a person', async () => {
+    expect((await claim(PEER_RUNTIME)).status).toBe(200);
+    AgentSendFreshness.unseenMessages.mockResolvedValue(HOLD);
+    const res = await request(app).patch(base()).set(as(OWNER_USER)).send({ status: 'pending' });
+    expect(res.status).toBe(200);
+    expect(notifyPodAgents.mock.calls.at(-1)[3]).toEqual(expect.objectContaining({ isAgent: false }));
+  });
+
+  test('a row it created can be retitled over a peer lease, as on its runtime token', async () => {
+    const created = await request(app).post(`/api/v1/tasks/${pod._id}`).set(as(BOT_USER)).send({ title: 'bot row' });
+    expect(created.status).toBe(201);
+    const { taskId } = created.body.task;
+    expect((await request(app).post(`/api/v1/tasks/${pod._id}/${taskId}/claim`).set(as(PEER_RUNTIME)).send({})).status)
+      .toBe(200);
+    const retitled = await request(app).patch(`/api/v1/tasks/${pod._id}/${taskId}`).set(as(BOT_USER))
+      .send({ title: 'bot row, renamed' });
+    expect(retitled.status).toBe(200);
+  });
+
+  test('a row it creates is recorded as an agent row whatever source it sends', async () => {
+    const created = await request(app).post(`/api/v1/tasks/${pod._id}`).set(as(BOT_USER))
+      .send({ title: 'sourced row', source: 'human' });
+    expect(created.status).toBe(201);
+    expect((await Task.findOne({ title: 'sourced row' }).lean()).source).toBe('agent');
   });
 });
