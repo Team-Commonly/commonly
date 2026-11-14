@@ -109,6 +109,10 @@ interface AuthReq {
   query?: Record<string, string>;
   body?: Record<string, unknown>;
   header?: (name: string) => string | undefined;
+  // A bot holding a cm_ user token rides the human branch (middleware/auth.ts).
+  botCaller?: { username?: unknown; botMetadata?: unknown };
+  // Set by requireTaskWriter for an outside assignee (F127): always a seat.
+  outsideAssigneeCaller?: boolean;
 }
 interface Res {
   status: (n: number) => Res;
@@ -241,7 +245,7 @@ const OUTSIDE_ROW_FIELDS = 'podId taskId title status priority claimedBy claimEx
 router.get('/assigned-to-me', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const actor = actorOf(req);
-    if (!actor.isAgent || !actor.userId) return res.status(403).json({ error: 'Only an agent has outside rows' });
+    if ((!actor.isAgent && !req.botCaller) || !actor.userId) return res.status(403).json({ error: 'Only an agent has outside rows' });
     const rows = await Task.find({ 'outsideAssignee.userId': String(actor.userId), status: { $ne: 'done' } })
       .select(OUTSIDE_ROW_FIELDS).sort({ updatedAt: -1 }).limit(100).lean() as Array<Record<string, any>>;
     const pods = await Pod.find({ _id: { $in: rows.map((row) => row.podId) } }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>;
@@ -276,7 +280,10 @@ const INSTANCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const setOutsideAssignee = async (req: AuthReq, res: Res, next: { agentName: string; instanceId: string } | null) => {
   const { podId, taskId } = req.params || {};
   const userId = req.userId || req.user?._id || req.agentUser?._id;
-  if (actorOf(req).isAgent) {
+  const callerRow = userId && mongoose.isValidObjectId(String(userId))
+    ? await User.findById(userId).select('isBot').lean() as { isBot?: boolean } | null
+    : null;
+  if (actorOf(req).isAgent || req.botCaller || !callerRow || callerRow.isBot) {
     return res.status(403).json({ error: 'Only a person can hand a row to an agent outside the pod', code: 'outside_assignee_person_only' });
   }
   const access = await requirePodMember(podId || '', userId, { write: true });
@@ -315,24 +322,33 @@ const setOutsideAssignee = async (req: AuthReq, res: Res, next: { agentName: str
       grantedAt: new Date(),
     };
   }
-  const current = await Task.findOne({ podId: podObjectId, taskId }).select('outsideAssignee claimedByUserId claimedBy status').lean() as
-    { outsideAssignee?: { userId?: string } | null; claimedByUserId?: string | null; claimedBy?: string | null; status?: string } | null;
+  const current = await Task.findOne({ podId: podObjectId, taskId }).select('outsideAssignee').lean() as
+    { outsideAssignee?: { userId?: string } | null } | null;
   if (!current) return res.status(404).json({ error: 'Task not found' });
   const previous = current.outsideAssignee?.userId || null;
+  if (!grant && !previous) return res.status(404).json({ error: 'This row has no outside assignee' });
   const author = await resolveAuthor(req);
-  const now = new Date();
-  const set: Record<string, unknown> = { outsideAssignee: grant };
-  const releases = Boolean(previous && previous !== (grant?.userId ?? null) && current.status === 'claimed'
-    && (current.claimedByUserId === previous || current.claimedBy === previous));
-  if (releases) Object.assign(set, { status: 'pending', claimedBy: null, claimedByUserId: null, claimedAt: null, claimExpiresAt: null });
   const text = grant
     ? `${author} handed this row to ${grant.agentName}${grant.instanceId === 'default' ? '' : ` (${grant.instanceId})`}, an agent outside this pod`
-    : `${author} took this row back from the agent outside this pod${releases ? ' and released its claim' : ''}`;
-  const task = await updateTaskWithRevision(
+    : `${author} took this row back from the agent outside this pod`;
+  let task = await updateTaskWithRevision(
     { podId: podObjectId, taskId, 'outsideAssignee.userId': previous ?? { $exists: false } },
-    { $set: set, $push: { updates: { text, author, authorId: String(userId), createdAt: now } } },
+    { $set: { outsideAssignee: grant }, $push: { updates: { text, author, authorId: String(userId), createdAt: new Date() } } },
   );
   if (!task) return res.status(409).json({ error: 'Task changed concurrently; retry' });
+  // The grant is gone, so the old grantee can no longer claim. Release a claim
+  // it still holds, matched on the row as it is now: a member's claim is never
+  // touched, and a claim the grantee won just before the clear is still caught.
+  if (previous && previous !== (grant?.userId ?? null)) {
+    const released = await updateTaskWithRevision(
+      { podId: podObjectId, taskId, status: 'claimed', $or: [{ claimedByUserId: previous }, { claimedBy: previous }] },
+      {
+        $set: { status: 'pending', claimedBy: null, claimedByUserId: null, claimedAt: null, claimExpiresAt: null },
+        $push: { updates: { text: `${author} released the outside agent's claim`, author, authorId: String(userId), createdAt: new Date() } },
+      },
+    );
+    if (released) task = released;
+  }
   emitTaskUpdated(podId, task, 'updated');
   return res.json({ task });
 };
@@ -730,7 +746,9 @@ const liveLeaseHolder = (
 // in `agentRuntimeAuth` set `req.agentUser`, the bot user row also arrives as
 // `req.user.isBot` (which is what `resolveAgentInstanceId` reads), and a human JWT
 // sets neither — so either signal means "a seat is calling".
-const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot);
+// An outside assignee is a seat whatever token it holds (F127): a bot on a cm_
+// user token rides the human branch, and a person may override a live lease.
+const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot || req.outsideAssigneeCaller);
 
 type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
 
@@ -856,13 +874,16 @@ const writableLeaseCondition = (
  * puts `outsideOnly` in its filter, so a grant cleared mid-request writes nothing.
  */
 type TaskWriteAccess = { error?: string; status?: number; pod?: unknown; outside?: { grantedByName: string } };
-const requireTaskWriter = async (podId: string, taskId: string, userId: unknown): Promise<TaskWriteAccess> => {
+const requireTaskWriter = async (
+  req: AuthReq | null, podId: string, taskId: string, userId: unknown,
+): Promise<TaskWriteAccess> => {
   const access = await requirePodMember(podId, userId, { write: true });
   // Only a refused write is a candidate; requirePodMember has checked the pod id.
   if (!access.error || access.status !== 403 || !userId || typeof taskId !== 'string' || !taskId) return access;
   const row = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId), taskId })
     .select('outsideAssignee').lean() as { outsideAssignee?: { userId?: string; grantedByName?: string } | null } | null;
   if (row?.outsideAssignee?.userId && row.outsideAssignee.userId === String(userId)) {
+    if (req) req.outsideAssigneeCaller = true;
     return { outside: { grantedByName: row.outsideAssignee.grantedByName || 'a pod member' } };
   }
   return access;
@@ -909,7 +930,7 @@ type TaskClaimResult = { status: 200; task: unknown } | { status: number; body: 
  * a hosted agent does not keep, since its turn is handed the pod's recent messages.
  */
 const claimTaskAs = async (podId: string, taskId: string, claimant: TaskClaimant): Promise<TaskClaimResult> => {
-  const access = await requireTaskWriter(podId, taskId, claimant.userId);
+  const access = await requireTaskWriter(null, podId, taskId, claimant.userId);
   if (access.error) return { status: access.status || 500, body: { error: access.error } };
   const { userId, claimedBy, author } = claimant;
   // The pod sees who let an outside agent in (F127).
@@ -1036,7 +1057,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // Checked here as well as in claimTaskAs: the freshness hold below answers
     // with previews of pod messages, so membership must gate it first. An
     // outside assignee (F127) skips the hold, since it may not read the pod.
-    const access = await requireTaskWriter(podId || '', taskId || '', userId);
+    const access = await requireTaskWriter(req, podId || '', taskId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     if (actorOf(req).isAgent && !access.outside && req.body?.continueAnyway !== true) {
       const hold = await AgentSendFreshness.unseenMessages(userId, podId);
@@ -1083,8 +1104,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const { prUrl, notes } = (req.body || {}) as { prUrl?: string; notes?: string };
     const author = await resolveAuthor(req);
-    const access = await requireTaskWriter(podId || '', taskId || '', userId);
+    const access = await requireTaskWriter(req, podId || '', taskId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    if (access.outside && notes !== undefined) {
+      return res.status(403).json({ error: 'An agent outside this pod may change only the status of its row', code: 'outside_assignee_status_only' });
+    }
     // AX entry 61 (2026-09-19): the write below filters on `status` alone, so this
     // route reported `done` through a peer's live lease. A seat must stand down; a
     // person never is. TASK-669: the row's creator may close over a live claim, and
@@ -1166,7 +1190,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       return res.status(400).json({ error: 'priority must be P0, P1, P2 or P3' });
     }
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
-    const access = await requireTaskWriter(podId || '', taskId || '', userId);
+    const access = await requireTaskWriter(req, podId || '', taskId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     // An outside assignee may note progress, not reprioritise the row (F127).
     if (access.outside && priority !== undefined) {
@@ -1403,7 +1427,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     }
     // Access first, so an outside assignee's refusal never depends on which
     // field validation its body would have failed.
-    const access = await requireTaskWriter(podId || '', taskId || '', userId);
+    const access = await requireTaskWriter(req, podId || '', taskId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     // An outside assignee changes status only: it cannot rewrite the row or
     // hand the grant on (F127).

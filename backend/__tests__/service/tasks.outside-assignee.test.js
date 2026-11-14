@@ -31,6 +31,9 @@ const {
 const OUTSIDE_TOKEN = 'cm_agent_outside_builder_test';
 const STRANGER_TOKEN = 'cm_agent_outside_stranger_test';
 const MEMBER_AGENT_TOKEN = 'cm_agent_outside_member_test';
+// A bot may also hold a cm_ user token, which rides the human branch of auth.
+const OUTSIDE_USER_TOKEN = 'cm_outsidebuilderusertoken000000000001';
+const MEMBER_USER_TOKEN = 'cm_memberagentusertoken0000000000000001';
 
 describe('F127: a one-row grant to an agent outside the pod', () => {
   let app;
@@ -87,6 +90,8 @@ describe('F127: a one-row grant to an agent outside the pod', () => {
     await AgentInstallation.create({
       agentName: 'member-agent', instanceId: 'default', podId: team._id, version: '1.0.0', installedBy: owner._id,
     });
+    await User.updateOne({ _id: outside._id }, { $set: { apiTokenHash: hash(OUTSIDE_USER_TOKEN) } });
+    await User.updateOne({ _id: memberAgent._id }, { $set: { apiTokenHash: hash(MEMBER_USER_TOKEN) } });
     ownerToken = generateTestToken(owner._id);
     rivalToken = generateTestToken(rival._id);
     adminToken = generateTestToken(admin._id);
@@ -227,5 +232,59 @@ describe('F127: a one-row grant to an agent outside the pod', () => {
     expect(theirs.body.tasks).toEqual([]);
     const person = await request(app).get('/api/v1/tasks/assigned-to-me').set('Authorization', `Bearer ${ownerToken}`);
     expect(person.status).toBe(403);
+  });
+
+  describe('an agent on a cm_ user token', () => {
+    test('cannot grant, though auth treats its token as a person', async () => {
+      await Pod.create({
+        name: 'Peers', type: 'team', createdBy: owner._id, members: [memberAgent._id, outside._id], 
+      });
+      const res = await grant(MEMBER_USER_TOKEN);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('outside_assignee_person_only');
+    });
+
+    test('as the grantee, is held to a member live lease like any seat', async () => {
+      await grant(ownerToken);
+      expect((await claim(MEMBER_AGENT_TOKEN)).status).toBe(200);
+      expect((await patch(OUTSIDE_USER_TOKEN, { status: 'pending' })).status).toBe(409);
+      expect((await complete(OUTSIDE_USER_TOKEN)).status).toBe(409);
+      expect((await patch(OUTSIDE_USER_TOKEN, { status: 'claimed' })).status).toBe(400);
+      expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).claimedByUserId).toBe(String(memberAgent._id));
+    });
+
+    test('lists its outside rows', async () => {
+      await grant(ownerToken);
+      const res = await request(app).get('/api/v1/tasks/assigned-to-me').set('Authorization', `Bearer ${OUTSIDE_USER_TOKEN}`);
+      expect(res.status).toBe(200);
+      expect(res.body.tasks.map((row) => row.taskId)).toEqual(['TASK-001']);
+    });
+  });
+
+  test('the grantee may attach a PR link on completion but not rewrite the notes', async () => {
+    await grant(ownerToken);
+    await claim(OUTSIDE_TOKEN);
+    const refused = await request(app).post(`${base()}/complete`).set('Authorization', `Bearer ${OUTSIDE_TOKEN}`).send({ notes: 'rewritten' });
+    expect(refused.status).toBe(403);
+    const done = await request(app).post(`${base()}/complete`).set('Authorization', `Bearer ${OUTSIDE_TOKEN}`)
+      .send({ prUrl: 'https://github.com/example/repo/pull/1' });
+    expect(done.status).toBe(200);
+    expect(done.body.task.notes).toBeNull();
+  });
+
+  test('a member who takes the row after the grantee lapses keeps it through a revoke', async () => {
+    await grant(ownerToken);
+    await claim(OUTSIDE_TOKEN);
+    await Task.updateOne({ taskId: 'TASK-001' }, { $set: { claimExpiresAt: new Date(Date.now() - 1000) } });
+    expect((await claim(MEMBER_AGENT_TOKEN)).status).toBe(200);
+    expect((await revoke(ownerToken)).status).toBe(200);
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row).toEqual(expect.objectContaining({ status: 'claimed', claimedByUserId: String(memberAgent._id), outsideAssignee: null }));
+  });
+
+  test('clearing a row with no grant answers 404 and writes nothing', async () => {
+    const res = await revoke(ownerToken);
+    expect(res.status).toBe(404);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).updates).toEqual([]);
   });
 });
