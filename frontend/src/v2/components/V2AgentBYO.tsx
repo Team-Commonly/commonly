@@ -2408,6 +2408,57 @@ const V2AgentBYO: React.FC = () => {
                 />
               </p>
             )}
+            {/* Codex on Windows: every route that works, whether or not this pod
+                qualifies. Invite-only with --unsandboxed, WSL 2 (Codex under
+                bubblewrap there, in any pod), or hosted. The WSL lines are the
+                page's Linux lines, walked on Ubuntu, not yet inside WSL. */}
+            {setupOs === 'windows' && listenAdapter === 'codex' && (
+              <div className="v2-byo__listen-note v2-byo__codex-ways" data-testid="byo-listen-windows-codex-ways">
+                <p>{t('agentByo.listen.windowsCodexWays')}</p>
+                <ul>
+                  {listenerAvailable && (
+                    <li data-testid="byo-codex-way-invite">
+                      <Trans i18nKey="agentByo.listen.windowsCodexWayInvite" components={{ cmd: <code /> }} />
+                    </li>
+                  )}
+                  <li data-testid="byo-codex-way-wsl">
+                    <Trans
+                      i18nKey="agentByo.listen.windowsCodexWayWsl"
+                      components={{
+                        cmd: <code />,
+                        linux: (
+                          <button
+                            type="button"
+                            className="v2-byo__link"
+                            data-testid="byo-codex-way-wsl-linux"
+                            onClick={() => setSetupOs('linux')}
+                          />
+                        ),
+                      }}
+                    />
+                  </li>
+                  {/* With no listener the won't-answer line above carries the one Run it here button. */}
+                  {hostedOffered && listenerAvailable && (
+                    <li data-testid="byo-codex-way-hosted">
+                      <Trans
+                        i18nKey="agentByo.listen.windowsCodexWayHosted"
+                        components={{
+                          hosted: (
+                            <button
+                              type="button"
+                              className="v2-byo__link"
+                              data-testid="byo-codex-way-hosted-button"
+                              disabled={submitting}
+                              onClick={startHostedInstead}
+                            />
+                          ),
+                        }}
+                      />
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
             {listenerAvailable && (
               <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
