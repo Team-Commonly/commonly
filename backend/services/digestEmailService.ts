@@ -283,7 +283,9 @@ export class DigestEmailService {
           try {
             await StalledConnectEpisode.updateOne(
               { _id: mark.episodeId, status: 'open' },
-              { $set: Object.fromEntries((mark.fields || []).map((field) => [field, emailedAt])) },
+              { $set: Object.fromEntries((mark.fields || [])
+                .filter((field) => field === 'digestedAt' || field === 'digestedAgainAt')
+                .map((field) => [field, emailedAt])) },
             );
           } catch (markError) {
             console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);

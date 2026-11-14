@@ -130,6 +130,16 @@ test('a reissued token opens a second episode, and the digest still says it once
   expect((await digestFor(me)).content).toBe(LINE);
 });
 
+test('a replaced episode stays quiet once the newest has had both its lines', async () => {
+  const { me, pod, installation } = await setup({ openedHoursAgo: 9 * 24, digestedAt: new Date(Date.now() - 8 * 24 * HOUR) });
+  await StalledConnectEpisode.create({
+    installationId: installation._id, podId: String(pod._id), installedBy: me._id, agentName: 'codex', instanceId: 'mk',
+    displayName: 'mk codex', tokenIssuedAt: new Date(Date.now() - 8.5 * 24 * HOUR), nudgedAt: new Date(Date.now() - 8.5 * 24 * HOUR),
+    digestedAt: new Date(Date.now() - 7 * 24 * HOUR), digestedAgainAt: new Date(Date.now() - 24 * HOUR),
+  });
+  expect((await digestFor(me)).metadata.totalItems).toBe(0);
+});
+
 test('an on-demand digest shows the line but carries no marks', async () => {
   const { me, episode } = await setup({ openedHoursAgo: 25 });
   const digest = await digestFor(me, false);

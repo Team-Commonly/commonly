@@ -191,9 +191,9 @@ export class DailyDigestService {
       installedBy: userId,
       status: 'open',
       nudgedAt: { $lte: new Date(now.getTime() - STALL_FIRST_MS) },
-      digestedAgainAt: { $exists: false },
-    }).select('installationId podId agentName displayName nudgedAt digestedAt').lean() as Array<{
-      _id: unknown; installationId: unknown; podId: string; agentName: string; displayName?: string; nudgedAt: Date; digestedAt?: Date;
+    }).select('installationId podId agentName displayName nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+      _id: unknown; installationId: unknown; podId: string; agentName: string; displayName?: string;
+      nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
     }>;
     if (episodes.length === 0) return { lines: [], marks: [] };
     // The sweep that closes an episode on uninstall reads a bounded batch, so
@@ -206,6 +206,8 @@ export class DailyDigestService {
     }).select('_id').lean() as Array<{ _id: unknown }>).map((row) => String(row._id)));
     // A reissued token opens a new episode while the old one stays open; one
     // line per installation, the newest episode's, never the same line twice.
+    // Chosen before the done-filter below, so a replaced episode never speaks
+    // late once the newest has had its two lines.
     const newest = new Map<string, typeof episodes[number]>();
     for (const episode of episodes) {
       const key = String(episode.installationId);
@@ -214,7 +216,7 @@ export class DailyDigestService {
     }
     const result: StalledDigest = { lines: [], marks: [] };
     for (const episode of newest.values()) {
-      if (!active.has(String(episode.installationId))) continue;
+      if (episode.digestedAgainAt || !active.has(String(episode.installationId))) continue;
       const pod = memberPods.find((p) => String(p._id) === String(episode.podId));
       if (!pod) continue;
       const pastAgain = now.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS;
