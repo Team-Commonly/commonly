@@ -106,4 +106,16 @@ describe('an agent whose computer was removed', () => {
     const withMeta = await User.findOne({ isBot: true }).select('username isBot botMetadata').lean();
     expect(JSON.stringify(withMeta)).not.toContain('Studio Mac');
   });
+
+  // A computer's name is its owner's: a stranger asking for the placement is
+  // refused, and nothing in the refusal names the computer or carries the field.
+  it('refuses a non-owner the placement, and the refusal names nothing about the computer', async () => {
+    await removeA();
+    const stranger = await User.create({ username: `s${Date.now() % 1e6}`, email: `s${Date.now()}@x.com`, password: 'x'.repeat(12) });
+    global.__CALLER_ID = String(stranger._id);
+    const refused = await placement();
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).not.toContain('Studio Mac');
+    expect(JSON.stringify(refused.body)).not.toContain('removedMachine');
+  });
 });
