@@ -36,7 +36,7 @@ export const DIGEST_SENDING_KEY = 'digest.sending';
 // definite 'off' stops the run. A summary skipped by a stop is never retried
 // (each run sends only its own), so a read blip must not forfeit the rest.
 type DigestSendingState = 'on' | 'off' | 'unknown';
-const digestSendingState = async (): Promise<DigestSendingState> => {
+export const digestSendingState = async (): Promise<DigestSendingState> => {
   try {
     const row = await SystemSetting.findOne({ key: DIGEST_SENDING_KEY })
       .lean() as { value?: { enabled?: unknown } } | null;
@@ -108,7 +108,7 @@ const extractTopItems = (content: string | undefined, limit = 5): string[] => {
  * SMTP2GO v3 answers 200 with per-recipient results; one recipient, so it was
  * accepted only if it counts as succeeded and nothing failed.
  */
-const providerAccepted = (response: any): boolean => {
+export const providerAccepted = (response: any): boolean => {
   const data = response?.data?.data;
   if (!data || response?.skipped) return false;
   const failures = Array.isArray(data.failures) ? data.failures.length : 0;

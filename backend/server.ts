@@ -540,6 +540,8 @@ const { isListedPodMember } = require('./utils/isPodMember');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const DMServiceForSocketAuth = require('./services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const mentionEmailVisits = require('./services/mentionEmailService');
 
 const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) => {
   if (!podId) {
@@ -589,16 +591,29 @@ io.on('connection', (socket: any) => {
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
   socket.data.joinedPods = new Set();
+  // Joins still being authorized, so a leave during that wait is stamped (F512).
+  socket.data.pendingJoins = new Set();
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {
-    const pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    // Taken before the authorization wait: a leave that lands during it must
+    // stay later than this open (F512).
+    const joinedAt = new Date();
+    socket.data.pendingJoins.add(podId);
+    let pod;
+    try {
+      pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    } finally {
+      socket.data.pendingJoins.delete(podId);
+    }
     if (!pod) {
       return;
     }
 
     socket.join(`pod_${podId}`);
     socket.data.joinedPods.add(podId);
+    // F512: an open pod is a seen mention; the mention email reads this.
+    void mentionEmailVisits.stampPodOpened(socket.userId, podId, joinedAt);
     console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });
@@ -610,7 +625,11 @@ io.on('connection', (socket: any) => {
       return;
     }
     socket.leave(`pod_${podId}`);
+    // Only a pod this socket joined, or is joining, gets a close stamp: any
+    // other id would add a visit row for a pod the person never opened.
+    const wasOpen = socket.data.joinedPods.has(podId) || socket.data.pendingJoins.has(podId);
     socket.data.joinedPods.delete(podId);
+    if (wasOpen) void mentionEmailVisits.stampPodClosed(socket.userId, [podId]);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
     await emitPresence(podId);
   });
@@ -821,6 +840,7 @@ io.on('connection', (socket: any) => {
       `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
     );
     const pods = Array.from(socket.data.joinedPods || []);
+    void mentionEmailVisits.stampPodClosed(socket.userId, pods);
     pods.forEach((podId) => {
       emitPresence(podId);
     });
