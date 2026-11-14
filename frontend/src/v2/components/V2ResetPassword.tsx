@@ -4,6 +4,7 @@ import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import { Trans, useTranslation } from 'react-i18next';
+import { authErrorText } from '../utils/authErrorText';
 
 // Landing pad for the emailed reset link (/v2/reset-password?token=...).
 // Token consumption is server-side; a used or expired token surfaces the
@@ -42,8 +43,7 @@ const V2ResetPassword: React.FC = () => {
       await axios.post('/api/auth/reset-password', { token, password });
       setDone(true);
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string } } };
-      setError(e1.response?.data?.error || t('auth.reset.errors.failed'));
+      setError(authErrorText(err, t, 'reset'));
     } finally {
       setSubmitting(false);
     }

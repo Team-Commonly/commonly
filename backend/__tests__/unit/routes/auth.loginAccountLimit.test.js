@@ -77,6 +77,10 @@ describe('POST /api/auth/login per-address budget', () => {
 
     expect(res.status).toBe(429);
     expect(res.body.code).toBe('rate_limited');
+    // A page says what was counted and when to try again, in its own words.
+    expect(res.body.scope).toBe('account');
+    expect(res.body.retryAfterSeconds).toBeGreaterThan(0);
+    expect(res.body.retryAfterSeconds).toBeLessThanOrEqual(15 * 60);
     expect(login).toHaveBeenCalledTimes(10);
   });
 
