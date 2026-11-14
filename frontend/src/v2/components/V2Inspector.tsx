@@ -555,7 +555,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
 
         {/* F498: the pod's working rules, read by every agent turn here (F124). */}
         {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && pod._id && renderGroup('conventions', 'pencil', t('inspector.conventions.label'), null, (
-          openGroups.has('conventions') ? <V2PodConventions podId={pod._id} /> : null
+          openGroups.has('conventions') ? <V2PodConventions key={pod._id} podId={pod._id} /> : null
         ))}
 
         {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, !isOwner ? (

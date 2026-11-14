@@ -111,3 +111,47 @@ test('a server without conventions (404) renders nothing', async () => {
   await waitFor(() => expect(axios.get).toHaveBeenCalled());
   await waitFor(() => expect(container.querySelector('[data-testid=pod-conventions]')).toBeNull());
 });
+
+test('a save that finishes after a pod switch stays out of the new pod', async () => {
+  let finishSave;
+  axios.get.mockResolvedValueOnce(read('A rules', { canEdit: true, revision: 1 }));
+  axios.patch.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve; }));
+  const view = mount(<V2PodConventions podId="pA" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Conventions' }), { target: { value: 'A draft' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  axios.get.mockResolvedValueOnce(read('B rules', { canEdit: true, revision: 7, label: 'Bo' }));
+  view.rerender(<AuthContext.Provider value={auth}><V2PodConventions podId="pB" /></AuthContext.Provider>);
+  expect(await screen.findByTestId('pod-conventions-text')).toHaveTextContent('B rules');
+  await act(async () => { finishSave(read('A draft', { canEdit: true, revision: 2 })); });
+  expect(screen.getByTestId('pod-conventions-text')).toHaveTextContent('B rules');
+  expect(screen.getByText(/Set by Bo/)).toBeInTheDocument();
+});
+
+test('focus moves into the field on Edit and back to Edit after Save or Cancel', async () => {
+  axios.get.mockResolvedValueOnce(read('Rules', { canEdit: true, revision: 1 }));
+  axios.patch.mockResolvedValueOnce(read('New rules', { canEdit: true, revision: 2 }));
+  mount(<V2PodConventions podId="p1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByRole('button', { name: 'Edit' })).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  expect(await screen.findByRole('button', { name: 'Edit' })).toHaveFocus();
+});
+
+test('a 409 without the saved version re-reads it and keeps the draft', async () => {
+  axios.get.mockResolvedValueOnce(read('v1', { canEdit: true, revision: 1 }));
+  axios.patch.mockRejectedValueOnce({ response: { status: 409, data: { code: 'CONVENTIONS_CONFLICT' } } });
+  axios.get.mockResolvedValueOnce(read('v5 from Cy', { canEdit: true, revision: 5, label: 'Cy' }));
+  axios.patch.mockResolvedValueOnce(read('mine', { canEdit: true, revision: 6 }));
+  mount(<V2PodConventions podId="p1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Conventions' }), { target: { value: 'mine' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  expect(await screen.findByTestId('pod-conventions-latest')).toHaveTextContent('v5 from Cy');
+  expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveValue('mine');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  expect(axios.patch).toHaveBeenLastCalledWith('/api/pods/p1/conventions', { expectedRevision: 5, text: 'mine' }, expect.anything());
+});

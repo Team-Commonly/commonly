@@ -34,6 +34,10 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
   const [conflict, setConflict] = useState(false);
   const [latest, setLatest] = useState<ConventionsRead | null>(null);
   const requestRef = useRef(0);
+  const fieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const actionRef = useRef<HTMLButtonElement | null>(null);
+  // Where focus goes after the editor opens or closes; null leaves it alone.
+  const focusNextRef = useRef<'field' | 'action' | null>(null);
 
   useEffect(() => {
     const requestId = ++requestRef.current;
@@ -55,7 +59,22 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
       });
   }, [api, podId]);
 
+  useEffect(() => {
+    const target = focusNextRef.current;
+    if (!target) return;
+    focusNextRef.current = null;
+    (target === 'field' ? fieldRef.current : actionRef.current)?.focus();
+  }, [editing]);
+
+  const closeEditor = () => {
+    focusNextRef.current = 'action';
+    setEditing(false);
+    setLatest(null);
+    setSaveError(null);
+  };
+
   const startEditing = () => {
+    focusNextRef.current = 'field';
     setDraft(read?.conventions?.text || '');
     setBaseRevision(read?.revision ?? 0);
     setLatest(null);
@@ -66,7 +85,9 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
   const save = useCallback(async () => {
     if (saving) return;
     const trimmed = draft.trim();
-    const requestPodId = podId;
+    // The pod can change while the save is in flight; the read effect bumps
+    // requestRef then, and a stale answer must not land in the new pod's view.
+    const requestId = requestRef.current;
     setSaving(true);
     setSaveError(null);
     try {
@@ -74,15 +95,28 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
         expectedRevision: baseRevision,
         text: trimmed ? trimmed : null,
       });
-      if (requestPodId !== podId) return;
+      if (requestId !== requestRef.current) return;
       setRead(result);
-      setLatest(null);
-      setEditing(false);
+      closeEditor();
     } catch (error) {
+      if (requestId !== requestRef.current) return;
       const e = error as { response?: { status?: number; data?: { current?: ConventionsRead } } };
-      if (e?.response?.status === 409 && e.response.data?.current) {
+      if (e?.response?.status === 409) {
         // Keep the draft; show what is saved now, and let the next Save replace it.
-        const current = e.response.data.current;
+        let current = e.response.data?.current;
+        if (!current) {
+          try {
+            current = await api.get<ConventionsRead>(`/api/pods/${encodeURIComponent(podId)}/conventions`);
+          } catch {
+            current = undefined;
+          }
+          if (requestId !== requestRef.current) return;
+        }
+        if (!current) {
+          setConflict(false);
+          setSaveError(t('inspector.conventions.saveError'));
+          return;
+        }
         setLatest(current);
         setRead((prev) => ({ ...current, permissions: prev?.permissions }));
         setBaseRevision(current.revision);
@@ -97,6 +131,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
     } finally {
       setSaving(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- closeEditor only sets state and refs
   }, [api, baseRevision, draft, podId, saving, t]);
 
   if (state === 'absent') return null;
@@ -127,7 +162,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
             </p>
           )}
           {canEdit && (
-            <button type="button" className="v2-pod-conventions__action" onClick={startEditing}>
+            <button ref={actionRef} type="button" className="v2-pod-conventions__action" onClick={startEditing}>
               {t(saved ? 'inspector.conventions.edit' : 'inspector.conventions.write')}
             </button>
           )}
@@ -136,15 +171,17 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
       {editing && (
         <div className="v2-pod-conventions__editor">
           <textarea
+            ref={fieldRef}
             id={fieldId}
             aria-label={t('inspector.conventions.label')}
+            aria-describedby={`${fieldId}-count`}
             className="v2-pod-conventions__field"
             value={draft}
             rows={6}
             placeholder={t('inspector.conventions.placeholder')}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <p className={`v2-pod-conventions__count${left < 0 ? ' v2-pod-conventions__count--over' : ''}`}>
+          <p id={`${fieldId}-count`} className={`v2-pod-conventions__count${left < 0 ? ' v2-pod-conventions__count--over' : ''}`}>
             {left < 0
               ? t('inspector.conventions.over', { count: -left })
               : t('inspector.conventions.left', { count: left })}
@@ -159,7 +196,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
             <button type="button" className="v2-pod-conventions__save" disabled={saving || left < 0} onClick={() => { void save(); }}>
               {t('inspector.conventions.save')}
             </button>
-            <button type="button" className="v2-pod-conventions__cancel" disabled={saving} onClick={() => { setEditing(false); setLatest(null); setSaveError(null); }}>
+            <button type="button" className="v2-pod-conventions__cancel" disabled={saving} onClick={closeEditor}>
               {t('inspector.conventions.cancel')}
             </button>
           </div>

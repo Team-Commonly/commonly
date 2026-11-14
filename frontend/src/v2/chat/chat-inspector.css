@@ -537,8 +537,8 @@
 
 .v2-root button.v2-pod-conventions__action {
   align-self: flex-start;
-  padding-inline: 0;
-  color: var(--v2-accent);
+  margin-inline: -9px;
+  color: var(--v2-accent-text);
 }
 
 .v2-root button.v2-pod-conventions__save {
@@ -568,5 +568,6 @@
   .v2-root button.v2-pod-conventions__cancel {
     min-height: 44px;
   }
+  .v2-root button.v2-pod-conventions__action { min-width: 44px; }
   .v2-pod-conventions__field { font-size: 16px; }
 }
