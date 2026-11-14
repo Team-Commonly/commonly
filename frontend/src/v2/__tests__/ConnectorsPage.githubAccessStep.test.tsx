@@ -111,7 +111,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
     expect(notice).toHaveAttribute('role', 'status');
     // GitHub's install page preselects "All repositories" and always reads
     // public repos, so the link carries the choice and what leaving it costs.
-    expect(notice).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(notice).toHaveTextContent('On GitHub, choose "Only select repositories".');
     expect(notice).toHaveTextContent(
       'Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones.',
     );

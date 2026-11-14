@@ -117,9 +117,9 @@ const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE, ent
  * handler read the wrong shape and still look green (measured 2026-09-28 —
  * the same class of miss as the unprefixed `$set` beside it).
  */
-const storedRow = (config = {}) => ({
+const storedRow = (config = {}, status = 'pending') => ({
   _id: 'row-1',
-  status: 'pending',
+  status,
   createdBy: 'user-1',
   config: {
     entryId: 'linear',
@@ -170,8 +170,8 @@ beforeEach(() => {
  * the pre-image. Setting only the lookup would leave the claim's copy bare, and
  * an arm about what the pre-image CONTAINED would pass on the empty one.
  */
-const setStoredRow = (overrides = {}) => {
-  const row = storedRow(overrides);
+const setStoredRow = (overrides = {}, status = 'pending') => {
+  const row = storedRow(overrides, status);
   Integration.findOne.mockResolvedValue(row);
   Integration.findOneAndUpdate.mockReset();
   Integration.findOneAndUpdate
@@ -243,11 +243,24 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
     // with the revoke page; the access step rides along on the same redirect.
     describe('on a reconnect that names the revoke page', () => {
       // An old pair with no recorded subject: the accounts cannot be compared,
-      // so the old token is never sent and the page is the only recovery.
+      // so the old token is never sent and the page is the only recovery. A
+      // reconnect starts from a row that is connected, as it is in the database.
       const uncomparableReconnect = () => setStoredRow({
         credentialRef: 'ref-old-access',
         refreshTokenRef: 'ref-old-refresh',
-      });
+      }, 'connected');
+
+      // The early return with the revoke page comes after the new pair is
+      // stored and the row is published as connected, never before.
+      const expectNewPairPublished = () => {
+        expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+        const published = Integration.findOneAndUpdate.mock.calls
+          .filter(([, update]) => update?.$set?.status === 'connected');
+        expect(published).toHaveLength(1);
+        expect(published[0][1].$set).toEqual(expect.objectContaining({
+          'config.credentialRef': 'ref-access', 'config.refreshTokenRef': 'ref-refresh',
+        }));
+      };
 
       it('also sends the page on to the access step when nothing is reachable yet', async () => {
         FIXTURE_ENTRY.accessPage = 'https://github.com/apps/commonly-connect/installations/new';
@@ -262,6 +275,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
           next: 'access',
         });
         expect(FIXTURE_ENTRY.needsAccessSetup).toHaveBeenCalledWith('access-1');
+        expectNewPairPublished();
       });
 
       it('names only the revoke page when access is already set up', async () => {
@@ -275,6 +289,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
           entryId: 'linear',
           revokeAt: FIXTURE_ENTRY.revoke.page,
         });
+        expectNewPairPublished();
       });
     });
 

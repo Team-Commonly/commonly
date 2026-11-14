@@ -1233,7 +1233,7 @@ describe('Connectors page: tools', () => {
     renderPage();
     const { aside } = await openRow('GitHub MCP', 'View GitHub MCP in Launch pod');
     const link = within(aside).getByRole('link', { name: 'Choose what GitHub MCP can reach' });
-    expect(link.closest('.v2-cx-warning')).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(link.closest('.v2-cx-warning')).toHaveTextContent('On GitHub, choose "Only select repositories".');
   });
 
   // A live grant takes the entry off the offer, so the page moves to the grant's
@@ -1804,7 +1804,7 @@ describe('F221: connecting your own repository', () => {
     const link = await within(step).findByRole('link');
     expect(link).toHaveAttribute('href', hostedGithub.accessPage);
     const warning = link.closest('.v2-cx-warning');
-    expect(warning).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(warning).toHaveTextContent('On GitHub, choose "Only select repositories".');
     expect(warning).toHaveTextContent('Commonly Connect can reach every repository on the account or org you install it on');
   });
 
@@ -1814,7 +1814,7 @@ describe('F221: connecting your own repository', () => {
     const github = await openToolPopover('GitHub MCP');
     expect(within(github).getByRole('link', { name: 'Choose what GitHub MCP can reach' }).closest('.v2-cx-warning')).not.toBeNull();
     const linear = await openToolPopover('Linear');
-    expect(within(linear).queryByText("On GitHub, choose 'Only select repositories'.")).toBeNull();
+    expect(within(linear).queryByText('On GitHub, choose "Only select repositories".')).toBeNull();
   });
 
   it('labels each row and names the picked repository, public or private', async () => {
