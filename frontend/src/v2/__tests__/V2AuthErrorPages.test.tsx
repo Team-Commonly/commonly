@@ -47,7 +47,7 @@ test('forgot password under zh-CN: the line is Chinese, not the English server m
   const { container } = mount(<V2ForgotPassword />);
   fireEvent.change(container.querySelector('input[type=email]'), { target: { value: 'a@example.com' } });
   await act(async () => { fireEvent.submit(container.querySelector('form')); });
-  expect(await screen.findByText('当前网络尝试次数过多，请 50 分钟后再试。')).toBeInTheDocument();
+  expect(await screen.findByText('当前网络尝试次数过多，请50分钟后再试。')).toBeInTheDocument();
   expect(container.textContent).not.toMatch(/rate limit exceeded/);
 });
 

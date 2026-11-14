@@ -30,7 +30,7 @@ describe('rate limits say what was counted and when to try again', () => {
   test('zh-CN', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(authErrorText(fail(429, { code: 'rate_limited', retryAfterSeconds: 610 }), i18n.t, 'login'))
-      .toBe('当前网络尝试次数过多，请 11 分钟后再试。');
+      .toBe('当前网络尝试次数过多，请11分钟后再试。');
     expect(authErrorText(fail(429, { code: 'rate_limited', scope: 'account' }), i18n.t, 'login'))
       .toBe('这个邮箱的密码输错次数太多了，请过几分钟再试，或者重置密码。');
   });
