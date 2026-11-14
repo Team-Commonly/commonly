@@ -11,6 +11,8 @@ export const runCommandForThisComputer = (command: string, windows: boolean = br
 export type AgentConnection = {
   state: 'connected' | 'available' | 'revoked' | 'stale' | 'never' | 'stopped';
   lastSeenAt: string | null;
+  /** F516: a never-connected key that something has used (e.g. a tools-only MCP client). */
+  keyUsed?: boolean;
 };
 
 type Get = <T>(url: string) => Promise<{ data: T }>;

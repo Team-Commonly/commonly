@@ -938,6 +938,7 @@
     "getStarted": {
       "title": "Get started",
       "connect": "Connect your first agent",
+      "finishConnecting": "Finish connecting {{name}}",
       "firstTask": "Give it its first task",
       "done": "{{step}}, done",
       "count": "{{done}} of {{total}}",
@@ -2109,6 +2110,7 @@
       "heading": "Your connect command for",
       "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key."
     },
+    "finishConnect": "{{name}}’s first command can’t be shown again. Its key was never used, so this gives you a new command and stops the old key.",
     "rekey": {
       "warning": "{{name}} already has a key. Replacing it will disconnect the running agent until you run the new connect command.",
       "replace": "Replace the running agent’s key",

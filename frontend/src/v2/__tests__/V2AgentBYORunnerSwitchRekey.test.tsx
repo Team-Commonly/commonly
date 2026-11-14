@@ -110,11 +110,12 @@ describe('BYO runner switch and key replacement (TASK-645 item 5, #3019 HOLD)', 
     mockAlreadyKeyed(() => Promise.resolve({ data: { existing: true } }));
     const rosterless = axios.get.getMockImplementation();
     axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/p1\/agents/.test(url)
-      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'default', installedBy: 'u1', connection: { state: 'never' } }] } })
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'default', installedBy: 'u1', connection: { state: 'never', keyUsed: true } }] } })
       : rosterless(url)));
     const scrolled = [];
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function scrollIntoView() { scrolled.push(this); };
+    // F516: a key something has used keeps the replace prompt on a reconnect link.
     window.history.pushState({}, '', '/?name=sam-claude&reconnect=1');
     try {
       renderPage();

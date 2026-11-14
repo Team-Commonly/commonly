@@ -65,8 +65,22 @@ describe('agent connection verdict', () => {
       expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [
         { tokenHash: 'h', status: 'active', lastUsedAt: seen(minutes) },
       ], embeddedTokens: [{ tokenHash: 'h', lastUsedAt: seen(minutes) }], now }))
-        .toEqual({ state: 'never', lastSeenAt: null });
+        .toEqual({ state: 'never', lastSeenAt: null, keyUsed: true });
     }
+  });
+
+  // F516: a never-connected key may still be in use by a client that never
+  // listens (an MCP config in a desktop app). The page replaces a key in one
+  // click only when the verdict says nothing has used it.
+  it('says when a never-connected key has been used, and only then', () => {
+    expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [
+      { tokenHash: 'h', status: 'active', lastUsedAt: null },
+    ], embeddedTokens: [{ tokenHash: 'h', lastUsedAt: null }], now }))
+      .toEqual({ state: 'never', lastSeenAt: null });
+    expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [
+      { tokenHash: 'h', status: 'active', lastUsedAt: seen(3) },
+    ], embeddedTokens: [{ tokenHash: 'h', lastUsedAt: null }], now }))
+      .toEqual({ state: 'never', lastSeenAt: null, keyUsed: true });
   });
 
   it('once an embedded key has listened, use decides connected or stale as before', () => {
