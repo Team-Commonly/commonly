@@ -15,7 +15,7 @@ import { join } from 'path';
 import { PassThrough } from 'stream';
 import { jest } from '@jest/globals';
 import hermes, { SUPPORTED_HERMES_VERSION_RANGE, readHermesJsonl } from '../src/lib/adapters/hermes.js';
-import { validateEnvironmentSpec } from '../src/lib/environment.js';
+import { providerRefusal, validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const fixture = async (name, version = '0.22.5') => readFile(
   new URL(`./fixtures/hermes-${version}/${name}.jsonl`, import.meta.url), 'utf8',
@@ -232,7 +232,7 @@ test('refuses a public seat before probing or spawning Hermes', async () => {
 test('refuses a declared MCP server rather than silently dropping its tools', async () => {
   await expect(hermes.validateEnvironment({
     mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '@commonlyai/mcp'] }],
-  })).rejects.toThrow('does not yet consume environment.mcp');
+  })).rejects.toThrow('Commonly can\'t give Hermes extra MCP servers yet');
 });
 
 test('does not advertise the provider object contract it cannot consume', async () => {
@@ -252,6 +252,7 @@ test('every Hermes refusal is plain', async () => {
     hermes.validateEnvironment({ sandbox: { trust: 'public' } }),
     hermes.validateEnvironment({ sandbox: { mode: 'seatbelt' } }),
     hermes.validateEnvironment({ provider: { id: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' } }),
+    hermes.validateEnvironment({ mcp: [{ name: 'extra', transport: 'stdio', command: ['npx', 'extra-mcp'] }] }),
   ].map((pending) => pending.then(() => '', (error) => error.message)));
   refusals.forEach((message) => {
     expect(message).not.toBe('');
@@ -259,6 +260,16 @@ test('every Hermes refusal is plain', async () => {
   });
   expect(refusals[1]).toContain('sandbox.mode=seatbelt');
   expect(refusals[2]).toContain('OPENROUTER_API_KEY');
+});
+
+// The CLI's shared provider check runs at attach, run and the daemon's swap
+// before validateEnvironment, so it must answer for Hermes in the same words.
+test('the shared provider check refuses a Hermes provider block in plain words', () => {
+  const message = providerRefusal({ model: 'test-model', provider: { id: 'openrouter' } }, hermes);
+  expect(message).toContain('Hermes connects through OpenRouter only');
+  expect(message).not.toMatch(/provider-capable adapter|environment\.provider/);
+  expect(providerRefusal({ model: 'test-model', provider: { id: 'x' } }, { name: 'stub' }))
+    .toMatch(/requires a provider-capable adapter/);
 });
 
 test('a missing OpenRouter key says where to set it', async () => {
