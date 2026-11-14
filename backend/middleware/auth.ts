@@ -95,10 +95,9 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       };
       // A bot row holding a cm_ user token rides the human branch of every
       // route, with no req.agentUser. Name it, from the row already loaded, so
-      // the pod write gate (F149) and the task board (F501) can hold it to the
-      // agent rule. Kept off req.user, and no middleware sets req.user.isBot:
-      // a route that means "an agent is calling" reads req.agentUser or
-      // req.botCaller, never req.user.isBot alone.
+      // the pod write gate can hold it to the agent rule (F149). Kept off
+      // req.user on purpose: tasksApi reads req.user.isBot/botMetadata as
+      // "a seat is calling", and changing that is not this fix.
       if (user.isBot) {
         req.botCaller = { username: user.username, botMetadata: user.botMetadata || {} };
       }
