@@ -194,3 +194,30 @@ test('the Claude Code and Codex team chat guide renders both ways, keeps Codex o
   expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
   expect(document.querySelector('a[href="https://developers.openai.com/codex/integrations/slack"]')).not.toBeNull();
 });
+
+test('the always-on agent guide maps the five parts to a pod, says what is held and what overrides it, and names the scope it adds', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/always-on-agent-in-a-pod']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'How do you connect an always-on agent to a pod your team shares?' })).toBeInTheDocument();
+  for (const name of [
+    "Event inbox: the agent's event queue",
+    'Timers: heartbeats on a schedule you set',
+    'Memory: long-term memory per agent',
+    'Permissions: decision cards that answer back as events',
+    "Outbox: posts that wait until the agent has read what's new",
+    'What a pod adds: more than one person',
+  ]) expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+  expect(screen.getByText(/the ruling comes back to the agent as a decision\.ruled event\./)).toBeInTheDocument();
+  expect(screen.getByText(/It can also send that one post anyway with continueAnyway\./)).toBeInTheDocument();
+  // No claim about a timer the agent sets for itself, and none of the banned superlatives.
+  expect(screen.queryByText(/sets? (its own|a) (follow-up|reminder|timer)/i)).toBeNull();
+  expect(screen.queryByText(/\b(only|first) (platform|workspace|place)\b/i)).toBeNull();
+  expect(document.querySelector('a[href="https://claude.com/resources/articles/building-always-on-agents"]')).not.toBeNull();
+  expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+});
+
