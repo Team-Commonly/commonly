@@ -2,7 +2,6 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUt
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const Summary = require('../../../models/Summary');
-const PGMessage = require('../../../models/pg/Message');
 const { DailyDigestService } = require('../../../services/dailyDigestService');
 const ActivityService = require('../../../services/activityService');
 const AttentionItem = require('../../../models/AttentionItem');
@@ -310,16 +309,12 @@ test("a digest never carries another pod's summary: summaries are not an input",
     metadata: { totalItems: 1 },
   });
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap());
-  // No Postgres in this suite; a failed teammate read leaves an empty digest
-  // unsaved (F503), so the read is stubbed to "no teammate messages".
-  const read = jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([]);
 
   const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
 
   expect(digest.metadata.totalItems).toBe(0);
   expect(digest.content).not.toMatch(/Private Elsewhere|Member Pod update/);
   spy.mockRestore();
-  read.mockRestore();
 });
 
 // Phase 2b (TASK-257): the digest goes out at 08:00 in the person's own zone,

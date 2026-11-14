@@ -739,7 +739,9 @@ class Message {
     excludeUserId: string,
     since: Date,
   ): Promise<Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>> {
-    if (!podIds.length) return [];
+    // No Postgres configured (PG_HOST unset) means no chat messages to read,
+    // not a failed read: the digest saves its empty day instead of retrying.
+    if (!podIds.length || !pool) return [];
     const where = `pod_id = ANY($1) AND user_id <> $2 AND created_at > $3
           AND message_type != 'system' AND content <> ''`;
     const counts = await (pool as PgPool).query(
