@@ -37,6 +37,7 @@ import {
 } from './grantBrokerConfinement';
 import { namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { grantBrokerServer, selectLiveGrantsForIdentities } from './grantBrokerProjectionService';
+import { judgeSeatConfinement } from './seatGrantConfinement';
 import {
   SeatEnvironmentEntry,
   normalizeIdentityPart,
@@ -173,6 +174,13 @@ export const grantServersForIdentities = async (
  * copies its source's config) is not an owner's, as in /installations (D247).
  * A refusal from any projection is reported (fail closed, as the per-call
  * judgement does), and the broker re-checks every call either way.
+ *
+ * F155: what is delivered is then held to that per-call judgement, which sees
+ * what the projection does not: the seat's host (a run marked unsandboxed, a
+ * machine that reports no sandbox) and every owner's row. A broker it refuses
+ * would answer 403 on each call while the seat believes it has a server. Its
+ * rule is the broker's own (`assertSeatCanConfine`): a host refusal is never
+ * lifted; a refusal naming lifts keeps only the grants that name the seat.
  */
 export const grantBrokersForRuntimeSeat = async (
   { agentUserId, adapter }: { agentUserId: string; adapter: string },
@@ -215,7 +223,20 @@ export const grantBrokersForRuntimeSeat = async (
       servers.push(named);
     }
   }
-  return { servers, refusal };
+  if (!servers.length) return { servers, refusal };
+  const judgement = await judgeSeatConfinement({
+    agentUserId: String(seat._id), agentName, instanceId: seat.botMetadata?.instanceId,
+  });
+  if (!judgement.refusal) return { servers, refusal };
+  const liftable = !judgement.hostUnconfined && namingLiftsRefusal(judgement.refusal);
+  const kept = liftable ? servers.filter((server) => server.byoNamed === true) : [];
+  // The refusal is reported only for what it withheld: a named grant it lifts
+  // for leaves the read as the projection said.
+  if (kept.length === servers.length) return { servers, refusal };
+  return {
+    servers: kept,
+    refusal: judgement.hostUnconfined ? judgement.refusal : (refusal || judgement.refusal),
+  };
 };
 
 export default { grantServersForIdentities, grantBrokersForRuntimeSeat };

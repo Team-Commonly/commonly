@@ -240,6 +240,42 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(bare.config.get('runtime')).not.toHaveProperty('host');
   });
 
+  // F155 (#3458 review 3): a codex row with no host and no adapter is the one
+  // every reader takes for Commonly's (runsOnCommonly). So clearing the stored
+  // adapter of a host-less codex seat would move it onto the softer no-daemon
+  // reading and the hosted re-judge. Only an admin clears an adapter.
+  it.each([[''], [null], ['   ']])('refuses the installer clearing a stored adapter (%j)', async (adapter) => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { adapter } });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ fields: ['config.runtime.adapter'] });
+    expect(row.save).not.toHaveBeenCalled();
+    expect(row.config.get('runtime')).toEqual({ runtimeType: 'codex', adapter: 'codex' });
+  });
+
+  it('still lets the installer switch a stored adapter to another one', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { adapter: 'claude' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime').adapter).toBe('claude');
+  });
+
+  it('lets the installer send an empty adapter where none is stored', async () => {
+    const row = installation({ runtime: { runtimeType: 'webhook' } });
+    given(row);
+    const res = await patch({ runtime: { adapter: '' } });
+    expect(res.status).toBe(200);
+  });
+
+  it('lets an admin clear a stored adapter', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+    given(row, 'admin');
+    const res = await patch({ runtime: { adapter: null } });
+    expect(res.status).toBe(200);
+  });
+
   it('lets an admin change the adapter of a hosted agent', async () => {
     const row = installation({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
     given(row, 'admin');

@@ -383,6 +383,46 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_pod_codex') })]);
   });
 
+  // F155 (CodeRabbit on #3458): the read must not deliver a broker the per-call
+  // judgement refuses. Each call would then answer 403, while the seat was told
+  // it had a working server. The seat's host is the case the projection alone
+  // never sees.
+  describe("the read agrees with the per-call judgement on the seat's host", () => {
+    const Machine = model(require('../../models/Machine'));
+
+    test('a seat whose own run went unsandboxed gets the refusal and no broker', async () => {
+      const fixture = await seed();
+      await namedGrant(fixture);
+      await User.updateOne({ _id: fixture.seat._id }, { $set: { 'botMetadata.hostUnconfined': true } });
+      const res = await read(SEAT_TOKEN);
+      expect(res.status).toBe(200);
+      expect(res.body.servers).toEqual([]);
+      expect(res.body.refusal).toEqual(expect.objectContaining({
+        code: GRANT_BROKER_REFUSAL_CODE, reason: 'sandbox_mode_unenforceable',
+      }));
+    });
+
+    test('a seat on a machine that reports no sandbox gets the refusal and no broker', async () => {
+      const fixture = await seed();
+      await namedGrant(fixture);
+      await Machine.create({
+        machineId: 'mach-f155', name: 'laptop', ownerUserId: fixture.owner._id, hostUnconfined: true, hostSandboxReportedAt: new Date(),
+      });
+      await User.updateOne({ _id: fixture.seat._id }, { $set: { 'botMetadata.machineId': 'mach-f155' } });
+      const res = await read(SEAT_TOKEN);
+      expect(res.status).toBe(200);
+      expect(res.body.servers).toEqual([]);
+      expect(res.body.refusal).toEqual(expect.objectContaining({ code: GRANT_BROKER_REFUSAL_CODE }));
+    });
+
+    test('a confined seat still gets its broker', async () => {
+      const fixture = await seed();
+      await namedGrant(fixture);
+      const res = await read(SEAT_TOKEN);
+      expect(brokerNames(res.body)).toEqual([GRANT_BROKER_ID]);
+    });
+  });
+
   test('revoking the grant drops it from the next read', async () => {
     const fixture = await seed();
     await namedGrant(fixture);
