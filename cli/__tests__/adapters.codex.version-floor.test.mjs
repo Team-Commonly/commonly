@@ -295,3 +295,39 @@ describe('a legacy trust value', () => {
     expect(calls).toEqual([]);
   });
 });
+
+// F262: `agent run` reads the version once at start, so a Codex every turn would
+// refuse is named in the seat log's first lines, not on the first mention.
+describe('agent run names a Codex below the floor when it starts', () => {
+  test('an older Codex on PATH gets one notice naming both versions', async () => {
+    const { path } = await fakeCodex('echo "codex-cli 0.149.1"');
+    const notice = await codex.startNotice({ env: { PATH: path } });
+    expect(notice).toContain('Codex 0.149.1 is older than');
+    expect(notice).toContain(PUBLIC_CODEX_MIN_VERSION);
+  });
+
+  test('a tested Codex gives no notice, and the first turn reuses the probe', async () => {
+    const { path, probes } = await fakeCodex('echo "codex-cli 0.162.1"');
+    expect(await codex.startNotice({ env: { PATH: path } })).toBeNull();
+    expect(await probes()).toBe(1);
+    const { error } = await runSeat({ path });
+    expect(error).toBeUndefined();
+    expect(await probes()).toBe(1);
+  });
+
+  test('an unreadable version says so instead of naming one', async () => {
+    const { path } = await fakeCodex('exit 1');
+    expect(await codex.startNotice({ env: { PATH: path } })).toContain('could not read the Codex version');
+  });
+
+  test('a Codex that is not installed gives no notice; detect() refuses that run', async () => {
+    expect(await codex.startNotice({ env: { PATH: '/nonexistent' } })).toBeNull();
+  });
+
+  test.each([
+    ['an operator-unconfined seat', { unconfined: true }],
+    ['a cloud-codex pod', { env: { PATH: '/nonexistent', COMMONLY_CODEX_TRUSTED_PERIMETER: '1' } }],
+  ])('%s is not floored, so it gets no notice', async (_label, opts) => {
+    expect(await codex.startNotice({ _codexVersion: '0.149.1', ...opts })).toBeNull();
+  });
+});
