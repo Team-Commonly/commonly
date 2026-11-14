@@ -219,5 +219,6 @@ test('the always-on agent guide maps the five parts to a pod, says what is held 
   expect(screen.queryByText(/\b(only|first) (platform|workspace|place)\b/i)).toBeNull();
   expect(document.querySelector('a[href="https://claude.com/resources/articles/building-always-on-agents"]')).not.toBeNull();
   expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+  // The scope line is ours: Anthropic's article recommends one inbox per user and never says it covers one person.
+  expect(screen.queryByText(/written for one person|covers one person/)).toBeNull();
 });
-
