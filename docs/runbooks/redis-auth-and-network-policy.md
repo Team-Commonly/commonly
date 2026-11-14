@@ -75,6 +75,19 @@ render while `edge` is empty, because an empty `from` admits every source.
     never frontend, so the edge names the controller's pods, not the namespace
     (the verifier refuses a namespace-wide edge);
   - the dev workloads that name redis are exactly those three.
+- **Prod step 2 (`values-dev.yaml`):** `allow-agent-computer-waker-ingress`
+  and `allow-agent-computer-steel-ingress` (backend, backend-worker,
+  ops-runner), still no deny. It rolls only after step 1 is live with its pods
+  Ready, so kubelet probes are known to pass a selecting policy. Checked
+  live, read-only, 2026-11-14:
+  - the waker pod carries `app=agent-computer-waker` and each gate
+    `app=agent-computer-steel`, neither with a `component` label, behind
+    Services on 80 (to 8080) and 3000;
+  - their one caller is the broker in the backend
+    (`agentComputerBroker.ts`: the waker's `/v1/users/:id/wake`, then steel);
+    the waker scales `steel-<userId>` through the kube API and never calls a
+    gate over HTTP;
+  - no Ingress or route names either, so the edge admits neither.
 - **A new in-cluster client or Service** needs its allow in the same change.
   `scripts/verify-network-policy-chart.js` fails on any Service whose pods no
   allow admits on its port, and on any known flow that's refused.

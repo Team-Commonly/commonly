@@ -116,22 +116,37 @@ const DEV_EDGE = [{
 }];
 // Dev's data tier is outside the cluster, so dev renders no mongodb or email-sink.
 const DEV_INGRESS_KEYS = ['frontend', 'backend', 'litellm', 'redis', 'agentComputer', 'defaultDeny'];
+// A switch whose policy names aren't allow-<key>-ingress (ingress-allow.yaml).
+const POLICY_NAMES = {
+  agentComputer: ['allow-agent-computer-waker-ingress', 'allow-agent-computer-steel-ingress'],
+  emailSink: ['allow-email-sink-ingress'],
+};
+// Prod's agent computer users come from the private values file, so a lane
+// that checks those allows names one user to render the waker and a gate.
+const ONE_AGENT_COMPUTER_USER = ['backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'];
 const ingressLanes = {
   default: { files: lanes.default.files, on: [] },
-  // Prod's first step: frontend and redis allows, no deny. Each allow isolates
-  // the pods it selects as soon as it applies, so its clients must be whole.
+  // Prod's steps 1 and 2: frontend, redis and agent-computer allows, no deny.
+  // Each allow isolates the pods it selects as soon as it applies, so its
+  // clients must be whole.
   dev: {
     files: lanes.dev.files,
-    on: ['frontend', 'redis'],
+    setJson: ONE_AGENT_COMPUTER_USER,
+    on: ['frontend', 'redis', 'agentComputer'],
     deny: false,
     edgeIs: DEV_EDGE,
     flows: [
       ['edge', 'frontend', 80],
-      ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379], ['app=ops-runner', 'redis', 6379],
+      ...['backend', 'backend-worker', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'redis', 6379],
+        [`app=${a}`, 'agent-computer-waker', 8080], [`app=${a}`, 'agent-computer-steel', 3000]]),
     ],
     // The tunnel shares the controller's namespace but must go through it.
+    // Steel is reached only through the broker, never from the edge.
     closed: [['ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
-      ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379]],
+      ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379],
+      ['edge', 'agent-computer-steel', 3000], ['edge', 'agent-computer-waker', 8080],
+      ['app=commonly-bot', 'agent-computer-steel', 3000], ['app=cloud-codex', 'agent-computer-waker', 8080],
+      ['app=agent-computer-waker', 'agent-computer-steel', 3000]],
   },
   staging: {
     files: lanes.staging.files,
@@ -153,7 +168,7 @@ const ingressLanes = {
     setJson: [`networkPolicy.ingress.edge=${JSON.stringify(DEV_EDGE)}`, 'networkPolicy.ingress.litellm.public=true',
       ...DEV_INGRESS_KEYS.map((k) => `networkPolicy.ingress.${k}.enabled=true`),
       // One agent computer user, so the waker and a steel gate render.
-      'backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'],
+      ...ONE_AGENT_COMPUTER_USER],
     on: DEV_INGRESS_KEYS,
     edge: true,
     flows: [
@@ -202,7 +217,7 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   }
   if (cfg.deny === false) {
     expect(!deny, `${lane}: default-deny-ingress renders, want the allows alone`);
-    const want = cfg.on.map((k) => `allow-${k}-ingress`).sort();
+    const want = cfg.on.flatMap((k) => POLICY_NAMES[k] || [`allow-${k}-ingress`]).sort();
     const got = allows.map((p) => p.metadata.name).sort();
     expect(JSON.stringify(got) === JSON.stringify(want), `${lane}: ingress allows are ${got.join(', ')}, want ${want.join(', ')}`);
   } else {
