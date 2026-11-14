@@ -95,7 +95,10 @@ describe('webAddressProvenance', () => {
       const started = process.hrtime.bigint();
       addressKey(token);
       addressesIn(`see ${token} and ${token}`);
-      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(50);
+      // Three tokens; the quadratic trim took ~2.2 s for them. 400 ms still
+      // catches it five times over, where 50 ms failed a loaded CI runner at
+      // 87 ms on a change that touched no backend (#4099).
+      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(400);
     });
 
     test('a long trailing run of punctuation or slashes still trims away', () => {
