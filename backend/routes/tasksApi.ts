@@ -52,15 +52,27 @@ const { recordTaskTransition } = require('../services/taskRecordService');
  * `notifyPodAgents` treats *undefined* as "assume agent" — the safe default
  * there, and not one to trip over by accident here.
  */
+// An agent is calling on any of its tokens: a cm_agent_ runtime token sets
+// req.agentUser, and a bot on a cm_ user token rides the human branch of auth,
+// which names it as req.botCaller (F501). Either way it is held to the agent
+// rules on the board: the lease, the freshness hold, and an agent's wake.
+const callerBotMetadata = (req: any): { agentName?: string; instanceId?: string } | null => {
+  if (req.agentUser?._id) return req.agentUser.botMetadata || {};
+  if (req.user?.isBot) return req.user.botMetadata || {};
+  if (req.botCaller) return req.botCaller.botMetadata || {};
+  return null;
+};
+
 const actorOf = (req: any) => {
-  const isAgent = Boolean(req.agentUser?._id || req.user?.isBot);
+  const botMeta = callerBotMetadata(req);
+  const isAgent = botMeta !== null;
   // Identity, not just a user id. The self-skip downstream keys on
   // (agentName, instanceId) because `installedBy` means the agent on a
   // self-install and the HUMAN on a human-install — supplying only userId let a
   // human-installed agent fail to match its own install and wake itself.
-  // Both auth shapes carry the same metadata: agentRuntimeAuth sets
-  // `req.agentUser`, the dual-auth path leaves the bot on `req.user`.
-  const meta = req.agentUser?.botMetadata || req.user?.botMetadata || {};
+  // Both agent tokens carry the same metadata: agentRuntimeAuth sets
+  // `req.agentUser`, and a cm_ user token names the bot as `req.botCaller`.
+  const meta = botMeta || {};
   return {
     userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
     isAgent,
@@ -245,7 +257,7 @@ const OUTSIDE_ROW_FIELDS = 'podId taskId title status priority claimedBy claimEx
 router.get('/assigned-to-me', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const actor = actorOf(req);
-    if ((!actor.isAgent && !req.botCaller) || !actor.userId) return res.status(403).json({ error: 'Only an agent has outside rows' });
+    if (!actor.isAgent || !actor.userId) return res.status(403).json({ error: 'Only an agent has outside rows' });
     const rows = await Task.find({ 'outsideAssignee.userId': String(actor.userId), status: { $ne: 'done' } })
       .select(OUTSIDE_ROW_FIELDS).sort({ updatedAt: -1 }).limit(100).lean() as Array<Record<string, any>>;
     const pods = await Pod.find({ _id: { $in: rows.map((row) => row.podId) } }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>;
@@ -283,7 +295,7 @@ const setOutsideAssignee = async (req: AuthReq, res: Res, next: { agentName: str
   const callerRow = userId && mongoose.isValidObjectId(String(userId))
     ? await User.findById(userId).select('isBot').lean() as { isBot?: boolean } | null
     : null;
-  if (actorOf(req).isAgent || req.botCaller || !callerRow || callerRow.isBot) {
+  if (actorOf(req).isAgent || !callerRow || callerRow.isBot) {
     return res.status(403).json({ error: 'Only a person can hand a row to an agent outside the pod', code: 'outside_assignee_person_only' });
   }
   const access = await requirePodMember(podId || '', userId, { write: true });
@@ -581,7 +593,7 @@ router.post('/:podId', rateLimit({
     // `source` is provenance for task creation, so an agent-authenticated
     // caller may not self-identify as human (or any other source) through the
     // request body. Human callers retain the explicit source override.
-    const taskSource = req.agentUser?._id
+    const taskSource = actorOf(req).isAgent
       ? 'agent'
       : source || 'human';
     let task;
@@ -751,13 +763,12 @@ const liveLeaseHolder = (
   return { claimedBy: holder, claimExpiresAt: expiry };
 };
 
-// Seats hold leases; people do not, so only a seat is ever refused. Both auth paths
-// in `agentRuntimeAuth` set `req.agentUser`, the bot user row also arrives as
-// `req.user.isBot` (which is what `resolveAgentInstanceId` reads), and a human JWT
-// sets neither — so either signal means "a seat is calling".
-// An outside assignee is a seat whatever token it holds (F127): a bot on a cm_
-// user token rides the human branch, and a person may override a live lease.
-const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot || req.outsideAssigneeCaller);
+// Seats hold leases; people do not, so only a seat is ever refused. A seat is
+// an agent on either of its tokens (callerBotMetadata, F501), or an outside
+// assignee whatever token it holds (F127), since a person may override a lease.
+const isSeatCaller = (req: AuthReq): boolean => (
+  callerBotMetadata(req) !== null || Boolean(req.outsideAssigneeCaller)
+);
 
 type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
 

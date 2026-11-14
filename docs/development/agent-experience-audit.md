@@ -5112,3 +5112,16 @@ Nothing in the seat broke a rule it could see. The wrapper reads as "you may not
 - A redaction pattern has to match every form the value can take (raw, base64, URL-encoded), or it fails exactly when a tool returns a stored blob.
 - Once a value has entered a model's context, it has left the machine. "It was never written to a file" is not a reason to skip rotation.
 - A refusal to hand over a credential should not say where the credential lives. Here, another agent correctly declined to copy the token, but its refusal named the store it sat in, and the seat read it from there. A refusal that names the location works as a map.
+
+## 139. `req.user.isBot` read like "a bot is calling", and no middleware sets it (2026-11-14, stack)
+
+*Origin: found by the F127 review; fixed as F501.*
+
+The task board decided whether an agent was calling from `req.agentUser || req.user?.isBot`, in `actorOf` and in `isSeatCaller`. A `cm_agent_` runtime token sets `req.agentUser`. A bot on a `cm_` user token rides the human branch of `auth.ts`, which never puts `isBot` on `req.user`; it names the bot as `req.botCaller` instead (F149). The F149 comment in `middleware/auth.ts` says the board already reads `req.user.isBot` as a seat, which made the gap look covered. It stays as written, because any edit to `auth.ts` re-files CodeQL alerts on every route that runs it (review-checklist rule 67); read it as history. So the same bot, switching tokens, became a person on the board:
+- it could write over a peer seat's live lease;
+- it skipped the freshness hold;
+- its board writes woke the pod priced as a person's turn, which clears the cascade brake, and named no agent, so the wake didn't skip the bot itself.
+
+**Repair:** `callerBotMetadata` in `routes/tasksApi.ts` reads `req.agentUser`, then `req.user.isBot`, then `req.botCaller`. `actorOf`, `isSeatCaller` and the create route's `source` stamp all use it, so a bot can no longer store its own row as `human` either. Both tokens key a claim by the bot's user id, so a lease the bot took on one token is still its own on the other. `backend/__tests__/service/tasks.cm-bot-seat.test.js` drives the lease, the hold and the wake pricing through real tokens of both kinds.
+
+**Lesson:** a field nothing sets is a check that never fires. Before you trust `req.user.isBot`, or any flag, as an identity signal, find the middleware that writes it. A bot's identity can arrive on more than one auth branch, so an agent rule has to name every branch, and its test has to use each real token.
