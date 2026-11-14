@@ -3036,6 +3036,91 @@ describe('performRun', () => {
     } finally { handle.stop(); global.fetch = originalFetch; }
   });
 
+  test('a Claude reset hint schedules the next batch after reset, not every 15 minutes', async () => {
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const event = makeEvent({ _id: 'evt-quota-reset' });
+      createClient.mockReturnValue({
+        get: jest.fn().mockResolvedValue({ events: [event] }),
+        post: jest.fn().mockResolvedValue({}),
+      });
+      const spawn = jest.fn().mockRejectedValue(new Error(
+        "claude exited with code 1: You've hit your session limit "
+        + '· resets 4:20am (America/Los_Angeles)',
+      ));
+      const scheduled = [];
+      const errors = [];
+      const handle = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        retryJitterRatio: 0,
+        setTimeoutImpl: (callback, delayMs) => {
+          scheduled.push({ callback, delayMs });
+          return 0;
+        },
+        onError: (error) => errors.push(error),
+      });
+      await drainMicrotasks();
+      handle.stop();
+
+      const delayMs = Date.parse('2026-10-23T11:22:00Z') - now;
+      expect(spawn).toHaveBeenCalledTimes(1);
+      // The circuit wait is the reset delay; the loop walks it in one-minute
+      // notice checks (F236), so the first timer is the first check.
+      expect(errors[0]).toMatchObject({
+        failureClass: 'quota', circuitOpen: true, retryAfterMs: delayMs,
+      });
+      expect(scheduled).toHaveLength(1);
+      expect(scheduled[0].delayMs).toBe(60_000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // CodeRabbit on #4108: a private consultation runs on the single-event path,
+  // which slept a whole circuit wait; it now walks it in notice checks too.
+  test('a private consultation that hits a quota reset walks the wait in one-minute checks', async () => {
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const ask = makeEvent({
+        _id: 'evt-ask-quota', type: 'agent.ask',
+        payload: { requestId: 'req-quota', question: 'done?', fromAgent: 'peer' },
+      });
+      createClient.mockReturnValue({
+        get: jest.fn().mockResolvedValue({ events: [ask] }),
+        post: jest.fn().mockResolvedValue({}),
+      });
+      const spawn = jest.fn().mockRejectedValue(new Error(
+        "claude exited with code 1: You've hit your session limit · resets 4:20am (America/Los_Angeles)",
+      ));
+      const scheduled = [];
+      const errors = [];
+      const handle = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        retryJitterRatio: 0,
+        setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; },
+        onError: (error) => errors.push(error),
+      });
+      await drainMicrotasks();
+      handle.stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(errors[0]).toMatchObject({
+        failureClass: 'quota', circuitOpen: true, retryAfterMs: Date.parse('2026-10-23T11:22:00Z') - now,
+      });
+      expect(scheduled.map(({ delayMs }) => delayMs)).toEqual([60_000]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
     let poll = 0;
     const mockGet = jest.fn(async (route) => {

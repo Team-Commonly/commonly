@@ -44,7 +44,7 @@ export const isExternalSignal = (error) => error?.externalSignal === true;
 export const SPAWN_STALL_RETRY_BASE_MS = 2 * 60 * 1000;
 
 export const SPAWN_CIRCUIT_THRESHOLD = 3;
-// Base ceiling before the stable per-agent 0–20% anti-herd offset.
+// Fallback ceiling when an error has no usable reset clock.
 export const SPAWN_RETRY_MAX_MS = 15 * 60 * 1000;
 export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 
@@ -143,6 +143,16 @@ const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[
 const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
+// The zone is an IANA name: Area/Location (America/Port-au-Prince, Etc/GMT+5)
+// or a bare UTC/GMT, as a CI box or container seat reports. An unknown name
+// fails Intl below and keeps the fallback.
+const QUOTA_RESET_RE = /\bresets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\((UTC|GMT|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)\)/i;
+const QUOTA_RESET_MARGIN_MS = 2 * 60 * 1000;
+// A stated reset is the old account's. A person who hits quota can switch to
+// another account (`/login`), and the seat must notice that within the hour,
+// not at the old account's reset hours later. So a far reset probes hourly,
+// and a near one still waits for it (CTO on #4108).
+export const QUOTA_RESET_MAX_WAIT_MS = 60 * 60 * 1000;
 
 const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
 
@@ -229,6 +239,46 @@ const applyJitter = (delayMs, jitterRatio) => {
   return Math.round(delayMs * (1 + safeJitter));
 };
 
+// Claude names the local reset clock in its quota error. Waiting for that
+// clock avoids repeatedly launching a seat that cannot answer before then.
+// If the hint is absent or malformed, keep the ordinary bounded retry path.
+export const quotaResetDelay = (error, now = Date.now()) => {
+  const match = QUOTA_RESET_RE.exec(errorText(error));
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  const target = ((hour % 12) + (match[3].toLowerCase() === 'pm' ? 12 : 0)) * 60 + minute;
+  let formatter;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: match[4], hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+  } catch {
+    return null;
+  }
+  const localMinute = (instant) => {
+    const parts = Object.fromEntries(formatter.formatToParts(instant).map(({ type, value }) => [type, value]));
+    return Number(parts.hour) * 60 + Number(parts.minute);
+  };
+  const nowMinute = localMinute(now);
+  const wallMinutes = (target - nowMinute + 1440) % 1440;
+  // At or just after the named minute, the message may be a stale failure
+  // from the old quota window. Probe on the ordinary cooldown instead of
+  // assuming the next reset is nearly 24 hours away.
+  if (wallMinutes === 0 || wallMinutes > 1430) return null;
+  let resetAt = now - (now % 60000) + wallMinutes * 60 * 1000;
+  // Crossing a daylight-saving boundary can shift the initial wall-clock
+  // estimate by an hour. Reconcile against the target in the named zone.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const difference = (target - localMinute(resetAt) + 1440) % 1440;
+    if (difference === 0) break;
+    resetAt += (difference > 720 ? difference - 1440 : difference) * 60 * 1000;
+  }
+  if (resetAt <= now || localMinute(resetAt) !== target) return null;
+  return resetAt - now + QUOTA_RESET_MARGIN_MS;
+};
+
 /**
  * Return the next probe delay and whether the circuit is open.
  *
@@ -261,10 +311,18 @@ export const spawnRetryPolicy = ({
     failureClass === SPAWN_FAILURE_CLASS.QUOTA
     || failureClass === SPAWN_FAILURE_CLASS.CONFIGURATION
   ) {
+    const resetDelay = failureClass === SPAWN_FAILURE_CLASS.QUOTA
+      ? quotaResetDelay(error)
+      : null;
     return {
       failureClass,
       circuitOpen: true,
-      delayMs: applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio),
+      // Spread the reset probe by at most 24 seconds, not a percentage of
+      // the entire wait: a six-hour hint must not add an hour of lag.
+      delayMs: resetDelay === null
+        ? applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio)
+        : Math.min(resetDelay, QUOTA_RESET_MAX_WAIT_MS)
+          + applyJitter(QUOTA_RESET_MARGIN_MS, jitterRatio) - QUOTA_RESET_MARGIN_MS,
     };
   }
 
