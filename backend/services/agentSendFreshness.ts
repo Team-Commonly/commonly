@@ -10,6 +10,7 @@ type Preview = { id: string; author: string; content: string; createdAt: unknown
 type Hold = { code: 'unseen_messages'; unseenCount: number; messages: Preview[]; message: string } | null;
 
 type ReadStart = { at: Date; revision?: number };
+type UnseenOptions = { seenThroughMessageId?: unknown; exemptMessageIds?: unknown[] };
 
 // A kernel row under the agent's own id is a notice the platform posted for it,
 // so it counts as unseen. The one exception is its install intro: that is the
@@ -117,8 +118,14 @@ async function recordCatchUp(
 // A delivered event names the message that woke the agent. That message is the
 // one the reply answers, so it is treated as seen: only messages after it hold.
 // Without this, an inline webhook reply always counts its own trigger as unseen.
+//
+// `exemptMessageIds` (F490) drops exactly those ids and nothing else: the CAP
+// post route passes the message a delivered event named, when the post answers
+// it. Unlike `seenThroughMessageId` it never marks older unread messages seen.
 async function unseenMessages(
-  agentUserId: unknown, podId: unknown, { seenThroughMessageId = null }: { seenThroughMessageId?: unknown } = {},
+  agentUserId: unknown,
+  podId: unknown,
+  { seenThroughMessageId = null, exemptMessageIds = [] }: UnseenOptions = {},
 ): Promise<Hold> {
   const cursor = await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
@@ -129,6 +136,7 @@ async function unseenMessages(
 
   if (pool && process.env.PG_HOST) {
     const seenPgId = /^\d+$/.test(String(seenThroughMessageId ?? '')) ? Number(seenThroughMessageId) : null;
+    const exemptPgIds = exemptMessageIds.map(String).filter((id) => /^\d+$/.test(id)).map(Number);
     const result = await pool.query(`
         SELECT m.id, m.content, m.created_at, COALESCE(u.username, 'Unknown') AS author,
           COUNT(*) OVER ()::integer AS unseen_count
@@ -138,8 +146,9 @@ async function unseenMessages(
           ${notOwnIntroSql('$3')}
           AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           AND ($4::integer IS NULL OR m.id > $4)
+          AND NOT (m.id = ANY($5::integer[]))
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
-      `, [String(podId), afterRevision, ownId, seenPgId]);
+      `, [String(podId), afterRevision, ownId, seenPgId, exemptPgIds]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -149,7 +158,8 @@ async function unseenMessages(
     }));
   } else {
     const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
-    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId));
+    const exemptMongoIds = exemptMessageIds.map(String).filter((id) => /^[a-f\d]{24}$/i.test(id));
+    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId, exemptMongoIds));
   }
 
   if (!unseenCount) return null;
@@ -165,11 +175,15 @@ async function unseenMessages(
 }
 
 async function unseenFromMongo(
-  podId: unknown, ownId: string, after: Date, seenMongoId: string | null,
+  podId: unknown, ownId: string, after: Date, seenMongoId: string | null, exemptMongoIds: string[] = [],
 ): Promise<{ unseenCount: number; messages: Preview[] }> {
+  const idFilter = {
+    ...(seenMongoId ? { $gt: seenMongoId } : {}),
+    ...(exemptMongoIds.length ? { $nin: exemptMongoIds } : {}),
+  };
   const query = {
     podId,
-    ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
+    ...(Object.keys(idFilter).length ? { _id: idFilter } : {}),
     $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }, ownIntroMongo(ownId)],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -199,5 +213,38 @@ async function unseenFromMongo(
   };
 }
 
-module.exports = { readStart, recordRead, recordCatchUp, unseenMessages };
+// F490: which of the messages a post answers (its thread root and reply
+// target) woke this agent. A message counts when an event for this agent, this
+// instance and this pod carried it, as its own or a joined one, and was handed
+// to the agent (delivered, or acked after). The agent then read that message
+// in the event itself, so its reply need not count it as unseen. A forged id,
+// a pending event or another agent's event names nothing.
+async function deliveredTriggerIds({
+  agentName, instanceId, podId, candidateIds,
+}: { agentName: string; instanceId?: string | null; podId: unknown; candidateIds: unknown[] }): Promise<string[]> {
+  const ids = Array.from(new Set(candidateIds.filter((id) => id !== null && id !== undefined && String(id) !== '')
+    .map(String)));
+  if (!ids.length) return [];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentEvent = require('../models/AgentEvent');
+  const rows = await AgentEvent.find({
+    agentName: String(agentName).toLowerCase(),
+    instanceId: instanceId || 'default',
+    podId,
+    status: { $in: ['delivered', 'acked'] },
+    $or: [{ 'payload.messageId': { $in: ids } }, { 'payload.coalesced.messageId': { $in: ids } }],
+  }).select('payload.messageId payload.coalesced.messageId').lean();
+  const named = new Set<string>();
+  for (const row of rows as Array<{ payload?: { messageId?: unknown; coalesced?: Array<{ messageId?: unknown }> } }>) {
+    if (row.payload?.messageId != null) named.add(String(row.payload.messageId));
+    (row.payload?.coalesced || []).forEach((entry) => {
+      if (entry?.messageId != null) named.add(String(entry.messageId));
+    });
+  }
+  return ids.filter((id) => named.has(id));
+}
+
+module.exports = {
+  readStart, recordRead, recordCatchUp, unseenMessages, deliveredTriggerIds,
+};
 export {};

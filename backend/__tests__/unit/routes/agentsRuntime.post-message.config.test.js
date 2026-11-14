@@ -23,6 +23,7 @@ jest.mock('../../../services/agentSendFreshness', () => ({
   recordRead: jest.fn(),
   recordCatchUp: jest.fn(),
   unseenMessages: jest.fn().mockResolvedValue(null),
+  deliveredTriggerIds: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
   findNonMemberMentionNotices: jest.fn(),
@@ -292,6 +293,50 @@ describe('agentsRuntime post message installation config forwarding', () => {
     await handler(req, res);
     expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledTimes(1);
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+// F490: the post route exempts the message a delivered event for this agent
+// named, when the post answers it (thread root or reply target). The lookup is
+// the service's; the route passes only what the post names.
+describe('F490: the waking mention on the CAP post route', () => {
+  const installation = { podId: 'pod-1', agentName: 'codex', instanceId: 'sre-ops', config: {} };
+  const send = (body) => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    const req = {
+      params: { podId: 'pod-1' }, body, agentUser: { _id: 'bot-1' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    return handler(req, res).then(() => res);
+  };
+
+  beforeEach(() => {
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+  });
+
+  it('asks about the thread root and the reply target, and exempts what it names', async () => {
+    AgentSendFreshness.deliveredTriggerIds.mockResolvedValueOnce(['133559']);
+    await send({ content: 'done', threadRootId: '133559', replyToMessageId: '133600' });
+    expect(AgentSendFreshness.deliveredTriggerIds).toHaveBeenCalledWith({
+      agentName: 'codex', instanceId: 'sre-ops', podId: 'pod-1', candidateIds: ['133559', '133600'],
+    });
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: ['133559'] });
+  });
+
+  it('a post that answers nothing asks no lookup and exempts nothing', async () => {
+    await send({ content: 'hello' });
+    expect(AgentSendFreshness.deliveredTriggerIds).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
+  });
+
+  it('still holds what the lookup does not name', async () => {
+    const hold = { code: 'unseen_messages', unseenCount: 1, messages: [{ id: '133601' }] };
+    AgentSendFreshness.deliveredTriggerIds.mockResolvedValueOnce([]);
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce(hold);
+    const res = await send({ content: 'done', threadRootId: '999' });
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
   });
 });
 

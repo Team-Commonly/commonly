@@ -2579,7 +2579,22 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         instanceId: installation.instanceId || 'default',
         displayName: installation.displayName,
       });
-      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
+      // F490: a reply to the message that woke this agent does not count that
+      // message as unseen. A thread read never advances the read cursor, so an
+      // agent that read only the thread and answered in it was held on its own
+      // trigger, and the hold taught it continueAnyway. Only a message a
+      // delivered event for this agent named is exempt, and only that message.
+      const answering = [req.body?.threadRootId, req.body?.replyToMessageId]
+        .filter((id) => id !== undefined && id !== null && String(id) !== '');
+      const exemptMessageIds = answering.length
+        ? await AgentSendFreshness.deliveredTriggerIds({
+          agentName: installation.agentName,
+          instanceId: installation.instanceId || 'default',
+          podId,
+          candidateIds: answering,
+        })
+        : [];
+      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
       if (hold) return res.status(409).json(hold);
     }
 
