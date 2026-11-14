@@ -92,6 +92,23 @@ render while `edge` is empty, because an empty `from` admits every source.
     the steel token, so an operator script can drive a gate. Removing it
     would break that path, not tighten anything the token doesn't already
     decide.
+- **Prod step 3 (`values-dev.yaml`):** `allow-litellm-ingress` with
+  `public: true`, still no deny. It rolls on its own, the roll after step 2
+  is checked. Checked live, read-only, 2026-11-14:
+  - the workloads whose env names `LITELLM_BASE_URL` (or cloud-codex's
+    `COMMONLY_LITELLM_BASE_URL`) are exactly backend, backend-worker,
+    commonly-bot, ops-runner and cloud-codex, the chart's API client list;
+  - the `commonly-ingress` Ingress routes `litellm.commonly.me` to
+    `litellm:4000`, so the controller must be admitted (`public: true`).
+    Leaving it off breaks the public OpenAI-compatible API, and the
+    verifier's dev lane refuses that;
+  - nothing scrapes litellm's metrics (no PodMonitoring), so no scraper
+    needs an allow;
+  - **trap:** no openclaw gateway runs today, but the provisioner can create
+    one (`clawdbot-gateway` or `gateway-<slug>`, outside the chart), and it
+    writes `http://litellm:4000/v1` into `moltbot.json`. Bringing a gateway
+    back means adding it to the API client list in `ingress-allow.yaml` in
+    the same change, or every openclaw agent's model call is refused.
 - **A new in-cluster client or Service** needs its allow in the same change.
   `scripts/verify-network-policy-chart.js` fails on any Service whose pods no
   allow admits on its port, and on any known flow that's refused.

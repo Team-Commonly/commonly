@@ -590,15 +590,16 @@ opsRunner:
 # Tighten pod egress (templates/network/egress-restrict.yaml); staging ran it
 # first (11-11).
 networkPolicy:
-  # Ingress, prod steps 1 and 2 (templates/network/ingress-allow.yaml), no
+  # Ingress, prod steps 1 to 3 (templates/network/ingress-allow.yaml), no
   # defaultDeny yet. A policy that selects a pod isolates it at once, so each
   # allow is live the moment it applies: frontend admits only the
   # ingress-nginx controller (the tunnel dials the controller, never
-  # frontend), redis only its three clients, and the agent-computer waker and
+  # frontend), redis only its three clients, the agent-computer waker and
   # steel gates only backend, backend-worker and ops-runner (the broker in the
   # backend is their one caller; the waker scales steel through the kube API,
-  # not over HTTP). Rollout order and rollback:
-  # docs/runbooks/redis-auth-and-network-policy.md.
+  # not over HTTP), and litellm only the five LITELLM_BASE_URL clients plus
+  # the controller for the public litellm.commonly.me route. Rollout order and
+  # rollback: docs/runbooks/redis-auth-and-network-policy.md.
   ingress:
     edge:
       - namespaceSelector:
@@ -614,6 +615,10 @@ networkPolicy:
       enabled: true
     agentComputer:
       enabled: true
+    litellm:
+      enabled: true
+      # litellm.commonly.me routes to it through the controller.
+      public: true
   egress:
     restrict:
       enabled: true
