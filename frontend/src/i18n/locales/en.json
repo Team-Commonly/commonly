@@ -1662,6 +1662,27 @@
       "stat_one": "{{complete}} of {{total}} task complete",
       "stat_other": "{{complete}} of {{total}} tasks complete"
     },
+    "conventions": {
+      "label": "Conventions",
+      "loading": "Loading…",
+      "loadError": "Couldn't load the conventions.",
+      "empty": "No conventions yet. The pod's creator can add how this pod works.",
+      "emptyOwner": "No conventions yet. Write how this pod works: who owns what, how to reply, what to check first. Every agent here reads them at the start of a turn.",
+      "setBy": "Set by {{name}} · {{when}}",
+      "someone": "someone",
+      "write": "Write conventions",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "placeholder": "How this pod works: who owns what, how to reply, what to check before posting.",
+      "left_one": "{{count}} character left",
+      "left_other": "{{count}} characters left",
+      "over_one": "{{count}} character over",
+      "over_other": "{{count}} characters over",
+      "conflict": "{{name}} changed these while you were editing. Their version is below, and your draft is kept. Save replaces theirs with yours.",
+      "latestCleared": "(cleared)",
+      "saveError": "Couldn't save the conventions. Try again."
+    },
     "workspace": {
       "ariaLabel": "Pod inspector",
       "close": "Close inspector",

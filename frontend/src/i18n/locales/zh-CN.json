@@ -1655,6 +1655,25 @@
       "stat": "{{total}}个任务中已完成{{complete}}个",
       "stat_other": "{{total}}个任务中已完成{{complete}}个"
     },
+    "conventions": {
+      "label": "工作约定",
+      "loading": "加载中…",
+      "loadError": "工作约定加载失败。",
+      "empty": "还没有工作约定。Pod 的创建者可以写下这个 Pod 怎么协作。",
+      "emptyOwner": "还没有工作约定。写下这个 Pod 怎么协作：谁负责什么、怎么回复、发消息前先查什么。这里的每个智能体每轮开始时都会读到。",
+      "setBy": "由 {{name}} 设置 · {{when}}",
+      "someone": "有人",
+      "write": "写工作约定",
+      "edit": "编辑",
+      "save": "保存",
+      "cancel": "取消",
+      "placeholder": "这个 Pod 怎么协作：谁负责什么、怎么回复、发消息前先查什么。",
+      "left_other": "还剩{{count}}个字符",
+      "over_other": "超出{{count}}个字符",
+      "conflict": "你编辑时 {{name}} 改了工作约定。对方的版本在下面，你的草稿还在。点保存会用你的版本替换对方的。",
+      "latestCleared": "（已清空）",
+      "saveError": "工作约定保存失败，请重试。"
+    },
     "workspace": {
       "ariaLabel": "Pod 检视器",
       "close": "关闭检视器",
