@@ -30,16 +30,19 @@ describe('rate limits say what was counted and when to try again', () => {
   test('zh-CN', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(authErrorText(fail(429, { code: 'rate_limited', retryAfterSeconds: 610 }), i18n.t, 'login'))
-      .toBe('这个网络尝试的次数太多了，请 11 分钟后再试。');
+      .toBe('当前网络尝试次数过多，请 11 分钟后再试。');
     expect(authErrorText(fail(429, { code: 'rate_limited', scope: 'account' }), i18n.t, 'login'))
-      .toBe('这个邮箱输错密码的次数太多了，请过几分钟再试，或者重置密码。');
+      .toBe('这个邮箱的密码输错次数太多了，请过几分钟再试，或者重置密码。');
   });
 });
 
 describe('no server text reaches the page', () => {
   const cases = [
     ['login', 400, { error: 'Invalid credentials' }, "That email and password don't match."],
-    ['login', 403, { error: 'This account has been suspended.' }, 'This account has been suspended.'],
+    ['login', 403, { error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' }, 'This account has been suspended.'],
+    // An edge proxy's challenge page: a 403 with HTML and no code is not a ban.
+    ['login', 403, '<!DOCTYPE html><title>Just a moment...</title>', 'Login failed'],
+    ['login', 403, { error: 'This instance is limited to the team.', code: 'INSTANCE_ACCESS_RESTRICTED' }, 'This instance is limited to the team. Sign in with your approved email.'],
     ['login', 403, { error: 'This instance is limited to the team.', code: 'INSTANCE_ACCESS_RESTRICTED', reason: 'unverified' }, 'Verify your email first. Open the link we sent you, then sign in.'],
     ['login', 500, 'Server error', 'Something went wrong on our side. Try again in a minute.'],
     ['register', 400, { error: 'User already exists' }, "There's already an account with that email. Sign in instead."],
@@ -62,7 +65,7 @@ describe('no server text reaches the page', () => {
   });
   test('zh-CN lines are Chinese, not the English server text', async () => {
     await i18n.changeLanguage('zh-CN');
-    expect(authErrorText(fail(400, { error: 'Invalid credentials' }), i18n.t, 'login')).toBe('邮箱和密码不匹配。');
+    expect(authErrorText(fail(400, { error: 'Invalid credentials' }), i18n.t, 'login')).toBe('邮箱或密码不正确。');
     expect(authErrorText(fail(400, { error: 'User already exists' }), i18n.t, 'register')).toBe('这个邮箱已经注册过了，直接登录就行。');
   });
 });

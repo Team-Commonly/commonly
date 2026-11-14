@@ -538,8 +538,8 @@
       "errors": {
         "verifyFirst": "请先验证邮箱。打开我们发给你的链接，再回来登录。",
         "failed": "登录失败",
-        "invalid": "邮箱和密码不匹配。",
-        "suspended": "这个账号已被停用。"
+        "invalid": "邮箱或密码不正确。",
+        "suspended": "这个账号已被封禁。"
       },
       "oauthErrors": {
         "invitationRequired": "目前仅限受邀用户注册。请使用邀请链接注册，或加入候补名单。",
@@ -568,7 +568,7 @@
         "invitationRequired": "注册需要邀请码，请先填写。",
         "emailTaken": "这个邮箱已经注册过了，直接登录就行。",
         "emailReserved": "这个邮箱不能用来注册新账号。",
-        "verificationUnavailable": "暂时不能用邮箱注册，请用 GitHub 或 Google 继续。",
+        "verificationUnavailable": "暂时不能用邮箱注册，请改用 GitHub 或 Google 注册。",
         "signupsClosed": "注册暂时关闭了，请稍后再试。"
       },
       "success": {
@@ -664,10 +664,10 @@
     "errors": {
       "network": "暂时连不上 Commonly，请检查网络后重试。",
       "server": "我们这边出了点问题，请过一分钟再试。",
-      "rateLimited": "这个网络尝试的次数太多了，请过几分钟再试。",
-      "rateLimitedIn_other": "这个网络尝试的次数太多了，请 {{count}} 分钟后再试。",
-      "rateLimitedAccount": "这个邮箱输错密码的次数太多了，请过几分钟再试，或者重置密码。",
-      "rateLimitedAccountIn_other": "这个邮箱输错密码的次数太多了，请 {{count}} 分钟后再试，或者重置密码。"
+      "rateLimited": "当前网络尝试次数过多，请过几分钟再试。",
+      "rateLimitedIn_other": "当前网络尝试次数过多，请 {{count}} 分钟后再试。",
+      "rateLimitedAccount": "这个邮箱的密码输错次数太多了，请过几分钟再试，或者重置密码。",
+      "rateLimitedAccountIn_other": "这个邮箱的密码输错次数太多了，请 {{count}} 分钟后再试，或者重置密码。"
     }
   },
   "inviteRedeem": {

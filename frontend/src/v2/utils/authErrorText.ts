@@ -58,7 +58,12 @@ export const authErrorText = (err: unknown, t: TFunction, page: AuthErrorPage): 
   if (status >= 500) return t('auth.errors.server');
   if (page === 'login') {
     if (status === 400) return t('auth.login.errors.invalid');
-    if (status === 403) return t('auth.login.errors.suspended');
+    // Only the server's own refusal says suspended: an edge proxy's 403 (a
+    // challenge page) carries no code and must not tell someone they're banned.
+    // The prose match covers a backend from before the code.
+    if (code === 'ACCOUNT_SUSPENDED' || body.error === 'This account has been suspended.') {
+      return t('auth.login.errors.suspended');
+    }
   }
   return t(FALLBACK[page]);
 };
