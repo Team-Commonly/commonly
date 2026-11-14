@@ -294,8 +294,17 @@ const setOutsideAssignee = async (req: AuthReq, res: Res, next: { agentName: str
     const agentType = AgentIdentityService.resolveAgentType(next.agentName);
     const agentUser = await User.findOne({
       username: AgentIdentityService.buildAgentUsername(agentType, next.instanceId), isBot: true,
-    }).select('_id botMetadata').lean() as { _id: unknown; botMetadata?: { ownerUserId?: unknown } } | null;
-    if (!agentUser) return res.status(404).json({ error: 'Agent not found' });
+    }).select('_id botMetadata').lean() as {
+      _id: unknown; botMetadata?: { ownerUserId?: unknown; agentName?: string; instanceId?: string };
+    } | null;
+    // The username is not one-to-one (foo-bar/default and foo/bar both build
+    // foo-bar), so the row found must carry the identity that was asked for.
+    const storedType = agentUser?.botMetadata?.agentName
+      ? AgentIdentityService.resolveAgentType(agentUser.botMetadata.agentName) : null;
+    if (!agentUser || storedType !== agentType
+      || (agentUser.botMetadata?.instanceId || 'default') !== next.instanceId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
     const agentUserId = String(agentUser._id);
     const members = ((access.pod as { members?: unknown[] })?.members || []).map(String);
     if (members.includes(agentUserId)) {

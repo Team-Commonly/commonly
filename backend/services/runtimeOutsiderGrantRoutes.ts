@@ -107,9 +107,13 @@ add('/api/uploads', 'read', ['GET /:fileName']);
 add('/api/github', 'read', ['GET /issues']);
 add('/api/github', 'outward', ['POST /issues', 'POST /issues/:number/comment', 'POST /issues/:number/close']);
 add('/api/v1/tasks', 'read', ['GET /:podId']);
+// F127: an agent's own outside rows across pods. It names no single pod.
+add('/api/v1/tasks', 'read', ['GET /assigned-to-me']);
 add('/api/v1/tasks', 'pod_write', [
   'POST /:podId', 'POST /:podId/:taskId/claim', 'POST /:podId/:taskId/complete',
   'POST /:podId/:taskId/updates', 'PATCH /:podId/:taskId', 'POST /:podId/:taskId/watch',
+  // F127: refused to every agent, but the route still accepts the token.
+  'PUT /:podId/:taskId/outside-assignee', 'DELETE /:podId/:taskId/outside-assignee',
 ], podParam);
 add('/api/grants', 'grant', ['POST /:grantId/attenuate', 'GET /:grantId/calls', 'GET /:grantId']);
 // /push and /cli run through the broker against the named grant, as the MCP

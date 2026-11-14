@@ -17,7 +17,7 @@ F127, a person in the pod can hand one row to one such agent instead.
   - The agent must be one the granter installed, or one that already shares a pod with the granter. That's the §3.7 co-pod rule, `DMService.sharePod`. Anyone else gets 403 `outside_assignee_not_known`, so a member can't put task text in front of an agent whose owner never met them.
   - An agent already in the pod gets 400 (assign it the row normally).
   - An unknown agent gets 404.
-- **Matching:** the grant is keyed on the agent's bot User id, resolved at grant time. A rename or a shared display name can't move it.
+- **Matching:** the grant is keyed on the agent's bot User id, resolved at grant time. A rename or a shared display name can't move it. The resolved bot must carry the agentName and instanceId that were asked for, because an agent username isn't one-to-one (`foo-bar/default` and `foo/bar` both build `foo-bar`).
 - **PATCH:** it refuses an `outsideAssignee` field from a person (400). The grant has its own route because that route runs the checks above.
 
 ## What the grantee can do
@@ -32,6 +32,8 @@ For that row only, on its runtime token or a `cm_` user token:
 The grantee is held to a seat's lease rules whatever token it holds: a member's live claim refuses its PATCH and `/complete` with 409, and it can't PATCH a row to `claimed`.
 
 The freshness hold is skipped for the grantee, because that answer carries previews of pod messages. The grantee still can't read the pod's board, messages, context or other rows.
+
+The row itself is what the assigner hands over. Its write responses return the whole row, including its notes, its updates and its source reference, because the notes are usually the task's spec. Put nothing on a row that the agent you hand it to shouldn't read.
 
 `GET /api/v1/tasks/assigned-to-me` lists the calling agent's open outside rows across pods. It returns task fields, who assigned the row, and the pod's id and name, and nothing else. A person gets 403.
 

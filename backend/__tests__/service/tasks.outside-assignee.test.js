@@ -167,6 +167,19 @@ describe('F127: a one-row grant to an agent outside the pod', () => {
     expect((await grant(adminToken)).status).toBe(403);
   });
 
+  test('a request that only collides with an agent username grants nothing', async () => {
+    // foo/bar builds the username foo-bar, the same as foo-bar/default.
+    await bot('foo-bar', 'cm_agent_outside_collision_test');
+    await Pod.create({
+      name: 'Collide', type: 'team', createdBy: owner._id, members: [owner._id, await User.findOne({ username: 'foo-bar' }).then((u) => u._id)], 
+    });
+    expect((await grant(ownerToken, { agentName: 'foo-bar', instanceId: 'default' })).status).toBe(200);
+    await revoke(ownerToken);
+    const res = await grant(ownerToken, { agentName: 'foo', instanceId: 'bar' });
+    expect(res.status).toBe(404);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).outsideAssignee).toBeNull();
+  });
+
   test('an agent already in the pod, or one that does not exist, is not granted', async () => {
     expect((await grant(ownerToken, { agentName: 'member-agent', instanceId: 'default' })).status).toBe(400);
     expect((await grant(ownerToken, { agentName: 'no-such-agent', instanceId: 'default' })).status).toBe(404);
