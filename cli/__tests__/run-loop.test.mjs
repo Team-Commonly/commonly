@@ -2914,7 +2914,8 @@ describe('performRun', () => {
     // Six deferrals past HELD_RETRY_MAX_FAILURES (3), and it was never released.
     expect(run.retries().some((e) => /releasing/.test(e.message))).toBe(false);
     expect(spawn).toHaveBeenCalledTimes(7);
-    // Claimed once: the retries ran from the carry, not a fresh claim.
+    // Never released: no hand-back while the run lives, so the kernel had no
+    // reason to re-claim it and raise its attempts.
     expect(callsTo(run.mockPost, '/events/release')).toEqual([]);
     expect(ackPosts(run.mockPost).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-held/ack']);
   });
@@ -2928,20 +2929,42 @@ describe('performRun', () => {
       const run = deferredRun({ spawn, event });
 
       await drainMicrotasks();
-      await run.fire(1);
-      clock += 2 * 60 * 60 * 1000;
-      await run.fire(3);
+      // A gate stuck shut: a 75 every 20 minutes, never a gap that starts a new run.
+      for (let i = 0; i < 8; i += 1) {
+        clock += 20 * 60 * 1000;
+        // eslint-disable-next-line no-await-in-loop
+        await run.fire(1);
+      }
       run.handle.stop();
 
       expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen])).toEqual([
-        ['host_deferred', 0, false],
-        ['host_deferred', 0, false],
-        // From the cap on, it is a runtime failure like any other.
+        ...Array(6).fill(['host_deferred', 0, false]),
+        // From two hours on, it is a runtime failure like any other.
         ['runtime', 1, false],
         ['runtime', 2, false],
         ['runtime', 3, true],
       ]);
-      expect(run.retries()[4].message).toMatch(/releasing 1 event after 3 failed attempts/);
+      expect(run.retries()[8].message).toMatch(/releasing 1 event after 3 failed attempts/);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('a deferral long after the last one starts a new run, not the old run past its cap', async () => {
+    let clock = Date.UTC(2026, 10, 14, 0, 0, 0);
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const spawn = jest.fn().mockImplementation(async () => { throw heldByHost(); });
+      const run = deferredRun({ spawn, event: makeEvent({ _id: 'evt-new-hold' }) });
+      await drainMicrotasks();
+      // No good spawn in between, and well past HOST_DEFERRAL_MAX_MS.
+      clock += 3 * 60 * 60 * 1000;
+      await run.fire(1);
+      run.handle.stop();
+      expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.retryAfterMs])).toEqual([
+        ['host_deferred', 0, 60000],
+        ['host_deferred', 0, 60000],
+      ]);
     } finally {
       now.mockRestore();
     }

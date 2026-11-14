@@ -136,6 +136,7 @@ import {
 import {
   EXTERNAL_SIGNAL_GRACE,
   HOST_DEFERRAL_MAX_MS,
+  SPAWN_RETRY_MAX_MS,
   formatRetryDelay,
   isExternalSignal,
   isHostDeferral,
@@ -2333,9 +2334,18 @@ export const performRun = ({
   // backs off by this streak. Past it, they count like any failure.
   let hostDeferralStreak = 0;
   let hostDeferralSince = null;
+  let lastHostDeferralAt = null;
   // `graced`: this failure doesn't count, and the carried events take no strike.
   const countSpawnFailure = (err) => {
     if (isHostDeferral(err)) {
+      // A run with no deferral for longer than the longest retry wait ended
+      // without a good spawn (claims lost, events released): a new hold starts
+      // a new run, so it isn't charged for the last one's time.
+      if (lastHostDeferralAt !== null && Date.now() - lastHostDeferralAt > 2 * SPAWN_RETRY_MAX_MS) {
+        hostDeferralStreak = 0;
+        hostDeferralSince = null;
+      }
+      lastHostDeferralAt = Date.now();
       if (hostDeferralSince === null) hostDeferralSince = Date.now();
       if (Date.now() - hostDeferralSince < HOST_DEFERRAL_MAX_MS) {
         hostDeferralStreak += 1;
@@ -2351,6 +2361,7 @@ export const performRun = ({
     externalSignalStreak = 0;
     hostDeferralStreak = 0;
     hostDeferralSince = null;
+    lastHostDeferralAt = null;
   };
   let pollStalled = false;
   const pollLiveness = createPollLiveness({
@@ -3912,8 +3923,11 @@ export const performRun = ({
   const inboxQuery = ({ inOutage = false } = {}) => {
     const carried = [...heldRetry, ...heldGreeting];
     const carriedCount = carried.filter((event) => event.deliveryMode !== 'digest').length;
+    // A host hold (F491) counts as an outage here: with the carry full, a
+    // deferred retry claims nothing new, or each one would claim a row past
+    // the prompt cap and spend its attempts on hand-backs.
     const full = carriedCount >= batchLimit
-      && (inOutage || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
+      && (inOutage || hostDeferralStreak > 0 || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
     return {
       agentName,
       instanceId,
