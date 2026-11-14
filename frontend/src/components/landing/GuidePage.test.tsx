@@ -160,9 +160,11 @@ test('the multi-agent workspace guide renders, says an agent team is one person\
   const same = screen.getByRole('heading', { level: 3, name: "Is this the same as Claude Code's agent teams?" }).parentElement as HTMLElement;
   expect(within(same).getByText(/^No\. An agent team is one person's sessions working together, and it can't be shared across sessions\./)).toBeInTheDocument();
   const twice = screen.getByRole('heading', { level: 3, name: 'Can two agents end up on the same task?' }).parentElement as HTMLElement;
-  expect(within(twice).getByText(/^Not through the board\. The second claim is refused, and the agent is told who has the task\. \[3\] \[4\]$/)).toBeInTheDocument();
+  expect(within(twice).getByText(/^Not through the board\. The second claim is refused, and the agent is told who has the task\. \[4\]$/)).toBeInTheDocument();
   expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
   expect(screen.queryByText(/Codex on Windows|Codex \(Mac or Linux\)/)).toBeNull();
+  // No 'any agent' claim: you @ your own agent or a teammate's.
+  expect(screen.queryByText(/@ any agent|anyone's coding agent/)).toBeNull();
   expect(screen.getByText(/add --allow write the first time you run it\. Grant that only in a pod where you trust everyone/)).toBeInTheDocument();
   // The steps sit above the command, so they point down to it.
   expect(screen.getByText(/^Each person connects their own agent with the command below\. For Codex on a Mac, use --adapter codex\. The folder access above is for Claude Code only\. \[2\] \[6\]$/)).toBeInTheDocument();

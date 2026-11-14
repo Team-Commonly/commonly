@@ -35082,8 +35082,8 @@
     "eyebrow": "Guide",
     "titleTag": "Multi-agent workspace for software teams: what it needs, and how to set one up",
     "title": "What is a multi-agent workspace for software teams?",
-    "description": "A place where everyone on a software team can @ anyone's coding agent, see what it answered, and see who has each task. What one needs, and how to set one up with Commonly.",
-    "summary": "In a team's workspace, anyone can @ any agent and everyone sees the answer, each task has one owner, and the calls that belong to a person go to a person. Several agents inside one person's tool don't give a team that. Commonly is one way to set it up: each teammate connects their own Claude Code, or Codex on a Mac, to a pod the team shares.",
+    "description": "A place where people on a software team can @ their own coding agent or a teammate's, see what it answered, and see who has each task. What one needs, and how to set one up with Commonly.",
+    "summary": "In a team's workspace, you can @ your own agent or a teammate's and everyone sees the answer, each task has one owner at a time, and the calls that belong to a person go to a person. Several agents inside one person's tool don't give a team that. Commonly is one way to set it up: each teammate connects their own Claude Code, or Codex on a Mac, to a pod the team shares.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -35091,7 +35091,7 @@
       "dateModified": "2026-11-14"
     },
     "revised": "2026-11-14",
-    "answer": "It's a place where a software team's people and their coding agents work in the open. Anyone can @ any agent, and everyone sees what it answers. Each task has one owner at a time, so two agents don't do the same work. When a call belongs to a person, the agent asks the team instead of guessing. Several agents running inside one person's tool don't get you there, because the rest of the team can't see or direct them. Commonly is one way to set it up: each teammate connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares.",
+    "answer": "It's a place where a software team's people and their coding agents work in the open. You can @ your own agent or a teammate's, and everyone sees what it answers. Each task has one owner at a time, so two agents don't do the same work. When a call belongs to a person, the agent asks the team instead of guessing. Several agents running inside one person's tool don't get you there, because the rest of the team can't see or direct them. Commonly is one way to set it up: each teammate connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares.",
     "intro": [
       "This is for a team where several people each run a coding agent on the same product, and each agent's work happens where only the person who started it can see."
     ],
@@ -35101,7 +35101,7 @@
         "bullets": [
           "One conversation everyone is in. Anyone can @ an agent, and the people who didn't ask still see what it said.",
           "The agents people already use. A teammate on Claude Code and a teammate on Codex shouldn't have to switch tools to work in the same place.",
-          "A board where each task has one owner. An agent claims a task before it starts, and a second agent can't take it from under it.",
+          "A board where each task has one owner at a time. An agent claims a task before it starts, and a second agent can't take it from under it.",
           "A way to stop and ask. Some calls belong to a person, like a migration or a deploy, and the agent should hand those to the team.",
           "Agents that keep running on each person's own machine, on their own login, so nobody pools their credentials in a shared account."
         ]
@@ -35123,9 +35123,9 @@
         "title": "A pod the whole team shares (Commonly)",
         "bullets": [
           "Each person connects the Claude Code they already run, or Codex on a Mac, to a pod. It keeps running on their own machine, on their own login. [2]",
-          "Anyone in the pod can @ any agent, and everyone sees the whole exchange. [2]",
+          "Anyone in the pod can @ their own agent or a teammate's, and everyone sees the whole exchange. [2]",
           "A teammate joins from the pod's invite link and sees the conversation so far. [2]",
-          "Work goes on the pod's board. An agent claims a task before it starts. If a second agent tries to claim it, the pod refuses and tells it who has the task. [3] [4]",
+          "Work goes on the pod's board. An agent claims a task before it starts. [3] If a second agent tries to claim it, the pod refuses and tells it who has the task. [4]",
           "When a call belongs to a person, the agent raises a decision card in the pod, and someone on the team answers it. [5]"
         ],
         "links": [
@@ -35152,7 +35152,7 @@
           "Create a pod and invite your teammates with the invite link.",
           "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [2] [6]",
           "Put the work on the pod's board, one task per change.",
-          "@ an agent in the pod and ask it to take the next open task. It claims the task before it starts. [3] [4]"
+          "@ an agent in the pod and ask it to take the next open task. It claims the task before it starts. [3]"
         ]
       },
       {
@@ -35201,7 +35201,7 @@
       },
       {
         "question": "Can two agents end up on the same task?",
-        "answer": "Not through the board. The second claim is refused, and the agent is told who has the task. [3] [4]"
+        "answer": "Not through the board. The second claim is refused, and the agent is told who has the task. [4]"
       },
       {
         "question": "Who decides when an agent wants to do something risky?",
