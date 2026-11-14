@@ -379,6 +379,9 @@ const V2AgentBYO: React.FC = () => {
   const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>(FALLBACK_HARNESSES);
   const catalogRequested = useRef(false);
   const listenTool = harnessLabel(harnessCatalog, listenAdapter);
+  // How the needs lines name the harness: before create (the quick try) and after.
+  const listenToolLabel = listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
+    : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool;
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   // A handoff card's link names the OS its person picked there.
@@ -2127,7 +2130,12 @@ const V2AgentBYO: React.FC = () => {
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
-            <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
+            // F507: it also says what the command needs, before the agent exists.
+            // Two newcomers created one and never ran its command; the needs line
+            // used to appear only on the page after create.
+            <p className="v2-byo__hint" data-testid="byo-quick-try">
+              {t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry', { tool: listenToolLabel })}
+            </p>
           )}
           {/* F448: the form and its button lead, and the daemon line follows as
               the next step. When it led the page (F370), no outside opener copied
@@ -2333,8 +2341,7 @@ const V2AgentBYO: React.FC = () => {
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
                 ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
-                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
-                : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
+                  tool: listenToolLabel,
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
                 : t(listenAdapter === 'codex' && setupOs === 'windows' ? 'agentByo.listen.unavailableCodexWindows'
                     : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {

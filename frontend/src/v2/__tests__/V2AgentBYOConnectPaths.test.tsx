@@ -91,6 +91,9 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     renderPage();
     expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/stops when that window closes/);
     expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/add this computer once with the command below/);
+    // F507: two newcomers created an agent and never ran its command. What the
+    // command needs is said here, before the agent exists, not only after.
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/^Quick try: you’ll run a command in Terminal\. It needs Node 22\+ with npm and Claude Code signed in, and it stops when that window closes\./);
     // F448: the form and its button lead; the daemon block follows the quick
     // try as the next step. In 14 days nobody copied the daemon line from the
     // top, and 4 of 9 openers left before copying anything. It stays out of
