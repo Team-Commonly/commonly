@@ -43,7 +43,8 @@ describe('F490: the waking mention is not unseen for the reply that answers it',
 
   const say = async (content, at = new Date()) => {
     const { insertedId } = await Message.collection.insertOne({
-      podId, userId: peerId, content, messageType: 'text', createdAt: at, freshnessCommittedAt: at, freshnessPending: false,
+      podId, userId: peerId, content, messageType: 'text',
+      createdAt: at, freshnessCommittedAt: at, freshnessPending: false,
     });
     return String(insertedId);
   };
@@ -99,6 +100,34 @@ describe('F490: the waking mention is not unseen for the reply that answers it',
       await event(someoneElse, { instanceId: 'other' });
       expect(await Freshness.deliveredTriggerIds({
         ...agent, podId, candidateIds: [forged, pending, someoneElse],
+      })).toEqual([]);
+    });
+
+    // Opus review on F490: a mention inside a thread is a reply under the root,
+    // and the agent answers with threadRootId set to that root.
+    it('names the mention a thread wake carried when the post answers its thread', async () => {
+      const root = await say('the thread root');
+      const mention = await say('@codex check this, in the thread');
+      await event(mention, { payload: { messageId: mention, threadRootId: root } });
+      expect(await Freshness.deliveredTriggerIds({ ...agent, podId, candidateIds: [root] })).toEqual([mention]);
+      // And it is exactly that id: the root itself stays unseen if unread.
+      const hold = await Freshness.unseenMessages(agentId, podId, { exemptMessageIds: [mention] });
+      expect(hold).toMatchObject({ unseenCount: 1, messages: [{ content: 'the thread root' }] });
+    });
+
+    it('matches a numeric thread root stored as a number', async () => {
+      const mention = await say('@codex in a PG-numbered thread');
+      await event(mention, { payload: { messageId: mention, threadRootId: 133559 } });
+      expect(await Freshness.deliveredTriggerIds({ ...agent, podId, candidateIds: ['133559'] })).toEqual([mention]);
+    });
+
+    it('a mention in another thread, or a digest row, names nothing', async () => {
+      const elsewhere = await say('@codex in another thread');
+      const digest = await say('ambient line');
+      await event(elsewhere, { payload: { messageId: elsewhere, threadRootId: 'other-root' } });
+      await event(digest, { status: 'acked', deliveryMode: 'digest' });
+      expect(await Freshness.deliveredTriggerIds({
+        ...agent, podId, candidateIds: ['this-root', digest],
       })).toEqual([]);
     });
 
