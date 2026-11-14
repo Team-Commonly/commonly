@@ -69,6 +69,13 @@ const app = express();
 app.use(express.json());
 app.use('/api/registry', registryRoutes);
 
+// supertest's request(server) listens on [::]:0 and then calls 127.0.0.1, so on a
+// host with another IPv4 listener on that port the request reaches the wrong
+// server (F466: a 404 or 503 that is not ours). Listen on loopback once.
+let server;
+beforeAll(() => new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); }));
+afterAll(() => new Promise((resolve) => { server.close(resolve); }));
+
 describe('agent runtime tokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -106,7 +113,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Local dev' });
 
@@ -133,7 +140,7 @@ describe('agent runtime tokens', () => {
     AgentInstallation.exists.mockResolvedValueOnce({ _id: 'inst-1' });
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/registry/pods/pod-1/agents/${agentName}/runtime-tokens`)
       .send({ label: 'try it' });
     return { res, agentUser };
@@ -171,7 +178,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/maya-agent/runtime-tokens')
       .send({ label: 'racing a migration' });
 
@@ -227,7 +234,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach' });
 
@@ -262,7 +269,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/sam-claude/runtime-tokens')
       .send({ label: 'BYO MCP — initial issue' });
 
@@ -303,7 +310,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach', force: true });
 
@@ -352,14 +359,14 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const existing = await request(app)
+    const existing = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach' });
     expect(existing.status).toBe(200);
     expect(existing.body.existing).toBe(true);
     expect(existing.body.token).toBeUndefined();
 
-    const rotated = await request(app)
+    const rotated = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach', force: true });
     expect(rotated.status).toBe(200);
@@ -403,7 +410,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens');
 
     expect(res.status).toBe(200);
@@ -438,7 +445,7 @@ describe('agent runtime tokens', () => {
       token: 'cm_token_123', createdAt: new Date('2026-01-01T00:00:00Z'),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/clawd-bot/user-token')
       .send({ scopes: ['agent:events:read', 'agent:messages:write', 'invalid:scope'] });
 
@@ -464,11 +471,11 @@ describe('agent runtime tokens', () => {
     };
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
-    const existing = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
+    const existing = await request(server).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
     expect(existing.body).toMatchObject({ existing: true, token: null, requiresRotation: true });
     expect(agentUser.generateApiToken).not.toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalledTimes(1);
-    const rotated = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
+    const rotated = await request(server).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
     expect(rotated.body).toMatchObject({ existing: false, token: 'cm_new' });
     expect(agentUser.generateApiToken).toHaveBeenCalledTimes(1);
     expect(agentUser.save).toHaveBeenCalledTimes(2);
@@ -500,7 +507,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
@@ -535,7 +542,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
@@ -563,7 +570,7 @@ describe('agent runtime tokens', () => {
     };
     User.findOne.mockReturnValue(query);
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+    const res = await request(server).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ hasToken: true, scopes: ['agent:context:read'], scopeMode: 'scoped' });
@@ -585,7 +592,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+    const res = await request(server).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ hasToken: false, scopes: [], scopeMode: 'none' });
@@ -613,7 +620,7 @@ describe('agent runtime tokens', () => {
     };
     User.findOne.mockResolvedValue(agentUser);
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
