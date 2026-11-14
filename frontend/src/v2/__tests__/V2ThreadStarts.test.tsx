@@ -232,11 +232,25 @@ describe('V2Thread — a first message that asks nothing', () => {
     expect(primary[0]).toHaveTextContent(ASK);
   });
 
-  test('where the hosted start is offered, it keeps the ink key and the ask start is bordered', () => {
-    renderThread([withAsk([{ id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' }])]);
-    const primary = startsGroup().querySelectorAll('.v2-chat__start--primary');
-    expect(primary).toHaveLength(1);
-    expect(primary[0]).toHaveTextContent('Run an agent here');
+  const HOSTED = { id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' };
+
+  test('before any pick, hosting and connecting are equal ink keys, first in the row, and the ask start is bordered', () => {
+    renderThread([withAsk([HOSTED])]);
+    const primary = [...startsGroup().querySelectorAll('.v2-chat__start--primary')].map((key) => key.textContent);
+    expect(primary).toEqual(['Run an agent here', 'Connect an agent I already use']);
+    const all = [...startsGroup().querySelectorAll('.v2-chat__start')].map((key) => key.textContent);
+    expect(all.slice(0, 2)).toEqual(primary);
+  });
+
+  test('after the person asks to connect their own, the hosted start stops competing and Bring your own is the ink key', async () => {
+    const sent = {
+      id: 'mine', pod_id: 'pod-1', user_id: 'u1', content: CONNECT, message_type: 'text',
+      created_at: at(5), user: { _id: 'u1', username: 'maya', isBot: false },
+    };
+    renderThread([withAsk([HOSTED]), sent]);
+    const groups = await screen.findAllByRole('group', { name: 'Ways to start' });
+    const inked = groups.flatMap((group) => [...group.querySelectorAll('.v2-chat__start--primary')].map((key) => key.textContent));
+    expect(inked).toEqual(['Open Bring your own']);
   });
 
   test('one tap sends it as the person\'s own message', async () => {

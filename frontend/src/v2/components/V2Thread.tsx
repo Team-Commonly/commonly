@@ -40,6 +40,7 @@ import type { V2InviteTab } from './V2InviteModal';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
+import { isHostedStart, type WelcomePick } from '../utils/welcomePick';
 import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
@@ -562,6 +563,27 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     }
     return byMessage;
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
+  // The PH walk (2026-11-14) found two first steps on one screen: the bar said
+  // "Connect your first agent" while Scout's filled key said "Run an agent
+  // here". Both now follow one pick, read from what the person did here: they
+  // started a hosted agent, or asked to connect their own (or made one that
+  // still waits to connect). With no pick, both offer the same two choices.
+  const welcomeHosted = useMemo(() => {
+    for (const [messageId, starts] of startsByMessageId) {
+      const start = starts.find(isHostedStart);
+      if (start) return { messageId, start };
+    }
+    return null;
+  }, [startsByMessageId]);
+  const welcomePick = useMemo<WelcomePick>(() => {
+    // A failed start is not a pick: the cap or an unconfigured runtime can
+    // refuse it, and the person still has connecting their own.
+    if ((hostedStart.state && hostedStart.state.status !== 'failed') || viewerHoldsHostedAgent) return 'hosted';
+    if (pendingConnectAgent) return 'byo';
+    if (viewerId && messages.some((message) => message.user_id === viewerId
+      && (message.content || '').trim() === CONNECT_START_LABEL)) return 'byo';
+    return null;
+  }, [hostedStart.state, viewerHoldsHostedAgent, pendingConnectAgent, viewerId, messages]);
   // Only rows that render with their starts count: a flat message or a thread
   // root. A reply folded into a thread card renders without starts.
   const renderedStarts = useMemo(() => threadView.flatMap((item) => {
@@ -2386,6 +2408,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
               ? agentConnectLink(pendingConnectAgent)
               : `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
             onFirstTask={startFirstTask}
+            pick={welcomePick}
+            onRunHosted={welcomeHosted ? () => {
+              recordWelcomeStart(welcomeHosted.start, pod._id);
+              void hostedStart.run(welcomeHosted.messageId, welcomeHosted.start);
+            } : undefined}
+            hostedStarting={hostedStart.state?.status === 'starting'}
             onOpenBoard={() => navigate(`/v2/pods/${pod._id}/board`)}
           />
         )}
@@ -2423,6 +2451,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
+            welcomePick={welcomePick}
             onStart={isReadOnly ? undefined : (start, messageId) => {
               recordWelcomeStart(start, pod._id);
               if (start.action === 'add-first-task' && viewerOwnsPod && start.title) {
