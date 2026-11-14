@@ -52,7 +52,11 @@ export const deriveAgentConnection = ({
   // already applies (TASK-719). A computer's seats (`wrapper`) are left to the
   // use-based verdict below: their liveness is the daemon's, judged there.
   if (!isMachine && hasEmbedded && !usableEmbedded.some((token) => token.lastListenedAt)) {
-    return { state: 'never', lastSeenAt: null };
+    // F516: a client that only calls tools (an MCP config in a desktop app)
+    // uses the key and never listens. Say so, so the page never replaces a
+    // key in use as if it were unused.
+    const keyUsed = [...active, ...usableEmbedded].some((credential) => credential.lastUsedAt);
+    return { state: 'never', lastSeenAt: null, ...(keyUsed ? { keyUsed: true } : {}) };
   }
   // The agent's own credential use decides its state, on a computer or not.
   // The machine heartbeat belongs to the computer row: a live daemon in front
