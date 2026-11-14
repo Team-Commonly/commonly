@@ -4936,6 +4936,13 @@ export const performRun = ({
               });
               nextPollDelayMs = retry.delayMs;
               retryScheduled = true;
+              // As in the batch path (F236): an open circuit's wait is walked in
+              // one-minute checks that tell newly waiting pods, never slept
+              // through whole. A stated quota reset can make it hours (F481,
+              // CodeRabbit on #4108).
+              circuitNotice = retry.circuitOpen && cantAnswerNotice(err) && !modelUnavailableFailure(err)
+                ? { error: err, remainingMs: retry.delayMs }
+                : null;
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
