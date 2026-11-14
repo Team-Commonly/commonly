@@ -1465,6 +1465,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     return map;
   }, [agents]);
 
+  // F509: an agent's join note ("nothing is running me yet") never updates,
+  // so once agent-states says that agent is listening, its note gains a line.
+  const connectedIntroIds = React.useMemo(() => {
+    const listening = new Set(agentStates
+      .filter((row) => row.state === 'listening')
+      .map((row) => agentKeyOf(row.agentName, row.instanceId)));
+    const ids = new Set<string>();
+    if (!listening.size) return ids;
+    messages.forEach((message) => {
+      if (message.payload?.kind !== 'install-intro') return;
+      const key = agentKeyByAuthorString.get(String(message.user?.username || '').toLowerCase());
+      if (key && listening.has(key.toLowerCase())) ids.add(String(message.id));
+    });
+    return ids;
+  }, [agentStates, messages, agentKeyByAuthorString]);
   const agentAuthorKeys = React.useMemo(
     () => new Set(agentKeyByAuthorString.keys()),
     [agentKeyByAuthorString],
@@ -2286,6 +2301,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             settledDecisionByMessageId={settledDecisionByMessageId}
             agentDisplayNames={agentDisplayNames}
             ownerConnectLinks={ownerConnectLinks}
+            connectedIntroIds={connectedIntroIds}
             agentTags={agentTags}
             agentAuthorKeys={agentAuthorKeys}
             afterMessage={teammateMoment ? { messageId: teammateMoment.messageId, content: teammateCard } : undefined}

@@ -150,8 +150,8 @@ const ingressLanes = {
   },
   staging: {
     files: lanes.staging.files,
-    // Staging runs no backups and no ops-runner, but its allows admit both.
-    // Render them, so those flows are checked against real pods.
+    // Staging runs an ops-runner (values-staging.yaml) but no backups; its
+    // allows admit both. Render them, so those flows are checked against real pods.
     setJson: ['backup.mongodb.enabled=true', 'backup.postgresql.enabled=true', 'opsRunner.enabled=true'],
     on: ['frontend', 'backend', 'litellm', 'redis', 'mongodb', 'emailSink', 'defaultDeny'],
     edgeApp: 'cloudflared-commonly-k8s',
@@ -160,6 +160,7 @@ const ingressLanes = {
       ['app=backend', 'litellm', 4000], ['app=backend-worker', 'litellm', 4000],
       ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379],
       ['app=backend', 'mongodb', 27017], ['app=backend-worker', 'mongodb', 27017], ['component=backup', 'mongodb', 27017],
+      ['app=ops-runner', 'mongodb', 27017],
       ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['app=ops-runner', 'email-sink', 8080],
       ['component=stranger-journey', 'email-sink', 8080],
     ],

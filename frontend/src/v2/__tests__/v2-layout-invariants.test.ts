@@ -6849,3 +6849,16 @@ describe('the member add-agent pointer keeps its line box', () => {
     expect(topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent::after')).toMatch(/inset:/);
   });
 });
+
+// A min-height on the inline Connect link grew the line it wrapped onto and
+// opened a tall gap in the "isn't connected yet" notice at 390 px.
+describe('the notice Connect link keeps its line box', () => {
+  it('widens the tap target with an overlay, not a min-height', () => {
+    const chatStates = read('../chat/chat-states.css');
+    const link = topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect');
+    expect(link).toContain('position: relative');
+    expect(link).not.toMatch(/min-height|display: inline-flex/);
+    expect(chatStates).not.toMatch(/a\.v2-chat__agent-room-connect \{ min-height/);
+    expect(topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect::after')).toMatch(/inset:/);
+  });
+});
