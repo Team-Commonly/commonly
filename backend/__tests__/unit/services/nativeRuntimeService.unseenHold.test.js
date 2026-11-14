@@ -185,6 +185,48 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
     expect(Freshness.unseenMessages.mock.calls[1][2].ignoreIds).toEqual(['9001']);
   });
 
+  test('the guidance says how to end the turn, and where the rest are when only some fit', async () => {
+    Freshness.unseenMessages
+      .mockResolvedValueOnce({ ...missed, unseenCount: 14 })
+      .mockResolvedValue(null);
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scout, ask);
+
+    const shown = sentToModel(1);
+    expect(shown).toContain('reply with exactly NO_REPLY');
+    expect(shown).toContain('14 new messages came in');
+    expect(shown).toContain('the newest 1 are in messages');
+    expect(shown).toContain('commonly_read_context');
+  });
+
+  // A hold costs another model call. Late in the turn the clock cap would end
+  // the run before it, so the reply posts rather than becoming a failure line.
+  test('late in the turn a post goes through rather than be held into the clock cap', async () => {
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+    try {
+      Freshness.unseenMessages.mockResolvedValue(missed);
+      axios.post
+        .mockImplementationOnce(async () => {
+          offset = 50_000;
+          return callsTool('commonly_post_message', { content: REPLY });
+        })
+        .mockResolvedValueOnce(says('NO_REPLY'));
+
+      await runAgent(scout, ask);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].content).toBe(REPLY);
+      expect(Freshness.unseenMessages).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   test('when freshness cannot be read, the turn posts as it did before', async () => {
     Freshness.readStart.mockReset().mockRejectedValue(new Error('pg down'));
     axios.post

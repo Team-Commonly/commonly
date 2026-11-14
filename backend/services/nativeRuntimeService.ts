@@ -247,6 +247,10 @@ export const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
 // missed and decides again.
 export const UNSEEN_MESSAGES = 'unseen_messages';
 const UNSEEN_SHOWN_MAX = 10;
+// A hold costs one more model call. With less room than this left in the
+// turn's clock, the caps would end the run before that call and a reply that
+// would have posted becomes a failure line, so the post goes through instead.
+const UNSEEN_HOLD_HEADROOM_MS = 15_000;
 const UNSEEN_HELD_TOOLS: ReadonlySet<string> = new Set([
   'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
   'commonly_offer_own_agent', 'commonly_claim_task',
@@ -1139,7 +1143,8 @@ const unseenHold = async (ctx: DispatchContext): Promise<DispatchResult | null> 
     let below = count === 1 ? '1 new message came in while you were working; it is in messages.'
       : `${count} new messages came in while you were working; they are in messages.`;
     if (count > shown.length) {
-      below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages.`;
+      below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages. `
+        + 'Call commonly_read_context to read the rest.';
     }
     return {
       content: {
@@ -1150,8 +1155,9 @@ const unseenHold = async (ctx: DispatchContext): Promise<DispatchResult | null> 
         messages: shown,
         guidance: `That didn't go through: ${below} `
           + 'Read them and decide again: go ahead if it still fits, change it if they change the answer, '
-          + 'or end the turn if what you were asked is already answered. If you were asked by name, another '
-          + "agent's reply doesn't answer for you unless one answer was all that was asked.",
+          + 'or end the turn if what you were asked is already answered: to end it, reply with exactly NO_REPLY. '
+          + "If you were asked by name, another agent's reply doesn't answer for you unless one answer was all "
+          + 'that was asked.',
       },
       error: UNSEEN_MESSAGES,
     };
@@ -2970,6 +2976,11 @@ export async function runAgent(
   await run.save();
 
   const startTime = Date.now();
+  // F530: whether the caps leave room for one more model call.
+  const roomForAnotherCall = (tokensAhead: number): boolean => (
+    Date.now() - startTime < MAX_WALL_CLOCK_MS - UNSEEN_HOLD_HEADROOM_MS
+    && run.totalTokens + tokensAhead < MAX_TOKENS
+  );
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
@@ -3377,6 +3388,9 @@ export async function runAgent(
         // cap would turn a held reply into a failure line.
         let failedEarlierInRound: { name: string; error: string } | null = null;
         const mayHoldPost = !recoveryRound && turnIndex < MAX_TURNS - 1;
+        // F530: a hold needs room for the call after it, this call's tokens
+        // not yet counted.
+        const mayHoldUnseen = mayHoldPost && roomForAnotherCall(2 * Number(usage.total_tokens || 0));
 
         for (const tc of toolCalls) {
           const toolStart = Date.now();
@@ -3464,7 +3478,7 @@ export async function runAgent(
           }
           // F530. Not in the last-chance rounds, where a hold would leave no
           // step to reply in (the same exception F317 makes).
-          else if (mayHoldPost && offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
+          else if (mayHoldUnseen && offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
             && UNSEEN_HELD_TOOLS.has(toolName) && (unseen = await unseenHold(dispatchCtx))) result = unseen;
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
@@ -3631,7 +3645,7 @@ export async function runAgent(
       // F530: the written reply is a post too. Held, it goes back to the model
       // with what it missed, unless this was the last step it had.
       const replyHeld = textOut && !postedViaTool && !fallbackBlocked && !declinedInText
-        && !recoveryRound && turnIndex < MAX_TURNS - 1
+        && !recoveryRound && turnIndex < MAX_TURNS - 1 && roomForAnotherCall(Number(usage.total_tokens || 0))
         ? await unseenHold(dispatchCtx) : null;
       if (replyHeld) {
         messages.push({ role: 'assistant', content: textOut });
