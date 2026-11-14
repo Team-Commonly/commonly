@@ -210,6 +210,13 @@ A Claude seat on a private pod can work in your project folder (`sandbox.trust: 
 
 Public seats don't need this: their writable folder must be a real folder at its own name (F197). Workspace trust is Claude-only, and every other adapter refuses it. On Seatbelt the profile is built from, and grants only, the checked realpath; a swap before the build is refused, and one after it gains nothing. On bubblewrap the checked realpath is the folder mounted at the seat's path. Code: `cli/src/lib/sandbox/workspace-pin.js`.
 
+bubblewrap resolves a path bind when the jail starts, after the check. A seat whose folder sits inside another seat's writable workspace could have that folder swapped for a link in the gap, and the jail would be mounted on the link's target. Where bubblewrap takes descriptors (`--bind-fd`, in 0.10.0 and later, backported to 0.6.3), the CLI closes that gap (F211):
+- **It opens the checked realpath and the project's own git folder,** never following a link at the last step, and refuses anything that is not a folder or a regular file.
+- **It checks each descriptor's path** against the realpath. A swap before the open refuses the turn.
+- **It hands bwrap the open folders** as fd 3 and 4. A swap after the open moves nothing: bwrap mounts the folder that was checked, confirms the mount landed on it, and closes the descriptor before the agent starts.
+
+Debian 12 (0.8.0) and Ubuntu 24.04 (0.9.0) keep the path binds and that startup gap. The CLI reads support from `bwrap --help`. Code: `cli/src/lib/sandbox/bind-fd.js`; the swap is run for real on Debian 13 (0.12) by `.github/workflows/bwrap-bind-fd.yml`.
+
 ### A workspace seat that reads host folders outside its project (F122)
 
 A workspace seat can also read folders outside its project that it names in `sandbox.filesystem.read-outside`, for example an ops seat that watches `~/.commonly/logs`. The folders are read-only on both platforms: bubblewrap binds them on Linux, and from F122 the Seatbelt profile admits them on macOS. Before F122, macOS dropped the list without a word, so such a seat could only run unconfined.

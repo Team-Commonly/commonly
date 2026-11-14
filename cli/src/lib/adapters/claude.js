@@ -91,6 +91,7 @@ import {
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
+import { closeHeldPaths, openHeldPath } from '../sandbox/bind-fd.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
@@ -982,7 +983,7 @@ const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
   processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
-  commandResolution = {}, confined = false,
+  commandResolution = {}, confined = false, passFds = [],
 }) => new Promise((resolve, reject) => {
   // Every process the turn starts inherits this marker however it detaches,
   // so what it leaves running is stopped once the turn has closed. A confined
@@ -991,11 +992,19 @@ const runClaude = ({
   // On Windows an npm `claude.cmd` is read, not run through cmd.exe: the
   // prompt in `args` is pod content (#2141). Off Windows this is identity.
   const launch = resolveLaunch(cmd, args, { env: turn.env, ...commandResolution });
-  const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, {
-    cwd,
-    env: turn.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }, { ownGroup });
+  let proc;
+  try {
+    proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, {
+      cwd,
+      env: turn.env,
+      // F211: bind sources bwrap mounts by descriptor arrive as fds 3 and up.
+      // The child holds its own copies once spawned; bwrap closes them after
+      // mounting, and the host closes these here.
+      stdio: ['ignore', 'pipe', 'pipe', ...passFds],
+    }, { ownGroup });
+  } finally {
+    closeHeldPaths(passFds);
+  }
   observeSpawn(proc, onSpawn, controls);
   let stdout = '';
   let stderr = '';
@@ -1500,6 +1509,29 @@ const proxyPort = (proxy) => {
   return Number.isInteger(port) && port > 0 ? port : null;
 };
 
+// F211: the held workspace and its .git, opened and checked, to hand bwrap as
+// descriptors. Child fd 3 is the workspace and 4 the .git (stdio is 0-2). A
+// writable workspace needs its .git (checked before this), so failing to hold
+// it refuses the turn. A read-only one whose .git is missing, a link or
+// unreadable keeps the path bind for it, which is -try there.
+// The .git is opened by its path, not under the workspace descriptor: a swap
+// between the two opens gains nothing, since whoever can make it can already
+// write that .git.
+const holdBindSources = (realpath, { write, fdPath }) => {
+  const passFds = [openHeldPath(realpath, { directory: true, ...(fdPath ? { fdPath } : {}) })];
+  const bindFds = { workspace: 3, entries: {} };
+  try {
+    passFds.push(openHeldPath(join(realpath, '.git'), fdPath ? { fdPath } : {}));
+    bindFds.entries['.git'] = 4;
+  } catch (error) {
+    if (write || !['ENOENT', 'ELOOP', 'EACCES'].includes(error?.code)) {
+      closeHeldPaths(passFds);
+      throw error;
+    }
+  }
+  return { passFds, bindFds };
+};
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -1668,12 +1700,13 @@ const prepareArgv = async (innerArgv, ctx) => {
     };
   }
 
+  let bwrap = null;
   if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
     // every one of its spawns with a bare ENOENT. On a non-Linux
     // host this reports the macOS-only message, same as the wrapper would.
-    const bwrap = (ctx._detectBwrap || detectBwrap)();
+    bwrap = (ctx._detectBwrap || detectBwrap)();
     if (!bwrap.available) {
       throw new Error(`${sandboxTrust} Claude agents require bwrap: ${bwrap.error}`);
     }
@@ -1715,39 +1748,53 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { claudeBin, claudeInstall } = resolveClaudeInstall(claudeEnv);
     if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
     const { statePath } = ctx.publicClaudeState;
-    const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
-      workspacePath: ctx.cwd,
-      // F200: bwrap resolves a bind source when the jail starts, after the
-      // check, so the checked realpath is the source, mounted at the path the
-      // seat was given.
-      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
-      workspaceReadOnly: !grants.includes('write'),
-      readOnlyWorkspaceEntries: ['.git'],
-      homePath: statePath,
-      // .claude (the login copy) and tmp are bound again on their own, after
-      // the state folder: a mount point cannot be renamed or replaced from
-      // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
-      // cannot swap either for a link while the host writes or removes the
-      // login there. The state preparation made both real directories.
-      writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
-      readOnlyPaths: [
-        ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
-        ...(ctx.mcpReadDirectories || []),
-        ...(ctx.workspaceGit?.readDirectories || []),
-        ...(ctx.workspaceGit?.readPaths || []),
-      ].filter(Boolean),
-      // The binaries the jail runs: claude (a user-local install is outside
-      // the default binds, and its link points into a versions folder), the
-      // node that runs the stdio MCP servers, and the git the history tool runs.
-      optionalReadOnlyPaths: [...new Set([
-        dirname(claudeBin), claudeInstall, dirname(process.execPath),
-        ctx.workspaceGit ? dirname(ctx.workspaceGit.executable) : null,
-        // A claude not found on PATH is left bare and fails at spawn; its
-        // dirname is '.', which is not a path to bind.
-      ].filter((p) => p && isAbsolute(p)))],
-    });
+    const held = bwrap?.bindFd && ctx.workspaceRealpath
+      ? holdBindSources(ctx.workspaceRealpath, { write: grants.includes('write'), fdPath: ctx._fdPath })
+      : { passFds: [], bindFds: {} };
+    let wrapped;
+    try {
+      wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
+        workspacePath: ctx.cwd,
+        // F200: bwrap resolves a bind source when the jail starts, after the
+        // check, so the checked realpath is the source, mounted at the path the
+        // seat was given. F211: where bwrap takes descriptors, the checked
+        // folder is mounted from one, so a swap in the startup window moves
+        // nothing either.
+        workspaceSource: ctx.workspaceRealpath || ctx.cwd,
+        bindFds: held.bindFds,
+        workspaceReadOnly: !grants.includes('write'),
+        readOnlyWorkspaceEntries: ['.git'],
+        homePath: statePath,
+        // .claude (the login copy) and tmp are bound again on their own, after
+        // the state folder: a mount point cannot be renamed or replaced from
+        // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
+        // cannot swap either for a link while the host writes or removes the
+        // login there. The state preparation made both real directories.
+        writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
+        readOnlyPaths: [
+          ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
+          ...(ctx.mcpReadDirectories || []),
+          ...(ctx.workspaceGit?.readDirectories || []),
+          ...(ctx.workspaceGit?.readPaths || []),
+        ].filter(Boolean),
+        // The binaries the jail runs: claude (a user-local install is outside
+        // the default binds, and its link points into a versions folder), the
+        // node that runs the stdio MCP servers, and the git the history tool runs.
+        optionalReadOnlyPaths: [...new Set([
+          dirname(claudeBin), claudeInstall, dirname(process.execPath),
+          ctx.workspaceGit ? dirname(ctx.workspaceGit.executable) : null,
+          // A claude not found on PATH is left bare and fails at spawn; its
+          // dirname is '.', which is not a path to bind.
+        ].filter((p) => p && isAbsolute(p)))],
+      });
+    } catch (error) {
+      closeHeldPaths(held.passFds);
+      throw error;
+    }
     // TASK-440 reads the transcript from the HOME the child wrote under.
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: statePath };
+    return {
+      cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: statePath, passFds: held.passFds,
+    };
   }
   if (sandboxMode === 'bwrap') {
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -2115,11 +2162,14 @@ export default {
         workspacePinDirs,
         claudeEnv,
       };
-      const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
+      const {
+        cmd, args, env, childHome, passFds,
+      } = await prepareArgv(baseArgs, spawnCtx);
       armRelease();
       const stdout = await runClaude({
         cmd,
         args,
+        passFds,
         cwd: ctx.cwd,
         env,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
@@ -2186,6 +2236,10 @@ export default {
           publicClaudeState,
           publicSkillArgs,
           providerProxyPort: proxyPort(providerProxy),
+          // F200: the retry is the same turn in the same held folder, so it
+          // keeps the checked realpath and the pin record's deny.
+          workspaceRealpath,
+          workspacePinDirs,
           claudeEnv: withProvider(buildClaudeEnv(
             ctx.env,
             publicClaudeState,
@@ -2211,6 +2265,7 @@ export default {
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
+          passFds: retry.passFds,
           cwd: ctx.cwd,
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
