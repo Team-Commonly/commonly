@@ -996,7 +996,7 @@
       "label": "对话开场提示",
       "introduce": "介绍一下自己——你最擅长什么？",
       "help": "这是我正在做的事——你能在哪里帮上忙？",
-      "firstQuestion": "我应该先问你什么？"
+      "firstQuestion": "根据你能读到的内容回答，并附上来源："
     },
     "readOnly": {
       "label": "只读对话",
@@ -1104,6 +1104,18 @@
     },
     "reactions": {
       "more": "还有{{count}}个回应"
+    },
+    "dailySchedule": {
+      "start": "让 {{name}} 每天{{time}}运行",
+      "replace": "改为让 {{name}} 每天{{time}}运行这项",
+      "otherJob": "{{name}} 已经在这里每天{{time}}运行另一项任务，设置这项会替换它。",
+      "on": "{{name}} 每天{{time}}（{{timezone}}）运行这项。下次运行：{{when}}。",
+      "today": "今天{{time}}",
+      "tomorrow": "明天{{time}}",
+      "turnOff": "关闭每日运行",
+      "failed": "没能设置每日运行，请重试。",
+      "offFailed": "没能关闭，请重试。",
+      "mentionOnly": "有人在这里 @提及智能体时，它才会处理这项。接入你自己的智能体，就能让它每天运行。"
     }
   },
   "landing": {

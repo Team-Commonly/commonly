@@ -24,6 +24,7 @@ import {
 import { useCloseAgentRoom } from '../agentRoomClose';
 import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
+import V2DailySchedule, { ScheduleTarget } from './V2DailySchedule';
 import { usePodReadPoint } from '../hooks/usePodReadPoint';
 import { firstNewSinceId } from '../utils/newSince';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
@@ -521,6 +522,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // names it and opens its own connect page, where one click gives a new command.
   const pendingConnectAgent = useMemo(() => agentStates.find((row) => row.isOwner
     && row.state === 'never-connected' && !row.hosted && Boolean(agentConnectLink(row))) || null, [agentStates]);
+  // The daily schedule is for an agent the owner runs themselves (agentScheduleService.takesSchedule),
+  // so only their own connected, non-hosted agent here can take Scout's recurring workflow.
+  const scheduleTarget = useMemo<ScheduleTarget | null>(() => {
+    const row = agentStates.find((agent) => agent.isOwner && !agent.hosted
+      && (agent.state === 'listening' || agent.state === 'gone-dark'));
+    return row ? { agentName: row.agentName, instanceId: row.instanceId || 'default', displayName: row.displayName } : null;
+  }, [agentStates]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -529,6 +537,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       if (start.id === 'run-hosted' && viewerHoldsHostedAgent) return false;
       if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
       if (start.action === 'add-first-task') return viewerOwnsPod && Boolean(start.title);
+      // Drawn by V2DailySchedule, which also says how the work runs without one.
+      if (start.action === 'schedule-daily') return viewerOwnsPod && Boolean(pod?._id) && Boolean(start.prompt);
       if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
       return true;
     };
@@ -2451,6 +2461,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
+            renderStart={(start) => (start.action === 'schedule-daily' && pod?._id && start.prompt
+              ? <V2DailySchedule api={api} podId={pod._id} prompt={start.prompt} target={scheduleTarget} />
+              : null)}
             welcomePick={welcomePick}
             onStart={isReadOnly ? undefined : (start, messageId) => {
               recordWelcomeStart(start, pod._id);

@@ -97,6 +97,8 @@ interface V2ThreadMessagesProps {
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
   afterMessage?: { messageId: string; content: React.ReactNode };
+  /** A start that draws itself (its own state and controls), or null for a plain button. */
+  renderStart?: (start: V2Start, messageId: string) => React.ReactNode;
   agentDeliveryHint?: { messageId: string; mentionHandle: string; wokenAgent?: string } | null;
   // A pod with no installed agent answers nothing by construction, so there is
   // no handle to suggest — a different row, in the same slot.
@@ -194,6 +196,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   starterPanel,
   emptyState,
   afterMessage,
+  renderStart,
   agentDeliveryHint,
   noAgentsHint,
   onAddAgent,
@@ -540,6 +543,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';
+                    const drawn = renderStart?.(start, String(message.id));
+                    if (drawn) return <React.Fragment key={start.id}>{drawn}</React.Fragment>;
                     return (
                       <React.Fragment key={start.id}>
                         <button
