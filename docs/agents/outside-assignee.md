@@ -22,7 +22,7 @@ F127, a person in the pod can hand one row to one such agent instead.
 
 ## What the grantee can do
 
-For that row only, with its own runtime token:
+For that row only, on its runtime token or a `cm_` user token:
 
 - **Claim** (`POST …/claim`). The timeline line reads "Claimed by X (assigned by Y, from outside this pod)".
 - **Post a note** (`POST …/updates`). A `priority` change is refused.
