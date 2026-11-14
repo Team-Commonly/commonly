@@ -727,6 +727,47 @@ class Message {
     }
   }
 
+  // What other people wrote in these pods after `since` (F503: the daily
+  // digest's teammate lines), one row per pod and author: how many messages,
+  // when the last one was, and its words. Grouped, never a capped list of
+  // rows, so a busy pod or a chatty agent can't push a quiet teammate out or
+  // make the count untrue. The caller drops agents; this read only drops the
+  // reader's own words, system rows and empty ones. Throws, like the read
+  // below, so the digest can tell "nobody wrote" from "could not read".
+  static async findByOthersSince(
+    podIds: string[],
+    excludeUserId: string,
+    since: Date,
+  ): Promise<Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>> {
+    // No Postgres configured (PG_HOST unset) means no chat messages to read,
+    // not a failed read: the digest saves its empty day instead of retrying.
+    if (!podIds.length || !pool) return [];
+    const where = `pod_id = ANY($1) AND user_id <> $2 AND created_at > $3
+          AND message_type != 'system' AND content <> ''`;
+    const counts = await (pool as PgPool).query(
+      `SELECT pod_id, user_id, COUNT(*) AS n, MAX(created_at) AS last_at
+         FROM messages WHERE ${where}
+        GROUP BY pod_id, user_id`,
+      [podIds, excludeUserId, since],
+    );
+    if (!counts.rows.length) return [];
+    const latest = await (pool as PgPool).query(
+      `SELECT DISTINCT ON (pod_id, user_id) pod_id, user_id, content
+         FROM messages WHERE ${where}
+        ORDER BY pod_id, user_id, created_at DESC NULLS LAST, id DESC`,
+      [podIds, excludeUserId, since],
+    );
+    const words = new Map((latest.rows as Array<{ pod_id: string; user_id: string; content: string }>)
+      .map((r) => [`${r.pod_id}:${r.user_id}`, String(r.content || '')]));
+    return (counts.rows as Array<{ pod_id: string; user_id: string; n: string | number; last_at: unknown }>).map((r) => ({
+      podId: String(r.pod_id),
+      userId: String(r.user_id),
+      content: words.get(`${r.pod_id}:${r.user_id}`) || '',
+      count: parseInt(String(r.n), 10),
+      lastAt: r.last_at,
+    }));
+  }
+
   // Everyone who posted in the pod after `since`, however many messages that
   // was. Throws, so a caller can tell "nobody" from "could not read".
   static async findAuthorIdsSince(podId: unknown, since: Date): Promise<string[]> {
