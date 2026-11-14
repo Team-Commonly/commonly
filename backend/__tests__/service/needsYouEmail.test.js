@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 const express = require('express');
 
-const mockSendEmail = jest.fn().mockResolvedValue({});
+// An accepted SMTP2GO v3 answer: the digest counts only that as delivered (F506).
+const mockSendEmail = jest.fn().mockResolvedValue({ data: { data: { succeeded: 1, failed: 0, failures: [] } } });
 jest.mock('../../services/emailService', () => ({ sendEmail: mockSendEmail }));
 jest.mock('jsonwebtoken', () => ({}));
 
