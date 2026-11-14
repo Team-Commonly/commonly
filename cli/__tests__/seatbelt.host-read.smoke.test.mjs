@@ -14,7 +14,9 @@ import {
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
-import { buildSeatbeltProfile, wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
+import {
+  buildSeatbeltProfile, resolveHostReadDirectories, wrapArgvWithSeatbelt,
+} from '../src/lib/sandbox/seatbelt.js';
 
 const macTest = process.platform === 'darwin' ? test : test.skip;
 
@@ -52,6 +54,15 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     writeFileSync(join(logs, 'seat.log'), 'polling\n');
     writeFileSync(join(beside, 'token'), 'not-for-the-seat\n');
     symlinkSync(join(beside, 'token'), join(logs, 'token-link'));
+    // A project tree holds other repos' credentials too.
+    mkdirSync(join(logs, 'repo', '.commonly'), { recursive: true });
+    mkdirSync(join(logs, 'repo', '.codex'), { recursive: true });
+    writeFileSync(join(logs, 'repo', '.env'), 'KEY=1\n');
+    writeFileSync(join(logs, 'repo', '.env.local'), 'KEY=1\n');
+    writeFileSync(join(logs, 'repo', '.npmrc'), '//r/:_authToken=1\n');
+    writeFileSync(join(logs, 'repo', '.commonly', 'token'), 't\n');
+    writeFileSync(join(logs, 'repo', '.codex', 'auth.json'), '{}\n');
+    writeFileSync(join(logs, 'repo', 'README.md'), 'hi\n');
   });
   afterEach(() => { if (root) rmSync(root, { recursive: true, force: true }); });
 
@@ -69,6 +80,32 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     expect(attempt(read(join(logs, 'token-link')))).toBe('DENIED EPERM');
   });
 
+  macTest('cannot read the credential files a project tree under it holds', () => {
+    expect(attempt(read(join(logs, 'repo', 'README.md')))).toBe('ALLOWED');
+    for (const file of ['.env', '.env.local', '.npmrc', '.commonly/token', '.codex/auth.json']) {
+      expect(attempt(read(join(logs, 'repo', file)))).toBe('DENIED EPERM');
+    }
+  });
+
+  // The Opus review's case bypass, against a home that has a .ssh: on a
+  // case-insensitive volume `.SSH` is the same folder, and is refused as one.
+  test('a case change does not get past the check', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-host-read-home-')));
+    try {
+      mkdirSync(join(home, '.ssh'));
+      mkdirSync(join(home, 'project'));
+      for (const entry of ['.SSH', '.Ssh/id_rsa', 'LIBRARY/Keychains', '.ssh']) {
+        expect(() => resolveHostReadDirectories([join(home, entry)], home))
+          .toThrow(/refusing sandbox\.filesystem\.read-outside/);
+      }
+      expect(resolveHostReadDirectories([join(home, 'project')], home)).toEqual([join(home, 'project')]);
+      expect(resolveHostReadDirectories([join(home, '.commonly', 'logs')], home))
+        .toEqual([join(home, '.commonly', 'logs')]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('a named folder that is a link into a credential store is refused by its target', () => {
     const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-host-read-link-')));
     try {
@@ -79,7 +116,7 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
         executablePath: process.execPath,
         statePath: tmp,
         hostReadDirectories: [link],
-      })).toThrow(/overlaps .* holds credentials/);
+      })).toThrow(/refusing sandbox\.filesystem\.read-outside/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

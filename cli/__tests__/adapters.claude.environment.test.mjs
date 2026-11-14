@@ -1693,17 +1693,29 @@ describe('claude adapter — a workspace seat', () => {
       expect(profile).not.toContain(`file-write* (subpath "${hostDir}")`);
     });
 
+    test('the CLI logs folder is the one dot folder it may name', async () => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('workspace', ['~/.commonly/logs']));
+      expect(calls[0].args[1]).toContain(`(subpath "${path.join(os.homedir(), '.commonly', 'logs')}")`);
+    });
+
     test('a public seat that names one gets none of it', async () => {
       const { impl, calls } = makeSpawnImpl();
       await workspaceSpawn(impl, withReadOutside('public', [hostDir]));
       expect(calls[0].args[1]).not.toContain(hostDir);
     });
 
-    test.each([['~'], ['~/.commonly'], ['~/.ssh/keys'], ['/']])(
-      'a workspace seat naming %s, which overlaps a credential store, is refused before it spawns',
+    // The Opus review's bypasses: a case change (APFS and Seatbelt ignore
+    // case), and credential files a list of credential places missed.
+    test.each([
+      ['~'], ['/'], [path.dirname(os.homedir())], ['~/.commonly'], ['~/.ssh/keys'], ['~/.SSH'],
+      ['~/LIBRARY'], ['~/.commonly/admin-token'], ['~/.commonly/state'], ['~/.Commonly/Tokens'],
+      ['~/.zsh_history'], ['~/.git-credentials'], ['~/.commonly/logs/../tokens'],
+    ])(
+      'a workspace seat naming %s is refused before it spawns',
       async (entry) => {
         const { impl, calls } = makeSpawnImpl();
-        await expect(workspaceSpawn(impl, withReadOutside('workspace', [entry]))).rejects.toThrow(/overlaps .* holds credentials/);
+        await expect(workspaceSpawn(impl, withReadOutside('workspace', [entry]))).rejects.toThrow(/refusing sandbox\.filesystem\.read-outside/);
         expect(calls).toHaveLength(0);
       },
     );

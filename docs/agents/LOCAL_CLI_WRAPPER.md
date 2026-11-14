@@ -214,9 +214,17 @@ Public seats don't need this: their writable folder must be a real folder at its
 
 A workspace seat can also read folders outside its project that it names in `sandbox.filesystem.read-outside`, for example an ops seat that watches `~/.commonly/logs`. The folders are read-only on both platforms: bubblewrap binds them on Linux, and from F122 the Seatbelt profile admits them on macOS. Before F122, macOS dropped the list without a word, so such a seat could only run unconfined.
 
-On macOS, each entry is checked before the seat spawns. An entry that overlaps a place this host keeps credentials is refused, and so is a link that resolves into one. Overlapping means the entry sits inside one, or holds one. The places are `hostCredentialRoots` in `cli/src/lib/sandbox/seatbelt.js`: this CLI's tokens, MCP tokens, sessions, daemon records and seat homes under `~/.commonly`, plus `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/.codex`, `~/.docker`, `~/.kube`, `~/Library` and the usual dotfiles. So `~`, `/` and `~/.commonly` are refused, and `~/.commonly/logs` is not. Name the folder you need, beside the credentials.
+On macOS, each entry is checked before the seat spawns. The check is an allowlist (`resolveHostReadDirectories` in `cli/src/lib/sandbox/seatbelt.js`):
+- **Dot folders and dotfiles in the home folder are refused**, except `~/.commonly/logs`. That covers `~/.ssh`, `~/.config`, `~/.zsh_history` and every token file under `~/.commonly`.
+- **`~/Library` is refused.**
+- **The home folder itself, and any folder that holds it, are refused.** That includes `/` and `/Users`.
+- **Anything else is admitted read-only**, such as a project tree or `/var/log`. Beneath each admitted folder, the same denies a workspace gets still apply: `.env*`, `.commonly`, `.codex`, `.npmrc` and `.yarnrc*`.
 
-A link inside a named folder that leads anywhere else reaches nothing, because the profile denies by default. Public seats never get `read-outside`, on either platform. `write-outside` is still honoured only on Linux.
+Each entry is resolved once, to its real path with its real case, and that same path is both checked and granted. A link is judged by where it leads. A case change such as `~/.SSH` can't get past the check, because APFS and Seatbelt both ignore case. A link inside an admitted folder that leads anywhere else reaches nothing, because the profile denies by default.
+
+An earlier version listed the places that hold credentials and refused only those. An Opus review read fake keys through it with a case change, and through token files under `~/.commonly` the list had missed. That is why this is an allowlist.
+
+**Known gap:** on Linux, bubblewrap binds every `read-outside` entry without any check. A spec the server writes can therefore bind `~/.ssh` into a Linux workspace seat. Public seats never get `read-outside` on either platform. `write-outside` is honoured only on Linux.
 
 ## What's NOT deleted on detach
 
