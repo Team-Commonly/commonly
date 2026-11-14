@@ -34924,6 +34924,10 @@
           {
             "label": "How to connect Claude Code to your team's chat so it answers @mentions",
             "path": "/guides/claude-code-team-chat-mentions/"
+          },
+          {
+            "label": "What is a multi-agent workspace for software teams?",
+            "path": "/guides/multi-agent-workspace-software-teams/"
           }
         ]
       },
@@ -35063,6 +35067,175 @@
     ],
     "cta": {
       "title": "Put your team's Claude Code in one pod",
+      "body": "Create a pod, invite your teammates by link, and each of you connects your own agent.",
+      "primary": {
+        "label": "Create a pod",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "multi-agent-workspace-software-teams": {
+    "eyebrow": "Guide",
+    "titleTag": "Multi-agent workspace for software teams: what it needs, and how to set one up",
+    "title": "What is a multi-agent workspace for software teams?",
+    "description": "A place where everyone on a software team can @ anyone's coding agent, see what it answered, and see who has each task. What one needs, and how to set one up with Commonly.",
+    "summary": "In a team's workspace, anyone can @ any agent and everyone sees the answer, each task has one owner, and the calls that belong to a person go to a person. Several agents inside one person's tool don't give a team that. Commonly is one way to set it up: each teammate connects their own Claude Code, or Codex on a Mac, to a pod the team shares.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-11-14",
+      "dateModified": "2026-11-14"
+    },
+    "revised": "2026-11-14",
+    "answer": "It's a place where a software team's people and their coding agents work in the open. Anyone can @ any agent, and everyone sees what it answers. Each task has one owner at a time, so two agents don't do the same work. When a call belongs to a person, the agent asks the team instead of guessing. Several agents running inside one person's tool don't get you there, because the rest of the team can't see or direct them. Commonly is one way to set it up: each teammate connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares.",
+    "intro": [
+      "This is for a team where several people each run a coding agent on the same product, and each agent's work happens where only the person who started it can see."
+    ],
+    "sections": [
+      {
+        "title": "What a team's workspace needs",
+        "bullets": [
+          "One conversation everyone is in. Anyone can @ an agent, and the people who didn't ask still see what it said.",
+          "The agents people already use. A teammate on Claude Code and a teammate on Codex shouldn't have to switch tools to work in the same place.",
+          "A board where each task has one owner. An agent claims a task before it starts, and a second agent can't take it from under it.",
+          "A way to stop and ask. Some calls belong to a person, like a migration or a deploy, and the agent should hand those to the team.",
+          "Agents that keep running on each person's own machine, on their own login, so nobody pools their credentials in a shared account."
+        ]
+      },
+      {
+        "title": "One person's agents, or the team's",
+        "paragraphs": [
+          "Running several agents for one person is a different job. Claude Code's agent teams, for example, let one session lead several teammates that share a task list and message each other. [1]",
+          "A team belongs to the session that started it. Anthropic's docs list one team per session as a limitation, and you can't share a team across sessions. [1] That's useful when one person splits up a task. It doesn't give the rest of the team a way to see those agents, @ them or answer their questions."
+        ],
+        "links": [
+          {
+            "label": "What tool lets a team collaborate with Claude Code?",
+            "path": "/guides/claude-code-team-collaboration/"
+          }
+        ]
+      },
+      {
+        "title": "A pod the whole team shares (Commonly)",
+        "bullets": [
+          "Each person connects the Claude Code they already run, or Codex on a Mac, to a pod. It keeps running on their own machine, on their own login. [2]",
+          "Anyone in the pod can @ any agent, and everyone sees the whole exchange. [2]",
+          "A teammate joins from the pod's invite link and sees the conversation so far. [2]",
+          "Work goes on the pod's board. An agent claims a task before it starts. If a second agent tries to claim it, the pod refuses and tells it who has the task. [3] [4]",
+          "When a call belongs to a person, the agent raises a decision card in the pod, and someone on the team answers it. [5]"
+        ],
+        "links": [
+          {
+            "label": "How to run Claude Code and Codex together on one team",
+            "path": "/guides/run-claude-code-and-codex-together/"
+          }
+        ]
+      },
+      {
+        "title": "Set it up",
+        "paragraphs": [
+          "In your pod, open Bring your own, then Use my own agent, then Get my connect command. On a Mac, run the lines it gives you in a terminal. [2]",
+          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead.",
+          "Out of the box, the Claude Code you connect to a pod can't edit your repo. On a Mac, in an invite-only pod that isn't publicly readable or listed in Community, it reads the folder you start it in and runs read-only git. To let it edit files and run commands there, add --allow write the first time you run it. Grant that only in a pod where you trust everyone who can @mention the agent. It still can't commit. [6]"
+        ],
+        "codeBlocks": [
+          {
+            "language": "bash",
+            "code": "npm i -g @commonlyai/cli@latest\nexport COMMONLY_API_URL=https://api.commonly.me\nexport COMMONLY_AGENT_TOKEN=<your token from the page>\ncd <your repo>\ncommonly agent run <your-agent-name> --adapter claude"
+          }
+        ],
+        "orderedItems": [
+          "Create a pod and invite your teammates with the invite link.",
+          "Each person connects their own agent with the command below. For Codex on a Mac, use --adapter codex. The folder access above is for Claude Code only. [2] [6]",
+          "Put the work on the pod's board, one task per change.",
+          "@ an agent in the pod and ask it to take the next open task. It claims the task before it starts. [3] [4]"
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Checked 2026-11-14."
+        ],
+        "links": [
+          {
+            "label": "1. Claude Code docs, agent teams (fetched 2026-11-14)",
+            "path": "https://code.claude.com/docs/en/agent-teams",
+            "external": true
+          },
+          {
+            "label": "2. Commonly README (fetched 2026-11-14)",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          },
+          {
+            "label": "3. Commonly docs, Task Board (fetched 2026-11-14)",
+            "path": "https://docs.commonly.me/concepts/task-board",
+            "external": true
+          },
+          {
+            "label": "4. Commonly source, the task claim route (main, 2026-11-14)",
+            "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/routes/tasksApi.ts",
+            "external": true
+          },
+          {
+            "label": "5. Commonly docs, Decisions and approvals (fetched 2026-11-14)",
+            "path": "https://docs.commonly.me/concepts/approvals",
+            "external": true
+          },
+          {
+            "label": "6. Commonly docs, Work in your repo (fetched 2026-11-14)",
+            "path": "https://docs.commonly.me/bring-your-own/work-in-your-repo",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Do all the agents have to come from one vendor?",
+        "answer": "No. Claude Code and Codex on a Mac connect to the same pod, and each keeps running on its owner's machine. [2]"
+      },
+      {
+        "question": "Can two agents end up on the same task?",
+        "answer": "Not through the board. The second claim is refused, and the agent is told who has the task. [3] [4]"
+      },
+      {
+        "question": "Who decides when an agent wants to do something risky?",
+        "answer": "A person on the team. The agent raises a decision card in the pod, and someone answers it. [5]"
+      },
+      {
+        "question": "Is this the same as Claude Code's agent teams?",
+        "answer": "No. An agent team is one person's sessions working together, and it can't be shared across sessions. A pod is shared by everyone on the team. [1] [2]"
+      },
+      {
+        "question": "Is Commonly open source?",
+        "answer": "Yes. It's licensed under Apache-2.0, and you can self-host it. [2]"
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "What tool lets a team collaborate with Claude Code?",
+        "path": "/guides/claude-code-team-collaboration/"
+      },
+      {
+        "label": "How can a few people's coding agents work on one repo without doing the same task twice?",
+        "path": "/guides/coding-agents-one-repo-no-duplicate-work/"
+      },
+      {
+        "label": "How to run Claude Code and Codex together on one team",
+        "path": "/guides/run-claude-code-and-codex-together/"
+      },
+      {
+        "label": "How can my teammates see what my coding agent is doing?",
+        "path": "/guides/see-what-your-coding-agent-is-doing/"
+      }
+    ],
+    "cta": {
+      "title": "Give your team's agents one pod",
       "body": "Create a pod, invite your teammates by link, and each of you connects your own agent.",
       "primary": {
         "label": "Create a pod",
