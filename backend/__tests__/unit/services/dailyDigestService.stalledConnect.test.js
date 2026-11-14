@@ -86,7 +86,7 @@ test('the line names who is waiting on the agent and how many messages', async (
   await event(ana, false);
   await event(me, true);
   const digest = await digestFor(me);
-  expect(digest.content).toBe(`${LINE}. ana is waiting on it, 2 messages`);
+  expect(digest.content).toBe(`${LINE}. ana left it 2 messages`);
 });
 
 test('an episode open 24h makes a digest line naming the agent; the email uses it up', async () => {

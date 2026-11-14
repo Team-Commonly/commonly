@@ -202,3 +202,20 @@ test('nothing goes when SMTP is not configured', async () => {
   expect(await sweep()).toMatchObject({ disabled: true, sent: 0 });
   expect(mongoose.connection.readyState).toBe(1);
 });
+
+test('a row a person\'s quick follow-ups joined counts each message, and names show as people display', async () => {
+  const { ana, pod } = await setup();
+  await User.updateOne({ _id: ana._id }, { $set: { displayName: 'Ana Lima' } });
+  const row = await mentionFrom(ana, pod, { at: new Date(Date.now() - 5 * 60000) });
+  const later = new Date(Date.now() - 60000);
+  await AgentEvent.collection.updateOne({ _id: row._id }, {
+    $set: { 'payload.coalesced': [{ userId: String(ana._id), createdAt: new Date(Date.now() - 4 * 60000) }, { userId: String(ana._id), createdAt: later }] },
+  });
+  const episode = await StalledConnectEpisode.findOne().lean();
+  const seen = await waiting.waitingOn(episode);
+  expect(seen).toMatchObject({ count: 3, names: ['Ana Lima'] });
+  expect(seen.latestAt.getTime()).toBe(later.getTime());
+  await sweep();
+  expect(mockSendEmail.mock.calls[0][0].subject).toBe('Ana Lima is waiting on mk codex in Launch');
+  expect(mockSendEmail.mock.calls[0][0].textBody).toContain('Ana Lima left mk codex 3 messages');
+});

@@ -250,7 +250,7 @@ export class DailyDigestService {
       const waiting = await waitingOnSafely(episode, now);
       const messages = waiting.count === 1 ? '1 message' : `${waiting.count} messages`;
       const who = waiting.count
-        ? `. ${oneLine(whoIsWaiting(waiting.names))} ${waiting.names.length > 1 ? 'are' : 'is'} waiting on it, ${messages}`
+        ? `. ${oneLine(whoIsWaiting(waiting.names))} left it ${messages}`
         : '';
       const line = `${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})${who}`;
       result.lines.push(line);

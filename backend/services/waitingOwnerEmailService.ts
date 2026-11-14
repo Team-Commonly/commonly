@@ -55,7 +55,9 @@ type EpisodeLike = {
  * The mentions people have left for this never-connected agent in its pod:
  * pending, human-written, not the owner's own, since its current token was
  * issued (older events were for a key already replaced) and within the
- * lookback. Names are the senders' usernames, newest first, each once.
+ * lookback. A row a person's quick follow-ups joined (payload.coalesced)
+ * counts each message. Names are how the senders display, newest first, each
+ * once, falling back to the username.
  */
 export const waitingOn = async (episode: EpisodeLike, now: Date = new Date()): Promise<Waiting> => {
   const floor = new Date(Math.max(
@@ -70,15 +72,34 @@ export const waitingOn = async (episode: EpisodeLike, now: Date = new Date()): P
     type: { $in: MENTION_TYPES },
     createdAt: { $gte: floor },
     'payload.senderIsHuman': true,
-  }).select('payload.userId payload.username createdAt').sort({ createdAt: -1 }).limit(EVENT_LIMIT).lean();
+  }).select('payload.userId payload.username payload.coalesced createdAt').sort({ createdAt: -1 }).limit(EVENT_LIMIT).lean();
   const owner = String(episode.installedBy);
-  const mine = events.filter((event: any) => String(event.payload?.userId || '') !== owner);
+  const theirs = events.filter((event: any) => String(event.payload?.userId || '') !== owner);
+  if (!theirs.length) return { count: 0, names: [], latestAt: null };
+  let count = 0;
+  let latest = 0;
+  const senders: string[] = [];
+  const handles = new Map<string, string>();
+  for (const event of theirs as any[]) {
+    const joined = Array.isArray(event.payload?.coalesced) ? event.payload.coalesced : [];
+    count += 1 + joined.length;
+    for (const at of [event.createdAt, ...joined.map((entry: any) => entry?.createdAt)]) {
+      const time = at ? new Date(at).getTime() : NaN;
+      if (Number.isFinite(time) && time > latest) latest = time;
+    }
+    const id = String(event.payload?.userId || '');
+    if (id && !senders.includes(id)) senders.push(id);
+    if (id && !handles.has(id)) handles.set(id, String(event.payload?.username || '').trim());
+  }
+  const people = await User.find({ _id: { $in: senders.filter((id) => /^[a-f0-9]{24}$/i.test(id)) } })
+    .select('displayName username').lean() as Array<{ _id: unknown; displayName?: string; username?: string }>;
+  const shown = new Map(people.map((p) => [String(p._id), String(p.displayName || p.username || '').trim()]));
   const names: string[] = [];
-  for (const event of mine) {
-    const name = String(event.payload?.username || '').trim();
+  for (const id of senders) {
+    const name = shown.get(id) || handles.get(id) || '';
     if (name && !names.includes(name)) names.push(name);
   }
-  return { count: mine.length, names, latestAt: mine.length ? new Date(mine[0].createdAt) : null };
+  return { count, names, latestAt: new Date(latest) };
 };
 
 /** "ana", "ana and bo", "ana and 2 others". */
@@ -171,6 +192,8 @@ export const sweepWaitingOwnerEmails = async (
   const episodes = await StalledConnectEpisode.find({ status: 'open' })
     .select('installationId podId installedBy agentName instanceId displayName tokenIssuedAt nudgedAt')
     .sort({ nudgedAt: -1 }).limit(EPISODE_LIMIT).lean() as any[];
+  // Newest first, so a full read leaves out the oldest installs: say so.
+  if (episodes.length === EPISODE_LIMIT) console.warn(`[waiting-email] read the ${EPISODE_LIMIT}-episode limit; older installs wait for a later fix`);
   // A reissue opens a new episode while the old stays open: the newest speaks.
   const newest = new Map<string, any>();
   for (const episode of episodes) {
