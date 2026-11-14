@@ -118,6 +118,7 @@ describe('a member with no agent of their own in the pod (F510)', () => {
     ['the pod owner', joined({ createdBy: 'u1' }), [annsAgent]],
     ['a member who already added an agent here', joined(), [annsAgent, { ...annsAgent, agentName: 'mine', isOwner: true }]],
     ['a community pod, where members cannot install', joined({ publicRead: true }), [annsAgent]],
+    ['an agent admin pod, where the install is refused', joined({ type: 'agent-admin' }), [annsAgent]],
   ])('stays away for %s', async (_label, detail, states) => {
     mockStates(states);
     renderChat(detail);

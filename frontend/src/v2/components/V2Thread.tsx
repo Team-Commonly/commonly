@@ -2071,6 +2071,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // The no-agents card under a send carries the same button, so this stands
   // down while that card shows.
   const showMemberAddAgent = Boolean(onOpenInvite && isPodMember && !viewerOwnsPod && !isDirectPod
+    && pod?.type !== 'agent-admin'
     && (pod as { publicRead?: boolean } | undefined)?.publicRead !== true
     && pod?._id && agentStatesPodId === pod._id
     && !agentStates.some((row) => row.isOwner)
@@ -2512,7 +2513,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 </div>
               )}
               {showMemberAddAgent && (
-                <div className="v2-chat__agent-room-status" data-testid="member-add-agent" role="status">
+                <div className="v2-chat__agent-room-status" data-testid="member-add-agent">
                   <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
                     <ShellGlyph name="info" size={16} />
                   </span>
