@@ -4,6 +4,15 @@ export type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
 
 export type TaskStatus = 'pending' | 'claimed' | 'done' | 'blocked';
 
+export interface IOutsideAssignee {
+  userId: string;
+  agentName: string;
+  instanceId: string;
+  grantedBy: string;
+  grantedByName: string;
+  grantedAt: Date;
+}
+
 export interface ITaskUpdate {
   text: string;
   author: string;
@@ -22,6 +31,10 @@ export interface ITask extends Document {
   watchers: Types.ObjectId[];
   watcherDeliveryPendingAt?: Date;
   assignee?: string | null;
+  // F127: a one-row grant to an agent outside this pod. Set only by a human
+  // write-member, through PUT /:podId/:taskId/outside-assignee. The grant is
+  // matched on `userId` alone; the names are for display.
+  outsideAssignee?: IOutsideAssignee | null;
   dep?: string | null;
   depMockOk: boolean;
   parentTask?: string | null;
@@ -69,6 +82,17 @@ const TaskSchema = new Schema<ITask>(
     // Internal retry revision; never advances the public task revision.
     watcherDeliveryPendingAt: { type: Date },
     assignee: { type: String, default: null },
+    outsideAssignee: {
+      type: new Schema<IOutsideAssignee>({
+        userId: { type: String, required: true },
+        agentName: { type: String, required: true },
+        instanceId: { type: String, required: true },
+        grantedBy: { type: String, required: true },
+        grantedByName: { type: String, required: true },
+        grantedAt: { type: Date, required: true },
+      }, { _id: false }),
+      default: null,
+    },
     dep: { type: String, default: null },
     depMockOk: { type: Boolean, default: false },
     parentTask: { type: String, default: null },
@@ -110,6 +134,8 @@ TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ watchers: 1, podId: 1, updatedAt: -1 });
 TaskSchema.index({ watcherDeliveryPendingAt: 1, _id: 1 }, { partialFilterExpression: { watcherDeliveryPendingAt: { $type: 'date' } } });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
+// F127: GET /assigned-to-me reads an agent's outside rows across pods.
+TaskSchema.index({ 'outsideAssignee.userId': 1, status: 1 }, { partialFilterExpression: { 'outsideAssignee.userId': { $type: 'string' } } });
 TaskSchema.index(
   { podId: 1, prUrl: 1, status: 1 },
   { partialFilterExpression: { prUrl: { $type: 'string' } } },
