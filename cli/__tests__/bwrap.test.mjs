@@ -436,6 +436,39 @@ describe('a workspace seat\'s read-outside and write-outside under bwrap', () =>
     expect(argv[idx - 1]).toBe('--ro-bind-try');
   });
 
+  // F494: bwrap resolves a path bind when the jail starts, after the check, so
+  // a held read-outside folder is mounted from the descriptor the caller opened.
+  describe('with the read-outside folders held as descriptors', () => {
+    const logs = () => `${home}/.commonly/logs`;
+    const triples = (argv) => argv.flatMap((arg, i) => (
+      /^--(ro-)?bind(-fd|-try)?$/.test(arg) ? [[arg, argv[i + 1], argv[i + 2]]] : []));
+    const wrapHeld = (readOutside) => wrapArgvWithBwrap(
+      ['claude'],
+      { sandbox: { trust: 'workspace', filesystem: { 'read-outside': [logs()] } } },
+      { workspacePath: '/tmp/ws', hostReadHome: home, bindFds: { workspace: 3, readOutside } },
+    );
+
+    test('mounts a held folder from its descriptor, with no path bind for it', () => {
+      const argv = wrapHeld({ [logs()]: 5 });
+      expect(triples(argv)).toContainEqual(['--ro-bind-fd', '5', logs()]);
+      expect(argv.filter((arg, i) => arg === logs() && argv[i - 1] === '--ro-bind-try')).toEqual([]);
+    });
+
+    test('binds nothing for a folder that was missing when it was opened', () => {
+      const argv = wrapHeld({ [logs()]: null });
+      expect(argv).not.toContain(logs());
+    });
+
+    test('refuses a folder that resolves to a path the caller did not hold', () => {
+      expect(() => wrapHeld({ [`${home}/.commonly/other`]: 5 }))
+        .toThrow(/resolved differently from the folder that was opened/);
+    });
+
+    test('refuses a descriptor below 3', () => {
+      expect(() => wrapHeld({ [logs()]: 2 })).toThrow(/child descriptors of 3 or more/);
+    });
+  });
+
   test('compares case as it is: /VAR/LOG is not the system log folder on Linux', () => {
     expect(() => wrap({ 'read-outside': [`${home}/.Commonly/Logs`] })).toThrow(/refusing/);
   });

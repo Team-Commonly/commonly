@@ -514,9 +514,9 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
   // startup window cannot move either mount.
   describe('with a bwrap that binds descriptors', () => {
     // What /proc/self/fd/N reads on Linux, found here by inode.
-    const fdPathOf = (fd) => {
+    const fdPathOf = (fd, extra = []) => {
       const { ino, dev } = fs.fstatSync(fd);
-      const known = [cwd, path.join(cwd, '.git')]
+      const known = [cwd, path.join(cwd, '.git'), ...extra]
         .find((p) => { const st = fs.statSync(p); return st.ino === ino && st.dev === dev; });
       return known || '/somewhere/else';
     };
@@ -568,6 +568,64 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
         .toContainEqual([path.join(cwd, '.git'), path.join(cwd, '.git')]);
       expect(opts.stdio).toHaveLength(4);
       expect(() => fs.fstatSync(opts.stdio[3])).toThrow(/EBADF/);
+    });
+
+    // F494: the read-outside folder (only ~/.commonly/logs is admitted here) is
+    // opened and checked like the workspace, and mounted from its descriptor.
+    describe('and a read-outside logs folder', () => {
+      let home;
+      let logs;
+      beforeEach(() => {
+        home = path.join(root, 'home');
+        logs = path.join(home, '.commonly', 'logs');
+        fs.mkdirSync(logs, { recursive: true });
+      });
+      const readOutsideEnv = {
+        model: 'test-model',
+        sandbox: {
+          mode: 'bwrap', trust: 'workspace', allow: ['write'], filesystem: { 'read-outside': ['~/.commonly/logs'] },
+        },
+      };
+      const roBindTry = (args) => args.flatMap((arg, i) => (arg === '--ro-bind-try' ? [args[i + 1]] : []));
+
+      test('mounts it from descriptor 5, after the workspace and its .git, and closes it after the spawn', async () => {
+        const { impl, calls } = recorder();
+        await fdTurn(impl, cwd, {
+          environment: readOutsideEnv, _hostReadHome: home, _fdPath: (fd) => fdPathOf(fd, [logs]),
+        });
+        expect(calls).toHaveLength(1);
+        const { args, opts } = calls[0];
+        expect(bindTriples(args)).toContainEqual(['--ro-bind-fd', '5', logs]);
+        expect(roBindTry(args)).not.toContain(logs);
+        expect(args).toContain(`Read(/${logs}/**)`);
+        expect(opts.stdio).toHaveLength(6);
+        expect(() => fs.fstatSync(opts.stdio[5])).toThrow(/EBADF/);
+      });
+
+      test('a logs folder that is not the checked path once opened refuses the turn, with nothing left open', async () => {
+        const { impl, calls } = recorder();
+        const opened = [];
+        await expect(fdTurn(impl, cwd, {
+          environment: readOutsideEnv,
+          _hostReadHome: home,
+          _fdPath: (fd) => { opened.push(fd); return fdPathOf(fd); },
+        })).rejects.toThrow(/moved while it was being opened/);
+        expect(calls).toHaveLength(0);
+        expect(opened).toHaveLength(3);
+        for (const fd of opened) expect(() => fs.fstatSync(fd)).toThrow(/EBADF/);
+      });
+
+      test('a logs folder that does not exist binds nothing for it', async () => {
+        fs.rmSync(logs, { recursive: true });
+        const { impl, calls } = recorder();
+        await fdTurn(impl, cwd, { environment: readOutsideEnv, _hostReadHome: home });
+        expect(calls).toHaveLength(1);
+        const { args, opts } = calls[0];
+        // The seat's Read allow still names it: the list came from this home.
+        expect(args).toContain(`Read(/${logs}/**)`);
+        expect(args).not.toContain(logs);
+        expect(opts.stdio).toHaveLength(5);
+      });
     });
 
     test('a bwrap without descriptor binds keeps the path binds', async () => {

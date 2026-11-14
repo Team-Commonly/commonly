@@ -19,6 +19,7 @@ import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
 import { effectiveSandboxTrust } from '../environment.js';
+import { BIND_SOURCE_MOVED } from './bind-fd.js';
 import { HOST_READ_DOT_ALLOW, resolveHostReadDirectories } from './seatbelt.js';
 
 // Tilde-expansion lives here (and not in environment.js's expandHome) because
@@ -28,10 +29,10 @@ import { HOST_READ_DOT_ALLOW, resolveHostReadDirectories } from './seatbelt.js';
 // variant tolerates missing paths). Surfaced live during the 2026-04-17
 // demo validation: `~/.local/bin` was declared but `claude` still wasn't
 // reachable inside the sandbox.
-const expandHome = (p) => {
+const expandHome = (p, home = homedir()) => {
   if (!p || typeof p !== 'string') return p;
-  if (p === '~') return homedir();
-  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  if (p === '~') return home;
+  if (p.startsWith('~/')) return join(home, p.slice(2));
   return p;
 };
 
@@ -68,7 +69,7 @@ const DEFAULT_RO_BINDS = [
  */
 export const bwrapReadRoots = (env) => {
   const declared = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
-    ? env.sandbox.filesystem[key].map(expandHome) : []);
+    ? env.sandbox.filesystem[key].map((p) => expandHome(p)) : []);
   return {
     subpaths: [...new Set([...DEFAULT_RO_BINDS, ...declared('read-outside'), ...declared('write-outside')])],
     literals: [],
@@ -231,8 +232,9 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   //   - none (a seat of your own): as declared. It is not confined, and names
   //     folders such as ~/.local/bin on purpose.
   const trust = effectiveSandboxTrust(env?.sandbox?.trust);
+  const home = opts.hostReadHome || homedir();
   const declaredBinds = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
-    ? env.sandbox.filesystem[key].map(expandHome) : []);
+    ? env.sandbox.filesystem[key].map((p) => expandHome(p, home)) : []);
   for (const key of ['read-outside', 'write-outside']) {
     if (trust === 'public' && declaredBinds(key).length) {
       throw new Error(`refusing sandbox.filesystem.${key}: a public seat binds nothing outside its own folders`);
@@ -243,13 +245,45 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
       + 'as on macOS');
   }
   const userReadOutside = trust === 'workspace'
-    ? resolveHostReadDirectories(declaredBinds('read-outside'), opts.hostReadHome || homedir(), {
+    ? resolveHostReadDirectories(declaredBinds('read-outside'), home, {
       fold: false, only: HOST_READ_DOT_ALLOW,
     })
     : declaredBinds('read-outside');
-  const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...userReadOutside])];
+  // F211: with descriptors (the caller opened and checked the source, and
+  // passes it at this child fd), bwrap mounts the open folder, so a swap of
+  // the path after the check cannot move the mount.
+  const fds = opts.bindFds || {};
+  const childFd = (value) => {
+    if (value === undefined || value === null) return null;
+    if (!Number.isInteger(value) || value < 3) {
+      throw new Error('wrapArgvWithBwrap opts.bindFds entries must be child descriptors of 3 or more');
+    }
+    return String(value);
+  };
+  // F494: the caller held each read-outside folder it resolved, by that
+  // resolved path; null marks one that was missing when opened, which binds
+  // nothing, as its -try path bind did. A folder that resolves here to a path
+  // the caller did not hold moved between the two checks, so the turn is refused.
+  const heldReadOutside = fds.readOutside || null;
+  const pathReadOutside = [];
+  const fdReadOutside = [];
+  for (const p of userReadOutside) {
+    if (!heldReadOutside) { pathReadOutside.push(p); continue; }
+    if (!Object.hasOwn(heldReadOutside, p)) {
+      throw Object.assign(
+        new Error(`refusing a workspace turn: read-outside ${p} resolved differently from the folder that was opened`),
+        { code: BIND_SOURCE_MOVED },
+      );
+    }
+    const fd = childFd(heldReadOutside[p]);
+    if (fd) fdReadOutside.push([fd, p]);
+  }
+  const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...pathReadOutside])];
   for (const p of roBinds) {
     flags.push('--ro-bind-try', p, p);
+  }
+  for (const [fd, p] of fdReadOutside) {
+    flags.push('--ro-bind-fd', fd, p);
   }
 
   const userWriteOutside = declaredBinds('write-outside');
@@ -300,17 +334,6 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   if (!isAbsolute(workspaceSource)) {
     throw new Error('wrapArgvWithBwrap opts.workspaceSource must be an absolute path');
   }
-  // F211: with descriptors (the caller opened and checked the source, and
-  // passes it at this child fd), bwrap mounts the open folder, so a swap of
-  // the path after the check cannot move the mount.
-  const fds = opts.bindFds || {};
-  const childFd = (value) => {
-    if (value === undefined || value === null) return null;
-    if (!Number.isInteger(value) || value < 3) {
-      throw new Error('wrapArgvWithBwrap opts.bindFds entries must be child descriptors of 3 or more');
-    }
-    return String(value);
-  };
   const workspaceFd = childFd(fds.workspace);
   if (workspaceFd) {
     flags.push(opts.workspaceReadOnly ? '--ro-bind-fd' : '--bind-fd', workspaceFd, opts.workspacePath);

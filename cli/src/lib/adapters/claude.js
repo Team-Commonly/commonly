@@ -148,14 +148,21 @@ const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 // A workspace seat's sandbox.filesystem.read-outside, with `~` expanded the way
 // bwrap.js expands it. Anything still relative is refused by the profile.
-const workspaceReadOutside = (env) => {
+const workspaceReadOutside = (env, home = homedir()) => {
   const declared = env?.sandbox?.filesystem?.['read-outside'];
   if (!Array.isArray(declared)) return [];
   return declared.map((p) => {
-    if (p === '~') return homedir();
-    return typeof p === 'string' && p.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
+    if (p === '~') return home;
+    return typeof p === 'string' && p.startsWith('~/') ? join(home, p.slice(2)) : p;
   });
 };
+
+// F493: a Linux workspace seat's read-outside, held to ~/.commonly/logs and
+// resolved once. The seat's Read allows and the folders held below both come
+// from this list, and wrapArgvWithBwrap resolves it again to check them.
+const bwrapWorkspaceHostReads = (env, home = homedir()) => resolveHostReadDirectories(
+  workspaceReadOutside(env, home), home, { fold: false, only: HOST_READ_DOT_ALLOW },
+);
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
@@ -1532,6 +1539,28 @@ const holdBindSources = (realpath, { write, fdPath }) => {
   return { passFds, bindFds };
 };
 
+// F494: each read-outside folder, opened and checked like the workspace, at the
+// next child descriptor. A folder that is missing or unreadable binds nothing,
+// as its -try path bind did. A link or a moved folder refuses the turn, and
+// every descriptor held so far is closed.
+const holdReadOutside = (paths, held, { fdPath }) => {
+  const readOutside = {};
+  for (const path of paths) {
+    try {
+      const fd = openHeldPath(path, { directory: true, ...(fdPath ? { fdPath } : {}) });
+      readOutside[path] = 3 + held.passFds.length;
+      held.passFds.push(fd);
+    } catch (error) {
+      if (!['ENOENT', 'EACCES'].includes(error?.code)) {
+        closeHeldPaths(held.passFds);
+        throw error;
+      }
+      readOutside[path] = null;
+    }
+  }
+  return { passFds: held.passFds, bindFds: { ...held.bindFds, readOutside } };
+};
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -1701,6 +1730,8 @@ const prepareArgv = async (innerArgv, ctx) => {
   }
 
   let bwrap = null;
+  // Resolved once: the seat's Read allows and the folders held for bwrap below.
+  let workspaceHostReads = [];
   if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
@@ -1713,6 +1744,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     if (!ctx.publicClaudeState) {
       throw new Error(`${sandboxTrust} Claude state was not prepared before argv construction`);
     }
+    if (workspaceBwrapSandbox) workspaceHostReads = bwrapWorkspaceHostReads(env, ctx._hostReadHome);
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, workspaceBwrapSandbox
@@ -1723,9 +1755,7 @@ const prepareArgv = async (innerArgv, ctx) => {
           ownerWoken: ctx.ownerWoken,
           // F493: the folders bwrap binds for this seat, checked the same way
           // wrapArgvWithBwrap checks them, so its Read tool can reach them.
-          hostReads: resolveHostReadDirectories(workspaceReadOutside(env), homedir(), {
-            fold: false, only: HOST_READ_DOT_ALLOW,
-          }),
+          hostReads: workspaceHostReads,
         }
         : { memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }),
       ...(ctx.publicSkillArgs || []),
@@ -1748,13 +1778,17 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { claudeBin, claudeInstall } = resolveClaudeInstall(claudeEnv);
     if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
     const { statePath } = ctx.publicClaudeState;
-    const held = bwrap?.bindFd && ctx.workspaceRealpath
+    let held = bwrap?.bindFd && ctx.workspaceRealpath
       ? holdBindSources(ctx.workspaceRealpath, { write: grants.includes('write'), fdPath: ctx._fdPath })
       : { passFds: [], bindFds: {} };
+    if (bwrap?.bindFd && workspaceBwrapSandbox) {
+      held = holdReadOutside(workspaceHostReads, held, { fdPath: ctx._fdPath });
+    }
     let wrapped;
     try {
       wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
         workspacePath: ctx.cwd,
+        ...(ctx._hostReadHome ? { hostReadHome: ctx._hostReadHome } : {}),
         // F200: bwrap resolves a bind source when the jail starts, after the
         // check, so the checked realpath is the source, mounted at the path the
         // seat was given. F211: where bwrap takes descriptors, the checked
