@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { safeNextPath } from '../v2/utils/safeNextPath';
 import axios from '../utils/axiosConfig';
 import { useTranslation } from 'react-i18next';
 import V2AuthBrand from '../v2/components/V2AuthBrand';
@@ -16,6 +17,9 @@ import { registerPathWithInvite } from '../v2/utils/pendingInvite';
 const RegistrationInviteRequired: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // F518: where sign-up was headed (a pod invite), carried on past the code.
+  const nextPath = safeNextPath(searchParams.get('next')) || undefined;
   const [invitationCode, setInvitationCode] = useState('');
   const [waitlistEmail, setWaitlistEmail] = useState('');
   const [waitlistName, setWaitlistName] = useState('');
@@ -28,7 +32,7 @@ const RegistrationInviteRequired: React.FC = () => {
     e.preventDefault();
     const trimmed = invitationCode.trim();
     if (!trimmed) return;
-    navigate(registerPathWithInvite(trimmed));
+    navigate(registerPathWithInvite(trimmed, nextPath));
   };
 
   const onWaitlistSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -130,7 +134,7 @@ const RegistrationInviteRequired: React.FC = () => {
         <p className="v2-login__alt">
           {t('auth.register.alreadyHaveAccount')}
           {' '}
-          <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>
+          <Link to={nextPath ? `/v2/login?next=${encodeURIComponent(nextPath)}` : '/v2/login'} className="v2-login__link">{t('auth.login.submit')}</Link>
         </p>
       </div>
     </div>

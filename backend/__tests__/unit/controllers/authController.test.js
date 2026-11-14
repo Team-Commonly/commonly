@@ -650,6 +650,7 @@ describe('Auth Controller Tests', () => {
       await authController.login({ body: { email: 'other@example.com', password: 'Password123!' } }, res);
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INSTANCE_ACCESS_RESTRICTED' }));
+      expect(res.json.mock.calls[0][0].reason).toBeUndefined();
     });
 
     it('requires a verified account for password login when the team gate is on', async () => {
@@ -658,6 +659,9 @@ describe('Auth Controller Tests', () => {
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await authController.login({ body: { email: 'team@example.com', password: 'Password123!' } }, res);
       expect(res.status).toHaveBeenCalledWith(403);
+      // F518: an allowed address that isn't verified yet is told to verify, not
+      // that the instance is limited to the team (the same code, a reason added).
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INSTANCE_ACCESS_RESTRICTED', reason: 'unverified' }));
     });
 
     it('admits a verified allowlisted password account', async () => {
