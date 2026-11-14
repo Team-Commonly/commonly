@@ -111,8 +111,8 @@ describe('performRun pod-focus turn seam', () => {
     stop();
 
     const prompt = spawn.mock.calls[0][0];
-    expect(prompt).toContain('set by alice; revision 4');
-    expect(prompt).toContain('Reply in a thread.');
+    expect(prompt).toContain('set by alice for this pod; revision 4');
+    expect(prompt).toContain('| Reply in a thread.');
     expect(prompt.indexOf('Pod conventions')).toBeLessThan(prompt.indexOf('Pod focus'));
     // The read stays one call per turn.
     expect(get.mock.calls.filter(([route]) => route.endsWith('/context'))).toHaveLength(1);

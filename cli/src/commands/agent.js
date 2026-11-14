@@ -3073,7 +3073,8 @@ export const performRun = ({
       throw error;
     }
     const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
-    // F124: the pod's conventions open the turn, from the same read as focus.
+    // F124: the pod's conventions, from the same read as focus, ahead of the
+    // focus frame (skill text may still be put in front of both below).
     const conventionsFrame = formatPodConventionsFrame(focusRead?.conventions);
     const promptWithFocus = `${conventionsFrame ? `${conventionsFrame}\n\n` : ''}${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;

@@ -77,8 +77,8 @@ describe('pod conventions in a native turn', () => {
     expect(system).toEqual({ role: 'system', content: 'Owner says: be brief.' });
     expect(user.role).toBe('user');
     expect(user.content).toContain('=== Pod conventions');
-    expect(user.content).toContain('set by alice; revision 3');
-    expect(user.content).toContain('Reply in a thread. Tag the row owner.');
+    expect(user.content).toContain('set by alice for this pod; revision 3');
+    expect(user.content).toContain('| Reply in a thread. Tag the row owner.');
     expect(user.content.indexOf('Pod conventions')).toBeLessThan(user.content.indexOf('What is next?'));
   });
 

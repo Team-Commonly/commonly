@@ -2845,7 +2845,8 @@ export async function runAgent(
   if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
   // F124: after the given addresses are taken, so a link in the conventions is
   // not one commonly_fetch_url may open on their strength; and in the user
-  // message, so the owner's system prompt keeps the last word.
+  // message, so the owner's system prompt keeps the last word. The recent
+  // messages and Scout's start cue are put in front of it below.
   if (conventionsFrame) userMessage = `${conventionsFrame}\n\n${userMessage}`;
   // F46: when the person writing owns an agent that has never connected, Scout's
   // turn carries its start command, so the answer can't leave them stuck.
