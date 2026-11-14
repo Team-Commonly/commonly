@@ -2714,6 +2714,7 @@
       "needsYou": "needs you",
       "working": "working",
       "idle": "idle",
+      "signedOut": "{{harness}} is signed out",
       "answer": "Answer",
       "talk": "Talk",
       "podsAria": "Pods",
