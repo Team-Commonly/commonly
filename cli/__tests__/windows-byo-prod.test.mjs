@@ -74,9 +74,15 @@ describe('the walk workflows install the CLI the dispatch names', () => {
     expect(install[2].trim()).toBe('npm i -g @anthropic-ai/claude-code@2.1.318');
   });
 
-  test('byo-windows.yml: Codex 0.164.0 only on a prod codex dispatch', () => {
-    expect(workflow('byo-windows.yml')).toMatch(
-      /- name: Install Codex\n\s+if: inputs\.target == 'prod' && inputs\.adapter == 'codex'\n\s+run: npm i -g @openai\/codex@0\.164\.0\n/,
-    );
+  test('byo-windows.yml: on a prod codex dispatch only, the Codex version the dispatch names, 0.169.0 by default', () => {
+    const wf = workflow('byo-windows.yml');
+    expect(wf).toMatch(/codex_version:\n\s+description: [^\n]+\n\s+type: string\n\s+default: '0\.169\.0'\n/);
+    const step = /- name: Install Codex\n([\s\S]*?)\n\s+- name: /.exec(wf);
+    expect(step).not.toBeNull();
+    expect(step[1]).toMatch(/if: inputs\.target == 'prod' && inputs\.adapter == 'codex'\n/);
+    expect(step[1]).toMatch(/CODEX_VERSION: \$\{\{ inputs\.codex_version \|\| '0\.169\.0' \}\}/);
+    // The input reaches the shell only through env, after an x.y.z check.
+    expect(step[1]).not.toMatch(/run:[\s\S]*\$\{\{/);
+    expect(step[1]).toMatch(/\[\[ "\$CODEX_VERSION" =~ \^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$ \]\] \|\| \{[^}]*exit 1; \}\n\s+npm i -g "@openai\/codex@\$CODEX_VERSION"/);
   });
 });
