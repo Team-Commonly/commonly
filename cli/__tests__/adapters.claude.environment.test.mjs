@@ -1675,6 +1675,40 @@ describe('claude adapter — a workspace seat', () => {
     }
   });
 
+  // F122: an Ops-type seat reads the host folders it names, read-only, the way
+  // bwrap honours read-outside on Linux. A public seat never does.
+  describe('read-outside under Seatbelt', () => {
+    let hostDir;
+    beforeEach(() => { hostDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-host-read-'))); });
+    afterEach(() => fs.rmSync(hostDir, { recursive: true, force: true }));
+    const withReadOutside = (trust, readOutside) => ({
+      mode: 'workspace', trust, filesystem: { 'read-outside': readOutside },
+    });
+
+    test('a workspace seat reads the folder it names, and cannot write it', async () => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('workspace', [hostDir]));
+      const profile = calls[0].args[1];
+      expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${hostDir}"))`);
+      expect(profile).not.toContain(`file-write* (subpath "${hostDir}")`);
+    });
+
+    test('a public seat that names one gets none of it', async () => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('public', [hostDir]));
+      expect(calls[0].args[1]).not.toContain(hostDir);
+    });
+
+    test.each([['~'], ['~/.commonly'], ['~/.ssh/keys'], ['/']])(
+      'a workspace seat naming %s, which overlaps a credential store, is refused before it spawns',
+      async (entry) => {
+        const { impl, calls } = makeSpawnImpl();
+        await expect(workspaceSpawn(impl, withReadOutside('workspace', [entry]))).rejects.toThrow(/overlaps .* holds credentials/);
+        expect(calls).toHaveLength(0);
+      },
+    );
+  });
+
   test('under bwrap on a Mac it refuses before preparing any state', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))

@@ -23,7 +23,7 @@ import { spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { homedir } from 'os';
 import {
-  basename, dirname, isAbsolute, join, resolve,
+  basename, dirname, isAbsolute, join, relative, resolve,
 } from 'path';
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
@@ -480,6 +480,42 @@ export const detectSeatbelt = () => {
   }
 };
 
+// F122: where this host keeps credentials. A host read grant (a workspace
+// seat's sandbox.filesystem.read-outside) may not overlap any of these, in
+// either direction: not inside one, and not a folder that holds one (so `~`,
+// `/` and `~/.commonly` are refused, and `~/.commonly/logs` is not). Name the
+// folder beside the credential instead. Deny-by-default does the rest: a link
+// inside a granted folder that leads anywhere else resolves to a path no rule
+// admits.
+export const hostCredentialRoots = (home = homedir()) => [
+  // This CLI's own: login and instance tokens, MCP tokens, saved sessions, the
+  // daemon's records, the host gh broker, and other seats' homes.
+  ['.commonly', 'config.json'], ['.commonly', 'tokens'], ['.commonly', 'mcp'],
+  ['.commonly', 'sessions'], ['.commonly', 'daemon'], ['.commonly', 'host-gh'],
+  ['.commonly', 'claude-homes'], ['.commonly', 'pi-homes'], ['.commonly', 'dsh-homes'],
+  ['.commonly', 'hermes'],
+  // The usual per-user credential stores.
+  ['.ssh'], ['.aws'], ['.gnupg'], ['.config'], ['.claude'], ['.claude.json'], ['.codex'],
+  ['.netrc'], ['.npmrc'], ['.docker'], ['.kube'], ['Library'],
+].map((parts) => join(home, ...parts));
+
+const within = (outer, inner) => {
+  const rel = relative(outer, inner);
+  return rel === '' || (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel));
+};
+
+const assertHostReadDirectory = (path, credentialRoots) => {
+  for (const candidate of new Set([path, realpathOrSelf(path)])) {
+    const root = credentialRoots.find((r) => within(r, candidate) || within(candidate, r));
+    if (root) {
+      throw new Error(
+        `refusing sandbox.filesystem.read-outside ${path}: it overlaps ${root}, which holds `
+        + 'credentials. Name the folder you need beside it instead.',
+      );
+    }
+  }
+};
+
 export const buildSeatbeltProfile = ({
   workspacePath,
   workspaceAccess = 'write',
@@ -489,6 +525,11 @@ export const buildSeatbeltProfile = ({
   executablePaths = [],
   readOnlyPaths = [],
   readOnlyDirectories = [],
+  // F122: host folders a workspace seat names in sandbox.filesystem.read-outside,
+  // admitted read-only. Unlike readOnlyDirectories (folders the adapter itself
+  // prepared), these come from the seat's spec, so each is checked against
+  // hostCredentialRoots first and the turn is refused on an overlap.
+  hostReadDirectories = [],
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
   // 'open' (the default) or 'loopback': only the listed loopback ports.
@@ -533,6 +574,11 @@ export const buildSeatbeltProfile = ({
   for (const path of denyWritePaths) assertAbsolutePath(path, 'denyWritePaths entry');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
+  for (const path of hostReadDirectories) assertAbsolutePath(path, 'hostReadDirectories entry');
+  if (hostReadDirectories.length) {
+    const credentialRoots = [...new Set(hostCredentialRoots().flatMap((r) => [r, realpathOrSelf(r)]))];
+    for (const path of hostReadDirectories) assertHostReadDirectory(path, credentialRoots);
+  }
   for (const port of loopbackNetworkPorts) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
@@ -582,7 +628,9 @@ export const buildSeatbeltProfile = ({
   const resolvedState = pinnedRealpath(statePath, 'state folder');
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
   const resolvedReadOnlyPaths = [...new Set(readOnlyPaths.map(realpathOrSelf))];
-  const resolvedReadOnlyDirectories = [...new Set(readOnlyDirectories.map(realpathOrSelf))];
+  const resolvedReadOnlyDirectories = [...new Set(
+    [...readOnlyDirectories, ...hostReadDirectories].map(realpathOrSelf),
+  )];
   const executables = [...new Set(
     [resolvedExecutable, process.execPath, ...executablePaths]
       .filter(Boolean)

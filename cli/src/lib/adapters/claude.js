@@ -141,6 +141,17 @@ const PARALLEL_READS_CUE = 'Parallel reads: when a row needs several files or so
 const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE];
 const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
+// A workspace seat's sandbox.filesystem.read-outside, with `~` expanded the way
+// bwrap.js expands it. Anything still relative is refused by the profile.
+const workspaceReadOutside = (env) => {
+  const declared = env?.sandbox?.filesystem?.['read-outside'];
+  if (!Array.isArray(declared)) return [];
+  return declared.map((p) => {
+    if (p === '~') return homedir();
+    return typeof p === 'string' && p.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
+  });
+};
+
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
 // The helper takes the token from one of two places. With a socket path and a
@@ -1605,6 +1616,10 @@ const prepareArgv = async (innerArgv, ctx) => {
         ...(ctx.workspaceGit?.readDirectories || []),
       ],
       readOnlyPaths: ctx.workspaceGit?.readPaths || [],
+      // F122: a workspace seat reads the host folders it names, as it does
+      // under bwrap on Linux, so an Ops-type seat can read the logs it watches
+      // without running unconfined. A public seat names none: strangers drive it.
+      hostReadDirectories: sandboxTrust === 'workspace' ? workspaceReadOutside(env) : [],
     });
     return {
       cmd: wrapped[0],

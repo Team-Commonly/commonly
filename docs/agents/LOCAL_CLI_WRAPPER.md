@@ -210,6 +210,14 @@ A Claude seat on a private pod can work in your project folder (`sandbox.trust: 
 
 Public seats don't need this: their writable folder must be a real folder at its own name (F197). Workspace trust is Claude-only, and every other adapter refuses it. On Seatbelt the profile is built from, and grants only, the checked realpath; a swap before the build is refused, and one after it gains nothing. On bubblewrap the checked realpath is the folder mounted at the seat's path. Code: `cli/src/lib/sandbox/workspace-pin.js`.
 
+### A workspace seat that reads host folders outside its project (F122)
+
+A workspace seat can also read folders outside its project that it names in `sandbox.filesystem.read-outside`, for example an ops seat that watches `~/.commonly/logs`. The folders are read-only on both platforms: bubblewrap binds them on Linux, and from F122 the Seatbelt profile admits them on macOS. Before F122, macOS dropped the list without a word, so such a seat could only run unconfined.
+
+On macOS, each entry is checked before the seat spawns. An entry that overlaps a place this host keeps credentials is refused, and so is a link that resolves into one. Overlapping means the entry sits inside one, or holds one. The places are `hostCredentialRoots` in `cli/src/lib/sandbox/seatbelt.js`: this CLI's tokens, MCP tokens, sessions, daemon records and seat homes under `~/.commonly`, plus `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/.codex`, `~/.docker`, `~/.kube`, `~/Library` and the usual dotfiles. So `~`, `/` and `~/.commonly` are refused, and `~/.commonly/logs` is not. Name the folder you need, beside the credentials.
+
+A link inside a named folder that leads anywhere else reaches nothing, because the profile denies by default. Public seats never get `read-outside`, on either platform. `write-outside` is still honoured only on Linux.
+
 ## What's NOT deleted on detach
 
 - The agent's `User` row (intentional — identity continuity)
