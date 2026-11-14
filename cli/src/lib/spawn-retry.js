@@ -28,6 +28,10 @@ export const SPAWN_FAILURE_CLASS = Object.freeze({
   // supervisor, a walk). The provider never refused anything, so the retry
   // comes at the normal poll interval and the circuit stays shut.
   SIGNALED: 'signaled',
+  // F491: a host-side gate exited 75 (EX_TEMPFAIL) without running the turn,
+  // e.g. the memory gate during a host hold. Not a failure: the event is kept
+  // with no strike, the circuit stays shut, and the retry backs off.
+  HOST_DEFERRED: 'host_deferred',
 });
 
 // How many outside signals in a row go uncounted before they count again. A
@@ -38,6 +42,19 @@ export const EXTERNAL_SIGNAL_GRACE = 3;
 // Set by the adapter (`markExternalSignal`), only on a failure with no cause of
 // its own: a stream's error or the adapter's own kill never carries it.
 export const isExternalSignal = (error) => error?.externalSignal === true;
+
+// Set by adapterFailure (`markHostDeferral`) on a bare exit 75.
+export const isHostDeferral = (error) => error?.hostDeferred === true;
+
+// A host hold can last an hour or more (the 11-13 memory hold ran 96 minutes),
+// so the deferred retry starts at a minute and doubles to the usual ceiling:
+// 1, 2, 4, 8, then 15 minutes, and a long hold claims rarely.
+export const HOST_DEFERRAL_RETRY_BASE_MS = 60 * 1000;
+// How long a run of deferrals with no good spawn goes uncounted. Past it, an
+// adapter that exits 75 on every spawn is a fault (a gate stuck shut, a
+// misconfigured wrapper) and backs the seat off as any failure does, so its
+// events still release instead of waiting forever.
+export const HOST_DEFERRAL_MAX_MS = 2 * 60 * 60 * 1000;
 
 // A stalled probe costs one first-output window, so the wait starts short and
 // doubles to the usual ceiling: 2, 4, 8, then 15 minutes.
@@ -243,8 +260,21 @@ export const spawnRetryPolicy = ({
   jitterRatio = 0,
   // The run loop's call: an outside signal still inside its grace (F293).
   externalSignal = false,
+  // The run loop's call: the nth host deferral in a row, still inside
+  // HOST_DEFERRAL_MAX_MS (F491). 0 when this failure isn't one.
+  hostDeferrals = 0,
 }) => {
   const safeIntervalMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5000;
+  if (Number.isInteger(hostDeferrals) && hostDeferrals > 0) {
+    return {
+      failureClass: SPAWN_FAILURE_CLASS.HOST_DEFERRED,
+      circuitOpen: false,
+      delayMs: applyJitter(
+        Math.min(SPAWN_RETRY_MAX_MS, HOST_DEFERRAL_RETRY_BASE_MS * (2 ** (hostDeferrals - 1))),
+        jitterRatio,
+      ),
+    };
+  }
   if (externalSignal) {
     return {
       failureClass: SPAWN_FAILURE_CLASS.SIGNALED,

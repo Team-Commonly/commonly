@@ -2844,6 +2844,170 @@ describe('performRun', () => {
     ]);
   });
 
+  // F491: during a host memory hold the seat's gate exited 75 on every spawn;
+  // each exit counted as a failure and struck the event, so it was released to
+  // the server, re-claimed until attempts hit the cap, and failed unrun.
+  const deferredRun = ({ spawn, event }) => {
+    let served = false;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        if (served) return { events: [] };
+        served = true;
+        return { events: [event] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+    const fire = async (times) => {
+      for (let i = 0; i < times; i += 1) {
+        scheduled.shift().callback();
+        // eslint-disable-next-line no-await-in-loop
+        await drainMicrotasks();
+      }
+    };
+    const retries = () => errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
+    return { handle, mockGet, mockPost, fire, retries };
+  };
+  const heldByHost = () => Object.assign(
+    new Error('claude exited with code 75: keyed-seat-gate: kernel memory pressure critical; holding turn'),
+    { hostDeferred: true },
+  );
+
+  test('a host deferral keeps the event with no strike and no circuit, backs off, and runs it when the hold lifts', async () => {
+    const event = makeEvent({ _id: 'evt-held' });
+    const spawn = jest.fn();
+    for (let i = 0; i < 6; i += 1) spawn.mockRejectedValueOnce(heldByHost());
+    spawn.mockResolvedValue({ text: 'answered after the hold' });
+    const run = deferredRun({ spawn, event });
+
+    await drainMicrotasks();
+    await run.fire(6);
+    run.handle.stop();
+
+    expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen, e.retryAfterMs]))
+      .toEqual([
+        ['host_deferred', 0, false, 60000],
+        ['host_deferred', 0, false, 120000],
+        ['host_deferred', 0, false, 240000],
+        ['host_deferred', 0, false, 480000],
+        ['host_deferred', 0, false, 900000],
+        ['host_deferred', 0, false, 900000],
+      ]);
+    // Six deferrals past HELD_RETRY_MAX_FAILURES (3), and it was never released.
+    expect(run.retries().some((e) => /releasing/.test(e.message))).toBe(false);
+    expect(spawn).toHaveBeenCalledTimes(7);
+    // Claimed once: the retries ran from the carry, not a fresh claim.
+    expect(callsTo(run.mockPost, '/events/release')).toEqual([]);
+    expect(ackPosts(run.mockPost).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-held/ack']);
+  });
+
+  test('past HOST_DEFERRAL_MAX_MS a gate that exits 75 every time counts, and the event is released', async () => {
+    let clock = Date.UTC(2026, 10, 14, 0, 0, 0);
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const event = makeEvent({ _id: 'evt-stuck-gate' });
+      const spawn = jest.fn().mockImplementation(async () => { throw heldByHost(); });
+      const run = deferredRun({ spawn, event });
+
+      await drainMicrotasks();
+      await run.fire(1);
+      clock += 2 * 60 * 60 * 1000;
+      await run.fire(3);
+      run.handle.stop();
+
+      expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen])).toEqual([
+        ['host_deferred', 0, false],
+        ['host_deferred', 0, false],
+        // From the cap on, it is a runtime failure like any other.
+        ['runtime', 1, false],
+        ['runtime', 2, false],
+        ['runtime', 3, true],
+      ]);
+      expect(run.retries()[4].message).toMatch(/releasing 1 event after 3 failed attempts/);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('a good spawn resets the deferral run, so a later hold starts from a minute again', async () => {
+    const event = makeEvent({ _id: 'evt-first' });
+    const later = makeEvent({ _id: 'evt-later', payload: { content: 'a second ask' } });
+    // `later` is served once, on the first poll after evt-first is acked.
+    let servedFirst = false;
+    let servedLater = false;
+    let firstAcked = false;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        if (!servedFirst) {
+          servedFirst = true;
+          return { events: [event] };
+        }
+        if (firstAcked && !servedLater) {
+          servedLater = true;
+          return { events: [later] };
+        }
+        return { events: [] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    const mockPost = jest.fn(async (route) => {
+      if (String(route).endsWith('/events/evt-first/ack')) firstAcked = true;
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValueOnce({ text: 'first answered' })
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValue({ text: 'second answered' });
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+    await drainMicrotasks();
+    for (let i = 0; i < 4 && scheduled.length; i += 1) {
+      scheduled.shift().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+    handle.stop();
+    expect(firstAcked).toBe(true);
+    expect(errors.filter((e) => e.code === 'agent_spawn_retry_scheduled').map((e) => e.retryAfterMs))
+      .toEqual([60000, 120000, 60000]);
+  });
+
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
     const event = makeEvent({ _id: 'evt-quota' });
     const mockGet = jest.fn().mockResolvedValue({ events: [event] });

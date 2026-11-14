@@ -6,12 +6,13 @@ import {
   classifySpawnFailure,
   formatRetryDelay,
   isExternalSignal,
+  isHostDeferral,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../src/lib/spawn-retry.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
-import { adapterFailure, markExternalSignal } from '../src/lib/upstream-refusal.js';
+import { adapterFailure, markExternalSignal, markHostDeferral } from '../src/lib/upstream-refusal.js';
 
 const publicToolFailure = () => Object.assign(new Error('model: gpt-9'), {
   code: PUBLIC_TOOL_FAILED_CODE, status: 404, providerCode: 'model_not_found',
@@ -465,6 +466,50 @@ describe('an outside signal', () => {
 
   test('past the grace the run loop passes no flag and the error classes as usual', () => {
     const error = markExternalSignal(new Error('claude exited with code null:'), { signal: 'SIGTERM' });
+    expect(spawnRetryPolicy({ error, consecutiveFailures: 3, intervalMs: 5000 }))
+      .toMatchObject({ failureClass: SPAWN_FAILURE_CLASS.RUNTIME, circuitOpen: true });
+  });
+});
+
+// F491: a host-side gate exited 75 (EX_TEMPFAIL) without running the turn.
+describe('a host deferral', () => {
+  test('exit 75 is marked, any other code is not', () => {
+    expect(isHostDeferral(markHostDeferral(new Error('held'), { code: 75 }))).toBe(true);
+    for (const code of [0, 1, 74, 76, 143, null]) {
+      expect(isHostDeferral(markHostDeferral(new Error('x'), { code }))).toBe(false);
+    }
+  });
+
+  test('adapterFailure marks a bare exit 75, only when the caller passes the signal', () => {
+    expect(isHostDeferral(adapterFailure('claude', 'keyed-seat-gate: holding turn', { exitCode: 75, signal: null })))
+      .toBe(true);
+    expect(isHostDeferral(adapterFailure('claude', '', { exitCode: 75 }))).toBe(false);
+    expect(isHostDeferral(adapterFailure('claude', '', { exitCode: 1, signal: null }))).toBe(false);
+  });
+
+  test('a status the text named is a cause, so exit 75 is not marked', () => {
+    const failure = adapterFailure('claude', 'request failed with status 429', { exitCode: 75, signal: null });
+    expect(failure.status).toBe(429);
+    expect(isHostDeferral(failure)).toBe(false);
+  });
+
+  test('the policy keeps the circuit shut and backs off 1, 2, 4, 8, then 15 minutes', () => {
+    const error = markHostDeferral(new Error('claude exited with code 75'), { code: 75 });
+    const delays = [1, 2, 3, 4, 5, 6].map((n) => spawnRetryPolicy({
+      error, consecutiveFailures: 0, intervalMs: 5000, hostDeferrals: n,
+    }));
+    expect(delays.map((r) => [r.failureClass, r.circuitOpen, r.delayMs])).toEqual([
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, 60000],
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, 120000],
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, 240000],
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, 480000],
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, SPAWN_RETRY_MAX_MS],
+      [SPAWN_FAILURE_CLASS.HOST_DEFERRED, false, SPAWN_RETRY_MAX_MS],
+    ]);
+  });
+
+  test('past the cap the run loop passes no count and the error classes as usual', () => {
+    const error = markHostDeferral(new Error('claude exited with code 75'), { code: 75 });
     expect(spawnRetryPolicy({ error, consecutiveFailures: 3, intervalMs: 5000 }))
       .toMatchObject({ failureClass: SPAWN_FAILURE_CLASS.RUNTIME, circuitOpen: true });
   });
