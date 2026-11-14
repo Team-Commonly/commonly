@@ -28,6 +28,8 @@ interface RunCommandOptions {
   channelId?: string;
   /** The caller's Discord id; the sync toggles admit only the installer (F161). */
   actorId?: string;
+  /** /summary already holds this row's summarizer slot (F162). */
+  cooldownClaimed?: boolean;
 }
 
 interface RunMultiCommandOptions {
@@ -44,6 +46,7 @@ async function runCommandForIntegration({
   guildId,
   channelId,
   actorId,
+  cooldownClaimed = false,
 }: RunCommandOptions): Promise<IntegrationCommandResult> {
   if (commandName === 'discord-push') {
     const discordService = new DiscordService(integration._id);
@@ -62,7 +65,7 @@ async function runCommandForIntegration({
     return {
       integration,
       result: await discordService.commandService.handlePushCommand(
-        discordService,
+        discordService, { cooldownClaimed },
       ),
     };
   }

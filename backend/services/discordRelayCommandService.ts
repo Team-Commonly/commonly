@@ -32,6 +32,7 @@ import {
   DISCORD_CONTENT_LIMIT, defuseMassMentions, escapeDiscordMarkdown, fitWithin,
 } from './discordBridgeService';
 import DISCORD_APPLICATION_COMMANDS from '../config/discordApplicationCommands.json';
+import { SUMMARY_COOLING, claimSummaryRun, resetSummaryCooldowns } from './discordSummaryCooldown';
 
 const LOG = '[discord-commands]';
 const EPHEMERAL = 64;
@@ -307,27 +308,8 @@ const editDeferredReply = async (interaction: DiscordInteraction, content: strin
 };
 
 // /summary runs the summarizer, an LLM call, so one row runs it at most once a
-// minute (F161). Claimed before the run, so two calls racing in the same
-// second still make one. Per process: a second replica keeps its own clock,
-// which at worst doubles the rate, never removes the limit.
-const SUMMARY_COOLDOWN_MS = 60_000;
-const summaryRanAt = new Map<string, number>();
-
-const claimSummaryRun = (row: DiscordCommandRow): boolean => {
-  const key = String(row._id);
-  const now = Date.now();
-  const last = summaryRanAt.get(key);
-  if (last !== undefined && now - last < SUMMARY_COOLDOWN_MS) return false;
-  summaryRanAt.set(key, now);
-  // Drop expired entries so the map stays the size of the last minute's rows.
-  summaryRanAt.forEach((at, id) => { if (now - at >= SUMMARY_COOLDOWN_MS) summaryRanAt.delete(id); });
-  return true;
-};
-
-/** Test seam: forget every row's last /summary. */
-export const resetSummaryCooldowns = (): void => { summaryRanAt.clear(); };
-
-const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again shortly.';
+// minute (F161). The clock is shared with /discord-push, which runs the same
+// call (F162; services/discordSummaryCooldown).
 
 // /summary: the channel's buffered chat → a summary → Commonly Bot in the pod,
 // the path `/discord-push` has always taken. It calls the summarizer, so it
@@ -335,7 +317,7 @@ const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again sh
 const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]): DiscordCommandHandled => {
   // Only rows with sync on run the summarizer, so only they take a slot.
   const claimed = new Set(rows
-    .filter((row) => row.config?.webhookListenerEnabled && claimSummaryRun(row))
+    .filter((row) => row.config?.webhookListenerEnabled && claimSummaryRun(row._id))
     .map((row) => String(row._id)));
   if (!claimed.size && rows.some((row) => row.config?.webhookListenerEnabled)) {
     return { response: reply(SUMMARY_COOLING) };
@@ -356,7 +338,9 @@ const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]
         }
         if (!claimed.has(String(row._id))) return { podName, text: SUMMARY_COOLING };
         try {
-          const { result } = await runCommandForIntegration({ commandName: 'discord-push', integration: row });
+          const { result } = await runCommandForIntegration({
+            commandName: 'discord-push', integration: row, cooldownClaimed: true,
+          });
           return { podName, text: String(result?.content || '❌ The summary did not run.') };
         } catch (error) {
           console.warn(`${LOG} /summary failed integration=${String(row._id)}: ${(error as Error).message}`);

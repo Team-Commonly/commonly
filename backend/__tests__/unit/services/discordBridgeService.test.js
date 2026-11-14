@@ -156,6 +156,10 @@ describe('Discord inbound live relay (F131)', () => {
     ['an admin pause', row({}, { adminPause: { reason: 'abuse' } })],
     ['an inactive row', row({ isActive: false })],
     ['a row in error', row({ status: 'error' })],
+    // F162: disconnect writes 'disconnected' and leaves isActive and liveRelay
+    // as they were, so inbound takes `connected` exactly, as outbound does.
+    ['a disconnected row', row({ status: 'disconnected' })],
+    ['a pending row', row({ status: 'pending' })],
     ['a row bound to another channel', row({}, { channelId: '567890123456789012' })],
   ])('relays nothing for %s', async (_label, integration) => {
     await relayDiscordMessageToPod({ integration, message: discordMessage() });
