@@ -51,6 +51,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * back, in the email's pod (any pod for the digest). A post is a message the
  * recipient wrote, whatever its type. Two plain reads and the join in code:
  * this runs for an operator now and then, not on a request path.
+ *
+ * Read the numbers as floors: a return is recorded only under the person's
+ * usage-events consent (off by default in the EU, EEA and UK, and under
+ * DNT/GPC), so returned/sent undercounts. The digest's "posted" is any pod,
+ * a person's own agent rooms included.
  */
 export const countsSince = async (since: Date): Promise<KindCounts[]> => {
   const pool = loadPool();
@@ -65,6 +70,13 @@ export const countsSince = async (since: Date): Promise<KindCounts[]> => {
     'SELECT user_id, pod_id, created_at FROM messages WHERE user_id = ANY($1) AND created_at >= $2',
     [recipients, since],
   )).rows : [];
+  const postsBy = new Map<string, Array<{ podId: string; at: number }>>();
+  for (const post of posts) {
+    const key = String(post.user_id);
+    const list = postsBy.get(key) || [];
+    list.push({ podId: String(post.pod_id), at: new Date(post.created_at).getTime() });
+    postsBy.set(key, list);
+  }
   const byKind = new Map<string, KindCounts>();
   for (const row of sends) {
     const kind = String(row.kind);
@@ -73,10 +85,8 @@ export const countsSince = async (since: Date): Promise<KindCounts[]> => {
     if (row.returned_at) {
       counts.returned += 1;
       const from = new Date(row.returned_at).getTime();
-      const posted = posts.some((post) => String(post.user_id) === String(row.recipient_user_id)
-        && (!row.pod_id || String(post.pod_id) === String(row.pod_id))
-        && new Date(post.created_at).getTime() >= from
-        && new Date(post.created_at).getTime() < from + DAY_MS);
+      const posted = (postsBy.get(String(row.recipient_user_id)) || []).some((post) => (
+        (!row.pod_id || post.podId === String(row.pod_id)) && post.at >= from && post.at < from + DAY_MS));
       if (posted) counts.posted24h += 1;
     }
     byKind.set(kind, counts);

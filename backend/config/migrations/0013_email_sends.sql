@@ -18,4 +18,5 @@ CREATE TABLE IF NOT EXISTS email_sends (
   sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
   returned_at TIMESTAMP WITH TIME ZONE
 );
-CREATE INDEX IF NOT EXISTS idx_email_sends_kind_sent_at ON email_sends(kind, sent_at);
+-- The count reads a sent_at range across every kind.
+CREATE INDEX IF NOT EXISTS idx_email_sends_sent_at ON email_sends(sent_at);

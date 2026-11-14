@@ -10,13 +10,18 @@ jest.mock('../../context/AuthContext', () => ({ useAuth: () => mockAuth }));
 
 const post = axios.post as jest.Mock;
 let seen = '';
+let seenState: unknown = null;
 const Probe: React.FC = () => {
   useEmailReturn();
   const location = useLocation();
   seen = `${location.pathname}${location.search}${location.hash}`;
+  seenState = location.state;
   return null;
 };
-const mount = (path: string) => render(<MemoryRouter initialEntries={[path]}><Probe /></MemoryRouter>);
+const tree = (entry: string | { pathname: string; search: string; state: unknown }) => (
+  <MemoryRouter initialEntries={[entry]}><Probe /></MemoryRouter>
+);
+const mount = (entry: string | { pathname: string; search: string; state: unknown }) => render(tree(entry));
 const TAG = 'mention.0123456789abcdef01234567';
 
 // F519: an email link's ?em= is reported once on a signed-in load, then taken
@@ -35,12 +40,22 @@ describe('useEmailReturn', () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 
-  it('waits for sign-in before reporting', async () => {
+  it('waits for sign-in, then reports once signed in', async () => {
     mockAuth = { isAuthenticated: false, currentUser: null };
-    mount(`/v2/activity?em=${TAG}`);
+    const { rerender } = mount(`/v2/activity?em=${TAG}`);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(post).not.toHaveBeenCalled();
     expect(seen).toBe(`/v2/activity?em=${TAG}`);
+    mockAuth = { isAuthenticated: true, currentUser: { _id: 'u1' } };
+    rerender(tree(`/v2/activity?em=${TAG}`));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/users/me/email-return', { tag: TAG }));
+    await waitFor(() => expect(seen).toBe('/v2/activity'));
+  });
+
+  it('keeps the router state through the strip', async () => {
+    mount({ pathname: '/v2/pods/abc', search: `?em=${TAG}`, state: { from: 'login' } });
+    await waitFor(() => expect(seen).toBe('/v2/pods/abc'));
+    expect(seenState).toEqual({ from: 'login' });
   });
 
   it('drops a malformed tag without reporting it', async () => {
