@@ -129,7 +129,8 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
         setSaveError(t('inspector.conventions.saveError'));
       }
     } finally {
-      setSaving(false);
+      // A save from the pod before a switch must not re-enable the next pod's Save.
+      if (requestId === requestRef.current) setSaving(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- closeEditor only sets state and refs
   }, [api, baseRevision, draft, podId, saving, t]);
@@ -178,6 +179,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
             className="v2-pod-conventions__field"
             value={draft}
             rows={6}
+            readOnly={saving}
             placeholder={t('inspector.conventions.placeholder')}
             onChange={(event) => setDraft(event.target.value)}
           />

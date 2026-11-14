@@ -109,7 +109,7 @@ test('a server without conventions (404) renders nothing', async () => {
   axios.get.mockRejectedValueOnce({ response: { status: 404 } });
   const { container } = mount(<V2PodConventions podId="p1" />);
   await waitFor(() => expect(axios.get).toHaveBeenCalled());
-  await waitFor(() => expect(container.querySelector('[data-testid=pod-conventions]')).toBeNull());
+  await waitFor(() => expect(container).toBeEmptyDOMElement());
 });
 
 test('a save that finishes after a pod switch stays out of the new pod', async () => {
@@ -154,4 +154,15 @@ test('a 409 without the saved version re-reads it and keeps the draft', async ()
   expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveValue('mine');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
   expect(axios.patch).toHaveBeenLastCalledWith('/api/pods/p1/conventions', { expectedRevision: 5, text: 'mine' }, expect.anything());
+});
+
+test('the field is read-only while a save is in flight, so no typing is lost', async () => {
+  let finishSave;
+  axios.get.mockResolvedValueOnce(read('Rules', { canEdit: true, revision: 1 }));
+  axios.patch.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve; }));
+  mount(<V2PodConventions podId="p1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveAttribute('readonly');
+  await act(async () => { finishSave(read('Rules', { canEdit: true, revision: 2 })); });
 });
