@@ -304,7 +304,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
             { kind: 'runtime', agentUserId: { $in: agentIds } },
             { kind: 'daemon', machineId: { $in: machineIds } },
           ] }).select('kind agentUserId machineId tokenHash status lastUsedAt expiresAt').lean()),
-          read(() => Machine.find({ machineId: { $in: machineIds } }).select('machineId lastSeenAt runtimeInventory').lean()),
+          read(() => Machine.find({ machineId: { $in: machineIds } }).select('machineId ownerUserId lastSeenAt runtimeInventory').lean()),
         ]);
         for (const credential of credentials as any[]) {
           const key = credential.kind === 'daemon' ? String(credential.machineId) : String(credential.agentUserId);
@@ -519,11 +519,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           ? runInstructionFor(i) : null;
         // F459: a connected computer seat whose harness its computer reports
         // installed and signed out answers nothing, though its key is in use.
-        // Its installer is told which harness; the computer's report stays theirs.
+        // Only the computer's owner is told which harness. installedBy is not
+        // enough: a mention writes a row installed by whoever typed it.
         const seatHarness = String(seatPayload?.runtime?.adapter || '').replace(/^claude-code$/, 'claude');
+        const seatMachine = machineById.get(String(machineId));
         const harnessSignedOut = daemonBound && connection?.state === 'connected' && seatHarness
-          && installedByViewer(i) && !guestRows.has(i)
-          && (machineById.get(String(machineId))?.runtimeInventory || []).some((row: any) => (
+          && seatMachine && String(seatMachine.ownerUserId || '') === viewerId
+          && (seatMachine.runtimeInventory || []).some((row: any) => (
             row?.harness === seatHarness && row.installed === true && row.signedIn === false))
           ? seatHarness : null;
         return {

@@ -1,7 +1,7 @@
 // F459 (d): a computer seat whose harness is installed but signed out read
 // "idle · now" on the team page, because its key is in use (the daemon polls)
 // while every message it gets fails. The roster now carries the computer's own
-// signed-out report for that seat, to its installer only.
+// signed-out report for that seat, to that computer's owner only.
 const request = require('supertest');
 const express = require('express');
 const mongoose = require('mongoose');
@@ -32,8 +32,8 @@ const other = new mongoose.Types.ObjectId();
 const podId = new mongoose.Types.ObjectId();
 const MACHINE = 'mach-f459';
 
-const seat = async ({ inventory, installedBy = viewer, adapter = 'claude' }) => {
-  await Machine.create({ ownerUserId: installedBy, machineId: MACHINE, name: 'Studio Mac', runtimeInventory: inventory, lastSeenAt: new Date() });
+const seat = async ({ inventory, installedBy = viewer, machineOwner = installedBy, adapter = 'claude' }) => {
+  await Machine.create({ ownerUserId: machineOwner, machineId: MACHINE, name: 'Studio Mac', runtimeInventory: inventory, lastSeenAt: new Date() });
   const bot = await User.create({
     username: AgentIdentityService.buildAgentUsername('nova', 'default'),
     email: 'nova-f459@agents.invalid',
@@ -64,7 +64,7 @@ beforeEach(async () => {
 afterEach(clearMongoDb);
 
 describe('a computer seat whose harness is signed out', () => {
-  it('is connected, and names the signed-out harness to its installer', async () => {
+  it('is connected, and names the signed-out harness to its computer's owner', async () => {
     await seat({ inventory: [{ harness: 'claude', installed: true, signedIn: false }] });
     const agent = await nova();
     expect(agent.connection.state).toBe('connected');
@@ -87,6 +87,13 @@ describe('a computer seat whose harness is signed out', () => {
 
   it('keeps another person\'s computer report from a viewer who did not install the seat', async () => {
     await seat({ inventory: [{ harness: 'claude', installed: true, signedIn: false }], installedBy: other });
+    expect((await nova()).harnessSignedOut).toBeUndefined();
+  });
+
+  // A mention writes a row installed by whoever typed it, so the row's
+  // installer is not the computer's owner. The owner's report stays theirs.
+  it('keeps another person\'s computer report from a viewer whose row a mention wrote', async () => {
+    await seat({ inventory: [{ harness: 'claude', installed: true, signedIn: false }], installedBy: viewer, machineOwner: other });
     expect((await nova()).harnessSignedOut).toBeUndefined();
   });
 });
