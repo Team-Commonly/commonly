@@ -196,8 +196,15 @@ const safeNextPath = (value: any) => {
   }
 };
 
-const loginErrorRedirect = (res: any, code: string) =>
-  res.redirect(`${frontendUrl()}/v2/login?oauthError=${encodeURIComponent(code)}`);
+// A failed provider leg returns to sign-in with the page the person started
+// from, so a retry by password or another provider still lands there. Email
+// links (a mention, a needs-you ask) depend on it.
+const loginErrorRedirect = (res: any, code: string, next?: string) => {
+  const params = new URLSearchParams({ oauthError: code });
+  const dest = next ? safeNextPath(next) : '/v2';
+  if (dest !== '/v2') params.set('next', dest);
+  return res.redirect(`${frontendUrl()}/v2/login?${params.toString()}`);
+};
 
 // Derive a unique username from the provider handle. Existing usernames have
 // no charset constraint server-side, but keep these URL/mention-friendly.
@@ -296,7 +303,16 @@ exports.oauthCallback = async (req: any, res: any) => {
   const provider = String(req.params.provider || '').toLowerCase();
   try {
     if (!isProviderConfigured(provider)) return loginErrorRedirect(res, 'provider_error');
-    if (req.query.error) return loginErrorRedirect(res, 'provider_denied');
+    if (req.query.error) {
+      // A cancel on the provider. Read the start's next without claiming the
+      // state, and only from the browser that started it.
+      const deniedState = typeof req.query.state === 'string' ? req.query.state : '';
+      const deniedHash = deniedState ? readBrowserHash(req, deniedState) : null;
+      const deniedRow = deniedHash ? await OAuthLoginState.findOne({
+        provider, state: deniedState, browserNonceHash: deniedHash, usedAt: null, expiresAt: { $gt: new Date() },
+      }).select('next').lean() : null;
+      return loginErrorRedirect(res, 'provider_denied', (deniedRow as { next?: string } | null)?.next);
+    }
 
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const browserNonceHash = readBrowserHash(req, state);
@@ -324,14 +340,14 @@ exports.oauthCallback = async (req: any, res: any) => {
       stateRow.pkceVerifier,
     );
     stateRow.pkceVerifier = undefined;
-    if (!profile.providerId) return loginErrorRedirect(res, 'provider_error');
+    if (!profile.providerId) return loginErrorRedirect(res, 'provider_error', stateRow.next);
     // Linking by email is only safe when the provider vouches for it.
-    if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified');
-    if (!isInstanceEmailAllowed(profile.email)) return loginErrorRedirect(res, 'team_only');
+    if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified', stateRow.next);
+    if (!isInstanceEmailAllowed(profile.email)) return loginErrorRedirect(res, 'team_only', stateRow.next);
     // The derived agent address is a reserved namespace, and a provider-asserted
     // one would create the agent-marked row an install adopts (TASK-133 b).
     if (AgentIdentityService.isReservedAgentEmail(profile.email)) {
-      return loginErrorRedirect(res, 'email_reserved');
+      return loginErrorRedirect(res, 'email_reserved', stateRow.next);
     }
 
     let user = await User.findOne({
@@ -343,12 +359,12 @@ exports.oauthCallback = async (req: any, res: any) => {
     // email no longer matches anything. The email arm below already refuses bots;
     // this is the same refusal on the path that does not consult the email
     // (TASK-133).
-    if (user?.isBot) return loginErrorRedirect(res, 'bot_account');
-    if (user && !isInstanceEmailAllowed(user.email)) return loginErrorRedirect(res, 'team_only');
+    if (user?.isBot) return loginErrorRedirect(res, 'bot_account', stateRow.next);
+    if (user && !isInstanceEmailAllowed(user.email)) return loginErrorRedirect(res, 'team_only', stateRow.next);
 
     if (!user) {
       user = await User.findOne({ email: profile.email });
-      if (user && user.isBot) return loginErrorRedirect(res, 'bot_account');
+      if (user && user.isBot) return loginErrorRedirect(res, 'bot_account', stateRow.next);
       if (user) {
         // Existing password account with the same verified email → link.
         user.authProviders.push({
@@ -373,10 +389,10 @@ exports.oauthCallback = async (req: any, res: any) => {
       let invitationRedeemed = false;
       if (code) {
         invitationRedeemed = await redeemInvitationCode(code);
-        if (!invitationRedeemed) return loginErrorRedirect(res, 'invitation_invalid');
+        if (!invitationRedeemed) return loginErrorRedirect(res, 'invitation_invalid', stateRow.next);
       }
       if (isInviteOnlyRegistrationEnabled() && !invitationRedeemed) {
-        return loginErrorRedirect(res, 'invitation_required');
+        return loginErrorRedirect(res, 'invitation_required', stateRow.next);
       }
 
       user = new User({

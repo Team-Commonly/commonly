@@ -123,7 +123,10 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, held
     process.env.BACKEND_URL || process.env.COMMONLY_API_URL,
     'http://localhost:5000',
   );
-  const appUrl = `${frontendUrl}/v2`;
+  // Activity is the day's recap, and it sits behind sign-in, so a signed-out
+  // reader signs in and comes back to it. Bare /v2 sends them to the
+  // marketing page.
+  const appUrl = `${frontendUrl}/v2/activity`;
   const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/${encodeURIComponent(unsubscribeToken)}`;
   const textItems = items.length > 0
     ? items.map((item) => `- ${item}`).join('\n')

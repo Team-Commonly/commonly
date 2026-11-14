@@ -394,6 +394,43 @@ describe('OAuth Controller', () => {
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
     });
 
+    // An email link sends a signed-out reader through sign-in. When the
+    // provider leg fails, the page they came for has to survive the trip back.
+    describe('a failed sign-in keeps the page it started from', () => {
+      it('a cancel on the provider returns to sign-in with next, and leaves the state unclaimed', async () => {
+        await seedState({ next: '/v2/pods/abc?x=1' });
+        const res = mockRes();
+        await oauthController.oauthCallback(callbackReq({ code: undefined, error: 'access_denied' }), res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=provider_denied&next=%2Fv2%2Fpods%2Fabc%3Fx%3D1');
+        expect((await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' })).usedAt).toBeFalsy();
+      });
+
+      it('a cancel from another browser carries no next', async () => {
+        await seedState({ next: '/v2/pods/abc' });
+        const res = mockRes();
+        await oauthController.oauthCallback({ ...callbackReq({ error: 'access_denied' }), headers: {} }, res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=provider_denied');
+      });
+
+      it('a refusal after the state is claimed keeps next too', async () => {
+        process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
+        await seedState({ next: '/v2/activity?item=a1' });
+        mockGithubProfile({ verified: false });
+        const res = mockRes();
+        await oauthController.oauthCallback(callbackReq(), res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified&next=%2Fv2%2Factivity%3Fitem%3Da1');
+      });
+
+      it('the plain /v2 default adds nothing', async () => {
+        process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
+        await seedState({ next: '/v2' });
+        mockGithubProfile({ verified: false });
+        const res = mockRes();
+        await oauthController.oauthCallback(callbackReq(), res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified');
+      });
+    });
+
     it('refuses an unverified provider email even if listed', async () => {
       process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
       await seedState();
