@@ -346,7 +346,7 @@ export async function removeMachine({
   // computer's name, so Settings can say where it ran until it is placed again.
   await User.updateMany(
     { 'botMetadata.machineId': machine.machineId },
-    { $set: { 'botMetadata.machineId': null, 'botMetadata.removedMachine': { name: machine.name, at: new Date() } } },
+    { $set: { 'botMetadata.machineId': null, removedMachine: { name: machine.name, at: new Date() } } },
     { strict: false },
   );
   await Machine.deleteOne({ _id: machine._id });

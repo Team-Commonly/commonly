@@ -153,17 +153,19 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
   const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
   const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
   // F476: removal clears the binding, so the agent arrives as a terminal one
-  // (managed: false). The placement read still names the computer it lost.
+  // (managed: false). The placement read still names the computer it lost
+  // until a daemon adopts it, so the row stays up while a move waits too.
   const removedMachine = placement && !placement.boundMachineId ? placement.removedMachine : null;
   const showsPlacement = details.mode === 'daemon' || Boolean(removedMachine);
+  const waitingForMachine = Boolean(placement?.requestedMachineId && !placement.boundMachineId);
   const needsAttention = Boolean(placementError) || (showsPlacement && canMove)
     || Boolean(runtimeNotReady(runtime));
   useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
-    {removedMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}
+    {removedMachine && !waitingForMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}
     {!placement.boundMachineRevoked && placement.boundMachineId && <span><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</span>}
-    {placement.requestedMachineId && !placement.boundMachineId && <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>}
+    {waitingForMachine && <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>}
   </>;
   const alertRow = (text: string, tone?: 'muted', action?: React.ReactNode) => <div className={`lrow v2-agent-settings-page__alert${tone ? ` v2-agent-settings-page__alert--${tone}` : ''}`}>
     <span className="lb" role="alert"><V2AgentSettingsIcon name="alert" />{text}</span>

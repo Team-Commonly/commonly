@@ -1,7 +1,7 @@
 // F476: removing a computer clears its agents' binding, and the agent then
 // read as a terminal agent in Settings with nothing said about the computer.
-// Removal now leaves the computer's name on the agent until it is placed,
-// moved or released again, and the placement read hands it to Settings.
+// Removal now leaves the computer's name on the agent until a daemon adopts it
+// or its owner releases it, and only the owner's placement read hands it out.
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const request = require('supertest');
@@ -84,14 +84,26 @@ describe('an agent whose computer was removed', () => {
     expect(after.removedMachine).toBeNull();
   });
 
-  it('forgets it once its owner asks for another computer, or releases it', async () => {
+  it('keeps it while a move waits for the other computer, and forgets it on release', async () => {
     await removeA();
     await request(app).post('/api/agent-binding/move')
       .send({ agentName: 'wren-test', instanceId: 'default', machineId: 'machine-b', fromMachineId: null }).expect(200);
-    expect((await placement().expect(200)).body.removedMachine).toBeNull();
+    const waiting = (await placement().expect(200)).body;
+    expect(waiting.requestedMachineId).toBe('machine-b');
+    expect(waiting.removedMachine).toMatchObject({ name: 'Studio Mac' });
 
-    await User.updateOne({ isBot: true }, { $set: { 'botMetadata.removedMachine': { name: 'Studio Mac', at: new Date() } } });
     await request(app).post('/api/agent-binding/release').send({ agentName: 'wren-test', instanceId: 'default' }).expect(200);
     expect((await placement().expect(200)).body.removedMachine).toBeNull();
+  });
+
+  // Many reads send an agent's botMetadata to other people whole (the post
+  // routes populate it), so the name lives outside it and is never selected by default.
+  it('is not returned by an ordinary read of the agent, nor with its botMetadata', async () => {
+    await removeA();
+    const plain = await User.findOne({ isBot: true }).lean();
+    expect(plain.removedMachine).toBeUndefined();
+    expect(JSON.stringify(plain)).not.toContain('Studio Mac');
+    const withMeta = await User.findOne({ isBot: true }).select('username isBot botMetadata').lean();
+    expect(JSON.stringify(withMeta)).not.toContain('Studio Mac');
   });
 });

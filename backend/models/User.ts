@@ -137,6 +137,10 @@ export interface IUser extends Document {
   apiTokenLast4?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
+  // F476: the computer whose removal unbound this agent, until a daemon adopts
+  // it or its owner releases it. Kept out of botMetadata, which many reads send
+  // to other people whole; select: false so only the owner's placement read sees it.
+  removedMachine?: { name: string; at: Date } | null;
   isBot: boolean;
   botType: BotType;
   botMetadata: {
@@ -161,8 +165,6 @@ export interface IUser extends Document {
     requestedMachineId?: string | null;
     // Owner-approved request for the bound daemon to rotate the agent key.
     reconnectRequestedAt?: Date | null;
-    // F476: the computer whose removal unbound this agent, until it is placed again.
-    removedMachine?: { name: string; at: Date } | null;
     runtime?: string;
     icon?: string;
   };
@@ -365,6 +367,11 @@ const userSchema = new Schema<IUser>({
   apiTokenLast4: { type: String, select: false },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
+  removedMachine: {
+    type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   isBot: { type: Boolean, default: false },
   botType: {
     type: String,
@@ -392,11 +399,6 @@ const userSchema = new Schema<IUser>({
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
     reconnectRequestedAt: { type: Date, default: null },
-    // F476 — declared or stripped, as above.
-    removedMachine: {
-      type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
-      default: undefined,
-    },
   },
   avatarMetadata: {
     style: {

@@ -96,7 +96,7 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
     if (!ownership.owned) return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
     const identity = await User.findOne({
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
-    }).select('botMetadata.machineId botMetadata.requestedMachineId botMetadata.removedMachine').lean();
+    }).select('botMetadata.machineId botMetadata.requestedMachineId +removedMachine').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
     const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name createdAt').lean();
     type PlacementMachine = { machineId: string; name: string; createdAt: Date };
@@ -114,9 +114,9 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       boundMachineId,
       requestedMachineId: identity.botMetadata?.requestedMachineId || null,
       boundMachineRevoked: Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId)),
-      // F476: the computer whose removal unbound it, while it sits unplaced.
-      removedMachine: !boundMachineId && identity.botMetadata?.removedMachine
-        ? { name: identity.botMetadata.removedMachine.name, at: identity.botMetadata.removedMachine.at } : null,
+      // F476: the computer whose removal unbound it, until a daemon adopts it.
+      removedMachine: !boundMachineId && identity.removedMachine
+        ? { name: identity.removedMachine.name, at: identity.removedMachine.at } : null,
       activeMachines,
     });
   } catch (err) {
@@ -150,7 +150,7 @@ router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: 
       },
       // A successful adopt consumes any pending placement request — the
       // binding IS the fulfilled request, whichever machine it named.
-      { $set: { 'botMetadata.machineId': machine.machineId, 'botMetadata.requestedMachineId': null, 'botMetadata.removedMachine': null } },
+      { $set: { 'botMetadata.machineId': machine.machineId, 'botMetadata.requestedMachineId': null, removedMachine: null } },
     );
     if (result.modifiedCount === 1) {
       return res.json({ adopted: true, agentName, instanceId, machineId: machine.machineId });
@@ -231,8 +231,7 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
 
     await User.updateOne(
       { _id: identity._id },
-      // A computer chosen is a new placement: the removed one is no longer news (F476).
-      { $set: { 'botMetadata.requestedMachineId': requestedMachineId, ...(requestedMachineId ? { 'botMetadata.removedMachine': null } : {}) } },
+      { $set: { 'botMetadata.requestedMachineId': requestedMachineId } },
     );
     return res.json({
       requested: Boolean(requestedMachineId), agentName, instanceId, machineId: requestedMachineId,
@@ -274,7 +273,7 @@ router.post('/move', bindingRateLimit, auth, async (req: express.Request & { use
       : { 'botMetadata.machineId': fromMachineId };
     const changed = await User.updateOne({
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId, ...binding,
-    }, { $set: { 'botMetadata.machineId': null, 'botMetadata.requestedMachineId': machineId, 'botMetadata.removedMachine': null } });
+    }, { $set: { 'botMetadata.machineId': null, 'botMetadata.requestedMachineId': machineId } });
     if (!changed.matchedCount) {
       const exists = await User.exists({ isBot: true, 'botMetadata.agentName': agentName,
         'botMetadata.instanceId': instanceId });
@@ -515,7 +514,7 @@ router.post('/release', bindingRateLimit, auth, async (req: express.Request & { 
       { isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
       // Withdraw any pending placement too — a release means "stop running
       // this anywhere", not "fail over to the requested machine".
-      { $set: { 'botMetadata.machineId': null, 'botMetadata.requestedMachineId': null, 'botMetadata.removedMachine': null } },
+      { $set: { 'botMetadata.machineId': null, 'botMetadata.requestedMachineId': null, removedMachine: null } },
     );
     if (!result.matchedCount) return res.status(404).json({ message: 'Agent identity not found' });
     return res.json({ released: true, agentName, instanceId });

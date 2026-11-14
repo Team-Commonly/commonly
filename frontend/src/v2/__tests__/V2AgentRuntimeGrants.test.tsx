@@ -172,6 +172,17 @@ test('an agent whose computer was removed names it and offers another computer',
   expect(screen.getByRole('button', { name: 'Move agent' })).toBeInTheDocument();
 });
 
+test('an agent whose computer was removed keeps its row after a move, waiting for the new computer', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: 'new', boundMachineRevoked: false,
+      removedMachine: { name: 'Studio Mac', at: '2026-11-13T10:00:00Z' }, activeMachines: [{ machineId: 'new', name: 'New Mac' }] }
+    : response }));
+  renderSection({ runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: false });
+  const row = await screen.findByTestId('agent-machine-placement');
+  expect(row).toHaveTextContent('Waiting for New Mac to start this agent');
+  expect(row).not.toHaveTextContent('Studio Mac was removed');
+});
+
 test('an agent whose computer was removed, with no other computer, shows the setup line', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false,
