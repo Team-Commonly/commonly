@@ -44,8 +44,34 @@ case "$status" in
   *) echo "::error::the registry answered $status for $entry; not publishing blind"; exit 1 ;;
 esac
 
-if ! npm view "$pkg@$pkg_v" version >/dev/null 2>&1; then
-  echo "::error::$pkg@$pkg_v is not on npm, so the registry cannot verify it"
+# Read the version document, not `npm view` (F119). `npm view` reads the
+# packument, which the CDN caches for up to 300 s, so on 11-04 (run of
+# af78f080) it said "not on npm" 9 s after the step before this one had read
+# the same version live. The version document is uncached; the readback step in
+# npm-publish.yml reads it the same way. Require an exact 200 (no -L) and a body
+# whose .version is this version, and retry: a fresh publish can still lag.
+NPM_REGISTRY="${MCP_NPM_REGISTRY_URL:-https://registry.npmjs.org}"
+tries="${NPM_PRESENCE_TRIES:-8}"
+pause="${NPM_PRESENCE_SLEEP_S:-15}"
+manifest=$(mktemp)
+on_npm=""
+code=000
+for i in $(seq 1 "$tries"); do
+  code=$(curl -sS -m 20 -o "$manifest" -w '%{http_code}' "$NPM_REGISTRY/$pkg/$pkg_v" || echo 000)
+  if [ "$code" = 200 ]; then
+    # JSON.parse, not require(): mktemp's name has no .json extension, so
+    # require() would load the body as JavaScript and read no version.
+    got=$(node -e 'try{const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(b.version||""))}catch(e){}' "$manifest")
+    if [ "$got" = "$pkg_v" ]; then on_npm=yes; break; fi
+    echo "· npm answered 200 for $pkg@$pkg_v with version '$got' (try $i/$tries)"
+  else
+    echo "· npm has no $pkg@$pkg_v yet (HTTP $code, try $i/$tries)"
+  fi
+  if [ "$i" -lt "$tries" ]; then sleep "$pause"; fi
+done
+rm -f "$manifest"
+if [ -z "$on_npm" ]; then
+  echo "::error::$pkg@$pkg_v is not on npm after $tries tries (last HTTP $code), so the registry cannot verify it"
   exit 1
 fi
 
