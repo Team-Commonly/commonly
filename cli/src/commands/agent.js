@@ -5237,7 +5237,15 @@ export const performInit = async ({
     version: '1.0.0',
     config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-  }).catch((error) => { throw explainNarrowing(error); });
+  }).catch((error) => {
+    // The guard above proved neither file existed, so these two are this
+    // attempt's own. Remove them, or the re-run a refusal advises (F167:
+    // --confirm-narrowing) stops at that same guard before it installs.
+    for (const written of [sdkOutPath, botOutPath]) {
+      try { rmSync(written, { force: true }); } catch { /* the install error is the one to report */ }
+    }
+    throw explainNarrowing(error);
+  });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
   // Same rule as `attach`: the mention handle is the instanceId when there is
