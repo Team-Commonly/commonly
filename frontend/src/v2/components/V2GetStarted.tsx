@@ -40,7 +40,9 @@ const V2GetStarted: React.FC<Props> = ({
   if (steps.connect && steps.firstTask) return null;
   const current: Step = steps.connect ? 'first-task' : 'connect';
   const done = Number(steps.connect) + Number(steps.firstTask);
-  const hostedFirst = pick === 'hosted' && Boolean(onRunHosted);
+  // Once the hosted agent is live its offer goes away, but the done step still
+  // names what the person did.
+  const hostedFirst = pick === 'hosted' && (Boolean(onRunHosted) || steps.connect);
   // No pick yet and hosting offered: step 1 is a choice, as on Scout's welcome.
   const choosing = !steps.connect && pick === null && Boolean(onRunHosted);
   const track = (step: string) => trackUsage('get-started-click', { props: { step }, podId });

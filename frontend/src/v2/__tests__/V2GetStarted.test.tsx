@@ -109,6 +109,12 @@ describe('step 1 follows the person\'s pick', () => {
     expect(screen.getByTestId('get-started-connect')).toHaveTextContent('podChat.getStarted.connect');
   });
 
+  test('after the hosted agent is live (its offer gone), the done step still says "Run an agent here"', () => {
+    render(<V2GetStarted steps={{ connect: true, firstTask: false }} podId="pod-1" onConnect={jest.fn()} onFirstTask={jest.fn()}
+      onOpenBoard={jest.fn()} pick="hosted" />);
+    expect(screen.getByTestId('get-started-connect')).toHaveTextContent('podChat.starts.labels.run-hosted');
+  });
+
   test('while the hosted agent starts, its choice says so and can\'t be pressed twice', () => {
     renderPick(null, { hostedStarting: true });
     const hosted = screen.getByTestId('get-started-run-hosted');
