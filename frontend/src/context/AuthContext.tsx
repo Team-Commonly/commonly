@@ -20,6 +20,10 @@ interface AuthContextValue {
   token: string | null;
   loading: boolean;
   error: string | null;
+  // The instance's sign-in allowlist no longer admits this account (403
+  // INSTANCE_ACCESS_RESTRICTED). The session is cleared; the sign-in page says
+  // the instance is limited to the team (F517).
+  accessRestricted?: boolean;
   isAuthenticated: boolean;
   register: (formData: unknown) => Promise<unknown>;
   login: (email: string, password: string) => Promise<unknown>;
@@ -45,6 +49,13 @@ interface JwtPayload {
   [key: string]: unknown;
 }
 
+type LoadError = { message?: string; response?: { status?: number; data?: { code?: string } } };
+
+const isAccessRestricted = (err: unknown): boolean => {
+  const response = (err as LoadError)?.response;
+  return response?.status === 403 && response.data?.code === 'INSTANCE_ACCESS_RESTRICTED';
+};
+
 const decodeToken = (t: string): JwtPayload | null => {
   try { return JSON.parse(atob(t.split('.')[1])) as JwtPayload; } catch { return null; }
 };
@@ -58,6 +69,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accessRestricted, setAccessRestricted] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleRefresh = useCallback((t: string) => {
@@ -94,19 +106,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (active && localStorage.getItem('token') === token) {
             setCurrentUser(res.data);
             setError(null);
+            setAccessRestricted(false);
             scheduleRefresh(token);
           }
         } catch (err: unknown) {
-          const e = err as { message?: string; response?: { status?: number } };
+          const e = err as LoadError;
           if (!active) return;
           console.error('Error loading user:', e.message);
-          if (e.response?.status === 401 && localStorage.getItem('token') === token) {
-            localStorage.removeItem('token');
-            setCurrentUser(null);
-            setToken(null);
-            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+          // A load for a token something else has since replaced or cleared
+          // (a focus check that refused it, another tab) says nothing about
+          // the session now; it must not overwrite that one's state.
+          if (localStorage.getItem('token') === token) {
+            const restricted = isAccessRestricted(err);
+            if (e.response?.status === 401 || restricted) {
+              localStorage.removeItem('token');
+              setCurrentUser(null);
+              setToken(null);
+              if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+            }
+            setAccessRestricted(restricted);
+            setError(restricted ? null : 'Failed to load user data');
           }
-          setError('Failed to load user data');
         }
       }
       if (active) setLoading(false);
@@ -137,12 +157,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         await axios.get('/api/auth/user', { headers: { Authorization: `Bearer ${token}` } });
       } catch (err) {
-        const status = (err as { response?: { status?: number } })?.response?.status;
-        if (active && status === 401 && localStorage.getItem('token') === token) {
+        const status = (err as LoadError)?.response?.status;
+        const restricted = isAccessRestricted(err);
+        if (active && (status === 401 || restricted) && localStorage.getItem('token') === token) {
           if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
           localStorage.removeItem('token');
           setCurrentUser(null);
           setToken(null);
+          if (restricted) setAccessRestricted(true);
         }
       } finally {
         checking = false;
@@ -187,6 +209,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setToken(res.data.token);
       setCurrentUser(res.data.user);
       setError(null);
+      setAccessRestricted(false);
       scheduleRefresh(res.data.token);
       return res.data;
     } catch (err: unknown) {
@@ -209,6 +232,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (newToken === token) return;
     setLoading(true);
     setError(null);
+    setAccessRestricted(false);
     setToken(newToken);
   }, [token]);
 
@@ -219,6 +243,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     forgetInviteOAuthStart();
     setToken(null);
     setCurrentUser(null);
+    setAccessRestricted(false);
   };
 
   const updateProfile = async (profile: FormData | Record<string, string>): Promise<unknown> => {
@@ -264,6 +289,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         token,
         loading,
         error,
+        accessRestricted,
         register,
         login,
         signInWithToken,

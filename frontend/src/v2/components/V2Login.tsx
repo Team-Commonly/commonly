@@ -29,7 +29,7 @@ const OAUTH_ERROR_KEYS: Record<string, string> = {
 };
 
 const V2Login: React.FC = () => {
-  const { login, error: authError, loading } = useAuth();
+  const { login, error: authError, accessRestricted, loading } = useAuth();
   const { t } = useTranslation();
   useDocumentTitle('pageTitle.login');
   const navigate = useNavigate();
@@ -88,7 +88,10 @@ const V2Login: React.FC = () => {
     if (oauthErrorCode) forgetInviteOAuthStart();
   }, [oauthErrorCode]);
 
-  const errorMessage = localError || authError || oauthError;
+  // F517: a session the allowlist stopped admitting says why, not the load error.
+  const errorMessage = localError
+    || (accessRestricted ? t(OAUTH_ERROR_KEYS.team_only) : authError)
+    || oauthError;
 
   // Only a failed password sign-in marks the fields; a provider error is about
   // the provider, not what was typed.

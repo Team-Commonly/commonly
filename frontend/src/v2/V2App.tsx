@@ -152,7 +152,7 @@ const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 // the URL without remounting the shell. Other deep routes stay behind
 // V2RequireAuth (the `*` branch below).
 const V2PodShellGate: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, accessRestricted, loading } = useAuth();
   const location = useLocation();
   const podRoute = useMatch('/v2/pods/:podId');
 
@@ -161,7 +161,9 @@ const V2PodShellGate: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return location.pathname === '/v2' || location.pathname === '/v2/'
+    // F517: a session the allowlist just refused goes to sign-in, where the
+    // team-only line is, not the public landing.
+    return (location.pathname === '/v2' || location.pathname === '/v2/') && !accessRestricted
       ? <Navigate to="/" replace />
       : <Navigate to="/v2/login" state={{ from: location }} replace />;
   }
