@@ -224,7 +224,7 @@ test('refuses a public seat before probing or spawning Hermes', async () => {
   await expect(hermes.spawn('hello', {
     environment: { model: 'test-model', sandbox: { trust: 'public' } },
     _spawnSyncImpl: probe, _spawnImpl: child,
-  })).rejects.toThrow('no enforced confinement adapter exists');
+  })).rejects.toThrow('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat');
   expect(probe).not.toHaveBeenCalled();
   expect(child).not.toHaveBeenCalled();
 });
@@ -242,7 +242,35 @@ test('does not advertise the provider object contract it cannot consume', async 
   };
   expect(validateEnvironmentSpec(environment)).toEqual({ ok: true, errors: [] });
   expect(hermes.supportsProvider).toBe(false);
-  await expect(hermes.validateEnvironment(environment)).rejects.toThrow('does not consume environment.provider');
+  await expect(hermes.validateEnvironment(environment)).rejects.toThrow('Hermes connects through OpenRouter only');
+});
+
+// F116: these refusals reach the person attaching their own agent, so they say
+// what Hermes needs in words that person can act on, with no internal names.
+test('every Hermes refusal is plain', async () => {
+  const refusals = await Promise.all([
+    hermes.validateEnvironment({ sandbox: { trust: 'public' } }),
+    hermes.validateEnvironment({ sandbox: { mode: 'seatbelt' } }),
+    hermes.validateEnvironment({ provider: { id: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' } }),
+  ].map((pending) => pending.then(() => '', (error) => error.message)));
+  refusals.forEach((message) => {
+    expect(message).not.toBe('');
+    expect(message).not.toMatch(/Secret Manager|confinement adapter|environment\.provider|operator/);
+  });
+  expect(refusals[1]).toContain('sandbox.mode=seatbelt');
+  expect(refusals[2]).toContain('OPENROUTER_API_KEY');
+});
+
+test('a missing OpenRouter key says where to set it', async () => {
+  await withHome(async (home) => {
+    const probe = jest.fn(() => ({ status: 0, stdout: 'Hermes Agent v0.22.5\n' }));
+    const pending = hermes.spawn('hello', {
+      environment: { model: 'test-model' }, cwd: home, _hermesHome: home, env: { PATH: process.env.PATH },
+      _spawnSyncImpl: probe, _spawnImpl: jest.fn(),
+    });
+    await expect(pending).rejects.toThrow('Hermes connects through OpenRouter only. Set OPENROUTER_API_KEY where this agent runs');
+    await expect(pending).rejects.not.toThrow(/Secret Manager|confinement adapter|environment\.provider|operator/);
+  });
 });
 
 test('preserves a UTF-8 JSONL result split inside a character', async () => {

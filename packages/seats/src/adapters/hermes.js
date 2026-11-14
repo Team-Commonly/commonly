@@ -215,16 +215,23 @@ export const createHermesAdapter = ({
   supportsProvider: false,
   providerKeyEnv: 'OPENROUTER_API_KEY',
 
+  // F116: these refusals reach the person attaching their own agent, so each
+  // says what Hermes needs and what to do next, in words that person can act on.
   async validateEnvironment(environment) {
     if (environment?.provider !== undefined) {
-      throw new Error('Hermes adapter does not consume environment.provider; supply OPENROUTER_API_KEY in the host environment');
+      throw new Error('Hermes connects through OpenRouter only, so it can\'t use the provider block in this '
+        + 'environment file. Remove that block and set OPENROUTER_API_KEY where this agent runs.');
     }
     if (environment?.mcp?.length) {
       throw new Error('Hermes adapter does not yet consume environment.mcp declarations');
     }
-    if (effectiveTrust(environment?.sandbox?.trust) === 'public'
-      || (environment?.sandbox?.mode && environment.sandbox.mode !== 'none')) {
-      throw new Error('Hermes public or sandbox-declared seats are unsupported: no enforced confinement adapter exists');
+    if (effectiveTrust(environment?.sandbox?.trust) === 'public') {
+      throw new Error('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat. '
+        + 'Pick another harness for a public seat.');
+    }
+    if (environment?.sandbox?.mode && environment.sandbox.mode !== 'none') {
+      throw new Error(`This environment file asks for sandbox.mode=${environment.sandbox.mode}, and Commonly `
+        + 'has no sandbox for Hermes yet, so Hermes can\'t run under it.');
     }
   },
 
@@ -247,7 +254,8 @@ export const createHermesAdapter = ({
       throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
     }
     if (!env.OPENROUTER_API_KEY) {
-      throw new Error('Supply the operator OPENROUTER_API_KEY through Secret Manager before running Hermes');
+      throw new Error('Hermes connects through OpenRouter only. Set OPENROUTER_API_KEY where this agent runs, '
+        + 'then start it again.');
     }
     await syncProfileEnv(home, env);
     const cwd = ctx.cwd || process.cwd();
