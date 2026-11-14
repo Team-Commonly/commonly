@@ -87,7 +87,11 @@ render while `edge` is empty, because an empty `from` admits every source.
     (`agentComputerBroker.ts`: the waker's `/v1/users/:id/wake`, then steel);
     the waker scales `steel-<userId>` through the kube API and never calls a
     gate over HTTP;
-  - no Ingress or route names either, so the edge admits neither.
+  - no Ingress or route names either, so the edge admits neither;
+  - ops-runner is on the list on purpose: it carries the broker's env and
+    the steel token, so an operator script can drive a gate. Removing it
+    would break that path, not tighten anything the token doesn't already
+    decide.
 - **A new in-cluster client or Service** needs its allow in the same change.
   `scripts/verify-network-policy-chart.js` fails on any Service whose pods no
   allow admits on its port, and on any known flow that's refused.
