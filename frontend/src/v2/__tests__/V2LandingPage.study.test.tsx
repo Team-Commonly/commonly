@@ -47,5 +47,12 @@ describe('V2LandingPage research section', () => {
     expect(zh.landing.study.pod).toMatch(/照样发送/);
     expect(Object.keys(zh.landing.study)).toEqual(Object.keys(en.landing.study));
     expect(Object.keys(zh.compare.study)).toEqual(Object.keys(en.compare.study));
+    // The hub carries the same block; it must not drift from the landing copy.
+    for (const copy of [en, zh]) {
+      const { kicker, ...landing } = copy.landing.study;
+      expect(copy.compare.study).toEqual(landing);
+    }
+    expect(en.landing.study.pod).toMatch(/doesn't go through yet/);
+    expect(en.landing.study.pod).not.toMatch(/come back to it/);
   });
 });
