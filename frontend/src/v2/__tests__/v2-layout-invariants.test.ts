@@ -6846,7 +6846,10 @@ describe('the member add-agent pointer keeps its line box', () => {
     const button = topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent');
     expect(button).toContain('position: relative');
     expect(button).not.toMatch(/padding/);
-    expect(topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent::after')).toMatch(/inset:/);
+    const overlay = topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent::after');
+    expect(overlay).toContain("content: ''");
+    expect(overlay).toContain('position: absolute');
+    expect(overlay).toMatch(/inset:/);
   });
 });
 
@@ -6859,6 +6862,9 @@ describe('the notice Connect link keeps its line box', () => {
     expect(link).toContain('position: relative');
     expect(link).not.toMatch(/min-height|display: inline-flex/);
     expect(chatStates).not.toMatch(/a\.v2-chat__agent-room-connect \{ min-height/);
-    expect(topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect::after')).toMatch(/inset:/);
+    const overlay = topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect::after');
+    expect(overlay).toContain("content: ''");
+    expect(overlay).toContain('position: absolute');
+    expect(overlay).toMatch(/inset:/);
   });
 });

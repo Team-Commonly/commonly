@@ -1908,6 +1908,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           && !isAgentDm
           && !isAgentRoom
           && onOpenInvite
+          // The send can finish after the view has moved to another pod; the
+          // hint belongs to the pod the message went to, which is gone.
+          && activePodIdRef.current === sendPodId
         ) {
           const storageKey = `${NO_AGENTS_HINT_KEY}.${pod._id}`;
           let alreadyShown = deliveryHintShownPodsRef.current.has(storageKey);
