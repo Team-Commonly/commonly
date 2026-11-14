@@ -2472,13 +2472,20 @@ const V2AgentBYO: React.FC = () => {
               </>
             )}
             {/* Both reach notes describe a confinement Windows doesn't have; the
-                Windows note above says what holds there instead. */}
+                Windows note above says what holds there instead.
+                F508: the reach note and the repo choice are folded. Open, they
+                put about 330 words between the waiting line and the way to the
+                pod, and a newcomer who created a Claude Code agent copied
+                nothing. The summary says when Work in my repo is on, so a
+                closed fold never hides a choice that changes the command. */}
             {listenerAvailable && listenAdapter === 'claude' && setupOs !== 'windows' && (
+              <details className="v2-byo__more" data-testid="byo-folder-details">
+                <summary>{t(repoActive ? 'agentByo.listen.folderSummaryRepoOn' : 'agentByo.listen.folderSummary')}</summary>
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
                 {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
-            )}
-            {listenerAvailable && repoChoiceAvailable && (
+            {/* Inside the fold, so the listener is up and this is Claude Code off Windows. */}
+            {repoChoiceAvailable && (
               <div className="v2-byo__listen-note" data-testid="byo-repo-choice">
                 <label>
                   <input
@@ -2523,6 +2530,8 @@ const V2AgentBYO: React.FC = () => {
                   </>
                 )}
               </div>
+            )}
+              </details>
             )}
             {listenerAvailable && listenAdapter === 'codex' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
