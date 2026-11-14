@@ -227,6 +227,18 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
     }
   });
 
+  test("the turn's last allowed step posts without a hold: there is no step after it to reply in", async () => {
+    Freshness.unseenMessages.mockResolvedValue(missed);
+    for (let i = 0; i < 9; i += 1) axios.post.mockResolvedValueOnce(callsTool('not_a_tool', {}));
+    axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }));
+
+    await runAgent(scout, ask);
+
+    expect(axios.post).toHaveBeenCalledTimes(10);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(Freshness.unseenMessages).not.toHaveBeenCalled();
+  });
+
   test('when freshness cannot be read, the turn posts as it did before', async () => {
     Freshness.readStart.mockReset().mockRejectedValue(new Error('pg down'));
     axios.post
