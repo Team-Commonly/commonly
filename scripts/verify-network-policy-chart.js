@@ -380,6 +380,9 @@ expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is 
   expect(!flowHolds([toCache], bot, targetsFor('redis', [cache, plain], 'n').targets, 6379),
     'targetsFor(): a flow passes though one redis pod refuses it');
   expect(targetsFor('gone', [cache], 'n').matched === false, 'targetsFor(): an app with no rendered pod reads as matched');
+  const elsewhere = { kind: 'Deployment', metadata: { namespace: 'm', name: 'redis' }, spec: { template: { metadata: { labels: { app: 'redis', tier: 'other' } } } } };
+  const found = targetsFor('redis', [plain, elsewhere], 'n').targets;
+  expect(found.length === 1 && !found[0].tier, 'targetsFor(): a same-named pod in another namespace is taken for the chart\'s');
 }
 
 // peerLabels() itself: a prefixed label key carries a `/` of its own, so it
