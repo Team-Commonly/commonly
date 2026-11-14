@@ -1532,14 +1532,14 @@ describe('performRun', () => {
   // CLI's Hermes adapter does not, CodeRabbit on #2816).
   describe('a reaction as the third wake-close', () => {
     let wakeSeq = 0;
-    const ambient = () => [makeEvent({
+    const ambient = (payload = {}) => [makeEvent({
       // An agent's mention: not a person addressing the seat, so the wake
       // closes on the plain "final text is posted" line.
       _id: `evt-agent-thanks-${wakeSeq += 1}`, type: 'chat.mention',
-      payload: { content: '@my-stub thanks, that fixed it', messageId: 'msg-77', senderIsHuman: false },
+      payload: { content: '@my-stub thanks, that fixed it', messageId: 'msg-77', senderIsHuman: false, ...payload },
     })];
-    const promptFor = async (adapterName, environment) => {
-      const mockGet = jest.fn().mockResolvedValue({ events: ambient() });
+    const promptFor = async (adapterName, environment, payload) => {
+      const mockGet = jest.fn().mockResolvedValue({ events: ambient(payload) });
       const mockPost = jest.fn().mockResolvedValue({});
       // A real adapter name with no enforced sandbox runs only in pods confirmed private.
       createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: mockPost }));
@@ -1557,7 +1557,7 @@ describe('performRun', () => {
       expect(spawn).toHaveBeenCalled();
       return spawn.mock.calls[0][0];
     };
-    const REACT = 'react to it with commonly_react_to_message';
+    const REACT = 'react to the message you would acknowledge';
 
     test.each(['claude', 'codex', 'opencode', 'goose', 'pi', 'qwen', 'dsh'])(
       'a %s seat with the commonly tools is offered the reaction', async (adapterName) => {
@@ -1569,6 +1569,10 @@ describe('performRun', () => {
 
     test('a Hermes seat is not, since its spawn has no commonly tools', async () => {
       expect(await promptFor('hermes', seatWithPostTool)).not.toContain(REACT);
+    });
+
+    test('a wake with no message id shown has nothing to react to, so is not', async () => {
+      expect(await promptFor('claude', seatWithPostTool, { messageId: undefined })).not.toContain(REACT);
     });
 
     test('a seat without the commonly server is not', async () => {

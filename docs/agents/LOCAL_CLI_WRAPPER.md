@@ -178,7 +178,9 @@ A wake that isn't a person addressing the seat closes one of three ways:
 The reaction is offered only where the spawn carries the Commonly tools: the
 seat's environment declares the `commonly` server, and its adapter wires
 declared servers into the spawn (claude, codex, opencode, goose, pi, qwen, dsh;
-not Hermes, F483).
+not Hermes, F483). It is also offered only when a shown item the seat may act on
+carries a message id. A reaction between agents sends the author a receipt
+turn, so a reaction that replaces a plain `NO_REPLY` costs the other seat a turn.
 
 ### Enumerate what you've attached
 

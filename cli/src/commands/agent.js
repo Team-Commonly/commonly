@@ -1866,8 +1866,11 @@ const ADAPTERS_THAT_WIRE_MCP = new Set(['claude', 'codex', 'opencode', 'goose', 
 export const seatCanReact = (adapterName, environment) => (
   ADAPTERS_THAT_WIRE_MCP.has(String(adapterName || '')) && seatPostsForItself(environment)
 );
-const REACTION_CLOSES_A_WAKE = 'If an acknowledgement is all you would post, react to it with commonly_react_to_message '
-  + 'on that message id instead, then end with NO_REPLY.';
+const REACTION_CLOSES_A_WAKE = 'If an acknowledgement is all you would post, react to the message you would acknowledge '
+  + '(commonly_react_to_message with its message id) instead, then end with NO_REPLY.';
+// Only a shown item the seat may act on gives the reaction a target: a peer's
+// read-only item is not one, and an ask response or a ruling carries no id.
+const reactableEntry = (entry) => !entry.readOnly && Boolean(entry.event?.payload?.messageId);
 const HEARTBEAT_TEXT_IS_NOT_POSTED = 'This turn is only a heartbeat: nobody asked you anything, and your final text is not posted. '
   + 'If something needs saying, post it with commonly_post_message, then end with NO_REPLY. '
   + 'Otherwise end with NO_REPLY alone, with no summary.';
@@ -3727,7 +3730,8 @@ export const performRun = ({
             ? `Do not narrate the inbox. ${HEARTBEAT_TEXT_IS_NOT_POSTED}`
             : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
               + FINAL_TEXT_IS_POSTED
-              + (seatCanReact(adapter?.name, seatEnvironment) ? ` ${REACTION_CLOSES_A_WAKE}` : '')
+              + (seatCanReact(adapter?.name, seatEnvironment) && shownEntries.some(reactableEntry)
+                ? ` ${REACTION_CLOSES_A_WAKE}` : '')
               + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
