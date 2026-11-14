@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { reportBoundaryError } from '../sentryReport';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import { useUsageEvents } from './hooks/useUsageEvents';
+import { useEmailReturn } from './hooks/useEmailReturn';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
@@ -259,6 +260,8 @@ const V2App: React.FC = () => {
   useTimeZoneCapture();
   // D286: first-party usage events, within the person's Settings choice.
   useUsageEvents();
+  // F519: an email link's return tag, reported once signed in.
+  useEmailReturn();
   React.useEffect(() => {
     applyV2Theme(getV2Theme());
   }, []);

@@ -18,6 +18,8 @@ const Pod = require('../models/Pod');
 const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+// eslint-disable-next-line global-require
+const emailReturns = require('./emailReturnService');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -115,7 +117,9 @@ export const providerAccepted = (response: any): boolean => {
   return Number(data.succeeded) >= 1 && !(Number(data.failed) > 0) && failures === 0;
 };
 
-const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = []) => {
+const buildEmailBodies = (
+  summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = [], sendId: string | null = null,
+) => {
   const title = summary.title || 'Your Commonly daily digest';
   const items = extractTopItems(summary.content);
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
@@ -123,7 +127,8 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, held
     process.env.BACKEND_URL || process.env.COMMONLY_API_URL,
     'http://localhost:5000',
   );
-  const appUrl = `${frontendUrl}/v2`;
+  // F519: the app link carries the digest's return tag.
+  const appUrl = sendId ? emailReturns.tagUrl(`${frontendUrl}/v2`, 'digest', sendId) : `${frontendUrl}/v2`;
   const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/${encodeURIComponent(unsubscribeToken)}`;
   const textItems = items.length > 0
     ? items.map((item) => `- ${item}`).join('\n')
@@ -269,7 +274,8 @@ export class DigestEmailService {
         }
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
-        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
+        const sendId = emailReturns.newSendId();
+        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks, sendId);
         const sent = await sendEmail({
           to: user.email,
           subject: bodies.subject,
@@ -278,6 +284,9 @@ export class DigestEmailService {
         });
 
         result.sent += 1;
+        if (providerAccepted(sent)) {
+          await emailReturns.noteSend({ sendId, kind: 'digest', recipientUserId: user._id, sentAt: emailedAt });
+        }
         if (includedOverflow.length) {
           try {
             await NeedsYouEmail.updateMany(

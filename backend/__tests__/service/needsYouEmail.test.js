@@ -89,6 +89,41 @@ describe('needs-you email', () => {
     expect(deliveredBody).not.toContain('Ask 0');
   });
 
+  // F519: the click link carries this send's return tag; the redirect hands
+  // on a well-formed tag and drops anything else; an accepted send is noted.
+  it('tags the click link, hands the tag through the redirect, and notes the accepted send', async () => {
+    const emailReturns = require('../../services/emailReturnService');
+    const noted = jest.spyOn(emailReturns, 'noteSend').mockResolvedValue(undefined);
+    mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 1, failed: 0, failures: [] } } });
+    const user = await human();
+    const ask = { ...item(user, 'Ask'), podId: new mongoose.Types.ObjectId() };
+    await sendNeedsYouEmail(ask);
+
+    const { textBody } = mockSendEmail.mock.calls[0][0];
+    const tag = /\/api\/email\/needs-you\/open\/[a-f0-9]{48}\?em=(needs-you\.[a-f0-9]{24})/.exec(textBody)?.[1];
+    expect(tag).toBeDefined();
+    expect(noted).toHaveBeenCalledWith(expect.objectContaining({
+      sendId: tag.slice('needs-you.'.length), kind: 'needs-you', recipientUserId: user._id, podId: ask.podId,
+    }));
+
+    const delivered = await NeedsYouEmail.findOne({ recipientUserId: user._id }).select('+clickToken');
+    const tagged = await request(app).get(`/api/email/needs-you/open/${delivered.clickToken}?em=${tag}`);
+    expect(tagged.headers.location).toBe(`https://commonly.me/v2/activity?item=${ask._id}&em=${tag}`);
+    const forged = await request(app).get(`/api/email/needs-you/open/${delivered.clickToken}?em=https://evil.test`);
+    expect(forged.headers.location).toBe(`https://commonly.me/v2/activity?item=${ask._id}`);
+    noted.mockRestore();
+  });
+
+  it('notes no send when the provider refused it', async () => {
+    const emailReturns = require('../../services/emailReturnService');
+    const noted = jest.spyOn(emailReturns, 'noteSend').mockResolvedValue(undefined);
+    mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['x'] } } });
+    const user = await human();
+    await sendNeedsYouEmail(item(user, 'Ask'));
+    expect(noted).not.toHaveBeenCalled();
+    noted.mockRestore();
+  });
+
   it('skips an active, unverified, opted-out, bot, or reserved-domain recipient', async () => {
     const users = await Promise.all([
       human({ lastActive: new Date() }),

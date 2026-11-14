@@ -125,6 +125,36 @@ describe('digestEmailService', () => {
     expect(freshUser.lastDigestSent).toBeInstanceOf(Date);
   });
 
+  // F519: the app link carries the digest's return tag, and the send is noted
+  // only once the provider accepted it.
+  it('tags the app link with this send and notes the send once accepted', async () => {
+    const emailReturns = require('../../../services/emailReturnService');
+    const noted = jest.spyOn(emailReturns, 'noteSend').mockResolvedValue(undefined);
+    const user = await createUser();
+    const digest = await createDigest(user);
+
+    await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    const { textBody, htmlBody } = mockSendEmail.mock.calls[0][0];
+    const tag = /\?em=(digest\.[a-f0-9]{24})/.exec(textBody)?.[1];
+    expect(tag).toBeDefined();
+    expect(htmlBody).toContain(`em=${tag}`);
+    expect(noted).toHaveBeenCalledWith(expect.objectContaining({
+      sendId: tag.slice('digest.'.length), kind: 'digest', recipientUserId: user._id,
+    }));
+    noted.mockRestore();
+  });
+
+  it('notes no send when the provider refused it', async () => {
+    const emailReturns = require('../../../services/emailReturnService');
+    const noted = jest.spyOn(emailReturns, 'noteSend').mockResolvedValue(undefined);
+    mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['x'] } } });
+    const user = await createUser();
+    await digestEmailService.sendDigestEmails([runEntry(await createDigest(user))]);
+    expect(noted).not.toHaveBeenCalled();
+    noted.mockRestore();
+  });
+
   it('carries held needs-you asks into the next digest once', async () => {
     const user = await createUser({ email: `held-${sequence + 1}@gmail.com` });
     const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });

@@ -69,7 +69,7 @@ router.get('/unsubscribe/needs-you/:token', unsubscribeRateLimit, async (req: an
 
 router.get('/needs-you/open/:token', unsubscribeRateLimit, async (req: any, res: any) => {
   try {
-    const url = await recordNeedsYouClick(req.params?.token);
+    const url = await recordNeedsYouClick(req.params?.token, req.query?.em);
     if (!url) return res.status(404).send('Email link not found');
     return res.redirect(302, url);
   } catch (error) {

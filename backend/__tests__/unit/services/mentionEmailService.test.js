@@ -33,9 +33,10 @@ const path = require('path');
 const { pool } = require('../../../config/db-pg');
 
 const MIGRATION = fs.readFileSync(path.join(__dirname, '../../../config/migrations/0012_mention_email.sql'), 'utf8');
-const resetPg = () => pool.query('DELETE FROM pod_visits; DELETE FROM mention_email_state;');
+const SENDS = fs.readFileSync(path.join(__dirname, '../../../config/migrations/0013_email_sends.sql'), 'utf8');
+const resetPg = () => pool.query('DELETE FROM pod_visits; DELETE FROM mention_email_state; DELETE FROM email_sends;');
 
-beforeAll(async () => { await setupMongoDb(); await pool.query(MIGRATION); });
+beforeAll(async () => { await setupMongoDb(); await pool.query(MIGRATION); await pool.query(SENDS); });
 afterAll(closeMongoDb);
 beforeEach(() => {
   process.env = { ...originalEnv, SMTP2GO_API_KEY: 'smtp-key', SMTP2GO_FROM_EMAIL: 'hello@commonly.me' };
@@ -115,6 +116,30 @@ test('a platform-authored row creates no mention and no email', async () => {
   await recordMentionedUsers({ _id: 9002, podId: pod._id, userId: ana._id, content: '@bo welcome', authorKind: 'kernel', createdAt: at });
   expect(await AttentionItem.countDocuments({ kind: 'mention' })).toBe(0);
   expect((await sweep(new Date())).sent).toBe(0);
+});
+
+// F519: the pod link carries this send's return tag, and the accepted send is
+// recorded for the recipient and the pod; no tag names the person.
+test('the pod link carries a return tag, recorded against the recipient and pod', async () => {
+  const { ana, bo, pod } = await team();
+  await mention(ana, pod, '@bo look', new Date(Date.now() - 16 * MIN));
+  await sweep(new Date());
+  const mail = mockSendEmail.mock.calls[0][0];
+  const sendId = new RegExp(`/v2/pods/${pod._id}\\?em=mention\\.([a-f0-9]{24})`).exec(mail.textBody)?.[1];
+  expect(sendId).toBeDefined();
+  expect(mail.htmlBody).toContain(`em=mention.${sendId}`);
+  const { rows } = await pool.query('SELECT kind, recipient_user_id, pod_id, returned_at FROM email_sends');
+  expect(rows).toEqual([{ kind: 'mention', recipient_user_id: String(bo._id), pod_id: String(pod._id), returned_at: null }]);
+});
+
+test('a refused send records no send row', async () => {
+  const { ana, pod } = await team();
+  mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['x'] } } });
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await mention(ana, pod, '@bo look', new Date(Date.now() - 16 * MIN));
+  await sweep(new Date());
+  expect((await pool.query('SELECT COUNT(*) AS n FROM email_sends')).rows[0].n).toBe(0);
 });
 
 test('before 15 minutes nothing goes; the pass after the mark sends it', async () => {

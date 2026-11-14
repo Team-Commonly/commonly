@@ -15,6 +15,8 @@ const { sendEmail } = require('./emailService');
 // eslint-disable-next-line global-require
 const { providerAccepted, digestSendingState } = require('./digestEmailService');
 // eslint-disable-next-line global-require
+const emailReturns = require('./emailReturnService');
+// eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 
 /**
@@ -126,7 +128,9 @@ const unsubscribeTokenFor = async (user: any): Promise<string> => {
 const deliver = async (user: any, row: any): Promise<void> => {
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
   const backendUrl = primaryUrl(process.env.BACKEND_URL || process.env.COMMONLY_API_URL, 'http://localhost:5000');
-  const podUrl = `${frontendUrl}/v2/pods/${encodeURIComponent(String(row.podId))}`;
+  // F519: the link carries a return tag; the send is noted once accepted.
+  const sendId = emailReturns.newSendId();
+  const podUrl = emailReturns.tagUrl(`${frontendUrl}/v2/pods/${encodeURIComponent(String(row.podId))}`, 'mention', sendId);
   const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/${encodeURIComponent(await unsubscribeTokenFor(user))}`;
   // Who and where, never what: pod text can be private, and a preview pane
   // shows the body to anyone near the screen.
@@ -138,6 +142,7 @@ const deliver = async (user: any, row: any): Promise<void> => {
     htmlBody: `<!doctype html><html><body style="margin:0;background:#f8f8fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;"><main style="max-width:560px;margin:0 auto;padding:32px 20px;"><section style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;"><h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">${escapeHtml(subject)}</h1><p style="margin:0;"><a href="${escapeHtml(podUrl)}" style="display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;padding:10px 16px;">Open the pod</a></p></section><p style="margin:16px 0 0;text-align:center;color:#7b8494;font-size:12px;"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#2456c8;">Turn off these emails and the daily digest</a></p></main></body></html>`,
   });
   if (!providerAccepted(response)) throw new Error('provider did not accept the email');
+  await emailReturns.noteSend({ sendId, kind: 'mention', recipientUserId: user._id, podId: row.podId });
 };
 
 type Outcome = 'sent' | 'skipped' | 'failed';

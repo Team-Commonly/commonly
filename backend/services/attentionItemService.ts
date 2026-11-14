@@ -116,6 +116,7 @@ const recordForRecipients = async (
         _id: result.upsertedId, recipientUserId: recipient._id,
         title: String(payload.title || ''), detail: String(payload.detail || ''),
         podName: String(payload.podName || ''), actorName: String(payload.actorName || ''),
+        podId: payload.podId,
       });
     }
   }));
