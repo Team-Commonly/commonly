@@ -233,9 +233,10 @@ export const grantBrokersForRuntimeSeat = async (
   // The refusal is reported only for what it withheld: a named grant it lifts
   // for leaves the read as the projection said.
   if (kept.length === servers.length) return { servers, refusal };
+  // With nothing left, the judgement's reason is the one that emptied the read.
   return {
     servers: kept,
-    refusal: judgement.hostUnconfined ? judgement.refusal : (refusal || judgement.refusal),
+    refusal: judgement.hostUnconfined || !kept.length ? judgement.refusal : (refusal || judgement.refusal),
   };
 };
 

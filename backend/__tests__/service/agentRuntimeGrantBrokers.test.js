@@ -415,6 +415,36 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
       expect(res.body.refusal).toEqual(expect.objectContaining({ code: GRANT_BROKER_REFUSAL_CODE }));
     });
 
+    // The per-call judgement reads every owner's row, the seat's own included
+    // (an auto-join copies its source's config); the projection skips that one.
+    // Its absent sandbox is a refusal naming lifts, but the seat's own row makes
+    // it a second installer, and naming lifts only for a sole installer. So each
+    // call would refuse both grants, and the read now withholds both.
+    test("a seat's own row with no sandbox block withholds the brokers each call would refuse", async () => {
+      const fixture = await seed({ seatEnvironment: { sandbox: { mode: 'workspace', trust: 'public' } } });
+      await AgentInstallation.create({
+        agentName: 'quill',
+        instanceId: 'default',
+        podId: (await Pod.create({ name: `self${seq}`, createdBy: fixture.seat._id, members: [fixture.seat._id] }))._id,
+        version: '1.0.0',
+        status: 'active',
+        installedBy: fixture.seat._id,
+        config: { runtime: { runtimeType: 'webhook' } },
+      });
+      await namedGrant(fixture);
+      await grantFor({
+        grantId: 'grant_unnamed',
+        target: { kind: 'seat', id: String(fixture.seat._id) },
+        audience: [String(fixture.seat._id)],
+      });
+      const res = await read(SEAT_TOKEN);
+      expect(res.status).toBe(200);
+      expect(res.body.servers).toEqual([]);
+      expect(res.body.refusal).toEqual(expect.objectContaining({
+        code: GRANT_BROKER_REFUSAL_CODE, reason: 'sandbox_absent',
+      }));
+    });
+
     test('a confined seat still gets its broker', async () => {
       const fixture = await seed();
       await namedGrant(fixture);
