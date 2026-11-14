@@ -570,7 +570,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     return null;
   }, [startsByMessageId]);
   const welcomePick = useMemo<WelcomePick>(() => {
-    if (hostedStart.state || viewerHoldsHostedAgent) return 'hosted';
+    // A failed start is not a pick: the cap or an unconfigured runtime can
+    // refuse it, and the person still has connecting their own.
+    if ((hostedStart.state && hostedStart.state.status !== 'failed') || viewerHoldsHostedAgent) return 'hosted';
     if (pendingConnectAgent) return 'byo';
     if (viewerId && messages.some((message) => message.user_id === viewerId
       && (message.content || '').trim() === CONNECT_START_LABEL)) return 'byo';

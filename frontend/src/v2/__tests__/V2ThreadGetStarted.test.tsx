@@ -14,11 +14,12 @@ jest.mock('../../context/SocketContext', () => ({
 
 let mockTasks = [];
 let mockAgentStates = [];
+let mockPost = null;
 jest.mock('axios', () => {
   const mock = {
     get: jest.fn((url) => Promise.resolve({ data: String(url).startsWith('/api/v1/tasks/') ? { tasks: mockTasks }
       : String(url).endsWith('/agent-states') ? { agents: mockAgentStates } : {} })),
-    post: jest.fn(() => Promise.resolve({ data: {} })),
+    post: jest.fn((url) => (mockPost && String(url) === '/api/hosted/welcome-start' ? mockPost() : Promise.resolve({ data: {} }))),
     patch: jest.fn(),
     delete: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
@@ -84,7 +85,7 @@ const ByoPage = () => {
   return <p>byo page pod={params.get('pod')} name={params.get('name') || ''} reconnect={params.get('reconnect') || ''}</p>;
 };
 
-afterEach(() => { mockAgentStates = []; });
+afterEach(() => { mockAgentStates = []; mockPost = null; });
 
 describe('V2Thread Get started bar (D288)', () => {
   // F516: an owner who made an agent and never ran its command comes back to
@@ -221,6 +222,28 @@ describe('the bar and Scout\'s welcome name the same first step', () => {
     expect(step).toHaveTextContent('Connect your first agent');
     expect(screen.queryByTestId('get-started-choice')).not.toBeInTheDocument();
     expect(inked()).toEqual(['Open Bring your own']);
+  });
+
+  test('a hosted start from the bar shows "Starting…" in the bar and takes no second press', async () => {
+    mockTasks = starterTasks(false, false);
+    mockPost = () => new Promise(() => {});
+    renderThread({ messages: [welcome] });
+    fireEvent.click(await screen.findByTestId('get-started-run-hosted'));
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(step).toHaveTextContent('Starting'));
+    expect(step).toBeDisabled();
+    expect(step).toHaveAttribute('aria-busy', 'true');
+  });
+
+  test('a hosted start that fails leaves both choices, so connecting their own is still offered', async () => {
+    mockTasks = starterTasks(false, false);
+    mockPost = () => Promise.reject(Object.assign(new Error('refused'), { response: { status: 409, data: { code: 'hosted_cap_reached' } } }));
+    renderThread({ messages: [welcome] });
+    fireEvent.click(await screen.findByTestId('get-started-run-hosted'));
+    await waitFor(() => expect(document.querySelector('.v2-chat__start-note--error')).not.toBeNull());
+    expect(screen.getByTestId('get-started-choice')).toBeInTheDocument();
+    expect(screen.getByTestId('get-started-connect')).toHaveTextContent('Connect your own agent');
+    expect(inked()).toEqual(['Run an agent here', 'Connect an agent I already use']);
   });
 
   test('an agent of theirs waiting to connect counts as picking bring-your-own', async () => {

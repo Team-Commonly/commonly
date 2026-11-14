@@ -44,21 +44,23 @@ const V2GetStarted: React.FC<Props> = ({
   // No pick yet and hosting offered: step 1 is a choice, as on Scout's welcome.
   const choosing = !steps.connect && pick === null && Boolean(onRunHosted);
   const track = (step: string) => trackUsage('get-started-click', { props: { step }, podId });
-  const rows: Array<{ step: Step; label: string; isDone: boolean; act: () => void }> = [
+  const rows: Array<{ step: Step; label: string; isDone: boolean; act: () => void; busy?: boolean }> = [
     {
       step: 'connect',
       label: hostedFirst
-        ? t('podChat.starts.labels.run-hosted')
+        ? (hostedStarting ? t('agentByo.actions.starting') : t('podChat.starts.labels.run-hosted'))
         : (pendingAgentName ? t('podChat.getStarted.finishConnecting', { name: pendingAgentName }) : t('podChat.getStarted.connect')),
       isDone: steps.connect,
       act: hostedFirst && onRunHosted ? onRunHosted : onConnect,
+      // The hosted start in flight: the key says so and takes no second press.
+      busy: hostedFirst && hostedStarting && !steps.connect,
     },
     { step: 'first-task', label: t('podChat.getStarted.firstTask'), isDone: steps.firstTask, act: onFirstTask },
   ];
   return (
     <div className="v2-get-started" role="group" aria-label={t('podChat.getStarted.title')} data-testid="get-started">
       <span className="v2-get-started__title">{t('podChat.getStarted.title')}</span>
-      {rows.map(({ step, label, isDone, act }, index) => {
+      {rows.map(({ step, label, isDone, act, busy }, index) => {
         const now = step === current;
         if (step === 'connect' && choosing && onRunHosted) {
           return (
@@ -83,7 +85,7 @@ const V2GetStarted: React.FC<Props> = ({
                 data-testid="get-started-connect"
                 onClick={() => { track('connect'); onConnect(); }}
               >
-                {pendingAgentName ? t('podChat.getStarted.finishConnecting', { name: pendingAgentName }) : t('podChat.getStarted.connectOwn')}
+                {t('podChat.getStarted.connectOwn')}
               </button>
             </span>
           );
@@ -95,10 +97,12 @@ const V2GetStarted: React.FC<Props> = ({
             className={`v2-get-started__step${now ? ' v2-get-started__step--now' : ''}${isDone ? ' v2-get-started__step--done' : ''}`}
             aria-disabled={now ? undefined : true}
             aria-current={now ? 'step' : undefined}
+            aria-busy={busy || undefined}
+            disabled={busy}
             aria-label={isDone ? t('podChat.getStarted.done', { step: label }) : undefined}
             data-testid={`get-started-${step}`}
             onClick={() => {
-              if (!now) return;
+              if (!now || busy) return;
               track(step === 'connect' && hostedFirst ? 'run-hosted' : step);
               act();
             }}
