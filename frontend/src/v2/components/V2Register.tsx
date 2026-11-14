@@ -16,6 +16,7 @@ import {
 } from '../utils/pendingInvite';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { trackPublic } from '../utils/usageEvents';
+import { authErrorText } from '../utils/authErrorText';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -158,7 +159,7 @@ const V2Register: React.FC = () => {
         setError(t('auth.register.errors.invitationRequired'));
         setErrorField('invite');
       } else {
-        setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
+        setError(authErrorText(err, t, 'register'));
         // Only a 4xx is about what was typed; a network or server failure, or a
         // rate limit (429), marks no field.
         const status = e1.response?.status || 0;

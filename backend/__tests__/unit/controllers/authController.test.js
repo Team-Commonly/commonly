@@ -914,7 +914,7 @@ describe('Auth Controller Tests', () => {
         const right = res();
         await authController.login({ body: { email: 'banned@example.com', password: 'Password123!' } }, right);
         expect(right.status).toHaveBeenCalledWith(403);
-        expect(right.json).toHaveBeenCalledWith({ error: 'This account has been suspended.' });
+        expect(right.json).toHaveBeenCalledWith({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
       });
     });
   });

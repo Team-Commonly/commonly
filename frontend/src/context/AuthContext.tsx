@@ -213,8 +213,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       scheduleRefresh(res.data.token);
       return res.data;
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string; msg?: string } } };
-      setError(e.response?.data?.error || e.response?.data?.msg || 'Login failed');
+      // The caller shows its own line (V2Login via authErrorText). Storing the
+      // server's English text here let it reach the sign-in page on a retry.
+      setError(null);
       throw err;
     } finally {
       setLoading(false);

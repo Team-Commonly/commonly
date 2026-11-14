@@ -288,7 +288,8 @@ describe('reset password', () => {
   });
 
   test('an expired link carries its recovery link in the alert and leaves the fields alone', async () => {
-    axios.post.mockRejectedValue({});
+    // The server's answer for a used or expired link.
+    axios.post.mockRejectedValue({ response: { status: 400, data: { error: 'Invalid or expired reset link.' } } });
     mount(<V2ResetPassword />, '/v2/reset-password?token=t');
     fill('longenough1', 'longenough1');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /update password/i })); });
