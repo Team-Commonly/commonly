@@ -52,15 +52,27 @@ const { recordTaskTransition } = require('../services/taskRecordService');
  * `notifyPodAgents` treats *undefined* as "assume agent" — the safe default
  * there, and not one to trip over by accident here.
  */
+// An agent is calling on any of its tokens: a cm_agent_ runtime token sets
+// req.agentUser, and a bot on a cm_ user token rides the human branch of auth,
+// which names it as req.botCaller (F501). Either way it is held to the agent
+// rules on the board: the lease, the freshness hold, and an agent's wake.
+const callerBotMetadata = (req: any): { agentName?: string; instanceId?: string } | null => {
+  if (req.agentUser?._id) return req.agentUser.botMetadata || {};
+  if (req.user?.isBot) return req.user.botMetadata || {};
+  if (req.botCaller) return req.botCaller.botMetadata || {};
+  return null;
+};
+
 const actorOf = (req: any) => {
-  const isAgent = Boolean(req.agentUser?._id || req.user?.isBot);
+  const botMeta = callerBotMetadata(req);
+  const isAgent = botMeta !== null;
   // Identity, not just a user id. The self-skip downstream keys on
   // (agentName, instanceId) because `installedBy` means the agent on a
   // self-install and the HUMAN on a human-install — supplying only userId let a
   // human-installed agent fail to match its own install and wake itself.
   // Both auth shapes carry the same metadata: agentRuntimeAuth sets
   // `req.agentUser`, the dual-auth path leaves the bot on `req.user`.
-  const meta = req.agentUser?.botMetadata || req.user?.botMetadata || {};
+  const meta = botMeta || {};
   return {
     userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
     isAgent,
@@ -757,7 +769,10 @@ const liveLeaseHolder = (
 // sets neither — so either signal means "a seat is calling".
 // An outside assignee is a seat whatever token it holds (F127): a bot on a cm_
 // user token rides the human branch, and a person may override a live lease.
-const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot || req.outsideAssigneeCaller);
+// A member bot on a cm_ user token is a seat too (F501).
+const isSeatCaller = (req: AuthReq): boolean => Boolean(
+  req.agentUser || req.user?.isBot || req.botCaller || req.outsideAssigneeCaller,
+);
 
 type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
 
