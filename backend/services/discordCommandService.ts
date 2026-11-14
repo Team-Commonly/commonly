@@ -211,7 +211,11 @@ class DiscordCommandService {
       }
       // F162: as /tldr, only a connected row answers. Disconnect leaves the
       // row active, so isActive alone would still post the pod's summary.
-      if (this.integration.status !== 'connected') return { success: false, content: CONNECTION_NOT_ACTIVE };
+      // Marked `refused` like the F143 refusal: it shows nothing of the pod, so
+      // a channel's other, connected pod keeps its public reply.
+      if (this.integration.status !== 'connected') {
+        return { success: false, refused: true, content: CONNECTION_NOT_ACTIVE };
+      }
 
       const found = await DiscordCommandService.latestPodSummaryFor(this.integration);
       if (found.kind === 'refused') {

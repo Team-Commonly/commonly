@@ -168,6 +168,8 @@ describe('DiscordCommandService /commonly-summary on a shared channel', () => {
     expect(result.content).not.toContain('pod secrets');
     expect(result.success).toBe(false);
     expect(result.content).toMatch(/isn't active/);
+    // It shows nothing of the pod, so a connected sibling's reply stays public.
+    expect(result.refused).toBe(true);
   });
 });
 
