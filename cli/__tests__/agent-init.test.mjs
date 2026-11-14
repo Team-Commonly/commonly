@@ -123,6 +123,65 @@ describe('performInit (python)', () => {
     );
   });
 
+  // F167: init's install carries the narrowing confirmation only on the flag.
+  test('--confirm-narrowing reaches the install, and is absent by default', async () => {
+    const plain = makeClient();
+    await performInit({ client: plain, language: 'python', agentName: 'plain-bot', podId: 'pod-1', targetDir: tmp });
+    expect(plain.post.mock.calls.find(([route]) => route === '/api/registry/install')[1])
+      .not.toHaveProperty('confirmNarrowing');
+
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-init-narrowing-'));
+    try {
+      const confirmed = makeClient();
+      await performInit({
+        client: confirmed, language: 'python', agentName: 'ok-bot', podId: 'pod-1', targetDir: other,
+        confirmNarrowing: true,
+      });
+      expect(confirmed.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+        confirmNarrowing: true,
+      }));
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  // F167 (CodeRabbit on #4101): the refusal says to re-run with the flag, so a
+  // refused install must not leave files that make that re-run refuse to overwrite.
+  test('a narrowing refusal leaves the directory so the advised re-run installs', async () => {
+    const client = makeClient();
+    const post = client.post.getMockImplementation();
+    client.post.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('x'), {
+        status: 409,
+        body: {
+          code: 'outsider_grant_narrowing_confirm_required',
+          message: 'It would stop writing in Ops. Send confirmNarrowing: true to install anyway.',
+        },
+      });
+    });
+    await expect(performInit({
+      client, language: 'python', agentName: 'retry-bot', podId: 'pod-1', targetDir: tmp,
+    })).rejects.toThrow('Re-run with --confirm-narrowing to install anyway.');
+    expect(fs.readdirSync(tmp)).toEqual([]);
+
+    client.post.mockImplementation(post);
+    await performInit({
+      client, language: 'python', agentName: 'retry-bot', podId: 'pod-1', targetDir: tmp, confirmNarrowing: true,
+    });
+    expect(client.post).toHaveBeenLastCalledWith('/api/registry/install', expect.objectContaining({ confirmNarrowing: true }));
+    expect(fs.existsSync(path.join(tmp, 'retry-bot.py'))).toBe(true);
+  });
+
+  test('a failed install never removes a file it did not write', async () => {
+    fs.writeFileSync(path.join(tmp, 'notes.txt'), 'mine', 'utf8');
+    const client = makeClient();
+    client.post.mockImplementationOnce(async () => { throw new Error('Pod not found'); });
+    await expect(performInit({
+      client, language: 'python', agentName: 'gone-bot', podId: 'pod-1', targetDir: tmp,
+    })).rejects.toThrow('Pod not found');
+    expect(fs.readdirSync(tmp)).toEqual(['notes.txt']);
+  });
+
   test('refuses to clobber an existing file in the target directory', async () => {
     fs.writeFileSync(path.join(tmp, 'commonly.py'), '# user file', 'utf8');
 
