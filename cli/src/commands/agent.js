@@ -26,6 +26,7 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
+import { connectCodeRefusalLine, redeemConnectCode } from '../lib/connect-code.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -5738,6 +5739,8 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .option('--unsandboxed', 'Native Windows, or a private Codex agent on Linux: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
+    .option('--api-url <url>', 'The Commonly instance this agent joins (the Connect your own agent page fills it in; same as COMMONLY_API_URL)')
+    .option('--connect <code>', "The connect code from the Connect your own agent page's line, traded once for this agent's key; it stops working once the agent has listened, or after 30 minutes")
     .action(async (typedName, opts) => {
       // F306: the seat this run is. `name` is the local key (the token file,
       // the log label, the daemon's plist); the server identity is the record's.
@@ -5777,6 +5780,57 @@ Docs:
           name = agentArg;
         }
       }
+      // F525: the page's one pasted line names the instance and carries a
+      // connect code, not the agent's lasting key, so the shell history it
+      // lands in keeps nothing that still works once the agent has listened.
+      // The key it trades for takes the env path's place from here on: the
+      // first run bootstraps from it, and a saved record treats it as a
+      // reissued key (adoptEnvToken).
+      if (opts.apiUrl !== undefined) {
+        let apiUrl;
+        try {
+          apiUrl = new URL(String(opts.apiUrl).trim());
+        } catch {
+          apiUrl = null;
+        }
+        if (!apiUrl || !['https:', 'http:'].includes(apiUrl.protocol) || apiUrl.search || apiUrl.hash) {
+          console.error(`${stamp()} [${name}] --api-url needs an http(s) address, such as https://api.commonly.me.`);
+          process.exit(1);
+        }
+        // As typed, less a trailing slash, as the env path keeps it.
+        const typedUrl = String(opts.apiUrl).trim().replace(/\/+$/, '');
+        // A saved agent of this name on another instance would win over the
+        // line's key and run as that one, leaving this one waiting.
+        const savedOrigin = (() => {
+          try { return record?.instanceUrl ? new URL(record.instanceUrl).origin : null; } catch { return null; }
+        })();
+        if (savedOrigin && savedOrigin !== apiUrl.origin) {
+          console.error(`${stamp()} [${name}] This computer already runs an agent called ${agentArg} on ${savedOrigin}, `
+            + `and this line is for ${apiUrl.origin}. To use this line, remove that one first: `
+            + `${CLI} agent detach ${name} --force, then paste the line again.`);
+          process.exit(1);
+        }
+        process.env.COMMONLY_API_URL = typedUrl;
+      }
+      let connectCodeKey = false;
+      if (opts.connect !== undefined) {
+        const instanceUrl = (process.env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
+        const redeemed = await redeemConnectCode({ code: String(opts.connect).trim(), instanceUrl });
+        if (redeemed.token) {
+          process.env.COMMONLY_AGENT_TOKEN = redeemed.token;
+          connectCodeKey = true;
+        } else if (record) {
+          // The line again, from shell history, on the computer this agent
+          // already runs on: its code is spent or expired, or the instance
+          // can't be reached just now. The saved token is what to run.
+          console.log(`${stamp()} [${name}] this line's connect code wasn't used (${redeemed.refusal}), so this run uses the saved token`);
+        } else {
+          console.error(`${stamp()} [${name}] ${connectCodeRefusalLine(redeemed.refusal, {
+            name: agentArg, runName: name, instanceUrl, detail: redeemed.detail, status: redeemed.status,
+          })}`);
+          process.exit(1);
+        }
+      }
       let bootstrapped = false;
       const saved = record;
       const savedRefusal = record && named ? runInstanceRefusal({ record, instanceId }) : null;
@@ -5811,8 +5865,8 @@ Docs:
         }
         if (!record) {
           console.error(
-            `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
-            + ` (shown on the Connect your own agent page) and re-run, or:`
+            `No token for '${name}'. Paste the line from the Connect your own agent page,`
+            + ' or export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN and re-run, or:'
             + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
           );
           process.exit(1);
@@ -5912,7 +5966,7 @@ Docs:
         // belongs to another name).
         if (named) name = savedAs;
         saveAgentToken(savedAs, record);
-        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from ${connectCodeKey ? 'the connect code' : 'COMMONLY_AGENT_TOKEN'} (adapter: ${record.adapter})`);
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
           `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
