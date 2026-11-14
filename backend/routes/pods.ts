@@ -445,6 +445,22 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// F497: agent-room and agent-admin 404 a non-member (CLAUDE.md), so a refusal
+// must not confirm the room exists. True when this caller is a stranger to
+// such a room; a failed lookup keeps the route's own answer.
+const roomHiddenFrom = async (podId: string | undefined, userId: unknown): Promise<boolean> => {
+  if (!podId) return false;
+  try {
+    const pod = await Pod.findById(podId).select('_id type members').lean() as { type?: string; members?: unknown[] } | null;
+    if (!pod || !['agent-room', 'agent-admin'].includes(String(pod.type))) return false;
+    return !(pod.members || []).some((member) => String(member) === String(userId));
+  } catch (error) {
+    console.warn('[pods] room visibility lookup failed:', (error as Error).message);
+    return false;
+  }
+};
+const POD_NOT_FOUND_BODY = { message: 'Pod not found', code: 'POD_NOT_FOUND' };
+
 router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
@@ -454,15 +470,9 @@ router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id',
     return res.status(200).json({ ...focus, permissions });
   } catch (error) {
     const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
-    // F497: a room a stranger may not see answers 404, as its type rules say,
-    // so the refusal doesn't confirm it exists.
-    if (e?.code === 'NOT_A_MEMBER') {
-      try {
-        const pod = await Pod.findById(podId).select('_id type').lean() as { type?: string } | null;
-        if (['agent-room', 'agent-admin'].includes(String(pod?.type))) {
-          return res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' });
-        }
-      } catch { /* keep the 403 below */ }
+    // F497: a room a stranger may not see answers 404, as its type rules say.
+    if (e?.code === 'NOT_A_MEMBER' && await roomHiddenFrom(podId, userId)) {
+      return res.status(404).json(POD_NOT_FOUND_BODY);
     }
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
     console.error('Error reading pod focus:', error);
@@ -490,6 +500,10 @@ router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', I
     return res.status(200).json({ ...focus, permissions: { canEdit: true } });
   } catch (error) {
     const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    // F497: the write refusal must not confirm a room to a stranger either.
+    if (e?.code === 'FOCUS_EDIT_FORBIDDEN' && await roomHiddenFrom(podId, userId)) {
+      return res.status(404).json(POD_NOT_FOUND_BODY);
+    }
     if (e?.status === 409) {
       let current: unknown;
       try { current = await PodFocusService.read({ podId, userId }); } catch { /* retain the conflict response if the pod disappeared */ }
