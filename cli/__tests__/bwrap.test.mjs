@@ -464,6 +464,34 @@ describe('a workspace seat\'s read-outside and write-outside under bwrap', () =>
         .toThrow(/resolved differently from the folder that was opened/);
     });
 
+    // F494 review: a folder swapped for a link to another held one resolves to
+    // one path, and the other descriptor would reach the jail with no bind.
+    test('refuses a held folder that no longer resolves to any bind', () => {
+      const argv = () => wrapArgvWithBwrap(
+        ['claude'],
+        { sandbox: { trust: 'workspace', filesystem: { 'read-outside': [logs()] } } },
+        {
+          workspacePath: '/tmp/ws',
+          hostReadHome: home,
+          bindFds: { workspace: 3, readOutside: { [logs()]: 5, [`${logs()}/b`]: 6 } },
+        },
+      );
+      expect(argv).toThrow(/held for read-outside but no longer resolves/);
+    });
+
+    test('a held folder that was missing at open needs no bind', () => {
+      const argv = wrapArgvWithBwrap(
+        ['claude'],
+        { sandbox: { trust: 'workspace', filesystem: { 'read-outside': [logs()] } } },
+        {
+          workspacePath: '/tmp/ws',
+          hostReadHome: home,
+          bindFds: { workspace: 3, readOutside: { [logs()]: 5, [`${logs()}/gone`]: null } },
+        },
+      );
+      expect(argv).toContain('--ro-bind-fd');
+    });
+
     test('refuses a descriptor below 3', () => {
       expect(() => wrapHeld({ [logs()]: 2 })).toThrow(/child descriptors of 3 or more/);
     });

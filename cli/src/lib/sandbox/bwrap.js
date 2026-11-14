@@ -278,6 +278,20 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     const fd = childFd(heldReadOutside[p]);
     if (fd) fdReadOutside.push([fd, p]);
   }
+  // The other direction: every descriptor held must be bound. A held folder
+  // swapped for a link to another resolves to that one, and its descriptor,
+  // an open host folder, would reach the jail with no bind (F494 review).
+  if (heldReadOutside) {
+    const resolved = new Set(userReadOutside);
+    const unbound = Object.keys(heldReadOutside)
+      .find((p) => heldReadOutside[p] !== null && !resolved.has(p));
+    if (unbound) {
+      throw Object.assign(
+        new Error(`refusing a workspace turn: ${unbound} was held for read-outside but no longer resolves to it`),
+        { code: BIND_SOURCE_MOVED },
+      );
+    }
+  }
   const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...pathReadOutside])];
   for (const p of roBinds) {
     flags.push('--ro-bind-try', p, p);
