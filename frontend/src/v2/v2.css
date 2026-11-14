@@ -253,6 +253,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
   background: var(--v2-page-bg);
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   display: flex;
@@ -576,11 +577,15 @@ body.modern-ui.v2-canvas {
 /* Authenticated v2 routes reserve a compact shell row for the email
    verification reminder. The inner shell/panes must use the remaining space,
    not 100vh, or the composer and feature-page footers would clip. */
+/* Each full-height rule sets 100vh, then 100dvh: browsers that know dvh use the
+   visible height (iPhone toolbar shown, phone keyboard up), so the composer stays
+   on screen; older ones keep the 100vh line. */
 .v2-authenticated-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }
@@ -678,6 +683,7 @@ body.modern-ui.v2-canvas {
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr var(--v2-inspector-w);
   grid-template-rows: 1fr;
   height: 100vh;
+  height: 100dvh;
   width: 100%;
   background: var(--v2-shell-bg);
 }
@@ -696,6 +702,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pane {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -716,6 +723,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
@@ -1488,6 +1496,7 @@ body.modern-ui.v2-canvas {
 .v2-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow: auto;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border-soft);
@@ -3203,6 +3212,7 @@ body.modern-ui.v2-canvas {
     z-index: 60;
     width: min(86vw, 320px);
     height: 100vh;
+    height: 100dvh;
     transform: translateX(-100%);
     transition: transform 0.22s ease;
     box-shadow: 2px 0 24px rgba(15, 17, 21, 0.18);

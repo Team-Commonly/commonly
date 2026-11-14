@@ -6868,3 +6868,33 @@ describe('the notice Connect link keeps its line box', () => {
     expect(overlay).toMatch(/inset:/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Full-height rules follow 100vh with 100dvh (first minute back, 11-14).
+// On a phone, 100vh is the height with the browser toolbar hidden, so a shell
+// that tall puts the composer under the toolbar or the keyboard. Each rule keeps
+// 100vh for browsers without dvh, then 100dvh, which wins where it is known.
+// jsdom has no layout, so this pins the pair; the rendered box was checked in a
+// real browser at 390.
+describe('full-height shell rules use the dynamic viewport height', () => {
+  const sheet = readV2Css();
+  const pair = (body: string, prop: string, inner: string) => new RegExp(
+    `${prop}: ${inner.replace(/[()]/g, '\\$&').replace('VH', '100vh')};\\s*${prop}: ${inner.replace(/[()]/g, '\\$&').replace('VH', '100dvh')};`,
+  ).test(body);
+  it.each([
+    ['.v2-root', 'height', 'VH'],
+    ['.v2-authenticated-shell', 'height', 'VH'],
+    ['.v2-shell', 'height', 'VH'],
+    ['.v2-pane', 'height', 'VH'],
+    ['.v2-pane--main', 'height', 'calc(VH - 16px)'],
+    ['.v2-modal', 'max-height', 'calc(VH - 48px)'],
+  ])('%s sets %s with 100vh then 100dvh', (selector, prop, inner) => {
+    const body = ruleBody(sheet, selector);
+    expect(body).not.toBe('');
+    expect(pair(body, prop, inner)).toBe(true);
+  });
+  it('the phone pods drawer does too', () => {
+    const body = ruleBody(sheet, '.v2-pods-aside', { within: mediaBlockContaining(sheet, '.v2-pods-aside') });
+    expect(pair(body, 'height', 'VH')).toBe(true);
+  });
+});
