@@ -18,6 +18,8 @@ const Pod = require('../models/Pod');
 const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+// eslint-disable-next-line global-require
+const emailReturns = require('./emailReturnService');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -36,7 +38,7 @@ export const DIGEST_SENDING_KEY = 'digest.sending';
 // definite 'off' stops the run. A summary skipped by a stop is never retried
 // (each run sends only its own), so a read blip must not forfeit the rest.
 type DigestSendingState = 'on' | 'off' | 'unknown';
-const digestSendingState = async (): Promise<DigestSendingState> => {
+export const digestSendingState = async (): Promise<DigestSendingState> => {
   try {
     const row = await SystemSetting.findOne({ key: DIGEST_SENDING_KEY })
       .lean() as { value?: { enabled?: unknown } } | null;
@@ -108,14 +110,16 @@ const extractTopItems = (content: string | undefined, limit = 5): string[] => {
  * SMTP2GO v3 answers 200 with per-recipient results; one recipient, so it was
  * accepted only if it counts as succeeded and nothing failed.
  */
-const providerAccepted = (response: any): boolean => {
+export const providerAccepted = (response: any): boolean => {
   const data = response?.data?.data;
   if (!data || response?.skipped) return false;
   const failures = Array.isArray(data.failures) ? data.failures.length : 0;
   return Number(data.succeeded) >= 1 && !(Number(data.failed) > 0) && failures === 0;
 };
 
-const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = []) => {
+const buildEmailBodies = (
+  summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = [], sendId: string | null = null,
+) => {
   const title = summary.title || 'Your Commonly daily digest';
   const items = extractTopItems(summary.content);
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
@@ -125,8 +129,9 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, held
   );
   // Activity is the day's recap, and it sits behind sign-in, so a signed-out
   // reader signs in and comes back to it. Bare /v2 sends them to the
-  // marketing page.
-  const appUrl = `${frontendUrl}/v2/activity`;
+  // marketing page. F519: the link carries the digest's return tag.
+  const activityUrl = `${frontendUrl}/v2/activity`;
+  const appUrl = sendId ? emailReturns.tagUrl(activityUrl, 'digest', sendId) : activityUrl;
   const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/${encodeURIComponent(unsubscribeToken)}`;
   const textItems = items.length > 0
     ? items.map((item) => `- ${item}`).join('\n')
@@ -272,7 +277,8 @@ export class DigestEmailService {
         }
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
-        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
+        const sendId = emailReturns.newSendId();
+        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks, sendId);
         const sent = await sendEmail({
           to: user.email,
           subject: bodies.subject,
@@ -299,6 +305,9 @@ export class DigestEmailService {
         }
 
         result.sent += 1;
+        if (providerAccepted(sent)) {
+          await emailReturns.noteSend({ sendId, kind: 'digest', recipientUserId: user._id, sentAt: emailedAt });
+        }
         if (includedOverflow.length) {
           try {
             await NeedsYouEmail.updateMany(

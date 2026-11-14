@@ -32,6 +32,8 @@ const {
 } = require('../controllers/userController');
 
 const { defaultUsageEvents, privacySignal } = require('../services/usageEvents');
+// eslint-disable-next-line global-require
+const emailReturns = require('../services/emailReturnService');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const agentConnectionReadLimit = rateLimit({
@@ -322,6 +324,24 @@ router.put('/me/usage-events', usageSettingLimit, profileWriteIngressLimit, auth
     console.warn('[users] usage setting write failed:', (error as Error).message);
     return res.status(500).json({ msg: 'Failed to save the setting' });
   }
+});
+
+// POST /me/email-return { tag }: the app shell saw ?em=<kind>.<send id> on a
+// signed-in load (F519). Recorded only for the email's own recipient, once,
+// and only when usage events are on for this person under the same rules as
+// above (the switch, the regional default, DNT/GPC). 204 either way, so the
+// reply says nothing about whether a tag exists.
+router.post('/me/email-return', usageSettingLimit, auth, async (req: any, res: any) => {
+  try {
+    const user = await User.findById(req.userId).select('preferences isBot').lean();
+    const state = user && !user.isBot ? usageEventsState(req, user.preferences?.usageEvents) : null;
+    if (state?.usageEvents && !state.browserSignal) {
+      await emailReturns.recordEmailReturn(req.userId, req.body?.tag);
+    }
+  } catch (error) {
+    console.warn('[users] email return failed:', (error as Error).message);
+  }
+  return res.status(204).end();
 });
 
 module.exports = router;
