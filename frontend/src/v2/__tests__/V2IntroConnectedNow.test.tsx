@@ -96,6 +96,23 @@ describe('the join note says when its agent is connected now (F509)', () => {
     expect(document.getElementById('message-i1')).toContainElement(line);
   });
 
+  test('a second instance: the line follows its own key, and its sibling’s note stays as posted', async () => {
+    mockStates([
+      { ...row('listening'), instanceId: 'laptop' },
+      row('never-connected'),
+    ]);
+    renderChat(makeDetail({
+      agents: [
+        { agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent' },
+        { agentName: 'sam-agent', instanceId: 'laptop' },
+      ],
+      messages: [intro, { ...intro, id: 'i2', user: { username: 'sam-agent-laptop', isBot: true } }],
+    }));
+    const line = await screen.findByTestId('intro-connected-now');
+    expect(document.getElementById('message-i2')).toContainElement(line);
+    expect(screen.getAllByTestId('intro-connected-now')).toHaveLength(1);
+  });
+
   test('a never-connected agent: no line, the note stands as posted', async () => {
     mockStates([row('never-connected')]);
     renderChat(makeDetail({ messages: [intro] }));
