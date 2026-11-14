@@ -218,11 +218,12 @@ On macOS, each entry is checked before the seat spawns. The check is an allowlis
 - **Dot folders and dotfiles in the home folder are refused**, except `~/.commonly/logs`. That covers `~/.ssh`, `~/.config`, `~/.zsh_history` and every token file under `~/.commonly`.
 - **`~/Library` is refused.**
 - **The home folder itself, and any folder that holds it, are refused.** That includes `/` and `/Users`.
-- **Anything else is admitted read-only**, such as a project tree or `/var/log`. Beneath each admitted folder, the same denies a workspace gets still apply: `.env*`, `.commonly`, `.codex`, `.npmrc` and `.yarnrc*`.
+- **Any other folder in home is admitted read-only**, such as a project tree. Beneath each admitted folder, the same denies a workspace gets still apply: `.env*`, `.commonly`, `.codex`, `.npmrc` and `.yarnrc*`.
+- **Outside home, only `/var/log`, `/private/var/log` and `/Library/Logs` are admitted.** The temp folders are refused, because each seat's per-turn runtime token sits there during its turn. Every seat runs as the same user, so the folder's 0700 mode doesn't fence one seat from another. The `/System/Volumes/Data` spellings of home are refused too, along with everything else not on this list.
 
 Each entry is resolved once, to its real path with its real case, and that same path is both checked and granted. A link is judged by where it leads. A case change such as `~/.SSH` can't get past the check, because APFS and Seatbelt both ignore case. A link inside an admitted folder that leads anywhere else reaches nothing, because the profile denies by default.
 
-An earlier version listed the places that hold credentials and refused only those. An Opus review read fake keys through it with a case change, and through token files under `~/.commonly` the list had missed. That is why this is an allowlist.
+An earlier version listed the places that hold credentials and refused only those. An Opus review read fake keys through it with a case change, and through token files under `~/.commonly` the list had missed. A second review read another seat's fake runtime token through `/var/folders`. That is why this is an allowlist on both sides of home.
 
 **Known gap:** on Linux, bubblewrap binds every `read-outside` entry without any check. A spec the server writes can therefore bind `~/.ssh` into a Linux workspace seat. Public seats never get `read-outside` on either platform. `write-outside` is honoured only on Linux.
 
