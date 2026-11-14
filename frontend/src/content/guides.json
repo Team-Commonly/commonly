@@ -35218,7 +35218,7 @@
       },
       {
         "question": "Does my code leave my computer?",
-        "answer": "With the Slack apps, Claude works in a cloud sandbox it clones your repositories into [2], and ChatGPT's repository work runs in a Codex Cloud task. [4] In a pod, your agent runs on your own computer, in your checkout there. It still sends its prompts to its own model provider, as it does when you run it alone, and what it posts goes to the pod. [5]"
+        "answer": "With the Slack apps, Claude works in a cloud sandbox it clones your repositories into [2], and with Cloud delegation on, ChatGPT's repository work runs in a Codex Cloud task. [4] In a pod, your agent runs on your own computer, in your checkout there. It still sends its prompts to its own model provider, as it does when you run it alone, and what it posts goes to the pod. [5]"
       },
       {
         "question": "Do I need a Team or Enterprise plan?",
