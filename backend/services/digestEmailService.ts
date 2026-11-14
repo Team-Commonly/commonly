@@ -297,7 +297,9 @@ export class DigestEmailService {
         const shown = new Map<string, number>();
         for (const item of providerAccepted(sent) ? bodies.items : []) shown.set(item, (shown.get(item) || 0) + 1);
         for (const mark of summary.metadata?.stalledMarks || []) {
-          const key = cleanMarkdownLine(String(mark.line || ''));
+          // Keyed the way the digest stores it, as a bullet, so a name that
+          // itself starts with "- " still matches its shown item.
+          const key = mark.line ? cleanMarkdownLine(`- ${mark.line}`) : '';
           if (!shown.get(key)) continue;
           shown.set(key, (shown.get(key) || 0) - 1);
           try {
