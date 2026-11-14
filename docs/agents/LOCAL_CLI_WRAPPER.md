@@ -227,10 +227,10 @@ An earlier version listed the places that hold credentials and refused only thos
 
 **On Linux (F493),** bubblewrap binds whole folders. It can't hide the `.env` and `.commonly` files beneath a folder the way Seatbelt's pattern denies do. So the rules there are narrower:
 - **A workspace seat** can name only `~/.commonly/logs` in `read-outside`. Names are compared with their case as it is. The resolved path is what gets bound, and the seat's tool policy gets a Read allow for it. Its `write-outside` is refused, which matches macOS: a writable folder outside the project would let a seat plant a git hook that the host later runs.
-- **A public seat** refuses both lists, whichever adapter it runs (Claude Code, OpenCode, Qwen Code, Goose). An adapter binds its own home through `writablePaths`, never through the spec.
+- **A public seat** refuses both lists, whichever adapter it runs (Claude Code, OpenCode, Qwen Code, Goose). An adapter binds its own home through `homeWritablePaths`, never through the spec. That bind comes before the adapter's read-only inputs, so an input inside the home stays read-only, because bwrap stacks later binds on top of earlier ones.
 - **A seat of your own, with no trust tier,** keeps its binds exactly as declared, because it isn't confined; it names folders such as `~/.local/bin` on purpose.
 
-Before F493, Linux bound both lists for every seat without any check, so a spec the server wrote could bind `~/.ssh`. The F453 key-file check (`bwrapReadRoots`) now compares against the resolved paths bwrap binds.
+Before F493, Linux bound both lists for every seat without any check, so a spec the server wrote could bind `~/.ssh`.
 
 ## What's NOT deleted on detach
 
