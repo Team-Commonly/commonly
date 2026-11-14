@@ -165,17 +165,20 @@ const deliver = async (user: any, row: any): Promise<void> => {
 type Outcome = 'sent' | 'skipped' | 'failed';
 
 const decide = async (row: any, now: Date): Promise<Outcome | null> => {
-  // Claim the row first: whichever pass wins decides it, once.
+  // Claim the row first: whichever pass wins decides it, once. The lease
+  // starts at the claim, not the pass: late in a long batch, the pass's own
+  // start time would leave a fresh claim almost no lease.
+  const leasedAt = new Date(Math.max(Date.now(), now.getTime()));
   const claimed = await AttentionItem.updateOne(
     { _id: row._id, status: 'open', ...claimable(now) },
-    { $set: { mentionEmailCheckedAt: now, mentionEmailLeaseAt: now } },
+    { $set: { mentionEmailCheckedAt: now, mentionEmailLeaseAt: leasedAt } },
     { timestamps: false },
   );
   if (!claimed.modifiedCount) return null;
   const outcome = await decideClaimed(row, now);
   // Reached an outcome: the lease ends. A release already cleared both fields.
   await AttentionItem.updateOne(
-    { _id: row._id, mentionEmailLeaseAt: now },
+    { _id: row._id, mentionEmailLeaseAt: leasedAt },
     { $unset: { mentionEmailLeaseAt: 1 } },
     { timestamps: false },
   );
