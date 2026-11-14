@@ -60,6 +60,8 @@ describe('a BYO agent schedule', () => {
     expect(res.status).toBe(200);
     expect(res.body.settings.schedule).toEqual({
       enabled: true, time: '07:47', timezone: 'America/Los_Angeles', prompt: 'Post the morning count.',
+      // The real clock decides which; the page shows whatever the dispatcher would do.
+      nextRun: expect.stringMatching(/^(now|today|tomorrow)$/),
     });
     expect(res.body.settings.heartbeatEnabled).toBe(false);
 

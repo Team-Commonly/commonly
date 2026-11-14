@@ -5,7 +5,7 @@ import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from
 import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
-import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/agentScheduleService';
+import { invalidScheduleField, isBareStop, nextRunWhen, takesSchedule } from '../../services/agentScheduleService';
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
@@ -69,6 +69,15 @@ const hostedHeartbeatFor = (installation: any) => (isHostedInstallation(installa
   runsPerDay: hostedRunsNative(installation) ? hostedHeartbeatRunsPerDay() : 0,
 } : null);
 
+const scheduleNextRun = (schedule: any): 'now' | 'today' | 'tomorrow' | null => {
+  if (schedule?.enabled !== true || typeof schedule.time !== 'string' || typeof schedule.timezone !== 'string') return null;
+  try {
+    return nextRunWhen(schedule);
+  } catch {
+    return null;
+  }
+};
+
 const settings = (installation: any, podName: string, podType?: string, canChangeAskFirst?: boolean) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
@@ -94,6 +103,8 @@ const settings = (installation: any, podName: string, podType?: string, canChang
       time: config.schedule.time,
       timezone: config.schedule.timezone,
       prompt: config.schedule.prompt,
+      // The dispatcher's own answer, so the page never guesses (catch-up window, a day already fired).
+      nextRun: scheduleNextRun(config.schedule),
     } : null,
   };
 };

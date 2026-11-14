@@ -889,7 +889,7 @@ describe("V2Thread — Scout's recurring workflow, as a daily run", () => {
   test('one click sets a daily run on the owner\'s own agent, then shows the next run and a one-click off', async () => {
     serve([own]);
     axios.put.mockImplementation((url, body) => Promise.resolve({ data: String(url).includes('/schedule?')
-      ? { settings: { schedule: body.enabled ? { ...body } : { enabled: false, time: '09:00', timezone: 'UTC', prompt: PROMPT } } } : {} }));
+      ? { settings: { schedule: body.enabled ? { ...body, nextRun: 'tomorrow' } : { enabled: false, time: '09:00', timezone: 'UTC', prompt: PROMPT } } } : {} }));
     renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])]);
     const start = await screen.findByRole('button', { name: 'Have Maya Claude run it every day at 9:00 AM' });
     await waitFor(() => expect(start).toBeEnabled());
@@ -900,7 +900,7 @@ describe("V2Thread — Scout's recurring workflow, as a daily run", () => {
     expect(body).toEqual(expect.objectContaining({ enabled: true, time: '09:00', prompt: PROMPT }));
     expect(typeof body.timezone).toBe('string');
     const on = await screen.findByTestId('daily-schedule-on');
-    expect(on.textContent).toMatch(/^Maya Claude runs this every day at 9:00 AM \(.+\)\. Next run: (today|tomorrow) at 9:00 AM\.$/);
+    expect(on.textContent).toMatch(/^Maya Claude runs this every day at 9:00 AM \(.+\)\. Next run: tomorrow at 9:00 AM\.$/);
     expect(document.body.textContent).not.toMatch(/weekly/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Turn off the daily run' }));

@@ -6,7 +6,8 @@ const Pod = require('../models/Pod');
 const AgentMessageService = require('./agentMessageService');
 
 const GITHUB_API = new Map([['api.github.com', 'https://api.github.com/']]);
-const MAX_ISSUES_BYTES = 256 * 1024;
+// Thirty issues with long templated bodies can pass 256 KB; past the cap the read fails outright.
+const MAX_ISSUES_BYTES = 1024 * 1024;
 
 interface ProjectRepo { owner: string; repo: string }
 interface FirstTaskOnboarding {

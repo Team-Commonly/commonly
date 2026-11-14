@@ -23,7 +23,18 @@ interface SavedSchedule {
   time?: string;
   timezone?: string;
   prompt?: string;
+  /** The server's answer (agentScheduleService.nextRunWhen); absent from an older backend. */
+  nextRun?: 'now' | 'today' | 'tomorrow' | null;
 }
+
+// A refusal a retry can't change gets its own line, and the offer goes away.
+type Refusal = 'notYours' | 'byoOnly';
+const refusalOf = (error: unknown): Refusal | null => {
+  const response = (error as { response?: { status?: number; data?: { code?: string } } })?.response;
+  if (response?.data?.code === 'schedule_byo_only') return 'byoOnly';
+  if (response?.status === 403) return 'notYours';
+  return null;
+};
 
 interface Props {
   api: ReturnType<typeof useV2Api>;
@@ -41,18 +52,14 @@ const viewerTimeZone = (): string => {
   }
 };
 
-const clockIn = (now: Date, timeZone: string): number => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(now);
-  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value || 0);
-  return part('hour') * 60 + part('minute');
-};
-
-/** Today or tomorrow, from the schedule's own clock. The dispatcher runs it at that local time. */
-export const nextRunDay = (time: string, timeZone: string, now: Date = new Date()): 'today' | 'tomorrow' => {
-  const [hours, minutes] = time.split(':').map(Number);
-  return clockIn(now, timeZone) < hours * 60 + minutes ? 'today' : 'tomorrow';
+/** "Pacific Standard Time" rather than "America/Los_Angeles"; the IANA name when the browser has no words for it. */
+export const formatTimeZone = (timeZone: string, locale: string, now: Date = new Date()): string => {
+  try {
+    return new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: 'long' }).formatToParts(now)
+      .find((part) => part.type === 'timeZoneName')?.value || timeZone;
+  } catch {
+    return timeZone;
+  }
 };
 
 /** 09:00 in the reader's own clock style: "9:00 AM", or "09:00". */
@@ -74,6 +81,8 @@ const scheduleUrl = (target: ScheduleTarget, podId: string) => `/api/registry/ag
 const V2DailySchedule: React.FC<Props> = ({ api, podId, prompt, target }) => {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<SavedSchedule | null | undefined>(undefined);
+  const [readFailed, setReadFailed] = useState(false);
+  const [refused, setRefused] = useState<Refusal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const live = useRef(true);
@@ -88,14 +97,16 @@ const V2DailySchedule: React.FC<Props> = ({ api, podId, prompt, target }) => {
     if (!target) return undefined;
     let active = true;
     setSaved(undefined);
+    setReadFailed(false);
+    setRefused(null);
     void api.get<{ installations?: Array<{ podId: string; schedule?: SavedSchedule | null }> }>(settingsUrl(target))
       .then((data) => {
         if (!active) return;
         const row = (data?.installations || []).find((entry) => String(entry.podId) === String(podId));
         setSaved(row?.schedule || null);
       })
-      // An unreadable state still offers the run; saving reports its own failure.
-      .catch(() => { if (active) setSaved(null); });
+      // Unread, a save could overwrite a daily job it never named, so nothing is offered.
+      .catch(() => { if (active) setReadFailed(true); });
     return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, podId, targetKey]);
@@ -107,8 +118,11 @@ const V2DailySchedule: React.FC<Props> = ({ api, podId, prompt, target }) => {
     try {
       const data = await api.put<{ settings?: { schedule?: SavedSchedule | null } }>(scheduleUrl(target, podId), body);
       if (live.current) setSaved(data?.settings?.schedule ?? { enabled: body.enabled === true });
-    } catch {
-      if (live.current) setError(t(failedKey));
+    } catch (failure) {
+      if (!live.current) return;
+      const refusal = refusalOf(failure);
+      if (refusal) setRefused(refusal);
+      else setError(t(failedKey));
     } finally {
       if (live.current) setBusy(false);
     }
@@ -117,17 +131,24 @@ const V2DailySchedule: React.FC<Props> = ({ api, podId, prompt, target }) => {
   if (!target) {
     return <p className="v2-chat__start-note" data-testid="daily-schedule-mention-only">{t('podChat.dailySchedule.mentionOnly')}</p>;
   }
+  if (readFailed) return null;
   const name = target.displayName || target.agentName;
+  if (refused) {
+    return <p className="v2-chat__start-note" role="status" data-testid="daily-schedule-refused">{t(`podChat.dailySchedule.${refused}`, { name })}</p>;
+  }
   const on = Boolean(saved?.enabled && saved.time && saved.timezone);
   const thisJob = on && (saved?.prompt || '').trim() === prompt.trim();
 
   if (on && thisJob) {
     const time = formatScheduleTime(saved!.time!, i18n.language);
-    const when = t(`podChat.dailySchedule.${nextRunDay(saved!.time!, saved!.timezone!)}`, { time });
+    const zone = formatTimeZone(saved!.timezone!, i18n.language);
+    const next = saved!.nextRun ? t('podChat.dailySchedule.next', { when: t(`podChat.dailySchedule.${saved!.nextRun}`, { time }) }) : '';
     return (
       <>
         <p className="v2-chat__start-note" role="status" data-testid="daily-schedule-on">
-          {t('podChat.dailySchedule.on', { name, time, timezone: saved!.timezone, when })}
+          {/* Chinese sentences sit flush after 。; English ones take a space. */}
+          {[t('podChat.dailySchedule.on', { name, time, zone }), next].filter(Boolean)
+            .join(i18n.language.startsWith('zh') ? '' : ' ')}
         </p>
         <button type="button" className="v2-chat__start" disabled={busy}
           onClick={() => { void save({ enabled: false }, 'podChat.dailySchedule.offFailed'); }}>
