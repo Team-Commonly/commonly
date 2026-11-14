@@ -13,6 +13,8 @@ const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
 const StalledConnectEpisode = require('../models/StalledConnectEpisode');
 // eslint-disable-next-line global-require
+const PGMessage = require('../models/pg/Message');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const { cleanTimeZone, localHour, localDate } = require('../utils/timeZone');
@@ -79,6 +81,7 @@ const MAX_BOARD = 5;
 // from 24h after its in-pod nudge, one more from +7d, then none.
 const STALL_FIRST_MS = 24 * 60 * 60 * 1000;
 const STALL_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_TEAMMATES = 5;
 const LINE_MAX = 200;
 
 /** What the digest knows about an agent from its User row, keyed by user id. */
@@ -94,6 +97,8 @@ interface AgentIdentity {
 interface RecapContext {
   publicPodIds?: Set<string>;
   agentIdentities?: Map<string, AgentIdentity>;
+  /** F503: what teammates wrote, from teammateLines(). */
+  teammateLines?: string[];
   /** F502: the person's agents that never connected, from stalledLines(). */
   stalledLines?: string[];
 }
@@ -119,7 +124,7 @@ export class DailyDigestService {
    */
   static recapLines(
     recap: RecapLike | null | undefined,
-    { publicPodIds = new Set(), agentIdentities = new Map(), stalledLines = [] }: RecapContext = {},
+    { publicPodIds = new Set(), agentIdentities = new Map(), stalledLines = [], teammateLines = [] }: RecapContext = {},
   ): string[] {
     if (!recap) return [];
     const lines: string[] = [];
@@ -141,6 +146,8 @@ export class DailyDigestService {
     });
     // An agent the person added and never started waits on them too (F502).
     lines.push(...stalledLines);
+    // A person writing to you is the next most direct pull back (F503).
+    lines.push(...teammateLines);
     (recap.agents || [])
       .map((agent) => ({ agent, identity: agentIdentities.get(String(agent.id)) }))
       .filter(({ identity }) => !identity?.guide)
@@ -231,6 +238,60 @@ export class DailyDigestService {
     return result;
   }
 
+  /**
+   * F503: one line per person per pod for what other people wrote in the
+   * recipient's private pods since `since`, newest pod first. The recap is
+   * agent work only, so without this a teammate's message never reached the
+   * digest. Agents stay out (their work is the recap's), and so do public
+   * pods: HQ chatter is not the recipient's team. A failed read gives no
+   * lines, never a false one, and says it failed: an empty digest saved on a
+   * failed read would block the hour's retry (see generateUserDailyDigest).
+   */
+  static async teammateLines(
+    userId: unknown,
+    pods: Array<{ _id: unknown; name?: string }>,
+    since: Date,
+  ): Promise<{ lines: string[]; failed: boolean }> {
+    const none = { lines: [], failed: false };
+    if (pods.length === 0) return none;
+    let rows: Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>;
+    try {
+      rows = await PGMessage.findByOthersSince(pods.map((pod) => String(pod._id)), String(userId), since);
+    } catch (error) {
+      console.warn('[daily-digest] teammate read failed:', (error as Error).message);
+      return { lines: [], failed: true };
+    }
+    // The read already filters both; held here too, so a change to the query
+    // can't put the reader's own words or another pod into their email.
+    const podIds = new Set(pods.map((pod) => String(pod._id)));
+    rows = rows.filter((row) => row.userId !== String(userId) && podIds.has(row.podId));
+    const authorIds = [...new Set(rows.map((row) => row.userId))].filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    if (authorIds.length === 0) return none;
+    let people: Array<{ _id: unknown; username?: string; displayName?: string }>;
+    try {
+      people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
+        .select('username displayName').lean();
+    } catch (error) {
+      console.warn('[daily-digest] teammate names read failed:', (error as Error).message);
+      return { lines: [], failed: true };
+    }
+    const names = new Map(people.map((p) => [String(p._id), oneLine(p.displayName || p.username)]));
+    // One row per pod and author; the most recent writer leads.
+    const at = (value: unknown) => (value ? new Date(value as string).getTime() : 0);
+    const lines = rows
+      // The count and the words are two reads; a message deleted between them
+      // can leave a pair with no words, and a line with none says nothing.
+      .filter((row) => names.has(row.userId) && oneLine(row.content))
+      .sort((a, b) => at(b.lastAt) - at(a.lastAt))
+      .slice(0, MAX_TEAMMATES)
+      .map((row) => {
+        const podName = oneLine(pods.find((pod) => String(pod._id) === row.podId)?.name) || 'a pod';
+        const more = row.count > 1 ? ` (+${row.count - 1} more)` : '';
+        return `${names.get(row.userId)} in ${podName}: ${oneLine(row.content)}${more}`;
+      });
+    return { lines, failed: false };
+  }
+
   /** Each recap agent's display label and whether it is the guide, from its User row. */
   static async agentIdentities(recap: RecapLike | null): Promise<Map<string, AgentIdentity>> {
     const ids = (recap?.agents || []).map((agent) => String(agent.id || '')).filter((id) => /^[a-f0-9]{24}$/i.test(id));
@@ -269,7 +330,9 @@ export class DailyDigestService {
         ? null
         : await ActivityService.getRecap(userId, { window: 'today' });
       const publicPods = recap
-        ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
+        // Same membership shapes as memberPods below, or a public pod stored the
+        // old way would count as private and its chatter would reach the email.
+        ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }], publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
       const memberPods = recap
         ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }] }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
@@ -284,6 +347,13 @@ export class DailyDigestService {
         { $limit: MAX_BOARD },
         { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
       ]) as Array<Record<string, unknown>> : [];
+      const publicPodIds = new Set(publicPods.map((pod) => String(pod._id)));
+      // Words written while the reader was last here, they have seen.
+      const teammatesSince = new Date(Math.max(startTime.getTime(), lastActive));
+      const teammates = recap
+        ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), teammatesSince)
+        : { lines: [], failed: false };
+      const teammateLines = teammates.lines;
       const stalled: StalledDigest = recap
         ? await DailyDigestService.stalledLines(userId, memberPods, endTime)
         : { lines: [], marks: [] };
@@ -293,9 +363,10 @@ export class DailyDigestService {
           task.taskId === row.taskId && String(task.podId) === String(row.podId)
         ))),
       }, {
-        publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
+        publicPodIds,
         agentIdentities: await DailyDigestService.agentIdentities(recap),
         stalledLines: stalled.lines,
+        teammateLines,
       });
       for (const task of followed) {
         const podName = memberPods.find((pod) => String(pod._id) === String(task.podId))?.name;
@@ -304,6 +375,14 @@ export class DailyDigestService {
       }
       const podCount = recap?.pods?.length || 0;
 
+      // A saved digest, even an empty one, ends the day's tries: the run skips
+      // anyone with a digest in DIGEST_REPEAT_GUARD_MS, and digestKey is unique.
+      // So an empty digest only after a failed teammate read is not saved; the
+      // throw leaves the next hour of the DIGEST_DUE_HOURS window to retry.
+      // With other lines it still sends, short the teammate lines.
+      if (lines.length === 0 && teammates.failed) {
+        throw new Error('teammate read failed; leaving the digest for the next run');
+      }
       if (lines.length === 0) {
         const emptyData = DailyDigestService.createEmptyDigest(
           user as { username: string },
@@ -329,7 +408,10 @@ export class DailyDigestService {
 
       const digest = await Summary.create({
         type: 'daily-digest',
-        title: requireAway ? 'What your agents did while you were away' : 'What your agents did today',
+        // A teammate is in it, so "your agents" would be untrue (F503).
+        title: teammateLines.length
+          ? (requireAway ? 'What your team did while you were away' : 'What your team did today')
+          : (requireAway ? 'What your agents did while you were away' : 'What your agents did today'),
         content: lines.map((line) => `- ${line}`).join('\n'),
         timeRange: { start: startTime, end: endTime },
         metadata: {
