@@ -820,6 +820,7 @@
       "agentStopped": "{{name}} 已停止，要等所有者启动后才能回复。",
       "agentRemoved": "{{name}} 已被移除，无法在这里回复。",
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
+      "agentUnsandboxedPod": "{{name}} 曾经不开沙箱运行。这样运行时，它只会在邀请制、不公开也未列入社区的 Pod 里回复，所以在这里可能不会回复。",
       "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
       "runRequestRefused": "{{name}} 处理别人的请求前要先问所有者，这条请求没能送到所有者那里，所以不会运行。",
       "runRequestDeclined": "{{name}} 拒绝了 {{requester}} 的请求，{{agent}} 不会运行它。",

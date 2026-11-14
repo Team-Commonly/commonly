@@ -9,6 +9,7 @@ const ROOM_NOTICE_ACTIONS: ReadonlySet<unknown> = new Set([
   'agent-removed',
   'agent-paused',
   'agent-offline',
+  'agent-unsandboxed-pod',
   'agent-not-connected',
   'mention-unanswered',
 ]);
