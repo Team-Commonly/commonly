@@ -122,6 +122,18 @@ export const connectCodeOf = (res: IssuedConnectCode | null | undefined): { conn
   const at = code && res?.connectCodeExpiresAt ? Date.parse(res.connectCodeExpiresAt) : NaN;
   return { connectCode: code, connectCodeExpiresAt: Number.isFinite(at) ? at : null };
 };
+// True when the caller's latest listener check-in (an events poll or socket
+// connect) is this agent's, made after this key was issued, with a minute's
+// slack for clock skew. A tool call, the MCP server included, doesn't count.
+export const checkedInSinceIssue = (
+  data: { connected?: boolean; connectedAgent?: { agentName?: string }; lastUsedAt?: string } | null | undefined,
+  issued: { agentName: string; issuedAt: number },
+): boolean => Boolean(
+  data?.connected
+  && String(data.connectedAgent?.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+  && data.lastUsedAt
+  && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000,
+);
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs
 // a provider and a key file on that Mac (adapters/opencode.js), so it is
 // connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
@@ -1284,6 +1296,7 @@ const V2AgentBYO: React.FC = () => {
           token: tok, agentName: cleanName, podId, issuedAt: Date.now(), instanceId: secondInstance, ...connectCodeOf(tokenRes),
         });
         setConnectCodeExpired(false);
+        setLineCheck(null);
         setListenState('waiting');
         setMemoryText('');
         setMemoryDone(false);
@@ -1328,6 +1341,7 @@ const V2AgentBYO: React.FC = () => {
         ...connectCodeOf(tokenRes),
       });
       setConnectCodeExpired(false);
+      setLineCheck(null);
       setListenState('waiting');
       setMemoryText('');
       setMemoryDone(false);
@@ -1404,6 +1418,40 @@ const V2AgentBYO: React.FC = () => {
     return () => clearTimeout(timer);
   }, [issued?.issuedAt]);
 
+  // A new line replaces the key, which would cut off anything already using it.
+  // So the page asks once more first: the poll may have stopped, or missed a
+  // late check-in by seconds. If this agent listened since the key was issued,
+  // it is connected and nothing is replaced. If any of the person's agent keys
+  // was used since then (the read can't say which, so the MCP or Cursor setup
+  // below may be using this one), replacing waits for a second press. A failed
+  // read replaces nothing.
+  const [lineCheck, setLineCheck] = useState<'failed' | 'inUse' | null>(null);
+  const getNewLine = async (confirmed = false) => {
+    if (!issued) return;
+    const target = { agentName: issued.agentName, podId: issued.podId, instanceId: issued.instanceId || 'default' };
+    if (confirmed) { setLineCheck(null); void replaceRunningKey(target); return; }
+    let data;
+    try {
+      ({ data } = await axios.get('/api/users/me/agent-connection'));
+    } catch {
+      setLineCheck('failed');
+      return;
+    }
+    if (checkedInSinceIssue(data, issued)) {
+      setLineCheck(null);
+      setListenState('listening');
+      byoStep('listen-confirmed');
+      return;
+    }
+    const usedAt = data?.lastToolUseAt ? new Date(data.lastToolUseAt).getTime() : NaN;
+    if (Number.isFinite(usedAt) && usedAt >= issued.issuedAt - 60_000) {
+      setLineCheck('inUse');
+      return;
+    }
+    setLineCheck(null);
+    void replaceRunningKey(target);
+  };
+
   // Poll the kernel for THIS agent's first listener check-in after
   // issuance (an events poll or socket connect, not a tool call).
   // `/api/users/me/agent-connection` reports the caller's latest
@@ -1416,9 +1464,12 @@ const V2AgentBYO: React.FC = () => {
     if (!issued || listenState !== 'waiting') return undefined;
     let cancelled = false;
     const startedAt = Date.now();
+    // A connect code works for 30 minutes, so the page keeps watching at least
+    // that long: an agent that connects late must never read as "ran out".
+    const pollFor = Math.max(15 * 60 * 1000, (issued.connectCodeExpiresAt ?? 0) - startedAt + 60_000);
     const timer = setInterval(async () => {
       if (cancelled) return;
-      if (Date.now() - startedAt > 15 * 60 * 1000) {
+      if (Date.now() - startedAt > pollFor) {
         setListenState('timeout');
         byoStep('listen-timeout');
         return;
@@ -1435,12 +1486,7 @@ const V2AgentBYO: React.FC = () => {
             && row.at && new Date(row.at).getTime() >= issued.issuedAt - 60_000,
         );
         setHarnessMissingReport(missing ? { key: issued, harness: typeof missing.harness === 'string' ? missing.harness : null } : null);
-        if (!data?.connected) return;
-        const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
-          === issued.agentName.toLowerCase();
-        const afterIssue = data.lastUsedAt
-          && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000; // clock-skew slack
-        if (sameAgent && afterIssue) {
+        if (checkedInSinceIssue(data, issued)) {
           setListenState('listening');
           byoStep('listen-confirmed');
         }
@@ -2470,16 +2516,19 @@ const V2AgentBYO: React.FC = () => {
                 never used, so a new line replaces it and stops nothing running. */}
             {listenerAvailable && oneLine && connectCodeExpired && listenState !== 'listening' && (
               <p className="v2-byo__listen-note v2-byo__listen-note--stopped" role="status" data-testid="byo-line-expired">
-                {t('agentByo.listen.lineExpired', { name: issued.agentName })}{' '}
+                {lineCheck === 'inUse'
+                  ? t('agentByo.listen.lineKeyInUse', { name: issued.agentName })
+                  : t('agentByo.listen.lineExpired', { name: issued.agentName })}{' '}
                 <button
                   type="button"
                   className="v2-byo__link"
                   disabled={submitting}
                   data-testid="byo-line-new"
-                  onClick={() => { void replaceRunningKey({ agentName: issued.agentName, podId: issued.podId, instanceId: issued.instanceId || 'default' }); }}
+                  onClick={() => { void getNewLine(lineCheck === 'inUse'); }}
                 >
-                  {t('agentByo.listen.newLine')}
+                  {t(lineCheck === 'inUse' ? 'agentByo.listen.replaceKey' : 'agentByo.listen.newLine')}
                 </button>
+                {lineCheck === 'failed' && <> {t('agentByo.listen.lineCheckFailed', { name: issued.agentName })}</>}
               </p>
             )}
             {/* Windows Terminal asks before a multi-line paste, with Paste anyway
