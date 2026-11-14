@@ -239,6 +239,18 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // call in a response fails, a later post in that response is held, and the model
 // posts in its next step, with the failure in front of it.
 export const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
+
+// F530: the read-before-commit hold a connected agent gets on its post and its
+// task claim (#2580, agentSendFreshness). A hosted agent keeps no read cursor,
+// so a turn holds from the point it has read to: its start, then each set of
+// messages a hold shows it. A hold is not a failure: the model sees what it
+// missed and decides again.
+export const UNSEEN_MESSAGES = 'unseen_messages';
+const UNSEEN_SHOWN_MAX = 10;
+const UNSEEN_HELD_TOOLS: ReadonlySet<string> = new Set([
+  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
+  'commonly_offer_own_agent', 'commonly_claim_task',
+]);
 export const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
   `Not posted: ${failed.name}, called earlier in this same response, did not succeed (${failed.error}). `
   + 'Read its result above, then post your reply in your next step, saying what actually happened.'
@@ -918,6 +930,11 @@ interface DispatchContext {
   personWaiting?: boolean;
   ownAgentOfferPosted?: boolean;
   /**
+   * F530: what this turn has read to, null when it can't be read (the turn then
+   * posts unchecked, as before). ownIds are the turn's own posts since then.
+   */
+  freshness?: { agentUserId: string; since: unknown; ownIds: string[] } | null;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -1075,6 +1092,75 @@ const fanOutAgentPost = (
   }).catch((error: Error) => console.warn('[native-runtime] post fan-out failed:', error.message));
 };
 
+const noteOwnPost = (ctx: DispatchContext, id: unknown): void => {
+  if (ctx.freshness && id !== undefined && id !== null && String(id)) ctx.freshness.ownIds.push(String(id));
+};
+
+/** F530: where a hosted turn starts reading from. Null on any failure. */
+const startTurnFreshness = async (
+  podId: string, agentName: string, instanceId: string, ownUserId: string | null,
+): Promise<DispatchContext['freshness']> => {
+  try {
+    const agentUserId = ownUserId || await resolveOwnUserId(agentName, instanceId);
+    if (!agentUserId) return null;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const since = await require('./agentSendFreshness').readStart(podId);
+    return { agentUserId, since, ownIds: [] };
+  } catch (error) {
+    console.warn('[native-runtime] freshness start unavailable; posts go unchecked:', (error as Error).message);
+    return null;
+  }
+};
+
+/**
+ * F530: the result a post or claim gets when messages landed that this turn
+ * has not seen, or null to go ahead. The messages it shows count as read, so
+ * the next check starts after them. Fails open, as the turn did before.
+ */
+const unseenHold = async (ctx: DispatchContext): Promise<DispatchResult | null> => {
+  const freshness = ctx.freshness;
+  if (!freshness) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Freshness = require('./agentSendFreshness');
+    // Taken before the check: a message that lands in between is shown and
+    // still held next time, never skipped.
+    const next = await Freshness.readStart(String(ctx.podId));
+    const hold = await Freshness.unseenMessages(freshness.agentUserId, ctx.podId, {
+      since: freshness.since, ignoreIds: [...freshness.ownIds], limit: UNSEEN_SHOWN_MAX,
+    });
+    if (!hold) return null;
+    freshness.since = next;
+    freshness.ownIds = [];
+    const count = Number(hold.unseenCount) || 0;
+    const shown = (hold.messages || []).slice().reverse()
+      .map(({ author, content, createdAt }: { author: string; content: string; createdAt: unknown }) => (
+        { author, content, createdAt }));
+    let below = count === 1 ? '1 new message came in while you were working; it is in messages.'
+      : `${count} new messages came in while you were working; they are in messages.`;
+    if (count > shown.length) {
+      below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages.`;
+    }
+    return {
+      content: {
+        ok: false,
+        posted: false,
+        reason: UNSEEN_MESSAGES,
+        unseenCount: count,
+        messages: shown,
+        guidance: `That didn't go through: ${below} `
+          + 'Read them and decide again: go ahead if it still fits, change it if they change the answer, '
+          + 'or end the turn if what you were asked is already answered. If you were asked by name, another '
+          + "agent's reply doesn't answer for you unless one answer was all that was asked.",
+      },
+      error: UNSEEN_MESSAGES,
+    };
+  } catch (error) {
+    console.warn('[native-runtime] freshness check unavailable; posting unchecked:', (error as Error).message);
+    return null;
+  }
+};
+
 /**
  * What a posting tool tells the model and the run. Every tool that posts through
  * postMessage ends here, so none can answer `posted: true` over a post that
@@ -1085,7 +1171,10 @@ const postToolResult = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result: any,
 ): DispatchResult => {
-  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  if (result?.success && !result.skipped) {
+    ctx.personWaiting = false;
+    noteOwnPost(ctx, result.message?.id ?? result.message?._id);
+  }
   if (result?.refused && result.reason === 'consecutive_run_cap') {
     // The shared guidance offers an attachment, which a web-tainted turn
     // cannot make, and only another speaker clears the cap. Say only that.
@@ -1522,6 +1611,7 @@ export async function dispatchTool(
         if (!result.ok) {
           return { content: { ok: false, error: result.error }, error: 'propose_failed' };
         }
+        noteOwnPost(ctx, result.messageId);
         return {
           content: {
             ok: true,
@@ -2781,6 +2871,9 @@ export async function runAgent(
   // fetch makes neither lookup (its own user, the trigger's sender).
   const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
   if (mayFetch) dispatchCtx.ownUserId = await resolveOwnUserId(agentName, instanceId);
+  // F530: before the turn reads anything, so a message landing while it builds
+  // its context or thinks holds its post.
+  dispatchCtx.freshness = await startTurnFreshness(String(podId), agentName, instanceId, dispatchCtx.ownUserId);
 
   // Read whenever a web lookup could matter: before each model call of a turn
   // that may search or read a page, and before a lookup or a post after one. A failed read
@@ -3363,11 +3456,16 @@ export async function runAgent(
           // The recovery round posts at most one reply.
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
           let result: DispatchResult;
+          let unseen: DispatchResult | null = null;
           if (replied) result = { content: { ok: false, error: replied }, error: replied };
           else if (failedEarlierInRound && mayHoldPost && POSTING_NATIVE_TOOLS.has(toolName)) {
             const held = postHeldAfterFailedCall(failedEarlierInRound);
             result = { content: { ok: false, posted: false, error: held }, error: POST_HELD_AFTER_FAILED_CALL };
           }
+          // F530. Not in the last-chance rounds, where a hold would leave no
+          // step to reply in (the same exception F317 makes).
+          else if (mayHoldPost && offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
+            && UNSEEN_HELD_TOOLS.has(toolName) && (unseen = await unseenHold(dispatchCtx))) result = unseen;
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           } else result = { content: { ok: false, error: notOffered }, error: notOffered };
@@ -3530,6 +3628,17 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
+      // F530: the written reply is a post too. Held, it goes back to the model
+      // with what it missed, unless this was the last step it had.
+      const replyHeld = textOut && !postedViaTool && !fallbackBlocked && !declinedInText
+        && !recoveryRound && turnIndex < MAX_TURNS - 1
+        ? await unseenHold(dispatchCtx) : null;
+      if (replyHeld) {
+        messages.push({ role: 'assistant', content: textOut });
+        messages.push({ role: 'user', content: JSON.stringify(replyHeld.content) });
+        turnIndex += 1;
+        continue;
+      }
       if (textOut && !postedViaTool && !fallbackBlocked && !declinedInText) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
@@ -3575,7 +3684,7 @@ export async function runAgent(
       if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
         && run.turns.some((t: any) => (t.toolCalls || []).some(
           (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed'
-            && c.error !== POST_HELD_AFTER_FAILED_CALL
+            && c.error !== POST_HELD_AFTER_FAILED_CALL && c.error !== UNSEEN_MESSAGES
             && !/^duplicate_/.test(String(c.result?.result?.reason)),
         ))) {
         run.status = 'failed';

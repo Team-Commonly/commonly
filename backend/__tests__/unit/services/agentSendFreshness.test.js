@@ -107,16 +107,45 @@ describe('agent send-time freshness', () => {
     const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
     expect(hold.unseenCount).toBe(8);
     expect(hold.messages).toEqual([expect.objectContaining({ id: '23', content: 'new plan' })]);
-    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 3');
+    expect(pool.query.mock.calls[0][0]).toContain('LIMIT $6');
+    expect(pool.query.mock.calls[0][1][5]).toBe(3);
     expect(pool.query.mock.calls[0][0]).toContain('freshness_revision >');
     expect(Message.countDocuments).not.toHaveBeenCalled();
+  });
+
+  // F530: a hosted turn keeps no cursor. It holds from the point its own turn
+  // read to, and its own posts this turn are not something it has to read.
+  it('holds from a turn baseline instead of the cursor, skipping the turn\'s own posts (PostgreSQL)', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [] });
+    await Freshness.unseenMessages('agent-id', 'pod-id', {
+      since: { at: new Date('2026-11-14T00:00:00Z'), revision: 41 }, ignoreIds: ['90', 'not-a-pg-id'], limit: 20,
+    });
+    expect(Cursor.getReadWatermark).not.toHaveBeenCalled();
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', 41, 'agent-id', null, [90], 20]);
+    expect(pool.query.mock.calls[0][0]).toContain('NOT (m.id = ANY($5::int[]))');
+  });
+
+  it('holds from a turn baseline instead of the cursor, skipping the turn\'s own posts (MongoDB)', async () => {
+    Message.countDocuments.mockResolvedValue(0);
+    const limit = jest.fn(() => ({ populate: () => ({ lean: async () => [] }) }));
+    Message.find.mockReturnValue({ sort: () => ({ limit }) });
+    const own = '507f1f77bcf86cd799439044';
+    await Freshness.unseenMessages('agent-id', 'pod-id', {
+      since: { at: new Date('2026-11-14T00:00:00Z') }, ignoreIds: [own], limit: 20,
+    });
+    expect(Cursor.getReadWatermark).not.toHaveBeenCalled();
+    const query = Message.countDocuments.mock.calls[0][0];
+    expect(query._id).toEqual({ $nin: [own] });
+    expect(query.$and[1].$or[1]).toEqual({ freshnessCommittedAt: { $gte: new Date('2026-11-14T00:00:00Z') } });
+    expect(limit).toHaveBeenCalledWith(20);
   });
 
   it('bounds the PostgreSQL unseen query by the trigger id, and only a numeric id', async () => {
     process.env.PG_HOST = 'configured';
     pool.query.mockResolvedValue({ rows: [] });
     await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: '22' });
-    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22]);
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22, [], 3]);
     expect(pool.query.mock.calls[0][0]).toContain('($4::integer IS NULL OR m.id > $4)');
     await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: 'abc' });
     expect(pool.query.mock.calls[1][1][3]).toBeNull();
