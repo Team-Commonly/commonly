@@ -63,6 +63,10 @@ on:
         type: choice
         options: [published, tree]
         default: published
+      codex_version:
+        description: 'prod, adapter=codex: the codex-cli version to install (walk the one a person gets from npm today)'
+        type: string
+        default: '0.169.0'
 
 permissions:
   contents: read
@@ -81,10 +85,18 @@ jobs:
       # The same Claude Code the other real-Claude smokes pin.
       - name: Install Claude Code
         run: npm i -g @anthropic-ai/claude-code@2.1.318
-      # Codex at the version the Linux walk passed on.
+      # Codex at the version the dispatch names, checked as a plain x.y.z
+      # before it reaches the shell.
       - name: Install Codex
         if: inputs.target == 'prod' && inputs.adapter == 'codex'
-        run: npm i -g @openai/codex@0.164.0
+        shell: bash
+        env:
+          CODEX_VERSION: ${{ inputs.codex_version || '0.169.0' }}
+        run: |
+          set -euo pipefail
+          [[ "$CODEX_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "codex_version must be x.y.z"; exit 1; }
+          npm i -g "@openai/codex@$CODEX_VERSION"
+          codex --version
       - name: Pack this checkout's CLI
         if: inputs.target != 'prod' || inputs.cli == 'tree'
         id: pack
