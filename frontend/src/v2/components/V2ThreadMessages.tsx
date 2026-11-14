@@ -68,6 +68,8 @@ interface V2ThreadMessagesProps {
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
   hasMore: boolean;
+  /** First minute back: the message the "New since your last visit" divider sits above. */
+  newSinceMessageId?: string | null;
   loadingOlder: boolean;
   onLoadOlder: () => void;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
@@ -174,6 +176,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onDecisionRuled,
   onAimAtThread,
   hasMore,
+  newSinceMessageId = null,
   loadingOlder,
   onLoadOlder,
   edgeRef,
@@ -495,8 +498,14 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               return previousRuling ? rulingMessage(previous.message, previousRuling) : previous.message;
             })()
             : undefined;
+          const newSince = newSinceMessageId !== null && String(message.id) === newSinceMessageId;
           return (
             <React.Fragment key={message.id}>
+              {newSince && (
+                <div className="v2-chat__new-since" data-testid="new-since-divider" data-new-since-divider="" role="separator" aria-label={t('podChat.newSince')}>
+                  <span className="v2-chat__new-since-label" aria-hidden="true">{t('podChat.newSince')}</span>
+                </div>
+              )}
               <V2MessageRow
                 message={renderedMessage}
                 sourceMessageId={settledRuling ? message.id : undefined}
@@ -513,7 +522,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onReply={onReply}
                 onThread={onThread}
                 onQuoteNavigate={onQuoteNavigate}
-                grouped={isGroupedWithPrevious(renderedMessage, previousMessage)}
+                grouped={!newSince && isGroupedWithPrevious(renderedMessage, previousMessage)}
               />
               {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
                 <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>

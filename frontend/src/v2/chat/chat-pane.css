@@ -730,6 +730,31 @@
 
 .v2-root button.v2-thread__edge-line { cursor: pointer; }
 
+/* First minute back: "New since your last visit". It means unread, one of the
+   accent's named uses (the unread counter), so the label and its hairlines
+   take the accent text colour; the mono 11px voice matches the edge line. The
+   hairlines are pseudo-elements at reduced opacity, never a coloured stripe. */
+.v2-chat__new-since {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+  color: var(--v2-accent-text);
+}
+.v2-chat__new-since::before,
+.v2-chat__new-since::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.v2-chat__new-since-label {
+  flex: none;
+  font: 500 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
+
 .v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
 
 .v2-thread__history-status {
