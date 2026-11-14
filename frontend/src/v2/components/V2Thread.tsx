@@ -24,6 +24,8 @@ import {
 import { useCloseAgentRoom } from '../agentRoomClose';
 import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
+import { usePodReadPoint } from '../hooks/usePodReadPoint';
+import { firstNewSinceId } from '../utils/newSince';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { useDocumentTitleText } from '../hooks/useDocumentTitle';
@@ -57,6 +59,8 @@ import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
 const CONNECT_START_LABEL = 'Connect an agent I already use';
 // How long a smooth follow may run before its scroll events count as the reader's.
 const FOLLOW_SETTLE_MS = 1500;
+// Room left above the "New since your last visit" divider when a pod opens on it.
+const NEW_SINCE_TOP_GAP_PX = 12;
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
@@ -272,6 +276,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     retryHistorySearch: detailRetryHistorySearch,
   } = detail;
   const api = useV2Api();
+  // First minute back: where this person last read the pod's main channel.
+  const readPoint = usePodReadPoint(pod?._id ? String(pod._id) : null);
   const navigate = useNavigate();
   const location = useLocation();
   const refreshPodList = useCallback(() => podsState?.refresh({ silent: true }), [podsState]);
@@ -957,6 +963,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // otherwise they count up in the Jump-to-latest pill. Explicit local sends
   // follow in the separate confirmation effect below.
   const atBottomRef = useRef(true);
+  // Real input (wheel, touch, key, pointer) on this pod's list since it opened.
+  const readerMovedRef = useRef(false);
+  useEffect(() => { readerMovedRef.current = false; }, [pod?._id]);
+  // First minute back: reaching the end of the pod counts as reading it. Read
+  // through a ref so the scroll listener always sees the newest messages.
+  const markReadIfAtEndRef = useRef<() => void>(() => {});
+  markReadIfAtEndRef.current = () => {
+    if (!readPoint.ready || !atBottomRef.current) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const newest = messages[messages.length - 1];
+    readPoint.markRead(newest?.created_at || newest?.createdAt);
+  };
   const [jumpCount, setJumpCount] = useState(0);
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
   const [scrolledUp, setScrolledUp] = useState(false);
@@ -1002,9 +1020,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       else if (Date.now() < followingUntilRef.current) return;
       atBottomRef.current = near;
       setScrolledUp(distance > el.clientHeight);
-      if (near) setJumpCount(0);
+      if (near) {
+        setJumpCount(0);
+        markReadIfAtEndRef.current();
+      }
     };
-    const onReaderInput = () => { followingUntilRef.current = 0; };
+    const onReaderInput = () => { followingUntilRef.current = 0; readerMovedRef.current = true; };
     const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -1066,6 +1087,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       // The first read's rows don't animate in from the top; see the landing below.
       scrollListToEnd(initialLoadComplete ? 'smooth' : 'instant');
       setJumpCount(0);
+      markReadIfAtEndRef.current();
     } else {
       setJumpCount((count) => count + 1);
     }
@@ -1281,6 +1303,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // thousands of pixels short. A deep link has its own landing.
   const landedPodRef = useRef<string | null>(null);
   useLayoutEffect(() => { landedPodRef.current = null; }, [currentPodId]);
+  // First minute back: the divider's place is fixed when the pod opens, so
+  // reading to the end (which moves the read point) doesn't take it away.
+  const [newSince, setNewSince] = useState<{ podId: string; messageId: string | null } | null>(null);
+  useLayoutEffect(() => {
+    if (!currentPodId || !readPoint.ready || !initialLoadComplete) return;
+    if (newSince?.podId === currentPodId) return;
+    setNewSince({ podId: currentPodId, messageId: firstNewSinceId(threadView, viewerId, readPoint.lastReadAt, { historyAbove: Boolean(hasMore) }) });
+  }, [currentPodId, initialLoadComplete, newSince, readPoint.ready, readPoint.lastReadAt, threadView, viewerId, hasMore]);
+  const newSinceMessageId = newSince && newSince.podId === currentPodId ? newSince.messageId : null;
+  const newSinceSettled = Boolean(newSince && newSince.podId === currentPodId);
+  const newSinceMovedPodRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Back to a tab left at the end: what arrived meanwhile has now been seen.
+    const onVisible = () => { if (document.visibilityState === 'visible') markReadIfAtEndRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
   useLayoutEffect(() => {
     if (!initialLoadComplete || !newestMessageId || landedPodRef.current === currentPodId) return;
     landedPodRef.current = currentPodId;
@@ -1289,6 +1328,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     el.scrollTop = el.scrollHeight;
     atBottomRef.current = true;
   }, [currentPodId, initialLoadComplete, landingTarget, newestMessageId]);
+  // The read point usually answers just after that landing. Once it has, and
+  // only if the reader hasn't touched the list yet, open on what changed: the
+  // divider near the top, with the older context above it. Opening the pod
+  // counts as reading it, so the point then moves to the newest message.
+  useLayoutEffect(() => {
+    if (!newSinceSettled || !currentPodId || newSinceMovedPodRef.current === currentPodId) return;
+    if (landedPodRef.current !== currentPodId) return;
+    newSinceMovedPodRef.current = currentPodId;
+    const el = messagesContainerRef.current;
+    const divider = newSinceMessageId && el ? el.querySelector<HTMLElement>('[data-new-since-divider]') : null;
+    if (el && divider && !landingTarget && !readerMovedRef.current) {
+      const top = divider.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+      el.scrollTop = Math.max(0, top - NEW_SINCE_TOP_GAP_PX);
+      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }
+    readPoint.markRead(messages[messages.length - 1]?.created_at || messages[messages.length - 1]?.createdAt);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPodId, newSinceSettled, newSinceMessageId, landingTarget, initialLoadComplete, newestMessageId]);
   const retryHistorySearch = useCallback(async () => {
     // Retry is a new automatic target search, so a previous deliberate edge
     // release must not let the sentinel bypass the fresh bounded search.
@@ -2397,6 +2454,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}
             hasMore={hasMore}
+            newSinceMessageId={newSinceMessageId}
             loadingOlder={loadingOlder}
             onLoadOlder={() => { void handleExplicitLoadOlder(); }}
             edgeRef={edgeRef}
