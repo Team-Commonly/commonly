@@ -214,6 +214,23 @@ const admits = (pol, { ns, labels }, port) => (pol.spec.ingress || []).some((rul
   return portOk && fromOk;
 });
 
+// The sources a flow or closed spec stands for. In the chart's namespace that
+// is every rendered pod the spec's label matches, with ALL its labels: an allow
+// can admit by another label the real pod also carries (tier: data-client on
+// commonly-bot), which a synthetic one-label pod would never show. The edge and
+// other namespaces have no rendered pods here, so they keep the spec's labels.
+const sourcesFor = (spec, workloads, ns) => {
+  const src = peerLabels(spec);
+  if (spec === 'edge' || src.ns !== null) return [src];
+  const pods = workloads.filter((w) => w.metadata.namespace === ns && selects({ matchLabels: src.labels }, podTemplate(w).metadata?.labels))
+    .map((w) => ({ ns: null, labels: podTemplate(w).metadata.labels }));
+  return pods.length ? pods : [src];
+};
+// A flow holds only if every real source pod is admitted; a closed check holds
+// only if none is.
+const admittedFrom = (allows, sources, toApp, port) => sources.map((src) => allows
+  .some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, src, port)));
+
 for (const [lane, cfg] of Object.entries(ingressLanes)) {
   const args = ['template', 'commonly-verify', chart];
   for (const f of cfg.files) args.push('-f', f);
@@ -256,11 +273,11 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   if (cfg.edgeApp) {
     expect(podsOf(cfg.edgeApp).length > 0, `${lane}: the edge ${cfg.edgeApp} is not rendered in ${ns}`);
   }
-  const admitted = (from, toApp, port) => allows.some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, peerLabels(from), port));
+  const results = (from, toApp, port) => admittedFrom(allows, sourcesFor(from, workloads, ns), toApp, port);
   for (const [from, toApp, port] of cfg.flows) {
-    expect(admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is refused`);
-    // The source is built from this spec, not from a pod: a renamed label
-    // would leave the flow passing here while the real pod is cut off.
+    expect(results(from, toApp, port).every(Boolean), `${lane}: ${from} -> ${toApp}:${port} is refused`);
+    // A spec that matches no rendered pod falls back to its own labels, so a
+    // renamed label would leave the flow passing while the real pod is cut off.
     const src = from === 'edge' ? null : peerLabels(from);
     if (src && src.ns === null) {
       expect(workloads.some((w) => w.metadata.namespace === ns && selects({ matchLabels: src.labels }, podTemplate(w).metadata?.labels)),
@@ -268,7 +285,7 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
     }
   }
   for (const [from, toApp, port] of cfg.closed) {
-    expect(!admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
+    expect(!results(from, toApp, port).some(Boolean), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
   }
   // Every Service's pods are admitted on the port the Service sends to. With no
   // deny, only the pods an allow selects are isolated, so only they are checked.
@@ -301,6 +318,26 @@ expect(probe({ namespaceSelector: {} }), 'admits(): a namespaceSelector {} peer 
 expect(probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'n' } } }), 'admits(): a peer naming the own namespace does not admit its pods');
 expect(!probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'other' } } }), 'admits(): a peer naming another namespace admits same-namespace pods');
 expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is treated as refusing');
+
+// sourcesFor() itself (F504): a closed check must catch an allow that admits a
+// real pod by a label other than the one the spec names, and a flow must fail
+// when one of the spec's pods is cut off by its other labels.
+{
+  const bot = { kind: 'Deployment', metadata: { namespace: 'n', name: 'bot' },
+    spec: { template: { metadata: { labels: { app: 'commonly-bot', tier: 'data-client' } } } } };
+  const byTier = { metadata: { namespace: 'n' }, spec: { podSelector: { matchLabels: { app: 'redis' } },
+    ingress: [{ from: [{ podSelector: { matchLabels: { tier: 'data-client' } } }], ports: [{ port: 6379 }] }] } };
+  const closed = admittedFrom([byTier], sourcesFor('app=commonly-bot', [bot], 'n'), 'redis', 6379);
+  expect(closed.some(Boolean), 'sourcesFor(): an allow admitting app=commonly-bot by its tier label passes the closed check');
+  const synthetic = admittedFrom([byTier], [peerLabels('app=commonly-bot')], 'redis', 6379);
+  expect(!synthetic.some(Boolean), 'sourcesFor() probe: the synthetic one-label pod should miss the tier allow');
+  const twin = { ...bot, metadata: { namespace: 'n', name: 'bot-2' },
+    spec: { template: { metadata: { labels: { app: 'commonly-bot' } } } } };
+  const flow = admittedFrom([byTier], sourcesFor('app=commonly-bot', [bot, twin], 'n'), 'redis', 6379);
+  expect(flow.some(Boolean) && !flow.every(Boolean), 'sourcesFor(): a flow passes though one app=commonly-bot pod is refused');
+  expect(JSON.stringify(sourcesFor('ns:x/app=y', [bot], 'n')) === JSON.stringify([{ ns: 'x', labels: { app: 'y' } }]),
+    'sourcesFor(): an out-of-namespace spec does not keep its own labels');
+}
 
 // peerLabels() itself: a prefixed label key carries a `/` of its own, so it
 // must stay a label in the chart's namespace. Read as a namespace, its closed
