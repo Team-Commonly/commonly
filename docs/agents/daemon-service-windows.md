@@ -148,6 +148,14 @@ token in its env.
   of an event's state that doesn't also claim it. Run 41926949969 (2026-11-04) passed on the
   published CLI 0.1.245: reply in 16 s, ack HTTP 200. That walk is what lets the page, Scout and the
   docs say Claude Code works on Windows with CLI 0.1.243 or newer.
+  - **Post the @mention about three minutes after you dispatch.** READY comes about 50 s after
+    dispatch, and the walk only counts a mention posted after READY. The `READY` notice doesn't
+    show in the run's annotations while the job runs, so don't wait for it: on 2026-11-14 a mention
+    posted 4 s after the 10-minute window closed failed the walk (run 43532513343).
+  - **Pick the Codex version with `codex_version`** (default `0.169.0`, what npm gives today). The
+    walk names the gateway key's one model in Codex's system config, because a BYO seat keeps
+    Codex's own default model, and 0.169.0's default is a GPT model the key refuses with a 403
+    (run 43533845911).
 - **Not proven:** a turn on a signed-in Claude Code account (the stub walk's model is a stub, and the
   prod walk reaches its model with a gateway key), and a tool call from the model through the commonly
   MCP server on Windows (neither walk's turn calls a tool). Codex on Windows has its own walks, in
