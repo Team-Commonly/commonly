@@ -1751,6 +1751,7 @@ describe('claude adapter — a workspace seat', () => {
       // Outside home: the temp folders hold other seats' per-turn tokens.
       // A dot folder deeper in the path is a token folder too (CodeRabbit).
       ['~/Projects/repo/.commonly'], ['~/Projects/repo/.env'], ['~/Projects/.ssh'],
+      ['~/Projects/repo/.commonly/tokens'], ['~/Projects/repo/.ssh/keys'],
       ['~/.commonly/logs/.hidden'],
       [os.tmpdir()], ['/var/folders'], ['/private/tmp'], ['/tmp'], ['/Users/Shared'],
       ['/Library/Keychains'], [`/System/Volumes/Data${os.homedir()}/.ssh`],
