@@ -254,12 +254,15 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
       // stored and the row is published as connected, never before.
       const expectNewPairPublished = () => {
         expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
-        const published = Integration.findOneAndUpdate.mock.calls
-          .filter(([, update]) => update?.$set?.status === 'connected');
+        const { calls, invocationCallOrder } = Integration.findOneAndUpdate.mock;
+        const published = calls
+          .map((call, i) => ({ call, order: invocationCallOrder[i] }))
+          .filter(({ call: [, update] }) => update?.$set?.status === 'connected');
         expect(published).toHaveLength(1);
-        expect(published[0][1].$set).toEqual(expect.objectContaining({
+        expect(published[0].call[1].$set).toEqual(expect.objectContaining({
           'config.credentialRef': 'ref-access', 'config.refreshTokenRef': 'ref-refresh',
         }));
+        expect(Math.max(...connectorSecrets.put.mock.invocationCallOrder)).toBeLessThan(published[0].order);
       };
 
       it('also sends the page on to the access step when nothing is reachable yet', async () => {
