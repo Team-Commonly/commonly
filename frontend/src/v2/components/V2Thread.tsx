@@ -1036,7 +1036,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     observer.observe(el);
     resizeWatchRef.current = { el, observer };
   });
-  useEffect(() => () => resizeWatchRef.current?.observer.disconnect(), []);
+  useEffect(() => () => {
+    resizeWatchRef.current?.observer.disconnect();
+    resizeWatchRef.current = null;
+  }, []);
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {

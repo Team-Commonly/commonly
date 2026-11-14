@@ -6202,7 +6202,7 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   });
 
   test('the feature pane reserves the 58px tab bar, so the foot scrolls clear of it', () => {
-    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {') })).toContain('padding-bottom: 58px');
+    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {\n    padding-bottom: 58px') })).toContain('padding-bottom: 58px');
   });
 });
 
@@ -6878,8 +6878,9 @@ describe('the notice Connect link keeps its line box', () => {
 // real browser at 390.
 describe('full-height shell rules use the dynamic viewport height', () => {
   const sheet = readV2Css();
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pair = (body: string, prop: string, inner: string) => new RegExp(
-    `${prop}: ${inner.replace(/[()]/g, '\\$&').replace('VH', '100vh')};\\s*${prop}: ${inner.replace(/[()]/g, '\\$&').replace('VH', '100dvh')};`,
+    `${prop}: ${escape(inner.replace('VH', '100vh'))};\\s*${prop}: ${escape(inner.replace('VH', '100dvh'))};`,
   ).test(body);
   it.each([
     ['.v2-root', 'height', 'VH'],
@@ -6896,5 +6897,22 @@ describe('full-height shell rules use the dynamic viewport height', () => {
   it('the phone pods drawer does too', () => {
     const body = ruleBody(sheet, '.v2-pods-aside', { within: mediaBlockContaining(sheet, '.v2-pods-aside') });
     expect(pair(body, 'height', 'VH')).toBe(true);
+  });
+});
+
+describe('the phone tab bar steps aside for the keyboard', () => {
+  // interactive-widget=resizes-content lets the Android keyboard shrink the
+  // layout, so the fixed bar would otherwise sit between the field and it.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+  const focused = String.raw`\.v2-root:has\(:is\(textarea, \[contenteditable="true"\], input:not\([^)]*\)\):focus\)`;
+  it.each([
+    ['the bar hides', String.raw`\.v2-mobile-tabs \{ display: none; \}`],
+    ['the composer gives back its bar space', String.raw`\.v2-composer \{ margin-bottom: 4px; \}`],
+    ['feature pages give back their bar space', String.raw`\.v2-feature \{ padding-bottom: 0; \}`],
+  ])('%s while a text field has focus', (_label, rule) => {
+    expect(css).toMatch(new RegExp(`${focused} ${rule}`));
+  });
+  it('the phone pane height has its dvh pair', () => {
+    expect(css).toMatch(/\.v2-shell \.v2-pane \{\s*height: 100vh;\s*height: 100dvh;\s*\}/);
   });
 });

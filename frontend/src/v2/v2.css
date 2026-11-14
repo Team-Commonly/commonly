@@ -4069,6 +4069,7 @@ body.modern-ui.v2-canvas {
 
   .v2-shell .v2-pane {
     height: 100vh;
+    height: 100dvh;
   }
 
   /* A pane INSIDE the authenticated shell is bounded by the shell's content box,
@@ -4291,6 +4292,14 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-mobile-tabs { display: grid; }
+
+  /* The viewport meta asks for interactive-widget=resizes-content, so on
+     Android the keyboard shrinks the layout and this fixed bar would ride on
+     top of it, between the field and the keyboard. While a text field has
+     focus the bar steps aside and the space kept for it is given back. */
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-mobile-tabs { display: none; }
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-composer { margin-bottom: 4px; }
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-feature { padding-bottom: 0; }
 }
 
 /* ---------- Workspace at scale · direction C · PR 1 (sidebar + header + 390 list page) ----------
