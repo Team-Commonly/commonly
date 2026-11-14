@@ -64,7 +64,7 @@ beforeEach(async () => {
 afterEach(clearMongoDb);
 
 describe('a computer seat whose harness is signed out', () => {
-  it('is connected, and names the signed-out harness to its computer's owner', async () => {
+  it('is connected, and names the signed-out harness to its computer\'s owner', async () => {
     await seat({ inventory: [{ harness: 'claude', installed: true, signedIn: false }] });
     const agent = await nova();
     expect(agent.connection.state).toBe('connected');
