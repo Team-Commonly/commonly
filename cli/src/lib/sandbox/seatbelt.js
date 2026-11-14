@@ -521,8 +521,11 @@ const canonicalPath = (path) => {
   }
 };
 
+// Case is folded where the filesystem ignores it (macOS); on Linux the names
+// are compared as they are, so `/VAR/LOG` is not taken for `/var/log`.
+let foldCase = (p) => p.toLowerCase();
 const foldedWithin = (outer, inner) => {
-  const rel = relative(outer.toLowerCase(), inner.toLowerCase());
+  const rel = relative(foldCase(outer), foldCase(inner));
   return rel === '' || (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel));
 };
 
@@ -532,7 +535,7 @@ const foldedWithin = (outer, inner) => {
 const dotComponent = (canonical, home) => {
   if (HOST_READ_DOT_ALLOW.some((allowed) => foldedWithin(join(home, allowed), canonical))) {
     const allowed = HOST_READ_DOT_ALLOW.find((a) => foldedWithin(join(home, a), canonical));
-    const below = relative(join(home, allowed).toLowerCase(), canonical.toLowerCase());
+    const below = relative(foldCase(join(home, allowed)), foldCase(canonical));
     return below.split('/').find((name) => name.startsWith('.')) || null;
   }
   return canonical.split('/').find((name) => name.startsWith('.')) || null;
@@ -550,9 +553,9 @@ const hostReadRefusal = (canonical, home) => {
       ? null
       : `outside your home folder only ${HOST_READ_SYSTEM_ALLOW.join(', ')} are readable from a seat`;
   }
-  const rel = relative(home.toLowerCase(), canonical.toLowerCase());
+  const rel = relative(foldCase(home), foldCase(canonical));
   const [first] = rel.split('/');
-  if (first === 'library') return '~/Library holds keychains and app data';
+  if (foldCase(first) === 'library') return '~/Library holds keychains and app data';
   if (first.startsWith('.')
     && !HOST_READ_DOT_ALLOW.some((allowed) => foldedWithin(join(home, allowed), canonical))) {
     return `the folders under ~/${first.split('/')[0]} are not readable from a seat `
@@ -562,17 +565,35 @@ const hostReadRefusal = (canonical, home) => {
 };
 
 // Each entry resolved once, refused on the first that fails, in the order given.
-export const resolveHostReadDirectories = (entries, home = homedir()) => {
-  const canonicalHome = canonicalPath(home);
-  return entries.map((entry) => {
-    const canonical = canonicalPath(entry);
-    const reason = hostReadRefusal(canonical, canonicalHome);
-    if (reason) {
-      throw new Error(`refusing sandbox.filesystem.read-outside ${entry}: ${reason}.`);
-    }
-    return canonical;
-  });
+//   - fold: compare case-insensitively (macOS; default). Linux passes false.
+//   - only: folders under home the entry must also sit inside. bwrap cannot
+//     hide a credential file beneath a folder it binds, as Seatbelt's pattern
+//     denies do, so Linux admits only HOST_READ_DOT_ALLOW (F493 review).
+export const resolveHostReadDirectories = (entries, home = homedir(), { fold = true, only = null } = {}) => {
+  const previousFold = foldCase;
+  foldCase = fold ? (p) => p.toLowerCase() : (p) => p;
+  try {
+    const canonicalHome = canonicalPath(home);
+    return entries.map((entry) => {
+      const canonical = canonicalPath(entry);
+      let reason = hostReadRefusal(canonical, canonicalHome);
+      if (!reason && only && !only.some((allowed) => foldedWithin(join(canonicalHome, allowed), canonical))) {
+        reason = `here only ${only.map((a) => `~/${a}`).join(', ')} can be named, because this sandbox `
+          + 'cannot hide the credential files beneath a folder it binds';
+      }
+      if (reason) {
+        throw new Error(`refusing sandbox.filesystem.read-outside ${entry}: ${reason}.`);
+      }
+      return canonical;
+    });
+  } finally {
+    foldCase = previousFold;
+  }
 };
+
+// The canonical form of one path, for a caller that compares against what a
+// sandbox binds (bwrapReadRoots).
+export const canonicalHostPath = (path) => canonicalPath(path);
 
 export const buildSeatbeltProfile = ({
   workspacePath,

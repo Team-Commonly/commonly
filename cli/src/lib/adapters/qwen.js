@@ -452,17 +452,11 @@ export default {
         if (!bwrap.available) throw new Error(`public Qwen seats require bwrap: ${bwrap.error}`);
         [cmd, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([bwrapEntry, ...args], {
           ...ctx.environment,
-          sandbox: {
-            ...sandbox,
-            filesystem: {
-              ...(sandbox?.filesystem || {}),
-              'write-outside': [
-                ...(sandbox?.filesystem?.['write-outside'] || []), home,
-              ],
-            },
-          },
+          sandbox,
         }, {
           workspacePath: ctx.cwd,
+          // Its own home, bound writable through opts (F493).
+          writablePaths: [home],
           homePath: home,
           readOnlyPaths: [tempDir, bwrapEntry, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
         });

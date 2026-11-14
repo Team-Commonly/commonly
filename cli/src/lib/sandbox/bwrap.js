@@ -18,7 +18,8 @@ import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
-import { resolveHostReadDirectories } from './seatbelt.js';
+import { effectiveSandboxTrust } from '../environment.js';
+import { HOST_READ_DOT_ALLOW, canonicalHostPath, resolveHostReadDirectories } from './seatbelt.js';
 
 // Tilde-expansion lives here (and not in environment.js's expandHome) because
 // bwrap reads OS-level paths verbatim — `~` is a shell construct, not a
@@ -66,8 +67,10 @@ const DEFAULT_RO_BINDS = [
  * are the caller's.
  */
 export const bwrapReadRoots = (env) => {
+  // Resolved, as bwrap binds them: a link's target is what lands in the jail
+  // (F493 review: a key file under ~/keys behind ~/link read as unexposed).
   const declared = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
-    ? env.sandbox.filesystem[key].map(expandHome) : []);
+    ? env.sandbox.filesystem[key].map(expandHome).map(canonicalHostPath) : []);
   return {
     subpaths: [...new Set([...DEFAULT_RO_BINDS, ...declared('read-outside'), ...declared('write-outside')])],
     literals: [],
@@ -206,28 +209,39 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     '--tmpfs', '/tmp',
   ];
 
-  // F493: a workspace seat's binds pass the same allowlist Seatbelt applies
-  // (resolveHostReadDirectories, F122), so both platforms refuse the same
-  // paths: a server-written spec could otherwise bind ~/.ssh or another
-  // seat's per-turn token folder into the jail. Each entry is resolved once
-  // and the resolved path is what gets bound. write-outside is held to it too,
-  // since a read-write bind is also a read. A seat of your own (no trust) keeps
-  // its binds as declared: it is not confined, and names folders such as
-  // ~/.local/bin on purpose.
-  const checkedBinds = env?.sandbox?.trust === 'workspace'
-    ? (entries) => resolveHostReadDirectories(entries, opts.hostReadHome || homedir())
-    : (entries) => entries;
-  const userReadOutside = Array.isArray(env?.sandbox?.filesystem?.['read-outside'])
-    ? checkedBinds(env.sandbox.filesystem['read-outside'].map(expandHome))
-    : [];
+  // F493: the spec's binds are the server's to write, so a confined seat's are
+  // held to what the jail can keep safe.
+  //   - public: neither list. Strangers drive the seat; an adapter's own
+  //     folders come through opts (writablePaths), never the spec.
+  //   - workspace: read-outside only inside HOST_READ_DOT_ALLOW (bwrap cannot
+  //     hide the .env files beneath a wider bind, as Seatbelt's denies do),
+  //     resolved once and bound at the resolved path; write-outside refused, as
+  //     on macOS (a writable project lets a seat plant a git hook the host runs).
+  //   - none (a seat of your own): as declared. It is not confined, and names
+  //     folders such as ~/.local/bin on purpose.
+  const trust = effectiveSandboxTrust(env?.sandbox?.trust);
+  const declaredBinds = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
+    ? env.sandbox.filesystem[key].map(expandHome) : []);
+  for (const key of ['read-outside', 'write-outside']) {
+    if (trust === 'public' && declaredBinds(key).length) {
+      throw new Error(`refusing sandbox.filesystem.${key}: a public seat binds nothing outside its own folders`);
+    }
+  }
+  if (trust === 'workspace' && declaredBinds('write-outside').length) {
+    throw new Error('refusing sandbox.filesystem.write-outside: a workspace seat writes only its project, '
+      + 'as on macOS');
+  }
+  const userReadOutside = trust === 'workspace'
+    ? resolveHostReadDirectories(declaredBinds('read-outside'), opts.hostReadHome || homedir(), {
+      fold: false, only: HOST_READ_DOT_ALLOW,
+    })
+    : declaredBinds('read-outside');
   const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...userReadOutside])];
   for (const p of roBinds) {
     flags.push('--ro-bind-try', p, p);
   }
 
-  const userWriteOutside = Array.isArray(env?.sandbox?.filesystem?.['write-outside'])
-    ? checkedBinds(env.sandbox.filesystem['write-outside'].map(expandHome))
-    : [];
+  const userWriteOutside = declaredBinds('write-outside');
   for (const p of userWriteOutside) {
     flags.push('--bind-try', p, p);
   }

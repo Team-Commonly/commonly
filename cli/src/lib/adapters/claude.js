@@ -94,6 +94,7 @@ import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
+  HOST_READ_DOT_ALLOW,
   publicClaudeStateRoot,
   resolveHostReadDirectories,
   wrapArgvWithSeatbelt,
@@ -1689,7 +1690,9 @@ const prepareArgv = async (innerArgv, ctx) => {
           ownerWoken: ctx.ownerWoken,
           // F493: the folders bwrap binds for this seat, checked the same way
           // wrapArgvWithBwrap checks them, so its Read tool can reach them.
-          hostReads: resolveHostReadDirectories(workspaceReadOutside(env)),
+          hostReads: resolveHostReadDirectories(workspaceReadOutside(env), homedir(), {
+            fold: false, only: HOST_READ_DOT_ALLOW,
+          }),
         }
         : { memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }),
       ...(ctx.publicSkillArgs || []),

@@ -355,16 +355,39 @@ describe('a workspace seat\'s read-outside and write-outside under bwrap', () =>
     expect(() => wrap({ 'read-outside': [entry] })).toThrow(/refusing sandbox\.filesystem\.read-outside/);
   });
 
-  test('refuses a write-outside that reaches credentials, since a read-write bind is a read', () => {
-    expect(() => wrap({ 'write-outside': [`${home}/.ssh`] })).toThrow(/refusing sandbox\.filesystem/);
+  // The F493 review: bwrap cannot hide the .env files beneath a wider bind, so
+  // a project folder is refused here, and a writable folder outside the
+  // project lets a seat plant a git hook the host later runs.
+  test('refuses a project folder, which macOS admits with denies beneath it', () => {
+    expect(() => wrap({ 'read-outside': [`${home}/project`] }))
+      .toThrow(/only ~\/\.commonly\/logs can be named/);
   });
 
-  test('binds an admitted folder read-only, at its resolved path', () => {
-    const argv = wrap({ 'read-outside': [`${home}/project`, `${home}/.commonly/logs`] });
-    for (const dir of [`${home}/project`, `${home}/.commonly/logs`]) {
-      const idx = argv.indexOf(dir);
-      expect(argv[idx - 1]).toBe('--ro-bind-try');
-    }
+  test('refuses any write-outside', () => {
+    expect(() => wrap({ 'write-outside': [`${home}/project`] }))
+      .toThrow(/refusing sandbox\.filesystem\.write-outside/);
+  });
+
+  test('binds the CLI logs folder read-only, at its resolved path', () => {
+    const argv = wrap({ 'read-outside': [`${home}/.commonly/logs`] });
+    const idx = argv.indexOf(`${home}/.commonly/logs`);
+    expect(argv[idx - 1]).toBe('--ro-bind-try');
+  });
+
+  test('compares case as it is: /VAR/LOG is not the system log folder on Linux', () => {
+    expect(() => wrap({ 'read-outside': [`${home}/.Commonly/Logs`] })).toThrow(/refusing/);
+  });
+
+  test.each([['read-outside'], ['write-outside']])('a public seat refuses any %s', (key) => {
+    expect(() => wrap({ [key]: [`${home}/.commonly/logs`] }, 'public'))
+      .toThrow(new RegExp(`refusing sandbox\\.filesystem\\.${key}: a public seat`));
+  });
+
+  test('a public seat binds its own folders through opts', () => {
+    const argv = wrapArgvWithBwrap(['opencode'], { sandbox: { trust: 'public' } }, {
+      workspacePath: '/tmp/ws', writablePaths: [`${home}/project`],
+    });
+    expect(argv[argv.indexOf(`${home}/project`) - 1]).toBe('--bind');
   });
 
   test('a seat of your own (no trust) keeps its declared binds, ~/.local/bin included', () => {
