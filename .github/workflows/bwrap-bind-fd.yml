@@ -1,0 +1,42 @@
+name: bwrap descriptor binds
+
+# F211: a workspace seat's folder is mounted from an open descriptor where
+# bwrap supports it (bubblewrap 0.10.0+). Debian 13 ships 0.11, so the swap
+# race is run for real there: a path bind follows the link, a descriptor bind
+# does not. The public Claude smoke runs on Debian 12 (bubblewrap 0.8.0), which
+# keeps the path binds.
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/adapters/claude.js'
+      - 'cli/__tests__/bwrap.bind-fd.smoke.test.mjs'
+      - 'cli/__tests__/bind-fd.test.mjs'
+      - '.github/workflows/bwrap-bind-fd.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bind-fd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run the swap race in a disposable namespace
+        run: |
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            --mount "type=bind,src=$PWD,dst=/source,readonly" node:22-trixie bash -lc '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq bubblewrap >/dev/null
+              bwrap --version
+              mkdir -p /work/packages
+              cp -R /source/cli /work/
+              cp -R /source/packages/seats /work/packages/
+              rm -rf /work/cli/node_modules
+              npm ci --prefix /work/cli --silent
+              chown -R node:node /work
+              su node -s /bin/bash -c "cd /work/cli && COMMONLY_REQUIRE_BWRAP_BIND_FD=1 node --experimental-vm-modules node_modules/.bin/jest __tests__/bwrap.bind-fd.smoke.test.mjs __tests__/bind-fd.test.mjs __tests__/bwrap.test.mjs --runInBand"
+            '
