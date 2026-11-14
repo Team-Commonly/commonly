@@ -54,6 +54,16 @@ describe('a BYO agent schedule', () => {
     pod = await Pod.create({ name: 'Ops', type: 'chat', createdBy: owner._id, members: [owner._id] });
   });
 
+  it('a paused agent names no next run: the dispatcher skips it', async () => {
+    await AgentInstallation.create({
+      agentName: 'paused', instanceId: 'default', podId: pod._id, version: '1', installedBy: owner._id, status: 'active',
+      config: new Map([['runtime', { runtimeType: 'local-cli', host: 'byo' }], ['autonomy', { enabled: false }]]),
+    });
+    const res = await save('paused');
+    expect(res.status).toBe(200);
+    expect(res.body.settings.schedule).toEqual(expect.objectContaining({ enabled: true, nextRun: null }));
+  });
+
   it('saves through the route and fires once on its day, with the heartbeat off', async () => {
     await seat('daily');
     const res = await save('daily');

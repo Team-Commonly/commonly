@@ -104,7 +104,8 @@ const settings = (installation: any, podName: string, podType?: string, canChang
       timezone: config.schedule.timezone,
       prompt: config.schedule.prompt,
       // The dispatcher's own answer, so the page never guesses (catch-up window, a day already fired).
-      nextRun: scheduleNextRun(config.schedule),
+      // A paused agent is skipped by the dispatcher, so it has no next run to name.
+      nextRun: config.autonomy?.enabled === false ? null : scheduleNextRun(config.schedule),
     } : null,
   };
 };
