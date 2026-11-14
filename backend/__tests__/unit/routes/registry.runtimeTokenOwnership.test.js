@@ -101,6 +101,13 @@ app.use(express.json());
 app.use('/api/registry', agentTokensRouter);
 app.use('/api/registry', provisionRouter);
 
+// supertest's request(server) listens on [::]:0 and then calls 127.0.0.1, so on a
+// host with another IPv4 listener on that port the request reaches the wrong
+// server (F466: a 404 or 503 that is not ours). Listen on loopback once.
+let server;
+beforeAll(() => new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); }));
+afterAll(() => new Promise((resolve) => { server.close(resolve); }));
+
 const install = (installedBy, podId) => ({ agentName: 'quire', instanceId: 'default', status: 'active', installedBy, podId });
 
 beforeEach(() => {
@@ -113,7 +120,7 @@ beforeEach(() => {
   User.findOne.mockResolvedValue({ _id: 'bot-1', agentRuntimeTokens: [{ _id: 'tok-1', tokenHash: 'hash-1' }], save: jest.fn() });
 });
 
-const mint = (body = {}) => request(app).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);
+const mint = (body = {}) => request(server).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);
 
 describe('minting a runtime token needs the sole-installer rule, not pod membership', () => {
   test('a pod member who did not install the agent cannot mint or rotate its token', async () => {
@@ -161,14 +168,14 @@ describe('minting a runtime token needs the sole-installer rule, not pod members
 describe('revoking a runtime token needs the same rule', () => {
   test('a pod member who does not own the identity cannot revoke its tokens', async () => {
     mockInstalls = [install('user-b', 'pod-a')];
-    const res = await request(app).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
+    const res = await request(server).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
     expect(res.status).toBe(403);
     expect(User.findOne).not.toHaveBeenCalled();
   });
 
   test('the sole installer can revoke, and the revoke goes by the token hash', async () => {
     mockInstalls = [install('user-a', 'pod-a')];
-    const res = await request(app).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
+    const res = await request(server).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
     expect(res.status).toBe(200);
     // Every stored copy shares the hash, not the listed id (runtimeTokenRevoke.test.js).
     expect(mockRevokeOne).toHaveBeenCalledWith('hash-1');
@@ -178,7 +185,7 @@ describe('revoking a runtime token needs the same rule', () => {
 describe('provisioning mints a token, so it needs the same rule', () => {
   test('a pod member who does not solely own the identity cannot provision it', async () => {
     mockInstalls = [install('user-a', 'pod-a'), install('user-b', 'pod-b')];
-    const res = await request(app).post('/api/registry/pods/pod-a/agents/quire/provision').send({ force: true });
+    const res = await request(server).post('/api/registry/pods/pod-a/agents/quire/provision').send({ force: true });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('another_installer');
     expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
@@ -188,8 +195,8 @@ describe('provisioning mints a token, so it needs the same rule', () => {
 });
 
 describe('the agent user token takes the same rule', () => {
-  const issueUserToken = () => request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ scopes: [] });
-  const revokeUserToken = () => request(app).delete('/api/registry/pods/pod-a/agents/quire/user-token');
+  const issueUserToken = () => request(server).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ scopes: [] });
+  const revokeUserToken = () => request(server).delete('/api/registry/pods/pod-a/agents/quire/user-token');
 
   test('a pod member who did not install the agent is not given its user token', async () => {
     mockInstalls = [install('user-b', 'pod-a')];
@@ -247,7 +254,7 @@ describe('API user-token force rotation follows identity ownership', () => {
     mockInstalls = kind === 'shared'
       ? [install('user-a', 'pod-a'), install('user-b', 'pod-b')]
       : [install('user-b', 'pod-a')];
-    const response = await request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ force: true });
+    const response = await request(server).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ force: true });
     expect(response.status).toBe(403);
     expect(mockIssueUser).not.toHaveBeenCalled();
     expect(User.findOne).not.toHaveBeenCalled();

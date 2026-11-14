@@ -25,7 +25,7 @@ import { OWN_PROCESS_GROUP } from '@commonlyai/seats/process-group';
 import { superviseRun } from '@commonlyai/seats/supervisor';
 import { createTraceStore } from '@commonlyai/seats/trace/store';
 import { startFakeProvider } from '../../packages/seats/test-support/fake-provider.js';
-import { isRunning, readPid, reap, waitFor } from '../../packages/seats/test-support/processes.js';
+import { isRunning, readPids, reap, waitFor } from '../../packages/seats/test-support/processes.js';
 
 const PIN = 'deepseek-flash-1017';
 const CONFINED = { mode: 'workspace', network: { policy: 'restricted' } };
@@ -44,7 +44,7 @@ const prompt = args[args.length - 1];
 if (prompt.includes('[[hang]]')) {
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
-  fs.writeFileSync('.stub-grandchild.pid', String(child.pid));
+  fs.writeFileSync('.stub-pids', process.pid + ',' + child.pid);
   setInterval(() => {}, 1000);
   return;
 }
@@ -302,19 +302,24 @@ test('an unconfined seat keeps its old spawn: no wrap, no fence, no pin', async 
 (process.platform === 'win32' ? test.skip : test)('a supervised confined turn that stalls is killed with what it started', async () => {
   await withSeat(async ({ ctx, root }) => {
     const store = createTraceStore({ root: join(root, 'trace') });
-    let grandchild;
+    // The stub and the grandchild it starts. Both are reaped at the end: a
+    // stub the supervisor failed to kill once outlived this test by eight days,
+    // orphaned to init with its folder already deleted (F466).
+    let pids = [];
     try {
       const pending = superviseRun({
         adapter: dsh, prompt: '[[hang]]', ctx, store,
         policy: { stallMs: 400, cancelGraceMs: 300, timeoutMs: 20000 },
       });
-      grandchild = await readPid(join(ctx.cwd, '.stub-grandchild.pid'));
+      pids = await readPids(join(ctx.cwd, '.stub-pids'), 2);
+      const [stub, grandchild] = pids;
       expect(isRunning(grandchild)).toBe(true);
       const out = await pending;
       expect(out.outcome).toBe('stuck');
       expect(await waitFor(() => !isRunning(grandchild))).toBe(true);
+      expect(await waitFor(() => !isRunning(stub))).toBe(true);
     } finally {
-      if (grandchild) reap(grandchild);
+      pids.forEach(reap);
     }
   });
 }, 20000);
