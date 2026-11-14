@@ -183,12 +183,15 @@ const ingressLanes = {
     closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000]],
   },
 };
-const peerLabels = (spec, edgeApp) => {
+const peerLabels = (spec) => {
   if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };
   // `ns:<namespace>/key=value` is a pod in another namespace; bare `key=value`
   // is in the chart's. Only the prefix names a namespace: a label key can carry
   // its own `/` (app.kubernetes.io/name), so a bare `/` can't.
   const m = /^ns:([^/]+)\/(.+)$/.exec(spec);
+  // A malformed prefix would read as a label key in the chart's namespace, and
+  // a closed check on it would pass vacuously.
+  if (!m && spec.startsWith('ns:')) throw new Error(`peer spec ${spec} is not ns:<namespace>/key=value`);
   const label = m ? m[2] : spec;
   const eq = label.indexOf('=');
   if (eq < 1) throw new Error(`peer spec ${spec} is not key=value`);
