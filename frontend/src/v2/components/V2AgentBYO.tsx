@@ -2481,56 +2481,56 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && listenAdapter === 'claude' && setupOs !== 'windows' && (
               <details className="v2-byo__more" data-testid="byo-folder-details">
                 <summary>{t(repoActive ? 'agentByo.listen.folderSummaryRepoOn' : 'agentByo.listen.folderSummary')}</summary>
-              <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
-                {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
-              </p>
-            {/* Inside the fold, so the listener is up and this is Claude Code off Windows. */}
-            {repoChoiceAvailable && (
-              <div className="v2-byo__listen-note" data-testid="byo-repo-choice">
-                <label>
-                  <input
-                    type="checkbox"
-                    data-testid="byo-repo-toggle"
-                    checked={workInRepo}
-                    onChange={(e) => setWorkInRepo(e.target.checked)}
-                  />
-                  {' '}{t('agentByo.listen.repo.label')}
-                </label>
-                <p>{t('agentByo.listen.repo.hint')}</p>
-                {/* F386: what each level can do. Neither can commit or open a
-                    pull request; issue-to-PR is the terminal attach in the docs,
-                    never a promise of this page. */}
-                <p data-testid="byo-repo-limits">{t('agentByo.listen.repo.limits')}</p>
-                <p data-testid="byo-repo-issue-to-pr">
-                  {t('agentByo.listen.repo.issueToPr')}{' '}
-                  <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/claude-code-with-your-own-access.md" target="_blank" rel="noopener noreferrer">{t('agentByo.listen.repo.issueToPrLink')}</a>
+                <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
+                  {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
                 </p>
-                {workInRepo && (
-                  <>
+                {/* Inside the fold, so the listener is up and this is Claude Code off Windows. */}
+                {repoChoiceAvailable && (
+                  <div className="v2-byo__listen-note" data-testid="byo-repo-choice">
                     <label>
                       <input
                         type="checkbox"
-                        data-testid="byo-repo-write"
-                        checked={allowWrite}
-                        onChange={(e) => setAllowWrite(e.target.checked)}
+                        data-testid="byo-repo-toggle"
+                        checked={workInRepo}
+                        onChange={(e) => setWorkInRepo(e.target.checked)}
                       />
-                      {' '}{t('agentByo.listen.repo.write')}
+                      {' '}{t('agentByo.listen.repo.label')}
                     </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        data-testid="byo-repo-web"
-                        checked={allowWeb}
-                        onChange={(e) => setAllowWeb(e.target.checked)}
-                      />
-                      {' '}{t('agentByo.listen.repo.web')}
-                    </label>
-                    <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
-                    <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved')}</p>
-                  </>
+                    <p>{t('agentByo.listen.repo.hint')}</p>
+                    {/* F386: what each level can do. Neither can commit or open a
+                        pull request; issue-to-PR is the terminal attach in the docs,
+                        never a promise of this page. */}
+                    <p data-testid="byo-repo-limits">{t('agentByo.listen.repo.limits')}</p>
+                    <p data-testid="byo-repo-issue-to-pr">
+                      {t('agentByo.listen.repo.issueToPr')}{' '}
+                      <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/claude-code-with-your-own-access.md" target="_blank" rel="noopener noreferrer">{t('agentByo.listen.repo.issueToPrLink')}</a>
+                    </p>
+                    {workInRepo && (
+                      <>
+                        <label>
+                          <input
+                            type="checkbox"
+                            data-testid="byo-repo-write"
+                            checked={allowWrite}
+                            onChange={(e) => setAllowWrite(e.target.checked)}
+                          />
+                          {' '}{t('agentByo.listen.repo.write')}
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            data-testid="byo-repo-web"
+                            checked={allowWeb}
+                            onChange={(e) => setAllowWeb(e.target.checked)}
+                          />
+                          {' '}{t('agentByo.listen.repo.web')}
+                        </label>
+                        <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
+                        <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved')}</p>
+                      </>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
               </details>
             )}
             {listenerAvailable && listenAdapter === 'codex' && setupOs !== 'windows' && (
