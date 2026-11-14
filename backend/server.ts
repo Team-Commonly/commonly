@@ -591,13 +591,21 @@ io.on('connection', (socket: any) => {
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
   socket.data.joinedPods = new Set();
+  // Joins still being authorized, so a leave during that wait is stamped (F512).
+  socket.data.pendingJoins = new Set();
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {
     // Taken before the authorization wait: a leave that lands during it must
     // stay later than this open (F512).
     const joinedAt = new Date();
-    const pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    socket.data.pendingJoins.add(podId);
+    let pod;
+    try {
+      pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    } finally {
+      socket.data.pendingJoins.delete(podId);
+    }
     if (!pod) {
       return;
     }
@@ -617,8 +625,11 @@ io.on('connection', (socket: any) => {
       return;
     }
     socket.leave(`pod_${podId}`);
+    // Only a pod this socket joined, or is joining, gets a close stamp: any
+    // other id would add a visit row for a pod the person never opened.
+    const wasOpen = socket.data.joinedPods.has(podId) || socket.data.pendingJoins.has(podId);
     socket.data.joinedPods.delete(podId);
-    void mentionEmailVisits.stampPodClosed(socket.userId, [podId]);
+    if (wasOpen) void mentionEmailVisits.stampPodClosed(socket.userId, [podId]);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
     await emitPresence(podId);
   });
