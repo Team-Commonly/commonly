@@ -1013,31 +1013,47 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // A phone keyboard (or a rotated screen) makes the list shorter without a
   // scroll event. Someone reading at the end stays at the end, so the newest
   // message stays above the composer; someone reading up is left alone. "At
-  // the end" is read off the list at its old height, not the follow flag,
-  // which a smooth follow or a late notice can leave stale. The list element
-  // can remount after the first read, so the observer follows the element.
-  const resizeWatchRef = useRef<{ el: HTMLElement; observer: ResizeObserver } | null>(null);
+  // the end" is the list's own bottom distance as it stood before the resize
+  // (kept from the last scroll or observation), not the follow flag, which a
+  // smooth follow or a late notice can leave stale, and not a figure rebuilt
+  // from post-resize values: a narrower list rewraps text and changes its
+  // scrollHeight in the same callback. The list element can remount after the
+  // first read, so the observer follows the element.
+  const resizeWatchRef = useRef<{ el: HTMLElement; observer: ResizeObserver; onScroll: () => void } | null>(null);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (resizeWatchRef.current?.el === el) return;
-    resizeWatchRef.current?.observer.disconnect();
-    resizeWatchRef.current = null;
+    const stopWatching = () => {
+      const watch = resizeWatchRef.current;
+      watch?.observer.disconnect();
+      watch?.el.removeEventListener('scroll', watch.onScroll);
+      resizeWatchRef.current = null;
+    };
+    stopWatching();
     if (!el || typeof ResizeObserver === 'undefined') return;
+    const bottomDistance = () => el.scrollHeight - el.scrollTop - el.clientHeight;
     let lastHeight = el.clientHeight;
+    let lastDistance = bottomDistance();
+    // A scroll the resize itself causes (scroll anchoring) can land before the
+    // observer runs; it must not overwrite the distance from before the resize.
+    const onScroll = () => { if (el.clientHeight === lastHeight) lastDistance = bottomDistance(); };
     const observer = new ResizeObserver(() => {
       const height = el.clientHeight;
-      const endWasInView = el.scrollHeight - el.scrollTop - lastHeight < 80;
-      if (height < lastHeight && endWasInView) {
+      if (height < lastHeight && lastDistance < 80) {
         el.scrollTop = el.scrollHeight;
         atBottomRef.current = true;
       }
       lastHeight = height;
+      lastDistance = bottomDistance();
     });
     observer.observe(el);
-    resizeWatchRef.current = { el, observer };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    resizeWatchRef.current = { el, observer, onScroll };
   });
   useEffect(() => () => {
-    resizeWatchRef.current?.observer.disconnect();
+    const watch = resizeWatchRef.current;
+    watch?.observer.disconnect();
+    watch?.el.removeEventListener('scroll', watch.onScroll);
     resizeWatchRef.current = null;
   }, []);
   useEffect(() => {

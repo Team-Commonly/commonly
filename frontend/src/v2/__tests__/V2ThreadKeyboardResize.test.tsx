@@ -33,11 +33,11 @@ const tree = (d, strict = false) => {
 };
 const sized = (container) => {
   const list = container.querySelector('.v2-chat__messages');
-  let h = 700;
+  let h = 700; let sh = 2000;
   Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => h });
-  Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
+  Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => sh });
   // only observers still connected hear the resize, as in a browser
-  const shrink = (to) => { h = to; act(() => observed.filter((o) => o.live).forEach((o) => o.cb([]))); };
+  const shrink = (to, rewrapTo) => { h = to; if (rewrapTo) sh = rewrapTo; act(() => observed.filter((o) => o.live).forEach((o) => o.cb([]))); };
   return { list, shrink };
 };
 const setup = (strict = false) => {
@@ -69,11 +69,35 @@ test('the viewport lets the keyboard shrink the layout (Android Chrome)', () => 
   }
 });
 
-test('at the end by position, a stale follow flag does not leave the newest message below the fold', () => {
+test('a narrower list that rewraps its text still counts as "was at the end"', () => {
+  // before: scrollHeight 2000, clientHeight 700, scrollTop 1300 (distance 0).
+  // after one callback: clientHeight 380 and the rewrap grew scrollHeight to 2400.
   const { list, shrink } = setup();
   shrink(700);
-  list.scrollTop = 400; fireEvent.wheel(list); fireEvent.scroll(list); // the flag now says "reading up"
-  list.scrollTop = 1300; // back at the end, with no scroll event yet
+  list.scrollTop = 1300; fireEvent.scroll(list);
+  shrink(380, 2400);
+  expect(list.scrollTop).toBe(2400);
+});
+
+test('the end is read off the list, not the follow flag', () => {
+  // The pod lands at its end, which sets the follow flag; a scroll the flag
+  // doesn't record (a follow window) leaves it saying "at the end" while the
+  // list sits far up. The resize must leave that reader where they are.
+  const { list, shrink } = setup();
+  shrink(700);
+  list.scrollTop = 400; fireEvent.scroll(list);
+  shrink(380);
+  expect(list.scrollTop).toBe(400);
+});
+
+test('a scroll the resize causes before the observer runs does not count as reading up', () => {
+  const { list, shrink } = setup();
+  shrink(700);
+  list.scrollTop = 1300; fireEvent.scroll(list); // at the end
+  // the list is already shorter, and the browser re-anchors and fires a scroll
+  // before the resize observer gets its callback
+  Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 380 });
+  list.scrollTop = 1268; fireEvent.scroll(list);
   shrink(380);
   expect(list.scrollTop).toBe(2000);
 });

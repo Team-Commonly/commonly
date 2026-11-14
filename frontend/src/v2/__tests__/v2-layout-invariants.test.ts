@@ -6904,7 +6904,21 @@ describe('the phone tab bar steps aside for the keyboard', () => {
   // interactive-widget=resizes-content lets the Android keyboard shrink the
   // layout, so the fixed bar would otherwise sit between the field and it.
   const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
-  const focused = String.raw`\.v2-root:has\(:is\(textarea, \[contenteditable="true"\], input:not\([^)]*\)\):focus\)`;
+  // Structural check: the exact text-entry selector, so a changed exclusion
+  // list fails here rather than hiding the bar for a focused checkbox.
+  const EXCLUDED = ['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'file', 'color', 'image', 'hidden'];
+  const TEXT_ENTRY = `:is(textarea, [contenteditable="true"], input:not(${EXCLUDED.map((t) => `[type="${t}"]`).join(', ')})):focus`;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const focused = `\\.v2-root:has\\(${escape(TEXT_ENTRY)}\\)`;
+  it('the focus selector covers text entry and leaves out non-text inputs', () => {
+    expect(css).toContain(`.v2-root:has(${TEXT_ENTRY}) .v2-mobile-tabs`);
+    // positive controls: a textarea, a contenteditable and a plain input are text entry
+    expect(TEXT_ENTRY).toMatch(/:is\(textarea, \[contenteditable="true"\], input:not\(/);
+    // negative controls: a checkbox or a radio must never count as typing
+    for (const type of ['checkbox', 'radio']) expect(TEXT_ENTRY).toContain(`[type="${type}"]`);
+    // nothing that takes text is excluded
+    for (const type of ['text', 'email', 'search', 'password', 'url', 'tel', 'number']) expect(TEXT_ENTRY).not.toContain(`[type="${type}"]`);
+  });
   it.each([
     ['the bar hides', String.raw`\.v2-mobile-tabs \{ display: none; \}`],
     ['the composer gives back its bar space', String.raw`\.v2-composer \{ margin-bottom: 4px; \}`],
