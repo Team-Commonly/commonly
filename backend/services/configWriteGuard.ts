@@ -95,6 +95,15 @@ export const configWriteRefusal = ({
       code: 'invalid_config', status: 400, error: 'config.runtime must be an object.', fields: ['config.runtime'],
     };
   }
+  // Every reader takes a non-string adapter for none (grantBrokerConfinement
+  // normalizeAdapter), so `{}` or `[]` would be a clear the guard below cannot
+  // see (CodeRabbit on #4105). null is the one non-string that means a clear.
+  const sentRuntime = asObject(body.runtime);
+  if (sentRuntime && 'adapter' in sentRuntime && sentRuntime.adapter !== null && typeof sentRuntime.adapter !== 'string') {
+    return {
+      code: 'invalid_config', status: 400, error: 'config.runtime.adapter must be a string.', fields: ['config.runtime.adapter'],
+    };
+  }
 
   const owned = KERNEL_OWNED_CONFIG_KEYS.filter((key) => key in body);
   if (owned.length) {

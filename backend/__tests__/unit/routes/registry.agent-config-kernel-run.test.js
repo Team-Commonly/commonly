@@ -254,6 +254,20 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(row.config.get('runtime')).toEqual({ runtimeType: 'codex', adapter: 'codex' });
   });
 
+  // CodeRabbit on #4105: readers take a non-string adapter for none, so it is a
+  // clear in disguise. Malformed for every caller, admins included.
+  it.each([[{}], [[]], [7], [true]])('refuses a non-string adapter (%j) as malformed', async (adapter) => {
+    for (const role of ['user', 'admin']) {
+      const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+      given(row, role);
+      // eslint-disable-next-line no-await-in-loop
+      const res = await patch({ runtime: { adapter } });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'invalid_config', fields: ['config.runtime.adapter'] });
+      expect(row.save).not.toHaveBeenCalled();
+    }
+  });
+
   it('still lets the installer switch a stored adapter to another one', async () => {
     const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
     given(row);
