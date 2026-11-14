@@ -113,6 +113,34 @@ describe('BYO default agent name follows where it runs', () => {
     ));
   });
 
+  // F516: an owner back for an agent whose first command was never run gets a
+  // new command in one click; the unused key had nothing to lose.
+  test('a never-connected agent from a connect link gets a new command in one click', async () => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
+    renderAt('/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-finish-connect'))
+      .toHaveTextContent('walk-pending’s first command can’t be shown again'), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Get a new connect command' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/walk-pending/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(false);
+    expect(screen.queryByTestId('byo-replace-key-confirmation')).toBeNull();
+    expect((await screen.findAllByText(/cm_agent_new/)).length).toBeGreaterThan(0);
+  });
+
+  test('without the connect link, or for someone else’s agent, the key is never replaced in one click', async () => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u2', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state')).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByTestId('byo-finish-connect')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Get a new connect command' })).toBeNull();
+  });
+
   // F353 (Growth re-walk, 11-08): reconnecting a Codex agent opened on Claude
   // Code and printed `commonly agent run gw-codex --adapter claude`.
   test('a reconnect opens on the harness the agent runs, so the command names codex', async () => {

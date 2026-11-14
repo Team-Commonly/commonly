@@ -115,7 +115,9 @@ describe('BYO runner switch and key replacement (TASK-645 item 5, #3019 HOLD)', 
     const scrolled = [];
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function scrollIntoView() { scrolled.push(this); };
-    window.history.pushState({}, '', '/?name=sam-claude&reconnect=1');
+    // F516: from a reconnect link a never-used key is replaced in one click, so
+    // the replace prompt (and its scroll) is reached by a typed or prefilled name.
+    window.history.pushState({}, '', '/?name=sam-claude');
     try {
       renderPage();
       const rail = screen.getByTestId('byo-preview');

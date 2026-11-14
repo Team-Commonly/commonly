@@ -501,6 +501,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     .filter((row) => row.isOwner && row.state === 'never-connected')
     .map((row) => [agentKeyOf(row.agentName, row.instanceId), agentConnectLink(row)] as const)
     .filter(([, link]) => Boolean(link))), [agentStates]);
+  // F516: an agent the person made and never ran the command for. Get started
+  // names it and opens its own connect page, where one click gives a new command.
+  const pendingConnectAgent = useMemo(() => agentStates.find((row) => row.isOwner
+    && row.state === 'never-connected' && !row.hosted && Boolean(agentConnectLink(row))) || null, [agentStates]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -2244,7 +2248,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           <V2GetStarted
             steps={starter}
             podId={pod._id}
-            onConnect={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
+            pendingAgentName={pendingConnectAgent ? (pendingConnectAgent.displayName || pendingConnectAgent.agentName) : undefined}
+            onConnect={() => navigate(pendingConnectAgent
+              ? agentConnectLink(pendingConnectAgent)
+              : `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
             onFirstTask={startFirstTask}
             onOpenBoard={() => navigate(`/v2/pods/${pod._id}/board`)}
           />

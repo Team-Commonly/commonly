@@ -566,6 +566,16 @@ const V2AgentBYO: React.FC = () => {
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
       || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
     && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin'));
+  // F516: the owner is back from a Connect or Get started link for an agent
+  // whose first command was never run. That command can't be shown again (the
+  // key is stored hashed), and an unused key loses nothing when it's replaced,
+  // so one click gives the new command; the replace prompt is for a key that
+  // something may hold. A daemon-placed agent restarts on its computer instead.
+  const canFinishConnect = Boolean(prefill.reconnect && existingConnection
+    && existingConnection.connection.state === 'never'
+    && existingConnection.runtimeType !== 'wrapper'
+    && sanitizeAgentName(name) === prefill.name
+    && existingConnection.installedBy === String(currentUser?._id));
   const isOtherOwner = Boolean(existingConnection && existingConnection.installedBy
     && existingConnection.installedBy !== String(currentUser?._id) && currentUser?.role !== 'admin');
   // The same roster verdict powers Your Team and this reconnection screen.
@@ -1899,6 +1909,11 @@ const V2AgentBYO: React.FC = () => {
               {connectionLabel(existingConnection.connection, t)}
             </div>
           )}
+          {canFinishConnect && (
+            <div className="v2-byo__hint" data-testid="byo-finish-connect">
+              {t('agentByo.finishConnect', { name: sanitizeAgentName(name) })}
+            </div>
+          )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
@@ -1907,16 +1922,16 @@ const V2AgentBYO: React.FC = () => {
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
-              if (canReconnect) {
-                if (existingConnection?.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
+              if (canReconnect || canFinishConnect) {
+                if (canReconnect && existingConnection?.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
                 else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               } else void submit();
             }}
             disabled={submitting || !namesReady || !pods.some((p) => p._id === podId)}
             className="v2-byo__submit"
           >
-            {submitting ? t('agentByo.actions.issuing') : canReconnect
-              ? t('agentConnection.reconnect') : t('agentByo.actions.install')}
+            {submitting ? t('agentByo.actions.issuing') : canFinishConnect ? t('agentByo.rekey.replaceNever')
+              : canReconnect ? t('agentConnection.reconnect') : t('agentByo.actions.install')}
           </button>}
           <button
             type="button"
@@ -2090,6 +2105,11 @@ const V2AgentBYO: React.FC = () => {
               {connectionLabel(existingConnection.connection, t)}
             </div>
           )}
+          {canFinishConnect && mode !== 'hosted' && (
+            <div className="v2-byo__hint" data-testid="byo-finish-connect">
+              {t('agentByo.finishConnect', { name: sanitizeAgentName(name) })}
+            </div>
+          )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {mode === null ? (
             // Signal §3 not yet: a muted line where the act will be, until a
@@ -2098,15 +2118,15 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
-          ) : canReconnect && !byoAlternative ? (
+          ) : (canReconnect || canFinishConnect) && !byoAlternative ? (
               // A runner the page has no listener for shows its own way first:
               // a reconnected key would land in a command view with nothing to run.
               <button type="button" className="v2-byo__submit" disabled={submitting || !podId}
                 onMouseDown={(event) => event.preventDefault()} onClick={() => {
-                if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
+                if (canReconnect && existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
                 else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               }}>
-                {t('agentConnection.reconnect')}
+                {submitting ? t('agentByo.actions.issuing') : canFinishConnect ? t('agentByo.rekey.replaceNever') : t('agentConnection.reconnect')}
               </button>
             ) : isOtherOwner ? null : byoAlternative || (
             <button
