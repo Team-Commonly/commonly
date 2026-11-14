@@ -790,10 +790,14 @@ spec:
           value: {{ .Values.backend.env.recordV1Pods | quote }}
         {{- end }}
 
-        # GCP Secret Manager credentials
+        # GCP Secret Manager credentials. The key file is mounted only without
+        # Workload Identity, so the path is set only then: pointing it at a
+        # missing file makes a Google client fail instead of using ADC (F463).
         {{- if .Values.externalSecrets.enabled }}
+        {{- if not .Values.externalSecrets.workloadIdentity.enabled }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /app/gcp/secret-access-credentials.json
+        {{- end }}
         - name: GCP_PROJECT_ID
           value: {{ .Values.externalSecrets.secretStore.projectId | quote }}
         {{- end }}
