@@ -1010,6 +1010,33 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       inputs.forEach((name) => el.removeEventListener(name, onReaderInput));
     };
   }, [pod?._id]);
+  // A phone keyboard (or a rotated screen) makes the list shorter without a
+  // scroll event. Someone reading at the end stays at the end, so the newest
+  // message stays above the composer; someone reading up is left alone. "At
+  // the end" is read off the list at its old height, not the follow flag,
+  // which a smooth follow or a late notice can leave stale. The list element
+  // can remount after the first read, so the observer follows the element.
+  const resizeWatchRef = useRef<{ el: HTMLElement; observer: ResizeObserver } | null>(null);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (resizeWatchRef.current?.el === el) return;
+    resizeWatchRef.current?.observer.disconnect();
+    resizeWatchRef.current = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let lastHeight = el.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const height = el.clientHeight;
+      const endWasInView = el.scrollHeight - el.scrollTop - lastHeight < 80;
+      if (height < lastHeight && endWasInView) {
+        el.scrollTop = el.scrollHeight;
+        atBottomRef.current = true;
+      }
+      lastHeight = height;
+    });
+    observer.observe(el);
+    resizeWatchRef.current = { el, observer };
+  });
+  useEffect(() => () => resizeWatchRef.current?.observer.disconnect(), []);
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
