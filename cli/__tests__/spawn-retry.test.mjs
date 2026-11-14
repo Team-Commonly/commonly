@@ -1,9 +1,11 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
 import {
+  QUOTA_RESET_MAX_WAIT_MS,
   SPAWN_FAILURE_CLASS,
   SPAWN_RETRY_MAX_MS,
   classifySpawnFailure,
+  quotaResetDelay,
   formatRetryDelay,
   isExternalSignal,
   spawnRetryJitter,
@@ -39,7 +41,7 @@ describe('spawn retry policy', () => {
   });
 
   test('a named quota reset holds the first probe until after the reset', () => {
-    const now = Date.parse('2026-10-23T09:57:37Z'); // 2:57:37am in Los Angeles
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 3:57:37am in Los Angeles
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const error = new Error(
@@ -55,6 +57,24 @@ describe('spawn retry policy', () => {
       expect(spawnRetryPolicy({
         error, consecutiveFailures: 2, intervalMs: 5000, jitterRatio: 0.2,
       }).delayMs).toBe(policy.delayMs + 24_000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // CTO on #4108: the reset is the old account's. A person who switched to
+  // another account with /login must be picked up within the hour.
+  test('a reset six hours out probes in an hour, not at the reset', () => {
+    const now = Date.parse('2026-10-23T05:20:00Z'); // 10:20pm in Los Angeles
+    const error = new Error('session limit · resets 4:20am (America/Los_Angeles)');
+    expect(quotaResetDelay(error, now)).toBe(6 * 60 * 60 * 1000 + 2 * 60 * 1000);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      expect(spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 }))
+        .toMatchObject({ circuitOpen: true, delayMs: QUOTA_RESET_MAX_WAIT_MS });
+      expect(QUOTA_RESET_MAX_WAIT_MS).toBe(60 * 60 * 1000);
+      expect(spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000, jitterRatio: 0.2 }).delayMs)
+        .toBe(QUOTA_RESET_MAX_WAIT_MS + 24_000);
     } finally {
       clock.mockRestore();
     }
@@ -80,17 +100,8 @@ describe('spawn retry policy', () => {
     ['fall back', '2026-11-01T07:30:00Z', '2026-11-01T12:22:00Z'],
   ])('a quota reset across the %s clock change uses the named zone', (_, nowText, probeText) => {
     const now = Date.parse(nowText);
-    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
-    try {
-      const policy = spawnRetryPolicy({
-        error: new Error('session limit · resets 4:20am (America/Los_Angeles)'),
-        consecutiveFailures: 1,
-        intervalMs: 5000,
-      });
-      expect(policy.delayMs).toBe(Date.parse(probeText) - now);
-    } finally {
-      clock.mockRestore();
-    }
+    const error = new Error('session limit · resets 4:20am (America/Los_Angeles)');
+    expect(quotaResetDelay(error, now)).toBe(Date.parse(probeText) - now);
   });
 
   test.each([
@@ -99,18 +110,8 @@ describe('spawn retry policy', () => {
     ['America/Port-au-Prince', '2026-10-23T03:00:00Z', '2026-10-23T08:22:00Z'],
   ])('a reset named in %s is read', (zone, nowText, probeText) => {
     const now = Date.parse(nowText);
-    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
-    try {
-      const policy = spawnRetryPolicy({
-        error: new Error(`session limit · resets 4:20am (${zone})`),
-        consecutiveFailures: 1,
-        intervalMs: 5000,
-        jitterRatio: 0,
-      });
-      expect(policy.delayMs).toBe(Date.parse(probeText) - now);
-    } finally {
-      clock.mockRestore();
-    }
+    expect(quotaResetDelay(new Error(`session limit · resets 4:20am (${zone})`), now))
+      .toBe(Date.parse(probeText) - now);
   });
 
   // 2:30am does not exist in Los Angeles on 2027-03-14: the clock jumps 2:00 to 3:00.
@@ -262,7 +263,7 @@ describe('classifies the Claude CLI session-limit string (2026-08-18 outage)', (
   });
 
   test('so it opens the circuit until the stated reset on the first failure (TASK-380)', () => {
-    const now = Date.parse('2026-08-18T10:00:00Z'); // 3am in Los Angeles
+    const now = Date.parse('2026-08-18T10:30:00Z'); // 3:30am in Los Angeles
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const { circuitOpen, delayMs } = spawnRetryPolicy({
@@ -271,7 +272,7 @@ describe('classifies the Claude CLI session-limit string (2026-08-18 outage)', (
         intervalMs: 5000,
       });
       expect(circuitOpen).toBe(true);
-      expect(delayMs).toBe(62 * 60 * 1000);
+      expect(delayMs).toBe(32 * 60 * 1000);
     } finally {
       clock.mockRestore();
     }

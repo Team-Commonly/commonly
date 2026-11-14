@@ -3037,7 +3037,7 @@ describe('performRun', () => {
   });
 
   test('a Claude reset hint schedules the next batch after reset, not every 15 minutes', async () => {
-    const now = Date.parse('2026-10-23T09:57:37Z');
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const event = makeEvent({ _id: 'evt-quota-reset' });
@@ -3083,7 +3083,7 @@ describe('performRun', () => {
   // CodeRabbit on #4108: a private consultation runs on the single-event path,
   // which slept a whole circuit wait; it now walks it in notice checks too.
   test('a private consultation that hits a quota reset walks the wait in one-minute checks', async () => {
-    const now = Date.parse('2026-10-23T09:57:37Z');
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const ask = makeEvent({

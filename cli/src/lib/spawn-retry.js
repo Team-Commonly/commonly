@@ -148,6 +148,11 @@ const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required
 // fails Intl below and keeps the fallback.
 const QUOTA_RESET_RE = /\bresets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\((UTC|GMT|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)\)/i;
 const QUOTA_RESET_MARGIN_MS = 2 * 60 * 1000;
+// A stated reset is the old account's. A person who hits quota can switch to
+// another account (`/login`), and the seat must notice that within the hour,
+// not at the old account's reset hours later. So a far reset probes hourly,
+// and a near one still waits for it (CTO on #4108).
+export const QUOTA_RESET_MAX_WAIT_MS = 60 * 60 * 1000;
 
 const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
 
@@ -237,7 +242,7 @@ const applyJitter = (delayMs, jitterRatio) => {
 // Claude names the local reset clock in its quota error. Waiting for that
 // clock avoids repeatedly launching a seat that cannot answer before then.
 // If the hint is absent or malformed, keep the ordinary bounded retry path.
-const quotaResetDelay = (error, now = Date.now()) => {
+export const quotaResetDelay = (error, now = Date.now()) => {
   const match = QUOTA_RESET_RE.exec(errorText(error));
   if (!match) return null;
   const hour = Number(match[1]);
@@ -316,7 +321,8 @@ export const spawnRetryPolicy = ({
       // the entire wait: a six-hour hint must not add an hour of lag.
       delayMs: resetDelay === null
         ? applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio)
-        : resetDelay + applyJitter(QUOTA_RESET_MARGIN_MS, jitterRatio) - QUOTA_RESET_MARGIN_MS,
+        : Math.min(resetDelay, QUOTA_RESET_MAX_WAIT_MS)
+          + applyJitter(QUOTA_RESET_MARGIN_MS, jitterRatio) - QUOTA_RESET_MARGIN_MS,
     };
   }
 
