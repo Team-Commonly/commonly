@@ -4,7 +4,7 @@ import { CLI } from './cli-hint.js';
 // F525: the Connect your own agent page's one pasted line carries a connect
 // code, not the agent's lasting key, so the shell history it lands in keeps
 // nothing that still works once the agent has listened. The run trades it for
-// the key on POST /api/agents/runtime/connect-code (docs/agents/connect-code.md).
+// the key on POST /api/agents/runtime/connect-code.
 // The server's codes are 22 characters after the prefix; a little room either
 // way, so a later format isn't refused here as "not a code".
 export const CONNECT_CODE_PATTERN = /^cmc_[A-Za-z0-9_-]{16,64}$/;

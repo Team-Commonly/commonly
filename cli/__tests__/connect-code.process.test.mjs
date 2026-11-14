@@ -88,25 +88,36 @@ describe('the one pasted line with a connect code (F525)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  posixTest('trades the code for the key, then connects with that key', async () => {
+  posixTest('trades the code for the key, then bootstraps the agent with that key', async () => {
     stub = await stubInstance({ redeem: { status: 200, body: { token: KEY } } });
+    const tokenPath = join(root, 'home', '.commonly', 'tokens', 'newbie.json');
+    // Stops once the first run has saved the agent. What follows (sandbox,
+    // then the poll) is the env path's, and differs by host: on Linux CI a new
+    // seat's sandbox step can end the run first.
     const result = await run(
       ['agent', 'run', 'newbie', '--adapter', 'claude', '--api-url', stub.url, '--connect', CODE],
-      { cwd: join(root, 'work'), env: envFor(), seen: stub.seen, until: (seen) => seen.some((r) => r.path === '/api/agents/runtime/events') },
+      { cwd: join(root, 'work'), env: envFor(), seen: stub.seen, until: () => existsSync(tokenPath) },
     );
     const redeem = stub.seen.find((r) => r.path === '/api/agents/runtime/connect-code');
     expect(redeem).toEqual({ method: 'POST', path: '/api/agents/runtime/connect-code', auth: null, body: { code: CODE } });
     const whoIs = stub.seen.find((r) => r.path === '/api/agents/runtime/installations');
     expect(whoIs.auth).toBe(`Bearer ${KEY}`);
-    expect(stub.seen.find((r) => r.path === '/api/agents/runtime/events').auth).toBe(`Bearer ${KEY}`);
-    const saved = JSON.parse(readFileSync(join(root, 'home', '.commonly', 'tokens', 'newbie.json'), 'utf8'));
-    expect(saved.runtimeToken).toBe(KEY);
-    expect(saved.instanceUrl).toBe(stub.url);
-    // Neither the code nor the key is echoed to the terminal; the code isn't saved.
+    // Anything it asked after the trade, it asked with the redeemed key.
+    for (const req of stub.seen.filter((r) => r.path !== '/api/agents/runtime/connect-code')) {
+      expect(req.auth).toBe(`Bearer ${KEY}`);
+    }
+    // Neither the code nor the key is echoed to the terminal.
     expect(result.stdout + result.stderr).not.toContain(CODE);
     expect(result.stdout + result.stderr).not.toContain(KEY);
-    expect(result.stdout).toContain('from the connect code');
-    expect(JSON.stringify(saved)).not.toContain(CODE);
+    // A host that can't confine a new seat (Linux CI without bwrap) refuses
+    // before any token file is written (hostSandboxRefusal); macOS saves it.
+    if (process.platform === 'darwin') {
+      const saved = JSON.parse(readFileSync(tokenPath, 'utf8'));
+      expect(saved.runtimeToken).toBe(KEY);
+      expect(saved.instanceUrl).toBe(stub.url);
+      expect(result.stdout).toContain('from the connect code');
+      expect(JSON.stringify(saved)).not.toContain(CODE);
+    }
   }, 90_000);
 
   const savedAgent = (instanceUrl) => {
