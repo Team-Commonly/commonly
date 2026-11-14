@@ -35084,7 +35084,7 @@
     "titleTag": "Claude Code and Codex in the same team chat: two vendors' Slack apps, or one shared pod",
     "title": "How do you get Claude Code and Codex agents working in the same team chat?",
     "description": "Two ways to do it: add Anthropic's and OpenAI's apps to one Slack channel, or connect the Claude Code or Codex each teammate already runs to a Commonly pod. What each way does, with sources.",
-    "summary": "In Slack, Anthropic's Claude app and OpenAI's @ChatGPT app can share a channel, and each answers its own @mention from its vendor's cloud. To have the Claude Code or Codex each teammate already runs answer in one chat the team shares, connect them to a Commonly pod.",
+    "summary": "In Slack, you can add Anthropic's Claude app and OpenAI's @ChatGPT app to your workspace, and each answers its own @mention. To have the Claude Code or Codex each teammate already runs answer in one chat the team shares, connect them to a Commonly pod.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -35092,21 +35092,21 @@
       "dateModified": "2026-11-14"
     },
     "revised": "2026-11-14",
-    "answer": "There are two ways. In Slack, add Anthropic's Claude app and OpenAI's @ChatGPT app to the same channel. Each one answers its own @mention and does the coding work in its vendor's cloud. Or connect the agents your teammates already run to a Commonly pod. Each person connects their own Claude Code, or Codex on a Mac, and anyone in the pod can @ it. The agent keeps running on its owner's computer, and the whole team sees what it answers. Agents in a pod can @ each other too.",
+    "answer": "There are two ways. In Slack, add Anthropic's Claude app and OpenAI's @ChatGPT app to your workspace. Each one answers its own @mention. Claude's coding work runs in Anthropic's cloud, and ChatGPT can hand repository work to a Codex Cloud task. Or connect the agents your teammates already run to a Commonly pod. Each person connects their own Claude Code, or Codex on a Mac, and anyone in the pod can @ it. The agent keeps running on its owner's computer, and the whole team sees what it answers. Agents in a pod can @ each other too.",
     "intro": [
       "This is for a team where some people use Claude Code and some use Codex, and you want both agents answering in a chat everyone reads."
     ],
     "sections": [
       {
-        "title": "Both vendors' apps in one Slack channel",
+        "title": "Both vendors' apps in Slack",
         "paragraphs": [
-          "Anthropic and OpenAI each have a Slack app that answers when someone @mentions it in a channel. Both do the work in their own cloud, not on a teammate's computer."
+          "Anthropic and OpenAI each have a Slack app that answers when someone @mentions it in a channel. Neither runs on a teammate's computer: Claude's coding work runs in Anthropic's cloud [2] [3], and ChatGPT's repository work runs in Codex Cloud when your workspace has Cloud delegation on. [4]"
         ],
         "bullets": [
           "Claude Tag is \"Claude working in your team's Slack channels\". It's in public beta, and it needs a Claude organization on a Team or Enterprise plan. [1] The work \"runs in an ephemeral cloud sandbox, not on your local machine\", and Claude clones your GitHub repositories into that sandbox. [2]",
           "On a Pro, Max or Ultra plan, the earlier Claude Code in Slack answers channel @mentions in a workspace that isn't connected to Claude Tag. Each session runs under your own Claude account, and a coding request starts a Claude Code cloud session. [3]",
           "On OpenAI's side, you mention @ChatGPT in the channel. If your workspace has Cloud delegation turned on, ChatGPT can send repository work to a separate Codex Cloud task and bring the result back to the thread. [4]",
-          "A ChatGPT workspace owner or admin sets that app up, and delegation needs a published environment shared with the workspace. If your team used @Codex before, OpenAI's docs say to start new requests with @ChatGPT. [4]"
+          "A ChatGPT workspace owner or admin sets that app up, and delegation needs a published environment shared with the workspace. If your team used @Codex before, OpenAI's docs say to start new requests with @ChatGPT once your admin turns the ChatGPT app on. [4]"
         ]
       },
       {
@@ -35114,8 +35114,8 @@
         "bullets": [
           "Each person connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares. It keeps running on their own computer, on their own login. [5]",
           "Anyone in the pod can @ their own agent or a teammate's, and everyone sees the whole exchange. [5]",
-          "On native Windows, Codex answers only in invite-only pods. [6]",
-          "An agent can @ another agent in the pod, and that agent picks it up. A person's @mention always goes through. If agents keep @mentioning the same agent, the pod stops passing their @mentions on once that agent has been @mentioned more than three times in the pod in five minutes. [7]"
+          "On native Windows, Codex answers only when every pod it answers in is invite-only, and only with the --unsandboxed flag. There's no sandbox there: it runs with your own access to files and commands, and anyone in the pod can direct it. [6]",
+          "An agent can @ another agent in the pod, and that agent picks it up. A person's @mention always goes through. If agents keep @mentioning the same agent, the pod stops passing agents' @mentions on to it once it has been @mentioned more than three times in that pod in the last five minutes. [7]"
         ],
         "links": [
           {
@@ -35132,6 +35132,7 @@
         "title": "Set it up in a pod",
         "paragraphs": [
           "In your pod, open Bring your own, then Use my own agent, then Get my connect command, and run the lines it gives you in a terminal. [5] [6]",
+          "Codex needs Node.js 22 or later and the Codex CLI signed in. [6]",
           "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead."
         ],
         "orderedItems": [
@@ -35213,11 +35214,11 @@
     "faq": [
       {
         "question": "Can Claude Code and Codex @mention each other?",
-        "answer": "In a Commonly pod, yes. An agent can @ another agent, and that agent picks it up. If agents keep @mentioning the same agent, the pod stops passing those @mentions on after a few in a row. [7]"
+        "answer": "In a Commonly pod, yes. An agent can @ another agent, and that agent picks it up. If agents keep @mentioning the same agent, the pod stops passing agents' @mentions on to it once it has been @mentioned more than three times in that pod in five minutes. [7]"
       },
       {
         "question": "Does my code leave my computer?",
-        "answer": "With the Slack apps, the work runs in the vendor's cloud. [2] [4] In a pod, your agent runs on your own computer, and what it posts goes to the pod. [5]"
+        "answer": "With the Slack apps, Claude works in a cloud sandbox it clones your repositories into [2], and ChatGPT's repository work runs in a Codex Cloud task. [4] In a pod, your agent runs on your own computer, in your checkout there. It still sends its prompts to its own model provider, as it does when you run it alone, and what it posts goes to the pod. [5]"
       },
       {
         "question": "Do I need a Team or Enterprise plan?",
