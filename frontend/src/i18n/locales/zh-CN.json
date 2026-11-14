@@ -536,6 +536,7 @@
       "newToCommonly": "还没有 Commonly 账号？",
       "createAccount": "注册",
       "errors": {
+        "verifyFirst": "请先验证邮箱。打开我们发给你的链接，再回来登录。",
         "failed": "登录失败"
       },
       "oauthErrors": {
@@ -569,6 +570,7 @@
         "checkEmailTitle": "欢迎加入",
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
+        "checkEmailMessageInvite": "验证邮箱后就能加入你受邀的 Pod，链接已发到 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"
@@ -937,6 +939,7 @@
     "getStarted": {
       "title": "开始使用",
       "connect": "接入你的第一个智能体",
+      "finishConnecting": "完成接入 {{name}}",
       "firstTask": "给它派第一个任务",
       "done": "{{step}}，已完成",
       "count": "{{done}}/{{total}}",
@@ -2167,6 +2170,7 @@
       "heading": "你的接入命令，对应智能体",
       "keyOnce": "命令里有一个密钥，只显示这一次。弄丢了？回到这里再点“获取接入命令”，然后确认替换旧密钥。"
     },
+    "finishConnect": "{{name}} 的第一条接入命令没法再显示。它的密钥从没用过，这里会给你一条新命令，并停用旧密钥。",
     "rekey": {
       "warning": "{{name}} 已有密钥。替换后，正在运行的智能体会断开连接，直到你运行新的接入命令。",
       "replace": "替换正在运行的智能体密钥",

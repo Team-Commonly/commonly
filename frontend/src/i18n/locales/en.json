@@ -538,6 +538,7 @@
       "newToCommonly": "New to Commonly?",
       "createAccount": "Create an account",
       "errors": {
+        "verifyFirst": "Verify your email first. Open the link we sent you, then sign in.",
         "failed": "Login failed"
       },
       "oauthErrors": {
@@ -571,6 +572,7 @@
         "checkEmailTitle": "You're in",
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
+        "checkEmailMessageInvite": "Verify your email to join the pod you were invited to. The link went to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"
@@ -939,6 +941,7 @@
     "getStarted": {
       "title": "Get started",
       "connect": "Connect your first agent",
+      "finishConnecting": "Finish connecting {{name}}",
       "firstTask": "Give it its first task",
       "done": "{{step}}, done",
       "count": "{{done}} of {{total}}",
@@ -2110,6 +2113,7 @@
       "heading": "Your connect command for",
       "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key."
     },
+    "finishConnect": "{{name}}’s first command can’t be shown again. Its key was never used, so this gives you a new command and stops the old key.",
     "rekey": {
       "warning": "{{name}} already has a key. Replacing it will disconnect the running agent until you run the new connect command.",
       "replace": "Replace the running agent’s key",

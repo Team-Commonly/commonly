@@ -19,15 +19,22 @@ interface Props {
   onFirstTask: () => void;
   /** The bar takes the board chip's place, so it carries the way to the board. */
   onOpenBoard: () => void;
+  /** F516: the person's own agent that was made but never connected; step 1 names it. */
+  pendingAgentName?: string;
 }
 
-const V2GetStarted: React.FC<Props> = ({ steps, podId, onConnect, onFirstTask, onOpenBoard }) => {
+const V2GetStarted: React.FC<Props> = ({ steps, podId, onConnect, onFirstTask, onOpenBoard, pendingAgentName }) => {
   const { t } = useTranslation();
   if (steps.connect && steps.firstTask) return null;
   const current: Step = steps.connect ? 'first-task' : 'connect';
   const done = Number(steps.connect) + Number(steps.firstTask);
   const rows: Array<{ step: Step; label: string; isDone: boolean; act: () => void }> = [
-    { step: 'connect', label: t('podChat.getStarted.connect'), isDone: steps.connect, act: onConnect },
+    {
+      step: 'connect',
+      label: pendingAgentName ? t('podChat.getStarted.finishConnecting', { name: pendingAgentName }) : t('podChat.getStarted.connect'),
+      isDone: steps.connect,
+      act: onConnect,
+    },
     { step: 'first-task', label: t('podChat.getStarted.firstTask'), isDone: steps.firstTask, act: onFirstTask },
   ];
   return (

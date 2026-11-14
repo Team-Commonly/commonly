@@ -16,6 +16,8 @@ const {
   updateMessage,
   deleteMessage,
 } = require('../controllers/pgMessageController');
+// eslint-disable-next-line global-require
+const { stampPodReadOnRequest } = require('../services/mentionEmailService');
 
 interface RateLimitReq { get?: (name: string) => string | undefined; ip?: string }
 interface RateLimitRes { status: (code: number) => { json: (body: unknown) => void } }
@@ -57,7 +59,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 // Limiter first on every route, so the query sees it ahead of the
 // database-touching handler.
-router.get('/:podId', readLimit, auth, getMessages);
+router.get('/:podId', readLimit, auth, stampPodReadOnRequest, getMessages);
 router.post('/:podId', writeLimit, auth, createMessage);
 router.put('/:id', writeLimit, auth, updateMessage);
 router.delete('/:id', writeLimit, auth, deleteMessage);

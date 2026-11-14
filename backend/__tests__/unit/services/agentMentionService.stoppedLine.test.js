@@ -373,3 +373,25 @@ describe('an agent that went offline (F300)', () => {
     expect(result.enqueued).toEqual(['nova']);
   });
 });
+
+// F522 contract: waitingOwnerEmailService.waitingOn reads a never-connected
+// agent's pending mentions by these fields. If the enqueue path renames one,
+// the owner email goes quiet with no other test failing, so pin them here.
+describe('the fields the waiting-owner email reads', () => {
+  it('a person\'s mention carries type, agent, pod, sender id, username and the human stamp', async () => {
+    setup();
+    await mention();
+    const event = AgentEventService.enqueue.mock.calls.map(([e]) => e).find((e) => e.type === 'chat.mention');
+    expect(event).toMatchObject({
+      agentName: 'nova', instanceId: 'default', podId: 'pod-1', type: 'chat.mention',
+      payload: expect.objectContaining({ userId: 'user-1', username: 'priya', senderIsHuman: true }),
+    });
+  });
+
+  it('an agent\'s mention is stamped as not human, so it never counts', async () => {
+    setup({ sender: peer });
+    await mention({ sender: peer });
+    const event = AgentEventService.enqueue.mock.calls.map(([e]) => e).find((e) => e.agentName === 'nova');
+    expect(event?.payload?.senderIsHuman).not.toBe(true);
+  });
+});

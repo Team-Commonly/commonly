@@ -13,9 +13,11 @@ jest.mock('../../context/SocketContext', () => ({
 }));
 
 let mockTasks = [];
+let mockAgentStates = [];
 jest.mock('axios', () => {
   const mock = {
-    get: jest.fn((url) => Promise.resolve({ data: String(url).startsWith('/api/v1/tasks/') ? { tasks: mockTasks } : {} })),
+    get: jest.fn((url) => Promise.resolve({ data: String(url).startsWith('/api/v1/tasks/') ? { tasks: mockTasks }
+      : String(url).endsWith('/agent-states') ? { agents: mockAgentStates } : {} })),
     post: jest.fn(() => Promise.resolve({ data: {} })),
     patch: jest.fn(),
     delete: jest.fn(),
@@ -77,9 +79,55 @@ const renderThread = ({ owner = 'u1', agents = [] } = {}) => {
 
 const boardChips = () => document.querySelectorAll('button.v2-pod-header__board');
 
-const ByoPage = () => <p>byo page pod={new URLSearchParams(useLocation().search).get('pod')}</p>;
+const ByoPage = () => {
+  const params = new URLSearchParams(useLocation().search);
+  return <p>byo page pod={params.get('pod')} name={params.get('name') || ''} reconnect={params.get('reconnect') || ''}</p>;
+};
+
+afterEach(() => { mockAgentStates = []; });
 
 describe('V2Thread Get started bar (D288)', () => {
+  // F516: an owner who made an agent and never ran its command comes back to
+  // that agent by name, and step 1 opens that agent's page, not a blank form.
+  test('an agent of theirs that never connected is named, and step 1 opens its connect page', async () => {
+    mockTasks = starterTasks(false, false);
+    mockAgentStates = [
+      { agentName: 'scout', instanceId: 'default', state: 'listening', isOwner: false },
+      { agentName: 'walk-pending', instanceId: 'default', displayName: 'Walk Pending', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(step).toHaveTextContent('Finish connecting Walk Pending'));
+    fireEvent.click(step);
+    expect(await screen.findByText(/^byo page/)).toHaveTextContent('byo page pod=pod-1 name=walk-pending reconnect=1');
+  });
+
+  test('once step 1 is done, its row never reads "Finish connecting"', async () => {
+    mockTasks = starterTasks(true, false);
+    mockAgentStates = [
+      { agentName: 'walk-pending', instanceId: 'default', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(require('axios').default.get).toHaveBeenCalledWith('/api/pods/pod-1/agent-states', expect.anything()));
+    expect(step).toHaveTextContent('Connect your first agent');
+    expect(step).not.toHaveTextContent('Finish connecting');
+  });
+
+  test('someone else\'s unconnected agent, or one with no connect path, keeps the plain step', async () => {
+    mockTasks = starterTasks(false, false);
+    mockAgentStates = [
+      { agentName: 'theirs', instanceId: 'default', state: 'never-connected', isOwner: false, connectPodId: 'pod-1' },
+      { agentName: 'mine-no-path', instanceId: 'default', state: 'never-connected', isOwner: true },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(require('axios').default.get).toHaveBeenCalledWith('/api/pods/pod-1/agent-states', expect.anything()));
+    expect(step).toHaveTextContent('Connect your first agent');
+    fireEvent.click(step);
+    expect(await screen.findByText(/^byo page/)).toHaveTextContent('byo page pod=pod-1 name= reconnect=');
+  });
+
   test('the owner with both steps open sees the bar and no board chip; step 1 opens Bring your own', async () => {
     mockTasks = starterTasks(false, false);
     renderThread();

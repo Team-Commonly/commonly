@@ -52,4 +52,8 @@ export const forgetInviteOAuthStart = (): void => {
   try { window.sessionStorage.removeItem(OAUTH_MARKER_KEY); } catch { /* storage unavailable */ }
 };
 
-export const registerPathWithInvite = (code: string): string => `/v2/register#invite=${encodeURIComponent(code)}`;
+// F518: `next` (already through safeNextPath) keeps where sign-up should land,
+// e.g. the pod invite the person came from.
+export const registerPathWithInvite = (code: string, next?: string): string => (
+  `/v2/register${next ? `?next=${encodeURIComponent(next)}` : ''}#invite=${encodeURIComponent(code)}`
+);
