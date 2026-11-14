@@ -18,6 +18,9 @@ import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
+import { effectiveSandboxTrust } from '../environment.js';
+import { HOST_READ_DOT_ALLOW, resolveHostReadDirectories } from './seatbelt.js';
+
 // Tilde-expansion lives here (and not in environment.js's expandHome) because
 // bwrap reads OS-level paths verbatim — `~` is a shell construct, not a
 // kernel one, so any `~/foo` entry in `read-outside` / `write-outside` would
@@ -204,18 +207,49 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     '--tmpfs', '/tmp',
   ];
 
-  const userReadOutside = Array.isArray(env?.sandbox?.filesystem?.['read-outside'])
-    ? env.sandbox.filesystem['read-outside'].map(expandHome)
-    : [];
+  // F493: the spec's binds are the server's to write, so a confined seat's are
+  // held to what the jail can keep safe.
+  //   - public: neither list. Strangers drive the seat; an adapter's own
+  //     folders come through opts (writablePaths), never the spec.
+  //   - workspace: read-outside only inside HOST_READ_DOT_ALLOW (bwrap cannot
+  //     hide the .env files beneath a wider bind, as Seatbelt's denies do),
+  //     resolved once and bound at the resolved path; write-outside refused, as
+  //     on macOS (a writable project lets a seat plant a git hook the host runs).
+  //   - none (a seat of your own): as declared. It is not confined, and names
+  //     folders such as ~/.local/bin on purpose.
+  const trust = effectiveSandboxTrust(env?.sandbox?.trust);
+  const declaredBinds = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
+    ? env.sandbox.filesystem[key].map(expandHome) : []);
+  for (const key of ['read-outside', 'write-outside']) {
+    if (trust === 'public' && declaredBinds(key).length) {
+      throw new Error(`refusing sandbox.filesystem.${key}: a public seat binds nothing outside its own folders`);
+    }
+  }
+  if (trust === 'workspace' && declaredBinds('write-outside').length) {
+    throw new Error('refusing sandbox.filesystem.write-outside: a workspace seat writes only its project, '
+      + 'as on macOS');
+  }
+  const userReadOutside = trust === 'workspace'
+    ? resolveHostReadDirectories(declaredBinds('read-outside'), opts.hostReadHome || homedir(), {
+      fold: false, only: HOST_READ_DOT_ALLOW,
+    })
+    : declaredBinds('read-outside');
   const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...userReadOutside])];
   for (const p of roBinds) {
     flags.push('--ro-bind-try', p, p);
   }
 
-  const userWriteOutside = Array.isArray(env?.sandbox?.filesystem?.['write-outside'])
-    ? env.sandbox.filesystem['write-outside'].map(expandHome)
-    : [];
+  const userWriteOutside = declaredBinds('write-outside');
   for (const p of userWriteOutside) {
+    flags.push('--bind-try', p, p);
+  }
+  // A public adapter's own home (F493: it used to ride in the spec's
+  // write-outside). bwrap stacks later binds on top, so it binds here, before
+  // the read-only inputs below: an input inside the home stays read-only.
+  for (const p of opts.homeWritablePaths || []) {
+    if (!p || !isAbsolute(p)) {
+      throw new Error('wrapArgvWithBwrap opts.homeWritablePaths entries must be absolute paths');
+    }
     flags.push('--bind-try', p, p);
   }
 

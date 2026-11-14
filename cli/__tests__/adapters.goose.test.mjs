@@ -410,7 +410,9 @@ test('a public bwrap seat gets its own files read-only, apart from the home it w
     rmSync(root, { recursive: true, force: true });
   }
   const seatHome = seen.options.homePath;
-  expect(seen.environment.sandbox.filesystem['write-outside']).toEqual([seatHome]);
+  // F493: its own home is bound through opts; the spec's lists stay the spec's.
+  expect(seen.options.homeWritablePaths).toEqual([seatHome]);
+  expect(seen.environment.sandbox.filesystem).toBeUndefined();
   const owned = seen.options.readOnlyPaths.find((path) => seen.recipe.startsWith(`${path}/`));
   expect(owned).toBeTruthy();
   expect(seen.recipe.startsWith(`${seatHome}/`)).toBe(false);

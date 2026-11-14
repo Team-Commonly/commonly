@@ -318,3 +318,83 @@ describe('wrapArgvWithBwrap', () => {
     );
   });
 });
+
+// F493: a workspace seat's binds pass the allowlist Seatbelt applies (F122), so
+// a server-written spec can't bind ~/.ssh or another seat's per-turn token
+// folder into a Linux jail. Platform is faked so this runs on any host.
+describe('a workspace seat\'s read-outside and write-outside under bwrap', () => {
+  const realPlatform = process.platform;
+  let home;
+  beforeEach(async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-host-read-home-')));
+    fs.mkdirSync(path.join(home, 'project'));
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(async () => {
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+    const fs = await import('fs');
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const wrap = (filesystem, trust = 'workspace') => wrapArgvWithBwrap(
+    ['claude'],
+    { sandbox: { trust, filesystem } },
+    { workspacePath: '/tmp/ws', hostReadHome: home },
+  );
+
+  test.each([
+    ['.ssh'], ['.commonly/admin-token'], ['.commonly'], ['project/.env'], ['.SSH'], [''],
+  ])('refuses read-outside <home>/%s', (sub) => {
+    expect(() => wrap({ 'read-outside': [`${home}/${sub}`.replace(/\/$/, '')] }))
+      .toThrow(/refusing sandbox\.filesystem\.read-outside/);
+  });
+
+  test.each([['/tmp'], ['/var/folders'], ['/']])('refuses read-outside %s', (entry) => {
+    expect(() => wrap({ 'read-outside': [entry] })).toThrow(/refusing sandbox\.filesystem\.read-outside/);
+  });
+
+  // The F493 review: bwrap cannot hide the .env files beneath a wider bind, so
+  // a project folder is refused here, and a writable folder outside the
+  // project lets a seat plant a git hook the host later runs.
+  test('refuses a project folder, which macOS admits with denies beneath it', () => {
+    expect(() => wrap({ 'read-outside': [`${home}/project`] }))
+      .toThrow(/only ~\/\.commonly\/logs can be named/);
+  });
+
+  test('refuses any write-outside', () => {
+    expect(() => wrap({ 'write-outside': [`${home}/project`] }))
+      .toThrow(/refusing sandbox\.filesystem\.write-outside/);
+  });
+
+  test('binds the CLI logs folder read-only, at its resolved path', () => {
+    const argv = wrap({ 'read-outside': [`${home}/.commonly/logs`] });
+    const idx = argv.indexOf(`${home}/.commonly/logs`);
+    expect(argv[idx - 1]).toBe('--ro-bind-try');
+  });
+
+  test('compares case as it is: /VAR/LOG is not the system log folder on Linux', () => {
+    expect(() => wrap({ 'read-outside': [`${home}/.Commonly/Logs`] })).toThrow(/refusing/);
+  });
+
+  test.each([['read-outside'], ['write-outside']])('a public seat refuses any %s', (key) => {
+    expect(() => wrap({ [key]: [`${home}/.commonly/logs`] }, 'public'))
+      .toThrow(new RegExp(`refusing sandbox\\.filesystem\\.${key}: a public seat`));
+  });
+
+  test('a public seat binds its own home through opts, before the read-only inputs inside it', () => {
+    const input = `${home}/project/recipe`;
+    const argv = wrapArgvWithBwrap(['opencode'], { sandbox: { trust: 'public' } }, {
+      workspacePath: '/tmp/ws', homeWritablePaths: [`${home}/project`], readOnlyPaths: [input],
+    });
+    const homeAt = argv.indexOf(`${home}/project`);
+    expect(argv[homeAt - 1]).toBe('--bind-try');
+    expect(argv.indexOf(input)).toBeGreaterThan(homeAt);
+  });
+
+  test('a seat of your own (no trust) keeps its declared binds, ~/.local/bin included', () => {
+    const argv = wrap({ 'read-outside': [`${home}/.local/bin`] }, null);
+    expect(argv).toContain(`${home}/.local/bin`);
+  });
+});
