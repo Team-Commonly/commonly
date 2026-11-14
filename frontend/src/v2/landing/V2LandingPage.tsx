@@ -874,6 +874,19 @@ const V2LandingPage: React.FC = () => {
           </div>
         </section>
 
+        {/* ---- Research: the study, then what the pod does ---- */}
+        <section className="v2-landing__section v2-landing__study" data-testid="landing-study">
+          <div className="v2-landing__section-head" data-reveal>
+            <div className="v2-landing__kicker">{t('landing.study.kicker')}</div>
+            <h2 className="v2-landing__h2">{t('landing.study.title')}</h2>
+            <p className="v2-landing__sub">{t('landing.study.study')}</p>
+            <p className="v2-landing__sub">{t('landing.study.pod')}</p>
+            <p className="v2-landing__sub">
+              <a className="v2-landing__study-link" href="https://alignment.anthropic.com/2026/worse-together" target="_blank" rel="noreferrer">{t('landing.study.link')}</a>
+            </p>
+          </div>
+        </section>
+
         {/* ---- Why open-source ---- */}
         <section className="v2-landing__section v2-landing__open">
           <div className="v2-landing__open-grid" data-reveal data-reveal-stagger>
