@@ -114,9 +114,14 @@ const setup = ({ installs = [install()], userTokens = [], open = [], machineId }
   mockEpFind.mockImplementation((filter = {}) => {
     const rows = filter.status === 'open'
       ? open.filter((ep) => !filter._id || String(ep._id) > String(filter._id.$gt)) : [];
+    // A $gt cursor over unsorted pages skips episodes: the sweep must sort by _id.
+    let sortedById = false;
     const chain = {
-      sort: () => chain,
-      limit: (n) => ({ lean: () => Promise.resolve(rows.slice(0, n)) }),
+      sort: (order) => { sortedById = JSON.stringify(order) === '{"_id":1}'; return chain; },
+      limit: (n) => {
+        if (filter.status === 'open') expect(sortedById).toBe(true);
+        return { lean: () => Promise.resolve(rows.slice(0, n)) };
+      },
       select: () => ({ lean: () => Promise.resolve([]) }),
       lean: () => Promise.resolve(rows),
     };
