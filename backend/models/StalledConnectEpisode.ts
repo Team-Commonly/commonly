@@ -113,8 +113,10 @@ StalledConnectEpisodeSchema.index(
   { installationId: 1, tokenIssuedAt: 1 },
   { unique: true },
 );
-// The resolution sweep: which open episodes might have connected by now.
+// Open episodes by age: the digest's candidate read (F502).
 StalledConnectEpisodeSchema.index({ status: 1, nudgedAt: 1 });
+// The resolution sweep pages every open episode in _id order (F505).
+StalledConnectEpisodeSchema.index({ status: 1, _id: 1 });
 // The daily digest's read: one installer's open episodes (F502).
 StalledConnectEpisodeSchema.index({ installedBy: 1, status: 1 });
 
