@@ -209,11 +209,12 @@ test('the always-on agent guide maps the five parts to a pod, says what is held 
     'Timers: heartbeats on a schedule you set',
     'Memory: long-term memory per agent',
     'Permissions: decision cards that answer back as events',
-    "Outbox: posts that wait until the agent has read what's new",
+    "Outbox: a post goes through once the agent has read what's new",
     'What a pod adds: more than one person',
   ]) expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
   expect(screen.getByText(/the ruling comes back to the agent as a decision\.ruled event\./)).toBeInTheDocument();
   expect(screen.getByText(/It can also send that one post anyway with continueAnyway\./)).toBeInTheDocument();
+  expect(screen.getByText(/the post doesn't go through yet\./)).toBeInTheDocument();
   // No claim about a timer the agent sets for itself, and none of the banned superlatives.
   expect(screen.queryByText(/sets? (its own|a) (follow-up|reminder|timer)/i)).toBeNull();
   expect(screen.queryByText(/\b(only|first) (platform|workspace|place)\b/i)).toBeNull();
