@@ -177,7 +177,7 @@ export class DailyDigestService {
     since: Date,
   ): Promise<string[]> {
     if (pods.length === 0) return [];
-    let rows: Array<{ podId: string; userId: string; content: string }>;
+    let rows: Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>;
     try {
       rows = await PGMessage.findByOthersSince(pods.map((pod) => String(pod._id)), String(userId), since);
     } catch (error) {
@@ -193,21 +193,17 @@ export class DailyDigestService {
     const people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
       .select('username displayName').lean() as Array<{ _id: unknown; username?: string; displayName?: string }>;
     const names = new Map(people.map((p) => [String(p._id), oneLine(p.displayName || p.username)]));
-    // Rows arrive newest first, so each group's first row is its latest.
-    const groups = new Map<string, { podId: string; name: string; latest: string; count: number }>();
-    for (const row of rows) {
-      const name = names.get(row.userId);
-      if (!name) continue;
-      const key = `${row.podId}:${row.userId}`;
-      const group = groups.get(key);
-      if (group) group.count += 1;
-      else groups.set(key, { podId: row.podId, name, latest: oneLine(row.content), count: 1 });
-    }
-    return [...groups.values()].slice(0, MAX_TEAMMATES).map((group) => {
-      const podName = oneLine(pods.find((pod) => String(pod._id) === group.podId)?.name) || 'a pod';
-      const more = group.count > 1 ? ` (+${group.count - 1} more)` : '';
-      return `${group.name} in ${podName}: ${group.latest}${more}`;
-    });
+    // One row per pod and author; the most recent writer leads.
+    const at = (value: unknown) => (value ? new Date(value as string).getTime() : 0);
+    return rows
+      .filter((row) => names.has(row.userId))
+      .sort((a, b) => at(b.lastAt) - at(a.lastAt))
+      .slice(0, MAX_TEAMMATES)
+      .map((row) => {
+        const podName = oneLine(pods.find((pod) => String(pod._id) === row.podId)?.name) || 'a pod';
+        const more = row.count > 1 ? ` (+${row.count - 1} more)` : '';
+        return `${names.get(row.userId)} in ${podName}: ${oneLine(row.content)}${more}`;
+      });
   }
 
   /** Each recap agent's display label and whether it is the guide, from its User row. */
@@ -248,7 +244,9 @@ export class DailyDigestService {
         ? null
         : await ActivityService.getRecap(userId, { window: 'today' });
       const publicPods = recap
-        ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
+        // Same membership shapes as memberPods below, or a public pod stored the
+        // old way would count as private and its chatter would reach the email.
+        ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }], publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
       const memberPods = recap
         ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }] }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
@@ -264,8 +262,10 @@ export class DailyDigestService {
         { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
       ]) as Array<Record<string, unknown>> : [];
       const publicPodIds = new Set(publicPods.map((pod) => String(pod._id)));
+      // Words written while the reader was last here, they have seen.
+      const teammatesSince = new Date(Math.max(startTime.getTime(), lastActive));
       const teammateLines = recap
-        ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), startTime)
+        ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), teammatesSince)
         : [];
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
@@ -309,7 +309,10 @@ export class DailyDigestService {
 
       return Summary.create({
         type: 'daily-digest',
-        title: requireAway ? 'What your agents did while you were away' : 'What your agents did today',
+        // A teammate is in it, so "your agents" would be untrue (F503).
+        title: teammateLines.length
+          ? (requireAway ? 'What your team did while you were away' : 'What your team did today')
+          : (requireAway ? 'What your agents did while you were away' : 'What your agents did today'),
         content: lines.map((line) => `- ${line}`).join('\n'),
         timeRange: { start: startTime, end: endTime },
         metadata: {

@@ -38,12 +38,9 @@ beforeAll(async () => {
   }
 });
 
-test("returns other people's words in the given pods since the window opened, newest first", async () => {
+test("gives one row per pod and author with the count and latest words, inside the window", async () => {
   const rows = await PGMessage.findByOthersSince(['shared'], 'me', new Date(Date.now() - 24 * 3600000));
-  expect(rows.map((r) => [r.podId, r.userId, r.content])).toEqual([
-    ['shared', 'mate', 'newer'],
-    ['shared', 'mate', 'older'],
-  ]);
+  expect(rows.map((r) => [r.podId, r.userId, r.content, r.count])).toEqual([['shared', 'mate', 'newer', 2]]);
 });
 
 test('no pods means no query and no rows', async () => {

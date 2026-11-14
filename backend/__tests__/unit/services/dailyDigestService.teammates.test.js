@@ -38,21 +38,22 @@ test("a teammate's message in a shared pod is a digest line, and the digest is n
   const { me, mate, shared } = await setup();
   jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(shared));
   const read = jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([
-    { podId: String(shared._id), userId: String(mate._id), content: 'pushed the fix, can you try it?', createdAt: new Date() },
-    { podId: String(shared._id), userId: String(mate._id), content: 'first message', createdAt: new Date(Date.now() - 3600000) },
+    { podId: String(shared._id), userId: String(mate._id), content: 'pushed the fix, can you try it?', count: 2, lastAt: new Date() },
   ]);
   const digest = await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
   expect(read).toHaveBeenCalledWith([String(shared._id)], String(me._id), expect.any(Date));
   expect(digest.metadata.totalItems).toBe(1);
   expect(digest.content).toBe('- mk in Launch: pushed the fix, can you try it? (+1 more)');
+  // A teammate is in it, so the subject can't say it is only agents.
+  expect(digest.title).toBe('What your team did while you were away');
 });
 
 test("the recipient's own messages, an agent's and a public pod's make no line", async () => {
   const { me, bot, shared, hq } = await setup();
   jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(shared));
   const read = jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([
-    { podId: String(shared._id), userId: String(bot._id), content: 'heartbeat', createdAt: new Date() },
-    { podId: String(hq._id), userId: String(me._id), content: 'mine', createdAt: new Date() },
+    { podId: String(shared._id), userId: String(bot._id), content: 'heartbeat', count: 1, lastAt: new Date() },
+    { podId: String(hq._id), userId: String(me._id), content: 'mine', count: 1, lastAt: new Date() },
   ]);
   const digest = await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
   // HQ is public: other people's chatter there is not the recipient's team.
@@ -75,4 +76,25 @@ test('someone active recently gets no teammate read: they have seen it in the ap
   const read = jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([]);
   await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
   expect(read).not.toHaveBeenCalled();
+});
+
+test('a chatty agent cannot push a quiet teammate out, and the most recent writer leads', async () => {
+  const { me, mate, bot, shared } = await setup();
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(shared));
+  jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([
+    { podId: String(shared._id), userId: String(bot._id), content: 'tick', count: 300, lastAt: new Date() },
+    { podId: String(shared._id), userId: String(mate._id), content: 'one quiet line', count: 1, lastAt: new Date(Date.now() - 9 * 3600000) },
+  ]);
+  const digest = await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
+  expect(digest.content).toBe('- mk in Launch: one quiet line');
+});
+
+test('the teammate window opens no earlier than the reader was last here', async () => {
+  const lastActive = new Date(Date.now() - 21 * 3600000);
+  const me = await person('back-yesterday', { lastActive });
+  const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(pod));
+  const read = jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([]);
+  await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
+  expect(read.mock.calls[0][2].getTime()).toBe(lastActive.getTime());
 });
