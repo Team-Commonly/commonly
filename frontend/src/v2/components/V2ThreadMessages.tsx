@@ -47,6 +47,8 @@ interface V2ThreadMessagesProps {
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
   ownerConnectLinks?: Map<string, string>;
+  // F509: ids of join notes whose agent is listening now.
+  connectedIntroIds?: Set<string>;
   agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
@@ -156,6 +158,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   settledDecisionByMessageId,
   agentDisplayNames,
   ownerConnectLinks,
+  connectedIntroIds,
   agentTags,
   agentAuthorKeys,
   onAuthorClick,
@@ -502,6 +505,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
                 ownerConnectLinks={ownerConnectLinks}
+                introConnectedNow={Boolean(connectedIntroIds?.has(String(message.id)))}
                 agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
@@ -710,6 +714,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
                     ownerConnectLinks={ownerConnectLinks}
+                    introConnectedNow={Boolean(connectedIntroIds?.has(String(reply.id)))}
                     agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}
