@@ -540,6 +540,8 @@ const { isListedPodMember } = require('./utils/isPodMember');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const DMServiceForSocketAuth = require('./services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const mentionEmailVisits = require('./services/mentionEmailService');
 
 const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) => {
   if (!podId) {
@@ -599,6 +601,8 @@ io.on('connection', (socket: any) => {
 
     socket.join(`pod_${podId}`);
     socket.data.joinedPods.add(podId);
+    // F512: an open pod is a seen mention; the mention email reads this.
+    void mentionEmailVisits.stampPodOpened(socket.userId, podId);
     console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });
@@ -611,6 +615,7 @@ io.on('connection', (socket: any) => {
     }
     socket.leave(`pod_${podId}`);
     socket.data.joinedPods.delete(podId);
+    void mentionEmailVisits.stampPodClosed(socket.userId, [podId]);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
     await emitPresence(podId);
   });
@@ -821,6 +826,7 @@ io.on('connection', (socket: any) => {
       `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
     );
     const pods = Array.from(socket.data.joinedPods || []);
+    void mentionEmailVisits.stampPodClosed(socket.userId, pods);
     pods.forEach((podId) => {
       emitPresence(podId);
     });

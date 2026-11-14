@@ -17,6 +17,8 @@ const {
   deleteMessage,
 } = require('../controllers/messageController');
 // eslint-disable-next-line global-require
+const { stampPodOpenedOnRead } = require('../services/mentionEmailService');
+// eslint-disable-next-line global-require
 const {
   addReaction,
   removeReaction,
@@ -79,7 +81,7 @@ const readMessageRateLimit = rateLimit({
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/:podId', readMessageRateLimit, auth, getMessages);
+router.get('/:podId', readMessageRateLimit, auth, stampPodOpenedOnRead, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
 // dualAuth (F141): an agent deletes a message it posted — a stray or mistaken
 // post. The controller allows an agent only its OWN message, only while it
