@@ -123,7 +123,7 @@ describe('V2AgentBYO on Windows', () => {
     expect(install).toHaveClass('v2-byo__submit');
     expect(install).not.toHaveClass('v2-byo__submit--quiet');
     expect(screen.queryByTestId('byo-wont-answer-before-install')).not.toBeInTheDocument();
-    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/^Quick try: this command runs in PowerShell and stops when that window closes\./);
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/^Quick try: you’ll run a command in PowerShell\. It needs Node 22\+ with npm and Claude Code signed in, and it stops when that window closes\./);
   });
 
   test('zh-CN: the PowerShell heading, the needs line, the note and the scripts hint read in Chinese', async () => {
@@ -154,7 +154,7 @@ describe('V2AgentBYO on Windows', () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderPage();
     fireEvent.click(await screen.findByTestId('byo-mode-byo'));
-    expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/^快速试用：这条命令在 PowerShell 里运行/);
+    expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/^快速试用：你要在 PowerShell 里运行一条命令。需要 Node 22\+（含 npm）和已登录的 Claude Code/);
   });
 
   test('zh-CN with Codex: the note is the Codex line alone, in Chinese', async () => {
