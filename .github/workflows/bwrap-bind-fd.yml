@@ -3,8 +3,9 @@ name: bwrap descriptor binds
 # F211: a workspace seat's folder is mounted from an open descriptor where
 # bwrap supports it (bubblewrap 0.10.0+). Debian 13 ships 0.12, so the swap
 # race is run for real there: a path bind follows the link, a descriptor bind
-# does not. The public Claude smoke runs on Debian 12 (bubblewrap 0.8.0), which
-# keeps the path binds.
+# does not. The public Claude smoke runs the adapter's own descriptor launch.
+# ubuntu-22.04, as that smoke: a 24.04 host's AppArmor refuses the unprivileged
+# user namespaces bwrap needs, even from a container (run 43550328450).
 on:
   pull_request:
     paths:
@@ -20,7 +21,7 @@ permissions:
 
 jobs:
   bind-fd:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:

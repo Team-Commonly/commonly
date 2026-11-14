@@ -25,7 +25,12 @@ const runs = bwrap.available && bwrap.bindFd === true;
 const maybe = runs ? test : test.skip;
 
 test('bwrap binds descriptors here, where this smoke is required', () => {
-  if (required) expect({ platform: process.platform, ...bwrap }).toMatchObject({ available: true, bindFd: true });
+  // The whole probe result, reason included, is in the failure diff.
+  if (required) expect({ platform: process.platform, ...bwrap }).toEqual(expect.objectContaining({ available: true, bindFd: true }));
+  if (required && !runs) {
+    // eslint-disable-next-line no-console
+    console.log('bwrap probe', JSON.stringify(bwrap));
+  }
 });
 
 describe('a workspace swapped for a link after the check', () => {
