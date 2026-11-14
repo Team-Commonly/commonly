@@ -142,7 +142,7 @@ const ingressLanes = {
     ],
     // The tunnel shares the controller's namespace but must go through it.
     // Steel is reached only through the broker, never from the edge.
-    closed: [['ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
+    closed: [['ns:ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
       ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379],
       ['edge', 'agent-computer-steel', 3000], ['edge', 'agent-computer-waker', 8080],
       ['app=commonly-bot', 'agent-computer-steel', 3000], ['app=cloud-codex', 'agent-computer-waker', 8080],
@@ -150,6 +150,9 @@ const ingressLanes = {
   },
   staging: {
     files: lanes.staging.files,
+    // Staging runs no backups and no ops-runner, but its allows admit both.
+    // Render them, so those flows are checked against real pods.
+    setJson: ['backup.mongodb.enabled=true', 'backup.postgresql.enabled=true', 'opsRunner.enabled=true'],
     on: ['frontend', 'backend', 'litellm', 'redis', 'mongodb', 'emailSink', 'defaultDeny'],
     edgeApp: 'cloudflared-commonly-k8s',
     flows: [
@@ -182,10 +185,14 @@ const ingressLanes = {
 };
 const peerLabels = (spec, edgeApp) => {
   if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };
-  // `ns/key=value` is a pod in another namespace; bare `key=value` is in the chart's.
-  const [nsPart, label] = spec.includes('/') ? spec.split('/') : [null, spec];
-  const [k, v] = label.split('=');
-  return { ns: nsPart, labels: { [k]: v } };
+  // `ns:<namespace>/key=value` is a pod in another namespace; bare `key=value`
+  // is in the chart's. Only the prefix names a namespace: a label key can carry
+  // its own `/` (app.kubernetes.io/name), so a bare `/` can't.
+  const m = /^ns:([^/]+)\/(.+)$/.exec(spec);
+  const label = m ? m[2] : spec;
+  const eq = label.indexOf('=');
+  if (eq < 1) throw new Error(`peer spec ${spec} is not key=value`);
+  return { ns: m ? m[1] : null, labels: { [label.slice(0, eq)]: label.slice(eq + 1) } };
 };
 // Does a policy's `from` admit a pod with these labels (ns null = the policy's
 // own namespace)? An ipBlock counts as admitting: pod IPs can fall inside it,
@@ -248,6 +255,13 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   const admitted = (from, toApp, port) => allows.some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, peerLabels(from), port));
   for (const [from, toApp, port] of cfg.flows) {
     expect(admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is refused`);
+    // The source is built from this spec, not from a pod: a renamed label
+    // would leave the flow passing here while the real pod is cut off.
+    const src = from === 'edge' ? null : peerLabels(from);
+    if (src && src.ns === null) {
+      expect(workloads.some((w) => w.metadata.namespace === ns && selects({ matchLabels: src.labels }, podTemplate(w).metadata?.labels)),
+        `${lane}: flow source ${from} matches no rendered pod in ${ns}`);
+    }
   }
   for (const [from, toApp, port] of cfg.closed) {
     expect(!admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
@@ -283,6 +297,15 @@ expect(probe({ namespaceSelector: {} }), 'admits(): a namespaceSelector {} peer 
 expect(probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'n' } } }), 'admits(): a peer naming the own namespace does not admit its pods');
 expect(!probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'other' } } }), 'admits(): a peer naming another namespace admits same-namespace pods');
 expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is treated as refusing');
+
+// peerLabels() itself: a prefixed label key carries a `/` of its own, so it
+// must stay a label in the chart's namespace. Read as a namespace, its closed
+// check would pass without testing anything.
+const parsed = (spec) => JSON.stringify(peerLabels(spec));
+expect(parsed('app.kubernetes.io/name=x') === JSON.stringify({ ns: null, labels: { 'app.kubernetes.io/name': 'x' } }),
+  `peerLabels(): app.kubernetes.io/name=x reads as ${parsed('app.kubernetes.io/name=x')}, want a prefixed label in the chart's namespace`);
+expect(parsed('ns:ingress-nginx/app.kubernetes.io/name=x') === JSON.stringify({ ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'x' } }),
+  `peerLabels(): ns:ingress-nginx/app.kubernetes.io/name=x reads as ${parsed('ns:ingress-nginx/app.kubernetes.io/name=x')}`);
 
 // An edge peer must name pods: a bare namespaceSelector or an ipBlock would
 // admit whole namespaces or address ranges to frontend and backend.
