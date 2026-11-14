@@ -282,9 +282,15 @@ export class DigestEmailService {
         // as for any failure after it (at-most-once, above).
         if (!providerAccepted(sent)) {
           result.failed += 1;
+          // Counts only: a failures entry can carry the recipient's address.
+          const answer = (sent as any)?.data?.data;
           console.error('Digest email delivery failed: the provider did not accept it.', {
             summaryId: String(summary._id || ''),
             userId: String(userId || ''),
+            succeeded: Number(answer?.succeeded ?? 0),
+            failed: Number(answer?.failed ?? 0),
+            failures: Array.isArray(answer?.failures) ? answer.failures.length : 0,
+            skipped: Boolean((sent as any)?.skipped),
           });
           continue;
         }
@@ -324,7 +330,7 @@ export class DigestEmailService {
             console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);
           }
         }
-        // SMTP has accepted the email. A failed timestamp write should not
+        // The provider accepted the email. A failed timestamp write should not
         // reclassify that delivery as a failed send.
         try {
           await User.updateOne({ _id: user._id }, { $set: { lastDigestSent: emailedAt } });

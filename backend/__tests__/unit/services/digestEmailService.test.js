@@ -175,6 +175,19 @@ describe('digestEmailService', () => {
     expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeUndefined();
   });
 
+  it.each([
+    ['no per-recipient answer', { data: {} }],
+    ['a skipped send', { skipped: 'reserved_domain', data: { skipped: 'reserved_domain' } }],
+    ['a success alongside failures', { data: { data: { succeeded: 1, failed: 0, failures: ['partial'] } } }],
+  ])('counts %s as failed, with lastDigestSent unset', async (_label, response) => {
+    const user = await createUser({ email: `shape-${sequence + 1}@gmail.com` });
+    const digest = await createDigest(user);
+    mockSendEmail.mockResolvedValueOnce(response);
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+    expect(result).toMatchObject({ sent: 0, failed: 1 });
+    expect((await User.findById(user._id)).lastDigestSent).toBeUndefined();
+  });
+
   it('sends held asks even when the daily recap has no lines', async () => {
     const user = await createUser({ email: `empty-held-${sequence + 1}@gmail.com` });
     const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });
