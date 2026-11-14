@@ -301,6 +301,9 @@ exports.startOAuth = async (req: any, res: any) => {
 // GET /api/auth/oauth/:provider/callback?code=...&state=...
 exports.oauthCallback = async (req: any, res: any) => {
   const provider = String(req.params.provider || '').toLowerCase();
+  // Set once the state is claimed, so a later throw still returns the person
+  // to the page they started from.
+  let claimedNext: string | undefined;
   try {
     if (!isProviderConfigured(provider)) return loginErrorRedirect(res, 'provider_error');
     if (req.query.error) {
@@ -333,6 +336,7 @@ exports.oauthCallback = async (req: any, res: any) => {
       { new: true },
     ).select('+pkceVerifier');
     if (!stateRow) return loginErrorRedirect(res, 'state_invalid');
+    claimedNext = stateRow.next;
 
     const profile = await PROVIDERS[provider].fetchProfile(
       String(req.query.code || ''),
@@ -435,7 +439,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     // provider is user-controlled (req.params) — keep it out of the format
     // string (CodeQL js/tainted-format-string).
     console.error('OAuth callback failed for provider:', provider);
-    return loginErrorRedirect(res, 'provider_error');
+    return loginErrorRedirect(res, 'provider_error', claimedNext);
   }
 };
 

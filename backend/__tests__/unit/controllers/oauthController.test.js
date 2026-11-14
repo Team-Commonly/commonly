@@ -421,6 +421,33 @@ describe('OAuth Controller', () => {
         expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified&next=%2Fv2%2Factivity%3Fitem%3Da1');
       });
 
+      it.each([
+        ['a different browser nonce', {}, { cookie: `__Host-cm-oauth-111111111111111111111111111111111111111111111111=${'b'.repeat(64)}` }],
+        ['a state already used', { usedAt: new Date() }, null],
+        ['an expired state', { expiresAt: new Date(Date.now() - 1000) }, null],
+      ])('a cancel with %s carries no next and changes nothing', async (_label, overrides, headers) => {
+        await seedState({ next: '/v2/pods/abc', ...overrides });
+        const before = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' }).lean();
+        const res = mockRes();
+        const req = callbackReq({ code: undefined, error: 'access_denied' });
+        await oauthController.oauthCallback(headers ? { ...req, headers } : req, res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=provider_denied');
+        expect(axios.post).not.toHaveBeenCalled();
+        const after = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' }).lean();
+        expect(after.usedAt).toEqual(before.usedAt);
+        expect(after.exchangeCode).toBeUndefined();
+      });
+
+      it('a provider exchange that throws after the claim keeps next', async () => {
+        await seedState({ next: '/v2/pods/abc?x=1' });
+        axios.post.mockRejectedValueOnce(new Error('token endpoint down'));
+        const res = mockRes();
+        const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        await oauthController.oauthCallback(callbackReq(), res);
+        spy.mockRestore();
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=provider_error&next=%2Fv2%2Fpods%2Fabc%3Fx%3D1');
+      });
+
       it('the plain /v2 default adds nothing', async () => {
         process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
         await seedState({ next: '/v2' });
