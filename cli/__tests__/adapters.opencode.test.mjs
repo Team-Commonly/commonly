@@ -431,7 +431,7 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         // F493: the seat's own home comes through opts, not the spec's list.
         _wrapArgvWithBwrap: (argv, environment, opts) => {
-          seen.writeOutside = opts.writablePaths;
+          seen.writeOutside = opts.homeWritablePaths;
           return ['/usr/bin/bwrap', '--test', ...argv];
         },
         // Stands in for the Commonly server: it creates the file its config names.
@@ -2122,8 +2122,8 @@ describe('opencode adapter — spawn()', () => {
           expect(opts).not.toHaveProperty('loopbackNetworkPorts');
           // F493: its own home is bound through opts; the spec's lists stay
           // the spec's, which a public seat's bwrap refuses.
-          expect(opts.writablePaths).not.toContain(opts.readOnlyPaths[0]);
-          expect(opts.writablePaths).toContain(seatRoot);
+          expect(opts.homeWritablePaths).not.toContain(opts.readOnlyPaths[0]);
+          expect(opts.homeWritablePaths).toContain(seatRoot);
           expect(environment.sandbox.filesystem?.['write-outside']).toBeUndefined();
           return ['/usr/bin/bwrap', '--test', ...argv];
         },

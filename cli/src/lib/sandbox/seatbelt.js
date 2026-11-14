@@ -591,9 +591,6 @@ export const resolveHostReadDirectories = (entries, home = homedir(), { fold = t
   }
 };
 
-// The canonical form of one path, for a caller that compares against what a
-// sandbox binds (bwrapReadRoots).
-export const canonicalHostPath = (path) => canonicalPath(path);
 
 export const buildSeatbeltProfile = ({
   workspacePath,

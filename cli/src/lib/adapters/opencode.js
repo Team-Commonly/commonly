@@ -1687,7 +1687,7 @@ export default {
           workspacePath: ctx.cwd,
           // Its own home, bound writable through opts: the spec's lists are
           // the server's, and a public seat's are refused (F493).
-          writablePaths: [openCodeHome.root],
+          homeWritablePaths: [openCodeHome.root],
           readOnlyPaths: [
             tempDir,
             binary,

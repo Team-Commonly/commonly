@@ -311,10 +311,11 @@ test('the bwrap launch binds the fresh HOME instead of the workspace', async () 
     expect(wraps).toHaveLength(1);
     expect(wraps[0].options.homePath).toContain('commonly-qwen-home-');
     expect(wraps[0].options.homePath).not.toBe(ctx.cwd);
-    expect(wraps[0].environment.sandbox.filesystem['write-outside'])
-      .toContain(wraps[0].options.homePath);
+    // F493: its own home is bound through opts; the spec's lists stay the spec's.
+    expect(wraps[0].options.homeWritablePaths).toContain(wraps[0].options.homePath);
+    expect(wraps[0].environment.sandbox.filesystem).toBeUndefined();
     const configDir = wraps[0].argv[wraps[0].argv.indexOf('--mcp-config') + 1].replace(/\/mcp\.json$/, '');
-    expect(wraps[0].environment.sandbox.filesystem['write-outside']).not.toContain(configDir);
+    expect(wraps[0].options.homeWritablePaths).not.toContain(configDir);
     expect(wraps[0].options.readOnlyPaths).toContain(configDir);
     expect(wraps[0].options.homePath.startsWith(`${configDir}/`)).toBe(false);
   });

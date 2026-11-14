@@ -19,7 +19,7 @@ import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
 import { effectiveSandboxTrust } from '../environment.js';
-import { HOST_READ_DOT_ALLOW, canonicalHostPath, resolveHostReadDirectories } from './seatbelt.js';
+import { HOST_READ_DOT_ALLOW, resolveHostReadDirectories } from './seatbelt.js';
 
 // Tilde-expansion lives here (and not in environment.js's expandHome) because
 // bwrap reads OS-level paths verbatim — `~` is a shell construct, not a
@@ -67,10 +67,8 @@ const DEFAULT_RO_BINDS = [
  * are the caller's.
  */
 export const bwrapReadRoots = (env) => {
-  // Resolved, as bwrap binds them: a link's target is what lands in the jail
-  // (F493 review: a key file under ~/keys behind ~/link read as unexposed).
   const declared = (key) => (Array.isArray(env?.sandbox?.filesystem?.[key])
-    ? env.sandbox.filesystem[key].map(expandHome).map(canonicalHostPath) : []);
+    ? env.sandbox.filesystem[key].map(expandHome) : []);
   return {
     subpaths: [...new Set([...DEFAULT_RO_BINDS, ...declared('read-outside'), ...declared('write-outside')])],
     literals: [],
@@ -243,6 +241,15 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
 
   const userWriteOutside = declaredBinds('write-outside');
   for (const p of userWriteOutside) {
+    flags.push('--bind-try', p, p);
+  }
+  // A public adapter's own home (F493: it used to ride in the spec's
+  // write-outside). bwrap stacks later binds on top, so it binds here, before
+  // the read-only inputs below: an input inside the home stays read-only.
+  for (const p of opts.homeWritablePaths || []) {
+    if (!p || !isAbsolute(p)) {
+      throw new Error('wrapArgvWithBwrap opts.homeWritablePaths entries must be absolute paths');
+    }
     flags.push('--bind-try', p, p);
   }
 

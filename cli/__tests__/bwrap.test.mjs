@@ -383,11 +383,14 @@ describe('a workspace seat\'s read-outside and write-outside under bwrap', () =>
       .toThrow(new RegExp(`refusing sandbox\\.filesystem\\.${key}: a public seat`));
   });
 
-  test('a public seat binds its own folders through opts', () => {
+  test('a public seat binds its own home through opts, before the read-only inputs inside it', () => {
+    const input = `${home}/project/recipe`;
     const argv = wrapArgvWithBwrap(['opencode'], { sandbox: { trust: 'public' } }, {
-      workspacePath: '/tmp/ws', writablePaths: [`${home}/project`],
+      workspacePath: '/tmp/ws', homeWritablePaths: [`${home}/project`], readOnlyPaths: [input],
     });
-    expect(argv[argv.indexOf(`${home}/project`) - 1]).toBe('--bind');
+    const homeAt = argv.indexOf(`${home}/project`);
+    expect(argv[homeAt - 1]).toBe('--bind-try');
+    expect(argv.indexOf(input)).toBeGreaterThan(homeAt);
   });
 
   test('a seat of your own (no trust) keeps its declared binds, ~/.local/bin included', () => {

@@ -456,7 +456,7 @@ export default {
         }, {
           workspacePath: ctx.cwd,
           // Its own home, bound writable through opts (F493).
-          writablePaths: [home],
+          homeWritablePaths: [home],
           homePath: home,
           readOnlyPaths: [tempDir, bwrapEntry, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
         });
