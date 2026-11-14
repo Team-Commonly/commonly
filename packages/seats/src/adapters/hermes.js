@@ -21,6 +21,8 @@ const MAX_STDERR_CHARS = 4096;
 const MAX_LINE_CHARS = 1024 * 1024;
 // Keys the wrapper owns in the profile's .env. Every other line is the user's.
 const PROFILE_ENV_KEYS = ['OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL'];
+const HERMES_NO_PROVIDER = 'Hermes connects through OpenRouter only, so it can\'t use the provider block in this '
+  + 'environment file. Remove that block and set OPENROUTER_API_KEY where this agent runs.';
 const PLAIN_ENV_VALUE = /^[A-Za-z0-9_\-.:/+=@%~]+$/;
 
 const definedKey = (line) => {
@@ -214,17 +216,25 @@ export const createHermesAdapter = ({
   runtimeType: 'hermes',
   supportsProvider: false,
   providerKeyEnv: 'OPENROUTER_API_KEY',
+  // The CLI's shared provider check answers before validateEnvironment, so it
+  // reads this text for Hermes (F116).
+  noProviderRefusal: HERMES_NO_PROVIDER,
 
+  // F116: these refusals reach the person attaching their own agent, so each
+  // says what Hermes needs and what to do next, in words that person can act on.
   async validateEnvironment(environment) {
-    if (environment?.provider !== undefined) {
-      throw new Error('Hermes adapter does not consume environment.provider; supply OPENROUTER_API_KEY in the host environment');
-    }
+    if (environment?.provider !== undefined) throw new Error(HERMES_NO_PROVIDER);
     if (environment?.mcp?.length) {
-      throw new Error('Hermes adapter does not yet consume environment.mcp declarations');
+      throw new Error('Commonly can\'t give Hermes extra MCP servers yet, so this environment file can\'t '
+        + 'list any. Remove the mcp block to run Hermes.');
     }
-    if (effectiveTrust(environment?.sandbox?.trust) === 'public'
-      || (environment?.sandbox?.mode && environment.sandbox.mode !== 'none')) {
-      throw new Error('Hermes public or sandbox-declared seats are unsupported: no enforced confinement adapter exists');
+    if (effectiveTrust(environment?.sandbox?.trust) === 'public') {
+      throw new Error('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat. '
+        + 'Pick another harness for a public seat.');
+    }
+    if (environment?.sandbox?.mode && environment.sandbox.mode !== 'none') {
+      throw new Error(`This environment file asks for sandbox.mode=${environment.sandbox.mode}, and Commonly `
+        + 'has no sandbox for Hermes yet, so Hermes can\'t run under it.');
     }
   },
 
@@ -247,7 +257,8 @@ export const createHermesAdapter = ({
       throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
     }
     if (!env.OPENROUTER_API_KEY) {
-      throw new Error('Supply the operator OPENROUTER_API_KEY through Secret Manager before running Hermes');
+      throw new Error('Hermes connects through OpenRouter only. Set OPENROUTER_API_KEY where this agent runs, '
+        + 'then start it again.');
     }
     await syncProfileEnv(home, env);
     const cwd = ctx.cwd || process.cwd();
