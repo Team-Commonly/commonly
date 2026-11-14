@@ -53,7 +53,10 @@ export const HOST_DEFERRAL_RETRY_BASE_MS = 60 * 1000;
 // How long a run of deferrals with no good spawn goes uncounted. Past it, an
 // adapter that exits 75 on every spawn is a fault (a gate stuck shut, a
 // misconfigured wrapper) and backs the seat off as any failure does, so its
-// events still release instead of waiting forever.
+// events still release instead of waiting forever. A run with a gap of over
+// two retry ceilings starts again (agent.js), so a released event that comes
+// back later gets a new grace; the kernel's requeue attempts cap is the outer
+// bound on that, and retires it after a few such rounds.
 export const HOST_DEFERRAL_MAX_MS = 2 * 60 * 60 * 1000;
 
 // A stalled probe costs one first-output window, so the wait starts short and
