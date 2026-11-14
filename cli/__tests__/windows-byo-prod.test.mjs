@@ -54,13 +54,13 @@ describe('the Windows prod walk', () => {
     expect(() => walkInstallLines(lines, { cli: 'tree' })).toThrow(/packed/);
   });
 
-  // Codex will not create its sandbox helpers under the temp dir (run 41994410063 on Linux).
   test("names the key's one model in Codex's system config", () => {
     const script = readFileSync(resolve(HERE, '../scripts/windows-byo-prod.mjs'), 'utf8');
     expect(script).toMatch(/writeFileSync\(codexConfig, codexSystemConfig\(MODEL_GATEWAY, MODEL\)\);/);
     expect(script).toMatch(/^const MODEL = 'claude-haiku-5-5';$/m);
   });
 
+  // Codex will not create its sandbox helpers under the temp dir (run 41994410063 on Linux).
   test('puts the walk profile outside the temp dir', () => {
     expect(windowsProfileRoot().startsWith(tmpdir())).toBe(false);
     const script = readFileSync(resolve(HERE, '../scripts/windows-byo-prod.mjs'), 'utf8');

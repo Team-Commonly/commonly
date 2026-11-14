@@ -121,7 +121,14 @@ export const walkModelEnv = (adapter, llmKey, gateway) => (adapter === 'codex'
  * keeps Codex's own default model, which moves between releases: 0.169.0
  * asks for a GPT model the key refuses (403), and the turn never runs.
  */
-export const codexSystemConfig = (gateway, model) => [
+export const codexSystemConfig = (gateway, model) => {
+  if (typeof model !== 'string' || !/^[A-Za-z0-9._:/-]+$/.test(model)) {
+    throw new Error('codexSystemConfig: name the model the walk key allows');
+  }
+  return codexSystemConfigLines(gateway, model);
+};
+
+const codexSystemConfigLines = (gateway, model) => [
   `model = "${model}"`,
   'model_provider = "commonly-gateway"',
   '',

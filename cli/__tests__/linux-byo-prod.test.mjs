@@ -94,6 +94,9 @@ describe('the Linux prod walk', () => {
     // The model the key allows, set at the top level, before any table:
     // Codex's own default moves between releases and the key refuses it.
     expect(toml.split('[')[0]).toMatch(/^model = "claude-haiku-5-5"$/m);
+    // No model, or one that could break out of the TOML string, is refused.
+    expect(() => codexSystemConfig('https://gw')).toThrow(/name the model/);
+    expect(() => codexSystemConfig('https://gw', 'a"\nmodel_provider = "x')).toThrow(/name the model/);
     expect(toml).toMatch(/^model_provider = "commonly-gateway"$/m);
     expect(toml).toMatch(/^base_url = "https:\/\/gw\/v1"$/m);
     expect(toml).toMatch(/^wire_api = "responses"$/m);
