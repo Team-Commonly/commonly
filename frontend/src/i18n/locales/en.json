@@ -788,6 +788,7 @@
     }
   },
   "podChat": {
+    "newSince": "New since your last visit",
     "closeDm": {
       "notice": "{{name}} was removed, so nothing will answer here. Its messages stay. Close this direct message if you’re done with it.",
       "close": "Close direct message",
