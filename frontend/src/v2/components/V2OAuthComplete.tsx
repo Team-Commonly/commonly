@@ -35,13 +35,16 @@ const V2OAuthComplete: React.FC = () => {
 
     const code = searchParams.get('code') || '';
     const next = safeNextPath(searchParams.get('next')) || '/v2';
+    // A failed exchange returns to sign-in with the page this started for, so
+    // the retry still lands there (an email link to a pod, say).
+    const failed = `/v2/login?oauthError=exchange_failed${next === '/v2' ? '' : `&next=${encodeURIComponent(next)}`}`;
     // The backend marks only a newly-created invited account. The session
     // marker prevents a stale callback from consuming an invite in another tab.
     const inviteSignup = searchParams.get('inviteSignup') === '1' && hasInviteOAuthStart();
 
     if (!code) {
       forgetInviteOAuthStart();
-      navigate('/v2/login?oauthError=exchange_failed', { replace: true });
+      navigate(failed, { replace: true });
       return;
     }
 
@@ -64,7 +67,7 @@ const V2OAuthComplete: React.FC = () => {
         // Keep the invite for a retry, but do not let a later ordinary login
         // mistake it for a successful invite-bearing signup.
         forgetInviteOAuthStart();
-        navigate('/v2/login?oauthError=exchange_failed', { replace: true });
+        navigate(failed, { replace: true });
       });
   }, [searchParams, navigate, signInWithToken]);
 

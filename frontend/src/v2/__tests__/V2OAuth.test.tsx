@@ -243,6 +243,19 @@ describe('V2OAuthComplete', () => {
     expect(view.container.querySelector('.v2-login__card--stack')).not.toBeNull();
   });
 
+  test('a failed exchange returns to sign-in, and signing in from there still reaches the page it started for', async () => {
+    axios.post.mockRejectedValueOnce(new Error('expired'));
+    const login = jest.fn(() => Promise.resolve());
+    await act(async () => {
+      renderComplete('?code=one-time&next=%2Fv2%2Fpods%2Fabc', { ...baseAuth, login });
+    });
+    const password = await screen.findByLabelText(/password/i);
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'a@example.com' } });
+    fireEvent.change(password, { target: { value: 'pw' } });
+    await act(async () => { fireEvent.submit(password.closest('form')); });
+    expect(await screen.findByText('pod page REPLACE')).toBeInTheDocument();
+  });
+
   test('exchanges the one-time code, hands the session to AuthContext and navigates in-app', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
     const signInWithToken = jest.fn();

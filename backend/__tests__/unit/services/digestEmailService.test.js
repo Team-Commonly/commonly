@@ -111,7 +111,7 @@ describe('digestEmailService', () => {
     expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
       to: user.email,
       subject: digest.title,
-      textBody: expect.stringContaining('https://commonly.me/v2'),
+      textBody: expect.stringContaining('Open Commonly: https://commonly.me/v2/activity\n'),
       htmlBody: expect.stringContaining('https://api.commonly.me/api/email/unsubscribe/'),
     }));
     expect(mockSendEmail.mock.calls[0][0].htmlBody).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
