@@ -1038,8 +1038,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       scrollListToEnd(initialLoadComplete ? 'smooth' : 'instant');
       setJumpCount(0);
       markReadIfAtEndRef.current();
-    } else if (newSinceLandedRef.current === newestMessageId) {
-      // Landing on the divider leaves the end below on purpose; it is not an arrival.
     } else {
       setJumpCount((count) => count + 1);
     }
@@ -1261,11 +1259,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   useLayoutEffect(() => {
     if (!currentPodId || !readPoint.ready || !initialLoadComplete) return;
     if (newSince?.podId === currentPodId) return;
-    setNewSince({ podId: currentPodId, messageId: firstNewSinceId(threadView, viewerId, readPoint.lastReadAt) });
-  }, [currentPodId, initialLoadComplete, newSince, readPoint.ready, readPoint.lastReadAt, threadView, viewerId]);
+    setNewSince({ podId: currentPodId, messageId: firstNewSinceId(threadView, viewerId, readPoint.lastReadAt, { historyAbove: Boolean(hasMore) }) });
+  }, [currentPodId, initialLoadComplete, newSince, readPoint.ready, readPoint.lastReadAt, threadView, viewerId, hasMore]);
   const newSinceMessageId = newSince && newSince.podId === currentPodId ? newSince.messageId : null;
   const newSinceSettled = Boolean(newSince && newSince.podId === currentPodId);
-  const newSinceLandedRef = useRef<string | number | null>(null);
   const newSinceMovedPodRef = useRef<string | null>(null);
   useEffect(() => {
     // Back to a tab left at the end: what arrived meanwhile has now been seen.
@@ -1295,7 +1292,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       const top = divider.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
       el.scrollTop = Math.max(0, top - NEW_SINCE_TOP_GAP_PX);
       atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      newSinceLandedRef.current = newestMessageId;
     }
     readPoint.markRead(messages[messages.length - 1]?.created_at || messages[messages.length - 1]?.createdAt);
   // eslint-disable-next-line react-hooks/exhaustive-deps

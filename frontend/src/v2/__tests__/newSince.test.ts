@@ -30,4 +30,12 @@ describe('firstNewSinceId', () => {
     const withCard = [{ kind: 'card', rootId: '9', replyCount: 2, participants: [], lastActivityAt: null, replies: [] } as never, ...view];
     expect(firstNewSinceId(withCard, 'me', '2026-11-14T10:30:00Z')).toBe('4');
   });
+  it('is none when unloaded history could hide earlier new messages', () => {
+    // every loaded message is newer than the point, and there is more above
+    expect(firstNewSinceId(view, 'me', '2026-11-14T09:00:00Z', { historyAbove: true })).toBeNull();
+    // the point falls inside the loaded page, so the divider is honest
+    expect(firstNewSinceId(view, 'me', '2026-11-14T10:30:00Z', { historyAbove: true })).toBe('4');
+    // the whole history is loaded: the top message can carry the divider
+    expect(firstNewSinceId(view, 'me', '2026-11-14T09:00:00Z')).toBe('1');
+  });
 });
