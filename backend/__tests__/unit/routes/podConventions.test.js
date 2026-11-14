@@ -12,6 +12,10 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../../middleware/adminAuth', () => (_req, _res, next) => next());
 jest.mock('../../../services/dmService', () => ({ canViewPod: jest.fn(async () => true) }));
+const mockPodRow = { value: null };
+jest.mock('../../../models/Pod', () => ({
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => mockPodRow.value }) })),
+}));
 jest.mock('../../../services/podConventionsService', () => ({
   read: jest.fn(),
   update: jest.fn(),
@@ -19,6 +23,7 @@ jest.mock('../../../services/podConventionsService', () => ({
 }));
 
 const PodConventionsService = require('../../../services/podConventionsService');
+const DMService = require('../../../services/dmService');
 
 const app = express();
 app.use(express.json());
@@ -28,7 +33,36 @@ const POD = '6a0000000000000000000002';
 const USER = '6a0000000000000000000001';
 const read = { podId: POD, revision: 1, conventions: { text: 'Reply in a thread.', updatedAt: '2026-11-14T00:00:00.000Z', updatedBy: { userId: USER, label: 'alice' } } };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  DMService.canViewPod.mockResolvedValue(true);
+  mockPodRow.value = { _id: POD, type: 'chat', members: [USER] };
+});
+
+// CodeRabbit on #4112: every new pod-scoped read calls DMService.canViewPod
+// before returning content. The service's own member check still runs after.
+test('GET runs the shared visibility check first, and a refusal returns no conventions', async () => {
+  DMService.canViewPod.mockResolvedValue(false);
+  const res = await request(app).get(`/api/pods/${POD}/conventions`);
+  expect(res.status).toBe(403);
+  expect(res.body.conventions).toBeUndefined();
+  expect(DMService.canViewPod).toHaveBeenCalledWith(USER, mockPodRow.value);
+  expect(PodConventionsService.read).not.toHaveBeenCalled();
+});
+
+test.each([['agent-room'], ['agent-admin']])('GET on a %s the caller may not see answers 404', async (type) => {
+  mockPodRow.value = { _id: POD, type, members: [] };
+  DMService.canViewPod.mockResolvedValue(false);
+  const res = await request(app).get(`/api/pods/${POD}/conventions`);
+  expect(res.status).toBe(404);
+  expect(PodConventionsService.read).not.toHaveBeenCalled();
+});
+
+test('GET on a missing pod answers 404', async () => {
+  mockPodRow.value = null;
+  const res = await request(app).get(`/api/pods/${POD}/conventions`);
+  expect(res.status).toBe(404);
+});
 
 test('GET returns the read and whether the caller may edit', async () => {
   PodConventionsService.read.mockResolvedValue(read);

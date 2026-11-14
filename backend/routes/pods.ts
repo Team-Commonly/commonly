@@ -499,6 +499,16 @@ router.get('/:id/conventions', podFocusReadRateLimit, auth, requireObjectIdParam
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   try {
+    // The shared visibility rule for a pod-scoped read (CLAUDE.md), before the
+    // service's own member check: both must pass. A room a stranger may not
+    // see answers 404, as its type rules say, so the 403 doesn't confirm it.
+    const pod = await Pod.findById(podId).select('_id type members publicRead').lean() as { type?: string } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' });
+    if (!await DMService.canViewPod(userId, pod)) {
+      return ['agent-room', 'agent-admin'].includes(String(pod.type))
+        ? res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' })
+        : res.status(403).json({ message: 'Not authorized for this pod', code: 'NOT_A_MEMBER' });
+    }
     const conventions = await PodConventionsService.read({ podId, userId });
     const permissions = await PodConventionsService.permissions({ podId, userId });
     return res.status(200).json({ ...conventions, permissions });

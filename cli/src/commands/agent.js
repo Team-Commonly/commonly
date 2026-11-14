@@ -2919,6 +2919,7 @@ export const performRun = ({
 
   const runTurnBody = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
+    withoutConventions = false, report = null,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -3074,8 +3075,12 @@ export const performRun = ({
     }
     const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
     // F124: the pod's conventions, from the same read as focus, ahead of the
-    // focus frame (skill text may still be put in front of both below).
-    const conventionsFrame = formatPodConventionsFrame(focusRead?.conventions);
+    // focus frame (skill text may still be put in front of both below). A
+    // refusal-recovery turn runs without them: text every item shares can
+    // draw the refusal, and isolating items assumes the refused text is one
+    // item's own. `report` tells the batch whether this turn carried them.
+    const conventionsFrame = withoutConventions ? '' : formatPodConventionsFrame(focusRead?.conventions);
+    if (report) report.carriedConventions = Boolean(conventionsFrame);
     const promptWithFocus = `${conventionsFrame ? `${conventionsFrame}\n\n` : ''}${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;
     let skillReadUnavailable = false;
@@ -4355,6 +4360,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
         trigger,
+        withoutConventions: true,
       });
     };
 
@@ -4365,6 +4371,7 @@ export const performRun = ({
 
     let turnResult;
     let deferredError = null;
+    const firstTurn = {};
     try {
       try {
         turnResult = await runTurn({
@@ -4375,6 +4382,7 @@ export const performRun = ({
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,
           trigger,
+          report: firstTurn,
         });
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
@@ -4410,9 +4418,9 @@ export const performRun = ({
         // only. A posted wake still settles those digests on the server, the
         // same as any counts-only turn.
         let refused = true;
-        if (turnPrompt !== plainPrompt) {
-          log('[inbox.batch] the model provider refused a turn that carried unread messages (content_refused); '
-            + 'running it once more without them');
+        if (turnPrompt !== plainPrompt || firstTurn.carriedConventions) {
+          log('[inbox.batch] the model provider refused a turn that carried unread messages or pod conventions '
+            + '(content_refused); running it once more without them');
           try {
             const before = await snapshotMessages();
             turnResult = await runTurn({
@@ -4423,6 +4431,7 @@ export const performRun = ({
               snapshotMessages,
               claimKeeper: compositeClaimKeeper,
               trigger,
+              withoutConventions: true,
             });
             for (const entry of actionEntries) entry.result = turnResult;
             refused = false;

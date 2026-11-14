@@ -36,6 +36,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
+const { readPodFocus } = await import('../src/lib/pod-focus.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
@@ -180,6 +181,52 @@ describe('a provider content refusal', () => {
     for (const fragment of ['169.254', 'meta-data', 'ReDoS', 'aaaaaaaa', 'security gate', POD_ID]) {
       expect(notice).not.toContain(fragment);
     }
+  });
+
+  // F124 (CodeRabbit on #4112): the pod's conventions ride every turn, so
+  // when they draw the refusal no item's own text did. The item runs once more
+  // without them and is answered, not acked as refused.
+  describe('when the pod conventions draw the refusal', () => {
+    const withConventions = async (_client, podId) => ({
+      podId, revision: 0, focus: null, conventions: { revision: 1, text: 'FLAGGED-RULE', author: 'alice' },
+    });
+    const withoutConventions = async (_client, podId) => ({ podId, revision: 0, focus: null });
+    beforeEach(() => readPodFocus.mockImplementation(withConventions));
+    afterEach(() => readPodFocus.mockImplementation(withoutConventions));
+
+    test('a single item runs again without them and is answered', async () => {
+      const spawn = jest.fn(async (prompt) => {
+        if (prompt.includes('FLAGGED-RULE')) throw refusal();
+        return { text: 'docs gate: PASS' };
+      });
+      const run = setup({ events: [normalEvent()], spawn });
+      await drainMicrotasks();
+      run.handle.stop();
+
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(spawn.mock.calls[0][0]).toContain('FLAGGED-RULE');
+      expect(spawn.mock.calls[1][0]).not.toContain('Pod conventions');
+      expect(run.acks()).toEqual([{ id: 'evt-normal', result: { outcome: 'posted' } }]);
+      expect(run.notices()).toHaveLength(0);
+    });
+
+    test('a batch\'s items, run alone after that, carry none either', async () => {
+      const spawn = jest.fn(async (prompt) => {
+        if (prompt.includes('FLAGGED-RULE') || prompt.includes('169.254.169.254')) throw refusal();
+        return { text: 'docs gate: PASS' };
+      });
+      const run = setup({ events: [poisonEvent(), normalEvent()], spawn });
+      await drainMicrotasks();
+      run.handle.stop();
+
+      // The composite turn, the rerun without conventions, then each item alone.
+      expect(spawn).toHaveBeenCalledTimes(4);
+      for (const [prompt] of spawn.mock.calls.slice(1)) expect(prompt).not.toContain('Pod conventions');
+      expect(run.acks()).toEqual([
+        { id: 'evt-poison', result: REFUSED_ACK('vera') },
+        { id: 'evt-normal', result: { outcome: 'posted' } },
+      ]);
+    });
   });
 
   test('a mixed batch: the ordinary item is still handled, and only the refused one is refused', async () => {
