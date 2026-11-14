@@ -140,6 +140,11 @@ import {
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
+import { explainNarrowing, narrowingConfirmBody } from '../lib/install-narrowing.js';
+
+// F167: shared by attach, init and register.
+const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
+  + '(the install says which pods first)';
 import {
   CONTENT_REFUSED_REASON,
   composeRefusalHandoff,
@@ -1499,6 +1504,8 @@ export const performAttach = async ({
   wakeOnMessage = false,
   memoryFrom = null,
   memoryInstance = 'default',
+  // F167: confirm the install route's narrowing warning (F164).
+  confirmNarrowing = false,
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
@@ -1690,6 +1697,7 @@ export const performAttach = async ({
     ...(memoryFrom ? {
       resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
     } : {}),
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1707,7 +1715,7 @@ export const performAttach = async ({
       ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-  });
+  }).catch((error) => { throw explainNarrowing(error); });
 
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
@@ -5193,6 +5201,7 @@ export const performInit = async ({
   podId,
   displayName,
   targetDir,
+  confirmNarrowing = false,
 }) => {
   const recipe = SDK_SOURCES[language];
   if (!recipe) {
@@ -5221,13 +5230,14 @@ export const performInit = async ({
   // Self-serve install (ADR-006). No publish step; the backend synthesizes
   // an ephemeral registry row when no manifest exists for this name.
   const installResult = await client.post('/api/registry/install', {
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
     version: '1.0.0',
     config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-  });
+  }).catch((error) => { throw explainNarrowing(error); });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
   // Same rule as `attach`: the mention handle is the instanceId when there is
@@ -5404,6 +5414,7 @@ Docs:
     .requiredOption('--webhook <url>', 'Webhook URL (e.g. https://my-agent.example.com/cap)')
     .option('--secret <secret>', 'Webhook signing secret (HMAC-SHA256)')
     .option('--display <name>', 'Display name shown in the pod')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5427,6 +5438,7 @@ Docs:
         });
 
         const result = await client.post('/api/registry/install', {
+          ...narrowingConfirmBody(opts.confirmNarrowing === true),
           agentName: opts.name,
           podId: opts.pod,
           displayName: opts.display || opts.name,
@@ -5440,7 +5452,7 @@ Docs:
             },
           },
           scopes: ['context:read', 'messages:write', 'memory:read'],
-        });
+        }).catch((error) => { throw explainNarrowing(error); });
 
         const installation = result.installation || result;
         const instId = installation.instanceId || 'default';
@@ -5554,6 +5566,7 @@ Docs:
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
     .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5577,6 +5590,7 @@ Docs:
           wakeOnMessage: Boolean(opts.wakeOnMessage),
           memoryFrom: opts.memoryFrom,
           memoryInstance: opts.memoryInstance,
+          confirmNarrowing: opts.confirmNarrowing === true,
           log: (line) => console.warn(`[attach] ${line}`),
         });
 
@@ -6123,6 +6137,7 @@ Docs:
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--dir <path>', 'Target directory (default: current dir)')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -6139,6 +6154,7 @@ Docs:
           podId: opts.pod,
           displayName: opts.display,
           targetDir: pathResolve(opts.dir || process.cwd()),
+          confirmNarrowing: opts.confirmNarrowing === true,
         });
 
         console.log(`✓ Written: ${result.files.bot}`);

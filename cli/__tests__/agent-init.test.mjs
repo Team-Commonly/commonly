@@ -123,6 +123,28 @@ describe('performInit (python)', () => {
     );
   });
 
+  // F167: init's install carries the narrowing confirmation only on the flag.
+  test('--confirm-narrowing reaches the install, and is absent by default', async () => {
+    const plain = makeClient();
+    await performInit({ client: plain, language: 'python', agentName: 'plain-bot', podId: 'pod-1', targetDir: tmp });
+    expect(plain.post.mock.calls.find(([route]) => route === '/api/registry/install')[1])
+      .not.toHaveProperty('confirmNarrowing');
+
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-init-narrowing-'));
+    try {
+      const confirmed = makeClient();
+      await performInit({
+        client: confirmed, language: 'python', agentName: 'ok-bot', podId: 'pod-1', targetDir: other,
+        confirmNarrowing: true,
+      });
+      expect(confirmed.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+        confirmNarrowing: true,
+      }));
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
   test('refuses to clobber an existing file in the target directory', async () => {
     fs.writeFileSync(path.join(tmp, 'commonly.py'), '# user file', 'utf8');
 

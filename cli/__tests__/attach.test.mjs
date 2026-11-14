@@ -878,6 +878,41 @@ describe('performAttach', () => {
     expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
   });
 
+  // F167: the narrowing confirmation the install route asks for.
+  test('--confirm-narrowing sends confirmNarrowing: true, and attach omits it by default', async () => {
+    const plain = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({ client: plain, adapterName: 'stub', agentName: 'plain', podId: 'pod-1' });
+    const plainBody = plain.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+    expect(plainBody).not.toHaveProperty('confirmNarrowing');
+
+    const confirmed = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({
+      client: confirmed, adapterName: 'stub', agentName: 'ok', podId: 'pod-1', confirmNarrowing: true,
+    });
+    expect(confirmed.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      confirmNarrowing: true,
+    }));
+  });
+
+  test('a narrowing refusal tells the person the flag, not the API field', async () => {
+    const client = makeClient();
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      if (route === '/api/registry/install') {
+        throw Object.assign(new Error('x'), {
+          status: 409,
+          body: {
+            code: 'outsider_grant_narrowing_confirm_required',
+            message: 'It would stop writing in Ops. Send confirmNarrowing: true to install anyway.',
+          },
+        });
+      }
+      return post(route, body);
+    });
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'narrow', podId: 'pod-1' }))
+      .rejects.toThrow('It would stop writing in Ops. Re-run with --confirm-narrowing to install anyway.');
+  });
+
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
     const client = makeClient({ runtimeToken: 'cm_agent_x' });
     await performAttach({
