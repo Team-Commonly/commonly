@@ -107,6 +107,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
+import { formatPodConventionsFrame } from '../lib/pod-conventions.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
@@ -2490,7 +2491,8 @@ export const performRun = ({
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
-  const processEvent = async (event) => {
+  // `turnOptions` reaches runTurn: { withoutConventions, report } (F124).
+  const processEvent = async (event, turnOptions = {}) => {
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -2720,6 +2722,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper,
         trigger,
+        ...turnOptions,
       });
       return turnResult;
     } finally {
@@ -2918,6 +2921,7 @@ export const performRun = ({
 
   const runTurnBody = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
+    withoutConventions = false, report = null,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -3072,7 +3076,14 @@ export const performRun = ({
       throw error;
     }
     const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
-    const promptWithFocus = `${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
+    // F124: the pod's conventions, from the same read as focus, ahead of the
+    // focus frame (skill text may still be put in front of both below). A
+    // refusal-recovery turn runs without them: text every item shares can
+    // draw the refusal, and isolating items assumes the refused text is one
+    // item's own. `report` tells the batch whether this turn carried them.
+    const conventionsFrame = withoutConventions ? '' : formatPodConventionsFrame(focusRead?.conventions);
+    if (report) report.carriedConventions = Boolean(conventionsFrame);
+    const promptWithFocus = `${conventionsFrame ? `${conventionsFrame}\n\n` : ''}${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;
     let skillReadUnavailable = false;
     try {
@@ -4351,6 +4362,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
         trigger,
+        withoutConventions: true,
       });
     };
 
@@ -4361,6 +4373,7 @@ export const performRun = ({
 
     let turnResult;
     let deferredError = null;
+    const firstTurn = {};
     try {
       try {
         turnResult = await runTurn({
@@ -4371,6 +4384,7 @@ export const performRun = ({
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,
           trigger,
+          report: firstTurn,
         });
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
@@ -4406,9 +4420,9 @@ export const performRun = ({
         // only. A posted wake still settles those digests on the server, the
         // same as any counts-only turn.
         let refused = true;
-        if (turnPrompt !== plainPrompt) {
-          log('[inbox.batch] the model provider refused a turn that carried unread messages (content_refused); '
-            + 'running it once more without them');
+        if (turnPrompt !== plainPrompt || firstTurn.carriedConventions) {
+          log('[inbox.batch] the model provider refused a turn that carried unread messages or pod conventions '
+            + '(content_refused); running it once more without them');
           try {
             const before = await snapshotMessages();
             turnResult = await runTurn({
@@ -4419,6 +4433,7 @@ export const performRun = ({
               snapshotMessages,
               claimKeeper: compositeClaimKeeper,
               trigger,
+              withoutConventions: true,
             });
             for (const entry of actionEntries) entry.result = turnResult;
             refused = false;
@@ -4908,8 +4923,19 @@ export const performRun = ({
           log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
+          const firstTurn = {};
           try {
-            result = await duringTurn(() => processEvent(event));
+            try {
+              result = await duringTurn(() => processEvent(event, { report: firstTurn }));
+            } catch (refusedErr) {
+              // F124 (CodeRabbit on #4112): the pod's conventions ride every
+              // turn, so a refusal of a turn that carried them may not be this
+              // item's own text. Run it once more without them first.
+              if (!isContentRefusal(refusedErr) || !firstTurn.carriedConventions) throw refusedErr;
+              log(`[${event.type}] the model provider refused a turn that carried pod conventions (content_refused); `
+                + 'running it once more without them');
+              result = await duringTurn(() => processEvent(event, { withoutConventions: true }));
+            }
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no

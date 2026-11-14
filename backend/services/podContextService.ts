@@ -18,6 +18,8 @@ const AgentMessageService = require('./agentMessageService');
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const PodFocusService = require('./podFocusService');
+// eslint-disable-next-line global-require
+const PodConventionsService = require('./podConventionsService');
 
 const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
 
@@ -321,7 +323,7 @@ function buildSkillCandidates({ assets, summariesWithTags, maxSkills = 6 }: {
 class PodContextService {
   static async loadPodForMember({ podId, userId }: LoadPodOptions): Promise<Record<string, unknown>> {
     const pod = await Pod.findById(podId)
-      .select('_id name description type members focus focusRevision createdAt updatedAt')
+      .select('_id name description type members focus focusRevision conventions conventionsRevision createdAt updatedAt')
       .lean() as Record<string, unknown> | null;
 
     if (!pod) {
@@ -388,6 +390,9 @@ class PodContextService {
     // same Pod snapshot used for the descriptor so board and runtime context
     // cannot silently diverge on revision or ordered task references.
     const focus = await PodFocusService.readForPod({ pod, podId });
+    // F124: the pod's conventions, from the same snapshot. A CAP client (the
+    // CLI, an SDK bot) carries them into its turn; see docs/agents/pod-conventions.md.
+    const conventions = await PodConventionsService.readForPod({ pod, podId });
 
     // Roster: who else is in this pod, so an agent knows who it can @mention or
     // DM. The `members` field is part of this endpoint's documented contract
@@ -666,6 +671,7 @@ class PodContextService {
       activityAvailable: hasActivity,
       pod: podDescriptor,
       focus,
+      conventions,
       members,
       files,
       recentMessages,

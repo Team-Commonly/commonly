@@ -81,6 +81,43 @@ describe('performRun pod-focus turn seam', () => {
     );
   });
 
+  // F124 (TASK-766): the pod's conventions ride the same context read and
+  // open the turn, ahead of the focus frame.
+  test('the pod conventions from the same read open the turn', async () => {
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') return { events: [event({ _id: 'conv-event-1' })] };
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return {
+        focus: { podId: 'pod-focus', revision: 0, focus: null },
+        conventions: {
+          podId: 'pod-focus',
+          revision: 4,
+          conventions: { text: 'Reply in a thread.', updatedAt: '2026-11-14T00:00:00.000Z', updatedBy: { userId: 'u1', label: 'alice' } },
+        },
+      };
+      return {};
+    });
+    createClient.mockReturnValue({ get, post: jest.fn().mockResolvedValue({}) });
+    const spawn = jest.fn().mockResolvedValue({ text: 'done' });
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_focus',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'focus-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drain();
+    stop();
+
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('set by alice for this pod; revision 4');
+    expect(prompt).toContain('| Reply in a thread.');
+    expect(prompt.indexOf('Pod conventions')).toBeLessThan(prompt.indexOf('Pod focus'));
+    // The read stays one call per turn.
+    expect(get.mock.calls.filter(([route]) => route.endsWith('/context'))).toHaveLength(1);
+  });
+
   test('an added agent skill reaches the next spawn and disappears after removal', async () => {
     let installed = true;
     let eventId = 'skill-add-1';

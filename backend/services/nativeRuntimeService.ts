@@ -2677,11 +2677,19 @@ export async function runAgent(
   // D278: where a top-level mention's answer goes depends on it. Unknown keeps
   // the answer at the pod root, as before.
   let podType: string | null = null;
+  // F124: the pod's conventions, from the same row. Empty when it has none.
+  let conventionsFrame = '';
   try {
     const Pod = require('../models/Pod');
     const pod = await Pod.findById(installation.podId).lean();
     if (pod?.name) podName = String(pod.name);
     if (pod?.type) podType = String(pod.type);
+    if (pod) {
+      const PodConventionsService = require('./podConventionsService');
+      conventionsFrame = PodConventionsService.formatPodConventionsFrame(
+        await PodConventionsService.readForPod({ pod }),
+      );
+    }
   } catch (err) {
     console.warn('[native-runtime] pod lookup failed:', (err as Error).message);
   }
@@ -2835,6 +2843,11 @@ export async function runAgent(
   // After the line above: the notice is our text, not the person's, so it
   // must not give an address.
   if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
+  // F124: after the given addresses are taken, so a link in the conventions is
+  // not one commonly_fetch_url may open on their strength; and in the user
+  // message, so the owner's system prompt keeps the last word. The recent
+  // messages and Scout's start cue are put in front of it below.
+  if (conventionsFrame) userMessage = `${conventionsFrame}\n\n${userMessage}`;
   // F46: when the person writing owns an agent that has never connected, Scout's
   // turn carries its start command, so the answer can't leave them stuck.
   if (agentName === 'scout' && dispatchCtx.computerRequesterId) {
