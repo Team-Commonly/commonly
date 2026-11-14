@@ -785,14 +785,11 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     denyRegistryConfig ? `(deny file-read* file-write* ${registryConfigUnder(resolvedWorkspace)})` : '',
-    // A host read folder gets the workspace's credential denies beneath it: a
-    // project tree holds other repos' .env files and .commonly token folders.
-    ...grantedHostReads.map((dir) => [
-      `(deny file-read* file-write* ${regexUnder(dir, '\\.commonly(/.*)?$')})`,
-      `(deny file-read* file-write* ${regexUnder(dir, '\\.codex(/.*)?$')})`,
-      `(deny file-read* file-write* ${envFilesUnder(dir)})`,
-      `(deny file-read* file-write* ${registryConfigUnder(dir)})`,
-    ].join('\n')),
+    // Beneath a host read folder, every dot folder and dotfile is denied, the
+    // same rule its request passed: a project tree holds other repos' .env
+    // files, .commonly token folders, .ssh keys and .aws credentials. One rule
+    // on the leading dot covers every name, in any case (CodeRabbit on #4129).
+    ...grantedHostReads.map((dir) => `(deny file-read* file-write* ${regexUnder(dir, '\\.[^/]*(/.*)?$')})`),
     readOnlyWorkspaceRules,
     // After every allow above, so a workspace that contained one of these
     // folders still could not write it (later rules win).
