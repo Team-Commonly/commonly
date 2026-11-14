@@ -123,14 +123,16 @@ export const connectCodeOf = (res: IssuedConnectCode | null | undefined): { conn
   return { connectCode: code, connectCodeExpiresAt: Number.isFinite(at) ? at : null };
 };
 // True when the caller's latest listener check-in (an events poll or socket
-// connect) is this agent's, made after this key was issued, with a minute's
-// slack for clock skew. A tool call, the MCP server included, doesn't count.
+// connect) is this agent's, same name and same instance, made after this key
+// was issued, with a minute's slack for clock skew. A tool call, the MCP
+// server included, doesn't count.
 export const checkedInSinceIssue = (
-  data: { connected?: boolean; connectedAgent?: { agentName?: string }; lastUsedAt?: string } | null | undefined,
-  issued: { agentName: string; issuedAt: number },
+  data: { connected?: boolean; connectedAgent?: { agentName?: string; instanceId?: string }; lastUsedAt?: string } | null | undefined,
+  issued: { agentName: string; issuedAt: number; instanceId?: string | null },
 ): boolean => Boolean(
   data?.connected
   && String(data.connectedAgent?.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+  && String(data.connectedAgent?.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
   && data.lastUsedAt
   && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000,
 );

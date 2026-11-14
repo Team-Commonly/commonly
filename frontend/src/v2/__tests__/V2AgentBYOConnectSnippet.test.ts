@@ -2,7 +2,7 @@
 // (D245, #2141 part 1). PowerShell has no `export`, and its double-quoted
 // strings treat ` as the escape and expand $, so the key is escaped without
 // assuming anything about its alphabet.
-import { connectSnippet, powerShellQuote } from '../components/V2AgentBYO';
+import { checkedInSinceIssue, connectSnippet, powerShellQuote } from '../components/V2AgentBYO';
 
 jest.mock('axios', () => {
   const mock = {
@@ -121,5 +121,24 @@ describe('connectSnippet with a connect code: one line, no key', () => {
       expect(lines).toHaveLength(4);
       expect(lines[2]).toContain(base.token);
     }
+  });
+});
+
+describe('checkedInSinceIssue: only this agent\'s own instance counts', () => {
+  const issuedAt = Date.parse('2026-11-14T20:00:00Z');
+  const at = '2026-11-14T20:10:00Z';
+  test('the default instance checking in does not mark a second instance connected', () => {
+    const data = { connected: true, connectedAgent: { agentName: 'my-claude', instanceId: 'default' }, lastUsedAt: at };
+    expect(checkedInSinceIssue(data, { agentName: 'my-claude', issuedAt, instanceId: 'alpha' })).toBe(false);
+    expect(checkedInSinceIssue(data, { agentName: 'my-claude', issuedAt, instanceId: null })).toBe(true);
+  });
+  test('the second instance checking in counts for it, in any case', () => {
+    const data = { connected: true, connectedAgent: { agentName: 'My-Claude', instanceId: 'Alpha' }, lastUsedAt: at };
+    expect(checkedInSinceIssue(data, { agentName: 'my-claude', issuedAt, instanceId: 'alpha' })).toBe(true);
+    expect(checkedInSinceIssue(data, { agentName: 'my-claude', issuedAt })).toBe(false);
+  });
+  test('a check-in from before the key was issued does not count', () => {
+    const data = { connected: true, connectedAgent: { agentName: 'my-claude', instanceId: 'default' }, lastUsedAt: '2026-11-14T19:00:00Z' };
+    expect(checkedInSinceIssue(data, { agentName: 'my-claude', issuedAt })).toBe(false);
   });
 });
