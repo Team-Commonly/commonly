@@ -3946,7 +3946,9 @@ export const performRun = ({
   // inside its grace (F293) is no failure of the event's either: `strike: false`
   // carries it without one, or the third kill would release it to the server's
   // requeue and the answer would wait 10–20 minutes. The grace bounds this.
-  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true } = {}) => {
+  // `passOver: false` (F491): no turn ran at all (a host deferral), so the
+  // past-cap items weren't passed over by one and keep their carry budget.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true, passOver = true } = {}) => {
     const released = [];
     let part = null;
     const carry = [];
@@ -3979,7 +3981,7 @@ export const performRun = ({
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
-        const carries = (pastCapCarries.get(id) || 0) + 1;
+        const carries = (pastCapCarries.get(id) || 0) + (passOver ? 1 : 0);
         // As above: a stop hands the item back rather than leave it to the sweep.
         if (running && carries >= PAST_CAP_MAX_CARRIES) passedOver.push(event);
         else {
@@ -4839,7 +4841,7 @@ export const performRun = ({
               attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
-              { strike: !graced },
+              { strike: !graced, passOver: hostDeferrals === 0 },
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];

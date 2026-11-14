@@ -2950,6 +2950,34 @@ describe('performRun', () => {
     }
   });
 
+  test('an ask on the single-event path is deferred the same way', async () => {
+    const ask = makeEvent({
+      _id: 'evt-ask', type: 'agent.ask', payload: { question: 'what do you think?', requestId: 'req-1', fromAgent: 'nova' },
+    });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValue({ text: 'my answer' });
+    const run = deferredRun({ spawn, event: ask });
+
+    await drainMicrotasks();
+    await run.fire(4);
+    run.handle.stop();
+
+    expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen, e.retryAfterMs]))
+      .toEqual([
+        ['host_deferred', 0, false, 60000],
+        ['host_deferred', 0, false, 120000],
+        ['host_deferred', 0, false, 240000],
+        ['host_deferred', 0, false, 480000],
+      ]);
+    expect(run.retries()[0].message).toMatch(/^agent\.ask processing failed/);
+    expect(run.retries().some((e) => /releasing/.test(e.message))).toBe(false);
+    expect(spawn).toHaveBeenCalledTimes(5);
+  });
+
   test('a deferral long after the last one starts a new run, not the old run past its cap', async () => {
     let clock = Date.UTC(2026, 10, 14, 0, 0, 0);
     const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
