@@ -6,6 +6,8 @@
  * adapter receives the same bounded projection, including resumed sessions.
  */
 
+import { normalizePodConventions } from './pod-conventions.js';
+
 export const FOCUS_FRAME_MAX_CODE_POINTS = 8000;
 export const FOCUS_TASK_TITLE_MAX_CODE_POINTS = 160;
 
@@ -93,7 +95,12 @@ export const readPodFocus = async (client, podId) => {
     if (!body || typeof body !== 'object' || !hasOwn(body, 'focus')) {
       throw invalidContract('Runtime context did not include the published focus DTO', { podId });
     }
-    return normalizeDto(body.focus, podId);
+    // F124: the pod's conventions ride the same read. Optional, unlike focus:
+    // null when the server omits them or sends something malformed.
+    return {
+      ...normalizeDto(body.focus, podId),
+      conventions: normalizePodConventions(body.conventions, podId),
+    };
   } catch (cause) {
     // Preserve contract diagnostics instead of relabelling them as transient
     // transport failures. The run loop still retries the queued event, but the

@@ -44,6 +44,22 @@ describe('F330: a non-ObjectId pod id answers 400, not 500', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  test.each([':podId', 'me', '6a0000aa'])('GET /api/pods/%s/conventions (F124)', async (id) => {
+    const res = await request(app).get(`/api/pods/${id}/conventions`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('invalid_pod_id');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/pods/:podId/conventions (F124)', async () => {
+    const res = await request(app)
+      .patch('/api/pods/:podId/conventions')
+      .send({ expectedRevision: 0, text: null });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('invalid_pod_id');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   test('PATCH /api/pods/:podId/focus', async () => {
     const res = await request(app)
       .patch('/api/pods/:podId/focus')

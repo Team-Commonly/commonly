@@ -40,6 +40,8 @@ const PodMemorySearchService = require('../services/podMemorySearchService');
 // eslint-disable-next-line global-require
 const PodFocusService = require('../services/podFocusService');
 // eslint-disable-next-line global-require
+const PodConventionsService = require('../services/podConventionsService');
+// eslint-disable-next-line global-require
 const { emitPodFocusUpdated } = require('../services/taskEventService');
 
 interface AuthReq {
@@ -488,6 +490,49 @@ router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', I
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
     console.error('Error updating pod focus:', error);
     return res.status(500).json({ message: 'Failed to update pod focus' });
+  }
+});
+
+// F124: the pod's conventions. Members read; the creator or a global admin
+// writes, with the revision they read (409 carries the current text).
+router.get('/:id/conventions', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  try {
+    const conventions = await PodConventionsService.read({ podId, userId });
+    const permissions = await PodConventionsService.permissions({ podId, userId });
+    return res.status(200).json({ ...conventions, permissions });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error reading pod conventions:', error);
+    return res.status(500).json({ message: 'Failed to read pod conventions' });
+  }
+});
+
+router.patch('/:id/conventions', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  const body = req.body || {};
+  try {
+    if (Object.keys(body).sort().join(',') !== 'expectedRevision,text') {
+      return res.status(400).json({ message: 'Body must contain expectedRevision and text only', code: 'INVALID_CONVENTIONS_REQUEST' });
+    }
+    if (typeof body.expectedRevision !== 'number' || !Number.isInteger(body.expectedRevision)) {
+      return res.status(400).json({ message: 'expectedRevision must be a non-negative integer', code: 'INVALID_REVISION' });
+    }
+    const conventions = await PodConventionsService.update({ podId, userId, expectedRevision: body.expectedRevision, text: body.text });
+    return res.status(200).json({ ...conventions, permissions: { canEdit: true } });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status === 409) {
+      let current: unknown;
+      try { current = await PodConventionsService.read({ podId, userId }); } catch { /* keep the conflict if the pod is gone */ }
+      return res.status(409).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}), ...(current ? { current } : {}) });
+    }
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error updating pod conventions:', error);
+    return res.status(500).json({ message: 'Failed to update pod conventions' });
   }
 });
 

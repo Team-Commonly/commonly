@@ -107,6 +107,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
+import { formatPodConventionsFrame } from '../lib/pod-conventions.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
@@ -3072,7 +3073,9 @@ export const performRun = ({
       throw error;
     }
     const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
-    const promptWithFocus = `${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
+    // F124: the pod's conventions open the turn, from the same read as focus.
+    const conventionsFrame = formatPodConventionsFrame(focusRead?.conventions);
+    const promptWithFocus = `${conventionsFrame ? `${conventionsFrame}\n\n` : ''}${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;
     let skillReadUnavailable = false;
     try {
