@@ -1422,20 +1422,24 @@ const V2AgentBYO: React.FC = () => {
   // So the page asks once more first: the poll may have stopped, or missed a
   // late check-in by seconds. If this agent listened since the key was issued,
   // it is connected and nothing is replaced. If any of the person's agent keys
-  // was used since then (the read can't say which, so the MCP or Cursor setup
-  // below may be using this one), replacing waits for a second press. A failed
-  // read replaces nothing.
+  // made any authenticated call since then (the read can't say which key, so
+  // this one may be in use, by the MCP or Cursor setup below, say), replacing
+  // waits for a second press. A failed read replaces nothing.
   const [lineCheck, setLineCheck] = useState<'failed' | 'inUse' | null>(null);
+  const lineChecking = useRef(false);
   const getNewLine = async (confirmed = false) => {
-    if (!issued) return;
+    if (!issued || lineChecking.current) return;
     const target = { agentName: issued.agentName, podId: issued.podId, instanceId: issued.instanceId || 'default' };
     if (confirmed) { setLineCheck(null); void replaceRunningKey(target); return; }
     let data;
+    lineChecking.current = true;
     try {
       ({ data } = await axios.get('/api/users/me/agent-connection'));
     } catch {
       setLineCheck('failed');
       return;
+    } finally {
+      lineChecking.current = false;
     }
     if (checkedInSinceIssue(data, issued)) {
       setLineCheck(null);
@@ -2512,8 +2516,9 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
-            {/* The connect code ran out before the agent connected. The key was
-                never used, so a new line replaces it and stops nothing running. */}
+            {/* The connect code ran out before the page saw the agent connect.
+                A new line replaces the key, so getNewLine checks first whether
+                the agent connected or a key is in use. */}
             {listenerAvailable && oneLine && connectCodeExpired && listenState !== 'listening' && (
               <p className="v2-byo__listen-note v2-byo__listen-note--stopped" role="status" data-testid="byo-line-expired">
                 {lineCheck === 'inUse'

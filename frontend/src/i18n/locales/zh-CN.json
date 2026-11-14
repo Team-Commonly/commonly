@@ -2245,7 +2245,7 @@
       "windowsPasteOneLine": "如果 Windows 终端在粘贴前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则什么都不会运行。",
       "lineExpired": "{{name}} 还没接入，这一行就已经失效了。",
       "newLine": "获取新命令",
-      "lineKeyInUse": "这一行生成后，{{name}} 的密钥被用过，可能是下方的 MCP 或 Cursor 配置在用。获取新命令会替换密钥，正在用它的连接都会断开。",
+      "lineKeyInUse": "这一行生成后，你名下有智能体的密钥被用过，可能就是 {{name}} 的，比如下方的 MCP 或 Cursor 配置在用。获取新命令会替换 {{name}} 的密钥，正在用它的连接都会断开。",
       "replaceKey": "替换密钥",
       "lineCheckFailed": "没能确认 {{name}} 是否已接入，请重试。",
       "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）。先运行 <cmd>node -v</cmd> 检查 Node，应显示 v22 或更高。如果提示无法识别 node，请到 nodejs.org 安装，再重新打开一个 PowerShell 窗口。",

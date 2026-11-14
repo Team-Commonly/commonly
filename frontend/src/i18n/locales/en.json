@@ -2188,7 +2188,7 @@
       "windowsPasteOneLine": "If Windows Terminal asks before it pastes, choose Paste anyway. Cancel runs nothing.",
       "lineExpired": "This line ran out before {{name}} connected.",
       "newLine": "Get a new line",
-      "lineKeyInUse": "{{name}}’s key was used after this line was made, maybe by the MCP or Cursor setup below. A new line replaces the key, and anything using it stops.",
+      "lineKeyInUse": "One of your agent keys was used after this line was made, maybe {{name}}’s, by the MCP or Cursor setup below. A new line replaces {{name}}’s key, and anything using it stops.",
       "replaceKey": "Replace the key",
       "lineCheckFailed": "Couldn’t check whether {{name}} connected. Try again.",
       "windowsCheck": "Use PowerShell, not Command Prompt (cmd). Check Node first: <cmd>node -v</cmd> should print v22 or later. If node isn’t recognized, install it from nodejs.org and open a new PowerShell window.",
