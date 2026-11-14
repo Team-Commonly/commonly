@@ -58,7 +58,9 @@ import { spawn as childSpawn, spawnSync } from 'child_process';
 import {
   createHash, randomBytes, randomUUID, timingSafeEqual,
 } from 'crypto';
-import { accessSync, constants, realpathSync } from 'fs';
+import {
+  accessSync, constants, readdirSync, realpathSync,
+} from 'fs';
 import {
   chmod,
   lstat,
@@ -93,6 +95,7 @@ import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
   publicClaudeStateRoot,
+  resolveHostReadDirectories,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
 import {
@@ -656,12 +659,43 @@ const permissionPath = (path, platform) => (platform === 'win32'
 // The tools that read or write the seat's agent-wide memory.
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
 
-const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
+export const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   trust, allow = [], memoryWithheld = false, ownerWoken = false, platform = process.platform, home: homeOverride = null,
   noShell = false,
+  // F122: a workspace seat's host read folders, already checked and resolved
+  // (resolveHostReadDirectories). The jail is the boundary; this lets the
+  // seat's Read, Grep and Glob reach them, which `Read(./**)` alone does not.
+  hostReads = [],
 } = {}) => {
   const home = homeOverride || homedir();
   const deny = (sub) => absoluteToolDeny(permissionPath(join(home, sub), platform));
+  const hostReadAllows = hostReads.map((dir) => absoluteToolDeny(permissionPath(dir, platform)));
+  // Claude Code applies a deny before any allow, so a grant inside ~/.commonly
+  // (only ~/.commonly/logs passes the check) would be refused by the
+  // ~/.commonly deny. Then that deny becomes one per other entry in the folder.
+  // An entry created after the spawn is not named here; the jail still
+  // refuses it, as it refuses everything not granted.
+  const commonlyHome = join(home, '.commonly');
+  const folded = (p) => p.toLowerCase();
+  const grantsInsideCommonly = hostReads.some((dir) => folded(dir).startsWith(`${folded(commonlyHome)}/`));
+  const commonlyDenies = () => {
+    if (!grantsInsideCommonly) return [deny('.commonly')];
+    try {
+      return readdirSync(commonlyHome)
+        .filter((name) => !hostReads.some((dir) => {
+          const entry = folded(join(commonlyHome, name));
+          return folded(dir) === entry || folded(dir).startsWith(`${entry}/`);
+        }))
+        // A file such as admin-token is matched by its own name, a folder by
+        // what is under it: each entry is denied both ways.
+        .flatMap((name) => {
+          const entry = permissionPath(join(commonlyHome, name), platform);
+          return [`Read(/${entry})`, `Read(/${entry}/**)`];
+        });
+    } catch {
+      return [deny('.commonly')];
+    }
+  };
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
   // D245: with no OS jail (native Windows, --unsandboxed) a shell would run
   // with the user's whole access and could read the seat's own token from its
@@ -672,7 +706,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     .filter((tool) => !(noShell && SHELL_TOOLS.has(tool)))
     .map((tool) => (noShell && (tool === 'Edit' || tool === 'Write') ? `${tool}(./**)` : tool));
   const deniedReads = [
-    deny('.commonly'),
+    ...commonlyDenies(),
     deny('.claude'),
     deny('.codex'),
     deny('.ssh'),
@@ -725,7 +759,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     '--strict-mcp-config',
     '--no-chrome',
     '--permission-mode', 'dontAsk',
-    '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
+    '--allowedTools', 'Read(./**)', ...hostReadAllows, ...granted, ...mcpToolPatterns,
     '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.some((g) => g === tool || g.startsWith(`${tool}(`))),
     ...deniedReads, ...toolDenies,
   ];
@@ -1569,10 +1603,15 @@ const prepareArgv = async (innerArgv, ctx) => {
     if (!ctx.publicClaudeState) {
       throw new Error('public Claude state was not prepared before argv construction');
     }
+    // F122: checked and resolved once; the policy and the profile get the same list.
+    const hostReads = sandboxTrust === 'workspace'
+      ? resolveHostReadDirectories(workspaceReadOutside(env))
+      : [];
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, {
         trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken,
+        hostReads,
       }),
       ...(ctx.publicSkillArgs || []),
     ];
@@ -1619,7 +1658,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       // F122: a workspace seat reads the host folders it names, as it does
       // under bwrap on Linux, so an Ops-type seat can read the logs it watches
       // without running unconfined. A public seat names none: strangers drive it.
-      hostReadDirectories: sandboxTrust === 'workspace' ? workspaceReadOutside(env) : [],
+      hostReadDirectories: hostReads,
     });
     return {
       cmd: wrapped[0],

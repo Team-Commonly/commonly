@@ -526,8 +526,25 @@ const foldedWithin = (outer, inner) => {
   return rel === '' || (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel));
 };
 
+// A dot folder or dotfile anywhere along the path, not only directly under
+// home: ~/Projects/repo/.commonly is a token folder too (CodeRabbit on #4111).
+// The one exception is inside HOST_READ_DOT_ALLOW.
+const dotComponent = (canonical, home) => {
+  if (HOST_READ_DOT_ALLOW.some((allowed) => foldedWithin(join(home, allowed), canonical))) {
+    const allowed = HOST_READ_DOT_ALLOW.find((a) => foldedWithin(join(home, a), canonical));
+    const below = relative(join(home, allowed).toLowerCase(), canonical.toLowerCase());
+    return below.split('/').find((name) => name.startsWith('.')) || null;
+  }
+  return canonical.split('/').find((name) => name.startsWith('.')) || null;
+};
+
 const hostReadRefusal = (canonical, home) => {
   if (foldedWithin(canonical, home)) return 'it holds your home folder';
+  const dot = dotComponent(canonical, home);
+  if (dot) {
+    return `${dot} is a dot folder or dotfile, and those are not readable from a seat `
+      + `(only ${HOST_READ_DOT_ALLOW.map((a) => `~/${a}`).join(', ')} is)`;
+  }
   if (!foldedWithin(home, canonical)) {
     return HOST_READ_SYSTEM_ALLOW.some((allowed) => foldedWithin(allowed, canonical))
       ? null
