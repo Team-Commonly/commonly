@@ -16,6 +16,8 @@ const AttentionItem = require('../models/AttentionItem');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
+// eslint-disable-next-line global-require
+const StalledConnectEpisode = require('../models/StalledConnectEpisode');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -58,6 +60,7 @@ interface DigestSummary {
     totalItems?: number;
     userId?: string;
     emailedAt?: Date;
+    stalledMarks?: Array<{ episodeId: string; fields?: string[]; line?: string }>;
   };
 }
 
@@ -101,6 +104,17 @@ const extractTopItems = (content: string | undefined, limit = 5): string[] => {
   return candidates.map(cleanMarkdownLine).filter(Boolean).slice(0, limit);
 };
 
+/**
+ * SMTP2GO v3 answers 200 with per-recipient results; one recipient, so it was
+ * accepted only if it counts as succeeded and nothing failed.
+ */
+const providerAccepted = (response: any): boolean => {
+  const data = response?.data?.data;
+  if (!data || response?.skipped) return false;
+  const failures = Array.isArray(data.failures) ? data.failures.length : 0;
+  return Number(data.succeeded) >= 1 && !(Number(data.failed) > 0) && failures === 0;
+};
+
 const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = []) => {
   const title = summary.title || 'Your Commonly daily digest';
   const items = extractTopItems(summary.content);
@@ -123,6 +137,7 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, held
     : '';
 
   return {
+    items,
     subject: title,
     textBody: `${title}\n\n${textItems}${heldText}\n\nOpen Commonly: ${appUrl}\n\nUnsubscribe from daily digests: ${unsubscribeUrl}`,
     // Email clients cannot reliably consume the app's CSS variables, so these
@@ -255,7 +270,7 @@ export class DigestEmailService {
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
         const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
-        await sendEmail({
+        const sent = await sendEmail({
           to: user.email,
           subject: bodies.subject,
           textBody: bodies.textBody,
@@ -271,6 +286,31 @@ export class DigestEmailService {
             );
           } catch (markError) {
             console.warn('Digest sent but held asks could not be marked included:', (markError as Error).message);
+          }
+        }
+        // F502: a stalled-connect line is used up only once it was delivered,
+        // so a skipped or failed send leaves it for the next digest: the
+        // provider must have accepted the message (SMTP2GO v3 can answer 200
+        // with the recipient failed), and the line must be one of the top
+        // items the email shows, not one the extract cut. Each mark stands
+        // alone: one failing must not undo the delivery or the others.
+        const shown = new Map<string, number>();
+        for (const item of providerAccepted(sent) ? bodies.items : []) shown.set(item, (shown.get(item) || 0) + 1);
+        for (const mark of summary.metadata?.stalledMarks || []) {
+          // Keyed the way the digest stores it, as a bullet, so a name that
+          // itself starts with "- " still matches its shown item.
+          const key = mark.line ? cleanMarkdownLine(`- ${mark.line}`) : '';
+          if (!shown.get(key)) continue;
+          shown.set(key, (shown.get(key) || 0) - 1);
+          try {
+            await StalledConnectEpisode.updateOne(
+              { _id: mark.episodeId, status: 'open' },
+              { $set: Object.fromEntries((mark.fields || [])
+                .filter((field) => field === 'digestedAt' || field === 'digestedAgainAt')
+                .map((field) => [field, emailedAt])) },
+            );
+          } catch (markError) {
+            console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);
           }
         }
         // SMTP has accepted the email. A failed timestamp write should not

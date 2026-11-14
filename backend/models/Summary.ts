@@ -28,6 +28,7 @@ export interface ISummary extends Document {
     sources?: string[];
     eventId?: string;
     emailedAt?: Date;
+    stalledMarks?: Array<{ episodeId: string; fields: string[]; line?: string }>;
   };
   analytics: {
     timeline: Array<{
@@ -100,6 +101,17 @@ const summarySchema = new Schema<ISummary>({
     emailedAt: { type: Date },
     // A scheduled daily digest's person and local day (DailyDigestService.digestKey).
     digestKey: { type: String },
+    // F502: the stalled-connect lines this digest carries, which the email
+    // marks delivered only once SMTP has accepted it. Declared or stripped.
+    stalledMarks: {
+      type: [new Schema({
+        episodeId: { type: String, required: true },
+        fields: [{ type: String }],
+        // The digest line the mark stands for: only a line the email shows is used up.
+        line: { type: String },
+      }, { _id: false })],
+      default: undefined,
+    },
   },
   analytics: {
     timeline: [
