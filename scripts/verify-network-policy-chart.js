@@ -230,12 +230,24 @@ const sourcesFor = (spec, workloads, ns) => {
   if (pods.length) return { sources: pods, matched: true };
   return { sources: [src], matched: src.ns !== null };
 };
-const admittedFrom = (allows, sources, toApp, port) => sources.map((src) => allows
-  .some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, src, port)));
-// A flow holds only if every real source pod is admitted; a closed check holds
-// only if none is.
-const flowHolds = (allows, sources, toApp, port) => admittedFrom(allows, sources, toApp, port).every(Boolean);
-const closedHolds = (allows, sources, toApp, port) => !admittedFrom(allows, sources, toApp, port).some(Boolean);
+// The destination pods for `app=<toApp>` (F520), with ALL their labels, the
+// mirror of sourcesFor: an allow can select the destination by another label it
+// carries (component: cache on redis), which a synthetic { app } pod never
+// matches, so a closed check would pass without testing it. `matched` is false
+// when nothing by that name renders.
+const targetsFor = (toApp, workloads, ns) => {
+  const pods = workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === toApp)
+    .map((w) => podTemplate(w).metadata.labels);
+  return pods.length ? { targets: pods, matched: true } : { targets: [{ app: toApp }], matched: false };
+};
+// One verdict per (source, destination) pair: does some allow selecting that
+// destination admit that source on the port?
+const admittedFrom = (allows, sources, targets, port) => sources.flatMap((src) => targets.map((dest) => allows
+  .some((p) => selects(p.spec.podSelector, dest) && admits(p, src, port))));
+// A flow holds only if every real source reaches every real destination pod; a
+// closed check holds only if no pair is admitted.
+const flowHolds = (allows, sources, targets, port) => admittedFrom(allows, sources, targets, port).every(Boolean);
+const closedHolds = (allows, sources, targets, port) => !admittedFrom(allows, sources, targets, port).some(Boolean);
 
 for (const [lane, cfg] of Object.entries(ingressLanes)) {
   const args = ['template', 'commonly-verify', chart];
@@ -282,9 +294,11 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   for (const [kind, list, holds, want] of [['flow', cfg.flows, flowHolds, 'is refused'], ['closed', cfg.closed, closedHolds, 'is admitted, want refused']]) {
     for (const [from, toApp, port] of list) {
       const { sources, matched } = sourcesFor(from, workloads, ns);
+      const { targets, matched: targetMatched } = targetsFor(toApp, workloads, ns);
       // A renamed label would leave the check passing on a pod that doesn't exist.
       expect(matched, `${lane}: ${kind} source ${from} matches no rendered pod in ${ns}`);
-      expect(holds(allows, sources, toApp, port), `${lane}: ${from} -> ${toApp}:${port} ${want}`);
+      expect(targetMatched, `${lane}: ${kind} destination app=${toApp} matches no rendered pod in ${ns}`);
+      expect(holds(allows, sources, targets, port), `${lane}: ${from} -> ${toApp}:${port} ${want}`);
     }
   }
   // Every Service's pods are admitted on the port the Service sends to. With no
@@ -331,21 +345,41 @@ expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is 
   const byTier = { metadata: { namespace: 'n' }, spec: { podSelector: { matchLabels: { app: 'redis' } },
     ingress: [{ from: [{ podSelector: { matchLabels: { tier: 'data-client' } } }], ports: [{ port: 6379 }] }] } };
   const of = (spec, pods) => sourcesFor(spec, pods, 'n').sources;
-  expect(!closedHolds([byTier], of('app=commonly-bot', [bot]), 'redis', 6379),
+  const REDIS = [{ app: 'redis' }];
+  expect(!closedHolds([byTier], of('app=commonly-bot', [bot]), REDIS, 6379),
     'sourcesFor(): an allow admitting app=commonly-bot by its tier label passes the closed check');
-  expect(closedHolds([byTier], [peerLabels('app=commonly-bot')], 'redis', 6379),
+  expect(closedHolds([byTier], [peerLabels('app=commonly-bot')], REDIS, 6379),
     'sourcesFor() probe: the synthetic one-label pod should miss the tier allow');
-  expect(!closedHolds([byTier], of('app=commonly-bot', [twin, bot]), 'redis', 6379),
+  expect(!closedHolds([byTier], of('app=commonly-bot', [twin, bot]), REDIS, 6379),
     'closedHolds(): a closed check passes though one app=commonly-bot pod is admitted');
-  expect(!flowHolds([byTier], of('app=commonly-bot', [bot, twin]), 'redis', 6379),
+  expect(!flowHolds([byTier], of('app=commonly-bot', [bot, twin]), REDIS, 6379),
     'flowHolds(): a flow passes though one app=commonly-bot pod is refused');
-  expect(closedHolds([byTier], of('app=commonly-bot', [twin, elsewhere]), 'redis', 6379),
+  expect(closedHolds([byTier], of('app=commonly-bot', [twin, elsewhere]), REDIS, 6379),
     "sourcesFor(): a pod in another namespace is read as the chart's");
   expect(sourcesFor('app=gone', [bot], 'n').matched === false, 'sourcesFor(): a spec matching no rendered pod reads as matched');
   const remote = sourcesFor('ns:m/app=commonly-bot', [bot, elsewhere], 'n');
   expect(remote.matched && remote.sources.length === 1 && remote.sources[0].ns === 'm' && remote.sources[0].labels.tier === 'data-client',
     'sourcesFor(): a rendered pod in another namespace keeps only its spec labels');
   expect(sourcesFor('ns:x/app=y', [bot], 'n').matched, 'sourcesFor(): an unrendered pod in another namespace reads as unmatched, though the chart cannot render it');
+}
+
+// targetsFor() itself (F520): an allow selecting the destination by a label
+// other than app must count for a closed check, and a flow must reach every
+// destination pod, not just one.
+{
+  const pod = (name, labels) => ({ kind: 'Deployment', metadata: { namespace: 'n', name }, spec: { template: { metadata: { labels } } } });
+  const cache = pod('redis', { app: 'redis', component: 'cache' });
+  const plain = pod('redis-2', { app: 'redis' });
+  const toCache = { metadata: { namespace: 'n' }, spec: { podSelector: { matchLabels: { component: 'cache' } },
+    ingress: [{ from: [{ podSelector: { matchLabels: { app: 'commonly-bot' } } }], ports: [{ port: 6379 }] }] } };
+  const bot = [{ ns: null, labels: { app: 'commonly-bot' } }];
+  expect(!closedHolds([toCache], bot, targetsFor('redis', [cache], 'n').targets, 6379),
+    'targetsFor(): an allow selecting redis by its component label passes the closed check');
+  expect(closedHolds([toCache], bot, [{ app: 'redis' }], 6379),
+    'targetsFor() probe: the synthetic { app } destination should miss the component allow');
+  expect(!flowHolds([toCache], bot, targetsFor('redis', [cache, plain], 'n').targets, 6379),
+    'targetsFor(): a flow passes though one redis pod refuses it');
+  expect(targetsFor('gone', [cache], 'n').matched === false, 'targetsFor(): an app with no rendered pod reads as matched');
 }
 
 // peerLabels() itself: a prefixed label key carries a `/` of its own, so it
