@@ -66,6 +66,12 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     writeFileSync(join(logs, 'repo', '.commonly', 'token'), 't\n');
     writeFileSync(join(logs, 'repo', '.codex', 'auth.json'), '{}\n');
     writeFileSync(join(logs, 'repo', 'README.md'), 'hi\n');
+    // And other dot folders: keys, cloud credentials, a keyring (CodeRabbit on #4129).
+    for (const dir of ['.ssh', '.aws', '.gnupg', '.config/gh']) mkdirSync(join(logs, 'repo', dir), { recursive: true });
+    writeFileSync(join(logs, 'repo', '.ssh', 'id_rsa'), 'fake-key\n');
+    writeFileSync(join(logs, 'repo', '.aws', 'credentials'), '[default]\n');
+    writeFileSync(join(logs, 'repo', '.gnupg', 'pubring.kbx'), 'x\n');
+    writeFileSync(join(logs, 'repo', '.config', 'gh', 'hosts.yml'), 'x\n');
   });
   afterEach(() => { if (root) rmSync(root, { recursive: true, force: true }); });
 
@@ -88,6 +94,15 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     for (const file of ['.env', '.env.local', '.npmrc', '.commonly/token', '.codex/auth.json']) {
       expect(attempt(read(join(logs, 'repo', file)))).toBe('DENIED EPERM');
     }
+  });
+
+  // A request for a dot folder is refused; one beneath a granted folder is
+  // denied by the same rule, whatever its name or case.
+  macTest('cannot read any dot folder or dotfile a project tree under it holds', () => {
+    for (const file of ['.ssh/id_rsa', '.SSH/id_rsa', '.aws/credentials', '.gnupg/pubring.kbx', '.config/gh/hosts.yml']) {
+      expect(attempt(read(join(logs, 'repo', file)))).toBe('DENIED EPERM');
+    }
+    expect(attempt(read(join(logs, 'repo', 'README.md')))).toBe('ALLOWED');
   });
 
   // The Opus review's case bypass, against a home that has a .ssh: on a
