@@ -2700,6 +2700,7 @@
       "needsYou": "等你",
       "working": "工作中",
       "idle": "空闲",
+      "signedOut": "{{harness}} 未登录",
       "answer": "回答",
       "talk": "对话",
       "podsAria": "Pod",

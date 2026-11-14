@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
 import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel, runCommandForThisComputer } from '../utils/agentConnection';
+import { harnessLabel } from '../utils/harnessCatalog';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
 import V2TeamViewSwitch from './V2TeamViewSwitch';
@@ -63,6 +64,8 @@ interface AgentInstallationSummary {
   installedBy?: string | null;
   connection?: AgentConnection;
   fixCommand?: string;
+  // F459: its computer reports this harness installed and signed out (installer only).
+  harnessSignedOut?: string;
 }
 
 interface TaskRow {
@@ -424,12 +427,16 @@ const V2YourTeamPage: React.FC = () => {
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
     // An ask still waits on a seat that dropped off, so its card keeps the ring.
-    const visualState = state !== 'needsYou' && a.connection && a.connection.state !== 'connected' ? 'idle' : state;
-    const offline = Boolean(a.connection && a.connection.state !== 'connected');
+    const visualState = state !== 'needsYou' && ((a.connection && a.connection.state !== 'connected') || a.harnessSignedOut) ? 'idle' : state;
+    // F459: a seat whose harness is signed out answers nothing, though it polls,
+    // so it reads like an offline one and never as idle.
+    const signedOut = a.harnessSignedOut ? t('yourTeam.card.signedOut', { harness: harnessLabel([], a.harnessSignedOut) }) : '';
+    const offline = Boolean(a.connection && a.connection.state !== 'connected') || Boolean(signedOut);
     // The ask stays the line's content, so the connection gets a quiet line of its own.
     const askOffline = offline && state === 'needsYou';
+    const offlineText = signedOut || (a.connection ? connectionLabel(a.connection, t) : '');
     const statusText = offline && !askOffline
-      ? connectionLabel(a.connection!, t)
+      ? offlineText
       : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${askTitle || ''}`.replace(/ · $/, '')
       : state === 'working'
@@ -458,7 +465,7 @@ const V2YourTeamPage: React.FC = () => {
               {(!offline || askOffline) && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
-            {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{connectionLabel(a.connection!, t)}</div>}
+            {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{offlineText}</div>}
             {a.connection?.state === 'never' && a.fixCommand && (
               <code className="v2-team-card__fix" data-testid="team-card-fix-command">{runCommandForThisComputer(a.fixCommand)}</code>
             )}
