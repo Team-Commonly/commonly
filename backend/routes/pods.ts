@@ -454,6 +454,16 @@ router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id',
     return res.status(200).json({ ...focus, permissions });
   } catch (error) {
     const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    // F497: a room a stranger may not see answers 404, as its type rules say,
+    // so the refusal doesn't confirm it exists.
+    if (e?.code === 'NOT_A_MEMBER') {
+      try {
+        const pod = await Pod.findById(podId).select('_id type').lean() as { type?: string } | null;
+        if (['agent-room', 'agent-admin'].includes(String(pod?.type))) {
+          return res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' });
+        }
+      } catch { /* keep the 403 below */ }
+    }
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
     console.error('Error reading pod focus:', error);
     return res.status(500).json({ message: 'Failed to read pod focus' });
