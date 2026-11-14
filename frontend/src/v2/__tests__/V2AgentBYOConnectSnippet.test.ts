@@ -97,3 +97,29 @@ describe('connectSnippet for a second instance (F306 part 2)', () => {
     }
   });
 });
+
+describe('connectSnippet with a connect code: one line, no key', () => {
+  const CODE = 'cmc_AbCdEfGhIjKlMnOpQr_-1z';
+  test('on a Mac or Linux it installs, then runs with the code, joined by &&', () => {
+    const line = connectSnippet({ ...base, os: 'unix', connectCode: CODE.slice(0, 26) });
+    expect(line).not.toContain('\n');
+    expect(line).toBe(`npm i -g @commonlyai/cli@latest && commonly agent run my-claude --adapter claude --api-url ${base.apiUrl} --connect ${CODE.slice(0, 26)}`);
+  });
+  test('on Windows PowerShell 5.1, which has no &&, the run waits on the install with if ($?)', () => {
+    const code = CODE.slice(0, 26);
+    expect(connectSnippet({ ...base, os: 'windows', connectCode: code, instanceId: 'nova', allow: 'write' }))
+      .toBe(`npm.cmd i -g @commonlyai/cli@latest; if ($?) { commonly.cmd agent run my-claude --instance-id nova --adapter claude --allow write --api-url "${base.apiUrl}" --connect "${code}" --unsandboxed }`);
+  });
+  test('the line never carries the key', () => {
+    for (const os of ['unix', 'windows'] as const) {
+      expect(connectSnippet({ ...base, os, connectCode: CODE.slice(0, 26) })).not.toContain(base.token);
+    }
+  });
+  test('a code in any other shape falls back to the four lines with the key', () => {
+    for (const connectCode of [null, '', 'cmc_short', 'cm_' + 'a'.repeat(22), 'cmc_' + 'a'.repeat(21) + ';', 'cmc_' + 'a'.repeat(23)]) {
+      const lines = connectSnippet({ ...base, os: 'unix', connectCode }).split('\n');
+      expect(lines).toHaveLength(4);
+      expect(lines[2]).toContain(base.token);
+    }
+  });
+});
