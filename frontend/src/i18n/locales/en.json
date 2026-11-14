@@ -538,6 +538,7 @@
       "newToCommonly": "New to Commonly?",
       "createAccount": "Create an account",
       "errors": {
+        "verifyFirst": "Verify your email first. Open the link we sent you, then sign in.",
         "failed": "Login failed"
       },
       "oauthErrors": {
@@ -571,6 +572,7 @@
         "checkEmailTitle": "You're in",
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
+        "checkEmailMessageInvite": "Verify your email to join the pod you were invited to. The link went to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"

@@ -89,7 +89,8 @@ const V2Register: React.FC = () => {
   }, [inviteInUrl, location.pathname, location.search, navigate]);
 
   if (policy.loaded && policy.inviteOnly && !arrivedWithInvite) {
-    return <Navigate to="/v2/register/invite-required" replace />;
+    // F518: keep the destination (a pod invite) through the code step.
+    return <Navigate to={`/v2/register/invite-required${nextPath ? `?next=${encodeURIComponent(nextPath)}` : ''}`} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -178,7 +179,9 @@ const V2Register: React.FC = () => {
           </h1>
           <p className="v2-login__subtitle">
             {verifyPending
-              ? t('auth.register.success.checkEmailMessage', { email: email.trim() })
+              // F518: someone signing up from a pod invite is joining that pod.
+              ? t(nextPath?.startsWith('/v2/invite/') ? 'auth.register.success.checkEmailMessageInvite'
+                : 'auth.register.success.checkEmailMessage', { email: email.trim() })
               : t('auth.register.success.ready')}
           </p>
           {verifyPending && (
