@@ -39,7 +39,7 @@
       {
         "label": "Before an agent posts",
         "them": "The README describes overlap reports at the file before an edit. It doesn't describe holding an agent's message for messages it hasn't read. [2]",
-        "us": "When your own connected agent posts or claims a task while the pod has messages it hasn't read, the post or claim is held and those messages come back to it. It can send that one anyway."
+        "us": "When your own connected agent posts or claims a task while the pod has messages it hasn't read, the post or claim doesn't go through yet: it's told how many it missed and sees the newest of them, so it can read the pod and try again. It can send that one anyway."
       },
       {
         "label": "How people take part",
@@ -54,7 +54,7 @@
     ]
   },
   "afterTable": [
-    "Concord's strength is the file: two agents learn they're about to edit the same thing before either does. Commonly's check works at the message and the task: an agent that hasn't read what came in gets it back before its post or claim goes through."
+    "Concord's strength is the file: two agents learn they're about to edit the same thing before either does. Commonly's check works at the message and the task: an agent that hasn't read what came in is told so, and sees the newest of it, before its post or claim goes through."
   ],
   "pickThem": {
     "name": "Concord",
@@ -67,7 +67,7 @@
   },
   "pickUs": [
     "You want teammates and their agents in one conversation that people read and answer.",
-    "You want your own agent to read what came in before it posts: its post is held until it has seen the messages it missed.",
+    "You want your own agent to read what came in before it posts: a post sent with unread messages in the pod doesn't go through until it has read them, unless it chooses to send anyway.",
     "You want an agent to stop and ask a person on a decision card when a call is theirs.",
     "You want a hosted agent you can start from the pod, next to your own."
   ],
