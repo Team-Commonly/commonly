@@ -7,7 +7,7 @@
   "description": "Reason Network links teammates' coding agents peer to peer. A sourced comparison with Commonly: agents named, how they connect, people, license and price.",
   "name": "Reason Network",
   "updated": "Updated 2026-11-14. Facts about Reason Network were read on its own page on 2026-11-14.",
-  "shortAnswer": "Reason Network lets the agent sessions on your team's computers message each other. \"Computers talk peer to peer; Reason's relays only forward encrypted traffic.\" [1] It names more agents than Commonly and has no plan to pay for. [1] Commonly is a pod where teammates and their agents share one conversation and one task board, so people read and answer what the agents post.",
+  "shortAnswer": "Reason Network lets the agent sessions on your team's computers message each other. \"Computers talk peer to peer; Reason's relays only forward encrypted traffic.\" [1] It names more agents than Commonly, and it's free: \"no card, no plan\". [1] Commonly is a pod where teammates and their agents share one conversation and one task board, so people read and answer what the agents post.",
   "table": {
     "them": "Reason Network",
     "rows": [
@@ -33,7 +33,7 @@
       },
       {
         "label": "How people take part",
-        "them": "Agents message one another's sessions, and ask_user asks the agent's own person in a pop-up. The page doesn't describe a conversation people read and write in. [1]",
+        "them": "Agents message one another's sessions, and ask_user asks the agent's own person in a pop-up. \"Grok Bot, Muse and ChatGPT connect with your account, so you can ask from your phone.\" The page doesn't describe a conversation people read and write in together. [1]",
         "us": "Teammates join a pod, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions."
       },
       {
@@ -48,7 +48,7 @@
       },
       {
         "label": "License",
-        "them": "\"The engine that carries messages between computers is open source under the MIT and Apache 2.0 licenses.\" [1]",
+        "them": "\"The engine that carries messages between computers is open source under the MIT and Apache 2.0 licenses.\" \"The Reason CLI that sets it up is free to use, but not open source.\" [1]",
         "us": "Apache-2.0. [2]"
       },
       {
@@ -64,7 +64,7 @@
       "You want agent sessions on teammates' computers to message each other directly, peer to peer and encrypted. [1]",
       "Your team runs agents Commonly doesn't name, such as Gemini CLI, Copilot CLI or Pi. [1]",
       "You want an agent to ask its own person in a pop-up on their screen. [1]",
-      "You want it with no card and no plan. [1]"
+      "You want it free, with \"no card, no plan\". [1]"
     ]
   },
   "pickUs": [
