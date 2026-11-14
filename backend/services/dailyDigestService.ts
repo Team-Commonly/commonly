@@ -11,6 +11,8 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
+const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const { cleanTimeZone, localHour, localDate } = require('../utils/timeZone');
@@ -73,6 +75,10 @@ const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
 const MAX_NEEDS_YOU = 3;
 const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
+// F502 (Cofounder ruling 11-14): an agent never started gets a digest line
+// from 24h after its in-pod nudge, one more from +7d, then none.
+const STALL_FIRST_MS = 24 * 60 * 60 * 1000;
+const STALL_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
 const LINE_MAX = 200;
 
 /** What the digest knows about an agent from its User row, keyed by user id. */
@@ -88,6 +94,14 @@ interface AgentIdentity {
 interface RecapContext {
   publicPodIds?: Set<string>;
   agentIdentities?: Map<string, AgentIdentity>;
+  /** F502: the person's agents that never connected, from stalledLines(). */
+  stalledLines?: string[];
+}
+
+interface StalledDigest {
+  lines: string[];
+  /** Applied only after the digest is stored, and only by the scheduled run. */
+  marks: Array<{ id: unknown; set: Record<string, Date> }>;
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
@@ -101,7 +115,7 @@ export class DailyDigestService {
    */
   static recapLines(
     recap: RecapLike | null | undefined,
-    { publicPodIds = new Set(), agentIdentities = new Map() }: RecapContext = {},
+    { publicPodIds = new Set(), agentIdentities = new Map(), stalledLines = [] }: RecapContext = {},
   ): string[] {
     if (!recap) return [];
     const lines: string[] = [];
@@ -121,6 +135,8 @@ export class DailyDigestService {
       const title = oneLine(item.title);
       if (title) lines.push(`Waiting on you: ${title}${item.podName ? ` (${oneLine(item.podName)})` : ''}`);
     });
+    // An agent the person added and never started waits on them too (F502).
+    lines.push(...stalledLines);
     (recap.agents || [])
       .map((agent) => ({ agent, identity: agentIdentities.get(String(agent.id)) }))
       .filter(({ identity }) => !identity?.guide)
@@ -154,6 +170,41 @@ export class DailyDigestService {
       lines.push(`${id}${title} is ${oneLine(task.status) || 'updated'}${pod}`);
     });
     return lines;
+  }
+
+  /**
+   * F502: a line for each agent this person installed whose stalled-connect
+   * episode is still open: from 24h after the in-pod nudge, and once more from
+   * +7d, then never. An episode first seen past +7d gets one line and both
+   * marks. Only the installer hears it, and only about a pod they are still in.
+   */
+  static async stalledLines(
+    userId: unknown,
+    memberPods: Array<{ _id: unknown; name?: string }>,
+    now: Date,
+  ): Promise<StalledDigest> {
+    const episodes = await StalledConnectEpisode.find({
+      installedBy: userId,
+      status: 'open',
+      nudgedAt: { $lte: new Date(now.getTime() - STALL_FIRST_MS) },
+      digestedAgainAt: { $exists: false },
+    }).select('podId agentName displayName nudgedAt digestedAt').lean() as Array<{
+      _id: unknown; podId: string; agentName: string; displayName?: string; nudgedAt: Date; digestedAt?: Date;
+    }>;
+    const result: StalledDigest = { lines: [], marks: [] };
+    for (const episode of episodes) {
+      const pod = memberPods.find((p) => String(p._id) === String(episode.podId));
+      if (!pod) continue;
+      const pastAgain = now.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS;
+      let set: Record<string, Date>;
+      if (!episode.digestedAt) set = pastAgain ? { digestedAt: now, digestedAgainAt: now } : { digestedAt: now };
+      else if (pastAgain) set = { digestedAgainAt: now };
+      else continue;
+      const name = oneLine(episode.displayName || episode.agentName) || 'Your agent';
+      result.lines.push(`${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})`);
+      result.marks.push({ id: episode._id, set });
+    }
+    return result;
   }
 
   /** Each recap agent's display label and whether it is the guide, from its User row. */
@@ -209,6 +260,9 @@ export class DailyDigestService {
         { $limit: MAX_BOARD },
         { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
       ]) as Array<Record<string, unknown>> : [];
+      const stalled: StalledDigest = recap
+        ? await DailyDigestService.stalledLines(userId, memberPods, endTime)
+        : { lines: [], marks: [] };
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
         board: (recap.board || []).filter((row) => !followed.some((task) => (
@@ -217,6 +271,7 @@ export class DailyDigestService {
       }, {
         publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
         agentIdentities: await DailyDigestService.agentIdentities(recap),
+        stalledLines: stalled.lines,
       });
       for (const task of followed) {
         const podName = memberPods.find((pod) => String(pod._id) === String(task.podId))?.name;
@@ -248,7 +303,7 @@ export class DailyDigestService {
         });
       }
 
-      return Summary.create({
+      const digest = await Summary.create({
         type: 'daily-digest',
         title: requireAway ? 'What your agents did while you were away' : 'What your agents did today',
         content: lines.map((line) => `- ${line}`).join('\n'),
@@ -263,6 +318,16 @@ export class DailyDigestService {
         },
         analytics: DailyDigestService.createEmptyDigest(user as { username: string }, startTime, endTime).analytics,
       });
+      // Marked only once the digest is stored, so a failed or duplicate run
+      // leaves the line for the next one, and only by the scheduled run: an
+      // on-demand look in the app must not use up the email's line (F502).
+      if (requireAway) {
+        for (const mark of stalled.marks) {
+          // eslint-disable-next-line no-await-in-loop
+          await StalledConnectEpisode.updateOne({ _id: mark.id, status: 'open' }, { $set: mark.set });
+        }
+      }
+      return digest;
     } catch (error) {
       if (!isDuplicateDigest(error)) console.error(`Error generating daily digest for user ${userId}:`, error);
       throw error;
