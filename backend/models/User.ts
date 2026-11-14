@@ -161,6 +161,8 @@ export interface IUser extends Document {
     requestedMachineId?: string | null;
     // Owner-approved request for the bound daemon to rotate the agent key.
     reconnectRequestedAt?: Date | null;
+    // F476: the computer whose removal unbound this agent, until it is placed again.
+    removedMachine?: { name: string; at: Date } | null;
     runtime?: string;
     icon?: string;
   };
@@ -390,6 +392,11 @@ const userSchema = new Schema<IUser>({
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
     reconnectRequestedAt: { type: Date, default: null },
+    // F476 — declared or stripped, as above.
+    removedMachine: {
+      type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
+      default: undefined,
+    },
   },
   avatarMetadata: {
     style: {

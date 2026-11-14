@@ -34,6 +34,8 @@ interface Placement {
   boundMachineId: string | null;
   requestedMachineId: string | null;
   boundMachineRevoked: boolean;
+  // F476: the computer whose removal unbound this agent, while it sits unplaced.
+  removedMachine?: { name: string; at: string } | null;
   activeMachines: Array<{ machineId: string; name: string; createdAt?: string | null }>;
 }
 
@@ -150,11 +152,16 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
 
   const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
   const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
-  const needsAttention = Boolean(placementError) || (details.mode === 'daemon' && canMove)
+  // F476: removal clears the binding, so the agent arrives as a terminal one
+  // (managed: false). The placement read still names the computer it lost.
+  const removedMachine = placement && !placement.boundMachineId ? placement.removedMachine : null;
+  const showsPlacement = details.mode === 'daemon' || Boolean(removedMachine);
+  const needsAttention = Boolean(placementError) || (showsPlacement && canMove)
     || Boolean(runtimeNotReady(runtime));
   useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
+    {removedMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}
     {!placement.boundMachineRevoked && placement.boundMachineId && <span><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</span>}
     {placement.requestedMachineId && !placement.boundMachineId && <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>}
   </>;
@@ -165,7 +172,7 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
   return (
     <section className="v2-agent-settings-page__runs" aria-label={t('agentManage.controls.title')}>
         <div className="list">
-          {details.mode === 'daemon' && placement && (canMove ? (
+          {showsPlacement && placement && (canMove ? (
             <details className="disc" open data-testid="agent-machine-placement">
               <summary>
                 <span className="lb"><V2AgentSettingsIcon name="device" />{t('agentManage.runtime.machine')}</span>
