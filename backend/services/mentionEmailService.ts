@@ -79,13 +79,16 @@ export const stampPodClosed = async (userId: unknown, podIds: unknown[], at: Dat
 };
 
 // Express middleware for a pod read: stamps the open once the read succeeded,
-// so a refused read of someone else's pod stamps nothing.
+// so a refused read of someone else's pod stamps nothing. The time is the
+// request's arrival: a leave that lands while the read is in flight must stay
+// later than the open, or a quick click-through reads as "open now" for 12h.
 export const stampPodOpenedOnRead = (req: any, res: any, next: () => void): void => {
   const userId = req.userId || req.user?.id;
   const podId = req.params?.podId;
+  const at = new Date();
   if (userId && podId && typeof res.on === 'function') {
     res.on('finish', () => {
-      if (res.statusCode < 400) void stampPodOpened(userId, podId);
+      if (res.statusCode < 400) void stampPodOpened(userId, podId, at);
     });
   }
   next();
@@ -185,8 +188,15 @@ const decide = async (row: any, now: Date): Promise<Outcome | null> => {
     await deliver(user, row);
     return 'sent';
   } catch (error) {
-    console.warn('[mention-email] delivery failed; the next pass retries:', (error as Error).message);
-    // Give the window and the row back, so a failed send is not a used one.
+    // A timeout or a dropped connection with no answer may still have been
+    // accepted. Keep the claim: a missed email beats one every pass.
+    const err = error as { isAxiosError?: boolean; response?: unknown; message?: string };
+    if (err.isAxiosError && !err.response) {
+      console.warn('[mention-email] no answer from the provider; not retrying:', err.message);
+      return 'failed';
+    }
+    console.warn('[mention-email] delivery failed; the next pass retries:', err.message);
+    // Give the window and the row back, so a refused send is not a used one.
     try {
       await MentionEmailState.updateOne(
         { recipientUserId: user._id, podId: row.podId, lastEmailAt: now },
@@ -210,11 +220,24 @@ export const sweepMentionEmails = async (
   const result = { scanned: 0, sent: 0, skipped: 0, failed: 0 };
   if (!process.env.SMTP2GO_API_KEY || !process.env.SMTP2GO_FROM_EMAIL) return { ...result, disabled: true };
   if (await digestSendingState() !== 'on') return { ...result, disabled: true };
+  // Nothing can be told "seen" from "not seen" before the first visit stamp
+  // existed, so the first passes after rollout don't mail mentions people
+  // already read on the old image.
+  const firstVisit = await PodVisit.findOne({}).sort({ _id: 1 }).select('_id').lean();
+  if (!firstVisit) return result;
+  const floor = new Date(Math.max(now.getTime() - CATCH_UP_MS, firstVisit._id.getTimestamp().getTime()));
+  const due = new Date(now.getTime() - MENTION_EMAIL_DELAY_MS);
+  // The mention's own time decides, not the row's: a backfill re-records old
+  // mentions with a fresh createdAt.
   const rows = await AttentionItem.find({
     kind: 'mention',
     status: 'open',
     mentionEmailCheckedAt: { $exists: false },
-    createdAt: { $lte: new Date(now.getTime() - MENTION_EMAIL_DELAY_MS), $gte: new Date(now.getTime() - CATCH_UP_MS) },
+    createdAt: { $lte: due, $gte: floor },
+    $or: [
+      { sourceCreatedAt: { $gte: floor, $lte: due } },
+      { sourceCreatedAt: { $exists: false } },
+    ],
   }).sort({ createdAt: 1 }).limit(BATCH).lean();
   for (const row of rows) {
     result.scanned += 1;

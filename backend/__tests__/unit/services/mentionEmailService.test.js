@@ -34,7 +34,20 @@ const person = (username, extra = {}) => {
     username, email: `${username}-${serial}@example.com`, password: 'Password123!', verified: true, ...extra,
   });
 };
-const room = (name, members) => Pod.create({ name, createdBy: members[0]._id, members: members.map((m) => m._id) });
+const PodVisit = require('../../../models/PodVisit');
+const mongoose = require('mongoose');
+
+// The pass mails nothing older than the first visit stamp (rollout floor), so
+// each test starts as if F512 had been live for a day.
+const rolledOut = (hoursAgo = 30) => PodVisit.create({
+  _id: mongoose.Types.ObjectId.createFromTime(Math.floor((Date.now() - hoursAgo * HOUR) / 1000)),
+  userId: new mongoose.Types.ObjectId(),
+  podId: new mongoose.Types.ObjectId(),
+});
+const room = async (name, members) => {
+  if (!(await PodVisit.countDocuments({}))) await rolledOut();
+  return Pod.create({ name, createdBy: members[0]._id, members: members.map((m) => m._id) });
+};
 
 // What a chat write does: the message lands, then the writer records its mentions.
 const mention = async (author, pod, content, at) => {
@@ -196,8 +209,8 @@ test('a mention older than the catch-up window is left to the digest', async () 
 
 test('a pod read stamps the open only when the read succeeded', async () => {
   const { EventEmitter } = require('events');
-  const PodVisit = require('../../../models/PodVisit');
   const { bo, pod } = await team();
+  await PodVisit.deleteMany({ userId: bo._id });
   const read = async (statusCode) => {
     const res = Object.assign(new EventEmitter(), { statusCode });
     const next = jest.fn();
@@ -207,7 +220,69 @@ test('a pod read stamps the open only when the read succeeded', async () => {
     await new Promise((resolve) => { setTimeout(resolve, 50); });
   };
   await read(403);
-  expect(await PodVisit.countDocuments({})).toBe(0);
+  expect(await PodVisit.countDocuments({ userId: bo._id })).toBe(0);
   await read(200);
   expect((await PodVisit.findOne({ userId: bo._id, podId: pod._id }).lean()).openedAt).toBeTruthy();
+});
+
+test('a read in flight when the person leaves stamps its arrival time, so the pod does not read as open', async () => {
+  const { EventEmitter } = require('events');
+  const { ana, bo, pod } = await team();
+  const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+  mentionEmail.stampPodOpenedOnRead({ userId: String(bo._id), params: { podId: String(pod._id) } }, res, () => {});
+  await new Promise((resolve) => { setTimeout(resolve, 20); });
+  await mentionEmail.stampPodClosed(bo._id, [pod._id]);
+  res.emit('finish');
+  await new Promise((resolve) => { setTimeout(resolve, 50); });
+  await mention(ana, pod, '@bo ping', new Date(Date.now() + 60 * MIN));
+  expect((await sweep(new Date(Date.now() + 80 * MIN))).sent).toBe(1);
+});
+
+test('a backfilled row for an old mention is left to the digest, whatever its createdAt', async () => {
+  const { ana, pod } = await team();
+  const row = await mention(ana, pod, '@bo old', new Date(Date.now() - 20 * MIN));
+  await AttentionItem.collection.updateOne({ _id: row._id }, { $set: { sourceCreatedAt: new Date(Date.now() - 3 * 24 * HOUR) } });
+  expect((await sweep(new Date())).sent).toBe(0);
+});
+
+test('mentions from before the first visit stamp existed are not mailed', async () => {
+  await PodVisit.deleteMany({});
+  await rolledOut(0.25);
+  const ana = await person('ana');
+  const bo = await person('bo');
+  const pod = await Pod.create({ name: 'Launch', createdBy: ana._id, members: [ana._id, bo._id] });
+  await mention(ana, pod, '@bo read this already', new Date(Date.now() - 40 * MIN));
+  expect((await sweep(new Date())).sent).toBe(0);
+  await PodVisit.deleteMany({});
+  expect((await sweep(new Date())).sent).toBe(0);
+});
+
+test('two mentions for the same person and pod in one pass send one email', async () => {
+  const { ana, pod } = await team();
+  await mention(ana, pod, '@bo one', new Date(Date.now() - 25 * MIN));
+  await mention(ana, pod, '@bo two', new Date(Date.now() - 20 * MIN));
+  const r = await sweep(new Date());
+  expect(r.sent).toBe(1);
+  expect(r.skipped).toBe(1);
+});
+
+test('a refused send after an earlier email gives back the earlier window, not a blank one', async () => {
+  const MentionEmailState = require('../../../models/MentionEmailState');
+  const { ana, bo, pod } = await team();
+  const earlier = new Date(Date.now() - 7 * HOUR);
+  await MentionEmailState.create({ recipientUserId: bo._id, podId: pod._id, lastEmailAt: earlier });
+  await mention(ana, pod, '@bo ping', new Date(Date.now() - 20 * MIN));
+  mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['rejected'] } } });
+  expect((await sweep(new Date())).sent).toBe(0);
+  const state = await MentionEmailState.findOne({ recipientUserId: bo._id, podId: pod._id }).lean();
+  expect(state.lastEmailAt.getTime()).toBe(earlier.getTime());
+});
+
+test('a timeout with no answer keeps the claim: no second email on the next pass', async () => {
+  const { ana, pod } = await team();
+  await mention(ana, pod, '@bo ping', new Date(Date.now() - 20 * MIN));
+  mockSendEmail.mockRejectedValueOnce(Object.assign(new Error('timeout of 30000ms exceeded'), { isAxiosError: true }));
+  expect((await sweep(new Date())).failed).toBe(1);
+  expect((await sweep(new Date())).sent).toBe(0);
+  expect(mockSendEmail).toHaveBeenCalledTimes(1);
 });
