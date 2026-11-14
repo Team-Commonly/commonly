@@ -109,11 +109,11 @@ const sawIt = (visit: Visit | null, mentionAt: number, now: number): boolean => 
   return opened > closed && now - opened < OPEN_STALE_MS;
 };
 
-const primaryUrl = (raw: string | undefined, fallback: string): string => (
+export const primaryUrl = (raw: string | undefined, fallback: string): string => (
   String(raw || '').split(',').map((value) => value.trim()).find(Boolean) || fallback
 ).replace(/\/$/, '');
 
-const unsubscribeTokenFor = async (user: any): Promise<string> => {
+export const unsubscribeTokenFor = async (user: any): Promise<string> => {
   if (user.digestUnsubscribeToken) return user.digestUnsubscribeToken;
   const candidate = crypto.randomBytes(24).toString('hex');
   await User.updateOne(
@@ -257,5 +257,5 @@ export default { sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClose
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
   sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClosed, stampPodReadOnRequest,
-  MENTION_EMAIL_DELAY_MS, MENTION_EMAIL_WINDOW_MS,
+  MENTION_EMAIL_DELAY_MS, MENTION_EMAIL_WINDOW_MS, primaryUrl, unsubscribeTokenFor,
 };

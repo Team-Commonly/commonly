@@ -205,6 +205,7 @@ export interface IAgentInstallationRegistry extends Document {
   agentName: string;
   podId: Types.ObjectId;
   instanceId: string;
+  waitingEmailAt?: Date;
   displayName?: string;
   version: string;
   config?: Map<string, unknown>;
@@ -299,6 +300,9 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
       }, { _id: false }),
       default: undefined,
     },
+    // F522: when the owner was last emailed that a person is waiting on this
+    // never-connected agent; at most one such email per 24h.
+    waitingEmailAt: { type: Date },
     usage: {
       lastUsedAt: Date,
       totalCalls: { type: Number, default: 0 },

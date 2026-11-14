@@ -40,6 +40,8 @@ describe('the tag', () => {
     expect(a).toMatch(/^[a-f0-9]{24}$/);
     expect(emailReturns.newSendId()).not.toBe(a);
     expect(emailReturns.parseTag(emailReturns.tagFor('mention', a))).toEqual({ kind: 'mention', sendId: a });
+    // F522's owner note is its own kind.
+    expect(emailReturns.parseTag(emailReturns.tagFor('waiting', a))).toEqual({ kind: 'waiting', sendId: a });
   });
 
   it('refuses anything but a known kind and a 24-hex id', () => {

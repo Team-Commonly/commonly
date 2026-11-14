@@ -494,6 +494,25 @@ class SchedulerService {
       },
       { scheduled: false, timezone: 'UTC' },
     );
+    // F522: a person waiting on an agent that never connected tells its owner,
+    // at most once per agent per 24h (waitingOwnerEmailService). Same cadence
+    // as the mention email; one bounded read of the open episodes.
+    const waitingOwnerEmailJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepWaitingOwnerEmails } = require('./waitingOwnerEmailService');
+          const r = await sweepWaitingOwnerEmails();
+          if (r.sent || r.failed) {
+            console.log(`[waiting-email] pass scanned=${r.scanned} sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
+          }
+        } catch (error) {
+          console.error('[waiting-email] pass failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
 
     const stalledConnectJob: CronJob = cron.schedule(
       FIVE_MINUTE_PASS_SCHEDULES.stalledConnect,
@@ -757,6 +776,7 @@ class SchedulerService {
       onboardingSilenceJob,
       stalledConnectJob,
       mentionEmailJob,
+      waitingOwnerEmailJob,
       missedAgentMentionJob,
       kernelWorkSweepJob,
       assignedTaskWakeJob,

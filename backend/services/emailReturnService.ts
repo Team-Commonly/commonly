@@ -4,7 +4,8 @@ const store = require('../repositories/emailReturnRepository');
 
 /**
  * F519: does an email bring the person back? Every link in the digest, a
- * needs-you ask and a teammate's @mention carries ?em=<kind>.<send id>. The
+ * needs-you ask, a teammate's @mention and a waiting-on-your-agent note (F522)
+ * carries ?em=<kind>.<send id>. The
  * id is random and names no one; the row it points at (email_sends) is
  * written only once the provider accepted the email. The first signed-in
  * visit that arrives with the tag marks the row returned, for the recipient
@@ -15,10 +16,10 @@ const store = require('../repositories/emailReturnRepository');
  * OAuth refusals), so a signed-out click still counts once they sign in.
  */
 
-export const EMAIL_KINDS = ['digest', 'needs-you', 'mention'] as const;
+export const EMAIL_KINDS = ['digest', 'needs-you', 'mention', 'waiting'] as const;
 export type EmailKind = typeof EMAIL_KINDS[number];
 
-const TAG = /^(digest|needs-you|mention)\.([a-f0-9]{24})$/;
+const TAG = /^(digest|needs-you|mention|waiting)\.([a-f0-9]{24})$/;
 
 export const newSendId = (): string => crypto.randomBytes(12).toString('hex');
 

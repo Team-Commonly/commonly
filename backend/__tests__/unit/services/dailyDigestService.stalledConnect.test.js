@@ -71,6 +71,24 @@ const deliver = async (me) => {
 };
 const reload = (episode) => StalledConnectEpisode.findById(episode._id).lean();
 
+// F522: the line says who is waiting and how many messages, from the
+// agent's own queue: people only, never the owner's own mentions.
+test('the line names who is waiting on the agent and how many messages', async () => {
+  const AgentEvent = require('../../../models/AgentEvent');
+  const { me, pod } = await setup({ openedHoursAgo: 25 });
+  const ana = await person('ana');
+  const event = (sender, senderIsHuman) => AgentEvent.create({
+    agentName: 'codex', instanceId: 'mk', podId: pod._id, type: 'chat.mention', status: 'pending',
+    payload: { userId: String(sender._id), username: sender.username, senderIsHuman },
+  });
+  await event(ana, true);
+  await event(ana, true);
+  await event(ana, false);
+  await event(me, true);
+  const digest = await digestFor(me);
+  expect(digest.content).toBe(`${LINE}. ana is waiting on it, 2 messages`);
+});
+
 test('an episode open 24h makes a digest line naming the agent; the email uses it up', async () => {
   const { me, episode } = await setup({ openedHoursAgo: 25 });
   const digest = await deliver(me);

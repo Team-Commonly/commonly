@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext';
  * once they're back. The server checks consent and recipient; the reply is
  * always empty.
  */
-const TAG = /^(digest|needs-you|mention)\.[a-f0-9]{24}$/;
+const TAG = /^(digest|needs-you|mention|waiting)\.[a-f0-9]{24}$/;
 
 export const useEmailReturn = (): void => {
   const { isAuthenticated, currentUser } = useAuth();

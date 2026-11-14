@@ -114,6 +114,19 @@ interface StalledDigest {
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
+// F522: who is waiting on a never-connected agent. Loaded lazily (it pulls in
+// the email services), and a failed read just leaves the line without it.
+const waitingOnSafely = async (episode: any, now: Date): Promise<{ count: number; names: string[] }> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    return await require('./waitingOwnerEmailService').waitingOn(episode, now);
+  } catch (error) {
+    console.warn('[daily-digest] waiting read failed:', (error as Error).message);
+    return { count: 0, names: [] };
+  }
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const whoIsWaiting = (names: string[]): string => require('./waitingOwnerEmailService').whoIsWaiting(names);
 const isDuplicateDigest = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 export class DailyDigestService {
@@ -198,9 +211,9 @@ export class DailyDigestService {
       installedBy: userId,
       status: 'open',
       nudgedAt: { $lte: new Date(now.getTime() - STALL_FIRST_MS) },
-    }).select('installationId podId agentName displayName nudgedAt digestedAt digestedAgainAt').lean() as Array<{
-      _id: unknown; installationId: unknown; podId: string; agentName: string; displayName?: string;
-      nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
+    }).select('installationId podId installedBy agentName instanceId displayName tokenIssuedAt nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+      _id: unknown; installationId: unknown; podId: string; installedBy: unknown; agentName: string; instanceId?: string;
+      displayName?: string; tokenIssuedAt?: Date; nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
     }>;
     if (episodes.length === 0) return { lines: [], marks: [] };
     // The sweep that closes an episode on uninstall reads a bounded batch, so
@@ -232,7 +245,14 @@ export class DailyDigestService {
       else if (pastAgain) fields = ['digestedAgainAt'];
       else continue;
       const name = oneLine(episode.displayName || episode.agentName) || 'Your agent';
-      const line = `${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})`;
+      // F522: who is waiting on it, and how many messages, from its own queue.
+      // eslint-disable-next-line no-await-in-loop
+      const waiting = await waitingOnSafely(episode, now);
+      const messages = waiting.count === 1 ? '1 message' : `${waiting.count} messages`;
+      const who = waiting.count
+        ? `. ${oneLine(whoIsWaiting(waiting.names))} ${waiting.names.length > 1 ? 'are' : 'is'} waiting on it, ${messages}`
+        : '';
+      const line = `${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})${who}`;
       result.lines.push(line);
       result.marks.push({ episodeId: String(episode._id), fields, line });
     }
