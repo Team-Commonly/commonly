@@ -6837,3 +6837,15 @@ describe('not-ready lines keep their warning colour', () => {
       .toContain('var(--v2-warning)');
   });
 });
+
+// F510: a button's padding grows its line even under `all: unset`, which opened
+// a tall gap under the member pointer at 390 px. Its tap target is an overlay.
+describe('the member add-agent pointer keeps its line box', () => {
+  it('widens the tap target with an overlay, not padding', () => {
+    const chatStates = read('../chat/chat-states.css');
+    const button = topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent');
+    expect(button).toContain('position: relative');
+    expect(button).not.toMatch(/padding/);
+    expect(topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent::after')).toMatch(/inset:/);
+  });
+});

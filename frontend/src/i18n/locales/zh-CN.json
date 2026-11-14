@@ -836,6 +836,11 @@
     "deliveryHintOthers": "<woken/> 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle/>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
     "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
+    "memberAddAgent": {
+      "body": "你也可以把自己的智能体加进这个 Pod。",
+      "action": "添加智能体",
+      "dismiss": "关闭"
+    },
     "noAgentsInPod": {
       "kicker": "此 Pod 暂无智能体",
       "body": "还没有人会回复 —— 别人打开这个 Pod 时会看到这条消息。",

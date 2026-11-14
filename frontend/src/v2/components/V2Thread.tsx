@@ -424,6 +424,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // and 60s refresh keeps the states honest without hammering the endpoint.
   // Declared here because the starts below read it too.
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
+  // F510: the member pointer waits for this pod's first agent-states read, so
+  // it never flashes at someone whose own agent is already here.
+  const [agentStatesPodId, setAgentStatesPodId] = useState<string | null>(null);
   // Bumped to read agent states again at once, e.g. when a hosted agent the
   // welcome started has just gone live.
   const [agentStatesReload, setAgentStatesReload] = useState(0);
@@ -436,6 +439,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const podCreator = pod?.createdBy as { _id?: string } | string | undefined;
   const podCreatorId = typeof podCreator === 'string' ? podCreator : podCreator?._id;
   const viewerOwnsPod = Boolean(viewerId) && String(podCreatorId || '') === String(viewerId);
+  // F510: the member pointer's dismissal, per person and pod (read below).
+  const memberAddAgentKey = `v2.memberAddAgent.dismissed.${viewerId || ''}.${pod?._id || ''}`;
+  const [memberAddAgentDismissed, setMemberAddAgentDismissed] = useState<string | null>(null);
+  const memberAddAgentStoredDismissed = React.useMemo(() => {
+    try { return localStorage.getItem(memberAddAgentKey) === '1'; } catch { return false; }
+  }, [memberAddAgentKey]);
   // A rename draft belongs to the pod it was typed for.
   useEffect(() => { setRenaming(false); }, [pod?._id]);
   const startRename = useCallback(() => {
@@ -650,7 +659,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     const load = async () => {
       try {
         const data = await api.get<{ agents?: AgentStateRow[] }>(`/api/pods/${podId}/agent-states`);
-        if (!cancelled) setAgentStates(data?.agents || []);
+        if (!cancelled) { setAgentStates(data?.agents || []); setAgentStatesPodId(podId); }
       } catch {
         // Honesty surface is best-effort: silence over a wrong dot.
       }
@@ -2054,6 +2063,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // the same mono label its messages carry after the time. The phone head
   // keeps "DM" alone, as the frame draws it.
   const isDirectPod = isAgentRoom || isAgentDm;
+  // F510: someone who joined another person's pod by invite saw its messages
+  // and nothing saying they could bring their own agent (Agents sits collapsed
+  // in the inspector). A member with no agent of their own here gets one line
+  // above the composer until they add one or dismiss it. Community pods are
+  // out: members can't install there.
+  // The no-agents card under a send carries the same button, so this stands
+  // down while that card shows.
+  const showMemberAddAgent = Boolean(onOpenInvite && isPodMember && !viewerOwnsPod && !isDirectPod
+    && (pod as { publicRead?: boolean } | undefined)?.publicRead !== true
+    && pod?._id && agentStatesPodId === pod._id
+    && !agentStates.some((row) => row.isOwner)
+    && !(noAgentsInPodLive && noAgentsHint)
+    && !memberAddAgentStoredDismissed && memberAddAgentDismissed !== memberAddAgentKey);
+  const dismissMemberAddAgent = () => {
+    try { localStorage.setItem(memberAddAgentKey, '1'); } catch { /* the hide still holds for this view */ }
+    setMemberAddAgentDismissed(memberAddAgentKey);
+  };
   const roomRuntime = isAgentRoom && botMembers.length === 1
     ? agentTags.get(String(botMembers[0]?.username || '').toLowerCase()) || ''
     : '';
@@ -2483,6 +2509,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                       </>
                     )}
                   </div>
+                </div>
+              )}
+              {showMemberAddAgent && (
+                <div className="v2-chat__agent-room-status" data-testid="member-add-agent" role="status">
+                  <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
+                    <ShellGlyph name="info" size={16} />
+                  </span>
+                  <div className="v2-chat__agent-room-status-body">
+                    {t('podChat.memberAddAgent.body')}{' '}
+                    <button type="button" className="v2-chat__member-add-agent" onClick={() => onOpenInvite?.(AGENT_INVITE_TAB)}>
+                      {t('podChat.memberAddAgent.action')}
+                    </button>
+                  </div>
+                  <button type="button" className="v2-chat__member-add-agent-dismiss" aria-label={t('podChat.memberAddAgent.dismiss')} onClick={dismissMemberAddAgent}>
+                    <ShellGlyph name="close" size={14} />
+                  </button>
                 </div>
               )}
               {podAgentLiveness.length === 1 && (

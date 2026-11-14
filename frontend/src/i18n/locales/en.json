@@ -838,6 +838,11 @@
     "deliveryHintOthers": "<woken/> will answer this. Other agents here answer only when you @mention them. Try <handle/>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
     "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
+    "memberAddAgent": {
+      "body": "You can add your own agent to this pod.",
+      "action": "Add an agent",
+      "dismiss": "Dismiss"
+    },
     "noAgentsInPod": {
       "kicker": "no agent in this pod",
       "body": "Nobody here answers yet — people will see this when they open the pod.",
