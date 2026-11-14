@@ -11,6 +11,8 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
+const PGMessage = require('../models/pg/Message');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const { cleanTimeZone, localHour, localDate } = require('../utils/timeZone');
@@ -73,6 +75,7 @@ const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
 const MAX_NEEDS_YOU = 3;
 const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
+const MAX_TEAMMATES = 5;
 const LINE_MAX = 200;
 
 /** What the digest knows about an agent from its User row, keyed by user id. */
@@ -88,6 +91,8 @@ interface AgentIdentity {
 interface RecapContext {
   publicPodIds?: Set<string>;
   agentIdentities?: Map<string, AgentIdentity>;
+  /** F503: what teammates wrote, from teammateLines(). */
+  teammateLines?: string[];
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
@@ -101,7 +106,7 @@ export class DailyDigestService {
    */
   static recapLines(
     recap: RecapLike | null | undefined,
-    { publicPodIds = new Set(), agentIdentities = new Map() }: RecapContext = {},
+    { publicPodIds = new Set(), agentIdentities = new Map(), teammateLines = [] }: RecapContext = {},
   ): string[] {
     if (!recap) return [];
     const lines: string[] = [];
@@ -121,6 +126,8 @@ export class DailyDigestService {
       const title = oneLine(item.title);
       if (title) lines.push(`Waiting on you: ${title}${item.podName ? ` (${oneLine(item.podName)})` : ''}`);
     });
+    // A person writing to you is the next most direct pull back (F503).
+    lines.push(...teammateLines);
     (recap.agents || [])
       .map((agent) => ({ agent, identity: agentIdentities.get(String(agent.id)) }))
       .filter(({ identity }) => !identity?.guide)
@@ -154,6 +161,53 @@ export class DailyDigestService {
       lines.push(`${id}${title} is ${oneLine(task.status) || 'updated'}${pod}`);
     });
     return lines;
+  }
+
+  /**
+   * F503: one line per person per pod for what other people wrote in the
+   * recipient's private pods since `since`, newest pod first. The recap is
+   * agent work only, so without this a teammate's message never reached the
+   * digest. Agents stay out (their work is the recap's), and so do public
+   * pods: HQ chatter is not the recipient's team. A failed read gives no
+   * lines, never a false one.
+   */
+  static async teammateLines(
+    userId: unknown,
+    pods: Array<{ _id: unknown; name?: string }>,
+    since: Date,
+  ): Promise<string[]> {
+    if (pods.length === 0) return [];
+    let rows: Array<{ podId: string; userId: string; content: string }>;
+    try {
+      rows = await PGMessage.findByOthersSince(pods.map((pod) => String(pod._id)), String(userId), since);
+    } catch (error) {
+      console.warn('[daily-digest] teammate read failed:', (error as Error).message);
+      return [];
+    }
+    // The read already filters both; held here too, so a change to the query
+    // can't put the reader's own words or another pod into their email.
+    const podIds = new Set(pods.map((pod) => String(pod._id)));
+    rows = rows.filter((row) => row.userId !== String(userId) && podIds.has(row.podId));
+    const authorIds = [...new Set(rows.map((row) => row.userId))].filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    if (authorIds.length === 0) return [];
+    const people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
+      .select('username displayName').lean() as Array<{ _id: unknown; username?: string; displayName?: string }>;
+    const names = new Map(people.map((p) => [String(p._id), oneLine(p.displayName || p.username)]));
+    // Rows arrive newest first, so each group's first row is its latest.
+    const groups = new Map<string, { podId: string; name: string; latest: string; count: number }>();
+    for (const row of rows) {
+      const name = names.get(row.userId);
+      if (!name) continue;
+      const key = `${row.podId}:${row.userId}`;
+      const group = groups.get(key);
+      if (group) group.count += 1;
+      else groups.set(key, { podId: row.podId, name, latest: oneLine(row.content), count: 1 });
+    }
+    return [...groups.values()].slice(0, MAX_TEAMMATES).map((group) => {
+      const podName = oneLine(pods.find((pod) => String(pod._id) === group.podId)?.name) || 'a pod';
+      const more = group.count > 1 ? ` (+${group.count - 1} more)` : '';
+      return `${group.name} in ${podName}: ${group.latest}${more}`;
+    });
   }
 
   /** Each recap agent's display label and whether it is the guide, from its User row. */
@@ -209,14 +263,19 @@ export class DailyDigestService {
         { $limit: MAX_BOARD },
         { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
       ]) as Array<Record<string, unknown>> : [];
+      const publicPodIds = new Set(publicPods.map((pod) => String(pod._id)));
+      const teammateLines = recap
+        ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), startTime)
+        : [];
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
         board: (recap.board || []).filter((row) => !followed.some((task) => (
           task.taskId === row.taskId && String(task.podId) === String(row.podId)
         ))),
       }, {
-        publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
+        publicPodIds,
         agentIdentities: await DailyDigestService.agentIdentities(recap),
+        teammateLines,
       });
       for (const task of followed) {
         const podName = memberPods.find((pod) => String(pod._id) === String(task.podId))?.name;

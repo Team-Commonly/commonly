@@ -727,6 +727,31 @@ class Message {
     }
   }
 
+  // What other people wrote in these pods after `since`, newest first (F503:
+  // the daily digest's teammate lines). The caller drops agents; this read
+  // only drops the reader's own words and system rows. Throws, like the read
+  // below, so the digest can tell "nobody wrote" from "could not read".
+  static async findByOthersSince(
+    podIds: string[],
+    excludeUserId: string,
+    since: Date,
+    limit = 200,
+  ): Promise<Array<{ podId: string; userId: string; content: string; createdAt: unknown }>> {
+    if (!podIds.length) return [];
+    const result = await (pool as PgPool).query(
+      `SELECT pod_id, user_id, content, created_at
+         FROM messages
+        WHERE pod_id = ANY($1) AND user_id <> $2 AND created_at > $3
+          AND message_type != 'system' AND content <> ''
+        ORDER BY created_at DESC NULLS LAST, id DESC
+        LIMIT $4`,
+      [podIds, excludeUserId, since, limit],
+    );
+    return (result.rows as Array<{ pod_id: string; user_id: string; content: string; created_at: unknown }>).map((r) => ({
+      podId: String(r.pod_id), userId: String(r.user_id), content: String(r.content || ''), createdAt: r.created_at,
+    }));
+  }
+
   // Everyone who posted in the pod after `since`, however many messages that
   // was. Throws, so a caller can tell "nobody" from "could not read".
   static async findAuthorIdsSince(podId: unknown, since: Date): Promise<string[]> {
