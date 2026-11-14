@@ -12,6 +12,7 @@ A connect code is what the page's one pasted line carries instead.
 - A code is `cmc_` plus 22 base64url characters (128 bits). It lives for 30 minutes, and each agent has one live code at a time.
 - The `AgentConnectCode` row holds the code's sha256, the key's hash, and the key sealed with AES-256-GCM under a key derived from the code (HKDF-SHA256). A database read alone can't recover the key.
 - If minting fails, the key response is returned unchanged, without a code.
+- Codes are minted only while `BYO_CONNECT_CODE=1`. Until the CLI that reads `--connect` is published, the published CLI would refuse the line, so the flag stays off and the page keeps its key lines. Redeeming needs no flag.
 
 ## Redeeming
 

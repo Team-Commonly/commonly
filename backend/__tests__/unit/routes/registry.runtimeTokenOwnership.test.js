@@ -269,7 +269,13 @@ jest.mock('../../../services/agentConnectCodeService', () => ({
 }));
 
 describe('a connect code beside a freshly issued key', () => {
+  const flag = process.env.BYO_CONNECT_CODE;
+  afterAll(() => {
+    if (flag === undefined) delete process.env.BYO_CONNECT_CODE;
+    else process.env.BYO_CONNECT_CODE = flag;
+  });
   beforeEach(() => {
+    process.env.BYO_CONNECT_CODE = '1';
     mockInstalls = [install('user-a', 'pod-a')];
     mockMintCode.mockReset();
     mockMintCode.mockResolvedValue({ code: 'cmc_AAAAAAAAAAAAAAAAAAAAAA', expiresAt: new Date('2026-11-15T00:30:00Z') });
@@ -299,6 +305,15 @@ describe('a connect code beside a freshly issued key', () => {
     expect(res.status).toBe(200);
     expect(mockRevoke).toHaveBeenCalledTimes(1);
     expect(res.body.connectCode).toBe('cmc_AAAAAAAAAAAAAAAAAAAAAA');
+  });
+
+  test('is not minted while BYO_CONNECT_CODE is off, so the page keeps its key lines', async () => {
+    delete process.env.BYO_CONNECT_CODE;
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_agent_new');
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
   });
 
   test('is not minted unless asked for', async () => {

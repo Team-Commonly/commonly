@@ -240,8 +240,10 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     // key, for its one pasted line. Only a new key gets one: asking never
     // rotates a key, and an existing key's raw value isn't held to seal. A
     // failed mint leaves the key response as it was; the page falls back to
-    // its key lines.
-    if (connectCode === true && issued?.token) {
+    // its key lines. BYO_CONNECT_CODE=1 turns it on: until the CLI that reads
+    // `--connect` is published, the published CLI would refuse the line, so
+    // the page must keep its key lines (F525).
+    if (connectCode === true && issued?.token && process.env.BYO_CONNECT_CODE === '1') {
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { mintConnectCode } = require('../../services/agentConnectCodeService');
