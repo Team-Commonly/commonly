@@ -63,10 +63,11 @@ const DEFAULT_AGENTS = [{
   agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', status: 'active',
 }];
 
-const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType = 'chat', podId = 'pod-1', onOpenInvite }) => {
+const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType = 'chat', podId = 'pod-1', onOpenInvite, sendGate }) => {
   const [messages, setMessages] = useState([]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
+    if (sendGate) await sendGate;
     setMessages((current) => [...current, response]);
     return response;
   };
@@ -418,6 +419,22 @@ describe('V2Thread agent delivery hint', () => {
     await waitFor(() => {
       expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
     });
+  });
+
+  test('a send that finishes after a pod switch leaves the new pod without the row', async () => {
+    let finishSend;
+    const sendGate = new Promise((resolve) => { finishSend = resolve; });
+    const props = { agents: [], onOpenInvite: jest.fn(), sendGate };
+    const response = makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 });
+    const view = render(harnessElement(response, jest.fn(), { ...props, podId: 'pod-1' }));
+
+    sendDraft('anyone there');
+    view.rerender(harnessElement(response, jest.fn(), { ...props, podId: 'pod-2' }));
+    await act(async () => { finishSend(); await sendGate; });
+
+    expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    // The stale send must not spend pod-1's once-per-session hint either.
+    expect(sessionStorage.getItem('v2.noAgentsHint.pod-1')).toBeNull();
   });
 
   // Silence census, 10-20: Scout woke on an unmentioned message, the person's

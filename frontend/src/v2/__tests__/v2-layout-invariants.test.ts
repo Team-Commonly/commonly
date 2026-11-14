@@ -6838,6 +6838,21 @@ describe('not-ready lines keep their warning colour', () => {
   });
 });
 
+// F510: a button's padding grows its line even under `all: unset`, which opened
+// a tall gap under the member pointer at 390 px. Its tap target is an overlay.
+describe('the member add-agent pointer keeps its line box', () => {
+  it('widens the tap target with an overlay, not padding', () => {
+    const chatStates = read('../chat/chat-states.css');
+    const button = topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent');
+    expect(button).toContain('position: relative');
+    expect(button).not.toMatch(/padding/);
+    const overlay = topLevelRuleBody(chatStates, '.v2-root button.v2-chat__member-add-agent::after');
+    expect(overlay).toContain("content: ''");
+    expect(overlay).toContain('position: absolute');
+    expect(overlay).toMatch(/inset:/);
+  });
+});
+
 // A min-height on the inline Connect link grew the line it wrapped onto and
 // opened a tall gap in the "isn't connected yet" notice at 390 px.
 describe('the notice Connect link keeps its line box', () => {
@@ -6847,6 +6862,9 @@ describe('the notice Connect link keeps its line box', () => {
     expect(link).toContain('position: relative');
     expect(link).not.toMatch(/min-height|display: inline-flex/);
     expect(chatStates).not.toMatch(/a\.v2-chat__agent-room-connect \{ min-height/);
-    expect(topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect::after')).toMatch(/inset:/);
+    const overlay = topLevelRuleBody(chatStates, '.v2-root a.v2-chat__agent-room-connect::after');
+    expect(overlay).toContain("content: ''");
+    expect(overlay).toContain('position: absolute');
+    expect(overlay).toMatch(/inset:/);
   });
 });

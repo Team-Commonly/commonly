@@ -475,6 +475,58 @@
   .v2-root .v2-chat__agents-away a.v2-chat__agent-room-connect::after { inset: -4px -6px; }
 }
 
+/* F510: the member pointer's action reads like the Connect link beside it,
+   and its dismiss sits at the row's end. A button's padding grows its line
+   even under all: unset, so the tap target is an overlay that takes no space. */
+.v2-root button.v2-chat__member-add-agent {
+  all: unset;
+  position: relative;
+  cursor: pointer;
+  color: var(--v2-accent);
+  font-weight: 600;
+}
+
+.v2-root button.v2-chat__member-add-agent::after {
+  content: '';
+  position: absolute;
+  inset: -6px -4px;
+}
+
+.v2-root button.v2-chat__member-add-agent:hover {
+  text-decoration: underline;
+}
+
+.v2-root button.v2-chat__member-add-agent-dismiss {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  border-radius: 8px;
+  color: var(--v2-text-muted);
+}
+
+.v2-root button.v2-chat__member-add-agent-dismiss:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-chat__member-add-agent:focus-visible,
+.v2-root button.v2-chat__member-add-agent-dismiss:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+}
+
+@media (max-width: 760px) {
+  .v2-root button.v2-chat__member-add-agent::after { inset: -12px -6px; }
+  .v2-root button.v2-chat__member-add-agent-dismiss { width: 44px; height: 44px; margin: -12px -12px -12px 0; }
+}
+
 .v2-root button.v2-chat__agent-room-copy {
   all: unset;
   box-sizing: border-box;
