@@ -469,7 +469,10 @@
 }
 
 @media (max-width: 760px) {
-  .v2-root a.v2-chat__agent-room-connect::after { inset: -12px -6px; }
+  .v2-root a.v2-chat__agent-room-connect::after { inset: -14px -6px; }
+  /* Away-list rows sit 4 px apart: a full overlay would reach into the row
+     above and take a tap meant for that row's Connect. */
+  .v2-root .v2-chat__agents-away a.v2-chat__agent-room-connect::after { inset: -4px -6px; }
 }
 
 .v2-root button.v2-chat__agent-room-copy {
