@@ -594,6 +594,9 @@ io.on('connection', (socket: any) => {
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {
+    // Taken before the authorization wait: a leave that lands during it must
+    // stay later than this open (F512).
+    const joinedAt = new Date();
     const pod = await authorizeSocketPodAccess(socket, podId, 'join');
     if (!pod) {
       return;
@@ -602,7 +605,7 @@ io.on('connection', (socket: any) => {
     socket.join(`pod_${podId}`);
     socket.data.joinedPods.add(podId);
     // F512: an open pod is a seen mention; the mention email reads this.
-    void mentionEmailVisits.stampPodOpened(socket.userId, podId);
+    void mentionEmailVisits.stampPodOpened(socket.userId, podId, joinedAt);
     console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });

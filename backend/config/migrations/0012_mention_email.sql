@@ -2,10 +2,11 @@
 -- pod about 15 minutes later (services/mentionEmailService.ts). ADR-034 D4:
 -- new state is a Postgres table, so both stores live here.
 --
--- pod_visits: when a person last opened a pod and last left it. A message
--- read or a socket join moves opened_at, a socket leave or disconnect moves
--- closed_at; both only move forward. opened_at later than closed_at means the
--- pod is open now. created_at of the oldest row is when stamping began, so the
+-- pod_visits: when a person last looked at a pod. read_at is a message read
+-- over HTTP, a one-time visit. opened_at and closed_at are a live socket
+-- session: a join moves opened_at, a leave or disconnect moves closed_at, and
+-- opened_at later than closed_at means the pod is open now. All three only
+-- move forward. created_at of the oldest row is when stamping began, so the
 -- first passes after rollout mail nothing from before it.
 --
 -- mention_email_state: one row per recipient and pod. last_email_at is the
@@ -17,6 +18,7 @@
 CREATE TABLE IF NOT EXISTS pod_visits (
   user_id VARCHAR(24) NOT NULL,
   pod_id VARCHAR(24) NOT NULL,
+  read_at TIMESTAMP WITH TIME ZONE,
   opened_at TIMESTAMP WITH TIME ZONE,
   closed_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,

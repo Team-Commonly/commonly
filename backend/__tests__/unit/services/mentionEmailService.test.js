@@ -232,7 +232,7 @@ test('a pod read stamps the open only when the read succeeded', async () => {
   const read = async (statusCode) => {
     const res = Object.assign(new EventEmitter(), { statusCode });
     const next = jest.fn();
-    mentionEmail.stampPodOpenedOnRead({ userId: String(bo._id), params: { podId: String(pod._id) } }, res, next);
+    mentionEmail.stampPodReadOnRequest({ userId: String(bo._id), params: { podId: String(pod._id) } }, res, next);
     expect(next).toHaveBeenCalledTimes(1);
     res.emit('finish');
     await new Promise((resolve) => { setTimeout(resolve, 50); });
@@ -243,17 +243,36 @@ test('a pod read stamps the open only when the read succeeded', async () => {
   expect(await visitCount(bo._id)).toBe(1);
 });
 
-test('a read in flight when the person leaves stamps its arrival time, so the pod does not read as open', async () => {
+// CodeRabbit (#4135): a read is one look, not an open session. No socket will
+// ever close it, so it must not suppress a mention that comes after it.
+test('a message read before the mention does not count as having the pod open', async () => {
   const { EventEmitter } = require('events');
   const { ana, bo, pod } = await team();
   const res = Object.assign(new EventEmitter(), { statusCode: 200 });
-  mentionEmail.stampPodOpenedOnRead({ userId: String(bo._id), params: { podId: String(pod._id) } }, res, () => {});
-  await new Promise((resolve) => { setTimeout(resolve, 20); });
-  await mentionEmail.stampPodClosed(bo._id, [pod._id]);
+  mentionEmail.stampPodReadOnRequest({ userId: String(bo._id), params: { podId: String(pod._id) } }, res, () => {});
   res.emit('finish');
   await new Promise((resolve) => { setTimeout(resolve, 50); });
-  await mention(ana, pod, '@bo ping', new Date(Date.now() + 60 * MIN));
-  expect((await sweep(new Date(Date.now() + 80 * MIN))).sent).toBe(1);
+  await mention(ana, pod, '@bo ping', new Date(Date.now() + 10 * MIN));
+  expect((await sweep(new Date(Date.now() + 26 * MIN))).sent).toBe(1);
+});
+
+test('a read after the mention counts as seen', async () => {
+  const { ana, bo, pod } = await team();
+  const at = new Date(Date.now() - 20 * MIN);
+  await mention(ana, pod, '@bo ping', at);
+  await mentionEmail.stampPodRead(bo._id, pod._id, new Date(at.getTime() + MIN));
+  expect((await sweep(new Date())).sent).toBe(0);
+});
+
+// CodeRabbit (#4135): a join stamped with its arrival time stays earlier than
+// a leave that landed while the join was still being authorized.
+test('a join whose leave landed during its authorization does not read as open', async () => {
+  const { ana, bo, pod } = await team();
+  const joinedAt = new Date(Date.now() - 2 * HOUR);
+  await mentionEmail.stampPodClosed(bo._id, [pod._id], new Date(joinedAt.getTime() + 50));
+  await mentionEmail.stampPodOpened(bo._id, pod._id, joinedAt);
+  await mention(ana, pod, '@bo ping', new Date(Date.now() - 20 * MIN));
+  expect((await sweep(new Date())).sent).toBe(1);
 });
 
 test('a backfilled row for an old mention is left to the digest, whatever its createdAt', async () => {

@@ -12,45 +12,41 @@ interface PgPool {
 
 const loadPool = (): PgPool | null => (require('../config/db-pg') as { pool: PgPool | null }).pool;
 
-export interface PodVisit { openedAt: Date | null; closedAt: Date | null }
+export interface PodVisit { readAt: Date | null; openedAt: Date | null; closedAt: Date | null }
 
 const toDate = (value: unknown): Date | null => (value ? new Date(value as string) : null);
 
 export const isAvailable = (): boolean => Boolean(loadPool());
 
-// Both stamps only move forward, so a late write never rewinds a newer one.
-export const stampOpened = async (userId: string, podId: string, at: Date): Promise<void> => {
+// Each stamp only moves forward, so a late write never rewinds a newer one.
+// `column` is one of three literals chosen below, never caller input.
+const stamp = async (column: 'read_at' | 'opened_at' | 'closed_at', userId: string, podId: string, at: Date) => {
   const pool = loadPool();
   if (!pool) return;
   await pool.query(
-    `INSERT INTO pod_visits (user_id, pod_id, opened_at) VALUES ($1, $2, $3)
-     ON CONFLICT (user_id, pod_id) DO UPDATE SET opened_at = CASE
-       WHEN pod_visits.opened_at IS NULL OR pod_visits.opened_at < EXCLUDED.opened_at THEN EXCLUDED.opened_at
-       ELSE pod_visits.opened_at END`,
+    `INSERT INTO pod_visits (user_id, pod_id, ${column}) VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, pod_id) DO UPDATE SET ${column} = CASE
+       WHEN pod_visits.${column} IS NULL OR pod_visits.${column} < EXCLUDED.${column} THEN EXCLUDED.${column}
+       ELSE pod_visits.${column} END`,
     [userId, podId, at],
   );
 };
 
-export const stampClosed = async (userId: string, podId: string, at: Date): Promise<void> => {
-  const pool = loadPool();
-  if (!pool) return;
-  await pool.query(
-    `INSERT INTO pod_visits (user_id, pod_id, closed_at) VALUES ($1, $2, $3)
-     ON CONFLICT (user_id, pod_id) DO UPDATE SET closed_at = CASE
-       WHEN pod_visits.closed_at IS NULL OR pod_visits.closed_at < EXCLUDED.closed_at THEN EXCLUDED.closed_at
-       ELSE pod_visits.closed_at END`,
-    [userId, podId, at],
-  );
-};
+// A message read over HTTP: a one-time visit, never an open session.
+export const stampRead = (userId: string, podId: string, at: Date) => stamp('read_at', userId, podId, at);
+// A live socket session's start and end.
+export const stampOpened = (userId: string, podId: string, at: Date) => stamp('opened_at', userId, podId, at);
+export const stampClosed = (userId: string, podId: string, at: Date) => stamp('closed_at', userId, podId, at);
 
 export const getVisit = async (userId: string, podId: string): Promise<PodVisit | null> => {
   const pool = loadPool();
   if (!pool) return null;
   const { rows } = await pool.query(
-    'SELECT opened_at, closed_at FROM pod_visits WHERE user_id = $1 AND pod_id = $2',
+    'SELECT read_at, opened_at, closed_at FROM pod_visits WHERE user_id = $1 AND pod_id = $2',
     [userId, podId],
   );
-  return rows[0] ? { openedAt: toDate(rows[0].opened_at), closedAt: toDate(rows[0].closed_at) } : null;
+  if (!rows[0]) return null;
+  return { readAt: toDate(rows[0].read_at), openedAt: toDate(rows[0].opened_at), closedAt: toDate(rows[0].closed_at) };
 };
 
 // When stamping began: the oldest visit row. Null before any visit.
@@ -103,5 +99,5 @@ export const releaseWindow = async (
   );
 };
 
-export default { isAvailable, stampOpened, stampClosed, getVisit, firstVisitAt, claimWindow, releaseWindow };
-module.exports = { isAvailable, stampOpened, stampClosed, getVisit, firstVisitAt, claimWindow, releaseWindow };
+export default { isAvailable, stampRead, stampOpened, stampClosed, getVisit, firstVisitAt, claimWindow, releaseWindow };
+module.exports = { isAvailable, stampRead, stampOpened, stampClosed, getVisit, firstVisitAt, claimWindow, releaseWindow };

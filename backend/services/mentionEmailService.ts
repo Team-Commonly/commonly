@@ -46,12 +46,26 @@ const BATCH = 200;
 const validIds = (...ids: unknown[]): boolean => ids.every((id) => mongoose.isValidObjectId(id));
 
 // Never throws: a visit stamp must not fail a message read or a socket join.
+// A socket join: the pod is open until a leave or disconnect closes it. Pass
+// the time the join arrived, not when its authorization finished, so a leave
+// that lands during that wait stays later than the open.
 export const stampPodOpened = async (userId: unknown, podId: unknown, at: Date = new Date()): Promise<void> => {
   if (!validIds(userId, podId)) return;
   try {
     await store.stampOpened(String(userId), String(podId), at);
   } catch (error) {
     console.warn('[mention-email] pod open stamp failed:', (error as Error).message);
+  }
+};
+
+// A message read over HTTP: proof of a look at that moment, never an open
+// session, since no socket will ever stamp its close.
+export const stampPodRead = async (userId: unknown, podId: unknown, at: Date = new Date()): Promise<void> => {
+  if (!validIds(userId, podId)) return;
+  try {
+    await store.stampRead(String(userId), String(podId), at);
+  } catch (error) {
+    console.warn('[mention-email] pod read stamp failed:', (error as Error).message);
   }
 };
 
@@ -70,23 +84,26 @@ export const stampPodClosed = async (userId: unknown, podIds: unknown[], at: Dat
 // so a refused read of someone else's pod stamps nothing. The time is the
 // request's arrival: a leave that lands while the read is in flight must stay
 // later than the open, or a quick click-through reads as "open now" for 12h.
-export const stampPodOpenedOnRead = (req: any, res: any, next: () => void): void => {
+export const stampPodReadOnRequest = (req: any, res: any, next: () => void): void => {
   const userId = req.userId || req.user?.id;
   const podId = req.params?.podId;
   const at = new Date();
   if (userId && podId && typeof res.on === 'function') {
     res.on('finish', () => {
-      if (res.statusCode < 400) void stampPodOpened(userId, podId, at);
+      if (res.statusCode < 400) void stampPodRead(userId, podId, at);
     });
   }
   next();
 };
 
-const sawIt = (visit: { openedAt: Date | null; closedAt: Date | null } | null, mentionAt: number, now: number): boolean => {
+type Visit = { readAt: Date | null; openedAt: Date | null; closedAt: Date | null };
+const sawIt = (visit: Visit | null, mentionAt: number, now: number): boolean => {
   if (!visit) return false;
+  const read = visit.readAt ? visit.readAt.getTime() : 0;
   const opened = visit.openedAt ? visit.openedAt.getTime() : 0;
   const closed = visit.closedAt ? visit.closedAt.getTime() : 0;
-  if (opened >= mentionAt || closed >= mentionAt) return true;
+  if (read >= mentionAt || opened >= mentionAt || closed >= mentionAt) return true;
+  // Only a socket session is "open now"; a read is one look.
   return opened > closed && now - opened < OPEN_STALE_MS;
 };
 
@@ -231,9 +248,9 @@ export const sweepMentionEmails = async (
   return result;
 };
 
-export default { sweepMentionEmails, stampPodOpened, stampPodClosed, stampPodOpenedOnRead };
+export default { sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClosed, stampPodReadOnRequest };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  sweepMentionEmails, stampPodOpened, stampPodClosed, stampPodOpenedOnRead,
+  sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClosed, stampPodReadOnRequest,
   MENTION_EMAIL_DELAY_MS, MENTION_EMAIL_WINDOW_MS,
 };
