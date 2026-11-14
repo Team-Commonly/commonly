@@ -594,7 +594,7 @@ io.on('connection', (socket: any) => {
   );
   socket.data.joinedPods = new Set();
   // Joins still being authorized, so a leave during that wait is stamped (F512).
-  socket.data.pendingJoins = new Set();
+  socket.data.pendingJoins = new Map();
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {
