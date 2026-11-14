@@ -2491,7 +2491,8 @@ export const performRun = ({
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
-  const processEvent = async (event) => {
+  // `turnOptions` reaches runTurn: { withoutConventions, report } (F124).
+  const processEvent = async (event, turnOptions = {}) => {
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -2721,6 +2722,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper,
         trigger,
+        ...turnOptions,
       });
       return turnResult;
     } finally {
@@ -4921,8 +4923,19 @@ export const performRun = ({
           log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
+          const firstTurn = {};
           try {
-            result = await duringTurn(() => processEvent(event));
+            try {
+              result = await duringTurn(() => processEvent(event, { report: firstTurn }));
+            } catch (refusedErr) {
+              // F124 (CodeRabbit on #4112): the pod's conventions ride every
+              // turn, so a refusal of a turn that carried them may not be this
+              // item's own text. Run it once more without them first.
+              if (!isContentRefusal(refusedErr) || !firstTurn.carriedConventions) throw refusedErr;
+              log(`[${event.type}] the model provider refused a turn that carried pod conventions (content_refused); `
+                + 'running it once more without them');
+              result = await duringTurn(() => processEvent(event, { withoutConventions: true }));
+            }
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no

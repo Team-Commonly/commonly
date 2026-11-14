@@ -57,7 +57,28 @@ describe('pod conventions persistence', () => {
   });
 
   test('two writes at the same revision: exactly one lands', async () => {
-    const results = await Promise.allSettled([write(0, 'first'), write(0, 'second')]);
+    // A barrier at the compare-and-swap: neither write reaches MongoDB until
+    // both have read revision 0 and passed the service's own check, so it is
+    // the database predicate that picks the winner (CodeRabbit on #4112).
+    const original = Pod.findOneAndUpdate.bind(Pod);
+    let arrived = 0;
+    let release;
+    const bothRead = new Promise((resolve) => { release = resolve; });
+    const spy = jest.spyOn(Pod, 'findOneAndUpdate').mockImplementation((...args) => ({
+      lean: async () => {
+        arrived += 1;
+        if (arrived === 2) release();
+        await bothRead;
+        return original(...args).lean();
+      },
+    }));
+    let results;
+    try {
+      results = await Promise.allSettled([write(0, 'first'), write(0, 'second')]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(arrived).toBe(2);
     const landed = results.filter((r) => r.status === 'fulfilled');
     const refused = results.filter((r) => r.status === 'rejected');
     expect(landed).toHaveLength(1);

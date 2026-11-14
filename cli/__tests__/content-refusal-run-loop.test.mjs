@@ -437,4 +437,49 @@ describe('a provider content refusal', () => {
     }]);
     expect(run.errors.filter((e) => e.code === 'agent_spawn_retry_scheduled')).toHaveLength(0);
   });
+
+  // F124 (CodeRabbit on #4112): a private ask skips batch recovery, so its own
+  // path runs it once more without the pod conventions before refusing it.
+  describe('a private ask whose refusal the pod conventions drew', () => {
+    const askEvent = (question) => ({
+      _id: 'evt-ask',
+      type: 'agent.ask',
+      podId: POD_ID,
+      agentName: 'rhea',
+      instanceId: 'default',
+      payload: { requestId: 'ask/10', fromAgent: 'planner', fromInstanceId: 'default', question },
+    });
+    beforeEach(() => readPodFocus.mockImplementation(async (_client, podId) => ({
+      podId, revision: 0, focus: null, conventions: { revision: 1, text: 'FLAGGED-RULE', author: 'alice' },
+    })));
+    afterEach(() => readPodFocus.mockImplementation(async (_client, podId) => ({ podId, revision: 0, focus: null })));
+
+    test('a clean ask runs again without them and is answered', async () => {
+      const spawn = jest.fn(async (prompt) => {
+        if (prompt.includes('FLAGGED-RULE')) throw refusal();
+        return { text: 'here is the answer' };
+      });
+      const run = setup({ events: [askEvent('what is the release plan?')], spawn });
+      await drainMicrotasks();
+      run.handle.stop();
+
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(spawn.mock.calls[1][0]).not.toContain('Pod conventions');
+      expect(run.acks()).toHaveLength(1);
+      expect(run.acks()[0].result.reason).not.toBe('provider-refused');
+    });
+
+    test('an ask refused again without them is acked as refused, after one rerun', async () => {
+      const spawn = jest.fn(async () => { throw refusal(); });
+      const run = setup({ events: [askEvent(FLAGGED)], spawn });
+      await drainMicrotasks();
+      run.handle.stop();
+
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(run.acks()).toEqual([{
+        id: 'evt-ask',
+        result: { outcome: 'error', reason: 'provider-refused', details: { failureClass: 'content_refused' } },
+      }]);
+    });
+  });
 });
