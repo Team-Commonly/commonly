@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
 import { WELCOME_HOSTED_ACTION, type WelcomeHostedStartState } from '../hooks/useWelcomeHostedStart';
+import { orderStarts, primaryStartIds, type WelcomePick } from '../utils/welcomePick';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import V2MessageRow from './V2MessageRow';
@@ -15,7 +16,7 @@ import V2Fold from './V2Fold';
 
 // Scout's start that asks nothing of the person (id in SCOUT_STARTS,
 // backend/config/native-agents/scout.ts). It sends itself as their first message.
-export const ASK_START_ID = 'ask-scout';
+export { ASK_START_ID } from '../utils/welcomePick';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
@@ -58,6 +59,8 @@ interface V2ThreadMessagesProps {
   // Scout's starts, keyed by the message that offers them; already filtered to
   // the ones still available to this person (V2Thread).
   startsByMessageId?: Map<string, V2Start[]>;
+  /** How the person chose their first agent; decides which starts get the filled key. */
+  welcomePick?: WelcomePick;
   onStart?: (start: V2Start, messageId: string) => void;
   startsDisabled?: boolean;
   // The welcome's hosted start while it runs in place, or after it failed.
@@ -166,6 +169,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onReply,
   onThread,
   startsByMessageId,
+  welcomePick,
   onStart,
   startsDisabled = false,
   hostedStart = null,
@@ -517,11 +521,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               />
               {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
                 <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>
-                  {startsByMessageId?.get(String(message.id))?.map((start, _index, starts) => {
-                    // One ink key per welcome: the hosted start where it is
-                    // offered, otherwise the start that asks nothing of you.
-                    const primary = start.action === WELCOME_HOSTED_ACTION
-                      || (start.id === ASK_START_ID && !starts.some((other) => other.action === WELCOME_HOSTED_ACTION));
+                  {(() => {
+                    const starts = startsByMessageId?.get(String(message.id)) || [];
+                    // The filled keys follow the person's pick, the same way the
+                    // Get started bar does (utils/welcomePick.ts).
+                    const primaryIds = primaryStartIds(starts, welcomePick ?? null);
+                    return orderStarts(starts, primaryIds).map((start) => ({ start, primary: primaryIds.has(start.id) }));
+                  })().map(({ start, primary }) => {
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';

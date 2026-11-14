@@ -56,3 +56,63 @@ test('both done: the bar is gone', () => {
   const { container } = renderBar({ connect: true, firstTask: true });
   expect(container).toBeEmptyDOMElement();
 });
+
+// The PH walk: step 1 follows the same pick as Scout's filled key.
+describe('step 1 follows the person\'s pick', () => {
+  const renderPick = (pick: 'hosted' | 'byo' | null, extra: Record<string, unknown> = {}) => {
+    const onConnect = jest.fn();
+    const onRunHosted = jest.fn();
+    render(<V2GetStarted steps={{ connect: false, firstTask: false }} podId="pod-1" onConnect={onConnect} onFirstTask={jest.fn()}
+      onOpenBoard={jest.fn()} pick={pick} onRunHosted={onRunHosted} {...extra} />);
+    return { onConnect, onRunHosted };
+  };
+
+  test('no pick, hosting offered: two equal choices under step 1, each doing what Scout\'s does', () => {
+    const { onConnect, onRunHosted } = renderPick(null);
+    const group = screen.getByTestId('get-started-choice');
+    expect(group).toHaveAttribute('role', 'group');
+    const hosted = screen.getByTestId('get-started-run-hosted');
+    const own = screen.getByTestId('get-started-connect');
+    expect(hosted).toHaveTextContent('podChat.starts.labels.run-hosted');
+    expect(own).toHaveTextContent('podChat.getStarted.connectOwn');
+    expect(hosted.className).toBe(own.className);
+    fireEvent.click(hosted);
+    expect(onRunHosted).toHaveBeenCalledTimes(1);
+    expect(mockTrack).toHaveBeenLastCalledWith('get-started-click', { props: { step: 'run-hosted' }, podId: 'pod-1' });
+    fireEvent.click(own);
+    expect(onConnect).toHaveBeenCalledTimes(1);
+    expect(mockTrack).toHaveBeenLastCalledWith('get-started-click', { props: { step: 'connect' }, podId: 'pod-1' });
+  });
+
+  test('picked hosted: step 1 is "Run an agent here" and starts it', () => {
+    const { onConnect, onRunHosted } = renderPick('hosted');
+    expect(screen.queryByTestId('get-started-choice')).not.toBeInTheDocument();
+    const step = screen.getByTestId('get-started-connect');
+    expect(step).toHaveTextContent('podChat.starts.labels.run-hosted');
+    fireEvent.click(step);
+    expect(onRunHosted).toHaveBeenCalledTimes(1);
+    expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  test('picked bring-your-own: step 1 is "Connect your first agent"', () => {
+    const { onConnect, onRunHosted } = renderPick('byo');
+    const step = screen.getByTestId('get-started-connect');
+    expect(step).toHaveTextContent('podChat.getStarted.connect');
+    fireEvent.click(step);
+    expect(onConnect).toHaveBeenCalledTimes(1);
+    expect(onRunHosted).not.toHaveBeenCalled();
+  });
+
+  test('no pick where hosting is not offered: the one connect step, as before', () => {
+    render(<V2GetStarted steps={{ connect: false, firstTask: false }} podId="pod-1" onConnect={jest.fn()} onFirstTask={jest.fn()} onOpenBoard={jest.fn()} pick={null} />);
+    expect(screen.queryByTestId('get-started-choice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('get-started-connect')).toHaveTextContent('podChat.getStarted.connect');
+  });
+
+  test('while the hosted agent starts, its choice says so and can\'t be pressed twice', () => {
+    renderPick(null, { hostedStarting: true });
+    const hosted = screen.getByTestId('get-started-run-hosted');
+    expect(hosted).toBeDisabled();
+    expect(hosted).toHaveTextContent('agentByo.actions.starting');
+  });
+});

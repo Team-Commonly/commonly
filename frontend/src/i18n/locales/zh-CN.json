@@ -938,6 +938,9 @@
     "getStarted": {
       "title": "开始使用",
       "connect": "接入你的第一个智能体",
+      "connectOwn": "接入你自己的智能体",
+      "or": "或",
+      "choose": "第一步：二选一",
       "finishConnecting": "完成接入 {{name}}",
       "firstTask": "给它派第一个任务",
       "done": "{{step}}，已完成",

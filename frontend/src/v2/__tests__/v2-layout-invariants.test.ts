@@ -464,6 +464,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).not.toMatch(/__board[^{]*\{[^}]*display:\s*none/);
   });
 
+  test('step 1\'s two choices share one phone row with "or" between them', () => {
+    const pane = read('../chat/chat-pane.css');
+    const phone = blockContaining(pane, '@media (max-width: 760px)', '.v2-get-started {');
+    const keys = phone.slice(phone.indexOf('.v2-root .v2-get-started__choice button.v2-get-started__step {'));
+    const body = keys.slice(0, keys.indexOf('}'));
+    // Without order: 0 the bar's order: 2 for steps moves "or" ahead of both keys
+    // (seen at 390 on 2026-11-14).
+    expect(body).toContain('order: 0');
+    expect(body).toContain('flex: 1 1 0');
+    expect(phone).toMatch(/\.v2-get-started__choice \{[^}]*flex: 1 1 100%/);
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');
@@ -3314,8 +3326,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // no-agent row share, so they land on the message text column too.
       expect(threadMessages).toContain('className="v2-chat__starts"');
       expect(threadMessages).toContain('v2-chat__start${primary ? \' v2-chat__start--primary\' : \'\'}');
-      // One ink key: the hosted start where offered, otherwise the start that asks nothing (walk 11-02).
-      expect(threadMessages).toMatch(/const primary = start\.action === WELCOME_HOSTED_ACTION\s*\|\| \(start\.id === ASK_START_ID && !starts\.some/);
+      // The ink keys follow the person's pick (utils/welcomePick.ts, unit-tested there).
+      expect(threadMessages).toContain('primaryStartIds(starts, welcomePick ?? null)');
       // The 44px phone minimum must come AFTER the 32px base in the sheet: at
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.

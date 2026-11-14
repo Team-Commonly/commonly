@@ -940,6 +940,9 @@
     "getStarted": {
       "title": "Get started",
       "connect": "Connect your first agent",
+      "connectOwn": "Connect your own agent",
+      "or": "or",
+      "choose": "First step: pick one",
       "finishConnecting": "Finish connecting {{name}}",
       "firstTask": "Give it its first task",
       "done": "{{step}}, done",
