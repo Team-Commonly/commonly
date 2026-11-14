@@ -206,3 +206,74 @@ test('signInWithToken with the token already held changes nothing, so loading ca
   expect(global.testAuth.loading).toBe(false);
   expect(global.testAuth.currentUser).toMatchObject({ username: 'ada' });
 });
+
+// F517: an account the instance's allowlist no longer admits gets 403
+// INSTANCE_ACCESS_RESTRICTED. The session is cleared, as on a 401, and the
+// sign-in page can say why instead of "Failed to load user data".
+const remountWithToken = async (t) => {
+  act(() => root.unmount());
+  localStorage.setItem('token', t);
+  root = ReactDOM.createRoot(container);
+  await act(async () => {
+    root.render(<AuthProvider><TestComponent /></AuthProvider>);
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+};
+const restricted = { response: { status: 403, data: { code: 'INSTANCE_ACCESS_RESTRICTED', msg: 'x' } } };
+
+test('a stored session the allowlist no longer admits is cleared and marked restricted', async () => {
+  axios.get.mockRejectedValue(restricted);
+  await remountWithToken('old-jwt');
+  expect(localStorage.getItem('token')).toBeNull();
+  expect(global.testAuth.isAuthenticated).toBe(false);
+  expect(global.testAuth.loading).toBe(false);
+  expect(global.testAuth.accessRestricted).toBe(true);
+  expect(global.testAuth.error).toBeNull();
+});
+
+test('another 403 on load keeps the old behaviour: no restricted mark', async () => {
+  axios.get.mockRejectedValue({ response: { status: 403, data: { msg: 'This account has been suspended.' } } });
+  await remountWithToken('old-jwt');
+  expect(global.testAuth.accessRestricted).toBe(false);
+  expect(global.testAuth.error).toBe('Failed to load user data');
+});
+
+test('removal from the allowlist while signed in signs out on focus and is marked restricted', async () => {
+  axios.get.mockResolvedValue({ data: { username: 'Alice' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  axios.get.mockRejectedValueOnce(restricted);
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  expect(localStorage.getItem('token')).toBeNull();
+  expect(global.testAuth.isAuthenticated).toBe(false);
+  expect(global.testAuth.accessRestricted).toBe(true);
+});
+
+test('a later sign-in clears the restricted mark', async () => {
+  axios.get.mockRejectedValueOnce(restricted);
+  await remountWithToken('old-jwt');
+  expect(global.testAuth.accessRestricted).toBe(true);
+  axios.get.mockResolvedValue({ data: { username: 'Alice' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  expect(global.testAuth.accessRestricted).toBe(false);
+});
+
+test('an OAuth sign-in or a logout clears the restricted mark', async () => {
+  axios.get.mockRejectedValueOnce(restricted);
+  await remountWithToken('old-jwt');
+  expect(global.testAuth.accessRestricted).toBe(true);
+  axios.get.mockImplementation(() => new Promise(() => {}));
+  await act(async () => { global.testAuth.signInWithToken('oauth-jwt'); });
+  expect(global.testAuth.accessRestricted).toBe(false);
+
+  axios.get.mockReset();
+  axios.get.mockRejectedValueOnce(restricted);
+  await remountWithToken('old-jwt');
+  expect(global.testAuth.accessRestricted).toBe(true);
+  act(() => { global.testAuth.logout(); });
+  expect(global.testAuth.accessRestricted).toBe(false);
+});

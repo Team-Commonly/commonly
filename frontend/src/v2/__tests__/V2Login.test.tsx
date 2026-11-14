@@ -84,6 +84,21 @@ describe('V2 routing', () => {
       .toBeInTheDocument();
   });
 
+  test('a session the allowlist no longer admits lands on sign-in with the team-only line (F517)', async () => {
+    renderAt('/v2', { ...baseAuth, accessRestricted: true });
+    expect(await screen.findByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
+    expect(screen.getByText('This instance is limited to the team. Sign in with your approved email.'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('Failed to load user data')).not.toBeInTheDocument();
+  });
+
+  test('the team-only line replaces a load error on the sign-in page (F517)', async () => {
+    renderAt('/v2/login', { ...baseAuth, accessRestricted: true, error: 'Failed to load user data' });
+    expect(await screen.findByText('This instance is limited to the team. Sign in with your approved email.'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('Failed to load user data')).not.toBeInTheDocument();
+  });
+
   test('index route shows the public landing when not authenticated', async () => {
     renderAt('/v2');
     // V2Home sends logged-out visitors to the canonical public front door,
