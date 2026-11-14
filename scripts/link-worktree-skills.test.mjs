@@ -47,6 +47,12 @@ test('something already at the expected path is never replaced', () => {
   assert.match(plan.reason, /not replacing/);
 });
 
+test('a link that would land inside the worktree is refused', () => {
+  const plan = planSkillsLink(facts({ linkText: '../skills' }));
+  assert.equal(plan.action, 'refuse');
+  assert.match(plan.reason, /inside the worktree/);
+});
+
 test('a .claude/skills that is not a relative link is left alone', () => {
   assert.equal(planSkillsLink(facts({ linkText: null })).action, 'refuse');
   assert.equal(planSkillsLink(facts({ linkText: '/abs/skills' })).action, 'refuse');
@@ -60,7 +66,11 @@ test('end to end: a nested worktree\'s skills resolve after one run', () => {
     const repo = path.join(tmp, 'commonly');
     fs.mkdirSync(path.join(tmp, 'commonly-skills', 'some-skill'), { recursive: true });
     fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
-    const g = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // No GIT_DIR or GIT_WORK_TREE from a hook context may point git at an outer repo.
+    const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+    const g = (cwd, ...args) => execFileSync('git', args, {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv,
+    });
     g(repo, 'init', '-q');
     fs.symlinkSync(LINK, path.join(repo, '.claude', 'skills'));
     g(repo, 'add', '.claude/skills');
@@ -70,12 +80,15 @@ test('end to end: a nested worktree\'s skills resolve after one run', () => {
     assert.equal(fs.existsSync(path.join(wt, '.claude', 'skills', 'some-skill')), false);
 
     const script = fileURLToPath(new URL('./link-worktree-skills.mjs', import.meta.url));
-    const env = { ...process.env, COMMONLY_SKILLS_DIR: '' };
+    const env = { ...cleanEnv, COMMONLY_SKILLS_DIR: '' };
     assert.throws(() => execFileSync(process.execPath, [script, '--check'], { cwd: wt, env, stdio: 'pipe' }));
     execFileSync(process.execPath, [script], { cwd: wt, env, stdio: 'pipe' });
     assert.equal(fs.existsSync(path.join(wt, '.claude', 'skills', 'some-skill')), true);
     assert.equal(g(wt, 'status', '--porcelain'), '');
     execFileSync(process.execPath, [script, '--check'], { cwd: wt, env, stdio: 'pipe' });
+    // From a subfolder of the main checkout, git's common dir is relative to it.
+    fs.mkdirSync(path.join(repo, 'sub'));
+    execFileSync(process.execPath, [script, '--check'], { cwd: path.join(repo, 'sub'), env, stdio: 'pipe' });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

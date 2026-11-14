@@ -37,6 +37,12 @@ export const planSkillsLink = ({
     return { action: 'refuse', reason: `${SKILLS_LINK} is an absolute link (${linkText}); nothing to place` };
   }
   const expected = path.resolve(root, '.claude', linkText);
+  // The promise is to write outside the worktree only. A tracked link that
+  // pointed inside it would make this create a file in the tree.
+  const fromRoot = path.relative(root, expected);
+  if (!fromRoot.startsWith('..') || path.isAbsolute(fromRoot)) {
+    return { action: 'refuse', expected, reason: `${SKILLS_LINK} points inside the worktree (${linkText}); not placing it` };
+  }
   if (resolves(path.join(root, SKILLS_LINK))) return { action: 'ok', expected };
   const source = skillsDir || (mainRoot ? path.resolve(mainRoot, '.claude', linkText) : null);
   if (!source || !resolves(source)) {
@@ -49,7 +55,12 @@ export const planSkillsLink = ({
   }
   if (path.resolve(source) === expected) return { action: 'ok', expected };
   if (present(expected)) {
-    return { action: 'refuse', expected, reason: `${expected} exists and is not the skills checkout; not replacing it` };
+    return {
+      action: 'refuse',
+      expected,
+      reason: `${expected} exists and is not the skills checkout; not replacing it `
+        + '(a stale link left by a moved checkout is the usual cause: remove it and run again)',
+    };
   }
   return { action: 'link', expected, source: path.resolve(source) };
 };
@@ -58,7 +69,9 @@ const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).
 
 const readFacts = (cwd, env) => {
   const root = git(cwd, ['rev-parse', '--show-toplevel']);
-  const commonDir = path.resolve(root, git(cwd, ['rev-parse', '--git-common-dir']));
+  // git prints the common dir relative to cwd (`../.git` from a subfolder of
+  // the main checkout), and absolute from a linked worktree.
+  const commonDir = path.resolve(cwd, git(cwd, ['rev-parse', '--git-common-dir']));
   let linkText = null;
   try { linkText = fs.readlinkSync(path.join(root, SKILLS_LINK)); } catch { /* not a link */ }
   return {
@@ -66,7 +79,8 @@ const readFacts = (cwd, env) => {
     mainRoot: path.basename(commonDir) === '.git' ? path.dirname(commonDir) : null,
     linkText,
     skillsDir: env.COMMONLY_SKILLS_DIR || null,
-    resolves: (p) => fs.existsSync(p),
+    // A folder, the skills checkout; a plain file there resolves nothing.
+    resolves: (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } },
     present: (p) => { try { fs.lstatSync(p); return true; } catch { return false; } },
   };
 };
