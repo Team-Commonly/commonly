@@ -1836,6 +1836,25 @@ describe('claude adapter — a workspace seat on Linux', () => {
     expect(binds).toContain(fs.realpathSync(claudeInstall));
   });
 
+  // F493: the Linux jail binds only folders the allowlist admits, and the seat's
+  // Read tool gets an allow for each one it binds.
+  test('read-outside binds an admitted folder and its policy lets Read reach it', async () => {
+    const named = path.join(fs.realpathSync.native(os.homedir()), 'commonly-f493-no-such-project');
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl, { trust: 'workspace', filesystem: { 'read-outside': [named] } });
+    const { args } = calls[0];
+    const outer = args.slice(0, args.indexOf('--'));
+    expect(outer[outer.indexOf(named) - 1]).toBe('--ro-bind-try');
+    expect(args).toContain(`Read(/${named}/**)`);
+  });
+
+  test('read-outside naming a credential folder is refused before it spawns', async () => {
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl, { trust: 'workspace', filesystem: { 'read-outside': ['~/.ssh'] } }))
+      .rejects.toThrow(/refusing sandbox\.filesystem\.read-outside/);
+    expect(calls).toHaveLength(0);
+  });
+
   // Plays the child: it looks for its login under the HOME it was given and
   // writes its transcript there, as claude does.
   const childImpl = ({ stdout = 'ok', code = 0 } = {}) => {

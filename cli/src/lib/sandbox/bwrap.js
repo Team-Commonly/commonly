@@ -18,6 +18,8 @@ import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
+import { resolveHostReadDirectories } from './seatbelt.js';
+
 // Tilde-expansion lives here (and not in environment.js's expandHome) because
 // bwrap reads OS-level paths verbatim — `~` is a shell construct, not a
 // kernel one, so any `~/foo` entry in `read-outside` / `write-outside` would
@@ -204,8 +206,19 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     '--tmpfs', '/tmp',
   ];
 
+  // F493: a workspace seat's binds pass the same allowlist Seatbelt applies
+  // (resolveHostReadDirectories, F122), so both platforms refuse the same
+  // paths: a server-written spec could otherwise bind ~/.ssh or another
+  // seat's per-turn token folder into the jail. Each entry is resolved once
+  // and the resolved path is what gets bound. write-outside is held to it too,
+  // since a read-write bind is also a read. A seat of your own (no trust) keeps
+  // its binds as declared: it is not confined, and names folders such as
+  // ~/.local/bin on purpose.
+  const checkedBinds = env?.sandbox?.trust === 'workspace'
+    ? (entries) => resolveHostReadDirectories(entries, opts.hostReadHome || homedir())
+    : (entries) => entries;
   const userReadOutside = Array.isArray(env?.sandbox?.filesystem?.['read-outside'])
-    ? env.sandbox.filesystem['read-outside'].map(expandHome)
+    ? checkedBinds(env.sandbox.filesystem['read-outside'].map(expandHome))
     : [];
   const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...userReadOutside])];
   for (const p of roBinds) {
@@ -213,7 +226,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   }
 
   const userWriteOutside = Array.isArray(env?.sandbox?.filesystem?.['write-outside'])
-    ? env.sandbox.filesystem['write-outside'].map(expandHome)
+    ? checkedBinds(env.sandbox.filesystem['write-outside'].map(expandHome))
     : [];
   for (const p of userWriteOutside) {
     flags.push('--bind-try', p, p);

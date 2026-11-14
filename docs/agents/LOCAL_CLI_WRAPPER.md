@@ -214,7 +214,7 @@ Public seats don't need this: their writable folder must be a real folder at its
 
 A workspace seat can also read folders outside its project that it names in `sandbox.filesystem.read-outside`, for example an ops seat that watches `~/.commonly/logs`. The folders are read-only on both platforms: bubblewrap binds them on Linux, and from F122 the Seatbelt profile admits them on macOS. Before F122, macOS dropped the list without a word, so such a seat could only run unconfined.
 
-On macOS, each entry is checked before the seat spawns. The check is an allowlist (`resolveHostReadDirectories` in `cli/src/lib/sandbox/seatbelt.js`):
+On both platforms, each entry is checked before the seat spawns (on Linux from F493). The check is an allowlist (`resolveHostReadDirectories` in `cli/src/lib/sandbox/seatbelt.js`):
 - **Dot folders and dotfiles in the home folder are refused**, except `~/.commonly/logs`. That covers `~/.ssh`, `~/.config`, `~/.zsh_history` and every token file under `~/.commonly`.
 - **`~/Library` is refused.**
 - **The home folder itself, and any folder that holds it, are refused.** That includes `/` and `/Users`.
@@ -225,7 +225,9 @@ Each entry is resolved once, to its real path with its real case, and that same 
 
 An earlier version listed the places that hold credentials and refused only those. An Opus review read fake keys through it with a case change, and through token files under `~/.commonly` the list had missed. A second review read another seat's fake runtime token through `/var/folders`. That is why this is an allowlist on both sides of home.
 
-**Known gap:** on Linux, bubblewrap binds every `read-outside` entry without any check. A spec the server writes can therefore bind `~/.ssh` into a Linux workspace seat. Public seats never get `read-outside` on either platform. `write-outside` is honoured only on Linux.
+**On Linux (F493),** a workspace seat's `read-outside` and `write-outside` entries go through the same check before bubblewrap binds them. `write-outside` is checked too, because a read-write bind is also a read. The resolved path is what gets bound, and the seat's tool policy gets a Read allow for each read folder. Before F493, Linux bound both lists without any check, so a spec the server wrote could bind `~/.ssh` into a Linux workspace seat.
+
+A seat of your own, with no trust tier, keeps its binds exactly as declared, because it isn't confined; it names folders such as `~/.local/bin` on purpose. Public seats never get `read-outside` on either platform. `write-outside` is honoured only on Linux.
 
 ## What's NOT deleted on detach
 

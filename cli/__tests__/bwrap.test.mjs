@@ -318,3 +318,57 @@ describe('wrapArgvWithBwrap', () => {
     );
   });
 });
+
+// F493: a workspace seat's binds pass the allowlist Seatbelt applies (F122), so
+// a server-written spec can't bind ~/.ssh or another seat's per-turn token
+// folder into a Linux jail. Platform is faked so this runs on any host.
+describe('a workspace seat\'s read-outside and write-outside under bwrap', () => {
+  const realPlatform = process.platform;
+  let home;
+  beforeEach(async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-host-read-home-')));
+    fs.mkdirSync(path.join(home, 'project'));
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(async () => {
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+    const fs = await import('fs');
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const wrap = (filesystem, trust = 'workspace') => wrapArgvWithBwrap(
+    ['claude'],
+    { sandbox: { trust, filesystem } },
+    { workspacePath: '/tmp/ws', hostReadHome: home },
+  );
+
+  test.each([
+    ['.ssh'], ['.commonly/admin-token'], ['.commonly'], ['project/.env'], ['.SSH'], [''],
+  ])('refuses read-outside <home>/%s', (sub) => {
+    expect(() => wrap({ 'read-outside': [`${home}/${sub}`.replace(/\/$/, '')] }))
+      .toThrow(/refusing sandbox\.filesystem\.read-outside/);
+  });
+
+  test.each([['/tmp'], ['/var/folders'], ['/']])('refuses read-outside %s', (entry) => {
+    expect(() => wrap({ 'read-outside': [entry] })).toThrow(/refusing sandbox\.filesystem\.read-outside/);
+  });
+
+  test('refuses a write-outside that reaches credentials, since a read-write bind is a read', () => {
+    expect(() => wrap({ 'write-outside': [`${home}/.ssh`] })).toThrow(/refusing sandbox\.filesystem/);
+  });
+
+  test('binds an admitted folder read-only, at its resolved path', () => {
+    const argv = wrap({ 'read-outside': [`${home}/project`, `${home}/.commonly/logs`] });
+    for (const dir of [`${home}/project`, `${home}/.commonly/logs`]) {
+      const idx = argv.indexOf(dir);
+      expect(argv[idx - 1]).toBe('--ro-bind-try');
+    }
+  });
+
+  test('a seat of your own (no trust) keeps its declared binds, ~/.local/bin included', () => {
+    const argv = wrap({ 'read-outside': [`${home}/.local/bin`] }, null);
+    expect(argv).toContain(`${home}/.local/bin`);
+  });
+});
