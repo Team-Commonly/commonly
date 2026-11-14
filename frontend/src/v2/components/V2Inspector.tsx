@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import V2PodConventions from './V2PodConventions';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
 import { compactAge, compactNow } from '../utils/compactTime';
@@ -97,7 +98,7 @@ const isWorkingTask = (task: TaskItem): boolean => (
 // D215 (TASK-691): the panel folds. Each group is one 44px row at rest and
 // opens on demand, except Needs you, which starts open. What a person opens or
 // closes stays that way for the session.
-export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
+export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'conventions' | 'join';
 export const INSPECTOR_OPEN_KEY = 'v2:inspector.openGroups';
 const DEFAULT_OPEN_GROUPS: InspectorGroup[] = ['needs-you'];
 const readOpenGroups = (): Set<InspectorGroup> => {
@@ -551,6 +552,11 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             </button>
           </section>
         )}
+
+        {/* F498: the pod's working rules, read by every agent turn here (F124). */}
+        {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && pod._id && renderGroup('conventions', 'pencil', t('inspector.conventions.label'), null, (
+          openGroups.has('conventions') ? <V2PodConventions podId={pod._id} /> : null
+        ))}
 
         {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, !isOwner ? (
           // Members see the policy; only the owner can change it.

@@ -449,3 +449,124 @@
 .v2-workspace-inspector__ext { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 18px; padding: 0 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); }
 
 .v2-root button.v2-workspace-inspector__all-files { padding: 6px 4px 2px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); text-align: left; }
+
+/* F498: the pod's conventions in the inspector. Text keeps its line breaks;
+   the editor reuses the create-pod field and button look. */
+.v2-pod-conventions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin: 3px 0;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-pod-conventions__text {
+  margin: 0;
+  color: var(--v2-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-conventions__meta,
+.v2-pod-conventions__muted,
+.v2-pod-conventions__count {
+  margin: 0;
+  color: var(--v2-text-tertiary);
+  font-size: var(--v2-fs-meta);
+}
+
+.v2-pod-conventions__count--over,
+.v2-pod-conventions__error {
+  margin: 0;
+  color: var(--v2-danger-text);
+}
+
+/* Someone else saved first: a heads-up, not a failure. */
+.v2-pod-conventions__error--conflict {
+  color: var(--v2-warning-text);
+}
+
+.v2-pod-conventions__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v2-pod-conventions__field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 112px;
+  padding: 8px 9px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 12px/16px var(--v2-font);
+  resize: vertical;
+  outline: none;
+}
+
+.v2-pod-conventions__field:focus {
+  border-color: var(--v2-accent);
+}
+
+.v2-pod-conventions__latest {
+  margin: 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--v2-border-strong);
+  color: var(--v2-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-conventions__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.v2-root button.v2-pod-conventions__action,
+.v2-root button.v2-pod-conventions__save,
+.v2-root button.v2-pod-conventions__cancel {
+  padding: 6px 9px;
+  border-radius: var(--v2-radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-root button.v2-pod-conventions__action {
+  align-self: flex-start;
+  padding-inline: 0;
+  color: var(--v2-accent);
+}
+
+.v2-root button.v2-pod-conventions__save {
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+}
+
+.v2-root button.v2-pod-conventions__save:disabled {
+  background: var(--v2-border-strong);
+  cursor: not-allowed;
+}
+
+.v2-root button.v2-pod-conventions__cancel {
+  color: var(--v2-text-tertiary);
+}
+
+.v2-root button.v2-pod-conventions__action:focus-visible,
+.v2-root button.v2-pod-conventions__save:focus-visible,
+.v2-root button.v2-pod-conventions__cancel:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+}
+
+@media (max-width: 760px) {
+  .v2-root button.v2-pod-conventions__action,
+  .v2-root button.v2-pod-conventions__save,
+  .v2-root button.v2-pod-conventions__cancel {
+    min-height: 44px;
+  }
+  .v2-pod-conventions__field { font-size: 16px; }
+}
