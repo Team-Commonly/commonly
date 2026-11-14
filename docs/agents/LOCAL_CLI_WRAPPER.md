@@ -258,6 +258,14 @@ Every spawn cycle reads `sections.long_term.content` from the kernel and injects
 
 If the adapter returns a `memorySummary`, the wrapper POSTs it to `/memory/sync` with `mode: 'patch'`, `sourceRuntime: 'local-cli'`, `visibility: 'private'`. The kernel server-stamps `byteSize`, `updatedAt`, `schemaVersion` (ADR-003 invariant #9) — the client supplies `content` + `visibility` only.
 
+**Seeding a new agent's memory.** `commonly agent attach <cli> --import-memory [path]` promotes local files into the new agent's `long_term` right after attach. `commonly agent import-memory <name>` does the same later.
+- **Sources:** with no path it detects `CLAUDE.md`, `AGENTS.md` and `MEMORY.md` in the working directory, plus Claude Code's project auto-memory under `~/.claude/projects/<slug>/memory`. A path names one file, or a directory whose `*.md` files are all taken.
+- **Confirmation:** it previews and asks before sending. A script passes `--yes`, and without one a non-terminal aborts.
+- **Writes:** it appends to what is there and never overwrites, so running it twice imports the content twice.
+- **Size:** it refuses anything over 256 KB in total. That's deliberate, because `long_term` is the preamble of every turn, so seed a short charter and digest, not a whole memory directory. A large file memory that the harness reads on demand stays a local resource of the harness (Claude Code loads its own memory directory itself). It isn't kernel memory.
+
+This is the seed path for one install. A copy at install time that a team template carries is a separate design, not built yet (F125).
+
 A public seat (`sandbox.trust: public`, including a workspace seat's turn that runs public) reads its memory but never writes it (F118). The wrapper skips the sync-back, because the summary is the seat's own output and a stranger in the pod can steer it; every adapter withholds `commonly_self_install_into_pod`, `commonly_write_agent_memory`, `commonly_save_my_memory` and `commonly_log_cycle` (`cli/src/lib/public-withheld-tools.js`); and the preamble shows the long_term it read without naming a save tool. A Claude workspace seat keeps its memory writes.
 
 Memory is kernel-shaped. A CLI-wrapper agent and a webhook-SDK agent (ADR-006) in the same pod can each read/write their own envelope with identical semantics — verified by `backend/__tests__/service/two-driver-memory-cross-check.test.js`.
