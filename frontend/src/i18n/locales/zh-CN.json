@@ -536,6 +536,7 @@
       "newToCommonly": "还没有 Commonly 账号？",
       "createAccount": "注册",
       "errors": {
+        "verifyFirst": "请先验证邮箱。打开我们发给你的链接，再回来登录。",
         "failed": "登录失败"
       },
       "oauthErrors": {
@@ -569,6 +570,7 @@
         "checkEmailTitle": "欢迎加入",
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
+        "checkEmailMessageInvite": "验证邮箱后就能加入你受邀的 Pod，链接已发到 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"
@@ -834,8 +836,14 @@
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle/>。",
     "deliveryHintOthers": "<woken/> 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle/>。",
+    "introConnectedNow": "{{name}} 已连接，@提及能送达。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
     "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
+    "memberAddAgent": {
+      "body": "你也可以把自己的智能体加进这个 Pod。",
+      "action": "添加智能体",
+      "dismiss": "关闭"
+    },
     "noAgentsInPod": {
       "kicker": "此 Pod 暂无智能体",
       "body": "还没有人会回复 —— 别人打开这个 Pod 时会看到这条消息。",
@@ -2219,6 +2227,8 @@
       "noteWindows": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持这个 PowerShell 窗口开启。",
       "reachClaudeLinux": "在 Linux 上，{{name}} 会在 bubblewrap（bwrap）里运行。通常它在自己的暂存文件夹里工作：如果你设置了 ANTHROPIC_API_KEY，就用这个密钥，否则用你自己登录的 Claude Code 账号。如果它所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，而且你是在项目文件夹（不是个人文件夹）里运行这段命令，它就只读取这个文件夹；这种情况下必须用你登录的 Claude Code 账号，只设 API 密钥不行。登录状态快过期时，它会停下来，提示你在 Claude Code 里运行 /login。11月5日，我们在一台全新的 Ubuntu 机器上，用 API 密钥连上线上的 Commonly，把暂存文件夹这种运行方式跑了一遍，它回复了第一条 @提及。用你自己登录的 Claude Code 账号时，这种运行方式只在 CI 里测过；项目文件夹这种运行方式还没有人在 Linux 上完整跑过一遍。只有在项目文件夹这种情况下，才能在最后一行加上 --allow write，让它编辑文件、运行命令，或者加上 --allow web，让它抓取网页。它运行的命令能读取文件夹以外的内容。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "reachClaude": "默认情况下，如果你用的是 macOS，并且 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，它只能读取你运行这段命令时所在的文件夹。不满足这些条件，或者你在个人文件夹里运行这段命令，它都会在自己的暂存文件夹里工作。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
+      "folderSummary": "文件夹与权限（可选）",
+      "folderSummaryRepoOn": "文件夹与权限：已开启「在我的仓库里工作」",
       "reachCodex": "Codex 会在系统临时目录里用自己的暂存文件夹工作，不在你运行命令的这个文件夹。--allow 对 Codex 无效，所以最后一行不带 --allow。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
@@ -2322,8 +2332,8 @@
       "openPod": "打开 pod",
       "signedOut": "已在 {{machine}} 上运行，但 {{harness}} 还没在那台电脑上登录，所以暂时没法回复。请在 {{machine}} 上运行一次 {{command}} 并登录，这个页面会自己更新。"
     },
-    "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
-    "quickTryWindows": "快速试用：这条命令在 PowerShell 里运行，关闭那个窗口就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
+    "quickTry": "快速试用：你要在终端里运行一条命令。需要 Node 22+（含 npm）和已登录的 {{tool}}，关闭那个窗口后它就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
+    "quickTryWindows": "快速试用：你要在 PowerShell 里运行一条命令。需要 Node 22+（含 npm）和已登录的 {{tool}}，关闭那个窗口后它就会停止。想让智能体一直运行，就用下方的命令把这台电脑添加一次。",
     "addComputer": {
       "title": "添加电脑",
       "recommended": "推荐用于需要持续运行的智能体。把这台电脑添加一次，守护进程会在你登录时启动，智能体停止后也会自动恢复。",

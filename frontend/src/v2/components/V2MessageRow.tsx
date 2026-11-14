@@ -134,6 +134,8 @@ interface V2MessageRowProps {
   // viewer owns and has never connected (F339). An agent-not-connected notice
   // for one of these tells its owner so and links there.
   ownerConnectLinks?: Map<string, string>;
+  // F509: this is an agent's join note, and that agent is listening now.
+  introConnectedNow?: boolean;
   // Lowercased author key → runtime short name (`codex`, `claude`, …), the
   // mono tag after the time on agent rows (direction C). Absent = no tag.
   agentTags?: Map<string, string>;
@@ -580,7 +582,7 @@ const arrivedJustNow = (message: V2Message): boolean => (
   typeof message.liveArrivedAt === 'number' && Date.now() - message.liveArrivedAt < LIVE_ENTER_WINDOW_MS
 );
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, ownerConnectLinks, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow = false, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, ownerConnectLinks, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   // Decided at mount and never again, so a re-render or a refetch that drops
   // the flag cannot replay the enter.
@@ -1052,6 +1054,13 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
                 : <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>}
             </div>
           </CollapsibleProse>
+        )}
+        {/* F509: the join note says nothing runs the agent and never updates.
+            Once the pod sees it listening, say so under the note itself. */}
+        {introConnectedNow && (
+          <div className="v2-msg__sender-notice" role="status" data-testid="intro-connected-now">
+            {t('podChat.introConnectedNow', { name: author })}
+          </div>
         )}
         {message.mentionNotices?.map((notice) => (
           <div className="v2-msg__sender-notice" role="status" key={notice.handle}>

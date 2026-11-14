@@ -47,6 +47,9 @@ const V2Login: React.FC = () => {
   // path and everything on the OAuth path. Same-origin paths only.
   const destination = safeNextPath(new URLSearchParams(location.search).get('next'))
     || pathOfLocation((location.state as LocationState | null)?.from);
+  // F518: someone sent here from a pod invite who has no account yet keeps the invite.
+  const registerHref = destination && destination !== '/v2'
+    ? `/v2/register?next=${encodeURIComponent(destination)}` : '/v2/register';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,8 +59,10 @@ const V2Login: React.FC = () => {
       await login(email.trim(), password);
       navigate(destination || '/v2', { replace: true });
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed'));
+      const e1 = err as { response?: { data?: { error?: string; msg?: string; reason?: string } }; message?: string };
+      // F518: an allowed account whose email isn't verified yet is told to verify.
+      setLocalError(e1.response?.data?.reason === 'unverified' ? t('auth.login.errors.verifyFirst')
+        : (e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed')));
     } finally {
       setSubmitting(false);
     }
@@ -146,7 +151,7 @@ const V2Login: React.FC = () => {
         <p className="v2-login__alt">
           {t('auth.login.newToCommonly')}
           {' '}
-          <Link to="/v2/register" className="v2-login__link">{t('auth.login.createAccount')}</Link>
+          <Link to={registerHref} className="v2-login__link">{t('auth.login.createAccount')}</Link>
         </p>
       </form>
     </div>

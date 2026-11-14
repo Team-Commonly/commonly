@@ -3,7 +3,7 @@
 // Anonymous visitors see a minimal preview ("you've been invited to X")
 // with sign-up / log-in CTAs that carry this URL as `?next=`, so the
 // shared link is a registration funnel instead of a blank login wall.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -32,6 +32,23 @@ interface InviteResolveResponse {
   expiresAt?: string | null;
 }
 
+// F518: a click on this page's Sign up or Log in arms the join for that invite
+// in this tab. sessionStorage survives the provider round trip in the same tab,
+// and only that click can arm it, so a crafted link never joins anyone alone.
+const PENDING_JOIN_KEY = 'v2.inviteJoin.pending';
+const armJoin = (token?: string) => {
+  try { if (token) sessionStorage.setItem(PENDING_JOIN_KEY, token); } catch { /* the Join button still works */ }
+};
+const takeArmedJoin = (token: string): boolean => {
+  try {
+    if (sessionStorage.getItem(PENDING_JOIN_KEY) !== token) return false;
+    sessionStorage.removeItem(PENDING_JOIN_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 interface InvitePreviewResponse {
   pod: { name?: string; memberCount?: number };
   expiresAt?: string | null;
@@ -50,6 +67,7 @@ const V2InviteRedeem: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState(false);
+  const autoJoinRef = useRef(false);
 
   const nextParam = encodeURIComponent(location.pathname + location.search);
 
@@ -88,9 +106,16 @@ const V2InviteRedeem: React.FC = () => {
         setLoading(true);
         setError(null);
         const data = await api.get<InviteResolveResponse>(`/api/invites/${encodeURIComponent(token)}`);
-        if (!cancelled) setInvite(data);
+        if (cancelled) return;
+        setInvite(data);
+        // Back from signing up or in for this invite: finish the join they asked for.
+        if (takeArmedJoin(token)) {
+          if (data?.alreadyMember && data.pod?._id) navigate(`/v2/pods/${data.pod._id}`, { replace: true });
+          else if (data?.pod?._id) autoJoinRef.current = true;
+        }
       } catch (err) {
         if (cancelled) return;
+        takeArmedJoin(token); // a lookup that failed spends the armed join too
         const e = err as { response?: { data?: { msg?: string } }; message?: string };
         setError(e.response?.data?.msg || e.message || t('inviteRedeem.errors.invalid'));
       } finally {
@@ -125,6 +150,14 @@ const V2InviteRedeem: React.FC = () => {
       setRedeeming(false);
     }
   };
+
+  useEffect(() => {
+    if (!invite || !autoJoinRef.current) return;
+    autoJoinRef.current = false;
+    void handleJoin();
+  // handleJoin reads only the token; running it once per armed resolve is the point.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invite]);
 
   // Layout: the d215 invite frames. The sign-in card family holding a pod:
   // brand row, the pod's mark beside its name as the title, one key per state.
@@ -178,14 +211,14 @@ const V2InviteRedeem: React.FC = () => {
         <button
           type="button"
           className="v2-login__submit"
-          onClick={() => navigate(`/v2/register?next=${nextParam}`)}
+          onClick={() => { armJoin(token); navigate(`/v2/register?next=${nextParam}`); }}
         >
           {t('inviteRedeem.signUpToJoin')}
         </button>
         <p className="v2-login__alt">
           <Trans
             i18nKey="inviteRedeem.alreadyHaveAccount"
-            components={{ login: <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link" /> }}
+            components={{ login: <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link" onClick={() => armJoin(token)} /> }}
           />
         </p>
       </>,
