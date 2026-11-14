@@ -160,9 +160,11 @@ const workspaceReadOutside = (env, home = homedir()) => {
 // F493: a Linux workspace seat's read-outside, held to ~/.commonly/logs and
 // resolved once. The seat's Read allows and the folders held below both come
 // from this list, and wrapArgvWithBwrap resolves it again to check them.
-const bwrapWorkspaceHostReads = (env, home = homedir()) => resolveHostReadDirectories(
+// Deduped: two spellings of one folder must not hold two descriptors, one of
+// which no bind would consume (F494 review).
+const bwrapWorkspaceHostReads = (env, home = homedir()) => [...new Set(resolveHostReadDirectories(
   workspaceReadOutside(env, home), home, { fold: false, only: HOST_READ_DOT_ALLOW },
-);
+))];
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
@@ -1545,7 +1547,7 @@ const holdBindSources = (realpath, { write, fdPath }) => {
 // every descriptor held so far is closed.
 const holdReadOutside = (paths, held, { fdPath }) => {
   const readOutside = {};
-  for (const path of paths) {
+  for (const path of new Set(paths)) {
     try {
       const fd = openHeldPath(path, { directory: true, ...(fdPath ? { fdPath } : {}) });
       readOutside[path] = 3 + held.passFds.length;

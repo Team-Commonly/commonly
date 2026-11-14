@@ -517,6 +517,7 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     const fdPathOf = (fd, extra = []) => {
       const { ino, dev } = fs.fstatSync(fd);
       const known = [cwd, path.join(cwd, '.git'), ...extra]
+        .filter((p) => fs.existsSync(p))
         .find((p) => { const st = fs.statSync(p); return st.ino === ino && st.dev === dev; });
       return known || '/somewhere/else';
     };
@@ -613,6 +614,50 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
         expect(calls).toHaveLength(0);
         expect(opened).toHaveLength(3);
         for (const fd of opened) expect(() => fs.fstatSync(fd)).toThrow(/EBADF/);
+      });
+
+      test('two spellings of the logs folder hold one descriptor, mounted once', async () => {
+        const { impl, calls } = recorder();
+        await fdTurn(impl, cwd, {
+          environment: {
+            ...readOutsideEnv,
+            sandbox: { ...readOutsideEnv.sandbox, filesystem: { 'read-outside': ['~/.commonly/logs', '~/.commonly/logs/'] } },
+          },
+          _hostReadHome: home,
+          _fdPath: (fd) => fdPathOf(fd, [logs]),
+        });
+        expect(calls).toHaveLength(1);
+        const { args, opts } = calls[0];
+        expect(bindTriples(args).filter(([flag, , dest]) => flag === '--ro-bind-fd' && dest === logs))
+          .toEqual([['--ro-bind-fd', '5', logs]]);
+        expect(opts.stdio).toHaveLength(6);
+      });
+
+      // The resolve follows the link, and its target is outside ~/.commonly/logs.
+      test('a link left at the logs path refuses the turn, with nothing spawned', async () => {
+        fs.rmSync(logs, { recursive: true });
+        fs.symlinkSync(decoy, logs);
+        const { impl, calls } = recorder();
+        await expect(fdTurn(impl, cwd, {
+          environment: readOutsideEnv,
+          _hostReadHome: home,
+          _fdPath: (fd) => fdPathOf(fd, [logs]),
+        })).rejects.toThrow(/refusing sandbox\.filesystem\.read-outside/);
+        expect(calls).toHaveLength(0);
+      });
+
+      test('a read-only workspace without a .git puts the logs folder at descriptor 4', async () => {
+        fs.rmSync(path.join(cwd, '.git'), { recursive: true });
+        const { impl, calls } = recorder();
+        await fdTurn(impl, cwd, {
+          environment: { ...readOutsideEnv, sandbox: { ...readOutsideEnv.sandbox, allow: [] } },
+          _hostReadHome: home,
+          _fdPath: (fd) => fdPathOf(fd, [logs]),
+        });
+        expect(calls).toHaveLength(1);
+        const { args, opts } = calls[0];
+        expect(bindTriples(args)).toContainEqual(['--ro-bind-fd', '4', logs]);
+        expect(opts.stdio).toHaveLength(5);
       });
 
       test('a logs folder that does not exist binds nothing for it', async () => {

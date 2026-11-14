@@ -267,7 +267,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   const heldReadOutside = fds.readOutside || null;
   const pathReadOutside = [];
   const fdReadOutside = [];
-  for (const p of userReadOutside) {
+  for (const p of new Set(userReadOutside)) {
     if (!heldReadOutside) { pathReadOutside.push(p); continue; }
     if (!Object.hasOwn(heldReadOutside, p)) {
       throw Object.assign(
