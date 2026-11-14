@@ -36,6 +36,9 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
       executablePath: process.execPath,
       statePath: state,
       hostReadDirectories: [logs],
+      // A temp folder stands in for home; the logs folder is an ordinary
+      // folder inside it, which the rules admit.
+      hostReadHome: join(root, 'host'),
     });
     const run = spawnSync(argv[0], argv.slice(1), { cwd: workspace, encoding: 'utf8', timeout: 20_000 });
     return (run.stdout || '').trim();

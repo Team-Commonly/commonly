@@ -1686,11 +1686,13 @@ describe('claude adapter — a workspace seat', () => {
     });
 
     test('a workspace seat reads the folder it names, and cannot write it', async () => {
+      // A folder in home that need not exist: nothing is written there.
+      const named = path.join(fs.realpathSync.native(os.homedir()), 'commonly-f122-no-such-project', 'logs');
       const { impl, calls } = makeSpawnImpl();
-      await workspaceSpawn(impl, withReadOutside('workspace', [hostDir]));
+      await workspaceSpawn(impl, withReadOutside('workspace', [named]));
       const profile = calls[0].args[1];
-      expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${hostDir}"))`);
-      expect(profile).not.toContain(`file-write* (subpath "${hostDir}")`);
+      expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${named}"))`);
+      expect(profile).not.toContain(`file-write* (subpath "${named}")`);
     });
 
     test('the CLI logs folder is the one dot folder it may name', async () => {
@@ -1711,6 +1713,9 @@ describe('claude adapter — a workspace seat', () => {
       ['~'], ['/'], [path.dirname(os.homedir())], ['~/.commonly'], ['~/.ssh/keys'], ['~/.SSH'],
       ['~/LIBRARY'], ['~/.commonly/admin-token'], ['~/.commonly/state'], ['~/.Commonly/Tokens'],
       ['~/.zsh_history'], ['~/.git-credentials'], ['~/.commonly/logs/../tokens'],
+      // Outside home: the temp folders hold other seats' per-turn tokens.
+      [os.tmpdir()], ['/var/folders'], ['/private/tmp'], ['/tmp'], ['/Users/Shared'],
+      ['/Library/Keychains'], [`/System/Volumes/Data${os.homedir()}/.ssh`],
     ])(
       'a workspace seat naming %s is refused before it spawns',
       async (entry) => {

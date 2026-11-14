@@ -489,15 +489,19 @@ export const detectSeatbelt = () => {
 //   - ~/Library is refused (keychains, browser and app data);
 //   - the home folder itself, and any folder that holds it (`/`, /Users), are
 //     refused.
-// Anything else (a project tree, /var/log) is admitted read-only, with the
+// Anything else in home (a project tree) is admitted read-only, with the
 // workspace's own credential denies (.env*, .commonly, .codex, .npmrc, .yarnrc)
-// applied beneath it.
+// applied beneath it. Outside home only HOST_READ_SYSTEM_ALLOW is admitted: the
+// temp folders hold every seat's per-turn runtime token (same uid, so their
+// 0700 mode is no fence), and /System/Volumes/Data firmlink spellings of home
+// are refused with everything else not on the list (second Opus review).
 //
 // Paths are compared canonically and case-folded. APFS is case-insensitive and
 // so is Seatbelt's subpath match, while path.relative and the JS realpathSync
 // keep the case they were given: `~/.SSH` would otherwise pass a check for
 // `.ssh` and still read ~/.ssh.
 export const HOST_READ_DOT_ALLOW = Object.freeze(['.commonly/logs']);
+export const HOST_READ_SYSTEM_ALLOW = Object.freeze(['/var/log', '/private/var/log', '/Library/Logs']);
 
 // The real path, with the real case, of the longest prefix that exists, plus
 // the rest as given. Resolved once: the result is both checked and granted.
@@ -524,7 +528,11 @@ const foldedWithin = (outer, inner) => {
 
 const hostReadRefusal = (canonical, home) => {
   if (foldedWithin(canonical, home)) return 'it holds your home folder';
-  if (!foldedWithin(home, canonical)) return null;
+  if (!foldedWithin(home, canonical)) {
+    return HOST_READ_SYSTEM_ALLOW.some((allowed) => foldedWithin(allowed, canonical))
+      ? null
+      : `outside your home folder only ${HOST_READ_SYSTEM_ALLOW.join(', ')} are readable from a seat`;
+  }
   const rel = relative(home.toLowerCase(), canonical.toLowerCase());
   const [first] = rel.split('/');
   if (first === 'library') return '~/Library holds keychains and app data';
@@ -564,6 +572,8 @@ export const buildSeatbeltProfile = ({
   // each passes resolveHostReadDirectories first and the turn is refused
   // otherwise.
   hostReadDirectories = [],
+  // The home folder those rules are judged against. Tests pass a temp one.
+  hostReadHome = homedir(),
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
   // 'open' (the default) or 'loopback': only the listed loopback ports.
@@ -609,7 +619,7 @@ export const buildSeatbeltProfile = ({
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
   for (const path of hostReadDirectories) assertAbsolutePath(path, 'hostReadDirectories entry');
-  const grantedHostReads = [...new Set(resolveHostReadDirectories(hostReadDirectories))];
+  const grantedHostReads = [...new Set(resolveHostReadDirectories(hostReadDirectories, hostReadHome))];
   for (const port of loopbackNetworkPorts) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
