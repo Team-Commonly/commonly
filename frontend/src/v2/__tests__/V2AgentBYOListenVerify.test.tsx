@@ -131,6 +131,46 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
   });
+  // F515: the run found the harness signed out, or Node too old, and stopped
+  // before it started waiting. The newer of this agent's reports is the one
+  // shown, and polling goes on.
+  test('says the harness is signed out or Node is too old, whichever this run reported last', async () => {
+    jest.useFakeTimers();
+    await issueToken();
+    const now = Date.now();
+    const read = (fields) => ({ data: { issued: true, connected: false, lastUsedAt: null, connectedAgent: null, ...fields } });
+
+    axios.get.mockResolvedValueOnce(read({
+      harnessMissing: [{ agentName: 'sam-claude', instanceId: 'default', harness: 'claude', at: new Date(now).toISOString() }],
+      listenBlocked: [{
+        agentName: 'sam-claude', instanceId: 'default', reason: 'harness-signed-out', harness: 'claude', at: new Date(now + 1000).toISOString(),
+      }],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: Claude Code is installed on that computer but not signed in. Run claude there once to sign in',
+    );
+    expect(screen.getByTestId('byo-listen-waiting')).toHaveClass('v2-byo__listen-note--stopped');
+
+    axios.get.mockResolvedValueOnce(read({
+      listenBlocked: [{ agentName: 'sam-claude', instanceId: 'default', reason: 'node-too-old', harness: null, at: new Date(now + 2000).toISOString() }],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: that computer’s Node is older than version 22.',
+    );
+
+    // Another agent's report, or a code this build doesn't know, shows nothing.
+    axios.get.mockResolvedValueOnce(read({
+      listenBlocked: [
+        { agentName: 'old-agent', instanceId: 'default', reason: 'node-too-old', harness: null, at: new Date(now + 3000).toISOString() },
+        { agentName: 'sam-claude', instanceId: 'default', reason: 'something-new', harness: null, at: new Date(now + 3000).toISOString() },
+      ],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
+  });
+
   test('waits, then flips to verified when THIS agent checks in after issuance', async () => {
     jest.useFakeTimers();
     await issueToken();

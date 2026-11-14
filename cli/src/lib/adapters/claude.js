@@ -1370,7 +1370,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
 // child environment and to every detection lookup so a daemon does not report
 // a false "adapter unavailable" (or hit spawn ENOENT) merely because it was
 // started outside an interactive shell.
-const withClaudePath = (input) => {
+export const withClaudePath = (input) => {
   const output = { ...(input || process.env) };
   const localBin = join(homedir(), '.local', 'bin');
   // Windows keys are case-insensitive, and a child given both `Path` and a

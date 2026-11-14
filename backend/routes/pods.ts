@@ -704,7 +704,9 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     // eslint-disable-next-line global-require
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
-    const { deriveAgentState, keyOnlyOnPage, offersConnect } = require('../services/agentStateService');
+    const {
+      deriveAgentState, keyOnlyOnPage, listenReasonFor, offersConnect,
+    } = require('../services/agentStateService');
     // eslint-disable-next-line global-require
     const { connectPodFor } = require('../services/roomConnectService');
     // eslint-disable-next-line global-require
@@ -720,24 +722,29 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       'botMetadata.instanceId': String(inst.instanceId || 'default'),
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
-      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt')
+      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
+        + 'botMetadata.harnessMissing botMetadata.listenBlocked')
       .lean();
     const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
     const machineByIdentity = new Map<string, unknown>();
+    const listenReasonByIdentity = new Map<string, unknown>();
     (agentUsers || []).forEach((u: any) => {
       const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
       userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
       machineByIdentity.set(key, u.botMetadata?.machineId);
+      listenReasonByIdentity.set(key, listenReasonFor(u.botMetadata));
     });
 
     const callerId = String(req.user?.id || '');
-    const agents = installations.map((inst: any) => deriveAgentState(
-      inst,
-      userTokensByIdentity.get(
-        `${AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase())}:${String(inst.instanceId || 'default').toLowerCase()}`,
-      ) || [],
-      callerId,
-    ));
+    const agents = installations.map((inst: any) => {
+      const agentType = AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase());
+      const key = `${agentType}:${String(inst.instanceId || 'default').toLowerCase()}`;
+      const row = deriveAgentState(inst, userTokensByIdentity.get(key) || [], callerId);
+      // F515: why its first run stopped, by code. Never-connected only: any
+      // check-in supersedes the report, so a listened agent carries none.
+      const listenReason = row.state === 'never-connected' ? listenReasonByIdentity.get(key) : null;
+      return listenReason ? { ...row, listenReason } : row;
+    });
 
     if (pod.type === 'agent-room') {
       await Promise.all(installations.map(async (inst: any, index: number) => {

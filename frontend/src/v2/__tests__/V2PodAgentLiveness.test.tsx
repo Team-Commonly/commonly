@@ -88,6 +88,34 @@ describe('group pod agent liveness', () => {
     expect(row).toHaveTextContent("Sam Agent isn't connected yet");
   });
 
+  // F515: the agent's first run stopped before it started waiting and said
+  // why, by code. The line names the reason instead of only "not connected".
+  test.each([
+    [{ reason: 'harness-signed-out', harness: 'claude' }, "Sam Agent isn't connected yet: Claude Code isn't signed in on its computer."],
+    [{ reason: 'harness-missing', harness: 'codex' }, "Sam Agent isn't connected yet: Codex isn't installed on its computer."],
+    [{ reason: 'harness-missing', harness: null }, "Sam Agent isn't connected yet: its computer has no Claude Code, Codex or pi."],
+    [{ reason: 'node-too-old', harness: null }, "Sam Agent isn't connected yet: its computer's Node is too old to run it."],
+  ])('says why it is not connected: %j', async (listenReason, line) => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: false, listenReason,
+    }]);
+    renderChat(makeDetail());
+
+    expect(await screen.findByTestId('pod-agent-liveness')).toHaveTextContent(line);
+  });
+
+  test('a reason code this build does not know reads as the plain line', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: false,
+      listenReason: { reason: 'something-new', harness: null },
+    }]);
+    renderChat(makeDetail());
+
+    expect(await screen.findByTestId('pod-agent-liveness')).toHaveTextContent(
+      "Sam Agent isn't connected yet, so it won't answer here until it's running.",
+    );
+  });
+
   test('gives the installer a way back to the connect command', async () => {
     mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true, connectPodId: 'pod-1' }]);
     renderChat(makeDetail());
@@ -220,6 +248,24 @@ describe('group pod agent liveness', () => {
 
     await screen.findByTestId('agent-room-liveness');
     expect(screen.queryByTestId('pod-agent-liveness')).not.toBeInTheDocument();
+  });
+
+  test('a 1:1 agent room says why its agent is not connected (F515)', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true,
+      listenReason: { reason: 'harness-signed-out', harness: 'codex' },
+    }]);
+    renderChat(makeDetail({
+      pod: { _id: 'p1', name: 'Sam Agent', type: 'agent-room' },
+      members: [
+        { _id: 'u1', username: 'solo-user', isBot: false },
+        { _id: 'b1', username: 'sam-agent', isBot: true },
+      ],
+    }));
+
+    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent(
+      "Sam Agent isn't connected yet: Codex isn't signed in on its computer. Messages sent here will wait until it runs.",
+    );
   });
 });
 

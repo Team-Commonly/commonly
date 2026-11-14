@@ -181,7 +181,8 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     })
       .select(
         'botMetadata.agentName botMetadata.instanceId '
-        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt botMetadata.harnessMissing',
+        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt botMetadata.harnessMissing '
+        + 'botMetadata.listenBlocked',
       )
       .lean();
 
@@ -201,6 +202,11 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     // F457: a quick-try run that found no harness exits before it checks in.
     // Its report stands until this agent listens again after it.
     const harnessMissing: { agentName: string; instanceId: string; harness: string | null; at: string }[] = [];
+    // F515: a first run that stopped before waiting says why, by reason code,
+    // and stands until the same listen.
+    const listenBlocked: {
+      agentName: string; instanceId: string; reason: string; harness: string | null; at: string;
+    }[] = [];
     for (const agentUser of agentUsers || []) {
       const agentName = String(agentUser.botMetadata?.agentName || '').trim().toLowerCase();
       const instanceId = String(agentUser.botMetadata?.instanceId || 'default').trim().toLowerCase();
@@ -222,6 +228,18 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
           at: missingAt.toISOString(),
         });
       }
+      const blocked = (agentUser.botMetadata as any)?.listenBlocked;
+      const blockedAt = blocked?.at ? new Date(blocked.at) : null;
+      if (typeof blocked?.reason === 'string' && blockedAt && !Number.isNaN(blockedAt.getTime())
+        && (!ownListen || blockedAt > ownListen.at)) {
+        listenBlocked.push({
+          agentName: (identity as any).agentName,
+          instanceId: (identity as any).instanceId,
+          reason: blocked.reason,
+          harness: typeof blocked.harness === 'string' ? blocked.harness : null,
+          at: blockedAt.toISOString(),
+        });
+      }
     }
 
     return res.json({
@@ -239,6 +257,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         podId: latestConnection.identity.podId,
       } : null,
       ...(harnessMissing.length ? { harnessMissing } : {}),
+      ...(listenBlocked.length ? { listenBlocked } : {}),
     });
   } catch (error) {
     console.error('Error reading agent connection status:', error);

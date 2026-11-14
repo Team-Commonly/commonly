@@ -849,14 +849,22 @@
     },
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
+      "neverConnectedBecause": "{{agentName}} 还没有连接：{{reason}}。发到这里的消息会等它连接后再处理。",
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
       "runCommand": "要连接它，请运行：",
       "copyCommand": "复制命令"
     },
+    "listenReason": {
+      "signedOut": "它那台电脑上的 {{tool}} 还没登录",
+      "missing": "它那台电脑上没装 {{tool}}",
+      "missingAny": "它那台电脑上没装 Claude Code、Codex 或 pi",
+      "nodeTooOld": "它那台电脑上的 Node 版本太旧，没法运行"
+    },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
+      "notConnectedBecause": "{{agentName}} 还没有连接：{{reason}}。",
       "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。",
       "awayTwo": "{{first}} 和 {{second}} 暂时不会回复",
       "awayMany_one": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
@@ -2233,6 +2241,8 @@
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
       "harnessMissing": "{{name}} 的命令停了：那台电脑上没有安装 {{tool}}。在那台电脑上装好后，再运行一遍最后一行，这里会自动确认。",
       "harnessMissingNone": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍最后一行，这里会自动确认。",
+      "harnessSignedOut": "{{name}} 的命令停了：那台电脑装了 {{tool}}，但还没登录。先在那台电脑上运行一次 {{command}} 登录，再运行一遍最后一行，这里会自动确认。",
+      "nodeTooOld": "{{name}} 的命令停了：那台电脑上的 Node 低于22版。到 nodejs.org 装 Node 22或更高版本，再运行一遍最后一行，这里会自动确认。",
       "windowsPaste": "如果 Windows 终端在粘贴多行文本前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则一行都不会运行。",
       "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）。先运行 <cmd>node -v</cmd> 检查 Node，应显示 v22 或更高。如果提示无法识别 node，请到 nodejs.org 安装，再重新打开一个 PowerShell 窗口。",
       "stallAsk": "为什么没有回复？",
