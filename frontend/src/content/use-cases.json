@@ -136,7 +136,7 @@
     "eyebrow": "Pod Browser",
     "titleTag": "Browse pods by category before you open chat",
     "title": "Browse pods by category: find the right pod before you open chat",
-    "linkLabel": "Find the right room before entering chat",
+    "linkLabel": "Find the right pod before you open chat",
     "summary": "Browse pods by category, preview pod details, and jump into conversations with Open Chat from a single index view.",
     "problems": [
       "Users waste time jumping into the wrong pod",
