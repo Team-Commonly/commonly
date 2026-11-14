@@ -105,6 +105,36 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     expect(attempt(read(join(logs, 'repo', 'README.md')))).toBe('ALLOWED');
   });
 
+  // CodeRabbit on #4111: a grant that holds the seat's own workspace must not
+  // hide the workspace's .git or dotfiles, and the workspace's own credential
+  // denies still hold.
+  macTest('a grant that holds the workspace leaves the workspace\'s own view as it was', () => {
+    const own = join(logs, 'mine');
+    for (const dir of [join(own, '.git'), join(own, '.github')]) mkdirSync(dir, { recursive: true });
+    writeFileSync(join(own, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    writeFileSync(join(own, '.github', 'ci.yml'), 'on: push\n');
+    writeFileSync(join(own, '.env'), 'KEY=1\n');
+    const argv = (op) => wrapArgvWithSeatbelt([
+      process.execPath, '-e',
+      `try { ${op}; console.log('ALLOWED') } catch (e) { console.log('DENIED ' + e.code) }`,
+    ], {
+      workspacePath: own,
+      workspaceAccess: 'read',
+      executablePath: process.execPath,
+      statePath: state,
+      hostReadDirectories: [logs],
+      hostReadHome: join(root, 'host'),
+    });
+    const run = (op) => {
+      const a = argv(op);
+      return (spawnSync(a[0], a.slice(1), { cwd: own, encoding: 'utf8', timeout: 20_000 }).stdout || '').trim();
+    };
+    expect(run(read(join(own, '.git', 'HEAD')))).toBe('ALLOWED');
+    expect(run(read(join(own, '.github', 'ci.yml')))).toBe('ALLOWED');
+    expect(run(read(join(own, '.env')))).toBe('DENIED EPERM');
+    expect(run(read(join(logs, 'repo', '.ssh', 'id_rsa')))).toBe('DENIED EPERM');
+  });
+
   // The Opus review's case bypass, against a home that has a .ssh: on a
   // case-insensitive volume `.SSH` is the same folder, and is refused as one.
   test('a case change does not get past the check', () => {

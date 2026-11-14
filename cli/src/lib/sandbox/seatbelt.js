@@ -726,6 +726,12 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence ${subpath(path)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(path)}"))`,
   ].join('\n'))).join('\n');
+  // The adapter's own read-only inputs, without the host read grants.
+  const adapterReadOnlyRules = resolvedReadOnlyPaths.map((path) => (
+    `(allow file-read* file-test-existence ${literal(path)})`
+  )).concat(resolvedReadOnlyDirectories.filter((path) => !grantedHostReads.includes(path)).map((path) => (
+    `(allow file-read* file-test-existence ${subpath(path)})`
+  ))).join('\n');
   // A symlinked entry is held at both its name and its target, so the write
   // cannot land through whichever path the link resolves to.
   const readOnlyWorkspaceRules = [...new Set(readOnlyWorkspaceEntries.flatMap((entry) => {
@@ -761,17 +767,22 @@ export const buildSeatbeltProfile = ({
     loopbackNetworkRules,
     mcpRule,
     readOnlyRules,
+    // Beneath a host read folder, every dot folder and dotfile is denied, the
+    // same rule its request passed: a project tree holds other repos' .env
+    // files, .commonly token folders, .ssh keys and .aws credentials. One rule
+    // on the leading dot covers every name, in any case (CodeRabbit on #4129).
+    ...grantedHostReads.map((dir) => `(deny file-read* file-write* ${regexUnder(dir, '\\.[^/]*(/.*)?$')})`),
+    // Later rules win, so a grant that holds the workspace, or a folder the
+    // adapter itself prepared, would hide its .git and dotfiles. Those allows
+    // are stated again here, and the workspace's credential denies follow them
+    // (CodeRabbit on #4111).
+    ...(grantedHostReads.length ? [workspaceRule, adapterReadOnlyRules] : []),
     // The workspace is intentionally readable, but credential-like nested
     // paths are not. Explicit deny wins over the broad workspace allow.
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     denyRegistryConfig ? `(deny file-read* file-write* ${registryConfigUnder(resolvedWorkspace)})` : '',
-    // Beneath a host read folder, every dot folder and dotfile is denied, the
-    // same rule its request passed: a project tree holds other repos' .env
-    // files, .commonly token folders, .ssh keys and .aws credentials. One rule
-    // on the leading dot covers every name, in any case (CodeRabbit on #4129).
-    ...grantedHostReads.map((dir) => `(deny file-read* file-write* ${regexUnder(dir, '\\.[^/]*(/.*)?$')})`),
     readOnlyWorkspaceRules,
     // After every allow above, so a workspace that contained one of these
     // folders still could not write it (later rules win).
