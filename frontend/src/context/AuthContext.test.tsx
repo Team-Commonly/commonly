@@ -236,6 +236,9 @@ test('another 403 on load keeps the old behaviour: no restricted mark', async ()
   await remountWithToken('old-jwt');
   expect(global.testAuth.accessRestricted).toBe(false);
   expect(global.testAuth.error).toBe('Failed to load user data');
+  // Only the allowlist code signs out; a suspended 403 keeps the session as before.
+  expect(localStorage.getItem('token')).toBe('old-jwt');
+  expect(global.testAuth.isAuthenticated).toBe(true);
 });
 
 test('removal from the allowlist while signed in signs out on focus and is marked restricted', async () => {
@@ -256,7 +259,8 @@ test('a later sign-in clears the restricted mark', async () => {
   axios.get.mockRejectedValueOnce(restricted);
   await remountWithToken('old-jwt');
   expect(global.testAuth.accessRestricted).toBe(true);
-  axios.get.mockResolvedValue({ data: { username: 'Alice' } });
+  // The user load after login stays pending, so only login itself can clear the mark.
+  axios.get.mockImplementation(() => new Promise(() => {}));
   axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });
   await act(async () => { await global.testAuth.login('a', 'b'); });
   expect(global.testAuth.accessRestricted).toBe(false);
@@ -276,4 +280,21 @@ test('an OAuth sign-in or a logout clears the restricted mark', async () => {
   expect(global.testAuth.accessRestricted).toBe(true);
   act(() => { global.testAuth.logout(); });
   expect(global.testAuth.accessRestricted).toBe(false);
+});
+
+test('a load that rejects after a focus check refused the same session keeps the restricted mark', async () => {
+  let rejectLoad;
+  axios.get.mockImplementationOnce(() => new Promise((_, reject) => { rejectLoad = reject; }));
+  await remountWithToken('old-jwt');
+  axios.get.mockRejectedValueOnce(restricted);
+  // Both rejections land before React re-renders, so the stale load's effect is still active.
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    rejectLoad({ response: { status: 500 } });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  expect(localStorage.getItem('token')).toBeNull();
+  expect(global.testAuth.isAuthenticated).toBe(false);
+  expect(global.testAuth.accessRestricted).toBe(true);
+  expect(global.testAuth.error).toBeNull();
 });

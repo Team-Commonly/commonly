@@ -113,17 +113,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const e = err as LoadError;
           if (!active) return;
           console.error('Error loading user:', e.message);
-          const current = localStorage.getItem('token') === token;
-          // Marked only when this load clears the session it refused.
-          const restricted = current && isAccessRestricted(err);
-          if ((e.response?.status === 401 || restricted) && current) {
-            localStorage.removeItem('token');
-            setCurrentUser(null);
-            setToken(null);
-            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+          // A load for a token something else has since replaced or cleared
+          // (a focus check that refused it, another tab) says nothing about
+          // the session now; it must not overwrite that one's state.
+          if (localStorage.getItem('token') === token) {
+            const restricted = isAccessRestricted(err);
+            if (e.response?.status === 401 || restricted) {
+              localStorage.removeItem('token');
+              setCurrentUser(null);
+              setToken(null);
+              if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+            }
+            setAccessRestricted(restricted);
+            setError(restricted ? null : 'Failed to load user data');
           }
-          setAccessRestricted(restricted);
-          setError(restricted ? null : 'Failed to load user data');
         }
       }
       if (active) setLoading(false);
