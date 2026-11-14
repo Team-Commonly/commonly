@@ -164,7 +164,9 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimi
 agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { label, instanceId, force } = req.body || {};
+    const {
+      label, instanceId, force, connectCode,
+    } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -234,6 +236,21 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       installation,
       { ownerUserId: userId },
     );
+    // F525: the connect page asks for a connect code beside a freshly issued
+    // key, for its one pasted line. Only a new key gets one: asking never
+    // rotates a key, and an existing key's raw value isn't held to seal. A
+    // failed mint leaves the key response as it was; the page falls back to
+    // its key lines.
+    if (connectCode === true && issued?.token) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { mintConnectCode } = require('../../services/agentConnectCodeService');
+        const minted = await mintConnectCode({ agentUserId: agentUser._id, rawToken: issued.token });
+        return res.json({ ...issued, connectCode: minted.code, connectCodeExpiresAt: minted.expiresAt });
+      } catch (error) {
+        console.warn('Connect code mint failed:', (error as Error).message);
+      }
+    }
     return res.json(issued);
   } catch (error) {
     if ((error as { code?: string })?.code === 'in_process_agent_no_token') {
