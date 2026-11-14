@@ -17,7 +17,8 @@
  *   could pick a paid model route, add the approval-proposing tool, or set
  *   `dailyRunCap: 0` to lift the cap. Admins may still change them. The same
  *   holds for `runtime.adapter`: grant-broker confinement and the daemon read
- *   it, so a change to it is refused (TASK-474).
+ *   it, so a change to it is refused (TASK-474). On any runtime, a stored
+ *   adapter is never cleared by a non-admin (F155).
  * - The kernel's own records (`hosted`), which only the install and
  *   provision routes write. Refused for every caller, admins included: a
  *   hand-written engine or provision stamp is a record that no longer
@@ -42,7 +43,7 @@ export const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [
 ];
 
 export interface ConfigWriteRefusal {
-  code: 'invalid_config' | 'kernel_owned_field' | 'runtime_type_change' | 'kernel_run_field';
+  code: 'invalid_config' | 'kernel_owned_field' | 'runtime_type_change' | 'kernel_run_field' | 'runtime_adapter_clear';
   /** HTTP status: 400 for a malformed body, 403 for a write this caller may not make. */
   status: 400 | 403;
   error: string;
@@ -94,6 +95,15 @@ export const configWriteRefusal = ({
       code: 'invalid_config', status: 400, error: 'config.runtime must be an object.', fields: ['config.runtime'],
     };
   }
+  // Every reader takes a non-string adapter for none (grantBrokerConfinement
+  // normalizeAdapter), so `{}` or `[]` would be a clear the guard below cannot
+  // see (CodeRabbit on #4105). null is the one non-string that means a clear.
+  const sentRuntime = asObject(body.runtime);
+  if (sentRuntime && 'adapter' in sentRuntime && sentRuntime.adapter !== null && typeof sentRuntime.adapter !== 'string') {
+    return {
+      code: 'invalid_config', status: 400, error: 'config.runtime.adapter must be a string.', fields: ['config.runtime.adapter'],
+    };
+  }
 
   const owned = KERNEL_OWNED_CONFIG_KEYS.filter((key) => key in body);
   if (owned.length) {
@@ -140,6 +150,18 @@ export const configWriteRefusal = ({
         code: 'kernel_run_field',
         status: 403,
         error: 'Commonly runs this agent, so Commonly sets its runtime adapter.',
+        fields: ['config.runtime.adapter'],
+      };
+    }
+    // F155: clearing a stored adapter is not a switch. A codex row left with no
+    // host and no adapter reads as Commonly-run (grantBrokerConfinement
+    // runsOnCommonly), which loosens grant confinement and passes the hosted
+    // re-judge. A switch to another adapter stays the installer's.
+    if (!requestedAdapter && targets.some((target) => storedAdapter(target))) {
+      return {
+        code: 'runtime_adapter_clear',
+        status: 403,
+        error: 'A runtime adapter can be switched here but not removed.',
         fields: ['config.runtime.adapter'],
       };
     }
