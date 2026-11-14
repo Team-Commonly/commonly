@@ -2248,7 +2248,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           <V2GetStarted
             steps={starter}
             podId={pod._id}
-            pendingAgentName={pendingConnectAgent ? (pendingConnectAgent.displayName || pendingConnectAgent.agentName) : undefined}
+            pendingAgentName={pendingConnectAgent && !starter.connect ? (pendingConnectAgent.displayName || pendingConnectAgent.agentName) : undefined}
             onConnect={() => navigate(pendingConnectAgent
               ? agentConnectLink(pendingConnectAgent)
               : `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}

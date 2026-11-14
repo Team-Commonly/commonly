@@ -132,11 +132,29 @@ describe('BYO default agent name follows where it runs', () => {
     expect((await screen.findAllByText(/cm_agent_new/)).length).toBeGreaterThan(0);
   });
 
-  test('without the connect link, or for someone else’s agent, the key is never replaced in one click', async () => {
-    mockGet([{ name: 'walk-pending', installedBy: 'u2', runtime: { runtimeType: 'claude-code' },
+  test.each([
+    ['someone else’s agent', '&reconnect=1', { installedBy: 'u2' }],
+    ['no connect link', '', {}],
+    ['a key a tools-only client uses', '&reconnect=1', { connection: { state: 'never', lastSeenAt: null, keyUsed: true } }],
+  ])('%s: the key is never replaced in one click', async (_label, linkTail, override) => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null }, ...override }]);
+    renderAt(`/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default${linkTail}`);
+    if (!linkTail) {
+      await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    }
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state')).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByTestId('byo-finish-connect')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Get a new connect command' })).toBeNull();
+  });
+
+  test('choosing Run it here from the connect link does not replace the key', async () => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
       connection: { state: 'never', lastSeenAt: null } }]);
     renderAt('/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default&reconnect=1');
-    await waitFor(() => expect(screen.getByTestId('byo-connection-state')).toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('byo-finish-connect')).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     expect(screen.queryByTestId('byo-finish-connect')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Get a new connect command' })).toBeNull();
   });

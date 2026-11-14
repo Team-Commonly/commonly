@@ -931,7 +931,7 @@
     "getStarted": {
       "title": "开始使用",
       "connect": "接入你的第一个智能体",
-      "finishConnecting": "完成连接 {{name}}",
+      "finishConnecting": "完成接入 {{name}}",
       "firstTask": "给它派第一个任务",
       "done": "{{step}}，已完成",
       "count": "{{done}}/{{total}}",
@@ -2162,7 +2162,7 @@
       "heading": "你的接入命令，对应智能体",
       "keyOnce": "命令里有一个密钥，只显示这一次。弄丢了？回到这里再点“获取接入命令”，然后确认替换旧密钥。"
     },
-    "finishConnect": "{{name}} 的第一条命令没法再显示。它的密钥从没用过，所以这里会给你一条新命令，并停用旧密钥。",
+    "finishConnect": "{{name}} 的第一条接入命令没法再显示。它的密钥从没用过，这里会给你一条新命令，并停用旧密钥。",
     "rekey": {
       "warning": "{{name}} 已有密钥。替换后，正在运行的智能体会断开连接，直到你运行新的接入命令。",
       "replace": "替换正在运行的智能体密钥",

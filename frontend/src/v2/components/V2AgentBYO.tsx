@@ -387,7 +387,8 @@ const V2AgentBYO: React.FC = () => {
   // A handoff card's link names the OS its person picked there.
   const [setupOs, setSetupOs] = useState<SetupOs>(() => prefill.os || browserOs());
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
-  const neverConnected = existingConnection?.connection.state === 'never';
+  // The prompt says the key "hasn't been used" only when nothing has used it.
+  const neverConnected = existingConnection?.connection.state === 'never' && !existingConnection.connection.keyUsed;
   const listenerAvailable = listenerRunsOn(setupOs, listenAdapter, repoPod ? podIsConfirmedPrivate(repoPod) : undefined);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
@@ -571,8 +572,11 @@ const V2AgentBYO: React.FC = () => {
   // key is stored hashed), and an unused key loses nothing when it's replaced,
   // so one click gives the new command; the replace prompt is for a key that
   // something may hold. A daemon-placed agent restarts on its computer instead.
-  const canFinishConnect = Boolean(prefill.reconnect && existingConnection
+  const canFinishConnect = Boolean(prefill.reconnect && mode === 'byo' && existingConnection
     && existingConnection.connection.state === 'never'
+    // A key a tools-only client uses never "connects"; replacing it would cut
+    // that client off, so it keeps the replace prompt.
+    && !existingConnection.connection.keyUsed
     && existingConnection.runtimeType !== 'wrapper'
     && sanitizeAgentName(name) === prefill.name
     && existingConnection.installedBy === String(currentUser?._id));
@@ -2105,7 +2109,7 @@ const V2AgentBYO: React.FC = () => {
               {connectionLabel(existingConnection.connection, t)}
             </div>
           )}
-          {canFinishConnect && mode !== 'hosted' && (
+          {canFinishConnect && (
             <div className="v2-byo__hint" data-testid="byo-finish-connect">
               {t('agentByo.finishConnect', { name: sanitizeAgentName(name) })}
             </div>

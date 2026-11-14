@@ -102,6 +102,18 @@ describe('V2Thread Get started bar (D288)', () => {
     expect(await screen.findByText(/^byo page/)).toHaveTextContent('byo page pod=pod-1 name=walk-pending reconnect=1');
   });
 
+  test('once step 1 is done, its row never reads "Finish connecting"', async () => {
+    mockTasks = starterTasks(true, false);
+    mockAgentStates = [
+      { agentName: 'walk-pending', instanceId: 'default', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(require('axios').default.get).toHaveBeenCalledWith('/api/pods/pod-1/agent-states', expect.anything()));
+    expect(step).toHaveTextContent('Connect your first agent');
+    expect(step).not.toHaveTextContent('Finish connecting');
+  });
+
   test('someone else\'s unconnected agent, or one with no connect path, keeps the plain step', async () => {
     mockTasks = starterTasks(false, false);
     mockAgentStates = [
