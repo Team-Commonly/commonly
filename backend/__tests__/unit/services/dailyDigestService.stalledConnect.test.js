@@ -166,6 +166,50 @@ test('the scheduled run reaches an installer gone 8 days whose +7d line is due',
   expect(mine?.digest?.content).toBe(LINE);
 });
 
+// CodeRabbit (#4128): the email shows only the top five lines. A stalled line
+// the extract cut was never seen, so it must stay for the next digest.
+test('only the stalled lines the email shows are used up', async () => {
+  const me = await person('mk');
+  const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue({
+    pods: [{ id: String(pod._id), name: 'Launch' }],
+    needsYou: ['one', 'two', 'three'].map((t) => ({ title: `Review ${t}`, podId: String(pod._id), podName: 'Launch' })),
+    agents: [],
+    board: [],
+  });
+  const episodes = [];
+  for (const name of ['alpha', 'beta', 'gamma']) {
+    // eslint-disable-next-line no-await-in-loop
+    const installation = await AgentInstallation.create({
+      agentName: 'codex', instanceId: name, podId: pod._id, version: '1.0.0', status: 'active', installedBy: me._id,
+    });
+    // eslint-disable-next-line no-await-in-loop
+    episodes.push(await StalledConnectEpisode.create({
+      installationId: installation._id, podId: String(pod._id), installedBy: me._id, agentName: 'codex', instanceId: name,
+      displayName: `${name} codex`, tokenIssuedAt: new Date(Date.now() - 26 * HOUR), nudgedAt: new Date(Date.now() - 25 * HOUR),
+    }));
+  }
+  const digest = await deliver(me);
+  expect(digest.metadata.totalItems).toBe(6);
+  const sentText = mockSendEmail.mock.calls[0][0].textBody;
+  const marked = [];
+  for (const episode of episodes) {
+    // eslint-disable-next-line no-await-in-loop
+    const after = await reload(episode);
+    const shown = sentText.includes(`${episode.displayName} isn't connected yet`);
+    expect(Boolean(after.digestedAt)).toBe(shown);
+    if (after.digestedAt) marked.push(episode.displayName);
+  }
+  expect(marked).toHaveLength(2);
+});
+
+test('a 200 from the provider with the recipient failed uses nothing up', async () => {
+  const { me, episode } = await setup({ openedHoursAgo: 25 });
+  mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['rejected'] } } });
+  await deliver(me);
+  expect((await reload(episode)).digestedAt).toBeFalsy();
+});
+
 test('an episode id from a stored digest only marks an episode still open', async () => {
   const { me, episode } = await setup({ openedHoursAgo: 25 });
   const digest = await digestFor(me);

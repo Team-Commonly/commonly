@@ -110,7 +110,7 @@ interface StalledDigest {
    * has accepted it (digestEmailService), so a skipped or failed send leaves
    * the line for the next digest.
    */
-  marks: Array<{ episodeId: string; fields: string[] }>;
+  marks: Array<{ episodeId: string; fields: string[]; line: string }>;
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
@@ -232,8 +232,9 @@ export class DailyDigestService {
       else if (pastAgain) fields = ['digestedAgainAt'];
       else continue;
       const name = oneLine(episode.displayName || episode.agentName) || 'Your agent';
-      result.lines.push(`${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})`);
-      result.marks.push({ episodeId: String(episode._id), fields });
+      const line = `${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})`;
+      result.lines.push(line);
+      result.marks.push({ episodeId: String(episode._id), fields, line });
     }
     return result;
   }
