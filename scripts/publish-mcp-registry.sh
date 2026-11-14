@@ -57,7 +57,9 @@ manifest=$(mktemp)
 on_npm=""
 code=000
 for i in $(seq 1 "$tries"); do
-  code=$(curl -sS -m 20 -o "$manifest" -w '%{http_code}' "$NPM_REGISTRY/$pkg/$pkg_v" || echo 000)
+  # A failed curl still prints 000 for -w; `|| true` keeps it from doubling.
+  code=$(curl -sS -m 20 -o "$manifest" -w '%{http_code}' "$NPM_REGISTRY/$pkg/$pkg_v" || true)
+  code=${code:-000}
   if [ "$code" = 200 ]; then
     # JSON.parse, not require(): mktemp's name has no .json extension, so
     # require() would load the body as JavaScript and read no version.
