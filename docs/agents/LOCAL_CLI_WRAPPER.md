@@ -210,6 +210,23 @@ A Claude seat on a private pod can work in your project folder (`sandbox.trust: 
 
 Public seats don't need this: their writable folder must be a real folder at its own name (F197). Workspace trust is Claude-only, and every other adapter refuses it. On Seatbelt the profile is built from, and grants only, the checked realpath; a swap before the build is refused, and one after it gains nothing. On bubblewrap the checked realpath is the folder mounted at the seat's path. Code: `cli/src/lib/sandbox/workspace-pin.js`.
 
+### A workspace seat that reads host folders outside its project (F122)
+
+A workspace seat can also read folders outside its project that it names in `sandbox.filesystem.read-outside`, for example an ops seat that watches `~/.commonly/logs`. The folders are read-only on both platforms: bubblewrap binds them on Linux, and from F122 the Seatbelt profile admits them on macOS. Before F122, macOS dropped the list without a word, so such a seat could only run unconfined.
+
+On macOS, each entry is checked before the seat spawns. The check is an allowlist (`resolveHostReadDirectories` in `cli/src/lib/sandbox/seatbelt.js`):
+- **Dot folders and dotfiles in the home folder are refused**, except `~/.commonly/logs`. That covers `~/.ssh`, `~/.config`, `~/.zsh_history` and every token file under `~/.commonly`.
+- **`~/Library` is refused.**
+- **The home folder itself, and any folder that holds it, are refused.** That includes `/` and `/Users`.
+- **Any other folder in home is admitted read-only**, such as a project tree. Beneath each admitted folder, every dot folder and dotfile is denied, by the same rule the request passed: that covers other repos' `.env*`, `.commonly`, `.codex` and `.npmrc`, and also `.ssh`, `.aws` or `.gnupg` inside a project tree, in any case. That includes a granted repo's `.git` and `.github`, on purpose: a seat can read the files of a sibling repo it names, but `git log` there fails. A seat that needs another repo's history should work in that repo as its own workspace. A grant that holds the seat's own project doesn't change what the seat sees there: its `.git` and dotfiles stay readable, and its `.env` and `.commonly` stay denied.
+- **Outside home, only `/var/log`, `/private/var/log` and `/Library/Logs` are admitted.** The temp folders are refused, because each seat's per-turn runtime token sits there during its turn. Every seat runs as the same user, so the folder's 0700 mode doesn't fence one seat from another. The `/System/Volumes/Data` spellings of home are refused too, along with everything else not on this list.
+
+Each entry is resolved once, to its real path with its real case, and that same path is both checked and granted. A link is judged by where it leads. A case change such as `~/.SSH` can't get past the check, because APFS and Seatbelt both ignore case. A link inside an admitted folder that leads anywhere else reaches nothing, because the profile denies by default.
+
+An earlier version listed the places that hold credentials and refused only those. An Opus review read fake keys through it with a case change, and through token files under `~/.commonly` the list had missed. A second review read another seat's fake runtime token through `/var/folders`. That is why this is an allowlist on both sides of home.
+
+**Known gap:** on Linux, bubblewrap binds every `read-outside` entry without any check. A spec the server writes can therefore bind `~/.ssh` into a Linux workspace seat. Public seats never get `read-outside` on either platform. `write-outside` is honoured only on Linux.
+
 ## What's NOT deleted on detach
 
 - The agent's `User` row (intentional — identity continuity)

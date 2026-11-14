@@ -1675,6 +1675,96 @@ describe('claude adapter — a workspace seat', () => {
     }
   });
 
+  // F122: an Ops-type seat reads the host folders it names, read-only, the way
+  // bwrap honours read-outside on Linux. A public seat never does.
+  describe('read-outside under Seatbelt', () => {
+    let hostDir;
+    beforeEach(() => { hostDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-host-read-'))); });
+    afterEach(() => fs.rmSync(hostDir, { recursive: true, force: true }));
+    const withReadOutside = (trust, readOutside) => ({
+      mode: 'workspace', trust, filesystem: { 'read-outside': readOutside },
+    });
+
+    test('a workspace seat reads the folder it names, and cannot write it', async () => {
+      // A folder in home that need not exist: nothing is written there.
+      const named = path.join(fs.realpathSync.native(os.homedir()), 'commonly-f122-no-such-project', 'logs');
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('workspace', [named]));
+      const profile = calls[0].args[1];
+      expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${named}"))`);
+      expect(profile).not.toContain(`file-write* (subpath "${named}")`);
+    });
+
+    test('the tool policy lets the seat read the folder it names, which Read(./**) alone does not', async () => {
+      const named = path.join(fs.realpathSync.native(os.homedir()), 'commonly-f122-no-such-project', 'logs');
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('workspace', [named]));
+      const { args } = calls[0];
+      const allowedEnd = args.indexOf('--disallowedTools');
+      expect(args.slice(args.indexOf('--allowedTools'), allowedEnd)).toContain(`Read(/${named}/**)`);
+    });
+
+    test('a grant inside ~/.commonly swaps the folder-wide deny for one per other entry', () => {
+      const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-policy-home-')));
+      try {
+        fs.mkdirSync(path.join(home, '.commonly', 'logs'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.commonly', 'tokens'));
+        fs.writeFileSync(path.join(home, '.commonly', 'admin-token'), 'x');
+        const logs = path.join(home, '.commonly', 'logs');
+        const args = claudeModule.buildPublicClaudePolicyArgs([], {
+          trust: 'workspace', home, platform: 'darwin', hostReads: [logs],
+        });
+        const denies = args.slice(args.indexOf('--disallowedTools'));
+        expect(args).toContain(`Read(/${logs}/**)`);
+        expect(denies).not.toContain(`Read(/${path.join(home, '.commonly')}/**)`);
+        expect(denies).toEqual(expect.arrayContaining([
+          `Read(/${path.join(home, '.commonly', 'tokens')}/**)`,
+          `Read(/${path.join(home, '.commonly', 'admin-token')})`,
+        ]));
+        expect(denies.some((d) => d.includes(`${logs}`))).toBe(false);
+
+        const none = claudeModule.buildPublicClaudePolicyArgs([], { trust: 'workspace', home, platform: 'darwin' });
+        expect(none).toContain(`Read(/${path.join(home, '.commonly')}/**)`);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('the CLI logs folder is the one dot folder it may name', async () => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('workspace', ['~/.commonly/logs']));
+      expect(calls[0].args[1]).toContain(`(subpath "${path.join(os.homedir(), '.commonly', 'logs')}")`);
+    });
+
+    test('a public seat that names one gets none of it', async () => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, withReadOutside('public', [hostDir]));
+      expect(calls[0].args[1]).not.toContain(hostDir);
+    });
+
+    // The Opus review's bypasses: a case change (APFS and Seatbelt ignore
+    // case), and credential files a list of credential places missed.
+    test.each([
+      ['~'], ['/'], [path.dirname(os.homedir())], ['~/.commonly'], ['~/.ssh/keys'], ['~/.SSH'],
+      ['~/LIBRARY'], ['~/.commonly/admin-token'], ['~/.commonly/state'], ['~/.Commonly/Tokens'],
+      ['~/.zsh_history'], ['~/.git-credentials'], ['~/.commonly/logs/../tokens'],
+      // Outside home: the temp folders hold other seats' per-turn tokens.
+      // A dot folder deeper in the path is a token folder too (CodeRabbit).
+      ['~/Projects/repo/.commonly'], ['~/Projects/repo/.env'], ['~/Projects/.ssh'],
+      ['~/Projects/repo/.commonly/tokens'], ['~/Projects/repo/.ssh/keys'],
+      ['~/.commonly/logs/.hidden'],
+      [os.tmpdir()], ['/var/folders'], ['/private/tmp'], ['/tmp'], ['/Users/Shared'],
+      ['/Library/Keychains'], [`/System/Volumes/Data${os.homedir()}/.ssh`],
+    ])(
+      'a workspace seat naming %s is refused before it spawns',
+      async (entry) => {
+        const { impl, calls } = makeSpawnImpl();
+        await expect(workspaceSpawn(impl, withReadOutside('workspace', [entry]))).rejects.toThrow(/refusing sandbox\.filesystem\.read-outside/);
+        expect(calls).toHaveLength(0);
+      },
+    );
+  });
+
   test('under bwrap on a Mac it refuses before preparing any state', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))
