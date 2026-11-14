@@ -98,3 +98,38 @@ test('the teammate window opens no earlier than the reader was last here', async
   await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
   expect(read.mock.calls[0][2].getTime()).toBe(lastActive.getTime());
 });
+
+// CodeRabbit (#4127): a saved digest, even an empty one, ends the day's tries
+// (the 20h repeat guard, the unique digestKey). So a failed read must not
+// pass for "nothing happened", and must not take the other lines down.
+test('a failed teammate read saves no empty digest, so the next hour retries', async () => {
+  const { me, shared } = await setup();
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(shared));
+  jest.spyOn(PGMessage, 'findByOthersSince').mockRejectedValue(new Error('pg down'));
+  await expect(new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true })).rejects.toThrow(/teammate read failed/);
+  const Summary = require('../../../models/Summary');
+  expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
+});
+
+test('a failed names read is the same: no lines, no empty digest', async () => {
+  const { me, mate, shared } = await setup();
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap(shared));
+  jest.spyOn(PGMessage, 'findByOthersSince').mockResolvedValue([
+    { podId: String(shared._id), userId: String(mate._id), content: 'hi', count: 1, lastAt: new Date() },
+  ]);
+  const find = User.find.bind(User);
+  jest.spyOn(User, 'find').mockImplementation((query, ...rest) => (
+    query && query.isBot ? { select: () => ({ lean: () => Promise.reject(new Error('mongo blip')) }) } : find(query, ...rest)));
+  await expect(new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true })).rejects.toThrow(/teammate read failed/);
+});
+
+test('with other lines, a failed teammate read still sends them', async () => {
+  const { me, shared } = await setup();
+  jest.spyOn(ActivityService, 'getRecap').mockResolvedValue({
+    ...recap(shared), needsYou: [{ title: 'Review the deploy', podId: String(shared._id), podName: 'Launch' }],
+  });
+  jest.spyOn(PGMessage, 'findByOthersSince').mockRejectedValue(new Error('pg down'));
+  const digest = await new DailyDigestService().generateUserDailyDigest(me._id, { requireAway: true });
+  expect(digest.metadata.totalItems).toBe(1);
+  expect(digest.content).toContain('Waiting on you: Review the deploy');
+});

@@ -169,33 +169,41 @@ export class DailyDigestService {
    * agent work only, so without this a teammate's message never reached the
    * digest. Agents stay out (their work is the recap's), and so do public
    * pods: HQ chatter is not the recipient's team. A failed read gives no
-   * lines, never a false one.
+   * lines, never a false one, and says it failed: an empty digest saved on a
+   * failed read would block the hour's retry (see generateUserDailyDigest).
    */
   static async teammateLines(
     userId: unknown,
     pods: Array<{ _id: unknown; name?: string }>,
     since: Date,
-  ): Promise<string[]> {
-    if (pods.length === 0) return [];
+  ): Promise<{ lines: string[]; failed: boolean }> {
+    const none = { lines: [], failed: false };
+    if (pods.length === 0) return none;
     let rows: Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>;
     try {
       rows = await PGMessage.findByOthersSince(pods.map((pod) => String(pod._id)), String(userId), since);
     } catch (error) {
       console.warn('[daily-digest] teammate read failed:', (error as Error).message);
-      return [];
+      return { lines: [], failed: true };
     }
     // The read already filters both; held here too, so a change to the query
     // can't put the reader's own words or another pod into their email.
     const podIds = new Set(pods.map((pod) => String(pod._id)));
     rows = rows.filter((row) => row.userId !== String(userId) && podIds.has(row.podId));
     const authorIds = [...new Set(rows.map((row) => row.userId))].filter((id) => /^[a-f0-9]{24}$/i.test(id));
-    if (authorIds.length === 0) return [];
-    const people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
-      .select('username displayName').lean() as Array<{ _id: unknown; username?: string; displayName?: string }>;
+    if (authorIds.length === 0) return none;
+    let people: Array<{ _id: unknown; username?: string; displayName?: string }>;
+    try {
+      people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
+        .select('username displayName').lean();
+    } catch (error) {
+      console.warn('[daily-digest] teammate names read failed:', (error as Error).message);
+      return { lines: [], failed: true };
+    }
     const names = new Map(people.map((p) => [String(p._id), oneLine(p.displayName || p.username)]));
     // One row per pod and author; the most recent writer leads.
     const at = (value: unknown) => (value ? new Date(value as string).getTime() : 0);
-    return rows
+    const lines = rows
       // The count and the words are two reads; a message deleted between them
       // can leave a pair with no words, and a line with none says nothing.
       .filter((row) => names.has(row.userId) && oneLine(row.content))
@@ -206,6 +214,7 @@ export class DailyDigestService {
         const more = row.count > 1 ? ` (+${row.count - 1} more)` : '';
         return `${names.get(row.userId)} in ${podName}: ${oneLine(row.content)}${more}`;
       });
+    return { lines, failed: false };
   }
 
   /** Each recap agent's display label and whether it is the guide, from its User row. */
@@ -266,9 +275,10 @@ export class DailyDigestService {
       const publicPodIds = new Set(publicPods.map((pod) => String(pod._id)));
       // Words written while the reader was last here, they have seen.
       const teammatesSince = new Date(Math.max(startTime.getTime(), lastActive));
-      const teammateLines = recap
+      const teammates = recap
         ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), teammatesSince)
-        : [];
+        : { lines: [], failed: false };
+      const teammateLines = teammates.lines;
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
         board: (recap.board || []).filter((row) => !followed.some((task) => (
@@ -286,6 +296,14 @@ export class DailyDigestService {
       }
       const podCount = recap?.pods?.length || 0;
 
+      // A saved digest, even an empty one, ends the day's tries: the run skips
+      // anyone with a digest in DIGEST_REPEAT_GUARD_MS, and digestKey is unique.
+      // So an empty digest only after a failed teammate read is not saved; the
+      // throw leaves the next hour of the DIGEST_DUE_HOURS window to retry.
+      // With other lines it still sends, short the teammate lines.
+      if (lines.length === 0 && teammates.failed) {
+        throw new Error('teammate read failed; leaving the digest for the next run');
+      }
       if (lines.length === 0) {
         const emptyData = DailyDigestService.createEmptyDigest(
           user as { username: string },
