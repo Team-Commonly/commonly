@@ -143,7 +143,10 @@ const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[
 const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
-const QUOTA_RESET_RE = /\bresets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([A-Za-z_]+(?:\/[A-Za-z_]+)+)\)/i;
+// The zone is an IANA name: Area/Location (America/Port-au-Prince, Etc/GMT+5)
+// or a bare UTC/GMT, as a CI box or container seat reports. An unknown name
+// fails Intl below and keeps the fallback.
+const QUOTA_RESET_RE = /\bresets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\((UTC|GMT|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)\)/i;
 const QUOTA_RESET_MARGIN_MS = 2 * 60 * 1000;
 
 const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;

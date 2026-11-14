@@ -93,6 +93,42 @@ describe('spawn retry policy', () => {
     }
   });
 
+  test.each([
+    ['UTC', '2026-10-23T03:00:00Z', '2026-10-23T04:22:00Z'],
+    ['Etc/GMT+5', '2026-10-23T03:00:00Z', '2026-10-23T09:22:00Z'],
+    ['America/Port-au-Prince', '2026-10-23T03:00:00Z', '2026-10-23T08:22:00Z'],
+  ])('a reset named in %s is read', (zone, nowText, probeText) => {
+    const now = Date.parse(nowText);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error(`session limit · resets 4:20am (${zone})`),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+        jitterRatio: 0,
+      });
+      expect(policy.delayMs).toBe(Date.parse(probeText) - now);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // 2:30am does not exist in Los Angeles on 2027-03-14: the clock jumps 2:00 to 3:00.
+  test('a reset at a skipped local time keeps the bounded quota fallback', () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-03-14T09:00:00Z'));
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error('session limit · resets 2:30am (America/Los_Angeles)'),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+        jitterRatio: 0,
+      });
+      expect(policy.delayMs).toBe(SPAWN_RETRY_MAX_MS);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   test('an invalid reset hint keeps the bounded quota fallback', () => {
     const policy = spawnRetryPolicy({
       error: new Error('session limit · resets 25:99am (America/Los_Angeles)'),
