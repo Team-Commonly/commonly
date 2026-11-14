@@ -448,14 +448,20 @@
 }
 
 /* The way to a key, for the agents Bring your own can connect. */
+/* The link sits inline after the notice text. A min-height on it grew the
+   line it wrapped onto, which opened a tall gap at phone width, so the tap
+   target is an overlay that takes no layout space. */
 .v2-root a.v2-chat__agent-room-connect {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  margin-top: 2px;
+  position: relative;
   color: var(--v2-accent);
   font-weight: 600;
   text-decoration: none;
+}
+
+.v2-root a.v2-chat__agent-room-connect::after {
+  content: '';
+  position: absolute;
+  inset: -6px -4px;
 }
 
 .v2-root a.v2-chat__agent-room-connect:hover {
@@ -463,7 +469,10 @@
 }
 
 @media (max-width: 760px) {
-  .v2-root a.v2-chat__agent-room-connect { min-height: 44px; }
+  .v2-root a.v2-chat__agent-room-connect::after { inset: -14px -6px; }
+  /* Away-list rows sit 4 px apart: a full overlay would reach into the row
+     above and take a tap meant for that row's Connect. */
+  .v2-root .v2-chat__agents-away a.v2-chat__agent-room-connect::after { inset: -4px -6px; }
 }
 
 .v2-root button.v2-chat__agent-room-copy {
