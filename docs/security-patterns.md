@@ -178,11 +178,11 @@ then answered with the pod's latest chat summary
 ## A hidden resource hides on every refusal, writes included
 
 `agent-room` and `agent-admin` answer a non-member 404, so the refusal doesn't
-confirm the room exists. That holds only if every refusal on the resource gives
+confirm the pod exists. That holds only if every refusal on the resource gives
 the answer a missing one gives, status and body. On F497 the focus read was
 mapped to 404, but the focus write still answered a stranger 403
 `FOCUS_EDIT_FORBIDDEN` where a missing pod answers 404. That 403 still confirmed
-the room. `roomHiddenFrom` in `routes/pods.ts` now maps both. Test the parity
+the pod. `roomHiddenFrom` in `routes/pods.ts` now maps both. Test the parity
 directly: a stranger's answer must equal a missing pod's answer
 (`podFocusRoomNotFound.test.js`). A member refused for another reason, such as
 not being the creator, keeps the 403, because it tells them nothing new.
