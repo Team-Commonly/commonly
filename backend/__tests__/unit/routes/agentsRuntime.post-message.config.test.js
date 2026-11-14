@@ -330,6 +330,16 @@ describe('F490: the waking mention on the CAP post route', () => {
     expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
   });
 
+  it('a failed lookup checks freshness with no exemption instead of failing the post', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    AgentSendFreshness.deliveredTriggerIds.mockRejectedValueOnce(new Error('mongo blip'));
+    const res = await send({ content: 'done', threadRootId: '133559' });
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
   it('still holds what the lookup does not name', async () => {
     const hold = { code: 'unseen_messages', unseenCount: 1, messages: [{ id: '133601' }] };
     AgentSendFreshness.deliveredTriggerIds.mockResolvedValueOnce([]);

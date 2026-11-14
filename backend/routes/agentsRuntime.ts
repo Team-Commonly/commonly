@@ -2586,12 +2586,17 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // delivered event for this agent named is exempt, and only that message.
       const answering = [req.body?.threadRootId, req.body?.replyToMessageId]
         .filter((id) => id !== undefined && id !== null && String(id) !== '');
+      // The lookup only narrows the hold. If it fails, the guard runs as it did
+      // before F490 (no exemption) rather than failing the post (CodeRabbit).
       const exemptMessageIds = answering.length
         ? await AgentSendFreshness.deliveredTriggerIds({
           agentName: installation.agentName,
           instanceId: installation.instanceId || 'default',
           podId,
           candidateIds: answering,
+        }).catch((lookupError: Error) => {
+          console.warn('[agent post] trigger lookup failed; checking freshness with no exemption:', lookupError.message);
+          return [];
         })
         : [];
       const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
