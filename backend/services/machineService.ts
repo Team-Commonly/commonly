@@ -342,10 +342,11 @@ export async function removeMachine({
   await AgentCredential.revokeCascade(credentials.map((credential) => credential._id));
 
   // S2 owns the identity-level CAS. Deletion clears the binding but preserves
-  // the agent User row, identity, and memory.
+  // the agent User row, identity, and memory. F476: the agent keeps the
+  // computer's name, so Settings can say where it ran until it is placed again.
   await User.updateMany(
     { 'botMetadata.machineId': machine.machineId },
-    { $set: { 'botMetadata.machineId': null } },
+    { $set: { 'botMetadata.machineId': null, removedMachine: { name: machine.name, at: new Date() } } },
     { strict: false },
   );
   await Machine.deleteOne({ _id: machine._id });

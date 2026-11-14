@@ -137,6 +137,10 @@ export interface IUser extends Document {
   apiTokenLast4?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
+  // F476: the computer whose removal unbound this agent, until a daemon adopts
+  // it or its owner releases it. Kept out of botMetadata, which many reads send
+  // to other people whole; select: false so only the owner's placement read sees it.
+  removedMachine?: { name: string; at: Date } | null;
   isBot: boolean;
   botType: BotType;
   botMetadata: {
@@ -363,6 +367,11 @@ const userSchema = new Schema<IUser>({
   apiTokenLast4: { type: String, select: false },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
+  removedMachine: {
+    type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   isBot: { type: Boolean, default: false },
   botType: {
     type: String,

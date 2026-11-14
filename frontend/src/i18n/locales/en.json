@@ -3315,6 +3315,7 @@
       "save": "Save runtime",
       "saveError": "Could not save the model.",
       "machineRevoked": "This computer’s key was revoked. Choose another computer to run this agent.",
+      "machineRemoved": "{{name}} was removed. Choose another computer to run this agent.",
       "currentMachine": "Running on {{name}}",
       "machineRequested": "Waiting for {{name}} to start this agent",
       "moveLabel": "Run on",

@@ -145,8 +145,8 @@ test('on a Windows browser, the setup hint is the npx.cmd line with --unsandboxe
   }
 });
 
-// An agent with no computer bound arrives as managed: false (a `commonly agent
-// run` listener, or one whose computer was removed): no computer row, no hint.
+// An agent with no computer bound arrives as managed: false. A `commonly agent
+// run` listener gets no computer row and no hint; a removed computer is F476's case below.
 test('an agent with no computer bound shows no computer row and no setup hint', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
@@ -156,6 +156,41 @@ test('an agent with no computer bound shows no computer row and no setup hint', 
   await screen.findByRole('button', { name: 'Connector grants' });
   expect(screen.queryByTestId('agent-machine-placement')).not.toBeInTheDocument();
   expect(screen.queryByText(/daemon setup/)).not.toBeInTheDocument();
+});
+
+// F476: removing a computer unbinds its agents, which then arrive managed: false.
+// The placement read names the removed computer, so the row says so and offers
+// the way back: another live computer to move to, or the setup line.
+test('an agent whose computer was removed names it and offers another computer', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false,
+      removedMachine: { name: 'Studio Mac', at: '2026-11-13T10:00:00Z' }, activeMachines: [{ machineId: 'new', name: 'New Mac' }] }
+    : response }));
+  renderSection({ runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: false });
+  const row = await screen.findByTestId('agent-machine-placement');
+  expect(row).toHaveTextContent('Studio Mac was removed. Choose another computer to run this agent.');
+  expect(screen.getByRole('button', { name: 'Move agent' })).toBeInTheDocument();
+});
+
+test('an agent whose computer was removed keeps its row after a move, waiting for the new computer', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: 'new', boundMachineRevoked: false,
+      removedMachine: { name: 'Studio Mac', at: '2026-11-13T10:00:00Z' }, activeMachines: [{ machineId: 'new', name: 'New Mac' }] }
+    : response }));
+  renderSection({ runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: false });
+  const row = await screen.findByTestId('agent-machine-placement');
+  expect(row).toHaveTextContent('Waiting for New Mac to start this agent');
+  expect(row).not.toHaveTextContent('Studio Mac was removed');
+});
+
+test('an agent whose computer was removed, with no other computer, shows the setup line', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false,
+      removedMachine: { name: 'Studio Mac', at: '2026-11-13T10:00:00Z' }, activeMachines: [] }
+    : response }));
+  renderSection({ runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: false });
+  expect(await screen.findByTestId('agent-machine-placement')).toHaveTextContent('Studio Mac was removed.');
+  expect(screen.getByText(/daemon setup/)).toBeInTheDocument();
 });
 
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {
