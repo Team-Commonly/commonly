@@ -116,8 +116,13 @@ export const walkModelEnv = (adapter, llmKey, gateway) => (adapter === 'codex'
  * $CODEX_HOME/config.toml; the system layer is the one other place to name a
  * provider. The walk's label says so: this is our gateway set system-wide, not
  * a user's own ChatGPT login or OpenAI key.
+ *
+ * It names the model too. The walk's key allows one alias, and a BYO seat
+ * keeps Codex's own default model, which moves between releases: 0.169.0
+ * asks for a GPT model the key refuses (403), and the turn never runs.
  */
-export const codexSystemConfig = (gateway) => [
+export const codexSystemConfig = (gateway, model) => [
+  `model = "${model}"`,
   'model_provider = "commonly-gateway"',
   '',
   '[model_providers.commonly-gateway]',

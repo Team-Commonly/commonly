@@ -90,7 +90,10 @@ describe('the Linux prod walk', () => {
   });
 
   test("names the gateway as Codex's provider in the system config, keyed by LITELLM_API_KEY, with no key in the file", () => {
-    const toml = codexSystemConfig('https://gw');
+    const toml = codexSystemConfig('https://gw', 'claude-haiku-5-5');
+    // The model the key allows, set at the top level, before any table:
+    // Codex's own default moves between releases and the key refuses it.
+    expect(toml.split('[')[0]).toMatch(/^model = "claude-haiku-5-5"$/m);
     expect(toml).toMatch(/^model_provider = "commonly-gateway"$/m);
     expect(toml).toMatch(/^base_url = "https:\/\/gw\/v1"$/m);
     expect(toml).toMatch(/^wire_api = "responses"$/m);
