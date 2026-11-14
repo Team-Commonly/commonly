@@ -8,6 +8,10 @@ const DiscordService = require('./discordService');
 const summarizerService = require('./summarizerService');
 const Pod = require('../models/Pod');
 import { assertCanBindSurface, SurfaceBindRefusedError } from './chatRelay/bindSurface';
+import { SUMMARY_COOLING, claimSummaryRun } from './discordSummaryCooldown';
+
+// The bridge's wording for a bound row that is not connected (discordRelayCommandService NOT_ACTIVE).
+const CONNECTION_NOT_ACTIVE = "This channel's connection to Commonly isn't active. Reconnect it from the pod's Connectors page.";
 
 interface CommandServiceOptions {
   guildId?: string;
@@ -205,6 +209,9 @@ class DiscordCommandService {
           content: '❌ Discord integration not found. Please install the bot first.',
         };
       }
+      // F162: as /tldr, only a connected row answers. Disconnect leaves the
+      // row active, so isActive alone would still post the pod's summary.
+      if (this.integration.status !== 'connected') return { success: false, content: CONNECTION_NOT_ACTIVE };
 
       const found = await DiscordCommandService.latestPodSummaryFor(this.integration);
       if (found.kind === 'refused') {
@@ -353,7 +360,16 @@ class DiscordCommandService {
     }
   }
 
-  async handlePushCommand(discordServiceInstance: unknown = null): Promise<CommandResult> {
+  /**
+   * `/discord-push`: the channel's buffered chat → a summary in the pod. It
+   * runs the summarizer, so it takes /summary's connected check and shares its
+   * one-a-minute clock per row (F162). `cooldownClaimed` is /summary calling
+   * with the slot it already holds.
+   */
+  async handlePushCommand(
+    discordServiceInstance: unknown = null,
+    { cooldownClaimed = false }: { cooldownClaimed?: boolean } = {},
+  ): Promise<CommandResult> {
     try {
       if (!this.integration) {
         await this.initialize();
@@ -363,11 +379,18 @@ class DiscordCommandService {
         return { success: false, content: '❌ Discord integration not found.' };
       }
 
+      if (this.integration.status !== 'connected') return { success: false, content: CONNECTION_NOT_ACTIVE };
+
       if (!this.integration.config?.webhookListenerEnabled) {
         return {
           success: false,
           content: '⚠️ Auto sync is disabled. Use `/discord-enable` first to enable Discord activity sync.',
         };
+      }
+
+      // After the sync check, so a row that would run nothing takes no slot.
+      if (!cooldownClaimed && !claimSummaryRun(this.integration._id)) {
+        return { success: false, content: SUMMARY_COOLING };
       }
 
       const syncResult = await (discordServiceInstance as { syncRecentMessages: (n: number, opts: unknown) => Promise<SyncResult> }).syncRecentMessages(1, {

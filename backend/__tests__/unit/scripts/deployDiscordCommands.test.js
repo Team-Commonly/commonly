@@ -45,11 +45,16 @@ test('/mode offers exactly the two modes, and /mute takes a duration', () => {
 });
 
 // F161 item 8: the bridge commands make sense only in a guild channel bound to a pod.
-test('every bridge command is offered in guilds only', () => {
+// F162: so do the five legacy ones, which all act on a channel's bound row.
+test('every command, bridge and legacy, is offered in guilds only', () => {
   const commands = require('../../../config/discordApplicationCommands.json');
   BRIDGE.forEach((name) => {
     expect(commands.find((c) => c.name === name).contexts).toEqual([0]);
   });
+  ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable', 'discord-push'].forEach((name) => {
+    expect(commands.find((c) => c.name === name).contexts).toEqual([0]);
+  });
+  commands.forEach((command) => expect(command.contexts).toEqual([0]));
 });
 
 // F161 item 5: the boot-time PUT cannot hang boot, and a failure is an exit code.

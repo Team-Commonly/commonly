@@ -98,14 +98,16 @@ export const isIgnoredDiscordMessage = (message: DiscordInboundMessage | null | 
 
 // The row is live for inbound, and the message came from the channel it binds.
 // The gateway's channel cache already matched guild and channel, but it is up to
-// a minute stale, so the row read here is the authority.
+// a minute stale, so the row read here is the authority. `connected` exactly, as
+// outbound: disconnect writes 'disconnected' and leaves isActive and liveRelay
+// as they were (F162).
 const isInboundRelayableIntegration = (
   integration: DiscordIntegrationDoc,
   message: DiscordInboundMessage,
 ): boolean => (
   integration.type === 'discord'
   && integration.isActive === true
-  && integration.status !== 'error'
+  && integration.status === 'connected'
   && integration.config?.liveRelay === true
   && !integration.config?.adminPause
   && Boolean(integration.podId)
