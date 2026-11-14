@@ -149,6 +149,32 @@ describe('digestEmailService', () => {
     expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeInstanceOf(Date);
   });
 
+  // F506: SMTP2GO v3 answers 200 with per-recipient results. A 200 whose one
+  // recipient failed delivered nothing, so nothing may be counted or marked
+  // as delivered: not the send, not lastDigestSent, not the held asks.
+  it('counts a 200 with the recipient failed as a failed send and marks nothing delivered', async () => {
+    const user = await createUser({ email: `failed-${sequence + 1}@gmail.com` });
+    const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId: pod._id, kind: 'blocked',
+      source: { type: 'message', id: 'blocked-f506' },
+      title: 'Scout needs a key', podName: 'Research', status: 'open',
+    });
+    const held = await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'b'.repeat(48), status: 'overflow',
+    });
+    const digest = await createDigest(user);
+    mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['rejected'] } } });
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result.sent).toBe(0);
+    expect(result.failed).toBe(1);
+    expect((await User.findById(user._id)).lastDigestSent).toBeUndefined();
+    expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeUndefined();
+  });
+
   it('sends held asks even when the daily recap has no lines', async () => {
     const user = await createUser({ email: `empty-held-${sequence + 1}@gmail.com` });
     const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });

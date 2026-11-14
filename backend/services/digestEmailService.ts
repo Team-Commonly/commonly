@@ -276,6 +276,18 @@ export class DigestEmailService {
           textBody: bodies.textBody,
           htmlBody: bodies.htmlBody,
         });
+        // F506: SMTP2GO v3 can answer 200 with the one recipient failed. That
+        // delivered nothing, so it is a failed send: no count, no
+        // lastDigestSent, no held ask or stalled line used up. The claim stays,
+        // as for any failure after it (at-most-once, above).
+        if (!providerAccepted(sent)) {
+          result.failed += 1;
+          console.error('Digest email delivery failed: the provider did not accept it.', {
+            summaryId: String(summary._id || ''),
+            userId: String(userId || ''),
+          });
+          continue;
+        }
 
         result.sent += 1;
         if (includedOverflow.length) {
@@ -289,13 +301,12 @@ export class DigestEmailService {
           }
         }
         // F502: a stalled-connect line is used up only once it was delivered,
-        // so a skipped or failed send leaves it for the next digest: the
-        // provider must have accepted the message (SMTP2GO v3 can answer 200
-        // with the recipient failed), and the line must be one of the top
-        // items the email shows, not one the extract cut. Each mark stands
-        // alone: one failing must not undo the delivery or the others.
+        // so a skipped or failed send leaves it for the next digest (the
+        // provider check above), and the line must be one of the top items the
+        // email shows, not one the extract cut. Each mark stands alone: one
+        // failing must not undo the delivery or the others.
         const shown = new Map<string, number>();
-        for (const item of providerAccepted(sent) ? bodies.items : []) shown.set(item, (shown.get(item) || 0) + 1);
+        for (const item of bodies.items) shown.set(item, (shown.get(item) || 0) + 1);
         for (const mark of summary.metadata?.stalledMarks || []) {
           // Keyed the way the digest stores it, as a bullet, so a name that
           // itself starts with "- " still matches its shown item.
