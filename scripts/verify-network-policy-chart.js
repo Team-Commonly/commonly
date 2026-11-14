@@ -139,7 +139,8 @@ const ingressLanes = {
       ['edge', 'frontend', 80], ['edge', 'litellm', 4000],
       ...['backend', 'backend-worker', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'redis', 6379],
         [`app=${a}`, 'agent-computer-waker', 8080], [`app=${a}`, 'agent-computer-steel', 3000]]),
-      // Every workload whose env names LITELLM_BASE_URL (live check, 11-14).
+      // Every workload whose env names litellm: LITELLM_BASE_URL, or
+      // COMMONLY_LITELLM_BASE_URL for cloud-codex (live check, 11-14).
       ...['backend', 'backend-worker', 'commonly-bot', 'ops-runner', 'cloud-codex'].map((a) => [`app=${a}`, 'litellm', 4000]),
     ],
     // The tunnel shares the controller's namespace but must go through it.

@@ -597,9 +597,10 @@ networkPolicy:
   # frontend), redis only its three clients, the agent-computer waker and
   # steel gates only backend, backend-worker and ops-runner (the broker in the
   # backend is their one caller; the waker scales steel through the kube API,
-  # not over HTTP), and litellm only the five LITELLM_BASE_URL clients plus
-  # the controller for the public litellm.commonly.me route. Rollout order and
-  # rollback: docs/runbooks/redis-auth-and-network-policy.md.
+  # not over HTTP), and litellm only the five clients whose env names it
+  # (cloud-codex as COMMONLY_LITELLM_BASE_URL) plus the controller for the
+  # public litellm.commonly.me route. Rollout order and rollback:
+  # docs/runbooks/redis-auth-and-network-policy.md.
   ingress:
     edge:
       - namespaceSelector:
