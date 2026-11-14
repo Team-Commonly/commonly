@@ -5,11 +5,9 @@ import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
 // eslint-disable-next-line global-require
 const AttentionItem = require('../models/AttentionItem');
 // eslint-disable-next-line global-require
-const MentionEmailState = require('../models/MentionEmailState');
-// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
-const PodVisit = require('../models/PodVisit');
+const store = require('../repositories/mentionEmailRepository');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
@@ -47,21 +45,11 @@ const BATCH = 200;
 
 const validIds = (...ids: unknown[]): boolean => ids.every((id) => mongoose.isValidObjectId(id));
 
-const upsertVisit = async (userId: unknown, podId: unknown, update: Record<string, unknown>): Promise<void> => {
-  try {
-    await PodVisit.updateOne({ userId, podId }, update, { upsert: true });
-  } catch (error) {
-    // Two first visits raced on the unique row; the loser's stamp still lands.
-    if ((error as { code?: number }).code !== 11000) throw error;
-    await PodVisit.updateOne({ userId, podId }, update);
-  }
-};
-
 // Never throws: a visit stamp must not fail a message read or a socket join.
 export const stampPodOpened = async (userId: unknown, podId: unknown, at: Date = new Date()): Promise<void> => {
   if (!validIds(userId, podId)) return;
   try {
-    await upsertVisit(userId, podId, { $max: { openedAt: at } });
+    await store.stampOpened(String(userId), String(podId), at);
   } catch (error) {
     console.warn('[mention-email] pod open stamp failed:', (error as Error).message);
   }
@@ -71,7 +59,7 @@ export const stampPodClosed = async (userId: unknown, podIds: unknown[], at: Dat
   await Promise.all((podIds || []).map(async (podId) => {
     if (!validIds(userId, podId)) return;
     try {
-      await upsertVisit(userId, podId, { $max: { closedAt: at } });
+      await store.stampClosed(String(userId), String(podId), at);
     } catch (error) {
       console.warn('[mention-email] pod close stamp failed:', (error as Error).message);
     }
@@ -94,10 +82,10 @@ export const stampPodOpenedOnRead = (req: any, res: any, next: () => void): void
   next();
 };
 
-const sawIt = (visit: any, mentionAt: number, now: number): boolean => {
+const sawIt = (visit: { openedAt: Date | null; closedAt: Date | null } | null, mentionAt: number, now: number): boolean => {
   if (!visit) return false;
-  const opened = visit.openedAt ? new Date(visit.openedAt).getTime() : 0;
-  const closed = visit.closedAt ? new Date(visit.closedAt).getTime() : 0;
+  const opened = visit.openedAt ? visit.openedAt.getTime() : 0;
+  const closed = visit.closedAt ? visit.closedAt.getTime() : 0;
   if (opened >= mentionAt || closed >= mentionAt) return true;
   return opened > closed && now - opened < OPEN_STALE_MS;
 };
@@ -159,30 +147,16 @@ const decide = async (row: any, now: Date): Promise<Outcome | null> => {
   if (!pod || !isListedPodMember(pod, user._id)) return 'skipped';
 
   const mentionAt = new Date(row.sourceCreatedAt || row.createdAt).getTime();
-  const visit = await PodVisit.findOne({ userId: user._id, podId: row.podId }).lean();
+  const recipientId = String(user._id);
+  const podId = String(row.podId);
+  const visit = await store.getVisit(recipientId, podId);
   if (sawIt(visit, mentionAt, now.getTime())) return 'skipped';
 
-  // The 6h window, claimed before the provider call. An existing row inside
-  // the window makes the upsert insert, which the unique index refuses.
-  let previous: Date | undefined;
-  try {
-    const before = await MentionEmailState.findOneAndUpdate(
-      {
-        recipientUserId: user._id,
-        podId: row.podId,
-        $or: [
-          { lastEmailAt: { $exists: false } },
-          { lastEmailAt: { $lte: new Date(now.getTime() - MENTION_EMAIL_WINDOW_MS) } },
-        ],
-      },
-      { $set: { lastEmailAt: now, attentionItemId: row._id } },
-      { upsert: true, new: false },
-    ).lean();
-    previous = before?.lastEmailAt;
-  } catch (error) {
-    if ((error as { code?: number }).code === 11000) return 'skipped';
-    throw error;
-  }
+  // The 6h window, claimed before the provider call, in one statement.
+  const claim = await store.claimWindow(
+    recipientId, podId, String(row._id), now, new Date(now.getTime() - MENTION_EMAIL_WINDOW_MS),
+  );
+  if (!claim) return 'skipped';
 
   try {
     await deliver(user, row);
@@ -198,10 +172,7 @@ const decide = async (row: any, now: Date): Promise<Outcome | null> => {
     console.warn('[mention-email] delivery failed; the next pass retries:', err.message);
     // Give the window and the row back, so a refused send is not a used one.
     try {
-      await MentionEmailState.updateOne(
-        { recipientUserId: user._id, podId: row.podId, lastEmailAt: now },
-        previous ? { $set: { lastEmailAt: previous } } : { $unset: { lastEmailAt: 1 } },
-      );
+      await store.releaseWindow(recipientId, podId, now, claim.previous);
       await AttentionItem.updateOne(
         { _id: row._id, mentionEmailCheckedAt: now },
         { $unset: { mentionEmailCheckedAt: 1 } },
@@ -219,13 +190,14 @@ export const sweepMentionEmails = async (
 ): Promise<{ scanned: number; sent: number; skipped: number; failed: number; disabled?: boolean }> => {
   const result = { scanned: 0, sent: 0, skipped: 0, failed: 0 };
   if (!process.env.SMTP2GO_API_KEY || !process.env.SMTP2GO_FROM_EMAIL) return { ...result, disabled: true };
+  if (!store.isAvailable()) return { ...result, disabled: true };
   if (await digestSendingState() !== 'on') return { ...result, disabled: true };
   // Nothing can be told "seen" from "not seen" before the first visit stamp
   // existed, so the first passes after rollout don't mail mentions people
   // already read on the old image.
-  const firstVisit = await PodVisit.findOne({}).sort({ _id: 1 }).select('_id').lean();
+  const firstVisit = await store.firstVisitAt();
   if (!firstVisit) return result;
-  const floor = new Date(Math.max(now.getTime() - CATCH_UP_MS, firstVisit._id.getTimestamp().getTime()));
+  const floor = new Date(Math.max(now.getTime() - CATCH_UP_MS, firstVisit.getTime()));
   const due = new Date(now.getTime() - MENTION_EMAIL_DELAY_MS);
   // The mention's own time decides, not the row's: a backfill re-records old
   // mentions with a fresh createdAt.

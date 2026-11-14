@@ -7,6 +7,14 @@
 // digest; the digest opt-out applies.
 const mockSendEmail = jest.fn();
 jest.mock('../../../services/emailService', () => ({ sendEmail: mockSendEmail }));
+// The visit and window stores are Postgres tables (ADR-034 D4), built from the
+// shipped migration on pg-mem.
+jest.mock('../../../config/db-pg', () => {
+  // eslint-disable-next-line global-require
+  const { newDb } = require('pg-mem');
+  const { Pool } = newDb().adapters.createPg();
+  return { pool: new Pool() };
+});
 
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const User = require('../../../models/User');
@@ -20,13 +28,21 @@ const HOUR = 60 * MIN;
 const originalEnv = process.env;
 let serial = 0;
 
-beforeAll(setupMongoDb);
+const fs = require('fs');
+const path = require('path');
+const { pool } = require('../../../config/db-pg');
+
+const MIGRATION = fs.readFileSync(path.join(__dirname, '../../../config/migrations/0012_mention_email.sql'), 'utf8');
+const resetPg = () => pool.query('DELETE FROM pod_visits; DELETE FROM mention_email_state;');
+
+beforeAll(async () => { await setupMongoDb(); await pool.query(MIGRATION); });
 afterAll(closeMongoDb);
 beforeEach(() => {
   process.env = { ...originalEnv, SMTP2GO_API_KEY: 'smtp-key', SMTP2GO_FROM_EMAIL: 'hello@commonly.me' };
   mockSendEmail.mockReset().mockResolvedValue({ data: { data: { succeeded: 1, failed: 0, failures: [] } } });
 });
-afterEach(async () => { process.env = originalEnv; jest.restoreAllMocks(); await clearMongoDb(); });
+const clearAll = async () => { await clearMongoDb(); await resetPg(); };
+afterEach(async () => { process.env = originalEnv; jest.restoreAllMocks(); await clearAll(); });
 
 const person = (username, extra = {}) => {
   serial += 1;
@@ -34,18 +50,20 @@ const person = (username, extra = {}) => {
     username, email: `${username}-${serial}@example.com`, password: 'Password123!', verified: true, ...extra,
   });
 };
-const PodVisit = require('../../../models/PodVisit');
 const mongoose = require('mongoose');
 
+const visitCount = async (userId) => Number((await pool.query(
+  userId ? 'SELECT COUNT(*) AS n FROM pod_visits WHERE user_id = $1' : 'SELECT COUNT(*) AS n FROM pod_visits',
+  userId ? [String(userId)] : [],
+)).rows[0].n);
 // The pass mails nothing older than the first visit stamp (rollout floor), so
 // each test starts as if F512 had been live for a day.
-const rolledOut = (hoursAgo = 30) => PodVisit.create({
-  _id: mongoose.Types.ObjectId.createFromTime(Math.floor((Date.now() - hoursAgo * HOUR) / 1000)),
-  userId: new mongoose.Types.ObjectId(),
-  podId: new mongoose.Types.ObjectId(),
-});
+const rolledOut = (hoursAgo = 30) => pool.query(
+  'INSERT INTO pod_visits (user_id, pod_id, created_at) VALUES ($1, $2, $3)',
+  [String(new mongoose.Types.ObjectId()), String(new mongoose.Types.ObjectId()), new Date(Date.now() - hoursAgo * HOUR)],
+);
 const room = async (name, members) => {
-  if (!(await PodVisit.countDocuments({}))) await rolledOut();
+  if (!(await visitCount())) await rolledOut();
   return Pod.create({ name, createdBy: members[0]._id, members: members.map((m) => m._id) });
 };
 
@@ -102,14 +120,14 @@ test('opening the pod after the mention, or having it open already, means no ema
   await mentionEmail.stampPodOpened(bo._id, pod._id, new Date(at.getTime() + 3 * MIN));
   expect((await sweep(new Date())).sent).toBe(0);
 
-  await clearMongoDb();
+  await clearAll();
   const t = await team();
   // In the room since before the mention and never left: it showed up live.
   await mentionEmail.stampPodOpened(t.bo._id, t.pod._id, new Date(Date.now() - 2 * HOUR));
   await mention(t.ana, t.pod, '@bo ping', new Date(Date.now() - 20 * MIN));
   expect((await sweep(new Date())).sent).toBe(0);
 
-  await clearMongoDb();
+  await clearAll();
   const u = await team();
   // Opened before, closed before: they have not seen this one.
   await mentionEmail.stampPodOpened(u.bo._id, u.pod._id, new Date(Date.now() - 3 * HOUR));
@@ -210,7 +228,7 @@ test('a mention older than the catch-up window is left to the digest', async () 
 test('a pod read stamps the open only when the read succeeded', async () => {
   const { EventEmitter } = require('events');
   const { bo, pod } = await team();
-  await PodVisit.deleteMany({ userId: bo._id });
+  await pool.query('DELETE FROM pod_visits WHERE user_id = $1', [String(bo._id)]);
   const read = async (statusCode) => {
     const res = Object.assign(new EventEmitter(), { statusCode });
     const next = jest.fn();
@@ -220,9 +238,9 @@ test('a pod read stamps the open only when the read succeeded', async () => {
     await new Promise((resolve) => { setTimeout(resolve, 50); });
   };
   await read(403);
-  expect(await PodVisit.countDocuments({ userId: bo._id })).toBe(0);
+  expect(await visitCount(bo._id)).toBe(0);
   await read(200);
-  expect((await PodVisit.findOne({ userId: bo._id, podId: pod._id }).lean()).openedAt).toBeTruthy();
+  expect(await visitCount(bo._id)).toBe(1);
 });
 
 test('a read in flight when the person leaves stamps its arrival time, so the pod does not read as open', async () => {
@@ -246,14 +264,14 @@ test('a backfilled row for an old mention is left to the digest, whatever its cr
 });
 
 test('mentions from before the first visit stamp existed are not mailed', async () => {
-  await PodVisit.deleteMany({});
+  await resetPg();
   await rolledOut(0.25);
   const ana = await person('ana');
   const bo = await person('bo');
   const pod = await Pod.create({ name: 'Launch', createdBy: ana._id, members: [ana._id, bo._id] });
   await mention(ana, pod, '@bo read this already', new Date(Date.now() - 40 * MIN));
   expect((await sweep(new Date())).sent).toBe(0);
-  await PodVisit.deleteMany({});
+  await resetPg();
   expect((await sweep(new Date())).sent).toBe(0);
 });
 
@@ -267,15 +285,16 @@ test('two mentions for the same person and pod in one pass send one email', asyn
 });
 
 test('a refused send after an earlier email gives back the earlier window, not a blank one', async () => {
-  const MentionEmailState = require('../../../models/MentionEmailState');
   const { ana, bo, pod } = await team();
   const earlier = new Date(Date.now() - 7 * HOUR);
-  await MentionEmailState.create({ recipientUserId: bo._id, podId: pod._id, lastEmailAt: earlier });
+  await pool.query('INSERT INTO mention_email_state (recipient_user_id, pod_id, last_email_at) VALUES ($1, $2, $3)',
+    [String(bo._id), String(pod._id), earlier]);
   await mention(ana, pod, '@bo ping', new Date(Date.now() - 20 * MIN));
   mockSendEmail.mockResolvedValueOnce({ data: { data: { succeeded: 0, failed: 1, failures: ['rejected'] } } });
   expect((await sweep(new Date())).sent).toBe(0);
-  const state = await MentionEmailState.findOne({ recipientUserId: bo._id, podId: pod._id }).lean();
-  expect(state.lastEmailAt.getTime()).toBe(earlier.getTime());
+  const state = (await pool.query('SELECT last_email_at FROM mention_email_state WHERE recipient_user_id = $1 AND pod_id = $2',
+    [String(bo._id), String(pod._id)])).rows[0];
+  expect(new Date(state.last_email_at).getTime()).toBe(earlier.getTime());
 });
 
 test('a timeout with no answer keeps the claim: no second email on the next pass', async () => {
