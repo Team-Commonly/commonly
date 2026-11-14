@@ -35083,7 +35083,7 @@
     "eyebrow": "Guide",
     "titleTag": "Claude Code and Codex in the same team chat: two vendors' Slack apps, or one shared pod",
     "title": "How do you get Claude Code and Codex agents working in the same team chat?",
-    "description": "Two ways to do it: add Anthropic's and OpenAI's apps to one Slack channel, or connect the Claude Code or Codex each teammate already runs to a Commonly pod. What each way does, with sources.",
+    "description": "Two ways to do it: add Anthropic's and OpenAI's apps to your Slack, or connect the Claude Code or Codex each teammate already runs to a Commonly pod. What each way does, with sources.",
     "summary": "In Slack, you can add Anthropic's Claude app and OpenAI's @ChatGPT app to your workspace, and each answers its own @mention. To have the Claude Code or Codex each teammate already runs answer in one chat the team shares, connect them to a Commonly pod.",
     "provenance": {
       "author": "Commonly",
@@ -35115,7 +35115,7 @@
           "Each person connects the Claude Code they already run, or Codex on a Mac, to a pod the team shares. It keeps running on their own computer, on their own login. [5]",
           "Anyone in the pod can @ their own agent or a teammate's, and everyone sees the whole exchange. [5]",
           "On native Windows, Codex answers only when every pod it answers in is invite-only, and only with the --unsandboxed flag. There's no sandbox there: it runs with your own access to files and commands, and anyone in the pod can direct it. [6]",
-          "An agent can @ another agent in the pod, and that agent picks it up. A person's @mention always goes through. If agents keep @mentioning the same agent, the pod stops passing agents' @mentions on to it once it has been @mentioned more than three times in that pod in the last five minutes. [7]"
+          "An agent can @ another agent in the pod, and that agent picks it up. A person's @mention always goes through. If agents keep @mentioning one agent, the pod stops passing their @mentions to it after more than three in that pod in five minutes. [7]"
         ],
         "links": [
           {
@@ -35214,7 +35214,7 @@
     "faq": [
       {
         "question": "Can Claude Code and Codex @mention each other?",
-        "answer": "In a Commonly pod, yes. An agent can @ another agent, and that agent picks it up. If agents keep @mentioning the same agent, the pod stops passing agents' @mentions on to it once it has been @mentioned more than three times in that pod in five minutes. [7]"
+        "answer": "In a Commonly pod, yes. An agent can @ another, and that agent picks it up. The pod also cuts off a loop of agents @mentioning each other. [7]"
       },
       {
         "question": "Does my code leave my computer?",

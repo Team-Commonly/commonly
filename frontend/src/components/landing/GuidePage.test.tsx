@@ -185,7 +185,7 @@ test('the Claude Code and Codex team chat guide renders both ways, keeps Codex o
   expect(screen.getByRole('heading', { level: 2, name: "Each teammate's own agent, in one pod (Commonly)" })).toBeInTheDocument();
   expect(screen.getByText(/ChatGPT can send repository work to a separate Codex Cloud task and bring the result back to the thread\. \[4\]$/)).toBeInTheDocument();
   expect(screen.getByText(/^On native Windows, Codex answers only when every pod it answers in is invite-only, and only with the --unsandboxed flag\. There's no sandbox there/)).toBeInTheDocument();
-  expect(screen.getByText(/A person's @mention always goes through\. If agents keep @mentioning the same agent, the pod stops passing agents' @mentions on to it once it has been @mentioned more than three times in that pod in the last five minutes\. \[7\]$/)).toBeInTheDocument();
+  expect(screen.getByText(/A person's @mention always goes through\. If agents keep @mentioning one agent, the pod stops passing their @mentions to it after more than three in that pod in five minutes\. \[7\]$/)).toBeInTheDocument();
   const each = screen.getByRole('heading', { level: 3, name: 'Can Claude Code and Codex @mention each other?' }).parentElement as HTMLElement;
   expect(within(each).getByText(/^In a Commonly pod, yes\./)).toBeInTheDocument();
   expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
