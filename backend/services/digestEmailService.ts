@@ -16,6 +16,8 @@ const AttentionItem = require('../models/AttentionItem');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
+// eslint-disable-next-line global-require
+const StalledConnectEpisode = require('../models/StalledConnectEpisode');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -58,6 +60,7 @@ interface DigestSummary {
     totalItems?: number;
     userId?: string;
     emailedAt?: Date;
+    stalledMarks?: Array<{ episodeId: string; fields?: string[] }>;
   };
 }
 
@@ -271,6 +274,19 @@ export class DigestEmailService {
             );
           } catch (markError) {
             console.warn('Digest sent but held asks could not be marked included:', (markError as Error).message);
+          }
+        }
+        // F502: a stalled-connect line is used up only once it was delivered,
+        // so a skipped or failed send leaves it for the next digest. Each mark
+        // stands alone: one failing must not undo the delivery or the others.
+        for (const mark of summary.metadata?.stalledMarks || []) {
+          try {
+            await StalledConnectEpisode.updateOne(
+              { _id: mark.episodeId, status: 'open' },
+              { $set: Object.fromEntries((mark.fields || []).map((field) => [field, emailedAt])) },
+            );
+          } catch (markError) {
+            console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);
           }
         }
         // SMTP has accepted the email. A failed timestamp write should not
