@@ -29,6 +29,7 @@ import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { useDocumentTitleText } from '../hooks/useDocumentTitle';
 import { podTabName } from '../utils/podTabName';
 import { runCommandForThisComputer } from '../utils/agentConnection';
+import { harnessLabel } from '../utils/harnessCatalog';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -101,6 +102,8 @@ interface AgentStateRow {
   noSavedKey?: boolean;
   /** A push webhook whose last delivery failed; absent from an older backend. */
   deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
+  /** F515: why a never-connected agent's first run stopped, as the code it reported. */
+  listenReason?: { reason: string; harness: string | null };
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -1703,8 +1706,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const showDirectAgentLiveness = Boolean(
     isAgentRoom && directAgent && (directAgentReach === 'never-connected' || directAgentReach === 'gone-dark'),
   );
+  // F515: why a never-connected agent's first run stopped, as one clause, or
+  // '' for a code this build doesn't know (an unknown code says nothing).
+  const listenReasonClause = (row?: AgentStateRow | null): string => {
+    const found = row?.state === 'never-connected' ? row.listenReason : undefined;
+    if (!found) return '';
+    const tool = found.harness ? harnessLabel([], found.harness) : '';
+    if (found.reason === 'harness-signed-out' && tool) return t('podChat.listenReason.signedOut', { tool });
+    if (found.reason === 'harness-missing') {
+      return tool ? t('podChat.listenReason.missing', { tool }) : t('podChat.listenReason.missingAny');
+    }
+    if (found.reason === 'node-too-old') return t('podChat.listenReason.nodeTooOld');
+    return '';
+  };
+  const directAgentReason = listenReasonClause(directAgent?.state);
   const directAgentLivenessKey = directAgentReach === 'never-connected'
-    ? 'podChat.agentRoomLiveness.neverConnected'
+    ? (directAgentReason ? 'podChat.agentRoomLiveness.neverConnectedBecause' : 'podChat.agentRoomLiveness.neverConnected')
     : 'podChat.agentRoomLiveness.goneDark';
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? runCommandForThisComputer(directAgent.state.fixCommand || '')
@@ -1733,7 +1750,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     });
   };
   const podAgentLivenessLine = (row: typeof podAgentLiveness[number]) => (
-    row.deliveryError ? webhookFailedLine(row) : row.state === 'never-connected' || !row.lastUsedAt
+    row.deliveryError ? webhookFailedLine(row) : listenReasonClause(row)
+      ? t('podChat.podAgentLiveness.notConnectedBecause', {
+        agentName: row.displayName || row.agentName, reason: listenReasonClause(row),
+      })
+      : row.state === 'never-connected' || !row.lastUsedAt
       ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
       : t('podChat.podAgentLiveness.offlineSince', {
         agentName: row.displayName || row.agentName,
@@ -2502,7 +2523,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                   <div className="v2-chat__agent-room-status-body">
                     {directAgent.state?.deliveryError
                       ? webhookFailedLine({ ...directAgent.state, displayName: directAgent.displayName })
-                      : t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                      : t(directAgentLivenessKey, { agentName: directAgent.displayName, reason: directAgentReason })}
                     {directAgentFixCommand && !directAgent?.state?.noSavedKey && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>

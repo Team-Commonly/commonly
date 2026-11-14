@@ -69,6 +69,8 @@ add(runtime, 'own_state', [
   'POST /host-unconfined',
   // F457: records which harness the calling seat's own run couldn't find.
   'POST /harness-missing',
+  // F515: records, by reason code, why the calling seat's own run stopped.
+  'POST /listen-blocked',
 ]);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',

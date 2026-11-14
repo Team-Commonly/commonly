@@ -587,6 +587,34 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
   }
 });
 
+// F515: a first `agent run` that finds this computer's Node too old, or its
+// harness installed but signed out, stops before it starts waiting. It says why
+// here first, by reason code only: free text from a computer could carry a path
+// or a secret. GET /api/users/me/agent-connection and the pod's agent states
+// show it to the owner until the agent listens again.
+const LISTEN_BLOCKED_REASONS = new Set(['node-too-old', 'harness-signed-out']);
+router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body).sort();
+  const harness = typeof body.harness === 'string' ? harnessCatalogEntry(body.harness) : null;
+  const valid = keys.length === 2 && keys[0] === 'harness' && keys[1] === 'reason'
+    && LISTEN_BLOCKED_REASONS.has(body.reason)
+    // A sign-in names the harness it is about; Node names none.
+    && (body.reason === 'harness-signed-out' ? Boolean(harness) : body.harness === null);
+  if (!valid) return res.status(400).json({ code: 'invalid_listen_blocked_report' });
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, {
+      $set: {
+        'botMetadata.listenBlocked': { reason: body.reason, harness: harness ? harness.id : null, at: new Date() },
+      },
+    });
+    return res.json({ recorded: true });
+  } catch (error) {
+    console.error('Listen-blocked report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'listen_blocked_report_unavailable' });
+  }
+});
+
 router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     return await patchAgentRuntimeConfiguration(req, res);

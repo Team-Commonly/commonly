@@ -40,6 +40,9 @@ import { formatDigestFrame, formatUnreadMessagesFrame } from '../lib/digest-fram
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
 import {
+  harnessFindings, nodeFinding, preflightOutcome, reportListenBlocked,
+} from '../lib/run-preflight.js';
+import {
   getSession,
   getSessionEntry,
   setSession,
@@ -5777,6 +5780,23 @@ Docs:
           name = agentArg;
         }
       }
+      // F515: Node first, before anything uses the token: on a Node without
+      // fetch, the first call fails and reads as a bad token. A first run stops
+      // here and says so, telling the instance when it can; a seat with a saved
+      // record only warns.
+      const oldNode = nodeFinding();
+      const nodeOutcome = preflightOutcome(oldNode ? [oldNode] : [], { firstRun: !record });
+      for (const line of nodeOutcome.lines) console.error(`${stamp()} [${name}] ${line}`);
+      if (nodeOutcome.stop) {
+        const envToken = (process.env.COMMONLY_AGENT_TOKEN || '').trim();
+        if (envToken.startsWith('cm_agent_') && typeof fetch === 'function') {
+          await reportListenBlocked(createClient({
+            instance: (process.env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined),
+            token: envToken,
+          }), nodeOutcome.report);
+        }
+        process.exit(1);
+      }
       let bootstrapped = false;
       const saved = record;
       const savedRefusal = record && named ? runInstanceRefusal({ record, instanceId }) : null;
@@ -5810,11 +5830,14 @@ Docs:
           process.exit(1);
         }
         if (!record) {
-          console.error(
-            `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
-            + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
-          );
+          // F515: on Windows the page's lines are PowerShell's ($env:…), and in
+          // Command Prompt they set nothing, so this is where that run lands.
+          console.error(process.platform === 'win32'
+            ? `No token for '${name}'. Run all the lines from the Connect your own agent page together, `
+              + 'in PowerShell (not Command Prompt): the $env: lines set the token for this window.'
+            : `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
+              + ` (shown on the Connect your own agent page) and re-run, or:`
+              + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`);
           process.exit(1);
         }
         const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;
@@ -5823,6 +5846,27 @@ Docs:
           process.exit(1);
         }
         bootstrapped = true;
+      }
+
+      // F515: the harness this record names, installed and signed in, before
+      // the run starts waiting. A first run has already looked for the harness
+      // (and reported a missing one); it stops on a signed-out one too, and the
+      // instance hears why, so the page and the pod can say it. A seat with a
+      // saved record only warns: a probe that reads it wrong must not stop it.
+      const harnessProblems = await harnessFindings({
+        adapterName: record.adapter,
+        adapter: getAdapter(record.adapter),
+        environment: record.environment,
+        checkInstalled: !bootstrapped,
+      });
+      const harnessOutcome = preflightOutcome(harnessProblems, { firstRun: bootstrapped });
+      for (const line of harnessOutcome.lines) console.error(`${stamp()} [${name}] ${line}`);
+      if (harnessOutcome.stop) {
+        await reportListenBlocked(
+          createClient({ instance: record.instanceUrl, token: record.runtimeToken }),
+          harnessOutcome.report,
+        );
+        process.exit(1);
       }
 
       // D245: on native Windows the user may choose to run without an OS

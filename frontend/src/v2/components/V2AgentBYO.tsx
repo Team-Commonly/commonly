@@ -417,8 +417,11 @@ const V2AgentBYO: React.FC = () => {
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
   // F457: the issued agent's run stopped before checking in because its
-  // harness wasn't on that computer. Keyed to the issue, like stallReport.
-  const [harnessMissingReport, setHarnessMissingReport] = useState<{ key: object; harness: string | null } | null>(null);
+  // harness wasn't on that computer. F515 adds a signed-out harness and an old
+  // Node. Keyed to the issue, like stallReport.
+  const [harnessMissingReport, setHarnessMissingReport] = useState<{
+    key: object; reason: 'harness-missing' | 'harness-signed-out' | 'node-too-old'; harness: string | null;
+  } | null>(null);
   // Which command the person copied for THIS issue, and whether they have been
   // waiting long enough to say so. A stranger copied the MCP snippet three
   // times and never the Terminal command (walk 2026-10-31, TASK-721): the page
@@ -1375,12 +1378,23 @@ const V2AgentBYO: React.FC = () => {
         // F457: a run that found no harness reports it before exiting. Only a
         // report for this agent, made after this issue, counts; polling goes
         // on, so installing it and running the line again turns this green.
-        const missing = (Array.isArray(data?.harnessMissing) ? data.harnessMissing : []).find(
-          (row: { agentName?: string; instanceId?: string; at?: string }) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
-            && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
-            && row.at && new Date(row.at).getTime() >= issued.issuedAt - 60_000,
-        );
-        setHarnessMissingReport(missing ? { key: issued, harness: typeof missing.harness === 'string' ? missing.harness : null } : null);
+        type StopRow = { agentName?: string; instanceId?: string; at?: string; harness?: unknown; reason?: unknown };
+        const forThisIssue = (row: StopRow) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+          && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
+          && Boolean(row.at) && new Date(row.at as string).getTime() >= issued.issuedAt - 60_000;
+        // F515: a signed-out harness or an old Node arrives as listenBlocked.
+        // Whichever report this agent's run made last is the one to show.
+        const reports = [
+          ...(Array.isArray(data?.harnessMissing) ? data.harnessMissing : [])
+            .filter(forThisIssue).map((row: StopRow) => ({ ...row, reason: 'harness-missing' })),
+          ...(Array.isArray(data?.listenBlocked) ? data.listenBlocked : [])
+            .filter((row: StopRow) => forThisIssue(row)
+              && (row.reason === 'harness-signed-out' || row.reason === 'node-too-old')),
+        ].sort((a: StopRow, b: StopRow) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime());
+        const latest = reports[0];
+        setHarnessMissingReport(latest ? {
+          key: issued, reason: latest.reason, harness: typeof latest.harness === 'string' ? latest.harness : null,
+        } : null);
         if (!data?.connected) return;
         const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
           === issued.agentName.toLowerCase();
@@ -2428,11 +2442,19 @@ const V2AgentBYO: React.FC = () => {
                 {harnessMissingReport?.key === issued
                   ? (
                     <span data-testid="byo-listen-harness-missing">
-                      {harnessMissingReport.harness
-                        ? t('agentByo.listen.harnessMissing', {
-                          name: issued.agentName, tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
-                        })
-                        : t('agentByo.listen.harnessMissingNone', { name: issued.agentName })}
+                      {harnessMissingReport.reason === 'node-too-old'
+                        ? t('agentByo.listen.nodeTooOld', { name: issued.agentName })
+                        : harnessMissingReport.reason === 'harness-signed-out' && harnessMissingReport.harness
+                          ? t('agentByo.listen.harnessSignedOut', {
+                            name: issued.agentName,
+                            tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
+                            command: harnessMissingReport.harness === 'codex' ? 'codex login' : harnessMissingReport.harness,
+                          })
+                          : harnessMissingReport.harness
+                            ? t('agentByo.listen.harnessMissing', {
+                              name: issued.agentName, tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
+                            })
+                            : t('agentByo.listen.harnessMissingNone', { name: issued.agentName })}
                     </span>
                   )
                   : missedWindowOver && copiedKinds.mcp && !copiedKinds.listen

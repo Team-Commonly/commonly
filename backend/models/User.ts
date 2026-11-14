@@ -159,6 +159,8 @@ export interface IUser extends Document {
     hostUnconfined?: boolean;
     // F457: set by a quick-try run that found no harness.
     harnessMissing?: { harness: string | null; at: Date };
+    // F515: set by a first run that stopped before waiting, by reason code.
+    listenBlocked?: { reason: string; harness: string | null; at: Date };
     // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
@@ -394,6 +396,16 @@ const userSchema = new Schema<IUser>({
     // probes), and when. Declared or stripped, as above.
     harnessMissing: {
       type: new Schema({ harness: { type: String, default: null }, at: { type: Date, required: true } }, { _id: false }),
+      default: undefined,
+    },
+    // F515: why a first run stopped before it started waiting (a reason code),
+    // the harness it is about, and when. Declared or stripped, as above.
+    listenBlocked: {
+      type: new Schema({
+        reason: { type: String, enum: ['node-too-old', 'harness-signed-out'], required: true },
+        harness: { type: String, default: null },
+        at: { type: Date, required: true },
+      }, { _id: false }),
       default: undefined,
     },
     // ADR-026 Phase 2 — same lesson: declared or stripped.
