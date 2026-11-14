@@ -90,9 +90,13 @@ describe('egress proxy', () => {
   test('reports an unreachable upstream without opening a tunnel', async () => {
     proxy = await start();
     const closedPort = upstreamPort;
+    // The replacement listens before the old one closes, so port 0 can't hand
+    // it closedPort back: when it did, the "closed" port answered and the
+    // tunnel opened (main red, 9613804c).
+    const replacement = createServer();
+    await new Promise((resolve) => replacement.listen(0, '127.0.0.1', resolve));
     await new Promise((resolve) => upstream.close(resolve));
-    upstream = createServer();
-    await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    upstream = replacement;
     const { status, socket } = await tunnel(proxy.port, `allowed.test:${closedPort}`);
     expect(status).toBe('HTTP/1.1 502 Bad Gateway');
     socket.destroy();
