@@ -2268,8 +2268,8 @@
       "openPod": "Open the pod",
       "signedOut": "Running on {{machine}}, but {{harness}} isn’t signed in there, so it can’t answer yet. On {{machine}}, run {{command}} once and sign in. This page updates by itself."
     },
-    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
-    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
+    "quickTry": "Quick try: you’ll run a command in Terminal. It needs Node 22+ with npm and {{tool}} signed in, and it stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
+    "quickTryWindows": "Quick try: you’ll run a command in PowerShell. It needs Node 22+ with npm and {{tool}} signed in, and it stops when that window closes. For an agent that should keep running, add this computer once with the command below.",
     "addComputer": {
       "title": "Add a computer",
       "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
