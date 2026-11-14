@@ -196,7 +196,9 @@ export class DailyDigestService {
     // One row per pod and author; the most recent writer leads.
     const at = (value: unknown) => (value ? new Date(value as string).getTime() : 0);
     return rows
-      .filter((row) => names.has(row.userId))
+      // The count and the words are two reads; a message deleted between them
+      // can leave a pair with no words, and a line with none says nothing.
+      .filter((row) => names.has(row.userId) && oneLine(row.content))
       .sort((a, b) => at(b.lastAt) - at(a.lastAt))
       .slice(0, MAX_TEAMMATES)
       .map((row) => {

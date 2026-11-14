@@ -24,7 +24,7 @@ real('PGMessage.findByOthersSince on real PostgreSQL (F503)', () => {
   let PGMessage;
   const insert = (podId, userId, content, { type = 'text', hoursAgo }) => pool.query(
     `INSERT INTO messages (pod_id, user_id, content, message_type, created_at)
-     VALUES ($1, $2, $3, $4, now() - make_interval(hours => $5))`,
+     VALUES ($1, $2, $3, $4, now() - make_interval(secs => $5::float8 * 3600))`,
     [podId, userId, content, type, hoursAgo],
   );
 
