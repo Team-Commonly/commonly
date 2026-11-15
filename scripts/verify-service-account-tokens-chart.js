@@ -25,8 +25,12 @@ const extraSets = [
   'backend.worker.startPaused=false',
   'agents.commonlyBot.enabled=true',
 ];
-const PROVISIONER = 'agent-provisioner';
-const NEEDS_TOKEN = new Set(['backend', 'backend-worker', 'ops-runner']);
+// The chart names the account from values, so read it rather than assume it.
+// `json: true` takes the last of a duplicated key, as Helm does.
+const PROVISIONER = yaml.load(require('fs').readFileSync(`${chart}/values.yaml`, 'utf8'), { json: true })
+  .rbac.serviceAccount.name;
+// Exempt by kind and name: only these Deployments provision agents.
+const NEEDS_TOKEN = new Set(['Deployment/backend', 'Deployment/backend-worker', 'Deployment/ops-runner']);
 
 const render = (lane) => {
   const args = ['template', `commonly-${lane}`, chart];
@@ -53,7 +57,7 @@ for (const lane of Object.keys(lanes)) {
     if (account !== PROVISIONER) continue;
     checked += 1;
     const name = doc.metadata.name;
-    if (NEEDS_TOKEN.has(name)) continue;
+    if (NEEDS_TOKEN.has(`${doc.kind}/${name}`)) continue;
     const mounts = spec.automountServiceAccountToken ?? accounts.get(account)?.automountServiceAccountToken ?? true;
     if (mounts !== false) {
       failures.push(`${lane}: ${doc.kind}/${name} runs as ${PROVISIONER} and mounts its token; set automountServiceAccountToken: false or give it its own account`);
@@ -66,4 +70,5 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`ok: ${checked} workload renders as ${PROVISIONER}; only ${[...NEEDS_TOKEN].join(', ')} mount its token`);
+console.log(`ok: ${checked} workloads render as ${PROVISIONER} across ${Object.keys(lanes).length} lanes; `
+  + `only ${[...NEEDS_TOKEN].join(', ')} mount its token`);
