@@ -26,7 +26,7 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
-import { connectCodeRefusalLine, redeemConnectCode } from '../lib/connect-code.js';
+import { connectCodeRefusalLine, redeemConnectCode, savedKeyNote } from '../lib/connect-code.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -5823,7 +5823,7 @@ Docs:
           // The line again, from shell history, on the computer this agent
           // already runs on: its code is spent or expired, or the instance
           // can't be reached just now. The saved token is what to run.
-          console.log(`${stamp()} [${name}] this line's connect code wasn't used (${redeemed.refusal}), so this run uses the saved token`);
+          console.log(`${stamp()} [${name}] ${savedKeyNote(redeemed.refusal)}`);
         } else {
           console.error(`${stamp()} [${name}] ${connectCodeRefusalLine(redeemed.refusal, {
             name: agentArg, runName: name, instanceUrl, detail: redeemed.detail, status: redeemed.status,

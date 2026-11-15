@@ -3,7 +3,7 @@
  * codes and keys only.
  */
 import { jest } from '@jest/globals';
-import { connectCodeRefusalLine, redeemConnectCode } from '../src/lib/connect-code.js';
+import { connectCodeRefusalLine, redeemConnectCode, savedKeyNote } from '../src/lib/connect-code.js';
 
 const CODE = `cmc_${'A'.repeat(22)}`;
 const failing = (status, body) => () => ({
@@ -49,6 +49,21 @@ describe('redeemConnectCode', () => {
   test('an answer that is not an agent key is refused', async () => {
     const odd = () => ({ post: async () => ({ token: 'cm_user_wrong_kind' }) });
     expect((await redeemConnectCode({ code: CODE, instanceUrl: 'x', clientFactory: odd })).refusal).toBe('unreachable');
+  });
+});
+
+describe('savedKeyNote', () => {
+  it('says in words why the saved key runs, never the refusal code', () => {
+    expect(savedKeyNote('used')).toBe("this line's connect code is spent, so this run uses the key already saved on this computer");
+    expect(savedKeyNote('unknown')).toContain('has expired or is spent,');
+    expect(savedKeyNote('revoked')).toContain('no longer works,');
+    expect(savedKeyNote('rate_limited')).toContain('had too many tries,');
+    expect(savedKeyNote('invalid')).toContain("isn't a connect code,");
+    expect(savedKeyNote('unreachable')).toContain("couldn't be checked just now,");
+    expect(savedKeyNote(undefined)).toContain("couldn't be checked just now,");
+    for (const refusal of ['used', 'unknown', 'revoked', 'rate_limited', 'invalid', 'no_fetch', 'unreachable']) {
+      expect(savedKeyNote(refusal)).not.toMatch(/\(|_/);
+    }
   });
 });
 

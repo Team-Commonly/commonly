@@ -135,7 +135,7 @@ describe('the one pasted line with a connect code (F525)', () => {
       ['agent', 'run', 'newbie', '--adapter', 'claude', '--api-url', stub.url, '--connect', CODE],
       { cwd: join(root, 'work'), env: envFor(), seen: stub.seen, until: (seen) => seen.some((r) => r.path === '/api/agents/runtime/events') },
     );
-    expect(result.stdout).toContain("this line's connect code wasn't used (unknown), so this run uses the saved token");
+    expect(result.stdout).toContain("this line's connect code has expired or is spent, so this run uses the key already saved on this computer");
     expect(stub.seen.find((r) => r.path === '/api/agents/runtime/events').auth).toBe('Bearer cm_agent_fake_saved_key');
   }, 90_000);
 

@@ -40,6 +40,20 @@ export const connectCodeRefusalLine = (refusal, {
   }
 };
 
+// The line again, from history, on the computer the agent already runs on:
+// the run goes on with the saved key and says why the code wasn't needed, in
+// words, not the server's refusal code. A spent code is deleted on its first
+// refused try, so a later one reads as unknown: that case names both.
+const SAVED_KEY_REASON = {
+  used: 'is spent',
+  unknown: 'has expired or is spent',
+  revoked: 'no longer works',
+  rate_limited: 'had too many tries',
+  invalid: "isn't a connect code",
+};
+export const savedKeyNote = (refusal) => `this line's connect code ${SAVED_KEY_REASON[refusal] || "couldn't be checked just now"}, `
+  + 'so this run uses the key already saved on this computer';
+
 const REFUSAL_BY_CODE = {
   invalid_connect_code: 'invalid',
   connect_code_unknown: 'unknown',
