@@ -1694,6 +1694,22 @@ const V2AgentBYO: React.FC = () => {
   // adds one on Windows. connectSnippet stays as it is, since the Windows smoke
   // lifts it from this file and runs its exact lines.
   const listenCopyText = listenSnippet && setupOs === 'windows' ? `${listenSnippet}\n` : listenSnippet;
+  // A hand copy (select, then Ctrl+C) of the same lines posts the same step as
+  // the button and, on Windows, gets the same final newline when the selection
+  // reaches the run line, so the pasted run line runs too (11-15: a Windows
+  // seat's key was never used and no copy step was ever recorded).
+  const handCopyListen = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    copiedIssuedContent();
+    markCopiedKind('listen');
+    byoStep('cli-command-copied', 'listen');
+    if (setupOs !== 'windows' || !listenSnippet) return;
+    const selected = window.getSelection()?.toString() || '';
+    const runLine = listenSnippet.trimEnd().split('\n').pop()?.trim() || '';
+    if (!runLine || selected.endsWith('\n') || !selected.trimEnd().endsWith(runLine)) return;
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', `${selected}\n`);
+    event.preventDefault();
+  };
 
   const cursorSnippet = issued
     ? JSON.stringify({
@@ -2561,7 +2577,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
             )}
             {listenerAvailable && (
-              <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
+              <div className="v2-byo__command" onCopy={handCopyListen}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
