@@ -165,7 +165,8 @@ describe('a hand copy (select, then Ctrl+C)', () => {
   const handCopy = (block, selected) => {
     const setData = jest.fn();
     const getSelection = jest.spyOn(window, 'getSelection').mockReturnValue({ toString: () => selected });
-    fireEvent.copy(block.querySelector('pre'), { clipboardData: { setData } });
+    // fireEvent returns false when the handler cancelled the browser's own copy.
+    setData.kept = fireEvent.copy(block.querySelector('pre'), { clipboardData: { setData } });
     getSelection.mockRestore();
     return setData;
   };
@@ -194,6 +195,7 @@ describe('a hand copy (select, then Ctrl+C)', () => {
       expect(text).toMatch(/commonly\.cmd agent run/);
       const setData = handCopy(listenBlock(), text);
       expect(setData).toHaveBeenCalledWith('text/plain', `${text}\n`);
+      expect(setData.kept).toBe(false);
     } finally {
       withUserAgent(original);
     }
@@ -218,7 +220,10 @@ describe('a hand copy (select, then Ctrl+C)', () => {
     try {
       await issueSeatAndReadSetup();
       const text = listenBlock().querySelector('pre').textContent;
-      expect(handCopy(listenBlock(), text)).not.toHaveBeenCalled();
+      const setData = handCopy(listenBlock(), text);
+      expect(setData).not.toHaveBeenCalled();
+      expect(setData.kept).toBe(true);
+      expect(stepsPosted()).toContain('cli-command-copied');
     } finally {
       withUserAgent(original);
     }

@@ -1706,6 +1706,7 @@ const V2AgentBYO: React.FC = () => {
     const selected = window.getSelection()?.toString() || '';
     const runLine = listenSnippet.trimEnd().split('\n').pop()?.trim() || '';
     if (!runLine || selected.endsWith('\n') || !selected.trimEnd().endsWith(runLine)) return;
+    if (!event.clipboardData) return;
     event.clipboardData.setData('text/plain', `${selected}\n`);
     event.preventDefault();
   };
