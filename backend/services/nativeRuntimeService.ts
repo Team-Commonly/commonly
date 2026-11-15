@@ -936,9 +936,10 @@ interface DispatchContext {
   /**
    * F530: what this turn has read to, null when it can't be read (the turn then
    * posts unchecked, as before). seenIds are messages after that point the
-   * turn has already seen: its own posts, and those a hold showed it.
+   * turn has already seen: its own posts, and those a hold showed it. held is
+   * each hold's result as sent, so a set-aside that drops it can put it back.
    */
-  freshness?: { agentUserId: string; since: unknown; seenIds: string[] } | null;
+  freshness?: { agentUserId: string; since: unknown; seenIds: string[]; held: string[] } | null;
   /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
@@ -1101,6 +1102,19 @@ const noteOwnPost = (ctx: DispatchContext, id: unknown): void => {
   if (ctx.freshness && id !== undefined && id !== null && String(id)) ctx.freshness.seenIds.push(String(id));
 };
 
+/**
+ * F530: a set-aside that drops rounds can drop a hold's result with them, while
+ * the messages it showed already count as read. Each one dropped goes back at
+ * the end, so what the turn counts as read is still in front of the model.
+ */
+const keepHeldMessages = (ctx: DispatchContext, messages: any[]): void => {
+  (ctx.freshness?.held || []).forEach((text) => {
+    if (!messages.some((message) => typeof message?.content === 'string' && message.content.includes(text))) {
+      messages.push({ role: 'user', content: text });
+    }
+  });
+};
+
 /** F530: where a hosted turn starts reading from. Null on any failure. */
 const startTurnFreshness = async (
   podId: string, agentName: string, instanceId: string, ownUserId: string | null,
@@ -1110,7 +1124,7 @@ const startTurnFreshness = async (
     if (!agentUserId) return null;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const since = await require('./agentSendFreshness').readStart(podId);
-    return { agentUserId, since, seenIds: [] };
+    return { agentUserId, since, seenIds: [], held: [] };
   } catch (error) {
     console.warn('[native-runtime] freshness start unavailable; posts go unchecked:', (error as Error).message);
     return null;
@@ -1157,7 +1171,7 @@ const unseenHold = async (
       below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages. `
         + 'The rest are shown the next time you try, or call commonly_read_context to read them now.';
     }
-    return {
+    const result = {
       content: {
         ok: false,
         posted: false,
@@ -1172,6 +1186,8 @@ const unseenHold = async (
       },
       error: UNSEEN_MESSAGES,
     };
+    freshness.held.push(JSON.stringify(result.content));
+    return result;
   } catch (error) {
     console.warn('[native-runtime] freshness check unavailable; posting unchecked:', (error as Error).message);
     return null;
@@ -3068,6 +3084,7 @@ export async function runAgent(
     const kept = webResults.filter((result) => result.round < firstRound
       || (result.round === firstRound && !aside.includes(result)));
     webResults.splice(0, webResults.length, ...kept);
+    keepHeldMessages(dispatchCtx, messages);
     return { setAside: aside.length, removed: before - kept.length };
   };
 
@@ -3180,6 +3197,7 @@ export async function runAgent(
     computerResults.splice(0, computerResults.length, ...keptComputer);
     const keptWeb = webResults.filter((result) => acted || result.round <= firstRound);
     webResults.splice(0, webResults.length, ...keptWeb);
+    keepHeldMessages(dispatchCtx, messages);
     return aside.length;
   };
 

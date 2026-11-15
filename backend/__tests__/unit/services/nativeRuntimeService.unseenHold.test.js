@@ -238,6 +238,31 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
     expect(next.ignoreIds).toEqual(['777']);
   });
 
+  test('a message a hold had no room for holds the next post, and the model is shown it', async () => {
+    const left = {
+      id: '778', author: 'sam', content: 'Hold off: the install guide moves on Monday.', createdAt: new Date(), 
+    };
+    Freshness.unseenMessages
+      .mockResolvedValueOnce({ ...missed, unseenCount: 2 })
+      .mockResolvedValueOnce({ ...missed, unseenCount: 1, messages: [left] })
+      .mockResolvedValue(null);
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }))
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'Codex has it: the Claude Code CLI.' }))
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'Claude Code CLI, but the guide moves Monday.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scout, ask);
+
+    // The transcript is one array the runtime keeps adding to: read the holds in order.
+    const holds = axios.post.mock.calls[3][1].messages.filter((m) => m.role === 'tool').map((m) => JSON.parse(m.content));
+    expect(holds[0].messages.map(({ content }) => content)).not.toContain(left.content);
+    expect(holds[1].reason).toBe('unseen_messages');
+    expect(holds[1].messages.map(({ content }) => content)).toEqual([left.content]);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(AgentMessageService.postMessage.mock.calls[0][0].content).toBe('Claude Code CLI, but the guide moves Monday.');
+  });
+
   test('a second claim in the same response is held with the first, before the model has read the hold', async () => {
     Freshness.unseenMessages.mockResolvedValueOnce(missed).mockResolvedValue(null);
     axios.post
