@@ -217,6 +217,13 @@ describe('a person answering the agent\'s question addresses it (F390 B)', () =>
     expect(scoutEvent().payload.addressed).toBeUndefined();
   });
 
+  test('a handle that continues after a run of dots does not name them either', async () => {
+    const otherBefore = { ...PERSON_BEFORE, user_id: OTHER_PERSON };
+    setup({ 79500: { ...QUESTION, content: '@priya..k can you paste the slide text?' }, 79499: otherBefore });
+    await send('Slide 1');
+    expect(scoutEvent().payload.addressed).toBeUndefined();
+  });
+
   test('a message that @s someone, even a person, is theirs: not an answer', async () => {
     setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
     await send('@omar can you send it to me?');

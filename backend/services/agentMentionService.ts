@@ -1495,8 +1495,9 @@ export const resolveQuestionAnswerTarget = async ({
   const ids = await botUserIds();
   const target = targets.find((inst) => ids.get(installKey(inst)) === askerId);
   if (!target) return null;
-  // A handle may hold dots, so only a dot followed by more handle extends it: "@maya.k." names maya.k.
-  const named = handle ? new RegExp(`@${escapeRegExp(handle)}(?![\\w-]|\\.[\\w-])`, 'i').test(String(question.content || '')) : false;
+  // A handle may hold dots, so only dots followed by more handle extend it: "@maya.k." names maya.k,
+  // "@maya..k" doesn't name maya.
+  const named = handle ? new RegExp(`@${escapeRegExp(handle)}(?![\\w-]|\\.+[\\w-])`, 'i').test(String(question.content || '')) : false;
   if (!named) {
     const askedAt = new Date(question.created_at as string | number | Date).getTime();
     const before = await PGMessage.findPreviousTopLevel(
