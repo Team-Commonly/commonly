@@ -13,16 +13,21 @@ const diff = (file, ...added) => [
   ...added.map((line) => `+${line}`),
 ].join('\n');
 
+// Fixture paths under docs/ are built from parts: the doc-reference check
+// scans every file for docs/<name>.md and would read a written-out fixture as
+// a dead pointer (see backend/__tests__/unit/scripts/docReferences.test.js).
+const doc = (...parts) => ['docs', ...parts].join('/');
+
 const tokens = (text, allow) => findLabels(text, allow).map((hit) => hit.token);
 
 test('a ledger id in a comment or a string is refused', () => {
   assert.deepEqual(tokens(diff('backend/services/a.ts', '// D215: the press waits for review')), ['D215']);
   assert.deepEqual(tokens(diff('cli/src/b.js', "const why = 'per D45, sign in';")), ['D45']);
-  assert.deepEqual(tokens(diff('docs/runbooks/c.md', 'Sam asked for this (D308).')), ['D308']);
+  assert.deepEqual(tokens(diff(doc('runbooks', 'c.md'), 'Sam asked for this (D308).')), ['D308']);
 });
 
 test('the team-internal role name is refused, in any case', () => {
-  assert.deepEqual(tokens(diff('docs/adr/ADR-030-x.md', 'Ratified by the Cofounder on 11-15.')), ['Cofounder']);
+  assert.deepEqual(tokens(diff(doc('adr', 'ADR-030-x.md'), 'Ratified by the Cofounder on 11-15.')), ['Cofounder']);
   assert.deepEqual(tokens(diff('frontend/src/v2/a.tsx', '// cofounder ruling: keep it')), ['cofounder']);
 });
 
@@ -31,7 +36,7 @@ test('hex colours, ADR decision numbers and one-digit ids pass', () => {
     'color: #D12;',
     'background: #D215AA;',
     'mask: 0xD215;')), []);
-  assert.deepEqual(tokens(diff('docs/adr/ADR-024-x.md',
+  assert.deepEqual(tokens(diff(doc('adr', 'ADR-024-x.md'),
     'This amends ADR-018 D12 and ADR-024 D9.2.',
     'See D9 above.')), []);
   assert.deepEqual(tokens(diff('backend/services/a.ts', 'const D2D = renderD3(1);', 'const id = "AD215B";')), []);
@@ -40,12 +45,12 @@ test('hex colours, ADR decision numbers and one-digit ids pass', () => {
 // ADR decisions top out at D13 today; ledger rows run past D300. Below D20 is
 // an ADR's own numbering ("### D10", "predates D17"), and stays allowed.
 test('an ADR-local decision number below D20 passes; D20 and up is refused', () => {
-  assert.deepEqual(tokens(diff('docs/adr/ADR-025-x.md', '### D10 — Inbound routing', '// Legacy binds predate D17.')), []);
+  assert.deepEqual(tokens(diff(doc('adr', 'ADR-025-x.md'), '### D10 — Inbound routing', '// Legacy binds predate D17.')), []);
   assert.deepEqual(tokens(diff('backend/services/a.ts', '// D20 says so')), ['D20']);
 });
 
 test('spreadsheet cell references and vendored skills pass', () => {
-  assert.deepEqual(tokens(diff('docs/x.md', 'get "/Sheet1/A1:D40"', 'formula: (1+D$54)/C$55', 'ref=D25:H29')), []);
+  assert.deepEqual(tokens(diff(doc('x.md'), 'get "/Sheet1/A1:D40"', 'formula: (1+D$54)/C$55', 'ref=D25:H29')), []);
   assert.deepEqual(tokens(diff('backend/commonly-bundled-skills/officecli/SKILL.md', 'Cell D214 is the anchor')), []);
 });
 
@@ -84,15 +89,15 @@ test('two ids joined by a slash are both refused', () => {
 });
 
 test('the role name is matched as a word, hyphenated too, not inside another word', () => {
-  assert.deepEqual(tokens(diff('docs/a.md', 'the co-founder said')), ['co-founder']);
+  assert.deepEqual(tokens(diff(doc('a.md'), 'the co-founder said')), ['co-founder']);
   assert.deepEqual(tokens(diff('frontend/src/a.tsx', "const cofounders = 'x';")), []);
 });
 
 test('an added line that reads like a file header stays inside its hunk', () => {
   const text = [
-    'diff --git a/docs/a.md b/docs/a.md',
-    '--- a/docs/a.md',
-    '+++ b/docs/a.md',
+    `diff --git a/${doc('a.md')} b/${doc('a.md')}`,
+    `--- a/${doc('a.md')}`,
+    `+++ b/${doc('a.md')}`,
     '@@ -0,0 +1,3 @@',
     '+++ counter',
     '+// D215',
