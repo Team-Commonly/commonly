@@ -3310,6 +3310,23 @@ describe('opencode public seat — the grant broker (F175a)', () => {
 
 // F197: a public seat's writable workspace is the scratch folder the CLI made,
 // so the profile pins it. A link at that path refuses the turn before spawn.
+// F535 (Cofounder ruling 11-15): a public seat reads only its workspace, so a
+// read path outside it is refused before anything spawns, bwrap included.
+test('the attack case: a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
+  const spawn = makeSpawnImpl();
+  await expect(opencode.spawn('turn', {
+    cwd: tmpdir(),
+    env: { PATH: process.env.PATH },
+    environment: {
+      model: 'gpt-5.4',
+      sandbox: { trust: 'public', mode: 'bwrap', filesystem: { 'read-outside': ['~/.commonly'] } },
+    },
+    _platform: 'linux',
+    _spawnImpl: spawn.impl,
+  })).rejects.toThrow('opencode adapter: public seats do not allow sandbox.filesystem.read-outside');
+  expect(spawn.calls).toHaveLength(0);
+});
+
 test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
   const root = await mkdtemp(join(tmpdir(), 'opencode-f197-'));
   try {

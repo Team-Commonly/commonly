@@ -17,6 +17,44 @@ describe('options no adapter enforces are refused', () => {
   });
 });
 
+// Cofounder ruling 11-15: public agents start from nothing. A read path outside
+// the workspace on a seat strangers can message is what an injected agent
+// would use to reach tokens, so it is refused on every adapter, bwrap
+// opencode and qwen included, which used to bind it into the jail.
+describe('read-outside on a public seat', () => {
+  test('the attack case: a public bwrap opencode seat asking to read ~/.commonly is refused at start', () => {
+    const refusal = sandboxOptionRefusal(
+      env({ trust: 'public', mode: 'bwrap', filesystem: { 'read-outside': ['~/.commonly'] } }), 'opencode', 'linux',
+    );
+    expect(refusal).toContain('sandbox.filesystem.read-outside');
+    expect(refusal).toContain('public');
+    expect(refusal).toContain('opencode');
+  });
+
+  test.each([
+    ['opencode', 'bwrap', 'linux'],
+    ['qwen', 'bwrap', 'linux'],
+    ['claude', 'workspace', 'darwin'],
+    ['codex', undefined, 'darwin'],
+    ['goose', undefined, 'linux'],
+    ['pi', undefined, 'linux'],
+    ['dsh', 'workspace', 'darwin'],
+  ])('is refused on %s (mode %s)', (adapter, mode, platform) => {
+    const sandbox = { trust: 'public', ...(mode ? { mode } : {}), filesystem: { 'read-outside': ['~/notes'] } };
+    expect(sandboxOptionRefusal(env(sandbox), adapter, platform)).toContain('sandbox.filesystem.read-outside');
+  });
+
+  test('a legacy internal trust is public, so it is refused too', () => {
+    expect(sandboxOptionRefusal(env({ trust: 'internal', mode: 'bwrap', filesystem: { 'read-outside': ['~/notes'] } }), 'opencode', 'linux'))
+      .toContain('sandbox.filesystem.read-outside');
+  });
+
+  test("workspace trust and an empty list keep today's behaviour", () => {
+    expect(sandboxOptionRefusal(env({ trust: 'workspace', filesystem: { 'read-outside': ['~/notes'] } }), 'claude', 'darwin')).toBeNull();
+    expect(sandboxOptionRefusal(env({ trust: 'public', mode: 'bwrap', filesystem: { 'read-outside': [] } }), 'opencode', 'linux')).toBeNull();
+  });
+});
+
 describe('a restricted network under macOS Seatbelt', () => {
   test.each([
     ['claude', { trust: 'workspace' }],
