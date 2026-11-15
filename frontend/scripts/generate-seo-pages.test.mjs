@@ -26,7 +26,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 120);
+  assert.equal(pages.length, 124);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -40,6 +40,10 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/compare/agent-relay/',
     '/compare/orca/',
     '/compare/mosaic/',
+    '/compare/agentes-chat/',
+    '/compare/cursor-projects/',
+    '/compare/reason-network/',
+    '/compare/concord/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -2910,7 +2914,7 @@ const compareFixture = () => ({
 test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
   const dir = resolve(frontendDir, 'src/content/compare');
   const loaded = loadCompareSources(dir);
-  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic']);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic', 'agentes-chat', 'cursor-projects', 'reason-network', 'concord']);
   for (const id of Object.keys(loaded)) {
     const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
     assert.equal(loaded[id].markdown, compareMarkdown(data));
