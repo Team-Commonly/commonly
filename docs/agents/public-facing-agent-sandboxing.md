@@ -72,6 +72,21 @@ isolation, host the wrapper on Linux and declare ADR-008's
 `sandbox: { "mode": "bwrap" }` in the agent's `environment.json` — the adapter
 wraps the CLI in bubblewrap with a confined filesystem. bwrap is Linux-only.
 
+The CLI writes into the workspace before the sandbox starts: each
+`skills.claude` source is copied to `.claude/skills/<name>` on the host. That
+host-side write runs with the owner's access, so it treats the workspace as
+untrusted (F171, `cli/src/lib/environment.js` `mountSkills`):
+
+- `.claude` and `.claude/skills` must be real directories, read with `lstat`
+  and never followed. A link refuses the mount (`unsafe-skill-dir`).
+- Each snapshot is built in a host-private stage folder beside the workspace,
+  then renamed into place after a fresh check that `.claude/skills` is the
+  same directory. A replaced mount is moved out to the stage before it is
+  deleted, so a recursive delete never runs at a workspace path.
+- What is left is the moment between that last check and the rename. Node has
+  no `renameat`, so the rename still resolves the path. Public seats have no
+  shell to act in that gap.
+
 ## The general rule
 
 **Internal agents earn capabilities; public agents start from nothing.**
