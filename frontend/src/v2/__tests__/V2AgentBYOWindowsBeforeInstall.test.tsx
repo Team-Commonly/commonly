@@ -241,6 +241,43 @@ describe('V2AgentBYO on Windows', () => {
     await act(async () => { release(); });
   });
 
+  test('after the command is copied, a failed hosted start shows its error beside the hosted way', async () => {
+    setUserAgent(WINDOWS);
+    window.history.replaceState({}, '', '/?adapter=codex');
+    renderPage();
+    const listen = await issue();
+    fireEvent.copy(within(listen).getByText(/--connect|COMMONLY_AGENT_TOKEN/));
+    axios.get.mockImplementation((url) => (url.startsWith('/api/registry/agents/next-free-name?')
+      ? Promise.reject(new Error('down'))
+      : Promise.resolve({ data: {} })));
+    await act(async () => { fireEvent.click(screen.getByTestId('byo-codex-way-hosted-button')); });
+    expect(within(screen.getByTestId('byo-codex-way-hosted')).getByRole('alert')).toHaveTextContent(/\S/);
+  });
+
+  test('a pod whose privacy never loaded is not described as invite-only; WSL and hosted stay', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+      if (url === '/api/pods') return Promise.reject(new Error('down'));
+      if (url === '/api/machines') return Promise.resolve({ data: { machines: [], offlineAfterMs: 90000 } });
+      if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
+      return Promise.resolve({ data: {} });
+    });
+    setUserAgent(WINDOWS);
+    window.history.replaceState({}, '', '/?adapter=codex&pod=aaaaaaaaaaaaaaaaaaaaaaaa');
+    renderPage();
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token' } });
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    // The link's pod is the full form's, so it can issue before the list loads.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^Get my connect command/ })
+      .some((b) => !b.hasAttribute('disabled'))).toBe(true));
+    fireEvent.click(screen.getAllByRole('button', { name: /^Get my connect command/ }).find((b) => !b.hasAttribute('disabled')));
+    await screen.findByTestId('byo-listen');
+    const items = within(ways()).getAllByRole('listitem').map((li) => li.getAttribute('data-testid'));
+    expect(items).toEqual(['byo-codex-way-wsl', 'byo-codex-way-hosted']);
+  });
+
   test('without hosting there is no hosted way', async () => {
     hostingConfigured = false;
     setUserAgent(WINDOWS);

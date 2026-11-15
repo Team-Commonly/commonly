@@ -502,6 +502,9 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
+  // The hosted offer panel on the result page, which shows its own error.
+  const hostedOfferShown = Boolean(issued) && listenerAvailable && showHostedOffer && !hasCopied
+    && hostedOffered && listenState !== 'listening';
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
   // machine link for a second instance falls back the same way, unless the
@@ -2416,7 +2419,7 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__listen-note v2-byo__codex-ways" data-testid="byo-listen-windows-codex-ways">
                 <p>{t('agentByo.listen.windowsCodexWays')}</p>
                 <ul>
-                  {listenerAvailable && (
+                  {listenerAvailable && podIsConfirmedPrivate(repoPod) && (
                     <li data-testid="byo-codex-way-invite">
                       <Trans i18nKey="agentByo.listen.windowsCodexWayInvite" components={{ cmd: <code /> }} />
                     </li>
@@ -2454,6 +2457,7 @@ const V2AgentBYO: React.FC = () => {
                           ),
                         }}
                       />
+                      {error && !hostedOfferShown && <span className="v2-byo__error" role="alert"> {error}</span>}
                     </li>
                   )}
                 </ul>
@@ -2795,7 +2799,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && listenerAvailable && showHostedOffer && !hasCopied && hostedOffered && listenState !== 'listening' && (
+          {hostedOfferShown && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
