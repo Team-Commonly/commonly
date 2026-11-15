@@ -52,6 +52,16 @@ test("a refusal a retry can't change says why and drops the offer", async () => 
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
+test('an owner who left the pod is told to join it, not that the agent is not theirs', async () => {
+  // The route's own refusal payload (manage-settings.ts, PUT …/schedule).
+  const left = jest.fn(() => Promise.reject({ response: { status: 403, data: { code: 'not_pod_member', error: 'Join this pod to schedule an agent in it' } } }));
+  render(<V2DailySchedule api={apiWith(null, left)} podId="pod-1" prompt="Triage" target={target} />);
+  const start = await screen.findByTestId('daily-schedule-start');
+  await waitFor(() => expect(start).toBeEnabled());
+  fireEvent.click(start);
+  expect(await screen.findByTestId('daily-schedule-refused')).toHaveTextContent('Join this pod to set a daily run in it.');
+});
+
 test('an agent Commonly runs is told a daily run is for an agent you run yourself', async () => {
   const byo = jest.fn(() => Promise.reject({ response: { status: 400, data: { code: 'schedule_byo_only' } } }));
   render(<V2DailySchedule api={apiWith(null, byo)} podId="pod-1" prompt="Triage" target={target} />);

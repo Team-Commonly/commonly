@@ -28,10 +28,12 @@ interface SavedSchedule {
 }
 
 // A refusal a retry can't change gets its own line, and the offer goes away.
-type Refusal = 'notYours' | 'byoOnly';
+type Refusal = 'notYours' | 'byoOnly' | 'notMember';
 const refusalOf = (error: unknown): Refusal | null => {
   const response = (error as { response?: { status?: number; data?: { code?: string } } })?.response;
   if (response?.data?.code === 'schedule_byo_only') return 'byoOnly';
+  // Starting a schedule needs a seat in the pod (manage-settings.ts), so an owner who left is told to join.
+  if (response?.data?.code === 'not_pod_member') return 'notMember';
   if (response?.status === 403) return 'notYours';
   return null;
 };

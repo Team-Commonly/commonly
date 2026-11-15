@@ -1125,7 +1125,8 @@
       "next": "Next run: {{when}}.",
       "now": "starting now",
       "notYours": "Only {{name}}'s owner can set a daily run for it, and only while no one else has it installed.",
-      "byoOnly": "A daily run is for an agent you run yourself."
+      "byoOnly": "A daily run is for an agent you run yourself.",
+      "notMember": "Join this pod to set a daily run in it."
     }
   },
   "landing": {
