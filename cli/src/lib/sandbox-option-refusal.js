@@ -1,5 +1,5 @@
 /**
- * Refuse before open (F535, D318): a sandbox option the seat's adapter can't
+ * Refuse before open (F535): a sandbox option the seat's adapter can't
  * enforce fails the seat at start, never drops silently. One check for config,
  * attach and run (the daemon starts seats through run), beside providerRefusal.
  *
