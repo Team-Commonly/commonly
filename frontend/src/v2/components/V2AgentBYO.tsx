@@ -551,6 +551,9 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
+  // The hosted offer panel on the result page, which shows its own error.
+  const hostedOfferShown = Boolean(issued) && listenerAvailable && showHostedOffer && !hasCopied
+    && hostedOffered && listenState !== 'listening';
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
   // machine link for a second instance falls back the same way, unless the
@@ -2505,6 +2508,58 @@ const V2AgentBYO: React.FC = () => {
                 />
               </p>
             )}
+            {/* Codex on Windows: every route that works, whether or not this pod
+                qualifies. Invite-only with --unsandboxed, WSL 2 (Codex under
+                bubblewrap there, in any pod), or hosted. The WSL lines are the
+                page's Linux lines, walked on Ubuntu, not yet inside WSL. */}
+            {setupOs === 'windows' && listenAdapter === 'codex' && (
+              <div className="v2-byo__listen-note v2-byo__codex-ways" data-testid="byo-listen-windows-codex-ways">
+                <p>{t('agentByo.listen.windowsCodexWays')}</p>
+                <ul>
+                  {listenerAvailable && podIsConfirmedPrivate(repoPod) && (
+                    <li data-testid="byo-codex-way-invite">
+                      <Trans i18nKey={lineCopy('agentByo.listen.windowsCodexWayInvite')} components={{ cmd: <code /> }} />
+                    </li>
+                  )}
+                  <li data-testid="byo-codex-way-wsl">
+                    <Trans
+                      i18nKey={lineCopy('agentByo.listen.windowsCodexWayWsl')}
+                      components={{
+                        cmd: <code />,
+                        linux: (
+                          <button
+                            type="button"
+                            className="v2-byo__link"
+                            data-testid="byo-codex-way-wsl-linux"
+                            onClick={() => setSetupOs('linux')}
+                          />
+                        ),
+                      }}
+                    />
+                  </li>
+                  {/* With no listener the won't-answer line above carries the one Run it here button. */}
+                  {hostedOffered && listenerAvailable && (
+                    <li data-testid="byo-codex-way-hosted">
+                      <Trans
+                        i18nKey="agentByo.listen.windowsCodexWayHosted"
+                        components={{
+                          hosted: (
+                            <button
+                              type="button"
+                              className="v2-byo__link"
+                              data-testid="byo-codex-way-hosted-button"
+                              disabled={submitting}
+                              onClick={startHostedInstead}
+                            />
+                          ),
+                        }}
+                      />
+                      {error && !hostedOfferShown && <span className="v2-byo__error" role="alert"> {error}</span>}
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
             {listenerAvailable && (
               <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
@@ -2861,7 +2916,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && listenerAvailable && showHostedOffer && !hasCopied && hostedOffered && listenState !== 'listening' && (
+          {hostedOfferShown && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
