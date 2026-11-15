@@ -110,10 +110,10 @@ const WINDOWS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 // Issue a seat so the result page renders (the same path the listen-snippet
 // suite drives), then return the page's own setup telemetry.
-const issueSeatAndReadSetup = async () => {
+const issueSeatAndReadSetup = async (issued = { token: 'cm_agent_test_token' }) => {
   axios.post
     .mockResolvedValueOnce({ data: { ok: true } }) // /api/registry/install
-    .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token' } }); // runtime-tokens
+    .mockResolvedValueOnce({ data: issued }); // runtime-tokens
   renderPage();
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
@@ -209,6 +209,29 @@ describe('a hand copy (select, then Ctrl+C)', () => {
       const text = listenBlock().querySelector('pre').textContent;
       expect(handCopy(listenBlock(), text.split('\n')[0])).not.toHaveBeenCalled();
       expect(handCopy(listenBlock(), `${text}\n`)).not.toHaveBeenCalled();
+    } finally {
+      withUserAgent(original);
+    }
+  });
+
+  test('on Windows with a connect code, the one line gets the final newline only when copied whole', async () => {
+    const original = window.navigator.userAgent;
+    withUserAgent(WINDOWS_UA);
+    try {
+      await issueSeatAndReadSetup({
+        token: 'cm_agent_test_token',
+        connectCode: `cmc_${'a'.repeat(22)}`,
+        connectCodeExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      });
+      const text = listenBlock().querySelector('pre').textContent;
+      expect(text).not.toMatch(/\n/);
+      expect(text).toMatch(/--connect .*--unsandboxed \}$/);
+      const whole = handCopy(listenBlock(), text);
+      expect(whole).toHaveBeenCalledWith('text/plain', `${text}\n`);
+      expect(whole.kept).toBe(false);
+      const part = handCopy(listenBlock(), text.slice(0, -10));
+      expect(part).not.toHaveBeenCalled();
+      expect(part.kept).toBe(true);
     } finally {
       withUserAgent(original);
     }
