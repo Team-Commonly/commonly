@@ -8,6 +8,8 @@ on:
   pull_request:
     branches: [ main ]
     types: [opened, synchronize, reopened, ready_for_review, edited]
+    # Only PRs under these paths run it. Keep it a non-required check: a
+    # required check that a paths filter skips leaves the PR pending forever.
     paths:
       - 'backend/**'
       - 'cli/src/**'

@@ -79,6 +79,28 @@ test('a hit names its file and line', () => {
   assert.equal(hit.line, 12);
 });
 
+test('two ids joined by a slash are both refused', () => {
+  assert.deepEqual(tokens(diff('backend/a.ts', '// per D243/D244')), ['D243', 'D244']);
+});
+
+test('the role name is matched as a word, hyphenated too, not inside another word', () => {
+  assert.deepEqual(tokens(diff('docs/a.md', 'the co-founder said')), ['co-founder']);
+  assert.deepEqual(tokens(diff('frontend/src/a.tsx', "const cofounders = 'x';")), []);
+});
+
+test('an added line that reads like a file header stays inside its hunk', () => {
+  const text = [
+    'diff --git a/docs/a.md b/docs/a.md',
+    '--- a/docs/a.md',
+    '+++ b/docs/a.md',
+    '@@ -0,0 +1,3 @@',
+    '+++ counter',
+    '+// D215',
+    '+// D216',
+  ].join('\n');
+  assert.deepEqual(tokens(text), ['D215', 'D216']);
+});
+
 test('an allowlist entry lets one token through in one file only', () => {
   const allow = parseAllowlist('# real hits\nfrontend/src/v2/a.tsx D100\n\n');
   assert.deepEqual(tokens(diff('frontend/src/v2/a.tsx', "label: 'D100 series'"), allow), []);

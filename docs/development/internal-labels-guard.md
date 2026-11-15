@@ -7,7 +7,7 @@ This repo is public. A comment such as `// per D215` or "ruled by the Cofounder"
 ## What it refuses
 
 - **A ledger id:** `D` followed by two or three digits, D20 and up.
-- **The internal role name** "Cofounder", in any case. In an ADR, write "the maintainers".
+- **The internal role name** "Cofounder" as a word, in any case, hyphenated too. In an ADR, write "the maintainers".
 
 ## What it lets through
 
@@ -16,6 +16,8 @@ This repo is public. A comment such as `// per D215` or "ruled by the Cofounder"
 - Vendored skills under `backend/commonly-bundled-skills/`.
 
 If ADR decisions ever reach D20, raise `FIRST_LEDGER_ID` in the script.
+
+Editing or moving a line that already carries a label counts as adding it, so a PR that touches one has to fix it. Saying the reason is best. If you can't, because you can't open the record it cites, just delete the bare id. A moved file with no edits adds no lines, because renames are detected.
 
 ## A real name that trips it
 

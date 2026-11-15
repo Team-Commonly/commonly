@@ -19,14 +19,14 @@ export const SCOPE = ['backend/', 'cli/src/', 'frontend/src/', 'packages/', 'doc
 const SKIP = /(^|\/)node_modules\/|^backend\/commonly-bundled-skills\/|\.(png|jpe?g|gif|svg|ico|woff2?|lock)$|package-lock\.json$/;
 
 // Not inside a word, a hex colour ("#D215") or a cell reference ("A1:D40",
-// "D$54", "/Sheet1/D25").
-const LEDGER_ID = /(?<![#\w$:/])D(\d{2,3})(?![\w$]|:\$?[A-Z])/g;
+// "D$54").
+const LEDGER_ID = /(?<![#\w$:])D(\d{2,3})(?![\w$]|:\$?[A-Z])/g;
 // ADR decisions top out at D13 today and ledger rows run past D300, so an
 // ADR's own numbering ("### D10", "predates D17") stays below this.
 const FIRST_LEDGER_ID = 20;
 // "ADR-018 D12" names a decision inside an ADR, not a ledger row.
 const ADR_DECISION = /ADR-\d{3}[ ,§]*D\d+/g;
-const ROLE = /cofounder/gi;
+const ROLE = /\bco-?founder\b/gi;
 
 export const inScope = (file) => SCOPE.some((dir) => file.startsWith(dir)) && !SKIP.test(file);
 
@@ -39,34 +39,41 @@ export function findLabels(diffText, allow = new Set()) {
   const hits = [];
   let file = null;
   let line = 0;
+  // Lines left in the current hunk, from its "@@ -a,b +c,d @@" header. Inside
+  // a hunk every line is content, even one that reads "+++ x" or "@@".
+  let oldLeft = 0;
+  let newLeft = 0;
   for (const raw of diffText.split('\n')) {
+    if (oldLeft > 0 || newLeft > 0) {
+      if (raw.startsWith('-')) { oldLeft -= 1; continue; }
+      if (raw.startsWith(' ') || raw === '') { oldLeft -= 1; newLeft -= 1; line += 1; continue; }
+      if (!raw.startsWith('+')) continue;
+      newLeft -= 1;
+      const text = raw.slice(1);
+      if (file && inScope(file)) {
+        const found = [
+          ...[...text.replace(ADR_DECISION, ' ').matchAll(LEDGER_ID)]
+            .filter((m) => Number(m[1]) >= FIRST_LEDGER_ID).map((m) => m[0]),
+          ...[...text.matchAll(ROLE)].map((m) => m[0]),
+        ];
+        for (const token of found) {
+          if (!allow.has(`${file} ${token}`)) hits.push({ file, line, token, text: text.trim() });
+        }
+      }
+      line += 1;
+      continue;
+    }
     if (raw.startsWith('+++ ')) {
       const path = raw.slice(4).trim();
       file = path === '/dev/null' ? null : path.replace(/^b\//, '');
       continue;
     }
-    if (raw.startsWith('@@')) {
-      const m = raw.match(/\+(\d+)/);
-      line = m ? Number(m[1]) : 0;
-      continue;
+    const hunk = raw.match(/^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+    if (hunk) {
+      oldLeft = hunk[1] === undefined ? 1 : Number(hunk[1]);
+      line = Number(hunk[2]);
+      newLeft = hunk[3] === undefined ? 1 : Number(hunk[3]);
     }
-    if (raw.startsWith('---') || raw.startsWith('diff ') || raw.startsWith('-')) continue;
-    if (!raw.startsWith('+')) {
-      if (raw.startsWith(' ')) line += 1;
-      continue;
-    }
-    const text = raw.slice(1);
-    if (file && inScope(file)) {
-      const found = [
-        ...[...text.replace(ADR_DECISION, ' ').matchAll(LEDGER_ID)]
-          .filter((m) => Number(m[1]) >= FIRST_LEDGER_ID).map((m) => m[0]),
-        ...[...text.matchAll(ROLE)].map((m) => m[0]),
-      ];
-      for (const token of found) {
-        if (!allow.has(`${file} ${token}`)) hits.push({ file, line, token, text: text.trim() });
-      }
-    }
-    line += 1;
   }
   return hits;
 }
@@ -77,7 +84,7 @@ const main = () => {
   let diffText;
   if (opt('--diff')) diffText = readFileSync(opt('--diff'), 'utf8');
   else if (opt('--base')) {
-    diffText = execFileSync('git', ['diff', '--no-color', '--no-renames', '-U0', `${opt('--base')}`, 'HEAD', '--', ...SCOPE],
+    diffText = execFileSync('git', ['diff', '--no-color', '--find-renames', '-U0', `${opt('--base')}`, 'HEAD', '--', ...SCOPE],
       { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   } else {
     console.error('usage: check-internal-labels.mjs --base <sha> | --diff <file>');
@@ -87,7 +94,7 @@ const main = () => {
   const allow = parseAllowlist(existsSync(allowPath) ? readFileSync(allowPath, 'utf8') : '');
   const hits = findLabels(diffText, allow);
   for (const hit of hits) {
-    console.log(`::error file=${hit.file},line=${hit.line}::"${hit.token}" is a team-internal label. Say the reason in plain words instead, or add "${hit.file} ${hit.token}" to .internal-labels-allow if it is a real name.`);
+    console.log(`::error file=${hit.file},line=${hit.line}::"${hit.token}" is a team-internal label. Say the reason in plain words, or just delete the id if you can't, or add "${hit.file} ${hit.token}" to .internal-labels-allow if it is a real name.`);
   }
   console.log(hits.length ? `${hits.length} internal label(s) on added lines` : 'no internal labels on added lines');
   process.exit(hits.length ? 1 : 0);
