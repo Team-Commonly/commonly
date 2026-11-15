@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../utils/axiosConfig';
 import V2AuthBrand from '../v2/components/V2AuthBrand';
 import V2AuthNotice from '../v2/components/V2AuthNotice';
+import { useAuth } from '../context/AuthContext';
 
 // The link in the verification email lands here (/verify-email?token=…, sent
 // on to /v2/verify-email). This was the last navy MUI card on the auth routes;
@@ -19,6 +20,9 @@ interface Result {
 const VerifyEmail: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Sign-up signs the visitor in, so the link is often opened in a session
+  // that's already live: that visitor goes on to the app, not to sign in.
+  const { isAuthenticated } = useAuth();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const [result, setResult] = useState<Result | null>(null);
@@ -46,20 +50,23 @@ const VerifyEmail: React.FC = () => {
     <div className="v2-login">
       <div className="v2-login__card v2-login__card--stack">
         <V2AuthBrand />
-        <h1 className="v2-login__title">{t('auth.verify.title')}</h1>
+        {/* Once it worked, the heading says so: "Verify your email" above a
+            success line read as a step still to do. */}
+        <h1 className="v2-login__title">{t(result?.ok ? 'auth.verify.titleDone' : 'auth.verify.title')}</h1>
         {!result ? (
           <p className="v2-login__subtitle">{t('auth.verify.verifying')}</p>
         ) : (
           <>
             <V2AuthNotice kind={result.ok ? 'status' : 'alert'}>
-              {result.message || (result.ok ? t('auth.verify.verified') : t('auth.verify.errors.failed'))}
+              {/* Success reads in the page's language; a failure keeps the server's reason. */}
+              {result.ok ? t('auth.verify.verified') : (result.message || t('auth.verify.errors.failed'))}
             </V2AuthNotice>
             <button
               type="button"
               className={result.ok ? 'v2-login__submit' : 'v2-login__submit v2-login__submit--ghost'}
-              onClick={() => navigate('/v2/login')}
+              onClick={() => navigate(result.ok && isAuthenticated ? '/v2' : '/v2/login')}
             >
-              {t('auth.verify.goToSignIn')}
+              {t(result.ok && isAuthenticated ? 'auth.verify.continue' : 'auth.verify.goToSignIn')}
             </button>
           </>
         )}

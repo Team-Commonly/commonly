@@ -656,12 +656,14 @@
     },
     "verify": {
       "title": "Verify your email",
+      "titleDone": "Your email is verified",
       "verifying": "Verifying your email…",
-      "verified": "Email verified.",
+      "verified": "You can use Commonly with this address now.",
       "goToSignIn": "Go to sign in",
       "errors": {
         "failed": "Verification failed."
-      }
+      },
+      "continue": "Continue"
     },
     "errors": {
       "network": "Can't reach Commonly right now. Check your connection and try again.",
