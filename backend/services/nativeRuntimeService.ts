@@ -935,9 +935,10 @@ interface DispatchContext {
   ownAgentOfferPosted?: boolean;
   /**
    * F530: what this turn has read to, null when it can't be read (the turn then
-   * posts unchecked, as before). ownIds are the turn's own posts since then.
+   * posts unchecked, as before). seenIds are messages after that point the
+   * turn has already seen: its own posts, and those a hold showed it.
    */
-  freshness?: { agentUserId: string; since: unknown; ownIds: string[] } | null;
+  freshness?: { agentUserId: string; since: unknown; seenIds: string[] } | null;
   /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
@@ -1097,7 +1098,7 @@ const fanOutAgentPost = (
 };
 
 const noteOwnPost = (ctx: DispatchContext, id: unknown): void => {
-  if (ctx.freshness && id !== undefined && id !== null && String(id)) ctx.freshness.ownIds.push(String(id));
+  if (ctx.freshness && id !== undefined && id !== null && String(id)) ctx.freshness.seenIds.push(String(id));
 };
 
 /** F530: where a hosted turn starts reading from. Null on any failure. */
@@ -1109,7 +1110,7 @@ const startTurnFreshness = async (
     if (!agentUserId) return null;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const since = await require('./agentSendFreshness').readStart(podId);
-    return { agentUserId, since, ownIds: [] };
+    return { agentUserId, since, seenIds: [] };
   } catch (error) {
     console.warn('[native-runtime] freshness start unavailable; posts go unchecked:', (error as Error).message);
     return null;
@@ -1118,10 +1119,14 @@ const startTurnFreshness = async (
 
 /**
  * F530: the result a post or claim gets when messages landed that this turn
- * has not seen, or null to go ahead. The messages it shows count as read, so
- * the next check starts after them. Fails open, as the turn did before.
+ * has not seen, or null to go ahead. The messages it shows count as read; the
+ * ones it had no room to show still hold the next call. `stillRoom` is asked
+ * after the reads: a hold that would leave no time to reply lets the call
+ * through. Fails open, as the turn did before.
  */
-const unseenHold = async (ctx: DispatchContext): Promise<DispatchResult | null> => {
+const unseenHold = async (
+  ctx: DispatchContext, stillRoom: () => boolean = () => true,
+): Promise<DispatchResult | null> => {
   const freshness = ctx.freshness;
   if (!freshness) return null;
   try {
@@ -1131,20 +1136,26 @@ const unseenHold = async (ctx: DispatchContext): Promise<DispatchResult | null> 
     // still held next time, never skipped.
     const next = await Freshness.readStart(String(ctx.podId));
     const hold = await Freshness.unseenMessages(freshness.agentUserId, ctx.podId, {
-      since: freshness.since, ignoreIds: [...freshness.ownIds], limit: UNSEEN_SHOWN_MAX,
+      since: freshness.since, ignoreIds: [...freshness.seenIds], limit: UNSEEN_SHOWN_MAX,
     });
-    if (!hold) return null;
-    freshness.since = next;
-    freshness.ownIds = [];
+    if (!hold || !stillRoom()) return null;
     const count = Number(hold.unseenCount) || 0;
-    const shown = (hold.messages || []).slice().reverse()
-      .map(({ author, content, createdAt }: { author: string; content: string; createdAt: unknown }) => (
-        { author, content, createdAt }));
+    const previews: Array<{ id: string; author: string; content: string; createdAt: unknown }> = hold.messages || [];
+    if (count > previews.length) {
+      // Some didn't fit. Moving the start past them would let the next call
+      // through unread, so only the ones shown count as seen.
+      freshness.seenIds.push(...previews.map(({ id }) => String(id)));
+    } else {
+      freshness.since = next;
+      freshness.seenIds = [];
+    }
+    const shown = previews.slice().reverse()
+      .map(({ author, content, createdAt }) => ({ author, content, createdAt }));
     let below = count === 1 ? '1 new message came in while you were working; it is in messages.'
       : `${count} new messages came in while you were working; they are in messages.`;
     if (count > shown.length) {
       below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages. `
-        + 'Call commonly_read_context to read the rest.';
+        + 'The rest are shown the next time you try, or call commonly_read_context to read them now.';
     }
     return {
       content: {
@@ -3389,8 +3400,12 @@ export async function runAgent(
         let failedEarlierInRound: { name: string; error: string } | null = null;
         const mayHoldPost = !recoveryRound && turnIndex < MAX_TURNS - 1;
         // F530: a hold needs room for the call after it, this call's tokens
-        // not yet counted.
-        const mayHoldUnseen = mayHoldPost && roomForAnotherCall(2 * Number(usage.total_tokens || 0));
+        // not yet counted. Asked at each call, since a slow tool before it
+        // spends the clock.
+        const roomToHold = (): boolean => mayHoldPost && roomForAnotherCall(2 * Number(usage.total_tokens || 0));
+        // Once a call is held, every later protected call in this response is
+        // held with it: the model has not read the hold yet.
+        let unseenHeldInRound: DispatchResult | null = null;
 
         for (const tc of toolCalls) {
           const toolStart = Date.now();
@@ -3478,8 +3493,13 @@ export async function runAgent(
           }
           // F530. Not in the last-chance rounds, where a hold would leave no
           // step to reply in (the same exception F317 makes).
-          else if (mayHoldUnseen && offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
-            && UNSEEN_HELD_TOOLS.has(toolName) && (unseen = await unseenHold(dispatchCtx))) result = unseen;
+          else if (unseenHeldInRound && UNSEEN_HELD_TOOLS.has(toolName)) result = unseenHeldInRound;
+          else if (offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
+            && UNSEEN_HELD_TOOLS.has(toolName) && roomToHold()
+            && (unseen = await unseenHold(dispatchCtx, roomToHold))) {
+            unseenHeldInRound = unseen;
+            result = unseen;
+          }
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           } else result = { content: { ok: false, error: notOffered }, error: notOffered };
@@ -3646,7 +3666,7 @@ export async function runAgent(
       // with what it missed, unless this was the last step it had.
       const replyHeld = textOut && !postedViaTool && !fallbackBlocked && !declinedInText
         && !recoveryRound && turnIndex < MAX_TURNS - 1 && roomForAnotherCall(Number(usage.total_tokens || 0))
-        ? await unseenHold(dispatchCtx) : null;
+        ? await unseenHold(dispatchCtx, () => roomForAnotherCall(Number(usage.total_tokens || 0))) : null;
       if (replyHeld) {
         messages.push({ role: 'assistant', content: textOut });
         messages.push({ role: 'user', content: JSON.stringify(replyHeld.content) });

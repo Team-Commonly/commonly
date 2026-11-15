@@ -61,7 +61,9 @@ const REREAD = { at: new Date('2026-11-14T10:00:05Z'), revision: 42 };
 const missed = {
   code: 'unseen_messages',
   unseenCount: 1,
-  messages: [{ id: '777', author: 'codex', content: 'Already answered: use the Claude Code CLI.', createdAt: new Date() }],
+  messages: [{
+    id: '777', author: 'codex', content: 'Already answered: use the Claude Code CLI.', createdAt: new Date(), 
+  }],
   message: 'There is 1 unseen message. (connected-agent wording)',
 };
 
@@ -70,6 +72,22 @@ const callsTool = (name, args) => ({
   headers: {},
   data: {
     choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }],
+    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+  },
+});
+// One response asking for several calls, in order.
+const callsTools = (...calls) => ({
+  status: 200,
+  headers: {},
+  data: {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: calls.map(([name, args], i) => (
+          { id: `c${i + 1}`, type: 'function', function: { name, arguments: JSON.stringify(args) } })), 
+      }, 
+    }],
     usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
   },
 });
@@ -202,6 +220,85 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
     expect(shown).toContain('commonly_read_context');
   });
 
+  // CodeRabbit on #4159: moving the start past messages the hold had no room
+  // to show would let the next call through without them.
+  test('messages a hold had no room to show still hold the next call', async () => {
+    Freshness.unseenMessages
+      .mockResolvedValueOnce({ ...missed, unseenCount: 14 })
+      .mockResolvedValue(null);
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }))
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'Codex has it: the Claude Code CLI.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scout, ask);
+
+    const next = Freshness.unseenMessages.mock.calls[1][2];
+    expect(next.since).toEqual(START);
+    expect(next.ignoreIds).toEqual(['777']);
+  });
+
+  test('a second claim in the same response is held with the first, before the model has read the hold', async () => {
+    Freshness.unseenMessages.mockResolvedValueOnce(missed).mockResolvedValue(null);
+    axios.post
+      .mockResolvedValueOnce(callsTools(['commonly_claim_task', { taskId: 'N-1' }], ['commonly_claim_task', { taskId: 'N-2' }]))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scout, ask);
+
+    const claims = saved[0].turns[0].toolCalls.filter((c) => c.name === 'commonly_claim_task');
+    expect(claims.map((c) => c.error)).toEqual(['unseen_messages', 'unseen_messages']);
+    expect(Freshness.unseenMessages).toHaveBeenCalledTimes(1);
+  });
+
+  test('a slow call earlier in the response spends the room, so a later post goes through unchecked', async () => {
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+    try {
+      Freshness.unseenMessages.mockResolvedValue(missed).mockResolvedValueOnce(null);
+      AgentMessageService.postMessage.mockImplementationOnce(async ({ content }) => {
+        offset = 50000;
+        return { success: true, message: { id: 9001, content, userId: { _id: BOT, username: 'scout' } } };
+      });
+      axios.post
+        .mockResolvedValueOnce(callsTools(
+          ['commonly_post_message', { content: REPLY }],
+          ['commonly_post_message', { content: 'One more thing: run it from the repo root.' }],
+        ))
+        .mockResolvedValueOnce(says('NO_REPLY'));
+
+      await runAgent(scout, ask);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+      expect(Freshness.unseenMessages).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('a hold found only after the reads ran out the room lets the post through', async () => {
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+    try {
+      Freshness.unseenMessages.mockImplementation(async () => {
+        offset = 50000;
+        return missed;
+      });
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }))
+        .mockResolvedValueOnce(says('NO_REPLY'));
+
+      await runAgent(scout, ask);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].content).toBe(REPLY);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   // A hold costs another model call. Late in the turn the clock cap would end
   // the run before it, so the reply posts rather than becoming a failure line.
   test('late in the turn a post goes through rather than be held into the clock cap', async () => {
@@ -212,7 +309,7 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
       Freshness.unseenMessages.mockResolvedValue(missed);
       axios.post
         .mockImplementationOnce(async () => {
-          offset = 50_000;
+          offset = 50000;
           return callsTool('commonly_post_message', { content: REPLY });
         })
         .mockResolvedValueOnce(says('NO_REPLY'));
