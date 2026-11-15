@@ -167,9 +167,12 @@ silently doesn't happen. Here is the chain:
    mismatch").
 2. The Postgres routes then stay unmounted, and `/api/health/ready` answers 503
    "PostgreSQL routes are not mounted on this pod" (`backend/routes/health.ts`).
-3. The old pods never go Ready. The backend rolls with `maxUnavailable: 0`
-   (`templates/core/backend-deployment.yaml`), so the rollout stalls, and the
-   new-code pods go on serving.
+3. The old pods never go Ready. The web backend rolls with
+   `maxUnavailable: 0` (`templates/core/backend-deployment.yaml`), so the
+   rollout stalls, and the new-code web pods go on serving. `backend-worker` is
+   different: it uses `Recreate`, so its new-code pod stops first, and the
+   old-code worker that replaces it can't do its Postgres work until the delete
+   lands.
 
 So before the rollback, delete the rows the target image doesn't carry. Use
 `ops-runner`, never an exec into the serving backend
@@ -177,10 +180,13 @@ So before the rollback, delete the rows the target image doesn't carry. Use
 migration file name, recorded at the cut: a bare name such as
 `0011_thread_read_point.sql`, not a path. The script refuses a `KEEP` that
 isn't a recorded row, and it deletes only the rows its dry run lists, in the
-runner's own file order. Run it once as a dry run, then again with `APPLY=1`:
+runner's own file order. Run it once with `APPLY=0` (a dry run), then again
+with `APPLY=1`. Set it on its own line, as shown: an `APPLY=1` typed in front
+of the command doesn't reach `${APPLY}`, which the shell expands first.
 
 ```bash
-kubectl exec -i deploy/ops-runner -n <ns> -- env NODE_PATH=/app/node_modules KEEP=<last file> APPLY=${APPLY:-0} node - <<'JS'
+APPLY=0   # 0 = dry run; 1 = delete the rows it lists
+kubectl exec -i deploy/ops-runner -n <ns> -- env NODE_PATH=/app/node_modules KEEP=<last file> APPLY=$APPLY node - <<'JS'
 const { pool } = require('/app/dist/config/db-pg');
 (async () => {
   // Sorted as the runner sorts its files, so no database collation decides the order.
@@ -217,9 +223,11 @@ JS
   chart's `ops-runner` removes it on rollback. Then the dry run can't be
   repeated afterwards. Prove the history from the pods instead: once every
   backend and worker pod is old code, nothing can re-insert the rows. If a
-  new-code pod restarted first and the old pods stay unready, nothing is down:
-  the stalled rollout keeps the new pods serving. Roll forward to the revision
-  you rolled back from, which brings `ops-runner` back. Then run the delete
+  new-code web pod restarted first and the old pods stay unready, the web
+  tier is still up, because the stalled rollout keeps the new web pods
+  serving. The worker is not: it is already old code and stuck without
+  Postgres. So roll forward at once to the revision you rolled back from,
+  which brings `ops-runner` and a working worker back. Then run the delete
   again and roll back once more.
 - **Verify:** every backend and backend-worker pod logs
   `PostgreSQL migrations ready (0 applied)` and no `history mismatch`, readiness
