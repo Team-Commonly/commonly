@@ -487,8 +487,6 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
   });
 });
 
-// F197: a public seat's writable workspace is the scratch folder the CLI made,
-// so the profile pins it. A link at that path refuses the turn before spawn.
 // F535 (Cofounder ruling 11-15): a public seat reads only its workspace.
 test('a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
   await withSeat(async (ctx) => {
@@ -507,6 +505,8 @@ test('a public bwrap seat asking to read ~/.commonly is refused, and nothing is 
   });
 });
 
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
 test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
   await withSeat(async (ctx, root) => {
     const elsewhere = join(root, 'elsewhere');
