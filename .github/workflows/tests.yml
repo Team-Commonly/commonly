@@ -384,7 +384,12 @@ jobs:
 
   tool-tests:
     name: CLI, MCP and hosted runtime tests
-    runs-on: ubuntu-latest
+    # Pinned while ubuntu-latest rolls to 26.04: there the public-bwrap smoke
+    # (cli/__tests__/opencode.bwrap-egress.test.mjs) can create its network
+    # namespace but not configure it ("RTNETLINK answers: Operation not
+    # permitted"), which the 24.04 image allows. Unpin once the CLI and this
+    # job handle 26.04 on purpose (F540).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
