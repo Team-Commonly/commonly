@@ -124,6 +124,23 @@ const POLICY_NAMES = {
 // Prod's agent computer users come from the private values file, so a lane
 // that checks those allows names one user to render the waker and a gate.
 const ONE_AGENT_COMPUTER_USER = ['backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'];
+// A pod the backend creates at runtime, outside this chart: an agent gateway
+// from gatewayProvisionerServiceK8s (`gateway-<slug>`, F511). The allows admit it
+// by the label key `commonly.gateway`, so its flows are checked against this
+// stand-in, and the provisioner's own labels are read below, so dropping or
+// renaming that label fails here instead of cutting every gateway off litellm.
+const GATEWAY_PROVISIONER = 'backend/services/gatewayProvisionerServiceK8s.ts';
+const provisionedGateway = (ns) => ({
+  kind: 'Deployment',
+  metadata: { name: 'gateway-verify', namespace: ns },
+  spec: { template: { metadata: { labels: { app: 'gateway-verify', 'commonly.gateway': 'verify' } } } },
+});
+{
+  const src = require('fs').readFileSync(GATEWAY_PROVISIONER, 'utf8');
+  const labels = /const labels: Record<string, string> = \{([^}]*)\}/.exec(src);
+  expect(labels && /'commonly\.gateway':\s*slug\b/.test(labels[1]),
+    `${GATEWAY_PROVISIONER}: the gateway pod labels no longer carry 'commonly.gateway': slug, which the backend and litellm allows admit gateways by`);
+}
 const ingressLanes = {
   default: { files: lanes.default.files, on: [] },
   // Prod's steps 1 and 2: frontend, redis and agent-computer allows, no deny.
@@ -146,7 +163,7 @@ const ingressLanes = {
       ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379],
       ['edge', 'agent-computer-steel', 3000], ['edge', 'agent-computer-waker', 8080],
       ['app=commonly-bot', 'agent-computer-steel', 3000], ['app=cloud-codex', 'agent-computer-waker', 8080],
-      ['app=agent-computer-waker', 'agent-computer-steel', 3000]],
+      ['app=agent-computer-waker', 'agent-computer-steel', 3000], ['app=gateway-verify', 'redis', 6379]],
   },
   staging: {
     files: lanes.staging.files,
@@ -163,9 +180,11 @@ const ingressLanes = {
       ['app=ops-runner', 'mongodb', 27017],
       ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['app=ops-runner', 'email-sink', 8080],
       ['component=stranger-journey', 'email-sink', 8080],
+      ['app=gateway-verify', 'backend', 5000], ['app=gateway-verify', 'litellm', 4000],
     ],
     // Nothing outside the namespace's tunnel reaches these.
-    closed: [['app=backend', 'frontend', 80], ['app=litellm', 'redis', 6379], ['app=frontend', 'backend', 5000], ['app=cloudflared-commonly-k8s', 'litellm', 4000]],
+    closed: [['app=backend', 'frontend', 80], ['app=litellm', 'redis', 6379], ['app=frontend', 'backend', 5000], ['app=cloudflared-commonly-k8s', 'litellm', 4000],
+      ['app=gateway-verify', 'redis', 6379], ['app=gateway-verify', 'mongodb', 27017], ['app=gateway-verify', 'email-sink', 8080]],
   },
   'dev+ingress': {
     files: lanes.dev.files,
@@ -180,8 +199,10 @@ const ingressLanes = {
       ...['backend', 'backend-worker', 'commonly-bot', 'ops-runner', 'cloud-codex'].flatMap((a) => [[`app=${a}`, 'backend', 5000], [`app=${a}`, 'litellm', 4000]]),
       ...['backend', 'backend-worker', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'redis', 6379],
         [`app=${a}`, 'agent-computer-waker', 8080], [`app=${a}`, 'agent-computer-steel', 3000]]),
+      ['app=gateway-verify', 'backend', 5000], ['app=gateway-verify', 'litellm', 4000],
     ],
-    closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000]],
+    closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000],
+      ['app=gateway-verify', 'redis', 6379], ['app=gateway-verify', 'agent-computer-waker', 8080], ['app=gateway-verify', 'agent-computer-steel', 3000]],
   },
 };
 const peerLabels = (spec) => {
@@ -280,8 +301,9 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
       ? Object.fromEntries(Object.keys(val).sort().map((key) => [key, val[key]])) : val));
     expect(canon(edgePeers) === canon(cfg.edgeIs), `${lane}: the edge peer is ${JSON.stringify(edgePeers)}, want the ingress-nginx controller`);
   }
-  const workloads = docs.filter((d) => ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d));
   const ns = (deny || policies[0])?.metadata.namespace;
+  const workloads = [...docs.filter((d) => ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job'].includes(d.kind) && podTemplate(d)),
+    provisionedGateway(ns)];
   for (const p of policies) expect(p.metadata.namespace === ns, `${lane}: ${p.metadata.name} renders outside ${ns}`);
   const podsOf = (app) => workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === app);
   // Every allow targets real pods, so a renamed label can't leave one guarding nothing.

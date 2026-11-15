@@ -7,6 +7,10 @@ own pod, and the deny closes only the pods no allow names. A policy that
 admits the edge refuses to render while the edge is empty, since an empty
 `from` admits everyone.
 Clients are named by pod label, never by node: pods move between pools.
+Agent gateways the backend provisions at runtime (gatewayProvisionerServiceK8s,
+`gateway-<slug>`) are not in this chart; they carry the label key
+`commonly.gateway`, and the backend and litellm allows admit any pod that has
+it, since a gateway calls both.
 `edge` is where outside traffic enters (prod: the ingress-nginx controller;
 staging: its in-namespace tunnel). One switch per policy under
 networkPolicy.ingress.<name>.enabled (default false); checked by
@@ -19,8 +23,8 @@ docs/runbooks/redis-auth-and-network-policy.md.
 {{- $data := list "backend" "backend-worker" "ops-runner" -}}
 {{- $policies := list
   (dict "key" "frontend" "name" "allow-frontend-ingress" "app" "frontend" "ports" (list 80) "edge" true "apps" (list))
-  (dict "key" "backend" "name" "allow-backend-ingress" "app" "backend" "ports" (list 5000) "edge" true "apps" $api)
-  (dict "key" "litellm" "name" "allow-litellm-ingress" "app" "litellm" "ports" (list 4000) "edge" $cfg.litellm.public "apps" $api)
+  (dict "key" "backend" "name" "allow-backend-ingress" "app" "backend" "ports" (list 5000) "edge" true "apps" $api "gateways" true)
+  (dict "key" "litellm" "name" "allow-litellm-ingress" "app" "litellm" "ports" (list 4000) "edge" $cfg.litellm.public "apps" $api "gateways" true)
   (dict "key" "redis" "name" "allow-redis-ingress" "app" "redis" "ports" (list 6379) "edge" false "apps" $data)
   (dict "key" "mongodb" "name" "allow-mongodb-ingress" "app" "mongodb" "ports" (list 27017) "edge" false "apps" $data "components" (list "backup"))
   (dict "key" "emailSink" "name" "allow-email-sink-ingress" "app" "email-sink" "ports" (list (int .Values.email.sink.port)) "edge" false "apps" $data "components" (list "stranger-journey"))
@@ -66,6 +70,12 @@ spec:
                 operator: In
                 values:
                   {{- toYaml $p.apps | nindent 18 }}
+        {{- end }}
+        {{- if $p.gateways }}
+        - podSelector:
+            matchExpressions:
+              - key: commonly.gateway
+                operator: Exists
         {{- end }}
         {{- with $p.components }}
         - podSelector:
