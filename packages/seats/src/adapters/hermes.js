@@ -222,6 +222,12 @@ export const createHermesAdapter = ({
     if (environment?.mcp?.length) {
       throw new Error('Hermes adapter does not yet consume environment.mcp declarations');
     }
+    // Workspace trust is claude's tier. Any other adapter that ran it would
+    // run bare while the unconfined-seat guard reads it as confined.
+    if (environment?.sandbox?.trust === 'workspace') {
+      throw new Error('hermes adapter: sandbox.trust=workspace is claude-only for now. '
+        + "Declare sandbox.trust 'public' for this seat, or attach it with the claude adapter.");
+    }
     if (effectiveTrust(environment?.sandbox?.trust) === 'public'
       || (environment?.sandbox?.mode && environment.sandbox.mode !== 'none')) {
       throw new Error('Hermes public or sandbox-declared seats are unsupported: no enforced confinement adapter exists');

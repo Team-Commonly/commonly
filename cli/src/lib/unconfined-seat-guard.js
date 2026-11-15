@@ -50,6 +50,9 @@ const ADAPTER_OWN_CONFINEMENT = {
   dsh: isConfinedDshShape,
 };
 
+/** True when the adapter enforces this sandbox shape with no trust (claude bwrap, dsh's one shape). */
+export const adapterConfinesItself = (adapterName, sandbox) => Boolean(ADAPTER_OWN_CONFINEMENT[adapterName]?.(sandbox));
+
 export const seatRunsUnconfined = ({ environment, adapterName }) => {
   if (UNCONFINED_UNCHECKED_ADAPTERS.has(adapterName)) return false;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);

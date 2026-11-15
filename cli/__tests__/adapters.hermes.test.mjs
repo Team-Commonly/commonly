@@ -229,6 +229,22 @@ test('refuses a public seat before probing or spawning Hermes', async () => {
   expect(child).not.toHaveBeenCalled();
 });
 
+// F535: the unconfined-seat guard reads workspace trust as confined, because
+// every adapter but claude refuses it. Hermes ran it bare.
+test.each([
+  ['workspace trust', { trust: 'workspace' }],
+  ['workspace trust with mode none', { trust: 'workspace', mode: 'none' }],
+])('refuses %s before probing or spawning Hermes', async (_label, sandbox) => {
+  const probe = jest.fn();
+  const child = jest.fn();
+  await expect(hermes.spawn('hello', {
+    environment: { model: 'test-model', sandbox },
+    _spawnSyncImpl: probe, _spawnImpl: child,
+  })).rejects.toThrow('hermes adapter: sandbox.trust=workspace');
+  expect(probe).not.toHaveBeenCalled();
+  expect(child).not.toHaveBeenCalled();
+});
+
 test('refuses a declared MCP server rather than silently dropping its tools', async () => {
   await expect(hermes.validateEnvironment({
     mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '@commonlyai/mcp'] }],

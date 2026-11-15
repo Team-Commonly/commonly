@@ -140,6 +140,23 @@ describe('performRun', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  // F535: refuse before open. The run stops at start, before any client or spawn.
+  test.each([
+    ['opencode', { trust: 'public', network: { 'allow-hosts': ['api.example.com'] } }, 'sandbox.network.allow-hosts'],
+    ['claude', { mode: 'workspace' }, 'applies sandbox.mode=workspace only with sandbox.trust=public'],
+    ['codex', { network: { policy: 'restricted' } }, 'enforced only inside a sandbox'],
+  ])('refuses a %s seat whose sandbox option it cannot enforce', (adapterName, sandbox, message) => {
+    const spawn = jest.fn();
+    expect(() => performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: adapterName, spawn },
+      environment: { sandbox },
+    })).toThrow(message);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   test.each([429, 503, 404])('own-key mint fallback HTTP %i refuses the real turn before model spawn', async (status) => {
     const { createOwnKeyResolver } = await import('../src/lib/own-key-launch.js');
     const { openSpawnCredential } = await import('../src/lib/spawn-credential.js');
@@ -5239,7 +5256,7 @@ describe('performRun — the grant broker is withheld where no daemon will judge
   });
 
   test('a non-public trust is withheld, named as its own reason', async () => {
-    const environment = { sandbox: { mode: 'workspace', trust: 'private' }, mcp: [BROKER] };
+    const environment = { sandbox: { trust: 'private' }, mcp: [BROKER] };
     const { spawned, log } = await runOnce({ environment });
     expect(spawned.mcp).toEqual([]);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('sandbox_trust_not_public'));
