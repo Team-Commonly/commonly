@@ -53,7 +53,7 @@ export const sandboxOptionRefusal = (environment, adapterName, platform = proces
   }
   // A public seat answers strangers, so it reads only its workspace: a path
   // outside it is what an injected agent would use to reach tokens
-  // (Cofounder ruling 11-15). bwrap opencode and qwen used to bind it in.
+  // (F535). bwrap opencode and qwen used to bind it in.
   if (sandbox.trust === 'public' && declares(sandbox.filesystem?.['read-outside'])) {
     return `A public seat reads only its workspace, so sandbox.filesystem.read-outside is refused on the ${adapter} adapter. `
       + 'Remove it, or copy what the agent needs into the workspace.';

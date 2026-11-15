@@ -487,7 +487,7 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
   });
 });
 
-// F535 (Cofounder ruling 11-15): a public seat reads only its workspace.
+// F535: a public seat reads only its workspace.
 test('a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
   await withSeat(async (ctx) => {
     const calls = [];

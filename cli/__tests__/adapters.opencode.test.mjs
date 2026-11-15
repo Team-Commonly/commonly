@@ -3308,7 +3308,7 @@ describe('opencode public seat — the grant broker (F175a)', () => {
   });
 });
 
-// F535 (Cofounder ruling 11-15): a public seat reads only its workspace, so a
+// F535: a public seat reads only its workspace, so a
 // read path outside it is refused before anything spawns, bwrap included.
 test('the attack case: a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
   const spawn = makeSpawnImpl();

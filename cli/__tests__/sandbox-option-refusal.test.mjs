@@ -17,7 +17,7 @@ describe('options no adapter enforces are refused', () => {
   });
 });
 
-// Cofounder ruling 11-15: public agents start from nothing. A read path outside
+// F535: public agents start from nothing. A read path outside
 // the workspace on a seat strangers can message is what an injected agent
 // would use to reach tokens, so it is refused on every adapter, bwrap
 // opencode and qwen included, which used to bind it into the jail.
