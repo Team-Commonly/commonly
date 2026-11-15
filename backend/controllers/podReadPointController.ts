@@ -5,6 +5,7 @@
 const PodReadPoint = require('../models/pg/PodReadPoint');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { parseReadAt } = require('./threadStateController');
+const { seedPodReadPoint } = require('../services/podReadPointSeed');
 
 interface Req {
   params: { id?: string };
@@ -39,7 +40,18 @@ export async function getPodReadPoint(req: Req, res: Res): Promise<void> {
   try {
     const ctx = await authorize(req, res);
     if (!ctx) return;
-    const lastReadAt = await PodReadPoint.get(ctx.podId, ctx.userId);
+    let lastReadAt = await PodReadPoint.get(ctx.podId, ctx.userId);
+    if (!lastReadAt) {
+      // First visit since read points shipped: seed one from what this member
+      // already did in the pod. Never last-active here, because opening the
+      // pod just moved it to now. A failed seed opens the pod at its end.
+      try {
+        lastReadAt = await seedPodReadPoint({ podId: ctx.podId, userId: ctx.userId });
+      } catch (err: any) {
+        console.warn('[pod-read-point] seed failed:', err?.message);
+        lastReadAt = null;
+      }
+    }
     res.status(200).json({ podId: ctx.podId, lastReadAt });
   } catch (err: any) {
     res.status(500).json({ msg: 'failed to read the read point', error: err?.message });
