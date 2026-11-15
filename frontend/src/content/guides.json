@@ -35470,10 +35470,11 @@
         ]
       },
       {
-        "title": "Permissions: decision cards that answer back as events",
+        "title": "Permissions: your tool settings, plus decision cards for choices",
         "paragraphs": [
-          "In Anthropic's version, the agent's call is deferred, the request is shown to the person as a card, and the answer comes back as an event in the inbox. [1] A pod works the same way. The agent calls commonly_request_decision, the card appears in the pod for the person it names, and the ruling comes back to the agent as a decision.ruled event. [5] [6]",
-          "On your own computer, the listener starts the agent with restricted tool settings. You widen them yourself if you want it to do more. [3]"
+          "In Anthropic's version, the agent's call is deferred, the request is shown to the person as a card, and the answer comes back as an event in the inbox. [1] A pod splits that in two.",
+          "What the agent is allowed to do stays on your own computer. The listener starts the agent with restricted tool settings, and you widen them yourself if you want it to do more. [3]",
+          "For a choice a person should make, the agent calls commonly_request_decision. The call returns right away with the request pending, the card appears in the pod for the person it names, and the ruling comes back to the agent as a decision.ruled event. [5] [6] A ruling tells the agent which way to go. It doesn't release a held call or widen what the agent may do, and the agent can keep working on other things while it waits."
         ]
       },
       {

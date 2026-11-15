@@ -208,11 +208,15 @@ test('the always-on agent guide maps the five parts to a pod, says what is held 
     "Event inbox: the agent's event queue",
     'Timers: heartbeats on a schedule you set',
     'Memory: long-term memory per agent',
-    'Permissions: decision cards that answer back as events',
+    'Permissions: your tool settings, plus decision cards for choices',
     "Outbox: a post goes through once the agent has read what's new",
     'What a pod adds: more than one person',
   ]) expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
   expect(screen.getByText(/the ruling comes back to the agent as a decision\.ruled event\./)).toBeInTheDocument();
+  // A decision request returns at once and its ruling is advisory, so the guide must not equate it with Anthropic's deferred call.
+  expect(screen.getByText(/The call returns right away with the request pending/)).toBeInTheDocument();
+  expect(screen.getByText(/A ruling tells the agent which way to go\. It doesn't release a held call or widen what the agent may do/)).toBeInTheDocument();
+  expect(screen.queryByText(/A pod works the same way/)).toBeNull();
   expect(screen.getByText(/It can also send that one post anyway with continueAnyway\./)).toBeInTheDocument();
   expect(screen.getByText(/the post doesn't go through yet\./)).toBeInTheDocument();
   // No claim about a timer the agent sets for itself, and none of the banned superlatives.
