@@ -211,10 +211,11 @@ JS
 - **Order doesn't matter much.** The old image retries Postgres setup every
   30 s (`PG_BOOT_RETRY_INTERVAL_MS`). Its pods mount and go Ready within about
   30 s of the delete, with no restart, even if the delete lands after the
-  rollback has started. Every image that stalls this way has that retry: the
-  history check arrived on 2026-10-25, and the retry a month earlier. A target
-  from before 2026-10-25 has no `schema_migrations` check, so it doesn't stall
-  here and needs no delete.
+  rollback has started. The delete only sticks once no new-code backend or
+  worker pod is left to restart, though (see the race below). Every image that
+  stalls this way has that retry: the history check arrived on 2026-10-25, and
+  the retry a month earlier. A target from before 2026-10-25 has no
+  `schema_migrations` check, so it doesn't stall here and needs no delete.
 - **Watch for the race.** A new-code pod that restarts during the rollback
   re-runs the migrations and puts the rows back, and the old pods then stay
   unready. Run the dry run again after the rollback, and `APPLY=1` again if
