@@ -6175,6 +6175,16 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
     expect(ruleBody(pane, '.v2-thread__edge:not([data-state="empty"])')).toContain('margin-top: auto');
     expect(ruleBody(pane, '.v2-chat__messages')).not.toContain('justify-content: flex-end');
   });
+
+  test('on a phone, a pod whose whole history is here starts at the top, not under a blank band', () => {
+    const pane = chatSheets[1];
+    const phone = pane.slice(pane.indexOf('@media (max-width: 760px) {\n  .v2-thread__edge[data-state="beginning"]'));
+    expect(phone.length).toBeGreaterThan(0);
+    expect(ruleBody(phone, '.v2-thread__edge[data-state="beginning"]')).toContain('margin-top: 0');
+    // Same specificity as the anchor rule, so it has to come after it.
+    expect(pane.indexOf('.v2-thread__edge[data-state="beginning"]'))
+      .toBeGreaterThan(pane.indexOf('.v2-thread__edge:not([data-state="empty"])'));
+  });
 });
 
 // d215 run-trace-after at 390: the page sits in the shared V2FeaturePage body,
