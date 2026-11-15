@@ -239,13 +239,26 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
   });
 
   test('a message a hold had no room for holds the next post, and the model is shown it', async () => {
-    const left = {
-      id: '778', author: 'sam', content: 'Hold off: the install guide moves on Monday.', createdAt: new Date(), 
-    };
-    Freshness.unseenMessages
-      .mockResolvedValueOnce({ ...missed, unseenCount: 2 })
-      .mockResolvedValueOnce({ ...missed, unseenCount: 1, messages: [left] })
-      .mockResolvedValue(null);
+    // A pod of 12 messages after the turn's start, the oldest an instruction.
+    // The check answers from the boundary and ignored ids it is given, newest
+    // first and at most `limit`, as agentSendFreshness does: if the boundary
+    // moved past the instruction, no later check could show it.
+    const INSTRUCTION = 'Hold off: the install guide moves on Monday.';
+    const pod = Array.from({ length: 12 }, (_, i) => ({
+      id: String(800 + i),
+      revision: START.revision + 1 + i,
+      author: 'sam',
+      content: i === 0 ? INSTRUCTION : `Note ${i}.`,
+      createdAt: new Date(),
+    }));
+    // After the turn's start, a re-read sees the whole pod.
+    Freshness.readStart.mockReset();
+    Freshness.readStart.mockResolvedValueOnce(START).mockResolvedValue({ at: new Date(), revision: pod[pod.length - 1].revision });
+    Freshness.unseenMessages.mockImplementation(async (_user, _pod, { since, ignoreIds, limit }) => {
+      const unseen = pod.filter((m) => m.revision > since.revision && !ignoreIds.includes(m.id));
+      if (!unseen.length) return null;
+      return { code: 'unseen_messages', unseenCount: unseen.length, messages: unseen.slice().reverse().slice(0, limit) };
+    });
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_post_message', { content: REPLY }))
       .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'Codex has it: the Claude Code CLI.' }))
@@ -256,9 +269,11 @@ describe('a hosted turn holds a post over messages it has not seen (F530)', () =
 
     // The transcript is one array the runtime keeps adding to: read the holds in order.
     const holds = axios.post.mock.calls[3][1].messages.filter((m) => m.role === 'tool').map((m) => JSON.parse(m.content));
-    expect(holds[0].messages.map(({ content }) => content)).not.toContain(left.content);
+    expect(holds[0].unseenCount).toBe(12);
+    expect(holds[0].messages).toHaveLength(10);
+    expect(holds[0].messages.map(({ content }) => content)).not.toContain(INSTRUCTION);
     expect(holds[1].reason).toBe('unseen_messages');
-    expect(holds[1].messages.map(({ content }) => content)).toEqual([left.content]);
+    expect(holds[1].messages.map(({ content }) => content)).toContain(INSTRUCTION);
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
     expect(AgentMessageService.postMessage.mock.calls[0][0].content).toBe('Claude Code CLI, but the guide moves Monday.');
   });
