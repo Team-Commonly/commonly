@@ -110,13 +110,20 @@ describe('the one pasted line with a connect code (F525)', () => {
     expect(result.stdout + result.stderr).not.toContain(CODE);
     expect(result.stdout + result.stderr).not.toContain(KEY);
     // A host that can't confine a new seat (Linux CI without bwrap) refuses
-    // before any token file is written (hostSandboxRefusal); macOS saves it.
-    if (process.platform === 'darwin') {
+    // before any token file is written (hostSandboxRefusal), and says so; any
+    // host that can saves it. Either way the run ends one of those two ways,
+    // never some other failure after the trade.
+    if (existsSync(tokenPath)) {
       const saved = JSON.parse(readFileSync(tokenPath, 'utf8'));
       expect(saved.runtimeToken).toBe(KEY);
       expect(saved.instanceUrl).toBe(stub.url);
       expect(result.stdout).toContain('from the connect code');
       expect(JSON.stringify(saved)).not.toContain(CODE);
+    } else {
+      expect(process.platform).not.toBe('darwin');
+      expect(result.code).toBe(1);
+      // bwrap missing, or present but refused a namespace: both name bubblewrap.
+      expect(result.stderr).toMatch(/bubblewrap/i);
     }
   }, 90_000);
 
