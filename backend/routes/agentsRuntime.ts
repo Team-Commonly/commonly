@@ -602,6 +602,9 @@ router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: an
     // A sign-in names the harness it is about; Node names none.
     && (body.reason === 'harness-signed-out' ? Boolean(harness) : body.harness === null);
   if (!valid) return res.status(400).json({ code: 'invalid_listen_blocked_report' });
+  // A legacy installation token whose bot User the middleware couldn't find has
+  // no identity to hold the report: say so, not a generic 503.
+  if (!req.agentUser?._id) return res.status(401).json({ code: 'agent_identity_required' });
   try {
     await User.updateOne({ _id: req.agentUser._id }, {
       $set: {

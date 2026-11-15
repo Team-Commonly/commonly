@@ -5,9 +5,10 @@ const express = require('express');
 const request = require('supertest');
 
 const mockUpdateOne = jest.fn();
+let mockAgentUser = { _id: 'seat-1' };
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
-  req.agentUser = { _id: 'seat-1' };
+  if (mockAgentUser) req.agentUser = mockAgentUser;
   next();
 });
 jest.mock('../../../models/User', () => ({ updateOne: (...args) => mockUpdateOne(...args) }));
@@ -21,6 +22,7 @@ const post = (body) => request(app).post('/api/agents/runtime/listen-blocked').s
 describe('POST /api/agents/runtime/listen-blocked', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAgentUser = { _id: 'seat-1' };
     mockUpdateOne.mockResolvedValue({ acknowledged: true });
   });
 
@@ -56,6 +58,14 @@ describe('POST /api/agents/runtime/listen-blocked', () => {
   ])('refuses %j and writes nothing', async (body) => {
     const response = await post(body);
     expect(response.status).toBe(400);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('a legacy token whose bot user was not found says so and writes nothing', async () => {
+    mockAgentUser = null;
+    const response = await post({ reason: 'node-too-old', harness: null });
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ code: 'agent_identity_required' });
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
