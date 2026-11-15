@@ -174,19 +174,23 @@ silently doesn't happen. Here is the chain:
 So before the rollback, delete the rows the target image doesn't carry. Use
 `ops-runner`, never an exec into the serving backend
 (`ops-runner-and-no-exec-into-backend.md`). `KEEP` is the target's last
-migration file name, recorded at the cut (a bare name such as
-`0011_thread_read_point.sql`, not a path; a path matches no row, so nothing
-is deleted). Run it once as a dry run, then again with `APPLY=1`:
+migration file name, recorded at the cut: a bare name such as
+`0011_thread_read_point.sql`, not a path. The script refuses a `KEEP` that
+isn't a recorded row, and it deletes only the rows its dry run lists, in the
+runner's own file order. Run it once as a dry run, then again with `APPLY=1`:
 
 ```bash
 kubectl exec -i deploy/ops-runner -n <ns> -- env NODE_PATH=/app/node_modules KEEP=<last file> APPLY=${APPLY:-0} node - <<'JS'
 const { pool } = require('/app/dist/config/db-pg');
 (async () => {
-  const all = (await pool.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map((r) => r.version);
-  const drop = all.filter((v) => v > process.env.KEEP);
+  // Sorted as the runner sorts its files, so no database collation decides the order.
+  const all = (await pool.query('SELECT version FROM schema_migrations')).rows.map((r) => r.version).sort();
+  const at = all.indexOf(process.env.KEEP);
+  if (at < 0) throw new Error(`KEEP ${process.env.KEEP} is not a recorded migration`);
+  const drop = all.slice(at + 1);
   console.log(`history ${all.length}, last ${all[all.length - 1]}; rows after ${process.env.KEEP}: ${drop.join(' ') || 'none'}`);
   if (process.env.APPLY === '1' && drop.length) {
-    const r = await pool.query('DELETE FROM schema_migrations WHERE version > $1 RETURNING version', [process.env.KEEP]);
+    const r = await pool.query('DELETE FROM schema_migrations WHERE version = ANY($1::text[]) RETURNING version', [drop]);
     console.log(`deleted ${r.rowCount}: ${r.rows.map((x) => x.version).join(' ')}`);
   }
 })().catch((e) => { console.error('FAILED', e.message); process.exitCode = 1; }).finally(() => pool.end());
@@ -201,7 +205,10 @@ JS
 - **Order doesn't matter much.** The old image retries Postgres setup every
   30 s (`PG_BOOT_RETRY_INTERVAL_MS`). Its pods mount and go Ready within about
   30 s of the delete, with no restart, even if the delete lands after the
-  rollback has started.
+  rollback has started. Every image that stalls this way has that retry: the
+  history check arrived on 2026-10-25, and the retry a month earlier. A target
+  from before 2026-10-25 has no `schema_migrations` check, so it doesn't stall
+  here and needs no delete.
 - **Watch for the race.** A new-code pod that restarts during the rollback
   re-runs the migrations and puts the rows back, and the old pods then stay
   unready. Run the dry run again after the rollback, and `APPLY=1` again if
@@ -209,7 +216,11 @@ JS
 - **Check the target still has `ops-runner`.** A Helm revision older than the
   chart's `ops-runner` removes it on rollback. Then the dry run can't be
   repeated afterwards. Prove the history from the pods instead: once every
-  backend and worker pod is old code, nothing can re-insert the rows.
+  backend and worker pod is old code, nothing can re-insert the rows. If a
+  new-code pod restarted first and the old pods stay unready, nothing is down:
+  the stalled rollout keeps the new pods serving. Roll forward to the revision
+  you rolled back from, which brings `ops-runner` back. Then run the delete
+  again and roll back once more.
 - **Verify:** every backend and backend-worker pod logs
   `PostgreSQL migrations ready (0 applied)` and no `history mismatch`, readiness
   answers 200 without `degraded`, and Helm shows the rollout complete, not
