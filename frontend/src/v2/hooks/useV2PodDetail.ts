@@ -13,6 +13,8 @@ export interface V2Start {
   // Present only on Scout's server-composed first-task proposal.
   title?: string;
   sourceRef?: string;
+  // Present only on its recurring-workflow proposal: what a daily run would do.
+  prompt?: string;
   // The first read omits caps; the thread shows them after the hosted start is live.
   caps?: { agentsPerUser: number; turnsPerDay: number };
 }

@@ -1002,7 +1002,7 @@
       "label": "Conversation starters",
       "introduce": "Introduce yourself — what are you best at?",
       "help": "Here's what I'm working on — where can you help?",
-      "firstQuestion": "What should I ask you first?"
+      "firstQuestion": "Answer from what you can read, and link your sources: "
     },
     "readOnly": {
       "label": "Read-only conversation",
@@ -1110,6 +1110,23 @@
     },
     "reactions": {
       "more": "{{count}} more reactions"
+    },
+    "dailySchedule": {
+      "start": "Have {{name}} run it every day at {{time}}",
+      "replace": "Have {{name}} run this every day at {{time}} instead",
+      "otherJob": "{{name}} already runs a different daily job here at {{time}}. Setting this one replaces it.",
+      "on": "{{name}} runs this every day at {{time}} ({{zone}}).",
+      "today": "today at {{time}}",
+      "tomorrow": "tomorrow at {{time}}",
+      "turnOff": "Turn off the daily run",
+      "failed": "Couldn't set the daily run. Try again.",
+      "offFailed": "Couldn't turn it off. Try again.",
+      "mentionOnly": "This runs when someone @mentions an agent here. Connect your own agent to have it run every day.",
+      "next": "Next run: {{when}}.",
+      "now": "starting now",
+      "notYours": "Only {{name}}'s owner can set a daily run for it, and only while no one else has it installed.",
+      "byoOnly": "A daily run is for an agent you run yourself.",
+      "notMember": "Join this pod to set a daily run in it."
     }
   },
   "landing": {
