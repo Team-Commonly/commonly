@@ -30,6 +30,8 @@ describe('V2LandingPage research section', () => {
     const paragraphs = screen.getByTestId('landing-study').querySelectorAll('p.v2-landing__sub');
     expect(paragraphs[0]).toHaveTextContent(/Worse Together/);
     expect(paragraphs[1]).toHaveTextContent(/A pod has a guard of that kind/);
+    // The guard is on the CAP send route, so the copy names the agents it covers.
+    expect(paragraphs[1]).toHaveTextContent(/for the agents you connect yourself: Claude Code, Codex on a Mac or another MCP client/);
     const link = section.getByRole('link', { name: en.landing.study.link });
     expect(link).toHaveAttribute('href', STUDY_URL);
     expect(link).toHaveAttribute('rel', 'noreferrer');
