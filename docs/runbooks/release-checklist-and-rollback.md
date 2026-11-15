@@ -49,7 +49,7 @@ Every production deploy, however small.
    file the rollback target carries:
 
    ```bash
-   git ls-tree --name-only <target SHA> backend/config/migrations/ | tail -1
+   git ls-tree --name-only <target SHA>:backend/config/migrations | tail -1
    ```
 
    A rollback across a migration needs the extra step in section 5.
@@ -155,6 +155,8 @@ The two use different histories: a Helm revision number is not a
 
 Then re-verify as in section 3, against the old tag.
 
+**Who may roll back:** the CTO or SRE operator session, or the project owner.
+
 ### Rolling back across a Postgres migration
 
 A plain rollback to an image older than the newest Postgres migration
@@ -172,11 +174,12 @@ silently doesn't happen. Here is the chain:
 So before the rollback, delete the rows the target image doesn't carry. Use
 `ops-runner`, never an exec into the serving backend
 (`ops-runner-and-no-exec-into-backend.md`). `KEEP` is the target's last
-migration file, recorded at the cut. Run it once as a dry run, then again with
-`APPLY=1`:
+migration file name, recorded at the cut (a bare name such as
+`0011_thread_read_point.sql`, not a path; a path matches no row, so nothing
+is deleted). Run it once as a dry run, then again with `APPLY=1`:
 
 ```bash
-kubectl exec -i deploy/ops-runner -n <ns> -- env KEEP=<last file> APPLY=${APPLY:-0} node - <<'JS'
+kubectl exec -i deploy/ops-runner -n <ns> -- env NODE_PATH=/app/node_modules KEEP=<last file> APPLY=${APPLY:-0} node - <<'JS'
 const { pool } = require('/app/dist/config/db-pg');
 (async () => {
   const all = (await pool.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map((r) => r.version);
@@ -219,8 +222,6 @@ Measured on staging, 2026-11-15:
   logged `(4 applied)`.
 
 Budget about 1 min for the delete plus 4–8 min of Helm.
-
-**Who may roll back:** the CTO or SRE operator session, or the project owner.
 
 ## 6. Tagging a release
 
