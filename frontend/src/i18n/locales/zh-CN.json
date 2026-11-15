@@ -656,7 +656,7 @@
       "title": "验证邮箱",
       "titleDone": "邮箱已验证",
       "verifying": "正在验证邮箱…",
-      "verified": "现在可以用这个邮箱使用 Commonly 了。",
+      "verified": "现在可以用这个邮箱登录 Commonly 了。",
       "goToSignIn": "前往登录",
       "errors": {
         "failed": "验证失败。"
