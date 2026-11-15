@@ -27,8 +27,9 @@ Listed codes always get their own count. Unlisted codes share 50 new slots a UTC
 The list is one `system_settings` row, `attribution.refs`. It takes effect within a minute, with no deploy:
 
 ```bash
-# add a code (here: li); $addToSet is a no-op if it is already there
-kubectl exec -i -n commonly-dev deploy/backend -c backend -- env NODE_PATH=/app/node_modules node -e '
+# add a code (here: li) through the ops-runner, never the serving backend
+# (docs/runbooks/ops-runner-and-no-exec-into-backend.md); $addToSet is a no-op if it is already there
+kubectl exec -i -n commonly-dev deploy/ops-runner -c ops-runner -- env NODE_PATH=/app/node_modules node -e '
 const m = require("mongoose");
 m.connect(process.env.MONGO_URI).then(async () => {
   await m.connection.db.collection("system_settings").updateOne(
