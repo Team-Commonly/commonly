@@ -1,4 +1,5 @@
 import { fetchTextFromAllowedHost } from './outboundUrlGuard';
+import { SCHEDULE_PROMPT_MAX_CHARS } from './agentScheduleService';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -125,7 +126,11 @@ export const proposeNewPodFirstTask = async ({
       note = zh ? '建议的第一项任务：' : 'Suggested first task: ';
       // The pod's own client offers a daily run of it on the owner's own
       // connected agent (agentScheduleService), and says plainly when none is here.
-      schedulePrompt = input;
+      // The whole instruction, not the 150-character title: a limit at the
+      // end ("don't close tickets") must reach the daily run. Capped where
+      // the schedule itself is.
+      schedulePrompt = content.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()
+        .slice(0, SCHEDULE_PROMPT_MAX_CHARS);
     }
     title = taskText(title);
     await AgentMessageService.postMessage({

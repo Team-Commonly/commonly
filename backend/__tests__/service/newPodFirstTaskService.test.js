@@ -74,6 +74,16 @@ test('workflow text proposes a recurring task, and offers a daily run of it', as
   expect(JSON.stringify(posted())).not.toMatch(/weekly/i);
 });
 
+test("a long workflow keeps its whole instruction in the daily run, though the title is shortened", async () => {
+  const workflow = `We review support tickets every Friday and tag each one by product area, ${'then note the customer and the plan, '.repeat(4)}and we never reply to customers or close tickets.`;
+  expect(workflow.length).toBeGreaterThan(150);
+  expect(await propose(workflow)).toBe(true);
+  const [add, , schedule] = posted().payload.starts;
+  expect(add.title.length).toBeLessThan(workflow.length);
+  expect(schedule.prompt).toBe(workflow);
+  expect(schedule.prompt).toMatch(/never reply to customers or close tickets\.$/);
+});
+
 test('a repo proposal offers no daily run, and says the agent can open a PR', async () => {
   mockFetchText.mockResolvedValue({ ok: true, text: JSON.stringify([{ title: 'Fix login', number: 10 }]) });
   expect(await propose('https://github.com/acme/widget')).toBe(true);
