@@ -248,7 +248,8 @@ describe('V2Thread starter prompts', () => {
     expect(screen.getByRole('button', {
       name: "Here's what I'm working on — where can you help?",
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'What should I ask you first?' })).toBeInTheDocument();
+    // A job, not an introduction: answer from sources and cite them (Claude Tag's company-brain job).
+    expect(screen.getByRole('button', { name: 'Answer from what you can read, and link your sources:' })).toBeInTheDocument();
 
     fireEvent.click(prompt);
 

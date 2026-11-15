@@ -195,6 +195,35 @@ describe('a person answering the agent\'s question addresses it (F390 B)', () =>
     expect(scoutEvent().payload).toMatchObject({ addressed: true, answersYourQuestion: true });
   });
 
+  // A hosted greeting is written in the person's language; a Chinese one ends on the full-width ？.
+  test('a question in Chinese that names the person counts, full-width question mark and all', async () => {
+    const otherBefore = { ...PERSON_BEFORE, user_id: OTHER_PERSON };
+    setup({ 79500: { ...QUESTION, content: '@priya 你好！这周你最想先解决哪件事？' }, 79499: otherBefore });
+    await send('整理客服工单');
+    expect(scoutEvent().payload).toMatchObject({ addressed: true, answersYourQuestion: true });
+  });
+
+  test('a handle at the end of a sentence still names the person', async () => {
+    const otherBefore = { ...PERSON_BEFORE, user_id: OTHER_PERSON };
+    setup({ 79500: { ...QUESTION, content: 'Which one first? Tell me, @priya.' }, 79499: otherBefore });
+    await send('The slides');
+    expect(scoutEvent().payload).toMatchObject({ addressed: true, answersYourQuestion: true });
+  });
+
+  test('a longer handle that starts with theirs does not name them', async () => {
+    const otherBefore = { ...PERSON_BEFORE, user_id: OTHER_PERSON };
+    setup({ 79500: { ...QUESTION, content: '@priya.k can you paste the slide text?' }, 79499: otherBefore });
+    await send('Slide 1');
+    expect(scoutEvent().payload.addressed).toBeUndefined();
+  });
+
+  test('a handle that continues after a run of dots does not name them either', async () => {
+    const otherBefore = { ...PERSON_BEFORE, user_id: OTHER_PERSON };
+    setup({ 79500: { ...QUESTION, content: '@priya..k can you paste the slide text?' }, 79499: otherBefore });
+    await send('Slide 1');
+    expect(scoutEvent().payload.addressed).toBeUndefined();
+  });
+
   test('a message that @s someone, even a person, is theirs: not an answer', async () => {
     setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
     await send('@omar can you send it to me?');

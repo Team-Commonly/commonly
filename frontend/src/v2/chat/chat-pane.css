@@ -723,6 +723,16 @@
   margin-top: auto;
 }
 
+/* PH walk 2026-11-14: on a phone a new pod's whole first conversation fits,
+   and the slack above it read as an empty screen under the Get started bar
+   (about 170px at 390). When the pod's history is all here, it starts at the
+   top. A longer pod overflows, and then the auto margin above is 0 anyway. */
+@media (max-width: 760px) {
+  .v2-thread__edge[data-state="beginning"] {
+    margin-top: 0;
+  }
+}
+
 .v2-thread__edge-line {
   padding: 0;
   border: 0;
