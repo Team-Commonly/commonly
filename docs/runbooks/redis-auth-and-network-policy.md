@@ -47,12 +47,23 @@ port, and `default-deny-ingress` turns away everything else in the namespace:
 | Pod | Admits | Port |
 |---|---|---|
 | frontend | the edge | 80 |
-| backend | the edge; backend, backend-worker, commonly-bot, ops-runner, cloud-codex | 5000 |
+| backend | the edge; backend, backend-worker, commonly-bot, ops-runner, cloud-codex; agent gateways | 5000 |
 | litellm | the same clients as backend; the edge only with `litellm.public` | 4000 |
 | redis | backend, backend-worker, ops-runner | 6379 |
 | mongodb (staging) | backend, backend-worker, ops-runner, the backup jobs | 27017 |
 | email-sink (staging) | backend, backend-worker, ops-runner, the stranger journey | 8080 |
 | agent-computer waker, steel gates | backend, backend-worker, ops-runner | 8080, 3000 |
+
+**Agent gateways** are the openclaw gateways the backend provisions at
+runtime (`gatewayProvisionerServiceK8s.ts`, Deployments named
+`gateway-<slug>`), so the chart never renders them. Each one calls the backend
+(`backendUrl`) and litellm (`http://litellm:4000/v1` in its `moltbot.json`), and
+its pods carry the label key `commonly.gateway`. The backend and litellm allows
+admit any pod with that key, so a new gateway needs no chart change. A gateway
+made any other way, including the legacy `clawdbot-gateway` the provisioner
+only looks up by name, needs that label or its own list entry. The verifier
+checks the flows against a stand-in gateway pod, and fails if the provisioner
+stops setting the label.
 
 The edge is `networkPolicy.ingress.edge`: staging's in-namespace tunnel, and
 in prod the ingress-nginx controller. Every switch is its own value, so each
