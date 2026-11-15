@@ -42,7 +42,7 @@ test('public repo: ignores PR entries and proposes one open issue without creati
   expect(await propose('https://github.com/acme/widget')).toBe(true);
 
   expect(mockFetchText).toHaveBeenCalledWith(
-    'https://api.github.com/repos/acme/widget/issues?state=open&per_page=10',
+    'https://api.github.com/repos/acme/widget/issues?state=open&per_page=30',
     expect.objectContaining({ allowedOrigins: new Map([['api.github.com', 'https://api.github.com/']]) }),
   );
   expect(posted().content).toContain('Fix login');
@@ -57,14 +57,60 @@ test('public repo: ignores PR entries and proposes one open issue without creati
   );
 });
 
-test('weekly workflow text proposes a task and offers the same two buttons', async () => {
+test('workflow text proposes a recurring task, and offers a daily run of it', async () => {
   expect(await propose('We review support tickets every Friday')).toBe(true);
   expect(mockFetchText).not.toHaveBeenCalled();
   expect(posted().payload.starts[0]).toEqual(expect.objectContaining({
-    title: 'Set up a weekly workflow: We review support tickets every Friday',
+    title: 'Set up a recurring workflow: We review support tickets every Friday',
     action: 'add-first-task',
   }));
   expect(posted().payload.starts[1].id).toBe('bring-your-own');
+  // The client decides whether the owner's own agent can take it; the server only carries the prompt.
+  expect(posted().payload.starts[2]).toEqual({
+    id: 'schedule-daily', label: 'Run it every day', action: 'schedule-daily',
+    prompt: 'We review support tickets every Friday',
+  });
+  // Nothing promises a weekly run: a schedule is daily, and the wording follows it.
+  expect(JSON.stringify(posted())).not.toMatch(/weekly/i);
+});
+
+test("a long workflow keeps its whole instruction in the daily run, though the title is shortened", async () => {
+  const workflow = `We review support tickets every Friday and tag each one by product area, ${'then note the customer and the plan, '.repeat(4)}and we never reply to customers or close tickets.`;
+  expect(workflow.length).toBeGreaterThan(150);
+  expect(await propose(workflow)).toBe(true);
+  const [add, , schedule] = posted().payload.starts;
+  expect(add.title.length).toBeLessThan(workflow.length);
+  expect(schedule.prompt).toBe(workflow);
+  expect(schedule.prompt).toMatch(/never reply to customers or close tickets\.$/);
+});
+
+test('a repo proposal offers no daily run, and says the agent can open a PR', async () => {
+  mockFetchText.mockResolvedValue({ ok: true, text: JSON.stringify([{ title: 'Fix login', number: 10 }]) });
+  expect(await propose('https://github.com/acme/widget')).toBe(true);
+  expect(posted().payload.starts.map((start) => start.id)).toEqual(['add-first-task', 'bring-your-own']);
+  expect(posted().content).toBe("From acme/widget's open issues. Your agent can work on it in a thread and open a PR: Fix login");
+});
+
+test('a labelled small issue wins over a newer unlabelled one, in label order', async () => {
+  mockFetchText.mockResolvedValue({ ok: true, text: JSON.stringify([
+    { title: 'Rethink the whole data model', number: 30, labels: [{ name: 'discussion' }] },
+    { title: 'Crash on empty name', number: 29, labels: [{ name: 'Bug' }] },
+    { title: 'Typo in the README', number: 28, labels: [{ name: 'good first issue' }] },
+    { title: 'Older bug', number: 27, labels: [{ name: 'bug' }] },
+  ]) });
+  expect(await propose('https://github.com/acme/widget')).toBe(true);
+  expect(posted().payload.starts[0]).toEqual(expect.objectContaining({
+    title: 'Typo in the README', sourceRef: 'https://github.com/acme/widget/issues/28',
+  }));
+});
+
+test('with no starter label, the newest open issue is still the pick', async () => {
+  mockFetchText.mockResolvedValue({ ok: true, text: JSON.stringify([
+    { title: 'Newest', number: 9, labels: [] },
+    { title: 'Older', number: 8, labels: [{ name: 'enhancement' }] },
+  ]) });
+  expect(await propose('https://github.com/acme/widget')).toBe(true);
+  expect(posted().payload.starts[0].title).toBe('Newest');
 });
 
 test.each(['thanks!', 'ok sounds good'])('acknowledgement %j leaves the prompt awaiting input', async (content) => {

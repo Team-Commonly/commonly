@@ -109,7 +109,7 @@ describe('BYO default agent name follows where it runs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/registry/pods/p1/agents/local/runtime-tokens',
-      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default', connectCode: true }, expect.anything(),
     ));
   });
 
@@ -125,7 +125,7 @@ describe('BYO default agent name follows where it runs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Get a new connect command' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/registry/pods/p1/agents/walk-pending/runtime-tokens',
-      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default', connectCode: true }, expect.anything(),
     ));
     expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(false);
     expect(screen.queryByTestId('byo-replace-key-confirmation')).toBeNull();
@@ -252,7 +252,7 @@ describe('BYO default agent name follows where it runs', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/registry/pods/p1/agents/local/runtime-tokens',
-      { label: 'BYO MCP — replacement', force: true, instanceId: 'alpha' }, expect.anything(),
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'alpha', connectCode: true }, expect.anything(),
     ));
   });
 

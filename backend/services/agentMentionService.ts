@@ -1455,7 +1455,8 @@ const outsideCode = (content: unknown): string => String(content || '')
   .replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
 
 // A question mark outside code is a question; one inside backticks is not.
-const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
+// The full-width ？ too: a greeting in Chinese or Japanese ends on it.
+const asksAQuestion = (content: unknown): boolean => /[?？]/.test(outsideCode(content));
 
 // An @handle outside code, at a word start: "mail me@x.com" names nobody.
 // A profile link (medium.com/@user) names nobody either.
@@ -1494,7 +1495,9 @@ export const resolveQuestionAnswerTarget = async ({
   const ids = await botUserIds();
   const target = targets.find((inst) => ids.get(installKey(inst)) === askerId);
   if (!target) return null;
-  const named = handle ? new RegExp(`@${escapeRegExp(handle)}(?![\\w.-])`, 'i').test(String(question.content || '')) : false;
+  // A handle may hold dots, so only dots followed by more handle extend it: "@maya.k." names maya.k,
+  // "@maya..k" doesn't name maya.
+  const named = handle ? new RegExp(`@${escapeRegExp(handle)}(?![\\w-]|\\.+[\\w-])`, 'i').test(String(question.content || '')) : false;
   if (!named) {
     const askedAt = new Date(question.created_at as string | number | Date).getTime();
     const before = await PGMessage.findPreviousTopLevel(

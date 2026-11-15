@@ -117,13 +117,21 @@ async function recordCatchUp(
 // A delivered event names the message that woke the agent. That message is the
 // one the reply answers, so it is treated as seen: only messages after it hold.
 // Without this, an inline webhook reply always counts its own trigger as unseen.
+// A hosted turn keeps no cursor: `since` is the point its own turn has read to,
+// and `ignoreIds` are the turn's own posts (a kernel card is stored under the
+// agent, so it would otherwise count as unseen).
 async function unseenMessages(
-  agentUserId: unknown, podId: unknown, { seenThroughMessageId = null }: { seenThroughMessageId?: unknown } = {},
+  agentUserId: unknown, podId: unknown, {
+    seenThroughMessageId = null, since, ignoreIds = [], limit = 3,
+  }: { seenThroughMessageId?: unknown; since?: ReadStart; ignoreIds?: string[]; limit?: number } = {},
 ): Promise<Hold> {
-  const cursor = await Cursor.getReadWatermark(agentUserId, podId);
+  const cursor = since
+    ? { readAt: since.at, readRevision: since.revision }
+    : await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
+  const shown = Math.max(1, Math.floor(limit));
   let unseenCount: number;
   let messages: Preview[];
 
@@ -138,8 +146,10 @@ async function unseenMessages(
           ${notOwnIntroSql('$3')}
           AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           AND ($4::integer IS NULL OR m.id > $4)
-        ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
-      `, [String(podId), afterRevision, ownId, seenPgId]);
+          AND NOT (m.id = ANY($5::int[]))
+        ORDER BY m.freshness_revision DESC, m.id DESC LIMIT $6
+      `, [String(podId), afterRevision, ownId, seenPgId,
+        ignoreIds.filter((id) => /^\d+$/.test(String(id))).map(Number), shown]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -149,7 +159,8 @@ async function unseenMessages(
     }));
   } else {
     const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
-    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId));
+    const ignored = ignoreIds.filter((id) => /^[a-f\d]{24}$/i.test(String(id))).map(String);
+    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId, ignored, shown));
   }
 
   if (!unseenCount) return null;
@@ -165,11 +176,15 @@ async function unseenMessages(
 }
 
 async function unseenFromMongo(
-  podId: unknown, ownId: string, after: Date, seenMongoId: string | null,
+  podId: unknown, ownId: string, after: Date, seenMongoId: string | null, ignored: string[] = [], shown = 3,
 ): Promise<{ unseenCount: number; messages: Preview[] }> {
+  const idFilter = {
+    ...(seenMongoId ? { $gt: seenMongoId } : {}),
+    ...(ignored.length ? { $nin: ignored } : {}),
+  };
   const query = {
     podId,
-    ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
+    ...(Object.keys(idFilter).length ? { _id: idFilter } : {}),
     $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }, ownIntroMongo(ownId)],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -185,7 +200,8 @@ async function unseenFromMongo(
   };
   const [unseenCount, rows] = await Promise.all([
     MongoMessage.countDocuments(query),
-    MongoMessage.find(query).sort({ freshnessPending: -1, freshnessCommittedAt: -1, createdAt: -1, _id: -1 }).limit(3)
+    MongoMessage.find(query)
+      .sort({ freshnessPending: -1, freshnessCommittedAt: -1, createdAt: -1, _id: -1 }).limit(shown)
       .populate('userId', 'username').lean(),
   ]);
   return {

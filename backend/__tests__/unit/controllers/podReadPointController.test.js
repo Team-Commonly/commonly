@@ -6,7 +6,9 @@ jest.mock('../../../services/podWriteAccessService', () => ({
   getCallerId: (req) => String(req.user?._id || req.userId || ''),
   callerHasPodWriteAccess: jest.fn(),
 }));
+jest.mock('../../../services/podReadPointSeed', () => ({ seedPodReadPoint: jest.fn() }));
 const PodReadPoint = require('../../../models/pg/PodReadPoint');
+const { seedPodReadPoint } = require('../../../services/podReadPointSeed');
 const { callerHasPodWriteAccess } = require('../../../services/podWriteAccessService');
 const { getPodReadPoint, setPodReadPoint } = require('../../../controllers/podReadPointController');
 
@@ -37,6 +39,33 @@ it('returns the member\'s own point, read by their auth id', async () => {
   expect(PodReadPoint.get).toHaveBeenCalledWith(POD, 'u1');
   expect(r.status).toHaveBeenCalledWith(200);
   expect(r.json).toHaveBeenCalledWith({ podId: POD, lastReadAt: '2026-11-14T10:00:00.000Z' });
+});
+
+it('seeds a first point from the member\'s activity in the pod when none exists, never last-active', async () => {
+  callerHasPodWriteAccess.mockResolvedValue(true);
+  PodReadPoint.get.mockResolvedValue(null);
+  seedPodReadPoint.mockResolvedValue('2026-11-12T09:00:00.000Z');
+  const r = res();
+  await getPodReadPoint({ params: { id: POD }, user: { _id: 'u1' } }, r);
+  expect(seedPodReadPoint).toHaveBeenCalledWith({ podId: POD, userId: 'u1' });
+  expect(r.json).toHaveBeenCalledWith({ podId: POD, lastReadAt: '2026-11-12T09:00:00.000Z' });
+});
+
+it('does not seed over a point that exists', async () => {
+  callerHasPodWriteAccess.mockResolvedValue(true);
+  PodReadPoint.get.mockResolvedValue('2026-11-14T10:00:00.000Z');
+  await getPodReadPoint({ params: { id: POD }, user: { _id: 'u1' } }, res());
+  expect(seedPodReadPoint).not.toHaveBeenCalled();
+});
+
+it('a failed seed still answers, with no point, so the pod opens at its end', async () => {
+  callerHasPodWriteAccess.mockResolvedValue(true);
+  PodReadPoint.get.mockResolvedValue(null);
+  seedPodReadPoint.mockRejectedValue(new Error('pg down'));
+  const r = res();
+  await getPodReadPoint({ params: { id: POD }, user: { _id: 'u1' } }, r);
+  expect(r.status).toHaveBeenCalledWith(200);
+  expect(r.json).toHaveBeenCalledWith({ podId: POD, lastReadAt: null });
 });
 
 it.each([[undefined], ['yesterday'], ['2026-02-30T10:00:00Z'], [1731578400000]])('a PUT with at=%p is a 400 before any read', async (at) => {

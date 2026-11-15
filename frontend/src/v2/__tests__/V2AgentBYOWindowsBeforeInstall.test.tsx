@@ -278,6 +278,24 @@ describe('V2AgentBYO on Windows', () => {
     expect(items).toEqual(['byo-codex-way-wsl', 'byo-codex-way-hosted']);
   });
 
+  test('with a connect code the ways name the one line, not "the lines" or "the last line"', async () => {
+    setUserAgent(WINDOWS);
+    window.history.replaceState({}, '', '/?adapter=codex');
+    renderPage();
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token', connectCode: `cmc_${'A'.repeat(22)}`, connectCodeExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString() } });
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    const install = await screen.findByRole('button', { name: /^Get my connect command/ });
+    await waitFor(() => expect(install).toBeEnabled());
+    fireEvent.click(install);
+    await screen.findByTestId('byo-listen');
+    expect(screen.getByTestId('byo-codex-way-invite')).toHaveTextContent('run the line below as given. It already has --unsandboxed');
+    expect(screen.getByTestId('byo-codex-way-invite')).not.toHaveTextContent('last line');
+    expect(screen.getByTestId('byo-codex-way-wsl')).toHaveTextContent('run that line in Ubuntu');
+    expect(screen.getByTestId('byo-codex-way-wsl')).toHaveTextContent('sudo apt install bubblewrap');
+  });
+
   test('without hosting there is no hosted way', async () => {
     hostingConfigured = false;
     setUserAgent(WINDOWS);
