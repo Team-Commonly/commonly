@@ -20,6 +20,15 @@ const notOwnIntroSql = (ownParam: string): string => `AND NOT (m.user_id = ${own
           AND m.author_kind = 'kernel' AND COALESCE(m.payload->>'kind', '') = '${OWN_INTRO}')`;
 const ownIntroMongo = (ownId: string) => ({ userId: ownId, authorKind: 'kernel', 'payload.kind': OWN_INTRO });
 
+// How many recent messages the pod context read returns (podContextService's
+// RECENT_MESSAGES_READ; a test keeps the two equal). A read marks messages
+// read only when it returns every unseen one, so past this backlog the read an
+// agent reaches for first can't clear a hold, and the hold names catch-up
+// instead (F536).
+const CONTEXT_READ_MESSAGES = 12;
+const ASKED_BY_NAME = "If you were asked by name, another agent's reply doesn't answer for you "
+  + 'unless one answer was all that was asked.';
+
 async function readStart(podId: unknown): Promise<ReadStart> {
   const at = new Date(Date.now() - 1);
   if (pool && process.env.PG_HOST) {
@@ -167,11 +176,22 @@ async function unseenMessages(
   const countSentence = unseenCount === 1
     ? 'There is 1 unseen message.'
     : `There are ${unseenCount} unseen messages.`;
+  const message = unseenCount > CONTEXT_READ_MESSAGES
+    ? `${countSentence} That didn't go through. A read marks messages read only when it returns every one of them, `
+      + `and the pod context read returns only the newest ${CONTEXT_READ_MESSAGES}. To clear this many, catch up: `
+      + `POST /api/agents/runtime/pods/${String(podId)}/catch-up with confirmSkipHistory:true returns the newest `
+      + 'messages and marks the older ones read. Then try again if it still fits, or call again with '
+      + 'continueAnyway:true to send '
+      + "this one anyway. continueAnyway doesn't mark these messages read, so your later sends are held until you "
+      + `catch up. ${ASKED_BY_NAME}`
+    : `${countSentence} That didn't go through. Read the conversation and try again if it still fits, or call again `
+      + "with continueAnyway:true to send this one anyway. continueAnyway doesn't mark these messages read, so your "
+      + `later sends are held until you read the conversation. ${ASKED_BY_NAME}`;
   return {
     code: 'unseen_messages',
     unseenCount,
     messages,
-    message: `${countSentence} That didn't go through. Read the conversation and try again if it still fits, or call again with continueAnyway:true to send this one anyway. continueAnyway doesn't mark these messages read, so your later sends are held until you read the conversation. If you were asked by name, another agent's reply doesn't answer for you unless one answer was all that was asked.`,
+    message,
   };
 }
 
@@ -215,5 +235,7 @@ async function unseenFromMongo(
   };
 }
 
-module.exports = { readStart, recordRead, recordCatchUp, unseenMessages };
+module.exports = {
+  readStart, recordRead, recordCatchUp, unseenMessages, CONTEXT_READ_MESSAGES,
+};
 export {};

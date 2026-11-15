@@ -10,6 +10,11 @@ const PodAssetService = require('./podAssetService');
 const PodSkillService = require('./podSkillService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
+
+// The recent messages one context read returns. agentSendFreshness measures a
+// hold's backlog against it (CONTEXT_READ_MESSAGES), and a test keeps the two
+// equal: past it, a context read can't mark the backlog read (F536).
+export const RECENT_MESSAGES_READ = 12;
 // eslint-disable-next-line global-require
 const File = require('../models/File');
 // eslint-disable-next-line global-require
@@ -465,7 +470,9 @@ class PodContextService {
     }> = [];
     let recentMessagesRead = false;
     try {
-      const recent = await AgentMessageService.getRecentMessages(podId, 12, undefined, undefined, undefined, { cardOutcome: true });
+      const recent = await AgentMessageService.getRecentMessages(
+        podId, RECENT_MESSAGES_READ, undefined, undefined, undefined, { cardOutcome: true },
+      );
       recentMessagesRead = !process.env.PG_HOST
         || (recent as typeof recent & { readSource?: string }).readSource === 'postgres';
       const withMention = await AgentMessageService.withMentionHandles(
