@@ -8,9 +8,9 @@ import { sandboxOptionRefusal } from '../src/lib/sandbox-option-refusal.js';
 const env = (sandbox) => ({ sandbox });
 
 describe('options no adapter enforces are refused', () => {
-  test.each(['claude', 'codex', 'opencode', 'qwen', 'goose', 'pi', 'hermes'])('network.allow-hosts on %s', (adapter) => {
+  test.each(['claude', 'codex', 'opencode', 'qwen', 'goose', 'pi', 'hermes'])('network.allow-hosts on an open network on %s', (adapter) => {
     const refusal = sandboxOptionRefusal(
-      env({ trust: 'public', network: { policy: 'restricted', 'allow-hosts': ['api.example.com'] } }), adapter, 'linux',
+      env({ trust: 'public', network: { policy: 'unrestricted', 'allow-hosts': ['api.example.com'] } }), adapter, 'linux',
     );
     expect(refusal).toContain('sandbox.network.allow-hosts');
     expect(refusal).toContain(adapter);
@@ -52,6 +52,15 @@ describe('a sandbox mode with no confined trust', () => {
       .toContain(`The ${adapter} adapter applies sandbox.mode=${mode} only with sandbox.trust=public`);
   });
 
+  test('codex keeps mode workspace, its private profile, and refuses what that profile does not apply', () => {
+    expect(sandboxOptionRefusal(env({ mode: 'read-only' }), 'codex', 'darwin'))
+      .toContain('so sandbox.mode=read-only would not apply');
+    expect(sandboxOptionRefusal(env({ mode: 'workspace', network: { policy: 'restricted' } }), 'codex', 'darwin'))
+      .toContain("not applied by the codex adapter's private profile");
+    expect(sandboxOptionRefusal(env({ mode: 'workspace', filesystem: { 'read-outside': ['~/notes'] } }), 'codex', 'darwin'))
+      .toContain("sandbox.filesystem is not applied by the codex adapter's private profile");
+  });
+
   test('is kept where the adapter gives it meaning: claude bwrap, codex profile, mode none', () => {
     expect(sandboxOptionRefusal(env({ mode: 'bwrap' }), 'claude', 'linux')).toBeNull();
     expect(sandboxOptionRefusal(env({ mode: 'workspace' }), 'codex', 'darwin')).toBeNull();
@@ -70,6 +79,18 @@ describe('network or filesystem rules on a seat with no sandbox', () => {
 
 describe('shapes that run today are untouched', () => {
   test.each([
+    // docs/DEMO_QUICKSTART.md's macOS shape: an open network asks for nothing.
+    ['the quickstart no-sandbox shape', 'claude', { mode: 'none', network: { policy: 'unrestricted' } }],
+    ['empty filesystem lists', 'claude', { filesystem: { 'read-outside': [], 'write-outside': [] } }],
+    // examples/demo/demo.yaml: bwrap with a restricted network reaches no host,
+    // so its allow-hosts asks for less than it gets.
+    ['the demo env', 'claude', {
+      mode: 'bwrap', network: { policy: 'restricted', 'allow-hosts': ['localhost', 'github.com'] },
+      filesystem: { 'write-outside': [] },
+    }],
+    ['allow-hosts beside a restricted public bwrap network', 'opencode', {
+      trust: 'public', mode: 'bwrap', network: { policy: 'restricted', 'allow-hosts': ['github.com'] },
+    }],
     ['no sandbox', 'claude', undefined],
     ['the default public seat', 'opencode', { trust: 'public' }],
     ['a public read-only opencode seat', 'opencode', { trust: 'public', mode: 'read-only' }],
