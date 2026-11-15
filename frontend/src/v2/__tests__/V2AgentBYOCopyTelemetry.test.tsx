@@ -156,3 +156,71 @@ test('a Mac daemon copy posts its command type with the setup the page showed', 
     withUserAgent(original);
   }
 });
+
+// 11-15: a person on Windows reached the result page, and the key was never
+// used, with no copy step recorded. A copy made by selecting the command and
+// pressing Ctrl+C posted nothing, and on Windows it left out the final newline
+// the Copy button adds, so the run line sat typed at the prompt.
+describe('a hand copy (select, then Ctrl+C)', () => {
+  const handCopy = (block, selected) => {
+    const setData = jest.fn();
+    const getSelection = jest.spyOn(window, 'getSelection').mockReturnValue({ toString: () => selected });
+    fireEvent.copy(block.querySelector('pre'), { clipboardData: { setData } });
+    getSelection.mockRestore();
+    return setData;
+  };
+  const listenBlock = () => screen.getByTestId('byo-listen').querySelector('.v2-byo__command');
+
+  test.each([['mac', MAC_UA], ['windows', WINDOWS_UA]])('of the %s listen lines posts cli-command-copied', async (os, ua) => {
+    const original = window.navigator.userAgent;
+    withUserAgent(ua);
+    try {
+      await issueSeatAndReadSetup();
+      const text = listenBlock().querySelector('pre').textContent;
+      handCopy(listenBlock(), text);
+      const call = recordByoStep.mock.calls.find(([, step]) => step === 'cli-command-copied');
+      expect(call?.[2]).toEqual({ setupOs: os, listenerAvailable: true, copyType: 'listen' });
+    } finally {
+      withUserAgent(original);
+    }
+  });
+
+  test('on Windows, a copy that reaches the run line gets the final newline', async () => {
+    const original = window.navigator.userAgent;
+    withUserAgent(WINDOWS_UA);
+    try {
+      await issueSeatAndReadSetup();
+      const text = listenBlock().querySelector('pre').textContent;
+      expect(text).toMatch(/commonly\.cmd agent run/);
+      const setData = handCopy(listenBlock(), text);
+      expect(setData).toHaveBeenCalledWith('text/plain', `${text}\n`);
+    } finally {
+      withUserAgent(original);
+    }
+  });
+
+  test('on Windows, a copy of only the first lines, or one that already ends in a newline, is left alone', async () => {
+    const original = window.navigator.userAgent;
+    withUserAgent(WINDOWS_UA);
+    try {
+      await issueSeatAndReadSetup();
+      const text = listenBlock().querySelector('pre').textContent;
+      expect(handCopy(listenBlock(), text.split('\n')[0])).not.toHaveBeenCalled();
+      expect(handCopy(listenBlock(), `${text}\n`)).not.toHaveBeenCalled();
+    } finally {
+      withUserAgent(original);
+    }
+  });
+
+  test('on a Mac the copy is left as the browser made it', async () => {
+    const original = window.navigator.userAgent;
+    withUserAgent(MAC_UA);
+    try {
+      await issueSeatAndReadSetup();
+      const text = listenBlock().querySelector('pre').textContent;
+      expect(handCopy(listenBlock(), text)).not.toHaveBeenCalled();
+    } finally {
+      withUserAgent(original);
+    }
+  });
+});
