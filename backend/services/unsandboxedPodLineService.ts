@@ -13,10 +13,10 @@
  *   most once per agent per UTC day, as a reply to the mention.
  *
  * The signal is `botMetadata.hostUnconfined`, which `/host-unconfined` sets
- * when an unconfined run starts. It is cleared by the owner's
- * `commonly agent clear-unsandboxed` or a forced key reissue, not by a later
- * sandboxed run, so the line says only what stays true ("has been run without
- * a sandbox") and "may not answer", never that it won't.
+ * when an unconfined run starts. Only the owner's `commonly agent
+ * clear-unsandboxed` clears it (routes/registry/agent-tokens.ts), not a later
+ * sandboxed run or a new key, so the line says only what stays true ("has been
+ * run without a sandbox") and "may not answer", never that it won't.
  */
 
 import { emitUnsandboxedPodLine, hasUnsandboxedLineSince } from './systemActionLineService';
@@ -52,6 +52,19 @@ const startOfUtcDay = (now: Date): Date => new Date(
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
 );
 
+// The once-a-day check and its insert run one at a time per pod and agent, so
+// two mentions at once (or a mention beside a settings change) can't both pass
+// the check before either line exists. In-process: a second replica can still
+// race, as with the other once-a-day lines; the worst case is a repeated line.
+const inFlight = new Map<string, Promise<unknown>>();
+const oneAtATime = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+  const next = (inFlight.get(key) || Promise.resolve()).catch(() => undefined).then(run);
+  inFlight.set(key, next);
+  const clear = () => { if (inFlight.get(key) === next) inFlight.delete(key); };
+  next.then(clear, clear);
+  return next;
+};
+
 const lineFor = async (
   podId: string, agent: UnsandboxedAgent, agentName: string, instanceId: string,
   placement: { messageId: string | number | null; threadRootId?: string | number | null },
@@ -66,6 +79,18 @@ const lineFor = async (
     agentKey: `${agentName}:${instanceId}`,
     messageId: placement.messageId,
     threadRootId: placement.threadRootId ?? null,
+  });
+};
+
+const postOnceToday = (
+  podId: string, agent: UnsandboxedAgent, agentName: string, instanceId: string, now: Date,
+  placement: { messageId: string | number | null; threadRootId?: string | number | null },
+): Promise<boolean> => {
+  const agentKey = `${agentName}:${instanceId}`;
+  return oneAtATime(`${podId}|${agentKey}`, async () => {
+    if (await hasUnsandboxedLineSince(podId, agentKey, startOfUtcDay(now))) return false;
+    await lineFor(podId, agent, agentName, instanceId, placement);
+    return true;
   });
 };
 
@@ -94,10 +119,7 @@ export async function noteUnsandboxedPodSettingsChange({
     if (!agent) continue;
     // A second toggle the same day says nothing new.
     // eslint-disable-next-line no-await-in-loop
-    if (await hasUnsandboxedLineSince(podId, `${install.agentName}:${instanceId}`, startOfUtcDay(now))) continue;
-    // eslint-disable-next-line no-await-in-loop
-    await lineFor(podId, agent, install.agentName, instanceId, { messageId: null });
-    posted += 1;
+    if (await postOnceToday(podId, agent, install.agentName, instanceId, now, { messageId: null })) posted += 1;
   }
   return posted;
 }
@@ -135,7 +157,5 @@ export async function noteUnsandboxedMention({
   const install = await AgentInstallation.findOne({ podId, agentName, instanceId, status: 'active' })
     .select('_id').lean();
   if (!install) return false;
-  if (await hasUnsandboxedLineSince(podId, `${agentName}:${instanceId}`, startOfUtcDay(now))) return false;
-  await lineFor(podId, agent, agentName, instanceId, { messageId, threadRootId });
-  return true;
+  return postOnceToday(podId, agent, agentName, instanceId, now, { messageId, threadRootId });
 }

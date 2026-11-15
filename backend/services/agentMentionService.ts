@@ -2503,19 +2503,17 @@ const enqueueMentions = async ({
           }
           // An agent last started without a sandbox answers only in pods that
           // are invite-only, not public and not listed; elsewhere its turns are
-          // refused while it keeps polling, so the pod says so once a day.
-          try {
-            await noteUnsandboxedMention({
-              podId: String(podId),
-              agentName: directMatch.agentName,
-              instanceId: directMatch.instanceId || 'default',
-              senderId: String(userId),
-              messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
-              threadRootId,
-            });
-          } catch (error) {
-            console.warn('[unsandboxed-pod] notice failed:', (error as Error).message);
-          }
+          // refused while it keeps polling, so the pod says so once a day. Not
+          // awaited: the notice is a reply to the mention, and nothing it reads
+          // decides whether the mention queues.
+          noteUnsandboxedMention({
+            podId: String(podId),
+            agentName: directMatch.agentName,
+            instanceId: directMatch.instanceId || 'default',
+            senderId: String(userId),
+            messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+            threadRootId,
+          }).catch((error: Error) => console.warn('[unsandboxed-pod] notice failed:', error?.message));
         }
         try {
           if (directMatch.agentName === 'commonly-bot') {

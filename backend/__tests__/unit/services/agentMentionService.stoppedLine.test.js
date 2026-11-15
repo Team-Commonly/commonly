@@ -213,6 +213,14 @@ describe('a mention of an agent that has been run without a sandbox', () => {
     expect(noteUnsandboxedMention).not.toHaveBeenCalled();
   });
 
+  it('a notice that never finishes holds up neither the send nor the wake', async () => {
+    setup();
+    noteUnsandboxedMention.mockReturnValue(new Promise(() => {}));
+    const result = await mention();
+    expect(result.enqueued).toEqual(['nova']);
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+
   it('a failed notice still queues the mention', async () => {
     setup();
     noteUnsandboxedMention.mockRejectedValueOnce(new Error('pg down'));

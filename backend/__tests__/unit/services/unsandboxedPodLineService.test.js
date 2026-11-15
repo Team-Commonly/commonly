@@ -146,3 +146,45 @@ describe('noteUnsandboxedMention', () => {
     expect(mockFindUserById).not.toHaveBeenCalled();
   });
 });
+
+describe('two notices at once for the same agent in the same pod', () => {
+  // The store the check reads: a line counts once its insert has finished.
+  const posted = new Set();
+  beforeEach(() => {
+    posted.clear();
+    mockHasLine.mockImplementation(async (podId, agentKey) => posted.has(`${podId}|${agentKey}`));
+    mockEmit.mockImplementation(async ({ podId, agentKey }) => {
+      await new Promise((resolve) => { setTimeout(resolve, 5); });
+      posted.add(`${podId}|${agentKey}`);
+    });
+  });
+
+  it('two mentions arriving together post one line', async () => {
+    const results = await Promise.all([
+      noteUnsandboxedMention(mention),
+      noteUnsandboxedMention({ ...mention, messageId: '556' }),
+    ]);
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('a settings change and a mention together post one line', async () => {
+    await Promise.all([
+      noteUnsandboxedPodSettingsChange({ podId: 'pod-1', now: NOW }),
+      noteUnsandboxedMention(mention),
+    ]);
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a different agent or pod is not held behind it', async () => {
+    mockFindBot.mockImplementation((q) => chain({
+      ...unconfinedBot, botMetadata: { ...unconfinedBot.botMetadata, instanceId: q['botMetadata.instanceId'] },
+    }));
+    await Promise.all([
+      noteUnsandboxedMention(mention),
+      noteUnsandboxedMention({ ...mention, instanceId: 'vega' }),
+      noteUnsandboxedMention({ ...mention, podId: 'pod-2' }),
+    ]);
+    expect(mockEmit).toHaveBeenCalledTimes(3);
+  });
+});
