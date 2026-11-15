@@ -57,13 +57,19 @@ port, and `default-deny-ingress` turns away everything else in the namespace:
 **Agent gateways** are the openclaw gateways the backend provisions at
 runtime (`gatewayProvisionerServiceK8s.ts`, Deployments named
 `gateway-<slug>`), so the chart never renders them. Each one calls the backend
-(`backendUrl`) and litellm (`http://litellm:4000/v1` in its `moltbot.json`), and
-its pods carry the label key `commonly.gateway`. The backend and litellm allows
-admit any pod with that key, so a new gateway needs no chart change. A gateway
-made any other way, including the legacy `clawdbot-gateway` the provisioner
-only looks up by name, needs that label or its own list entry. The verifier
-checks the flows against a stand-in gateway pod, and fails if the provisioner
-stops setting the label.
+(`backendUrl`) and litellm: `http://litellm:4000/v1` arrives in its
+`moltbot.json` once the agent provisioner rewrites that config. Its pods carry
+the label key `commonly.gateway`, and the backend and litellm allows admit any
+pod with that key, so a new gateway needs no chart change.
+
+- The peer matches pods in the policy's own namespace only, so a gateway
+  provisioned into another namespace (`metadata.namespace`) is refused.
+- A gateway made any other way, including the legacy `clawdbot-gateway` the
+  provisioner only looks up by name, needs that label or its own list entry.
+- The verifier checks the flows against a stand-in gateway pod. A backend unit
+  test (`gatewayProvisionerServiceK8s.labels.test.js`) fails if the pod
+  template stops carrying the label, and it runs on backend-only changes, where
+  the chart verifier doesn't.
 
 The edge is `networkPolicy.ingress.edge`: staging's in-namespace tunnel, and
 in prod the ingress-nginx controller. Every switch is its own value, so each

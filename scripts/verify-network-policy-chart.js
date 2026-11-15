@@ -127,8 +127,10 @@ const ONE_AGENT_COMPUTER_USER = ['backend.env.agentComputerEnabled="true"', 'age
 // A pod the backend creates at runtime, outside this chart: an agent gateway
 // from gatewayProvisionerServiceK8s (`gateway-<slug>`, F511). The allows admit it
 // by the label key `commonly.gateway`, so its flows are checked against this
-// stand-in, and the provisioner's own labels are read below, so dropping or
-// renaming that label fails here instead of cutting every gateway off litellm.
+// stand-in. The provisioner's labels block is also read below, but this script
+// runs only on chart changes. A backend-only change that drops the label is
+// caught by backend/__tests__/unit/services/gatewayProvisionerServiceK8s.labels.test.js,
+// which checks the pod template itself.
 const GATEWAY_PROVISIONER = 'backend/services/gatewayProvisionerServiceK8s.ts';
 const provisionedGateway = (ns) => ({
   kind: 'Deployment',
