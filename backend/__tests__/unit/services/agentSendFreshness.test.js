@@ -70,6 +70,40 @@ describe('agent send-time freshness', () => {
     expect(Cursor.advanceReadWatermark).not.toHaveBeenCalled();
   });
 
+  // F536: a read marks messages read only when it returns every one of them,
+  // and the pod context read returns the newest 12. Past that, "read the
+  // conversation" can't clear the hold, so it names catch-up instead.
+  const holdFor = async (count) => {
+    Message.countDocuments.mockResolvedValue(count);
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+    return Freshness.unseenMessages('agent-id', 'pod-id');
+  };
+
+  it('keeps the read-first text while one context read can still clear the backlog', async () => {
+    const hold = await holdFor(Freshness.CONTEXT_READ_MESSAGES);
+    expect(hold.message).toContain('Read the conversation and try again if it still fits');
+    expect(hold.message).toContain('held until you read the conversation.');
+    expect(hold.message).not.toContain('catch-up');
+  });
+
+  it('names catch-up once the backlog is more than one context read returns', async () => {
+    const hold = await holdFor(Freshness.CONTEXT_READ_MESSAGES + 1);
+    expect(hold.message).toContain(`There are ${Freshness.CONTEXT_READ_MESSAGES + 1} unseen messages.`);
+    expect(hold.message).toContain(`returns only the newest ${Freshness.CONTEXT_READ_MESSAGES}`);
+    expect(hold.message).toContain('POST /api/agents/runtime/pods/pod-id/catch-up with confirmSkipHistory:true');
+    expect(hold.message).toContain('continueAnyway:true to send this one anyway.');
+    expect(hold.message).toContain('held until you catch up.');
+    expect(hold.message).not.toContain('held until you read the conversation.');
+    expect(hold.message).toContain("If you were asked by name, another agent's reply doesn't answer for you");
+  });
+
+  it('measures the backlog against the read the pod context actually returns', () => {
+    // eslint-disable-next-line global-require
+    const PodContextService = require('../../../services/podContextService');
+    expect(Number.isInteger(Freshness.CONTEXT_READ_MESSAGES)).toBe(true);
+    expect(PodContextService.RECENT_MESSAGES_READ).toBe(Freshness.CONTEXT_READ_MESSAGES);
+  });
+
   it('uses singular wording for one unseen message', async () => {
     Message.countDocuments.mockResolvedValue(1);
     Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
