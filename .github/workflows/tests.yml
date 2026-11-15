@@ -142,6 +142,10 @@ jobs:
       # its relative .claude/skills expects, and nothing tracked changes.
       - name: Worktree skills link test
         run: node --test scripts/link-worktree-skills.test.mjs
+      # The internal-labels guard: what it refuses on added lines, and the
+      # look-alikes (hex colours, ADR decisions, cell references) it lets through.
+      - name: Internal labels guard test
+        run: node --test scripts/check-internal-labels.test.mjs
 
   # One heavy job, Backend tests (1/3), routes to a Latchkey runner on a push to
   # main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy path (the

@@ -1,0 +1,8 @@
+# Real names that look like a team-internal label, for
+# scripts/check-internal-labels.mjs. One per line: "<path> <token>", e.g.
+#   frontend/src/v2/components/Example.tsx D100
+# The token is allowed in that file only. Add a line only for a real name;
+# a comment citing an internal id should say the reason in plain words instead.
+docs/development/internal-labels-guard.md D215
+docs/development/internal-labels-guard.md D20
+docs/development/internal-labels-guard.md Cofounder
