@@ -45,6 +45,15 @@ Every production deploy, however small.
    Note the newest revision with status `deployed` and its image tag. Do not
    assume it is the previous row, because a failed upgrade is a revision too.
 
+   If the release adds a Postgres migration, also record the last migration
+   file the rollback target carries:
+
+   ```bash
+   git ls-tree --name-only <target SHA> backend/config/migrations/ | tail -1
+   ```
+
+   A rollback across a migration needs the extra step in section 5.
+
 ## 2. Deploy
 
 ```bash
@@ -145,6 +154,71 @@ The two use different histories: a Helm revision number is not a
 - Neither undoes data migrations or writes the new code made.
 
 Then re-verify as in section 3, against the old tag.
+
+### Rolling back across a Postgres migration
+
+A plain rollback to an image older than the newest Postgres migration
+silently doesn't happen. Here is the chain:
+
+1. The old image's migration runner refuses any `schema_migrations` row it
+   carries no file for (`backend/config/run-pg-migrations.ts`, "history
+   mismatch").
+2. The Postgres routes then stay unmounted, and `/api/health/ready` answers 503
+   "PostgreSQL routes are not mounted on this pod" (`backend/routes/health.ts`).
+3. The old pods never go Ready. The backend rolls with `maxUnavailable: 0`
+   (`templates/core/backend-deployment.yaml`), so the rollout stalls, and the
+   new-code pods go on serving.
+
+So before the rollback, delete the rows the target image doesn't carry. Use
+`ops-runner`, never an exec into the serving backend
+(`ops-runner-and-no-exec-into-backend.md`). `KEEP` is the target's last
+migration file, recorded at the cut. Run it once as a dry run, then again with
+`APPLY=1`:
+
+```bash
+kubectl exec -i deploy/ops-runner -n <ns> -- env KEEP=<last file> APPLY=${APPLY:-0} node - <<'JS'
+const { pool } = require('/app/dist/config/db-pg');
+(async () => {
+  const all = (await pool.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map((r) => r.version);
+  const drop = all.filter((v) => v > process.env.KEEP);
+  console.log(`history ${all.length}, last ${all[all.length - 1]}; rows after ${process.env.KEEP}: ${drop.join(' ') || 'none'}`);
+  if (process.env.APPLY === '1' && drop.length) {
+    const r = await pool.query('DELETE FROM schema_migrations WHERE version > $1 RETURNING version', [process.env.KEEP]);
+    console.log(`deleted ${r.rowCount}: ${r.rows.map((x) => x.version).join(' ')}`);
+  }
+})().catch((e) => { console.error('FAILED', e.message); process.exitCode = 1; }).finally(() => pool.end());
+JS
+```
+
+- **It only removes history rows.** The tables stay, and the old code never
+  reads them. A later forward roll re-runs those migrations and re-inserts the
+  rows, keeping the data. That holds only for additive migrations
+  (`CREATE … IF NOT EXISTS`). A migration that drops or rewrites data needs its
+  own down plan before it ships.
+- **Order doesn't matter much.** The old image retries Postgres setup every
+  30 s (`PG_BOOT_RETRY_INTERVAL_MS`). Its pods mount and go Ready within about
+  30 s of the delete, with no restart, even if the delete lands after the
+  rollback has started.
+- **Watch for the race.** A new-code pod that restarts during the rollback
+  re-runs the migrations and puts the rows back, and the old pods then stay
+  unready. Run the dry run again after the rollback, and `APPLY=1` again if
+  rows came back.
+- **Check the target still has `ops-runner`.** A Helm revision older than the
+  chart's `ops-runner` removes it on rollback. Then the dry run can't be
+  repeated afterwards. Prove the history from the pods instead: once every
+  backend and worker pod is old code, nothing can re-insert the rows.
+- **Verify:** every backend and backend-worker pod logs
+  `PostgreSQL migrations ready (0 applied)` and no `history mismatch`, readiness
+  answers 200 without `degraded`, and Helm shows the rollout complete, not
+  stalled.
+
+Measured on staging, 2026-11-15:
+- The delete took under a minute, removing four rows.
+- Deploying the old image took 5.6 min, and its pods were Ready 3.5 min in.
+- The forward deploy back to the new image took 6.5 min, and its first pod
+  logged `(4 applied)`.
+
+Budget about 1 min for the delete plus 4–8 min of Helm.
 
 **Who may roll back:** the CTO or SRE operator session, or the project owner.
 
