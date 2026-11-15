@@ -301,7 +301,7 @@ const ISO_DATE_TIME = new RegExp(`^(\\d{4})-(\\d{2})-(\\d{2})T${ISO_TIME}${ISO_Z
  * Parse `at` strictly. The shape check alone lets `2026-02-30` through, and
  * Date rolls it over to March 2; the calendar day must survive a round trip.
  */
-const parseReadAt = (raw: unknown): Date | null => {
+export const parseReadAt = (raw: unknown): Date | null => {
   if (typeof raw !== 'string') return null;
   const shape = ISO_DATE_TIME.exec(raw);
   if (!shape) return null;
@@ -330,6 +330,6 @@ export async function setThreadRead(req: Req, res: Res): Promise<void> {
 }
 
 module.exports = {
-  followThread, unfollowThread, listThreadState, setThreadCollapsed, setThreadRead,
+  followThread, unfollowThread, listThreadState, setThreadCollapsed, setThreadRead, parseReadAt,
 };
 Object.assign(module.exports, exports);

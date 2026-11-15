@@ -113,6 +113,52 @@ describe('BYO default agent name follows where it runs', () => {
     ));
   });
 
+  // F516: an owner back for an agent whose first command was never run gets a
+  // new command in one click; the unused key had nothing to lose.
+  test('a never-connected agent from a connect link gets a new command in one click', async () => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
+    renderAt('/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-finish-connect'))
+      .toHaveTextContent('walk-pending’s first command can’t be shown again'), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Get a new connect command' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/walk-pending/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(false);
+    expect(screen.queryByTestId('byo-replace-key-confirmation')).toBeNull();
+    expect((await screen.findAllByText(/cm_agent_new/)).length).toBeGreaterThan(0);
+  });
+
+  test.each([
+    ['someone else’s agent', '&reconnect=1', { installedBy: 'u2' }],
+    ['no connect link', '', {}],
+    ['a key a tools-only client uses', '&reconnect=1', { connection: { state: 'never', lastSeenAt: null, keyUsed: true } }],
+  ])('%s: the key is never replaced in one click', async (_label, linkTail, override) => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null }, ...override }]);
+    renderAt(`/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default${linkTail}`);
+    if (!linkTail) {
+      await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    }
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state')).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByTestId('byo-finish-connect')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Get a new connect command' })).toBeNull();
+  });
+
+  test('choosing Run it here from the connect link does not replace the key', async () => {
+    mockGet([{ name: 'walk-pending', installedBy: 'u1', runtime: { runtimeType: 'claude-code' },
+      connection: { state: 'never', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=walk-pending&instanceId=default&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-finish-connect')).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    expect(screen.queryByTestId('byo-finish-connect')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Get a new connect command' })).toBeNull();
+  });
+
   // F353 (Growth re-walk, 11-08): reconnecting a Codex agent opened on Claude
   // Code and printed `commonly agent run gw-codex --adapter claude`.
   test('a reconnect opens on the harness the agent runs, so the command names codex', async () => {

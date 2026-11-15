@@ -18,6 +18,8 @@ const Pod = require('../models/Pod');
 const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+// eslint-disable-next-line global-require
+const emailReturns = require('./emailReturnService');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -36,7 +38,7 @@ export const DIGEST_SENDING_KEY = 'digest.sending';
 // definite 'off' stops the run. A summary skipped by a stop is never retried
 // (each run sends only its own), so a read blip must not forfeit the rest.
 type DigestSendingState = 'on' | 'off' | 'unknown';
-const digestSendingState = async (): Promise<DigestSendingState> => {
+export const digestSendingState = async (): Promise<DigestSendingState> => {
   try {
     const row = await SystemSetting.findOne({ key: DIGEST_SENDING_KEY })
       .lean() as { value?: { enabled?: unknown } } | null;
@@ -108,14 +110,16 @@ const extractTopItems = (content: string | undefined, limit = 5): string[] => {
  * SMTP2GO v3 answers 200 with per-recipient results; one recipient, so it was
  * accepted only if it counts as succeeded and nothing failed.
  */
-const providerAccepted = (response: any): boolean => {
+export const providerAccepted = (response: any): boolean => {
   const data = response?.data?.data;
   if (!data || response?.skipped) return false;
   const failures = Array.isArray(data.failures) ? data.failures.length : 0;
   return Number(data.succeeded) >= 1 && !(Number(data.failed) > 0) && failures === 0;
 };
 
-const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = []) => {
+const buildEmailBodies = (
+  summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = [], sendId: string | null = null,
+) => {
   const title = summary.title || 'Your Commonly daily digest';
   const items = extractTopItems(summary.content);
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
@@ -125,8 +129,9 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, held
   );
   // Activity is the day's recap, and it sits behind sign-in, so a signed-out
   // reader signs in and comes back to it. Bare /v2 sends them to the
-  // marketing page.
-  const appUrl = `${frontendUrl}/v2/activity`;
+  // marketing page. F519: the link carries the digest's return tag.
+  const activityUrl = `${frontendUrl}/v2/activity`;
+  const appUrl = sendId ? emailReturns.tagUrl(activityUrl, 'digest', sendId) : activityUrl;
   const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/${encodeURIComponent(unsubscribeToken)}`;
   const textItems = items.length > 0
     ? items.map((item) => `- ${item}`).join('\n')
@@ -272,15 +277,37 @@ export class DigestEmailService {
         }
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
-        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
+        const sendId = emailReturns.newSendId();
+        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks, sendId);
         const sent = await sendEmail({
           to: user.email,
           subject: bodies.subject,
           textBody: bodies.textBody,
           htmlBody: bodies.htmlBody,
         });
+        // F506: SMTP2GO v3 can answer 200 with the one recipient failed. That
+        // delivered nothing, so it is a failed send: no count, no
+        // lastDigestSent, no held ask or stalled line used up. The claim stays,
+        // as for any failure after it (at-most-once, above).
+        if (!providerAccepted(sent)) {
+          result.failed += 1;
+          // Counts only: a failures entry can carry the recipient's address.
+          const answer = (sent as any)?.data?.data;
+          console.error('Digest email delivery failed: the provider did not accept it.', {
+            summaryId: String(summary._id || ''),
+            userId: String(userId || ''),
+            succeeded: Number(answer?.succeeded ?? 0),
+            failed: Number(answer?.failed ?? 0),
+            failures: Array.isArray(answer?.failures) ? answer.failures.length : 0,
+            skipped: Boolean((sent as any)?.skipped),
+          });
+          continue;
+        }
 
         result.sent += 1;
+        if (providerAccepted(sent)) {
+          await emailReturns.noteSend({ sendId, kind: 'digest', recipientUserId: user._id, sentAt: emailedAt });
+        }
         if (includedOverflow.length) {
           try {
             await NeedsYouEmail.updateMany(
@@ -292,13 +319,12 @@ export class DigestEmailService {
           }
         }
         // F502: a stalled-connect line is used up only once it was delivered,
-        // so a skipped or failed send leaves it for the next digest: the
-        // provider must have accepted the message (SMTP2GO v3 can answer 200
-        // with the recipient failed), and the line must be one of the top
-        // items the email shows, not one the extract cut. Each mark stands
-        // alone: one failing must not undo the delivery or the others.
+        // so a skipped or failed send leaves it for the next digest (the
+        // provider check above), and the line must be one of the top items the
+        // email shows, not one the extract cut. Each mark stands alone: one
+        // failing must not undo the delivery or the others.
         const shown = new Map<string, number>();
-        for (const item of providerAccepted(sent) ? bodies.items : []) shown.set(item, (shown.get(item) || 0) + 1);
+        for (const item of bodies.items) shown.set(item, (shown.get(item) || 0) + 1);
         for (const mark of summary.metadata?.stalledMarks || []) {
           // Keyed the way the digest stores it, as a bullet, so a name that
           // itself starts with "- " still matches its shown item.
@@ -316,7 +342,7 @@ export class DigestEmailService {
             console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);
           }
         }
-        // SMTP has accepted the email. A failed timestamp write should not
+        // The provider accepted the email. A failed timestamp write should not
         // reclassify that delivery as a failed send.
         try {
           await User.updateOne({ _id: user._id }, { $set: { lastDigestSent: emailedAt } });

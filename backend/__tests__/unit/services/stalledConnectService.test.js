@@ -63,7 +63,7 @@ jest.mock('../../../models/StalledConnectEpisode', () => ({
   updateOne: (...a) => mockEpUpdate(...a),
 }));
 
-const { scan, resolveTokenEpisode } = require('../../../services/stalledConnectService');
+const { scan, resolveTokenEpisode, RESOLVE_PAGE_SIZE } = require('../../../services/stalledConnectService');
 
 const install = (over = {}) => ({
   _id: 'inst1',
@@ -109,7 +109,24 @@ const setup = ({ installs = [install()], userTokens = [], open = [], machineId }
   mockUserFindById.mockReturnValue({
     select: () => ({ lean: () => Promise.resolve({ username: 'alice' }) }),
   });
-  mockEpFind.mockReturnValue({ limit: () => ({ lean: () => Promise.resolve(open) }) });
+  // The resolution sweep pages open episodes in _id order (F505); honour the
+  // cursor and the page size so a test past one page sees every page.
+  mockEpFind.mockImplementation((filter = {}) => {
+    const rows = filter.status === 'open'
+      ? open.filter((ep) => !filter._id || String(ep._id) > String(filter._id.$gt)) : [];
+    // A $gt cursor over unsorted pages skips episodes: the sweep must sort by _id.
+    let sortedById = false;
+    const chain = {
+      sort: (order) => { sortedById = JSON.stringify(order) === '{"_id":1}'; return chain; },
+      limit: (n) => {
+        if (filter.status === 'open') expect(sortedById).toBe(true);
+        return { lean: () => Promise.resolve(rows.slice(0, n)) };
+      },
+      select: () => ({ lean: () => Promise.resolve([]) }),
+      lean: () => Promise.resolve(rows),
+    };
+    return chain;
+  });
   mockEpCreate.mockImplementation((d) => Promise.resolve({ _id: 'ep1', ...d }));
   mockEpUpdate.mockResolvedValue({});
   mockPost.mockResolvedValue({ success: true, message: { id: 'msg1' } });
@@ -1008,6 +1025,23 @@ describe('keeping the forward promise', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+  });
+
+  // F505: one unsorted batch of 200 left every open episode past it open for
+  // good, since never-connected ones never leave the open set.
+  it('reaches every open episode, past the first page too', async () => {
+    const many = Array.from({ length: RESOLVE_PAGE_SIZE + 1 }, (_, i) => ({
+      ...openEpisode, _id: `ep${String(i).padStart(4, '0')}`,
+    }));
+    setup({ installs: [], open: many });
+    mockInstallFindById.mockReturnValue({ lean: () => Promise.resolve(null) });
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(RESOLVE_PAGE_SIZE + 1);
+    expect(r.resolved.map((x) => x.episodeId)).toContain(`ep${String(RESOLVE_PAGE_SIZE).padStart(4, '0')}`);
+    const pages = mockEpFind.mock.calls.filter(([f]) => f?.status === 'open');
+    expect(pages.map(([f]) => f._id?.$gt || null)).toEqual([null, `ep${String(RESOLVE_PAGE_SIZE - 1).padStart(4, '0')}`]);
   });
 
   it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {

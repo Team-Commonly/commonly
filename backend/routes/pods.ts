@@ -461,6 +461,12 @@ const roomHiddenFrom = async (podId: string | undefined, userId: unknown): Promi
 };
 const POD_NOT_FOUND_BODY = { message: 'Pod not found', code: 'POD_NOT_FOUND' };
 
+// First minute back: the caller's own read point in this pod's main channel.
+// eslint-disable-next-line global-require
+const { getPodReadPoint, setPodReadPoint } = require('../controllers/podReadPointController');
+router.get('/:id/read-point', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), getPodReadPoint);
+router.put('/:id/read-point', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), setPodReadPoint);
+
 router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;

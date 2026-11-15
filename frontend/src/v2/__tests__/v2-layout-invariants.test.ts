@@ -464,6 +464,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).not.toMatch(/__board[^{]*\{[^}]*display:\s*none/);
   });
 
+  test('step 1\'s two choices share one phone row with "or" between them', () => {
+    const pane = read('../chat/chat-pane.css');
+    const phone = blockContaining(pane, '@media (max-width: 760px)', '.v2-get-started {');
+    const keys = phone.slice(phone.indexOf('.v2-root .v2-get-started__choice button.v2-get-started__step {'));
+    const body = keys.slice(0, keys.indexOf('}'));
+    // Without order: 0 the bar's order: 2 for steps moves "or" ahead of both keys
+    // (seen at 390 on 2026-11-14).
+    expect(body).toContain('order: 0');
+    expect(body).toContain('flex: 1 1 0');
+    expect(phone).toMatch(/\.v2-get-started__choice \{[^}]*flex: 1 1 100%/);
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');
@@ -3314,8 +3326,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // no-agent row share, so they land on the message text column too.
       expect(threadMessages).toContain('className="v2-chat__starts"');
       expect(threadMessages).toContain('v2-chat__start${primary ? \' v2-chat__start--primary\' : \'\'}');
-      // One ink key: the hosted start where offered, otherwise the start that asks nothing (walk 11-02).
-      expect(threadMessages).toMatch(/const primary = start\.action === WELCOME_HOSTED_ACTION\s*\|\| \(start\.id === ASK_START_ID && !starts\.some/);
+      // The ink keys follow the person's pick (utils/welcomePick.ts, unit-tested there).
+      expect(threadMessages).toContain('primaryStartIds(starts, welcomePick ?? null)');
       // The 44px phone minimum must come AFTER the 32px base in the sheet: at
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.
@@ -6202,7 +6214,7 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   });
 
   test('the feature pane reserves the 58px tab bar, so the foot scrolls clear of it', () => {
-    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {') })).toContain('padding-bottom: 58px');
+    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {\n    padding-bottom: 58px') })).toContain('padding-bottom: 58px');
   });
 });
 
@@ -6866,5 +6878,67 @@ describe('the notice Connect link keeps its line box', () => {
     expect(overlay).toContain("content: ''");
     expect(overlay).toContain('position: absolute');
     expect(overlay).toMatch(/inset:/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full-height rules follow 100vh with 100dvh (first minute back, 11-14).
+// On a phone, 100vh is the height with the browser toolbar hidden, so a shell
+// that tall puts the composer under the toolbar or the keyboard. Each rule keeps
+// 100vh for browsers without dvh, then 100dvh, which wins where it is known.
+// jsdom has no layout, so this pins the pair; the rendered box was checked in a
+// real browser at 390.
+describe('full-height shell rules use the dynamic viewport height', () => {
+  const sheet = readV2Css();
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pair = (body: string, prop: string, inner: string) => new RegExp(
+    `${prop}: ${escape(inner.replace('VH', '100vh'))};\\s*${prop}: ${escape(inner.replace('VH', '100dvh'))};`,
+  ).test(body);
+  it.each([
+    ['.v2-root', 'height', 'VH'],
+    ['.v2-authenticated-shell', 'height', 'VH'],
+    ['.v2-shell', 'height', 'VH'],
+    ['.v2-pane', 'height', 'VH'],
+    ['.v2-pane--main', 'height', 'calc(VH - 16px)'],
+    ['.v2-modal', 'max-height', 'calc(VH - 48px)'],
+  ])('%s sets %s with 100vh then 100dvh', (selector, prop, inner) => {
+    const body = ruleBody(sheet, selector);
+    expect(body).not.toBe('');
+    expect(pair(body, prop, inner)).toBe(true);
+  });
+  it('the phone pods drawer does too', () => {
+    const body = ruleBody(sheet, '.v2-pods-aside', { within: mediaBlockContaining(sheet, '.v2-pods-aside') });
+    expect(pair(body, 'height', 'VH')).toBe(true);
+  });
+});
+
+describe('the phone tab bar steps aside for the keyboard', () => {
+  // interactive-widget=resizes-content lets the Android keyboard shrink the
+  // layout, so the fixed bar would otherwise sit between the field and it.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+  // Structural check: the exact text-entry selector, so a changed exclusion
+  // list fails here rather than hiding the bar for a focused checkbox.
+  const EXCLUDED = ['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'file', 'color', 'image', 'hidden'];
+  const TEXT_ENTRY = `:is(textarea, [contenteditable="true"], input:not(${EXCLUDED.map((t) => `[type="${t}"]`).join(', ')})):focus`;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const focused = `\\.v2-root:has\\(${escape(TEXT_ENTRY)}\\)`;
+  it('the focus selector covers text entry and leaves out non-text inputs', () => {
+    expect(css).toContain(`.v2-root:has(${TEXT_ENTRY}) .v2-mobile-tabs`);
+    // positive controls: a textarea, a contenteditable and a plain input are text entry
+    expect(TEXT_ENTRY).toMatch(/:is\(textarea, \[contenteditable="true"\], input:not\(/);
+    // negative controls: a checkbox or a radio must never count as typing
+    for (const type of ['checkbox', 'radio']) expect(TEXT_ENTRY).toContain(`[type="${type}"]`);
+    // nothing that takes text is excluded
+    for (const type of ['text', 'email', 'search', 'password', 'url', 'tel', 'number']) expect(TEXT_ENTRY).not.toContain(`[type="${type}"]`);
+  });
+  it.each([
+    ['the bar hides', String.raw`\.v2-mobile-tabs \{ display: none; \}`],
+    ['the composer gives back its bar space', String.raw`\.v2-composer \{ margin-bottom: 4px; \}`],
+    ['feature pages give back their bar space', String.raw`\.v2-feature \{ padding-bottom: 0; \}`],
+  ])('%s while a text field has focus', (_label, rule) => {
+    expect(css).toMatch(new RegExp(`${focused} ${rule}`));
+  });
+  it('the phone pane height has its dvh pair', () => {
+    expect(css).toMatch(/\.v2-shell \.v2-pane \{\s*height: 100vh;\s*height: 100dvh;\s*\}/);
   });
 });

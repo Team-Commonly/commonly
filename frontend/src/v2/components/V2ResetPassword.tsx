@@ -4,6 +4,7 @@ import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import { Trans, useTranslation } from 'react-i18next';
+import { authErrorText } from '../utils/authErrorText';
 
 // Landing pad for the emailed reset link (/v2/reset-password?token=...).
 // Token consumption is server-side; a used or expired token surfaces the
@@ -21,12 +22,15 @@ const V2ResetPassword: React.FC = () => {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldsBad, setFieldsBad] = useState(false);
+  // The server refused the link (400); a rate limit or an outage is not the link's fault.
+  const [linkRefused, setLinkRefused] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setFieldsBad(false);
+    setLinkRefused(false);
     if (password.length < 8) {
       setError(t('auth.reset.errors.tooShort'));
       setFieldsBad(true);
@@ -42,8 +46,8 @@ const V2ResetPassword: React.FC = () => {
       await axios.post('/api/auth/reset-password', { token, password });
       setDone(true);
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string } } };
-      setError(e1.response?.data?.error || t('auth.reset.errors.failed'));
+      setError(authErrorText(err, t, 'reset'));
+      setLinkRefused((err as { response?: { status?: number } }).response?.status === 400);
     } finally {
       setSubmitting(false);
     }
@@ -77,7 +81,7 @@ const V2ResetPassword: React.FC = () => {
             {error && (
               <V2AuthNotice>
                 {error}
-                {!fieldsBad && (
+                {linkRefused && (
                   <>
                     {' '}
                     <Trans

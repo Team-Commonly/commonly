@@ -615,6 +615,38 @@ router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: an
   }
 });
 
+// F525: the connect page's one pasted line carries a connect code, not the
+// agent's lasting key. The CLI trades it here for the key. No bearer: the
+// code is the credential, so this route has its own tight per-IP limit, and
+// the service caps redeems per code (one live code per agent).
+const connectCodeIpRateLimit = rateLimit({
+  windowMs: 10 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'connect_code_rate_limited' }),
+});
+router.post('/connect-code', connectCodeIpRateLimit, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body);
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { CONNECT_CODE_PATTERN, CONNECT_CODE_REFUSALS, redeemConnectCode } = require('../services/agentConnectCodeService');
+  if (keys.length !== 1 || keys[0] !== 'code' || typeof body.code !== 'string' || !CONNECT_CODE_PATTERN.test(body.code)) {
+    return res.status(400).json({ code: 'invalid_connect_code' });
+  }
+  res.set('Cache-Control', 'no-store');
+  try {
+    const result = await redeemConnectCode(body.code, { ip: cloudflareIpRateLimitKeyGenerator(req) });
+    if (result.outcome === 'redeemed') return res.json({ token: result.token });
+    const [status, code] = CONNECT_CODE_REFUSALS[result.outcome];
+    return res.status(status).json({ code });
+  } catch (error) {
+    console.error('Connect code redeem failed:', (error as Error).message);
+    return res.status(503).json({ code: 'connect_code_unavailable' });
+  }
+});
+
 router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     return await patchAgentRuntimeConfiguration(req, res);

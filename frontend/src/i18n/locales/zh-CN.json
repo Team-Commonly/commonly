@@ -536,7 +536,10 @@
       "newToCommonly": "还没有 Commonly 账号？",
       "createAccount": "注册",
       "errors": {
-        "failed": "登录失败"
+        "verifyFirst": "请先验证邮箱。打开我们发给你的链接，再回来登录。",
+        "failed": "登录失败",
+        "invalid": "邮箱或密码不正确。",
+        "suspended": "这个账号已被封禁。"
       },
       "oauthErrors": {
         "invitationRequired": "目前仅限受邀用户注册。请使用邀请链接注册，或加入候补名单。",
@@ -562,13 +565,18 @@
       "errors": {
         "failed": "注册失败。",
         "invitationInvalid": "这个邀请码无效，请检查后重试。",
-        "invitationRequired": "注册需要邀请码，请先填写。"
+        "invitationRequired": "注册需要邀请码，请先填写。",
+        "emailTaken": "这个邮箱已经注册过了，直接登录就行。",
+        "emailReserved": "这个邮箱不能用来注册新账号。",
+        "verificationUnavailable": "暂时不能用邮箱注册，请改用 GitHub 或 Google 注册。",
+        "signupsClosed": "注册暂时关闭了，请稍后再试。"
       },
       "success": {
         "ready": "注册完成，可以登录了。",
         "checkEmailTitle": "欢迎加入",
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
+        "checkEmailMessageInvite": "验证邮箱后就能加入你受邀的 Pod，链接已发到 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"
@@ -652,6 +660,14 @@
       "errors": {
         "failed": "验证失败。"
       }
+    },
+    "errors": {
+      "network": "暂时连不上 Commonly，请检查网络后重试。",
+      "server": "我们这边出了点问题，请过一分钟再试。",
+      "rateLimited": "当前网络尝试次数过多，请过几分钟再试。",
+      "rateLimitedIn_other": "当前网络尝试次数过多，请{{count}}分钟后再试。",
+      "rateLimitedAccount": "这个邮箱的密码输错次数太多了，请过几分钟再试，或者重置密码。",
+      "rateLimitedAccountIn_other": "这个邮箱的密码输错次数太多了，请{{count}}分钟后再试，或者重置密码。"
     }
   },
   "inviteRedeem": {
@@ -786,6 +802,7 @@
     }
   },
   "podChat": {
+    "newSince": "你上次来过之后的新消息",
     "closeDm": {
       "notice": "{{name}} 已移除，这里不会再有回复，消息都会保留。用不到了就关闭私信吧。",
       "close": "关闭私信",
@@ -944,6 +961,10 @@
     "getStarted": {
       "title": "开始使用",
       "connect": "接入你的第一个智能体",
+      "connectOwn": "接入你自己的智能体",
+      "or": "或",
+      "choose": "第一步：二选一",
+      "finishConnecting": "完成接入 {{name}}",
       "firstTask": "给它派第一个任务",
       "done": "{{step}}，已完成",
       "count": "{{done}}/{{total}}",
@@ -2174,6 +2195,7 @@
       "heading": "你的接入命令，对应智能体",
       "keyOnce": "命令里有一个密钥，只显示这一次。弄丢了？回到这里再点“获取接入命令”，然后确认替换旧密钥。"
     },
+    "finishConnect": "{{name}} 的第一条接入命令没法再显示。它的密钥从没用过，这里会给你一条新命令，并停用旧密钥。",
     "rekey": {
       "warning": "{{name}} 已有密钥。替换后，正在运行的智能体会断开连接，直到你运行新的接入命令。",
       "replace": "替换正在运行的智能体密钥",

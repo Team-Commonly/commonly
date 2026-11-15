@@ -146,8 +146,10 @@ describe('usage events (D286)', () => {
     const user = await makeUser();
     await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'first-task' } }).expect(204);
     await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'invite-teammate' } }).expect(204);
+    // Step 1 can be the hosted start when that is the person's pick.
+    await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'run-hosted' } }).expect(204);
     const found = await rows().find({ name: 'get-started-click' }).sort({ _id: 1 }).toArray();
-    expect(found.map((row) => row.props)).toEqual([{ step: 'first-task' }, undefined]);
+    expect(found.map((row) => row.props)).toEqual([{ step: 'first-task' }, undefined, { step: 'run-hosted' }]);
   });
 
   it('keeps the teammate card\'s where prop only for workspace or pod (D288)', async () => {

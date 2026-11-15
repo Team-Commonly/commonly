@@ -38,6 +38,8 @@ export interface IAttentionItem extends Document {
   // source-specific writers and never become dismissible through this field.
   // Growth's NEEDSYOU metric allowlists what counts as acted on; tell it when a value is added or a new kind starts writing one.
   resolvedBy?: 'replied' | 'acknowledged' | 'actioned' | 'missed';
+  mentionEmailCheckedAt?: Date;
+  mentionEmailLeaseAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,6 +73,13 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },
   resolvedAt: { type: Date },
   resolvedBy: { type: String, enum: ['replied', 'acknowledged', 'actioned', 'missed'] },
+  // F512: the mention-email pass has decided this row (sent or not). Cleared
+  // again only when a send fails, so the next pass can retry it.
+  mentionEmailCheckedAt: { type: Date },
+  // Set with the claim and cleared once the pass reaches an outcome. One still
+  // set past its lease means the process died mid-decision: a later pass may
+  // claim the row again (CodeRabbit on #4144).
+  mentionEmailLeaseAt: { type: Date },
 }, { timestamps: true });
 
 // A source can notify each recipient once. Retried source writes must not
@@ -78,6 +87,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
 attentionItemSchema.index({ recipientUserId: 1, 'source.type': 1, 'source.id': 1 }, { unique: true });
 attentionItemSchema.index({ recipientUserId: 1, status: 1, createdAt: -1 });
 attentionItemSchema.index({ podId: 1, status: 1, createdAt: -1 });
+attentionItemSchema.index({ kind: 1, status: 1, createdAt: -1 });
 
 const AttentionItem: Model<IAttentionItem> = mongoose.models.AttentionItem
   || mongoose.model<IAttentionItem>('AttentionItem', attentionItemSchema);
