@@ -32,6 +32,13 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { noteUnsandboxedMention } = require('./unsandboxedPodLineService') as {
+  noteUnsandboxedMention: (args: {
+    podId: string; agentName: string; instanceId: string; senderId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const {
   approverFor, asksBeforeOthers, holdRunRequest, joinedByMention, noteRunRequestRefused, UNOWNED,
 } = require('./runRequestService') as typeof import('./runRequestService');
@@ -2497,6 +2504,19 @@ const enqueueMentions = async ({
             // notice must never drop or block the delivery.
             console.warn('[not-connected] notice failed:', (error as Error).message);
           }
+          // An agent last started without a sandbox answers only in pods that
+          // are invite-only, not public and not listed; elsewhere its turns are
+          // refused while it keeps polling, so the pod says so once a day. Not
+          // awaited: the notice is a reply to the mention, and nothing it reads
+          // decides whether the mention queues.
+          noteUnsandboxedMention({
+            podId: String(podId),
+            agentName: directMatch.agentName,
+            instanceId: directMatch.instanceId || 'default',
+            senderId: String(userId),
+            messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+            threadRootId,
+          }).catch((error: Error) => console.warn('[unsandboxed-pod] notice failed:', error?.message));
         }
         try {
           if (directMatch.agentName === 'commonly-bot') {

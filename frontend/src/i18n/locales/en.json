@@ -826,6 +826,7 @@
       "agentStopped": "{{name}} is stopped, so it can't answer until its owner starts it.",
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
+      "agentUnsandboxedPod": "{{name}} has been run without a sandbox. Run that way, it answers only in invite-only pods that aren't public or listed, so it may not answer here.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
       "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "runRequestDeclined": "{{name}} declined {{requester}}'s request, so {{agent}} won't run it.",

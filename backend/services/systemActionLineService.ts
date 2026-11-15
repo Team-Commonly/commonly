@@ -221,6 +221,27 @@ export async function emitOfflineLine(line: OfflineLine): Promise<void> {
 }
 
 /**
+ * An agent its owner has run without a sandbox, in a pod that is not
+ * invite-only, or is publicly readable or listed (unsandboxedPodLineService).
+ * Hedged on purpose: the mark is set by an unconfined start and not cleared by
+ * a later sandboxed one, so this says only what stays true ("has been run")
+ * and "may not answer".
+ * Callers dedupe with `hasUnsandboxedLineSince`.
+ */
+export type UnsandboxedPodLine = StoppedLine;
+
+export async function emitUnsandboxedPodLine(line: UnsandboxedPodLine): Promise<void> {
+  const content = `${line.agentLabel} has been run without a sandbox. Run that way, it answers only in `
+    + "invite-only pods that aren't public or listed, so it may not answer here.";
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'agent-unsandboxed-pod',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
  * F270. A DM to an agent whose rows are all paused. It promises nothing: a paused
  * agent queues nothing, its owner may have gone, and a resume may land in a pod
  * this person isn't in. Callers dedupe with `hasPausedLineSince`.
@@ -307,6 +328,11 @@ export const hasOfflineLineSince = (podId: string, agentKey: string, since: Date
 /** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */
 export const hasRemovedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
   hasAgentLineSince('agent-removed', podId, agentKey, since)
+);
+
+/** Whether an unsandboxed-pod line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasUnsandboxedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-unsandboxed-pod', podId, agentKey, since)
 );
 
 /** Whether a paused line for this agent sits in the pod since `since`; no pool reads as yes. */
