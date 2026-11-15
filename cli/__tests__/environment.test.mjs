@@ -811,3 +811,43 @@ describe('mountSkills writes nothing through a .claude/skills swapped mid-mount 
     expect(fs.readdirSync(skillsDir)).toEqual([name]);
   });
 });
+
+// F171 gate: a skill source that is itself a link (common: ~/.claude/skills
+// entries link into a checkout) was copied as a link, so the mount wrote
+// through to the source: the marker landed in it and its files went 0444.
+describe('mountSkills snapshots a linked skill source as real files (F171)', () => {
+  let root;
+  let workspace;
+  let realSrc;
+  let linkSrc;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171src-'));
+    workspace = path.join(root, 'ws');
+    realSrc = path.join(root, 'checkout', 'my-skill');
+    linkSrc = path.join(root, 'skills', 'my-skill');
+    fs.mkdirSync(workspace);
+    fs.mkdirSync(realSrc, { recursive: true });
+    fs.mkdirSync(path.dirname(linkSrc));
+    fs.writeFileSync(path.join(realSrc, 'SKILL.md'), '# my skill', 'utf8');
+    fs.chmodSync(path.join(realSrc, 'SKILL.md'), 0o644);
+    fs.symlinkSync(realSrc, linkSrc);
+  });
+  afterEach(() => {
+    for (const dir of [realSrc, path.join(workspace, '.claude', 'skills', 'my-skill')]) {
+      if (!fs.existsSync(dir) || fs.lstatSync(dir).isSymbolicLink()) continue;
+      for (const e of fs.readdirSync(dir)) fs.chmodSync(path.join(dir, e), 0o644);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('the mount is a real directory, and the source is left as it was', async () => {
+    expect(await mountSkills({ skills: { claude: [linkSrc] } }, workspace)).toEqual({ mounted: [linkSrc], conflicted: [] });
+
+    const slot = path.join(workspace, '.claude', 'skills', 'my-skill');
+    expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('# my skill');
+    expect(fs.existsSync(path.join(realSrc, '.commonly-skill-mount'))).toBe(false);
+    expect(fs.statSync(path.join(realSrc, 'SKILL.md')).mode & 0o777).toBe(0o644);
+  });
+});

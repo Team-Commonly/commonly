@@ -613,11 +613,16 @@ const makeSkillStage = async (workspacePath) => {
 };
 
 // A rename, or a copy then delete when the stage is on another disk (EXDEV).
+// That fallback happens only when the workspace's parent can't be written and
+// the temp folder is another disk. It acts through the workspace path again,
+// the shape this staging removes, so it says so.
 const moveAcross = async (from, to) => {
   try {
     await rename(from, to);
   } catch (err) {
     if (err.code !== 'EXDEV') throw err;
+    // eslint-disable-next-line no-console
+    console.warn(`[skills] ${to}: the stage is on another disk, so this mount is copied in place, not renamed`);
     await cp(from, to, { recursive: true, verbatimSymlinks: true });
     await rm(from, { recursive: true, force: true });
   }
@@ -655,7 +660,9 @@ const moveAcross = async (from, to) => {
  * renamed into place after a fresh check, and a replaced mount is moved out
  * before it is deleted, so a swap mid-mount is refused the same way. What is
  * left is the moment between that check and the rename: Node has no
- * renameat, so the final rename still resolves the path.
+ * renameat, so the final rename still resolves the path. When the stage has
+ * to live on another disk, the move is a copy and delete in place, as before.
+ * A linked source is copied as the files it points to.
  *
  * `hooks.onStep(step)` is for tests: it runs after the check ('checked') and
  * after each snapshot is built ('staged').
@@ -695,8 +702,11 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
     const stage = await makeSkillStage(workspacePath);
     try {
       const snapshot = join(stage, 'new');
+      // A source that is a link (a ~/.claude/skills entry into a checkout)
+      // is copied as the files it points to: a copied link would make the
+      // mount write through to the source.
       // eslint-disable-next-line no-await-in-loop
-      await cp(absSource, snapshot, { recursive: true });
+      await cp(absSource, snapshot, { recursive: true, dereference: true });
       // eslint-disable-next-line no-await-in-loop
       await writeFile(join(snapshot, MOUNT_MARKER), `mounted-from: ${absSource}\n`, 'utf8');
       // eslint-disable-next-line no-await-in-loop
@@ -729,8 +739,8 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
           conflicted.push({ path: absSource, reason: 'not-a-mount' });
           continue;
         }
-        // Moved out first: the recursive delete runs in the stage, never at a
-        // path inside the workspace.
+        // Moved out first: the recursive delete runs in the stage, not at a
+        // path inside the workspace (except in moveAcross's EXDEV fallback).
         // eslint-disable-next-line no-await-in-loop
         await moveAcross(destPath, join(stage, 'old'));
       }

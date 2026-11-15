@@ -82,7 +82,12 @@ untrusted (F171, `cli/src/lib/environment.js` `mountSkills`):
 - Each snapshot is built in a host-private stage folder beside the workspace,
   then renamed into place after a fresh check that `.claude/skills` is the
   same directory. A replaced mount is moved out to the stage before it is
-  deleted, so a recursive delete never runs at a workspace path.
+  deleted, so the recursive delete runs in the stage. The one exception is a
+  workspace whose parent can't be written while the temp folder is on another
+  disk: the CLI warns, and the move falls back to a copy and delete in place.
+- A source that is itself a link (a `~/.claude/skills` entry into a checkout)
+  is copied as the files it points to, so the mount never writes through to
+  the source.
 - What is left is the moment between that last check and the rename. Node has
   no `renameat`, so the rename still resolves the path. Public seats have no
   shell to act in that gap.
