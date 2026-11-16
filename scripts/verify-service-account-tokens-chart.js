@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // The agent-provisioner service account can read and write every Secret in its
 // namespace, create Deployments and exec into pods. Only the workloads that
-// provision agents need that: the web backend, its worker and ops-runner. Any
-// other workload the chart runs as that account must not mount its token, or a
+// provision agents need that: the web backend and its worker. Any other
+// workload the chart runs as that account must not mount its token, or a
 // compromise of that process reaches every Secret in the namespace (F533).
+// ops-runner is an exec target for operator scripts, which read Mongo and
+// Postgres and never call the Kubernetes API from inside it (F539).
 // Pods the backend creates at runtime (agent gateways) are checked by
 // backend/__tests__/unit/services/gatewayProvisionerServiceK8s.serviceAccount.test.js.
 // Renders the chart itself:
@@ -30,7 +32,7 @@ const extraSets = [
 const PROVISIONER = yaml.load(require('fs').readFileSync(`${chart}/values.yaml`, 'utf8'), { json: true })
   .rbac.serviceAccount.name;
 // Exempt by kind and name: only these Deployments provision agents.
-const NEEDS_TOKEN = new Set(['Deployment/backend', 'Deployment/backend-worker', 'Deployment/ops-runner']);
+const NEEDS_TOKEN = new Set(['Deployment/backend', 'Deployment/backend-worker']);
 
 const render = (lane) => {
   const args = ['template', `commonly-${lane}`, chart];
