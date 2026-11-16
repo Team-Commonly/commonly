@@ -263,6 +263,27 @@ describe('the scheduled run asks what stalledLines() would say', () => {
     expect(await reached(me)).toBe(false);
   });
 
+  // CodeRabbit (#4184): a read that fails must not stop the run, and fails
+  // toward reaching the person (an empty digest at worst), never toward silence.
+  test.each([
+    ['the install lookup', () => jest.spyOn(AgentInstallation, 'find')],
+    ['the pod lookup', () => jest.spyOn(Pod, 'exists')],
+  ])('when %s fails, the run still finishes and still reaches them', async (_name, spy) => {
+    const me = await gone();
+    const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+    recap(pod);
+    await episodeAt(me, pod, await install(me, pod), 2);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    spy().mockImplementation(() => { throw new Error('db down'); });
+    expect(await DailyDigestService.stalledInstallerIds(at)).toEqual([me._id]);
+  });
+
+  test('when the episode read fails, the run still finishes', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(StalledConnectEpisode, 'find').mockImplementation(() => { throw new Error('db down'); });
+    await expect(DailyDigestService.stalledInstallerIds(at)).resolves.toEqual([]);
+  });
+
   test('one due line on an active install reaches them, beside one on a stale install', async () => {
     const me = await gone();
     const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });

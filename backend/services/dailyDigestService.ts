@@ -202,17 +202,26 @@ export class DailyDigestService {
    * choices in the same order: an episode open 24h; the newest per
    * installation, before the done-filter, so a replaced one never speaks; that
    * one due (no digestedAgainAt, and no digestedAt or past +7d); its install
-   * still active; and its installer still in its pod.
+   * still active; and its installer still in its pod. A read that fails
+   * never stops the run, and fails toward reaching the person: an empty
+   * digest at worst, never a missed line.
    */
   static async stalledInstallerIds(at: Date): Promise<unknown[]> {
-    const episodes = await StalledConnectEpisode.find({
-      status: 'open',
-      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
-    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+    const warn = (what: string) => (error: Error) => {
+      console.warn(`[daily-digest] stalled installers: ${what} could not be read:`, error.message);
+      return null;
+    };
+    type Episode = {
       installationId: unknown; installedBy: unknown; podId: string;
       nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
-    }>;
-    const newest = new Map<string, typeof episodes[number]>();
+    };
+    const episodes = await Promise.resolve().then(() => StalledConnectEpisode.find({
+      status: 'open',
+      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
+    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean())
+      .catch(warn('episodes')) as Episode[] | null;
+    if (!episodes) return [];
+    const newest = new Map<string, Episode>();
     for (const episode of episodes) {
       const key = String(episode.installationId);
       const held = newest.get(key);
@@ -223,22 +232,22 @@ export class DailyDigestService {
     if (due.length === 0) return [];
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { AgentInstallation } = require('../models/AgentRegistry');
-    const active = new Set((await AgentInstallation.find({
+    // null: the lookup failed, so every due install counts as active.
+    const rows = await Promise.resolve().then(() => AgentInstallation.find({
       _id: { $in: due.map((episode) => episode.installationId) }, status: 'active',
-    }).select('_id').lean() as Array<{ _id: unknown }>).map((row) => String(row._id)));
+    }).select('_id').lean()).catch(warn('installs')) as Array<{ _id: unknown }> | null;
+    const active = rows && new Set(rows.map((row) => String(row._id)));
     const ids = new Map<string, unknown>();
     for (const episode of due) {
       const person = String(episode.installedBy);
-      if (ids.has(person) || !active.has(String(episode.installationId))) continue;
+      if (ids.has(person) || (active && !active.has(String(episode.installationId)))) continue;
       // Same membership shapes as the digest's memberPods.
       // eslint-disable-next-line no-await-in-loop
-      const inPod = await Pod.exists({
+      // 'unread': the lookup failed, so the person counts as in the pod.
+      const inPod = await Promise.resolve().then(() => Pod.exists({
         _id: episode.podId,
         $or: [{ members: episode.installedBy }, { 'members.userId': episode.installedBy }],
-      }).catch((error: Error) => {
-        console.warn("[daily-digest] stalled installer's pod could not be read:", error.message);
-        return null;
-      });
+      })).catch((error: Error) => warn('a pod')(error) ?? 'unread');
       if (inPod) ids.set(person, episode.installedBy);
     }
     return [...ids.values()];
