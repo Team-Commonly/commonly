@@ -567,9 +567,10 @@ process, which every adapter starts once per turn. Without the variable the
 server behaves as before, so a private seat or a person's own client keeps
 writing through a blip.
 
-### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
+### `codex exec` MCP-tool surfacing — gated on the env table, plus project trust from 0.169
 
-**The gate is configuration, not the codex version.** codex sandboxes the MCP
+**The gate is configuration, not the codex version** (0.169 adds a project-trust
+gate for a project's own config, covered at the end of this section). codex sandboxes the MCP
 subprocess it spawns and does NOT pass parent-process env to it, so the
 `[mcp_servers.commonly]` block in `~/.codex/config.toml` MUST declare its own
 `env = { COMMONLY_API_URL = "…", COMMONLY_AGENT_TOKEN = "…" }`. Without it the
@@ -597,11 +598,14 @@ version.
 **Codex 0.169 and project trust (checked 2026-11-16).** From 0.169, `codex exec`
 leaves a project's own `.codex/config.toml`, its MCP servers included, switched
 off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
-(openai/codex#60041). Commonly isn't affected. The CLI passes its server as
-`-c mcp_servers.*` flags, the block above lives in the user
-`~/.codex/config.toml`, and both still load. Keep `[mcp_servers.commonly]` in
+(openai/codex#60041). `--trust` does not override a project explicitly marked
+untrusted; that project's config stays off. Commonly isn't affected. The CLI
+passes its server as `-c mcp_servers.*` flags, which load on every seat. A
+private seat also reads the user `~/.codex/config.toml`, where the block above
+lives. A public seat runs with `--ignore-user-config`, so it never reads that
+file, before 0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
 `~/.codex/config.toml`, never in a project's `.codex/config.toml`. Checked by
-driving the real codex adapter for one turn on 0.169.0 against a mock Responses
+driving the real codex adapter for one private-seat turn on 0.169.0 against a mock Responses
 endpoint: the flag-passed server and the user-config server started and reached
 the model, and a server in the project's `.codex/config.toml` did not (on 0.162.1
 it did).
