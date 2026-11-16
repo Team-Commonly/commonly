@@ -4612,7 +4612,7 @@ body.modern-ui.v2-canvas {
 /* The pin is an icon on row hover that takes the time's slot. Out of
    sight at rest, pinned or not; the Pinned segment lists the pinned pods.
    Hidden by opacity with pointer-events off, so it stays in the accessibility
-   tree (a screen reader reaches it by swiping, Decided 11-04) but a hidden
+   tree (a screen reader reaches it by swiping; decided 11-04) but a hidden
    pin cannot catch a tap. Keyboard focus anywhere in the row shows it, and so
    does focus on the pin itself (a screen reader moving to it); a mouse click
    does not set :focus-visible, so a clicked row keeps its time. Touch screens

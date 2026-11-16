@@ -696,7 +696,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain('togglePin(pod._id)');
     expect(podsSidebar).toContain('<ShellGlyph name="pin"');
     // At rest the pin is opacity 0 so it stays in the accessibility tree (a screen
-    // reader reaches it by swiping, Decided 11-04), and pointer-events none so the
+    // reader reaches it by swiping; decided 11-04), and pointer-events none so the
     // hidden pin cannot catch a tap on the time. visibility: hidden would drop it from
     // the tree and leave touch screen-reader users only the hold.
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
