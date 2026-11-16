@@ -197,21 +197,29 @@ export class DailyDigestService {
   }
 
   /**
-   * F502: a line for each agent this person installed whose stalled-connect
-   * episode is still open: from 24h after the in-pod nudge, and once more from
-   * +7d, then never. An episode first seen past +7d gets one line and both
-   * marks. Only the installer hears it, and only about a pod they are still in.
+   * F542: the people stalledLines() would give a line at `at`, so the
+   * scheduled run never wakes a gone person to an empty digest. The same
+   * choices in the same order: an episode open 24h; the newest per
+   * installation, before the done-filter, so a replaced one never speaks; that
+   * one due (no digestedAgainAt, and no digestedAt or past +7d); its install
+   * still active; and its installer still in its pod.
    */
-  /** F542: installers with a stalled line due at `at` on an agent still installed. */
   static async stalledInstallerIds(at: Date): Promise<unknown[]> {
-    const due = await StalledConnectEpisode.find({
+    const episodes = await StalledConnectEpisode.find({
       status: 'open',
-      digestedAgainAt: { $exists: false },
-      $or: [
-        { digestedAt: { $exists: false }, nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) } },
-        { nudgedAt: { $lte: new Date(at.getTime() - STALL_AGAIN_MS) } },
-      ],
-    }).select('installationId installedBy').lean() as Array<{ installationId: unknown; installedBy: unknown }>;
+      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
+    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+      installationId: unknown; installedBy: unknown; podId: string;
+      nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
+    }>;
+    const newest = new Map<string, typeof episodes[number]>();
+    for (const episode of episodes) {
+      const key = String(episode.installationId);
+      const held = newest.get(key);
+      if (!held || new Date(episode.nudgedAt) > new Date(held.nudgedAt)) newest.set(key, episode);
+    }
+    const due = [...newest.values()].filter((episode) => !episode.digestedAgainAt
+      && (!episode.digestedAt || at.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS));
     if (due.length === 0) return [];
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { AgentInstallation } = require('../models/AgentRegistry');
@@ -220,11 +228,25 @@ export class DailyDigestService {
     }).select('_id').lean() as Array<{ _id: unknown }>).map((row) => String(row._id)));
     const ids = new Map<string, unknown>();
     for (const episode of due) {
-      if (active.has(String(episode.installationId))) ids.set(String(episode.installedBy), episode.installedBy);
+      const person = String(episode.installedBy);
+      if (ids.has(person) || !active.has(String(episode.installationId))) continue;
+      // Same membership shapes as the digest's memberPods.
+      // eslint-disable-next-line no-await-in-loop
+      const inPod = await Pod.exists({
+        _id: episode.podId,
+        $or: [{ members: episode.installedBy }, { 'members.userId': episode.installedBy }],
+      }).catch(() => null);
+      if (inPod) ids.set(person, episode.installedBy);
     }
     return [...ids.values()];
   }
 
+  /**
+   * F502: a line for each agent this person installed whose stalled-connect
+   * episode is still open: from 24h after the in-pod nudge, and once more from
+   * +7d, then never. An episode first seen past +7d gets one line and both
+   * marks. Only the installer hears it, and only about a pod they are still in.
+   */
   static async stalledLines(
     userId: unknown,
     memberPods: Array<{ _id: unknown; name?: string }>,
