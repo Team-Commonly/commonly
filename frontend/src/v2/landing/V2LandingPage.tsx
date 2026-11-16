@@ -209,8 +209,8 @@ interface Stats {
   agentCount?: number;
 }
 
-// The hero copy: the rotating term sits inside one sentence, and the sentence
-// is stated once on the h1's aria-label.
+// The hero copy: the h1 is the multiplayer line, and the sentence under it
+// carries the rotating term, stated once as text in a clipped span.
 const heroCopy = (t: (key: string) => string) => ({
   title: t('landing.hero.title'),
   ariaLabel: t('landing.hero.ariaLabel'),
@@ -234,9 +234,9 @@ const fmt = (n: number | undefined, locale: string): string => (
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
 // term, which must read as the full claim on its own.
-// Completes "One pod for your team and …" — the teammate's agent, then the
-// payoff. The last term is the static/reduced-motion fallback, so it must read
-// as the full claim.
+// Fills the sentence under the h1 ("Bring ___ into one pod.") — the
+// teammate's agent, then the payoff. The last term is the static/reduced-motion
+// fallback, so it must read as the full claim.
 const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const [active, setActive] = useState(0);
   const [rotating, setRotating] = useState(false);

@@ -1498,8 +1498,8 @@
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
   /* TASK-213 (option 1): on a phone the suffix takes its own
-     line, so the title is 「与你的 / <term> / 对话」 at every width and only the
-     term rotates. Without this the h1 is 94.6px under three of the four terms
+     line, so the hero sentence (under the h1 since the multiplayer h1) is
+     「把 / <term> / 带进同一个 Pod。」 at every width and only the term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
      section below jumped 46px once per cycle (measured on main abe19fe0 and
      again on #2033). `margin-left: 0` is part of the rule rather than tidying:
@@ -1821,10 +1821,11 @@
 /* zh terms break only between words (keep-all); the ZWSP in eachOwnAgent is the
    one permitted break point, so 每个人 / 自己的智能体 at 320. */
 :lang(zh) .v2-landing__rotator { word-break: keep-all; }
-/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shares line 2
-   with 队友的智能体 and wraps for the other two terms, so the h1 jumped 63–84px on
-   every rotation. The suffix takes its own line in that band, as TASK-213 does on
-   phones. Measured steady from 320 to 1920 with this rule; en has no suffix element. */
+/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shared line 2
+   with 队友的智能体 and wrapped for the other two terms, so the hero sentence (then
+   the h1) jumped 63–84px on every rotation. The suffix takes its own line in that
+   band, as TASK-213 does on phones; `.v2-landing__bring` now sets it on its own line
+   at every width, so this band rule is belt and braces. */
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }

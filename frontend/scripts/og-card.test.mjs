@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(path, import.meta.url));
@@ -21,6 +22,14 @@ test('og-card.png stays 1200x630', async () => {
   assert.equal(png.toString('ascii', 12, 16), 'IHDR');
   assert.equal(png.readUInt32BE(16), 1200);
   assert.equal(png.readUInt32BE(20), 630);
+});
+
+// Any 1200x630 PNG passes the size check, so pin the exact file the source
+// renders. Regenerating the card (see og-card.html) means updating this hash
+// and bumping ?v=N together.
+test('og-card.png is the reviewed render of og-card.html', async () => {
+  const png = await read('../public/og-card.png');
+  assert.equal(createHash('sha256').update(png).digest('hex'), '9aa68d442aa27d3e0b7b103ea0d00d54b097934e4cfe6c9a20903e2b5b8544d4');
 });
 
 test('the committed card source leads with the multiplayer h1, carries the hero sentence and none of the ruled-out claims', async () => {
