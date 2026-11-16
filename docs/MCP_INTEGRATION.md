@@ -602,10 +602,13 @@ off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
 (openai/codex#60041). `--trust` does not override a project explicitly marked
 untrusted; that project's config stays off. Commonly isn't affected. The CLI
 passes its server as `-c mcp_servers.*` flags, which load on every seat. A
-private seat also reads a Codex user config: normally yours, linked into its
-private home (`$CODEX_HOME/config.toml`, by default `~/.codex/config.toml`). On
-Linux, a seat whose private home already holds its own `config.toml`, not a link,
-reads that file instead, so check there if a server you added is missing. A public
+private seat also reads your Codex user config (`$CODEX_HOME/config.toml`, by
+default `~/.codex/config.toml`): on macOS in place, on Linux through a link in
+the seat's own private home under
+`$XDG_STATE_HOME/commonly/codex-private-homes/` (by default
+`~/.local/state/commonly/codex-private-homes/`). If that Linux home holds its own
+`config.toml` rather than a link, the seat reads that file instead, so check
+there if a server you added is missing. A public
 seat runs with `--ignore-user-config`, so it never reads a user config, before
 0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
 that user config, never in a project's `.codex/config.toml`. Checked by
