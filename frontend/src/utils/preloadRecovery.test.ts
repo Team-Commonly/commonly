@@ -36,6 +36,21 @@ describe('shouldReloadAfterPreloadError', () => {
     expect(shouldReloadAfterPreloadError(store, 1_000_000 + PRELOAD_RELOAD_WINDOW_MS)).toBe(true);
   });
 
+  it('treats a corrupt stored value as no previous reload', () => {
+    const store = memoryStore();
+    store.setItem(PRELOAD_RELOAD_KEY, 'not-a-number');
+    expect(shouldReloadAfterPreloadError(store, 1_000_000)).toBe(true);
+    store.setItem(PRELOAD_RELOAD_KEY, '-5');
+    expect(shouldReloadAfterPreloadError(store, 2_000_000)).toBe(true);
+  });
+
+  it('holds a stamp from the future (a clock step back) until the window passes it: no reload, never a loop', () => {
+    const store = memoryStore();
+    store.setItem(PRELOAD_RELOAD_KEY, String(1_000_000 + 30_000));
+    expect(shouldReloadAfterPreloadError(store, 1_000_000)).toBe(false);
+    expect(shouldReloadAfterPreloadError(store, 1_000_000 + 30_000 + PRELOAD_RELOAD_WINDOW_MS)).toBe(true);
+  });
+
   it('does not reload when there is no storage to guard the loop with', () => {
     expect(shouldReloadAfterPreloadError(null, 1_000_000)).toBe(false);
   });
@@ -71,6 +86,9 @@ describe('installPreloadRecovery', () => {
     uninstall();
   });
 
+  // Structural check, on purpose: "installed before the first lazy import" is an
+  // ordering in the entry file that no jsdom run can show (review-checklist rule 18).
+  // The real-browser proof is in the PR that added this file.
   it('is installed by the app entry before its first lazy import', () => {
     const entry = fs.readFileSync(path.join(__dirname, '..', 'index.tsx'), 'utf8');
     const install = entry.indexOf('\ninstallPreloadRecovery();');
