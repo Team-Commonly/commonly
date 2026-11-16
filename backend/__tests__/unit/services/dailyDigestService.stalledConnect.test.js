@@ -184,6 +184,119 @@ test('the scheduled run reaches an installer gone 8 days whose +7d line is due',
   expect(mine?.digest?.content).toBe(LINE);
 });
 
+// F542: the episode's line is only for an installed agent (stalledLines reads
+// active installs), so an episode on a removed or stale install must not wake
+// a person who is otherwise gone: on prod that built a digest a day for five
+// dormant people with nothing to say.
+test.each(['stale', 'uninstalled'])(
+  'the scheduled run does not reach an installer gone 8 days whose only due line is on a %s install',
+  async (installStatus) => {
+    const at = new Date();
+    at.setUTCHours(6, 0, 0, 0);
+    const me = await person('gone', new Date(at.getTime() - 8 * 24 * HOUR));
+    const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+    jest.spyOn(ActivityService, 'getRecap').mockResolvedValue({
+      pods: [{ id: String(pod._id), name: 'Launch' }],
+      needsYou: [],
+      agents: [],
+      board: [],
+    });
+    const installation = await install(me, pod, installStatus);
+    await StalledConnectEpisode.create({
+      installationId: installation._id,
+      podId: String(pod._id),
+      installedBy: me._id,
+      agentName: 'codex',
+      instanceId: 'mk',
+      displayName: 'mk codex',
+      tokenIssuedAt: new Date(at.getTime() - 3 * 24 * HOUR),
+      nudgedAt: new Date(at.getTime() - 3 * 24 * HOUR + HOUR),
+    });
+    const results = await new DailyDigestService().generateAllDailyDigests({ at });
+    expect(results.find((r) => String(r.userId) === String(me._id))).toBeUndefined();
+  },
+);
+
+// F542 gate: the scheduled run picks a person up only when stalledLines()
+// would give them a line, or the digest it builds is empty every day.
+describe('the scheduled run asks what stalledLines() would say', () => {
+  const at = new Date();
+  at.setUTCHours(6, 0, 0, 0);
+  const gone = async () => person('gone', new Date(at.getTime() - 8 * 24 * HOUR));
+  const episodeAt = (me, pod, installation, nudgedDaysAgo, extra = {}) => StalledConnectEpisode.create({
+    installationId: installation._id,
+    podId: String(pod._id),
+    installedBy: me._id,
+    agentName: 'codex',
+    instanceId: 'mk',
+    displayName: 'mk codex',
+    tokenIssuedAt: new Date(at.getTime() - nudgedDaysAgo * 24 * HOUR - 60000),
+    nudgedAt: new Date(at.getTime() - nudgedDaysAgo * 24 * HOUR),
+    ...extra,
+  });
+  const reached = async (me) => (await new DailyDigestService().generateAllDailyDigests({ at }))
+    .some((r) => String(r.userId) === String(me._id));
+  const recap = (pod) => jest.spyOn(ActivityService, 'getRecap').mockResolvedValue({
+    pods: [{ id: String(pod._id), name: 'Launch' }],
+    needsYou: [],
+    agents: [],
+    board: [],
+  });
+
+  test('a replaced episode past +7d does not reach them when the newest has had its line', async () => {
+    const me = await gone();
+    const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+    recap(pod);
+    const installation = await install(me, pod);
+    await episodeAt(me, pod, installation, 10, { digestedAt: new Date(at.getTime() - 9 * 24 * HOUR) });
+    await episodeAt(me, pod, installation, 2, { digestedAt: new Date(at.getTime() - 24 * HOUR) });
+    expect(await reached(me)).toBe(false);
+  });
+
+  test('an installer who left the pod is not reached for its line', async () => {
+    const me = await gone();
+    const other = await person('owner-of-pod');
+    const pod = await Pod.create({ name: 'Launch', createdBy: other._id, members: [other._id] });
+    recap(pod);
+    const installation = await install(me, pod);
+    await episodeAt(me, pod, installation, 2);
+    expect(await reached(me)).toBe(false);
+  });
+
+  // CodeRabbit (#4184): a read that fails must not stop the run, and fails
+  // toward reaching the person (an empty digest at worst), never toward silence.
+  test.each([
+    ['the install lookup', () => jest.spyOn(AgentInstallation, 'find')],
+    ['the pod lookup', () => jest.spyOn(Pod, 'exists')],
+  ])('when %s fails, the run still finishes and still reaches them', async (_name, spy) => {
+    const me = await gone();
+    const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+    recap(pod);
+    await episodeAt(me, pod, await install(me, pod), 2);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    spy().mockImplementation(() => { throw new Error('db down'); });
+    expect(await DailyDigestService.stalledInstallerIds(at)).toEqual([me._id]);
+  });
+
+  test('when the episode read fails, the run still finishes', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(StalledConnectEpisode, 'find').mockImplementation(() => { throw new Error('db down'); });
+    await expect(DailyDigestService.stalledInstallerIds(at)).resolves.toEqual([]);
+  });
+
+  test('one due line on an active install reaches them, beside one on a stale install', async () => {
+    const me = await gone();
+    const pod = await Pod.create({ name: 'Launch', createdBy: me._id, members: [me._id] });
+    recap(pod);
+    await episodeAt(me, pod, await install(me, pod, 'stale'), 2);
+    const live = await AgentInstallation.create({
+      agentName: 'claude', instanceId: 'mk', podId: pod._id, version: '1.0.0', status: 'active', installedBy: me._id,
+    });
+    await episodeAt(me, pod, live, 2, { agentName: 'claude' });
+    expect(await reached(me)).toBe(true);
+  });
+});
+
 // CodeRabbit (#4128): the email shows only the top five lines. A stalled line
 // the extract cut was never seen, so it must stay for the next digest.
 test('only the stalled lines the email shows are used up', async () => {

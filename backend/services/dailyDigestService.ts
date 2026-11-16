@@ -197,6 +197,63 @@ export class DailyDigestService {
   }
 
   /**
+   * F542: the people stalledLines() would give a line at `at`, so the
+   * scheduled run never wakes a gone person to an empty digest. The same
+   * choices in the same order: an episode open 24h; the newest per
+   * installation, before the done-filter, so a replaced one never speaks; that
+   * one due (no digestedAgainAt, and no digestedAt or past +7d); its install
+   * still active; and its installer still in its pod. A read that fails
+   * never stops the run, and fails toward reaching the person: an empty
+   * digest at worst, never a missed line.
+   */
+  static async stalledInstallerIds(at: Date): Promise<unknown[]> {
+    const warn = (what: string) => (error: Error) => {
+      console.warn(`[daily-digest] stalled installers: ${what} could not be read:`, error.message);
+      return null;
+    };
+    type Episode = {
+      installationId: unknown; installedBy: unknown; podId: string;
+      nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
+    };
+    const episodes = await Promise.resolve().then(() => StalledConnectEpisode.find({
+      status: 'open',
+      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
+    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean())
+      .catch(warn('episodes')) as Episode[] | null;
+    if (!episodes) return [];
+    const newest = new Map<string, Episode>();
+    for (const episode of episodes) {
+      const key = String(episode.installationId);
+      const held = newest.get(key);
+      if (!held || new Date(episode.nudgedAt) > new Date(held.nudgedAt)) newest.set(key, episode);
+    }
+    const due = [...newest.values()].filter((episode) => !episode.digestedAgainAt
+      && (!episode.digestedAt || at.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS));
+    if (due.length === 0) return [];
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../models/AgentRegistry');
+    // null: the lookup failed, so every due install counts as active.
+    const rows = await Promise.resolve().then(() => AgentInstallation.find({
+      _id: { $in: due.map((episode) => episode.installationId) }, status: 'active',
+    }).select('_id').lean()).catch(warn('installs')) as Array<{ _id: unknown }> | null;
+    const active = rows && new Set(rows.map((row) => String(row._id)));
+    const ids = new Map<string, unknown>();
+    for (const episode of due) {
+      const person = String(episode.installedBy);
+      if (ids.has(person) || (active && !active.has(String(episode.installationId)))) continue;
+      // Same membership shapes as the digest's memberPods.
+      // eslint-disable-next-line no-await-in-loop
+      // 'unread': the lookup failed, so the person counts as in the pod.
+      const inPod = await Promise.resolve().then(() => Pod.exists({
+        _id: episode.podId,
+        $or: [{ members: episode.installedBy }, { 'members.userId': episode.installedBy }],
+      })).catch((error: Error) => warn('a pod')(error) ?? 'unread');
+      if (inPod) ids.set(person, episode.installedBy);
+    }
+    return [...ids.values()];
+  }
+
+  /**
    * F502: a line for each agent this person installed whose stalled-connect
    * episode is still open: from 24h after the in-pod nudge, and once more from
    * +7d, then never. An episode first seen past +7d gets one line and both
@@ -533,15 +590,11 @@ This might be a great time to start a new conversation or share something intere
         Task.distinct('watchers', { updatedAt: { $gte: startTime } }),
         // F502: someone whose agent never connected is often someone who never
         // came back, so neither rule above picks them up when their +7d line
-        // falls due. Only an episode with a line due today counts.
-        StalledConnectEpisode.distinct('installedBy', {
-          status: 'open',
-          digestedAgainAt: { $exists: false },
-          $or: [
-            { digestedAt: { $exists: false }, nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) } },
-            { nudgedAt: { $lte: new Date(at.getTime() - STALL_AGAIN_MS) } },
-          ],
-        }),
+        // falls due. Only an episode with a line due today counts, and only
+        // for an agent still installed: stalledLines() drops the rest, so a
+        // removed agent's episode would wake a gone person with nothing to say
+        // (F542).
+        DailyDigestService.stalledInstallerIds(at),
       ]);
       // Public-read pods include every signup; their activity is not a reason
       // to wake every stale account.
