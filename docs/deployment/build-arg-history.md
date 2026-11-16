@@ -36,3 +36,33 @@ before F408.
 Not fixed here: the bundled `officecli` skill still tells agents to run the
 binary, and since the gateway image (which baked it) was retired, no agent
 runtime is known to carry it.
+
+## The backend runtime base: slim since F547 (2026-11-16)
+
+Until F547 both stages of the backend `Dockerfile` ran `FROM node:22`, the full
+Debian bookworm image with a compiler toolchain, kernel headers and dev
+libraries. On 2026-11-16 the nightly live-image scan (`cve-scan.yml`, images
+job) reported 1 fixable CRITICAL (CVE-2026-99083 in `linux-libc-dev`, the
+kernel headers) and about 200 fixable HIGH in the live backend image, almost
+all in packages the server never runs.
+
+The runtime stage is now `node:22-bookworm-slim`, and the build stage
+`node:22-bookworm`. What made the switch safe:
+
+- No production dependency compiles native code. The only production packages
+  with install scripts are `protobufjs` and `@openuidev/lang-core`, and both
+  run plain `node`.
+- `playwright-core` only connects to a remote browser over CDP; no browser runs
+  in this image.
+- The server runs two binaries: `git` (installed explicitly) and `docker` (the
+  local provisioner, never present in the cluster image).
+- Every pod that runs this image (backend, its init container, worker,
+  ops-runner, email sink, waker, steel gate) calls only `sh`, `curl`, `node`,
+  `env`, `timeout`, `sleep` and `rm`, all present in slim.
+
+Both stages name `bookworm`, so a change of the default distro under `node:22`
+can't move the image unannounced. The tag is not pinned by digest: nothing in
+this repo bumps a digest, so a pin would go stale, while a floating tag takes
+the current Debian security fixes on every build. If you need a tool the full
+image had (`ps`, `python3`, a compiler), install it explicitly with `apt-get`
+in the runtime stage.
