@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved, import/extensions -- TypeScript modules expose CJS exports. */
 /**
- * D245: the message contract's columns on real PostgreSQL. pg-mem has its own
+ * The message contract's columns on real PostgreSQL. pg-mem has its own
  * parser and type inference (review-checklist rule 55), so the migration and
  * the model's INSERT, SELECT and edit run here against a real server too.
  */
@@ -21,7 +21,7 @@ const MIGRATIONS = path.join(__dirname, '../../config/migrations');
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
 const USER = 'bbbbbbbbbbbbbbbbbbbbbb01';
 
-real('message contract columns on real PostgreSQL (D245)', () => {
+real('message contract columns on real PostgreSQL', () => {
   let database;
   let pool;
   let PGMessage;
@@ -118,7 +118,7 @@ real('message contract columns on real PostgreSQL (D245)', () => {
       expect(reply).toMatchObject({ summary: 'Answered', kind: 'answer', thread_root_id: root.id });
     });
 
-    it('stores a self-reported receipt as JSONB, returns it on both reads, and an edit clears it (D245 item 4)', async () => {
+    it('stores a self-reported receipt as JSONB, returns it on both reads, and an edit clears it', async () => {
       const receipt = {
         adapter: 'claude', model: 'claude-opus-5-5', turns: 3, tools: ['Read', 'Bash'], durationMs: 41250, source: 'self-reported',
       };

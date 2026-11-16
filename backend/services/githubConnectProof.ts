@@ -4,7 +4,7 @@
  *
  * Nothing in the request body is trusted. The installation and the repository
  * are read back from GitHub with the person's OWN GitHub App user token: the
- * one D248's hosted-MCP GitHub connection stores (`hosted-mcp` row, entry
+ * one the hosted-MCP GitHub connection stores (`hosted-mcp` row, entry
  * `github-mcp`, opened through `credentialFor`). That token is minted by the
  * Commonly Connect App, so `GET /user/installations` lists only Connect
  * installations the person can access, and

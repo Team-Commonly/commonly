@@ -1,4 +1,4 @@
-// Discord live relay, inbound (D249, F131): a bound guild channel's messages
+// Discord live relay, inbound (F131): a bound guild channel's messages
 // reach its pod as real pod messages, through the shared chat-relay core.
 //
 // A guild channel is a SHARED surface: anyone in the guild can post there. So

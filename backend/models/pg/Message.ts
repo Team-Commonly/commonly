@@ -16,11 +16,11 @@ interface MessageRow {
   content: string;
   message_type: string;
   author_kind?: 'kernel' | null;
-  // D245: the optional message contract (services/messageContract.ts). NULL
+  // The optional message contract (services/messageContract.ts). NULL
   // unless an agent post carried them; same visibility as `content`.
   summary?: string | null;
   kind?: string | null;
-  // D245 item 4: a BYO agent's self-reported receipt (services/byoReceipt.ts).
+  // A BYO agent's self-reported receipt (services/byoReceipt.ts).
   receipt?: unknown;
   // ADR-020 D3: structured component payload (approval cards). JSONB; null
   // for ordinary messages.
@@ -128,7 +128,7 @@ class Message {
     // the attention writer and never stored: not a column, not a reply edge.
     answeringMessageId: string | null = null,
     authorKind: 'kernel' | null = null,
-    // D245: already normalized by services/messageContract.ts. Columns are
+    // Already normalized by services/messageContract.ts. Columns are
     // written only when a value is present, so a post without them runs the
     // same INSERT as before.
     contract: { summary?: string | null; kind?: string | null; receipt?: unknown } | null = null,
@@ -464,7 +464,7 @@ class Message {
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
   }
 
-  // An edit clears the D245 summary: it described the old content, and a
+  // An edit clears the summary: it described the old content, and a
   // stale summary would keep text the edit removed visible beside the new one.
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
     const pgId = await Message.resolveId(id);

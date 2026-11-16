@@ -1,5 +1,5 @@
 /**
- * The agent computer waker (D244 pilot 2). The broker calls
+ * The agent computer waker. The broker calls
  * `POST /v1/users/{userId}/wake` with `Authorization: Bearer <token>` before it
  * opens a person's Steel browser (agentComputerBroker.ts `wakeSteel`). This
  * service makes sure that person's `steel-{userId}` Deployment has a replica

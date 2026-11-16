@@ -3,7 +3,7 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { HELM_CHART } = require('../../utils/repoRoot');
 
-// D239, 2026-11-03: dev carries Google Calendar credentials, but the tile stays
+// 2026-11-03: Dev carries Google Calendar credentials, but the tile stays
 // hidden until the Cloud project is enrolled in Google's Workspace MCP Developer
 // Preview (Wren, 10-14: OAuth works, every tool call then fails). Values-level,
 // like the other tests here; the Chart Lint CI tier renders the chart.

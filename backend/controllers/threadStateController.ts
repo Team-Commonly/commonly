@@ -101,7 +101,7 @@ async function readThreadingCutoff(): Promise<{ cutoff: string | null; cutoffUnk
 }
 
 /**
- * The read-tracking epoch (D278): when migration 0011 was applied, as ISO, or
+ * The read-tracking epoch: when migration 0011 was applied, as ISO, or
  * null when that can't be read.
  *
  * Before this moment nobody could have stored a read point, so a thread the
@@ -224,7 +224,7 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
     const rows = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
     res.status(200).json({
       podId,
-      // D278 read-tracking epoch; null when unknown. See readReadTrackingSince.
+      // Read-tracking epoch; null when unknown. See readReadTrackingSince.
       readTrackingSince,
       // `following: null` is still a value the client must interpret, so its
       // default stays stated at the wire. `collapsed` no longer appears here
@@ -238,7 +238,7 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       // renamed a public field — caught by threadStateReadContract, which is
       // the reason that suite reads through the controller rather than the
       // model.
-      // `lastReadAt` is the caller's read point (D278): ISO, or null when they
+      // `lastReadAt` is the caller's read point: ISO, or null when they
       // have never opened the thread. Null is a value — it renders no unread
       // mark — so it is sent rather than omitted.
       threads: rows.map((r: {
@@ -279,7 +279,7 @@ export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
 }
 
 /**
- * A person's read point in a thread (D278) — the only writer of
+ * A person's read point in a thread — the only writer of
  * `last_read_at`. The client calls it while a thread is open, with the time of
  * the newest reply it rendered.
  *

@@ -1,5 +1,5 @@
 /**
- * The token gate in front of a person's Steel browser (D244 pilot 2).
+ * The token gate in front of a person's Steel browser.
  *
  * Steel's API and its CDP WebSocket proxy take no credentials, and the browser
  * behind them holds the person's signed-in session. The gate runs in the same

@@ -24,7 +24,7 @@ const { isListedPodMember } = require('../utils/isPodMember');
  * not opened that pod about 15 minutes later. Before this, every 'mention'
  * row skipped email (#2559), so a teammate's ask waited for the next digest.
  *
- * Ruling (Cofounder, 11-14): mentions written by people only, since an agent's
+ * Decided 11-14: mentions written by people only, since an agent's
  * real asks already email as decision, approval, blocked or handoff. Never the
  * author (the mention writer already excludes them). One email per recipient
  * per pod per 6h; later mentions stay open and ride the digest. The digest

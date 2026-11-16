@@ -1,8 +1,8 @@
 // F502: someone who installed an agent and never started it heard about it
 // once, from the nudge in the pod. If they never came back to the pod, they
 // never saw it: "+7d goes to the digest" (StalledConnectEpisode.digestedAt)
-// was never built, and the digest never read episodes. Ruling (Cofounder,
-// 11-14): a digest line 24h after the episode opens, a second at +7d, then
+// was never built, and the digest never read episodes. Decided
+// 11-14: a digest line 24h after the episode opens, a second at +7d, then
 // none. No new email type; it rides the digest, and a line is used up only
 // once an email carrying it was accepted.
 const mockSendEmail = jest.fn();

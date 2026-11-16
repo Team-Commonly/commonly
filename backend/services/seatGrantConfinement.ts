@@ -44,7 +44,7 @@ export interface SeatConfinementJudgement {
   refusal: GrantBrokerRefusal | null;
   scope: SeatConfinementScope;
   /**
-   * The seat's machine reported no sandbox Commonly can enforce (D245). Unlike
+   * The seat's machine reported no sandbox Commonly can enforce. Unlike
    * a declaration, no consent lifts this one (F94, ruling A).
    */
   hostUnconfined?: true;
@@ -135,7 +135,7 @@ const ownerIdsFor = async (keys: Set<string>): Promise<Set<string>> => {
  * two meanings ("judged, confinable" vs "never projected").
  */
 /**
- * D245: a seat bound to a machine whose daemon reported native Windows (with or
+ * A seat bound to a machine whose daemon reported native Windows (with or
  * without the user's own `--unsandboxed`) is refused
  * whatever its declaration says. The declaration still reads `trust: public`
  * there by design (the stored record keeps it), so the projection alone would

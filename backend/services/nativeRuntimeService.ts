@@ -121,7 +121,7 @@ const MAX_WALL_CLOCK_MS = 60_000;
 // deployment already pays for, so "no model configured" means "the normal
 // model", never "the dead one".
 const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
-// F91 (D243): the deployment's model for native turns (Claude Haiku on dev).
+// F91: the deployment's model for native turns (Claude Haiku on dev).
 // Set, it replaces the old platform default wherever that was stored (145 Scout
 // installs carry `config.model: deepseek-v4-flash`), and every turn that holds a
 // connector grant runs on it whatever the installation names, so connector data
@@ -129,7 +129,7 @@ const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
 const NATIVE_RUNTIME_MODEL = String(process.env.NATIVE_RUNTIME_MODEL || '').trim();
 const DEFAULT_MODEL = NATIVE_RUNTIME_MODEL || process.env.LITELLM_CHAT_MODEL || LEGACY_DEFAULT_MODEL;
 
-// F98 (D243, Cofounder 11-04): hosted agents are Claude-only. The models a
+// F98 (11-04): hosted agents are Claude-only. The models a
 // deployment offers hosted agents: only its native model for now (Sonnet comes
 // later, under a cap). Unset, it offers no list and nothing is mapped.
 export const hostedModelsOffered = (nativeModel: string): string[] => (nativeModel ? [nativeModel] : []);
@@ -493,7 +493,7 @@ export const TOOLS = [
           content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
           messageType: { type: 'string', enum: ['text', 'card'] },
           payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
-          // D245: the message contract, warn-only. A bad value posts anyway
+          // The message contract, warn-only. A bad value posts anyway
           // and comes back in the result's `warnings`.
           summary: { type: 'string', description: 'One line, at most 120 characters: what this message is.' },
           kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'What kind of message this is.' },
@@ -964,13 +964,13 @@ interface DispatchContext {
    * The thread this turn answers in. Every post the turn makes carries it, so
    * a mention inside a thread gets its answer in that thread (TASK-026), and a
    * top-level @mention in a shared pod gets its answer in that message's own
-   * thread (D278, answerThreadOfTrigger). Undefined otherwise: other top-level
+   * thread (answerThreadOfTrigger). Undefined otherwise: other top-level
    * triggers, and anything in a personal pod, keep the answer at the pod root.
    */
   answeringThreadRootId?: number;
   /**
    * The thread the trigger itself was posted in (TASK-026), independent of the
-   * D278 mention placement. A `progress` or `fyi` post is not the answer, so it
+   * Mention placement. A `progress` or `fyi` post is not the answer, so it
    * stays in the channel for a top-level mention — but when the trigger was
    * made inside a thread, those posts still belong in that thread, which this
    * carries. Undefined for a top-level trigger.
@@ -986,7 +986,7 @@ export const threadRootOfTrigger = (payload: unknown): number | undefined => {
 };
 
 /**
- * The thread a turn's answer goes in (D278): the thread its trigger was posted
+ * The thread a turn's answer goes in: the thread its trigger was posted
  * in, or, for a top-level chat.mention in a shared pod, that message's own
  * thread. The same rule a CAP post gets from agentAnswerService.answerRootOfWake.
  * `podType` unknown (a failed lookup) keeps the old placement: the pod root.
@@ -1006,7 +1006,7 @@ export const answerThreadOfTrigger = (
  * the trigger's own message. That message can sit inside a thread (a welcome
  * wake names a member's first message, which may be a reply), and then the
  * answer goes in that thread. A message that is gone leaves the answer at the
- * pod root, as before D278, instead of failing every post the turn makes.
+ * pod root, as before the thread rule, instead of failing every post the turn makes.
  */
 export const settleAnswerThread = async (
   trigger: { type?: unknown; payload?: unknown },
@@ -1342,7 +1342,7 @@ export async function dispatchTool(
         validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
           ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
           : content);
-        // D278: a `progress` or `fyi` post is not the answer, so it does not
+        // A `progress` or `fyi` post is not the answer, so it does not
         // inherit the top-level mention's thread — it stays in the channel. If
         // the trigger itself was inside a thread, it still belongs there
         // (TASK-026). Answer kinds get the full mention placement.
@@ -2446,7 +2446,7 @@ function formatRecentMessagesBlock(
 }
 
 /**
- * Why a hosted heartbeat doesn't run now, or null to run (D244). Both counts
+ * Why a hosted heartbeat doesn't run now, or null to run. Both counts
  * are spend bounds, so a failed count fails closed, as the per-user ceiling
  * does. A hold is acked with no AgentRun, like any other hosted decline.
  */
@@ -2797,7 +2797,7 @@ export async function runAgent(
 
   // Best-effort pod name lookup for user-message framing. Never block on it.
   let podName = 'this pod';
-  // D278: where a top-level mention's answer goes depends on it. Unknown keeps
+  // Where a top-level mention's answer goes depends on it. Unknown keeps
   // the answer at the pod root, as before.
   let podType: string | null = null;
   try {

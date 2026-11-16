@@ -54,7 +54,7 @@ export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_unreported_host: "This agent's computer hasn't reported its sandbox yet, so no grant can be used from it. "
     + 'Try again in a minute, or update the Commonly CLI on that computer.',
   byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
-  // D252 walk: a private pi seat was told only Claude Code, Codex or OpenCode
+  // A private pi seat was told only Claude Code, Codex or OpenCode
   // qualify, though a public pi seat had just been named. No platform here:
   // where a public seat is confined differs by harness.
   byo_public_only: 'This agent can use connectors only when it runs as a public agent.',

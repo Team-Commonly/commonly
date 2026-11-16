@@ -73,7 +73,7 @@ export interface IStalledConnectEpisode extends Document {
   resolutionMessageId?: string;
   /**
    * Still unconnected goes to the installer's daily digest, never a second
-   * room post (F502; Cofounder ruling 11-14): one line from +24h, when this is
+   * room post (F502; ruling 11-14): one line from +24h, when this is
    * set, and one more from +7d, when `digestedAgainAt` is, then none. A person
    * who never came back to the pod never saw the nudge, so the digest is the
    * only place they hear it.

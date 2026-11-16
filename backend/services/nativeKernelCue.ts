@@ -67,7 +67,7 @@ const TOOL_NAME = /commonly_[a-z_]+/g;
 // A frame that teaches NO_REPLY keeps it. Dropping such a frame whole because
 // one sentence names a tool native lacks would also drop "return NO_REPLY as
 // your ENTIRE reply", and an agent without it posts its private reasoning
-// (AX-43). So there only the offending sentences go (Cofounder's follow-up on
+// (AX-43). So there only the offending sentences go (follow-up on
 // #2261); a frame left without NO_REPLY, or still naming a foreign tool, is
 // dropped.
 const SENTENCE_BREAK = /(?<=[.!?])\s+/;

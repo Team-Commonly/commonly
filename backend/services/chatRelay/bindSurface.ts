@@ -1,4 +1,4 @@
-// Who may bind a pod to an external chat surface (F143, Cofounder 11-04).
+// Who may bind a pod to an external chat surface (F143, 11-04).
 //
 // One rule, in one place, for every chat bridge:
 //   - a SHARED surface (a Slack channel, a Discord guild channel, a Telegram

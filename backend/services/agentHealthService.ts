@@ -1,5 +1,5 @@
 /**
- * Agent health (D115): per-install counts for the agents in the viewer's own
+ * Agent health: per-install counts for the agents in the viewer's own
  * pods. Design: docs/architecture/fleet-health.md; frame:
  * docs/design/artboards/d115/.
  *

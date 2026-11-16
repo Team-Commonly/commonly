@@ -21,7 +21,7 @@ const keyPair = nacl.sign.keyPair();
 const PUBLIC_KEY = Buffer.from(keyPair.publicKey).toString('hex');
 
 // Discord's own signing: Ed25519 over timestamp + raw body. Every accepted
-// request in this file goes through it; there is no unverified path (D137 A9).
+// request in this file goes through it; there is no unverified path.
 const signed = (body, secretKey = keyPair.secretKey) => {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = Buffer.from(nacl.sign.detached(

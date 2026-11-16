@@ -1,4 +1,4 @@
-// Shared Playwright session for the D215 measuring scripts.
+// Shared Playwright session for the artboard measuring scripts.
 // COMMONLY_TOKEN (required): a session token for the account to measure as. Read from env only; never logged.
 // COMMONLY_URL (optional): instance origin, default https://commonly.me.
 // PLAYWRIGHT_CHROMIUM (optional): a chromium executable; default is Playwright's bundled browser.

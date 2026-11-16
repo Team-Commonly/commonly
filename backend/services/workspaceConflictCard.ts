@@ -1,5 +1,5 @@
 /**
- * TASK-597 (D155, ADR-008): a workspace merge that conflicts becomes a decision
+ * TASK-597 (ADR-008): a workspace merge that conflicts becomes a decision
  * request, not a failed turn.
  *
  * A LayerFS `branch.merge` refuses atomically on a conflict: nothing is created

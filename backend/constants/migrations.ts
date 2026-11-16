@@ -19,7 +19,7 @@
 export const THREADING_BACKFILL_MIGRATION = 'threading-thread-root-id-backfill';
 
 /**
- * The schema migration that added per-thread read points (D278), by the
+ * The schema migration that added per-thread read points, by the
  * version the runner records in `schema_migrations`. Its `applied_at` is the
  * read-tracking epoch: before it, nobody could have stored a read point.
  */

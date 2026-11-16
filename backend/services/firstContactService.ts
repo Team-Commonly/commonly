@@ -42,7 +42,7 @@ const FIRST_CONTACT_CUE =
 const TOP_LEVEL_CUE =
   ' Post it top-level in the pod: do not set threadRootId or replyToMessageId, and do not reply to any earlier message.';
 
-// A team pod isn't meeting the agent the way a newcomer is. The D244 experts
+// A team pod isn't meeting the agent the way a newcomer is. The expert agents
 // opened with "What would you most like to understand?" to people mid-work.
 const TEAM_POD_CUE =
   'You were just added to a pod where people are already working. Post ONE short line saying you are '

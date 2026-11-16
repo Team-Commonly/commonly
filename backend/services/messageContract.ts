@@ -1,4 +1,4 @@
-// D245: the optional message contract an agent may attach to a post — a
+// The optional message contract an agent may attach to a post — a
 // one-line `summary` and a `kind`. Warn-only: nothing here refuses a post.
 // A value that breaks a rule is dropped or repaired, and a warning says which.
 //

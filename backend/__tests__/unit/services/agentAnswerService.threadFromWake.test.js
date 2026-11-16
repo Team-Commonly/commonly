@@ -40,7 +40,7 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     });
     await mockPool.query('INSERT INTO pods (id) VALUES ($1) ON CONFLICT (id) DO NOTHING', [String(made._id)]);
     await AgentInstallation.create({
-      ...AGENT, podId: made._id, displayName: 'D141', version: '1.0.0', status: 'active', installedBy: human._id,
+      ...AGENT, podId: made._id, displayName: 'Answerer', version: '1.0.0', status: 'active', installedBy: human._id,
     });
     return made;
   };
@@ -260,10 +260,10 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     });
   });
 
-  // D278 (2026-11-09) reversed F212: in a shared pod, the answer to a top-level
+  // 2026-11-09 reversed F212: in a shared pod, the answer to a top-level
   // mention goes in that message's own thread, so a conversation and every
   // agent who joins it stay in one place.
-  describe('a lone top-level mention: the answer lands in that message\'s thread (D278)', () => {
+  describe('a lone top-level mention: the answer lands in that message\'s thread', () => {
     it('THE REPRO: a plain answer to a top-level mention, as the health walk saw it', async () => {
       const asked = await say('@d141 one line on what you are working on, please.');
       await wake(asked);

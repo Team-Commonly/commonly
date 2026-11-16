@@ -1,6 +1,6 @@
 # v2.css surface map
 
-D223 says a surface's old v2.css rules are deleted in the same PR that lifts the surface onto the artboard. This map says which rules those are. For each surface it lists the selectors that only that surface uses, which go with its lift, and separately the selectors it shares with another surface, which stay until the last of their users lifts.
+The rule is that a surface's old v2.css rules are deleted in the same PR that lifts the surface onto the artboard. This map says which rules those are. For each surface it lists the selectors that only that surface uses, which go with its lift, and separately the selectors it shares with another surface, which stay until the last of their users lifts.
 
 Measured 2026-11-01: v2.css at main `323595193` (14,081 lines, 2,374 rules, 2,754 selectors), live DOM read on prod `9460865ab`.
 

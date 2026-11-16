@@ -42,7 +42,7 @@ export interface LegacyMessageDoc {
   content: string;
   messageType?: string;
   authorKind?: 'kernel' | null;
-  // D245: the optional message contract; copied as stored.
+  // The optional message contract; copied as stored.
   summary?: string | null;
   kind?: string | null;
   receipt?: unknown;

@@ -278,7 +278,7 @@ router.post('/me/timezone', profileWriteIngressLimit, auth, profileWriteUserLimi
 });
 
 // GET/PUT /me/usage-events: the Settings switch for product usage events
-// (D286). Unset follows the region: off in the EU, EEA and UK until the person
+// Unset follows the region: off in the EU, EEA and UK until the person
 // turns it on, on elsewhere. A DNT or GPC signal keeps recording off whatever
 // the switch says, and the reply says so, so the page can tell the person why.
 // Ahead of auth and keyed by the Cloudflare address, the shape CodeQL reads as

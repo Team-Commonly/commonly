@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import publicPages from '../config/publicPages.json';
 
-// First-party usage events (D286, spec draft 2 with CTO's PASS). Every rule is
+// First-party usage events (spec draft 2). Every rule is
 // the server's: a name, screen, page, ref or prop value outside these lists is
 // dropped and never stored, and a 400 never echoes what was sent. No typed
 // text, no token, no route path with an id in it ever reaches a row.
@@ -61,7 +61,7 @@ const PUBLISHED = new Set<string>(publicPages as string[]);
 const APP_PAGES = new Set(['/register', '/login', '/invite/:token']);
 const REF_TAGS = new Set(['x', 'li', 'email', 'reddit', 'hn', 'gh', 'ph', 'docs']);
 
-// Where usage events are opt-in (Cofounder ruling 11-10): the EU, the rest of
+// Where usage events are opt-in (ruling 11-10): the EU, the rest of
 // the EEA, and the UK. Cloudflare's XX (unknown) and T1 (Tor) get the same
 // treatment, as does a request with no country at all: when we can't tell,
 // we ask first.

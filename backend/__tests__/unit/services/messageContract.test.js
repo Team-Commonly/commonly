@@ -5,7 +5,7 @@ const sanitize = (text) => AgentMessageService.sanitizeAgentContent(text);
 const normalize = (input) => normalizeMessageContract(input, sanitize);
 const codes = (result) => result.warnings.map((w) => w.code);
 
-describe('message contract (D245, warn-only)', () => {
+describe('message contract (warn-only)', () => {
   it('stores nothing and warns about nothing when both fields are absent', () => {
     expect(normalize({})).toEqual({ summary: null, kind: null, warnings: [] });
     expect(normalize({ summary: null, kind: null })).toEqual({ summary: null, kind: null, warnings: [] });
