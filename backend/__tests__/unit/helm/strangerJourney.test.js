@@ -59,6 +59,21 @@ describe('stranger journey', () => {
     }
   });
 
+  test('finished Jobs outlive the history window, so only the history limit prunes scheduled runs', () => {
+    // A TTL shorter than the history window races the CronJob's own cleanup and
+    // emits a FailedDelete Warning on every prune (GCP alert, 2026-11-16).
+    const template = read('templates/journey/stranger-journey.yaml');
+    const ttl = Number(template.match(/ttlSecondsAfterFinished: (\d+)/)[1]);
+    const limits = [...template.matchAll(/(?:successful|failed)JobsHistoryLimit: (\d+)/g)].map((m) => Number(m[1]));
+    const schedule = read('values.yaml').match(/\nstrangerJourney:[\s\S]*?\n {2}schedule: "([^"]+)"/)[1];
+    const [minute, hours, ...rest] = schedule.split(' ');
+    expect(rest).toEqual(['*', '*', '*']);
+    expect(minute).toMatch(/^\d+$/);
+    const runsPerDay = hours.split(',').length;
+    const windowSeconds = (Math.max(...limits) / runsPerDay) * 86400;
+    expect(ttl).toBeGreaterThan(windowSeconds);
+  });
+
   test('the sink token reaches the Job only where the sink is on, and only from its Secret', () => {
     const template = read('templates/journey/stranger-journey.yaml');
     const block = template.slice(template.indexOf('{{- if .Values.email.sink.enabled }}'), template.indexOf('volumeMounts'));
