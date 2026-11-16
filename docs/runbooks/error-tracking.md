@@ -222,6 +222,19 @@ contexts, request headers, cookies, body and query string, breadcrumb messages
 (console text and clicked-element selectors), console arguments, and frame
 variables and source context lines.
 
+**A failed lazy chunk.** An `Error` whose culprit or top frame is an
+`HTMLLinkElement` listener in the `index-*` bundle comes from Vite's preload
+helper. A lazy chunk, or the CSS it brings, failed to load. One cause is a tab
+opened before a deploy asking for a file the new image no longer serves (a
+missing `/assets/*` answers 404). The other is a dropped connection. The helper
+fires `vite:preloadError` for a failed CSS preload and for a failed import
+alike, and `frontend/src/utils/preloadRecovery.ts` reloads the page once in
+answer (F541). A second failure in the same tab within a minute doesn't reload
+again, so a file that's really gone can't loop. The error still throws, so it
+still reaches Sentry. A few events right after a roll are tabs recovering. A
+steady count on one release means an asset that really fails, so look at the
+page path and what that page loads lazily.
+
 ## Self-hosted behavior and rollback
 
 With the default `errorTracking.enabled: false` and no
