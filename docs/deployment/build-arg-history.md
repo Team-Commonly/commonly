@@ -57,8 +57,9 @@ The runtime stage is now `node:22-bookworm-slim`, and the build stage
 - The server runs two binaries: `git` (installed explicitly) and `docker` (the
   local provisioner, never present in the cluster image).
 - Every pod that runs this image (backend, its init container, worker,
-  ops-runner, email sink, waker, steel gate) calls only `sh`, `curl`, `node`,
-  `env`, `timeout`, `sleep` and `rm`, all present in slim.
+  ops-runner, email sink, waker, steel gate) calls only `sh`, `curl`, `cp`,
+  `sleep` and `node`, and the deploy workflow's execs add `env`. All are in
+  slim (`bash` and coreutils are essential packages).
 
 Both stages name `bookworm`, so a change of the default distro under `node:22`
 can't move the image unannounced. The tag is not pinned by digest: nothing in
