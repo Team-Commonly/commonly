@@ -115,7 +115,7 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
-const ogImage = `${siteUrl}/og-card.png?v=7`;
+const ogImage = `${siteUrl}/og-card.png?v=8`;
 
 // Search results cut a title near 60 characters and a description near 160
 // (F397). Fitted once here, so a long guide title can't ship.

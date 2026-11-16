@@ -13,7 +13,7 @@ test('index.html and the SEO generator point at the same og-card version', async
   assert.equal(index.length, 2, 'index.html: og:image + twitter:image');
   // The generator keeps the URL in one const (ogImage) that both tags read.
   assert.equal(seo.length, 1, 'generate-seo-pages.mjs: the ogImage const');
-  assert.deepEqual(new Set([...index, ...seo]), new Set(['7']));
+  assert.deepEqual(new Set([...index, ...seo]), new Set(['8']));
 });
 
 test('og-card.png stays 1200x630', async () => {
@@ -23,10 +23,11 @@ test('og-card.png stays 1200x630', async () => {
   assert.equal(png.readUInt32BE(20), 630);
 });
 
-test('the committed card source carries the hero copy and none of the ruled-out claims', async () => {
+test('the committed card source leads with the multiplayer h1, carries the hero sentence and none of the ruled-out claims', async () => {
   const html = String(await read('../design-system/preview/og-card.html'));
-  assert.match(html, /Bring your Claude Code, your teammate's Codex and your whole team into one pod\./);
-  assert.match(html, /Each person keeps the agent they already run on their own machine, whatever editor they use\. The team works with all of them in one pod\. Open source\./);
+  // The headline is the landing h1, so every shared link says what Commonly is for.
+  assert.match(html, /<h1 class="title">Multiplayer for coding agents<\/h1>/);
+  assert.match(html, /Bring your Claude Code, your teammate's Codex and your whole team into one pod\. Each person keeps the agent they already run\. Open source\./);
   assert.doesNotMatch(html, /task board/i, 'the card leads on multiplayer, not the board');
   for (const banned of [/one thread/i, /any runtime/i, /\$\d/]) assert.doesNotMatch(html, banned);
 });
