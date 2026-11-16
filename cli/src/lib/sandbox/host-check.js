@@ -19,7 +19,7 @@
 
 import { normalizeSandboxTrust } from '../environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
-import { detectBwrap as defaultDetectBwrap } from './bwrap.js';
+import { detectBwrap as defaultDetectBwrap, detectBwrapLoopback as defaultDetectBwrapLoopback } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 import { codexTrustedPerimeter } from './codex-perimeter.js';
 import { CLI } from '../cli-hint.js';
@@ -122,6 +122,24 @@ export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted, u
   ].join('\n');
 };
 
+/**
+ * F540: bubblewrap starts here, but this host won't give a public OpenCode's
+ * sandbox the private network it raises inside it. Ubuntu's bubblewrap profile
+ * is what takes that capability away, so it is never offered as the way out.
+ */
+export const opencodeLoopbackMessage = ({ loopbackRefused, reason, apparmorRestricted, error } = {}) => [
+  'A connected OpenCode runs inside a bubblewrap sandbox with a private network of its own, '
+    + (loopbackRefused === true
+      ? `and this machine lets bubblewrap start the sandbox but not set up that network (${reason}).`
+      : `which can't be set up here. ${error || ''}`.trim()),
+  ...(loopbackRefused === true && apparmorRestricted === true
+    ? ['AppArmor on recent Ubuntu releases takes away the network setup that sandbox needs.']
+    : []),
+  'So this agent cannot listen for @mentions here yet. You can:',
+  ...(loopbackRefused === true ? [] : ['  - Fix what is missing above and run the same command again.']),
+  HOSTED_LINE,
+].join('\n');
+
 const CODEX_UNSANDBOXED_RUN_LINE = `  - In invite-only pods, run it without a sandbox: ${CLI} agent run <name> ${UNSANDBOXED_FLAG}`
   + ' (in the foreground; the daemon takes this only on Windows).'
   + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod,'
@@ -202,6 +220,8 @@ export const hostSandboxRefusal = ({
   // chooses Codex's words: it never lets a seat through.
   optedIn = false,
   detectBwrap = defaultDetectBwrap,
+  // F540: only a public OpenCode seat needs it (adapters/opencode.js enableLoopback).
+  detectBwrapLoopback = defaultDetectBwrapLoopback,
   detectSeatbelt = defaultDetectSeatbelt,
   // F387: a cloud-codex pod declares itself here (codex-perimeter.js).
   env = process.env,
@@ -254,10 +274,19 @@ export const hostSandboxRefusal = ({
   }
   if (mode === 'bwrap') {
     const bwrap = detectBwrap();
-    if (bwrap.available) return null;
-    return bwrap.namespaceRefused === true
-      ? bwrapRefusedMessage(adapterName, bwrap)
-      : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
+    if (!bwrap.available) {
+      return bwrap.namespaceRefused === true
+        ? bwrapRefusedMessage(adapterName, bwrap)
+        : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
+    }
+    // A public OpenCode seat also raises a private loopback inside the sandbox.
+    // A host can start the namespace and refuse that, and every turn would then
+    // die at its first step while the pod heard nothing (F540).
+    if (adapterName === 'opencode' && sandbox.trust === 'public') {
+      const loopback = detectBwrapLoopback();
+      if (!loopback.available) return opencodeLoopbackMessage(loopback);
+    }
+    return null;
   }
   const seatbelt = detectSeatbelt();
   return seatbelt.available

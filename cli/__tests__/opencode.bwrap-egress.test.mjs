@@ -4,7 +4,11 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { detectBwrap, wrapArgvWithBwrap } from '../src/lib/sandbox/bwrap.js';
+import { existsSync } from 'fs';
+import {
+  detectBwrap, detectBwrapLoopback, wrapArgvWithBwrap, IP_CANDIDATES,
+} from '../src/lib/sandbox/bwrap.js';
+import { hostSandboxRefusal } from '../src/lib/sandbox/host-check.js';
 import { startProviderProxy } from '../src/lib/provider-proxy.js';
 import { startInstanceProxy } from '../src/lib/instance-proxy.js';
 
@@ -34,6 +38,36 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
     }
     return;
   }
+  // F540: a host can start the namespace and still refuse the private network
+  // (Ubuntu 26.04, run 43770297952). The preflight must agree with the sandbox
+  // on this host, whichever way it goes.
+  const publicOpenCode = { environment: { sandbox: { trust: 'public' } }, adapterName: 'opencode' };
+  const loopback = detectBwrapLoopback();
+  if (!loopback.available) {
+    expect(loopback.loopbackRefused).toBe(true);
+    // The real sandbox fails the same way the probe did...
+    const scratch = await mkdtemp(join(tmpdir(), 'commonly-loopback-'));
+    try {
+      const ip = IP_CANDIDATES.find((candidate) => existsSync(candidate));
+      const [cmd, ...args] = wrapArgvWithBwrap([ip, 'link', 'set', 'lo', 'up'], {
+        sandbox: { network: { policy: 'restricted' } },
+      }, { workspacePath: scratch, enableLoopback: true, optionalReadOnlyPaths: ['/usr/sbin', '/sbin'] });
+      const real = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15_000 });
+      expect(real.status).not.toBe(0);
+      expect(real.stderr).toContain(loopback.reason);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+    // ...and a public OpenCode seat is stopped at start, not at every turn.
+    const message = hostSandboxRefusal(publicOpenCode);
+    expect(message).toMatch(/private network of its own/);
+    expect(message).toContain(loopback.reason);
+    if (process.env.COMMONLY_REQUIRE_BWRAP_SMOKE === '1') {
+      throw new Error(`dedicated bwrap smoke needs a host that allows its private network: ${loopback.error}`);
+    }
+    return;
+  }
+  expect(hostSandboxRefusal(publicOpenCode)).toBeNull();
 
   const root = await mkdtemp(join(tmpdir(), 'commonly-egress-'));
   const privateRoot = await mkdtemp(join(tmpdir(), 'commonly-egress-key-'));

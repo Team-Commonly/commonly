@@ -156,6 +156,73 @@ export const detectBwrap = ({
   }
 };
 
+// OpenCode's private network: inside its own network namespace the loopback
+// bridge (opencode-loopback.mjs) raises `lo` with CAP_NET_ADMIN, then drops
+// both capabilities before the model process starts. wrapArgvWithBwrap and
+// detectBwrapLoopback share these flags so the probe asks for what the
+// sandbox will.
+export const LOOPBACK_ISOLATION_FLAGS = Object.freeze([
+  '--uid', '0', '--gid', '0',
+  '--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP',
+]);
+
+// Where the bridge looks for iproute2's `ip`. The bridge keeps its own copy
+// (only its file is bound into the sandbox); a test holds the two equal.
+export const IP_CANDIDATES = Object.freeze(['/usr/sbin/ip', '/sbin/ip', '/usr/bin/ip', '/bin/ip']);
+
+/**
+ * F540: can this host give OpenCode's sandbox its private network? detectBwrap
+ * proves bubblewrap can start a namespace; a host can do that and still refuse
+ * the capability the loopback needs. Ubuntu 26.04 does ("RTNETLINK answers:
+ * Operation not permitted", GitHub run 43770297952), and so does Ubuntu's
+ * bwrap-userns-restrict AppArmor profile, under which what bubblewrap starts
+ * gets no capabilities. So this starts the same namespace with the same flags
+ * and raises its loopback. Call it only once detectBwrap reports available.
+ */
+export const detectBwrapLoopback = ({
+  spawn = spawnSync,
+  platform = process.platform,
+  exists = existsSync,
+  readRestriction = readApparmorRestriction,
+  readRelease = readUbuntuRelease,
+} = {}) => {
+  if (platform !== 'linux') {
+    return { available: false, error: nonLinuxMessage(platform) };
+  }
+  const ip = IP_CANDIDATES.find((candidate) => exists(candidate));
+  if (!ip) {
+    return {
+      available: false,
+      error: 'It needs the ip command, which is not installed here. Install iproute2: '
+        + '`sudo apt install iproute2` (Debian/Ubuntu, WSL), `sudo dnf install iproute` (Fedora) '
+        + 'or `sudo pacman -S iproute2` (Arch).',
+    };
+  }
+  try {
+    const probe = spawn('bwrap', [
+      '--unshare-all', '--unshare-net', ...LOOPBACK_ISOLATION_FLAGS,
+      '--ro-bind', '/', '/', '--die-with-parent',
+      ip, 'link', 'set', 'lo', 'up',
+    ], { encoding: 'utf8', timeout: 10_000 });
+    if (probe.error || probe.status !== 0) {
+      const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
+      return {
+        available: false,
+        // As with the namespace probe: only a bwrap that ran and exited
+        // refusing says something about this host.
+        loopbackRefused: !probe.error && typeof probe.status === 'number',
+        reason,
+        apparmorRestricted: readRestriction(),
+        ubuntuRelease: readRelease(),
+        error: `bubblewrap starts a sandbox here, but not the private network OpenCode needs inside it (${reason}).`,
+      };
+    }
+    return { available: true };
+  } catch (err) {
+    return { available: false, error: `bwrap loopback detection failed: ${err.message}` };
+  }
+};
+
 /**
  * Build the bwrap-wrapped argv. Caller spawns argv[0] with argv.slice(1).
  *
@@ -193,10 +260,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   const flags = [
     '--unshare-all',
     ...networkFlags,
-    ...(opts.enableLoopback ? [
-      '--uid', '0', '--gid', '0',
-      '--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP',
-    ] : []),
+    ...(opts.enableLoopback ? LOOPBACK_ISOLATION_FLAGS : []),
     '--die-with-parent',
     '--new-session',
     '--proc', '/proc',
