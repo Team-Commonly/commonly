@@ -53,7 +53,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
-import { claudeRunStats } from '../reply-receipt.js';
+import { buildReplyReceipt, claudeRunStats, REPLY_RECEIPT_ENV } from '../reply-receipt.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import {
   createHash, randomBytes, randomUUID, timingSafeEqual,
@@ -111,6 +111,7 @@ import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS, publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 import { startProviderProxy } from '../provider-proxy.js';
@@ -1273,6 +1274,12 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     // read the credential (a path, not a secret). An older warm build refuses.
     const readyPath = spawnCommand ? commonlyMcpReadyFile(server, spawnCommand, ctx, { env: entry.env }) : null;
     if (readyPath) entry.env = { ...(entry.env || {}), [MCP_READY_FILE_ENV]: readyPath };
+    // F546: only our server posts replies, so only it is told what this spawn
+    // runs with.
+    if (ctx.replyReceipt && spawnCommand
+      && (isShippedCommonlyMcpCommand(server.command) || describeMcpCommand(spawnCommand)?.isCommonly)) {
+      entry.env = { ...(entry.env || {}), [REPLY_RECEIPT_ENV]: JSON.stringify(ctx.replyReceipt) };
+    }
     const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
     if (server.headers) {
       const headers = { ...server.headers };
@@ -2024,6 +2031,10 @@ export default {
           publicSeat: publicTrust,
           platform: ctx._platform || process.platform,
           commandResolution: { env: withClaudePath(ctx.env), ...ctx._commandResolution },
+          replyReceipt: buildReplyReceipt({
+            adapterName: 'claude',
+            stats: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          }),
         });
       }
       if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);

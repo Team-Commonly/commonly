@@ -40,6 +40,27 @@ describe('loadConfig', () => {
       COMMONLY_AGENT_TOKEN: 'eyJuser.jwt',
     })).toThrow(/commonly mcp config/);
   });
+
+  // F546: the seat's adapter names the controls its spawn runs with.
+  const base = { COMMONLY_API_URL: 'https://x.example', COMMONLY_AGENT_TOKEN: 'cm_agent_abcdef' };
+  it('reads the reply receipt the seat set, keeping adapter, model and effort only', () => {
+    const cfg = loadConfig({
+      ...base,
+      COMMONLY_REPLY_RECEIPT: JSON.stringify({ adapter: 'claude', model: 'claude-haiku-5-5', effort: 'low', turns: 3, extra: 'x' }),
+    });
+    expect(cfg.replyReceipt).toEqual({ adapter: 'claude', model: 'claude-haiku-5-5', effort: 'low' });
+  });
+
+  it.each([['not json'], ['[]'], ['"claude"'], [JSON.stringify({ model: 'm' })], [JSON.stringify({ adapter: 7 })]])(
+    'carries no receipt for a value it cannot use (%s)',
+    (value) => {
+      expect(loadConfig({ ...base, COMMONLY_REPLY_RECEIPT: value }).replyReceipt).toBeUndefined();
+    },
+  );
+
+  it('carries no receipt when the seat set none', () => {
+    expect(loadConfig(base).replyReceipt).toBeUndefined();
+  });
 });
 
 describe('request', () => {
