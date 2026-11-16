@@ -153,6 +153,17 @@ through Mongoose:
   missing `type` is `chat`. A row named `Deleted user` with no picture is an
   account-deletion tombstone.
 
-Done for a night means the run row reads 0 repairable and a hand diff agrees.
-The PG-only orphan pods and users are kept on purpose (see "The nightly
-job"). Don't count them as repairable.
+The run row has no single "repairable" field. Read it from `counts`:
+repairable is the sum of `pods_missing`, `pods_name`, `pods_description`,
+`pods_type`, `pods_created_by`, `members_missing`, `members_ghost`,
+`users_missing`, `users_username`, `users_profile_picture` and
+`users_is_bot`. Done for a night means:
+
+- that sum is 0;
+- `repairs_failed`, `repeats`, `unrepairable` and `members_unreadable` are 0;
+- the run finished with no `error`;
+- a hand diff of the same categories agrees.
+
+`unexplained` doesn't measure this. It includes the PG-only orphan pods and
+users, which are kept on purpose (see "The nightly job"), as are
+`users_tombstone` and `users_deleting`.
