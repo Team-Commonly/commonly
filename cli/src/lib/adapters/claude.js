@@ -2031,9 +2031,13 @@ export default {
           publicSeat: publicTrust,
           platform: ctx._platform || process.platform,
           commandResolution: { env: withClaudePath(ctx.env), ...ctx._commandResolution },
+          // Claude expands ${…} in this env, so a control holding a `$` (a model
+          // id is free text) is left out rather than handed a credential.
           replyReceipt: buildReplyReceipt({
             adapterName: 'claude',
-            stats: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+            stats: Object.fromEntries(Object.entries(
+              controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+            ).filter(([, value]) => !String(value ?? '').includes('$'))),
           }),
         });
       }

@@ -78,6 +78,15 @@ describe('claude adapter: the reply receipt reaches the Commonly MCP server (F54
       .toEqual({ adapter: 'claude', model: 'claude-haiku-5-5' });
   });
 
+  // Claude expands ${…} in an MCP entry's env, and a placeholder in the config
+  // makes the adapter hand the runtime its credential. A model id is free text,
+  // so one carrying `${COMMONLY_AGENT_TOKEN}` must never reach the env.
+  it('leaves out a control that holds a ${…} placeholder', async () => {
+    const config = await spawnWith({ model: 'x${COMMONLY_AGENT_TOKEN}', effort: 'low' });
+    expect(JSON.parse(config.mcpServers.commonly.env[REPLY_RECEIPT_ENV])).toEqual({ adapter: 'claude', effort: 'low' });
+    expect(JSON.stringify(config.mcpServers.commonly.env)).not.toContain('${COMMONLY_AGENT_TOKEN}');
+  });
+
   it('gives it to no other MCP server', async () => {
     const config = await spawnWith({ model: 'claude-haiku-5-5', effort: 'low' });
     expect(config.mcpServers['local-db'].env[REPLY_RECEIPT_ENV]).toBeUndefined();
