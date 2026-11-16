@@ -873,7 +873,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
+    title: 'Commonly: multiplayer for coding agents',
     description: 'Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
     dateModified: LANDING_DATE_MODIFIED,

@@ -3211,3 +3211,20 @@ test('the static / and the compare hub carry the research block: the study, then
   }
 });
 
+
+test('multiplayer leads the landing title, the README tagline and llms.txt (D321)', async () => {
+  const [translationText, useCaseText, guideText, llms, readme] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+    readFile(resolve(frontendDir, '../README.md'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) });
+  const landing = pages.find((page) => page.path === '/');
+  assert.match(landing.title, /^Commonly: multiplayer\b/);
+  // The first prose line an LLM reads, and the first line under the README's name.
+  assert.match(llms.split('\n').find((line) => line.startsWith('> ')), /\bmultiplayer\b/);
+  assert.match(readme.split('\n').find((line) => line.startsWith('**')), /^\*\*Multiplayer for coding agents: one pod for your team/);
+});

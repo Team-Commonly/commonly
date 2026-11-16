@@ -157,6 +157,19 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     expect(landingStrings(zhLanding).filter((value) => /agent/i.test(wording(value)))).toEqual([]);
   });
 
+  it('leads with multiplayer just above the h1 that says what it means (D321)', () => {
+    expect(String(readLocale('en.json').landing.hero.eyebrow)).toMatch(/^Multiplayer for coding agents/);
+    expect(String(readLocale('zh-CN.json').landing.hero.eyebrow)).toMatch(/多人协作/);
+    const view = renderLanding();
+    const eyebrow = view.container.querySelector('.v2-landing__eyebrow');
+    expect(eyebrow).toHaveTextContent(/^Multiplayer for coding agents/);
+    // The concrete line (your Claude Code, your teammate's Codex, your team, one pod) is the next heading after it.
+    const h1 = view.container.querySelector('h1');
+    expect(h1).not.toBeNull();
+    expect(eyebrow!.compareDocumentPosition(h1!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(h1).toHaveAttribute('aria-label', expect.stringMatching(/your Claude Code, your teammate's Codex/));
+  });
+
   it('does not put OpenClaw anywhere in the rendered hero', () => {
     renderLanding();
 
