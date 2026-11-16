@@ -237,7 +237,11 @@ and chunks from pods on different builds, can't bounce it between them. With no
 sessionStorage, the tab doesn't reload at all. The error still throws, so it
 still reaches Sentry. The boundary reporter writes its session record only
 after the report is captured, so a reload that cuts off the Sentry chunk
-doesn't hide the error on the next load. A few events right after a roll are
+doesn't hide the error on the next load. Capturing isn't delivering, though.
+The SDK sends the event a moment later, with `keepalive` while the payload is
+small, so a request that has started outlives the reload. A reload in the gap
+before it starts loses the event, and the record then hides it on the next
+load. A few events right after a roll are
 tabs recovering. A steady count on one release means an asset that really
 fails, so look at the page path and what that page loads lazily.
 
