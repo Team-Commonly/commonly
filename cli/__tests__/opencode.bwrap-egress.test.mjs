@@ -32,8 +32,12 @@ const close = (server) => new Promise((resolve) => server.close(resolve));
 test('public bwrap reaches its provider proxy but refuses other host and internet ports', async () => {
   const available = process.platform === 'linux' && detectBwrap().available
     && spawnSync('ip', ['-V']).status === 0;
+  // The sandbox-ubuntu-2604 CI job sets this, so it can't pass without
+  // exercising the refusal: a host missing a prerequisite fails, and so does
+  // one that starts allowing the private network.
+  const expectRefused = process.env.COMMONLY_BWRAP_SMOKE_EXPECT === 'refused';
   if (!available) {
-    if (process.env.COMMONLY_REQUIRE_BWRAP_SMOKE === '1') {
+    if (process.env.COMMONLY_REQUIRE_BWRAP_SMOKE === '1' || expectRefused) {
       throw new Error('dedicated bwrap smoke requires a working Linux namespace and iproute2');
     }
     return;
@@ -67,6 +71,11 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
       throw new Error(`dedicated bwrap smoke needs a host that allows its private network: ${loopback.error}`);
     }
     return;
+  }
+  if (expectRefused) {
+    throw new Error('This host now gives the sandbox its private network, so the refusal is not exercised here. '
+      + 'On the 26.04 runner that means 26.04 allows it: drop the 24.04 pin on tool-tests and retire '
+      + 'sandbox-ubuntu-2604 (F540).');
   }
   expect(hostSandboxRefusal(publicOpenCode)).toBeNull();
 

@@ -455,6 +455,10 @@ jobs:
           cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'no userns restriction sysctl'
           cd cli && node --input-type=module -e "import { detectBwrap, detectBwrapLoopback } from './src/lib/sandbox/bwrap.js'; const n = detectBwrap(); console.log('namespace', JSON.stringify(n)); if (n.available) console.log('loopback', JSON.stringify(detectBwrapLoopback()));"
       - name: Sandbox tests
+        # The egress smoke must reach the refusal here: it fails if this host
+        # is missing bwrap's namespace or ip, or starts allowing the network.
+        env:
+          COMMONLY_BWRAP_SMOKE_EXPECT: refused
         run: cd cli && npm test -- __tests__/bwrap.test.mjs __tests__/bwrap-loopback.test.mjs __tests__/opencode.bwrap-egress.test.mjs __tests__/host-sandbox-preflight.test.mjs
 
   test-gate:
