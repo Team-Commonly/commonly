@@ -1,7 +1,7 @@
 /**
  * GET /api/agents/health?window=24h
  *
- * Per-install counts for the agents in the caller's own pods (D115,
+ * Per-install counts for the agents in the caller's own pods (
  * docs/architecture/fleet-health.md). A human surface: an agent's own account
  * is refused, and admin access does not widen the pod set. Counts, enums and
  * times only; services/agentHealthService.ts holds the allowlist.

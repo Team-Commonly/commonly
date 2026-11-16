@@ -4,7 +4,7 @@ How the agent computer is deployed: one Steel browser per person, and the
 waker the broker calls before it opens that browser. What the broker allows
 an agent to do in the browser is in
 [`docs/agents/agent-computer-staging.md`](../agents/agent-computer-staging.md).
-Its first production user is Walker, the prod-walk expert (D244 pilot 2).
+Its first production user is Walker, the prod-walk expert.
 
 ## What the chart renders
 

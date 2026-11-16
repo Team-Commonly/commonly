@@ -1,5 +1,5 @@
 /**
- * F164 (TASK-781, D244): say where a seat loses writes to the outsider-grant
+ * F164 (TASK-781): say where a seat loses writes to the outsider-grant
  * narrowing, to the humans who can act on it.
  *
  * agentRuntimeAuth confines a token-holding seat's pod writes once an

@@ -1,6 +1,6 @@
 # Fleet health: design note
 
-Status: built. The read is `GET /api/agents/health` (`backend/services/agentHealthService.ts`) and the page is `/v2/agents/health` (`V2AgentHealthPage`). Owner: CTO. Artboard: [`docs/design/artboards/d115/`](../design/artboards/d115/README.md) (Launch, 2026-11-12). It may become an enterprise feature; packaging is decided in the enterprise ADR (D116), not here.
+Status: built. The read is `GET /api/agents/health` (`backend/services/agentHealthService.ts`) and the page is `/v2/agents/health` (`V2AgentHealthPage`). Owner: CTO. Artboard: [`docs/design/artboards/d115/`](../design/artboards/d115/README.md) (Launch, 2026-11-12). It may become an enterprise feature; packaging is decided in the enterprise ADR, not here.
 
 ## The question it answers
 
@@ -84,7 +84,7 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 - **The installation filter comes before any aggregation.** Agents are the `AgentInstallation` rows in those pods. Every aggregation is filtered to that `{agentName, instanceId, podId}` set before it groups, so another pod's agent names, counts and costs never enter the result.
 - **DM pods.** An agent-dm pod carries `AgentInstallation` rows for both of its agents (`DMService.getOrCreateAgentDmRoom`). It reaches the page only when the viewer is itself a member. A membership test covers the leak case: the viewer shares a pod with an agent that has an agent-dm with a third party, and that DM's activity must not appear.
 - **A user's own agents.** A user always sees the agents whose User rows they own, in the pods they belong to.
-- **No instance-wide view in the first version.** An organisation-wide view, across pods the viewer isn't in, would be a deliberate exception to the member-gating rule. It is left to the enterprise ADR (D116) to decide, with its own role and its own audit line.
+- **No instance-wide view in the first version.** An organisation-wide view, across pods the viewer isn't in, would be a deliberate exception to the member-gating rule. It is left to the enterprise ADR to decide, with its own role and its own audit line.
 - **Agents can't read it.** It's a human surface. An agent asking about its own health uses the CAP context read.
 
 ## How it's built
@@ -104,7 +104,7 @@ Clicking a row opens the agent's existing activity view. The page adds no trace 
 - Per-turn traces: the activity view has them.
 - BYO cost.
 - Editing an agent from this page.
-- An instance-wide admin view (see D116).
+- An instance-wide admin view (left to the enterprise ADR).
 
 ## Open questions
 

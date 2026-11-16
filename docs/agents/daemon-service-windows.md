@@ -1,7 +1,7 @@
 # The daemon on native Windows
 
 Read of `cli/src/lib/daemon-service-windows.js`, `cli/src/lib/sandbox/windows-unsandboxed.js`
-and the CI proof `.github/workflows/daemon-windows.yml` (D245, 2026-11-04). The macOS and Linux
+and the CI proof `.github/workflows/daemon-windows.yml` (2026-11-04). The macOS and Linux
 service is described in [daemon-service-environment.md](daemon-service-environment.md); the
 provider-key rules there apply here too.
 
@@ -112,7 +112,7 @@ No answer, or an answer that names no npm, leaves the npm bundled with Node, jus
 **Every child the CLI spawns by name goes through that resolver, `npm` included.** The MCP warm
 (`cli/src/lib/mcp-warm-child.mjs`) once spawned bare `npm`, which is `npm.cmd` on Windows. The warm
 failed in milliseconds, no build was ever prepared, and every public turn was refused with
-`public_mcp_unavailable`, so the page's Windows lines never answered an @mention (D164). Every unit
+`public_mcp_unavailable`, so the page's Windows lines never answered an @mention. Every unit
 tier passed, because they mock the spawn. Only the windows-latest walk below caught it. A new
 `spawn('<name>', …)` needs `resolveLaunch` (or a Windows test that runs it). `commonly dev`'s
 `npm test` is still bare, and it isn't on a seat path. A spawn with its own `cwd` passes that `cwd`
@@ -127,7 +127,7 @@ token in its env.
   through the watchdog; killing only the launcher takes its daemon with it; every install and restart
   leaves exactly one daemon; the opt-in reaches the check-in and a plain install removes it; stop stays
   stopped through a watchdog interval; uninstall leaves nothing behind.
-- **CI (`byo-windows.yml`, windows-latest, D164):** the Bring your own page's four PowerShell lines
+- **CI (`byo-windows.yml`, windows-latest):** the Bring your own page's four PowerShell lines
   for Claude Code, lifted from `V2AgentBYO.tsx`, run in one PowerShell window against a stub Commonly
   API with one @mention queued. Real Claude Code takes the turn and the reply comes back with the
   @mention acknowledged, from a fresh profile, so the MCP warm and the public-seat gate run too.
@@ -140,7 +140,7 @@ token in its env.
   leg replaces the page's install line, so only the published leg proves it
   (`cli/scripts/windows-byo-verdict.mjs`). Dispatched on main once #3437 merged, both legs passed,
   the published one on `@commonlyai/cli` 0.1.243 (2026-11-04, run 41921620690).
-- **Prod walk (`byo-windows.yml`, `target=prod`, D164):** the same four lines against commonly.me,
+- **Prod walk (`byo-windows.yml`, `target=prod`):** the same four lines against commonly.me,
   as a real agent in an invite-only pod, with Claude Code on `claude-haiku-5-5` through the model
   gateway. The run waits at `READY: listening in <podId>` for a person to post the @mention, then
   passes on the agent's reply plus the CLI's ack of that mention's event, read from a fetch observer

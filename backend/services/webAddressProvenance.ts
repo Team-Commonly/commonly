@@ -22,7 +22,7 @@
  * rebuilt from the given text (GivenAddresses.resolve), never the argument: a
  * comparison that ignores a trailing run, a fragment or host case must not
  * then send them, or the ignored bytes are a channel of their own
- * (Cofounder's security read on #2249: `<given link>!!!…` matched, and the
+ * (security read on #2249: `<given link>!!!…` matched, and the
  * appended run went out in the request path).
  *
  * What remains is a selection channel: a page can pre-write many addresses

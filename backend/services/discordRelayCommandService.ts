@@ -1,4 +1,4 @@
-// Discord bridge commands (D249, F133): /mode /status /mute /unmute /tldr
+// Discord bridge commands (F133): /mode /status /mute /unmute /tldr
 // /summary /help, the same commands a Telegram chat has, as Discord
 // application commands.
 //

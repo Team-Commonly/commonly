@@ -31,7 +31,7 @@ render references **47** keys across four ExternalSecrets — **43 staging-prefi
   - The 3 shared (`commonly-*`, deliberately not staging-prefixed): the Git
     author name + email (harmless), and the shared DeepSeek API key (a spend risk, not access — a
     post-11/1 row swaps it for a capped staging key). The Cloudflare Workers-AI
-    token + account id were dropped from the ring on 11-03 with the route (D81).
+    token + account id were dropped from the ring on 11-03 with the route.
   - **Deliberately NOT shared — the prod GitHub PAT.** `commonly-github-pat` has
     write power over prod repos, and staging auto-deploys every merge (the reckless
     lane), so it was never projected here (the same principle that keeps

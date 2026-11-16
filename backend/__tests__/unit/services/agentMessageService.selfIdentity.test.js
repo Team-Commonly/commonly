@@ -71,7 +71,7 @@ describe('getRecentMessages — PG path', () => {
     expect(out.readSource).toBe('postgres');
   });
 
-  test('returns the D245 summary and kind on the PG agent read, and omits them when absent', async () => {
+  test('returns the summary and kind on the PG agent read, and omits them when absent', async () => {
     PGMessage.findByPodId.mockResolvedValue([
       {
         id: 1,
@@ -225,7 +225,7 @@ describe('getRecentMessages — Mongo fallback path', () => {
     expect(out.readSource).toBe('mongo');
   });
 
-  test('returns the D245 summary and kind on the Mongo path, and omits them when absent', async () => {
+  test('returns the summary and kind on the Mongo path, and omits them when absent', async () => {
     mockMongoChain([
       { _id: 'm2', content: 'plain', userId: { _id: OTHER, username: 'other-bot', isBot: true } },
       {

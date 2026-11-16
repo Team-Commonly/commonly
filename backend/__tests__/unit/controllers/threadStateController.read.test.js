@@ -1,4 +1,4 @@
-// PUT /api/messages/:messageId/read (D278): a person's read point in a thread.
+// PUT /api/messages/:messageId/read: a person's read point in a thread.
 // Same harness as threadStateController.podAccess.test.js — pg-mem holds the
 // message and thread-state rows (built from the shipped DDL, so the 0011
 // column is the one that ships), memory Mongo holds the pods, and

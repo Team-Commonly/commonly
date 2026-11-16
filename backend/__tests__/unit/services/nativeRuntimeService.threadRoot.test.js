@@ -4,7 +4,7 @@
  */
 jest.mock('axios', () => ({ __esModule: true, default: { post: jest.fn() } }));
 // The pod the seat runs in. Its type decides where a top-level mention's
-// answer goes (D278); a test sets it, and afterEach puts the default back.
+// answer goes; a test sets it, and afterEach puts the default back.
 const mockPod = { doc: { name: 'My Workspace' } };
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(() => ({ lean: jest.fn().mockImplementation(async () => mockPod.doc) })),
@@ -61,10 +61,10 @@ describe('threadRootOfTrigger (TASK-026)', () => {
   });
 });
 
-// D278 (2026-11-09): in a shared pod the answer to a top-level mention goes in
+// 2026-11-09: In a shared pod the answer to a top-level mention goes in
 // that message's own thread. Personal pods, and a pod whose type is unknown,
 // keep the old placement at the pod root.
-describe('answerThreadOfTrigger (D278)', () => {
+describe('answerThreadOfTrigger', () => {
   const mention = (payload) => ({ type: 'chat.mention', payload });
 
   test('a top-level mention in a shared pod: its own message', () => {
@@ -162,7 +162,7 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
     expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
   });
 
-  describe('a top-level mention (D278)', () => {
+  describe('a top-level mention', () => {
     afterEach(() => { mockPod.doc = { name: 'My Workspace' }; });
 
     test('in a shared pod the tool post goes in that message\'s thread', async () => {
@@ -204,7 +204,7 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
       expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(7);
     });
 
-    test('a trigger message that is gone: the answer posts plain, as before D278', async () => {
+    test('a trigger message that is gone: the answer posts plain, as before the thread rule', async () => {
       mockPod.doc = { name: 'Team', type: 'team' };
       resolveThreadRoot.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'reply_target_unavailable' }));
       axios.post

@@ -42,7 +42,7 @@ export interface ThreadUserStateRow {
   pod_id: string;
   following: boolean | null;
   collapsed: boolean;
-  // D278 read point (0011). NULL until the person first opens the thread.
+  // Read point (0011). NULL until the person first opens the thread.
   last_read_at?: string | Date | null;
   followed_at: string;
   updated_at: string;
@@ -158,7 +158,7 @@ class ThreadUserState {
   }
 
   /**
-   * Move this user's read point in a thread forward to `at` (D278).
+   * Move this user's read point in a thread forward to `at`.
    *
    * Forward only: a write older than the stored point changes nothing, so two
    * tabs, a slow request or a replayed PUT can never make read replies unread

@@ -1,6 +1,6 @@
 /**
  * A Bring your own agent its owner started without a sandbox (`--unsandboxed`,
- * D245: Codex on native Windows, or on Linux where bubblewrap can't start)
+ * Codex on native Windows, or on Linux where bubblewrap can't start)
  * answers only while every pod it is in is invite-only and neither publicly
  * readable nor listed (cli/src/lib/workspace-trust.js podIsConfirmedPrivate).
  * Once a pod stops qualifying, the CLI refuses each turn and the events wait,

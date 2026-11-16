@@ -156,7 +156,7 @@ it('machine inventory rejects unsupported model/effort/harness choices and permi
   expect(await check({ environment: { effort: 'high' } })).toContain('effort');
   expect(await check({ environment: { effort: '' } })).toBeNull();
 });
-// D247: a computer that reported no effort levels for a harness, or no
+// A computer that reported no effort levels for a harness, or no
 // inventory yet, no longer greys effort out. The catalogue's ladder decides.
 it('an empty or missing device effort list falls back to the harness catalogue', async () => {
   const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');

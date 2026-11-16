@@ -109,7 +109,7 @@ by default, so a self-hosted install gets the `deepseek-v4-flash` and
 that target it, and `LITELLM_CHAT_MODEL=deepseek-v4-flash` on the backend. Off,
 none of that renders and `LITELLM_CHAT_MODEL` follows `litellm.agentDefaultModel`,
 which must then name another route. Dev turns it off: hosted agents run Claude
-only (D243), and DeepSeek had no calls in the window before deletion (see
+only, and DeepSeek had no calls in the window before deletion (see
 `docs/runbooks/anthropic-native-route.md`). Tests:
 `backend/__tests__/unit/helm/devNoDeepseek.test.js`, and
 `scripts/verify-agent-default-model.js --no-deepseek` on the dev render in CI.

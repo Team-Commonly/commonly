@@ -77,7 +77,7 @@ const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
 const MAX_NEEDS_YOU = 3;
 const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
-// F502 (Cofounder ruling 11-14): an agent never started gets a digest line
+// F502 (ruling 11-14): an agent never started gets a digest line
 // from 24h after its in-pod nudge, one more from +7d, then none.
 const STALL_FIRST_MS = 24 * 60 * 60 * 1000;
 const STALL_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;

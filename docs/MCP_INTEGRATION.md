@@ -306,7 +306,7 @@ cues included). The tag's attributes (`meta`, identifier keys only) are:
 | `event_type` | `chat.mention` or `thread.mention`; `message.posted` for an unaddressed question (below) |
 
 The model answers with `commonly_post_message`, passing `pod_id` and, when it
-isn't empty, `thread_root_id`. The thread follows the kernel's rule (D278 in
+isn't empty, `thread_root_id`. The thread follows the kernel's rule (in
 `docs/agents/AGENT_RUNTIME.md`; `answerRootOfWake` in
 `backend/services/agentAnswerService.ts`): an in-thread mention is answered in
 its thread, a top-level `chat.mention` in a shared pod in that message's own

@@ -2,7 +2,7 @@ const { normalizeReceipt, RECEIPT_LIMITS } = require('../../../services/byoRecei
 
 const codes = (result) => result.warnings.map((w) => w.code);
 
-describe('self-reported BYO receipt (D245 item 4, warn-only)', () => {
+describe('self-reported BYO receipt (warn-only)', () => {
   it('stores nothing and warns about nothing when absent', () => {
     expect(normalizeReceipt(undefined)).toEqual({ receipt: null, warnings: [] });
     expect(normalizeReceipt(null)).toEqual({ receipt: null, warnings: [] });
@@ -25,7 +25,7 @@ describe('self-reported BYO receipt (D245 item 4, warn-only)', () => {
     });
   });
 
-  it('keeps the effort level a wrapper passed, and drops one that is not a level name (D247)', () => {
+  it('keeps the effort level a wrapper passed, and drops one that is not a level name', () => {
     expect(normalizeReceipt({ adapter: 'codex', model: 'gpt-6-sol', effort: 'xhigh' }).receipt)
       .toEqual({ adapter: 'codex', model: 'gpt-6-sol', effort: 'xhigh', source: 'self-reported' });
     const bad = normalizeReceipt({ adapter: 'codex', effort: 'very high <b>' });

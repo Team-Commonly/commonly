@@ -388,7 +388,7 @@ export function markSurface(userId: unknown, mark: SurfaceMark): void {
 
 /**
  * verifiedAt is the first time a person's email link turned `verified` from
- * false to true, so the email-verify leg can be timed from register (D141). It
+ * false to true, so the email-verify leg can be timed from register. It
  * records nothing for an account that never took that step: Google and GitHub
  * sign-ups, an instance with no mail configured, a password reset, and anyone
  * verified before this mark shipped. Measuring starts at deploy.

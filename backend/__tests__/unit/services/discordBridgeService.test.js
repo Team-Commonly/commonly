@@ -1,4 +1,4 @@
-// F131 (D249): a bound Discord channel's lines relay live into its pod, through
+// F131: a bound Discord channel's lines relay live into its pod, through
 // the shared chat-relay core, only when their author is the Discord account the
 // install proved. Everyone else's lines keep the buffer-for-summary path.
 //

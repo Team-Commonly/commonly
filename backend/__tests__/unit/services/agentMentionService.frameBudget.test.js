@@ -59,13 +59,13 @@ const AgentEvent = require('../../../models/AgentEvent');
 // the extra ~1,058 characters is in the PR body.
 // The decision-card cue keeps @handle addressing and a fallback for runtimes
 // that do not expose the MCP card tool in the same message.
-// Raised from 4200 by D278 (2026-11-09): the reference wake was 4,193, and
+// Raised from 4200 on 2026-11-09: the reference wake was 4,193, and
 // saying that an answer to a mention goes in its thread, and that overflow
 // continues in that thread, costs 62 more (4,255). A wake for a numeric
 // top-level mention in a shared pod also carries formatMentionThreadCue; the
 // reference wake's message id is not numeric, so it is not counted here.
 const BUDGET_MAX = 4300;
-// The D278 thread line on a numeric top-level mention, measured separately.
+// The thread line on a numeric top-level mention, measured separately.
 const THREAD_CUE_MAX = 400;
 const BUDGET_MIN = 3550;
 
@@ -112,7 +112,7 @@ describe('wake frame size budget', () => {
     expect(content.length).toBeLessThanOrEqual(BUDGET_MAX);
   });
 
-  // D278: a real top-level mention has a numeric id, and its wake carries one
+  // A real top-level mention has a numeric id, and its wake carries one
   // more line naming the thread to answer in. The reference id is not numeric,
   // so the line is measured here, against its own ceiling.
   test('a numeric top-level mention adds only the thread line', async () => {

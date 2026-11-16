@@ -151,7 +151,7 @@ describe('native cue from kernel-built mention content', () => {
     expect(wake).not.toMatch(/commonly_claim_message|must be claimed first/);
   });
 
-  // Cofounder's follow-up on #2261: dropping a frame whole also dropped its
+  // Follow-up on #2261: dropping a frame whole also dropped its
   // NO_REPLY guidance. A frame that teaches NO_REPLY loses only the sentences
   // naming a tool native lacks.
   test('a reworded wake frame whose cut misses keeps NO_REPLY and loses only the claim sentence', async () => {

@@ -43,7 +43,7 @@ from Windows" (`byo-listen-windows-codex-ways`):
 
 "Private" is the pod's join settings, not the number of people in it: a
 teammate's invite-only pod qualifies. Owner approval or owner-only answering
-for a shared pod was declined (Cofounder, 11-14): an approved turn still reads
+for a shared pod was declined (11-14): an approved turn still reads
 the pod, so text in its context can steer a full shell. Codex's own Windows
 sandbox service (`windows_sandbox_service`, under development in codex-cli
 0.169) is the path to a public pod on native Windows; it isn't driven yet.

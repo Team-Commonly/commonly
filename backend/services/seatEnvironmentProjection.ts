@@ -154,7 +154,7 @@ export const seatEnvironmentKey = (agentName: unknown, instanceId: unknown): str
  * Whether an installation's config DECLARES a seat: a runtime, or an
  * environment the allow-list doesn't reduce to nothing. The oldest active
  * installation that declares one is the identity's source (below); the
- * listener's GET /installations names the same row (D247).
+ * listener's GET /installations names the same row.
  */
 export const declaresSeat = (rawConfig: unknown): boolean => {
   const config = rawConfig instanceof Map

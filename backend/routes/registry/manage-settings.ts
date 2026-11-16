@@ -57,7 +57,7 @@ const invalidWakeField = (body: Record<string, unknown>) => {
   return null;
 };
 
-// D244: a hosted install's heartbeat runs only on the native engine
+// A hosted install's heartbeat runs only on the native engine
 // (hostedRunsNative, the predicate nativeRuntimeService gates
 // hostedHeartbeatHold on), at most hourly, and within the owner's daily cap.
 // A hosted install the engine doesn't run (the Durable Object, a deprovisioned
@@ -110,7 +110,7 @@ const settings = (installation: any, podName: string, podType?: string, canChang
   };
 };
 
-// D247: the harnesses, models and effort levels an agent can be set to. The
+// The harnesses, models and effort levels an agent can be set to. The
 // add-agent page reads it before any agent exists; Settings gets the same list
 // on manage-settings.
 router.get('/harness-catalog', settingsRateLimit, auth, (_req: any, res: any) => (
@@ -200,7 +200,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       .select('tokenHash status lastUsedAt expiresAt').lean() : [];
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
-    // D247: hosted and native turns read their own run config, so only they
+    // Hosted and native turns read their own run config, so only they
     // stay read-only here. Every other agent the person owns is editable on
     // add and after: a daemon seat reads the projection, and a listener
     // (`agent run` with no machine binding) reads its installation's controls
