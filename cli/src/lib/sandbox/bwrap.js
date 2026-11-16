@@ -193,6 +193,7 @@ export const detectBwrapLoopback = ({
   if (!ip) {
     return {
       available: false,
+      missingIp: true,
       error: 'It needs the ip command, which is not installed here. Install iproute2: '
         + '`sudo apt install iproute2` (Debian/Ubuntu, WSL), `sudo dnf install iproute` (Fedora) '
         + 'or `sudo pacman -S iproute2` (Arch).',

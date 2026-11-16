@@ -88,6 +88,7 @@ describe('detectBwrapLoopback', () => {
     const res = detectBwrapLoopback({ spawn, platform: 'linux', exists: () => false });
     expect(res.available).toBe(false);
     expect(res.loopbackRefused).toBeUndefined();
+    expect(res.missingIp).toBe(true);
     expect(res.error).toMatch(/iproute2/);
     expect(calls).toHaveLength(0);
   });

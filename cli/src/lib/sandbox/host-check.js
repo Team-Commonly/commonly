@@ -127,7 +127,9 @@ export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted, u
  * sandbox the private network it raises inside it. Ubuntu's bubblewrap profile
  * is what takes that capability away, so it is never offered as the way out.
  */
-export const opencodeLoopbackMessage = ({ loopbackRefused, reason, apparmorRestricted, error } = {}) => [
+export const opencodeLoopbackMessage = ({
+  loopbackRefused, missingIp, reason, apparmorRestricted, error,
+} = {}) => [
   'A connected OpenCode runs inside a bubblewrap sandbox with a private network of its own, '
     + (loopbackRefused === true
       ? `and this machine lets bubblewrap start the sandbox but not set up that network (${reason}).`
@@ -136,7 +138,7 @@ export const opencodeLoopbackMessage = ({ loopbackRefused, reason, apparmorRestr
     ? ['AppArmor on recent Ubuntu releases takes away the network setup that sandbox needs.']
     : []),
   'So this agent cannot listen for @mentions here yet. You can:',
-  ...(loopbackRefused === true ? [] : ['  - Fix what is missing above and run the same command again.']),
+  ...(missingIp === true ? ['  - Install iproute2 as above and run the same command again.'] : []),
   HOSTED_LINE,
 ].join('\n');
 

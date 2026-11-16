@@ -44,7 +44,8 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
   const publicOpenCode = { environment: { sandbox: { trust: 'public' } }, adapterName: 'opencode' };
   const loopback = detectBwrapLoopback();
   if (!loopback.available) {
-    expect(loopback.loopbackRefused).toBe(true);
+    // A refusal, not a probe that couldn't run (an ip outside IP_CANDIDATES, a timeout): print what it said.
+    expect(loopback).toMatchObject({ loopbackRefused: true });
     // The real sandbox fails the same way the probe did...
     const scratch = await mkdtemp(join(tmpdir(), 'commonly-loopback-'));
     try {

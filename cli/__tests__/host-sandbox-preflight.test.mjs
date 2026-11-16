@@ -146,10 +146,23 @@ describe('hostSandboxRefusal', () => {
 
     test('without the ip command it says to install iproute2', () => {
       const message = hostSandboxRefusal({
-        ...args, detectBwrapLoopback: missing('needs the ip command. Install iproute2: `sudo apt install iproute2`'),
+        ...args,
+        detectBwrapLoopback: () => ({
+          available: false, missingIp: true, error: 'needs the ip command. Install iproute2: `sudo apt install iproute2`',
+        }),
       });
       expect(message).toMatch(/^A connected OpenCode runs inside a bubblewrap sandbox with a private network of its own/);
       expect(message).toContain('sudo apt install iproute2');
+      expect(message).toContain('Install iproute2 as above and run the same command again.');
+    });
+
+    test('a probe that timed out names the cause and offers no fix that does not exist', () => {
+      const message = hostSandboxRefusal({
+        ...args, detectBwrapLoopback: missing('bwrap loopback detection failed: spawnSync bwrap ETIMEDOUT'),
+      });
+      expect(message).toContain('ETIMEDOUT');
+      expect(message).not.toMatch(/run the same command again/);
+      expect(message).toContain('choose "Run it here"');
     });
 
     test('a refused namespace is reported first, and the network is not probed', () => {
