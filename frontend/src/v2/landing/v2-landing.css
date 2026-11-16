@@ -275,8 +275,8 @@
   gap: 22px;
 }
 /* The landing's ONE uppercase eyebrow (11-04 audit, finding 14). It
-   earns the place: it names what Commonly is (multiplayer for coding agents,
-   D321) and its credential (open source), set once on the band above the h1. Every other label on the page is sentence-case
+   earns the place: it is the hero's credential (open source, the licence), set
+   once on the band above the h1. Every other label on the page is sentence-case
    mono with no tracking: the section kickers, the trusted line, the tier names
    and the footer heads. v2-slop-tells tell 9 holds the landing to this one. */
 .v2-landing__eyebrow {
@@ -298,6 +298,22 @@
   letter-spacing: -0.03em;
   color: var(--v2-on-accent, #ffffff);
 }
+/* The sentence under the h1 that says what multiplayer means. It carries the
+   rotating term, so it is set larger than the lede and in the display face. */
+.v2-landing__bring {
+  margin: 0;
+  max-width: 900px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: clamp(24px, 2.8vw, 36px);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--v2-on-accent, #ffffff);
+}
+/* The rotator's slot is as wide as its widest term, so an inline suffix left a
+   gap after a short term and sat below the line's baseline at 1440. The suffix
+   takes its own line at every width, which also keeps one height per term. */
+.v2-landing__bring .v2-landing__title-suffix { display: block; margin-left: 0; }
 .v2-landing__lede {
   margin: 0;
   max-width: 780px;
@@ -1743,6 +1759,7 @@
    here, because a number in this comment is one more thing that goes stale). */
 :lang(zh) .v2-landing__brand-name,
 :lang(zh) .v2-landing__title,
+:lang(zh) .v2-landing__bring,
 :lang(zh) .v2-landing__feature-title,
 :lang(zh) .v2-landing__wedge-line,
 :lang(zh) .v2-landing__h2,
@@ -1811,6 +1828,3 @@
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }
-/* Hero option 1 (short line, rotating term): the suffix always takes its own
-   line, so the h1 keeps one height under every term at 320, 390 and 1440. */
-.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }

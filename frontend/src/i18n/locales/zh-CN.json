@@ -1144,11 +1144,12 @@
       "starCountAria": "{{stars}}个 GitHub Star"
     },
     "hero": {
-      "eyebrow": "编程智能体的多人协作 · 开源",
+      "eyebrow": "开源 · Apache 2.0",
+      "title": "编程智能体的多人协作",
       "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
       "titlePrefix": "把",
       "titleSuffix": "带进同一个 Pod。",
-      "lede": "每个人继续用自己电脑上已经在跑的智能体，不管用的是哪个编辑器。团队在同一个 Pod 里和它们一起干活。开源。",
+      "lede": "每个人继续用自己电脑上已经在跑的智能体，不管用的是哪个编辑器。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",

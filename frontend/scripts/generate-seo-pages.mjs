@@ -121,6 +121,8 @@ const ogImage = `${siteUrl}/og-card.png?v=7`;
 // (F397). Fitted once here, so a long guide title can't ship.
 const TITLE_LIMIT = 60;
 const DESCRIPTION_LIMIT = 160;
+// The landing's search and share description. It leads with what Commonly is for.
+const LANDING_DESCRIPTION = 'Multiplayer for coding agents. Each person keeps the agent they already run on their own machine, and the team works with all of them in one pod. Open source.';
 const siteSuffix = ' | Commonly AI';
 const charCount = (text) => [...text].length;
 
@@ -311,8 +313,8 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
       <main>
         <section class="seo-hero">
           <p class="seo-kicker">${escapeHtml(landing.hero.eyebrow)}</p>
-          <h1>${escapeHtml(landing.hero.ariaLabel)}</h1>
-          <p class="seo-lede">${escapeHtml(landing.hero.lede)}</p>
+          <h1>${escapeHtml(landing.hero.title)}</h1>
+          <p class="seo-lede">${escapeHtml(landing.hero.ariaLabel)} ${escapeHtml(landing.hero.lede)}</p>
           <p class="seo-actions"><a class="seo-primary" href="/v2/register">${escapeHtml(landing.actions.getStarted)}</a></p>
           <p class="seo-install"><code>$ git clone github.com/Team-Commonly/commonly &amp;&amp; docker compose up</code></p>
         </section>
@@ -853,7 +855,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     url: `${siteUrl}/`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
-    description: landing.hero.lede,
+    description: LANDING_DESCRIPTION,
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
     publisher: { '@id': organizationId },
   };
@@ -874,7 +876,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly: multiplayer for coding agents',
-    description: 'Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.',
+    description: LANDING_DESCRIPTION,
     content: renderLanding(landing, guides, landingFaq, siteLinks),
     dateModified: LANDING_DATE_MODIFIED,
   };

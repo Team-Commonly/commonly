@@ -2314,15 +2314,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
-  test('the hero option 1 suffix takes its own line at every width', () => {
-    // Option 1 is "Bring / <term> / into one pod." Inline, the widest term pushed
-    // the suffix to a third line at 1440 and the h1 jumped ~84px on that term
-    // (measured 173 vs 257 on the 1440 sweep). The modifier class is set only for
-    // option 1, so the rule is unconditional and sits after the base suffix rule.
-    expect(landing).toContain('.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }');
-    expect(landing.indexOf('.v2-landing__title-suffix--own-line')).toBeGreaterThan(
-      landing.indexOf('.v2-landing__title-suffix {'),
-    );
+  test('the h1 is the multiplayer line and the rotating sentence sits under it in its own style', () => {
+    // "Multiplayer for coding agents" leads; the "Bring ___ into one pod." line
+    // moved under it, so it needs its own type size rather than the h1's.
+    expect(selectorRuleBody(landing, '.v2-landing__bring')).toContain('font-size: clamp(24px, 2.8vw, 36px)');
+    // Its suffix takes its own line at every width: inline, the widest-term slot
+    // left a gap and the suffix dropped below the baseline at 1440.
+    expect(landing).toContain('.v2-landing__bring .v2-landing__title-suffix { display: block; margin-left: 0; }');
   });
 
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
