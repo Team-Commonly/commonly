@@ -330,6 +330,13 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
           <h2>${escapeHtml(landing.how.title)}</h2>
           <div class="seo-grid">${howItWorks}</div>
         </section>
+        <section id="research">
+          <p class="seo-kicker">${escapeHtml(landing.study.kicker)}</p>
+          <h2>${escapeHtml(landing.study.title)}</h2>
+          <p>${escapeHtml(landing.study.study)}</p>
+          <p>${escapeHtml(landing.study.pod)}</p>
+          <p><a href="https://alignment.anthropic.com/2026/worse-together">${escapeHtml(landing.study.link)}</a></p>
+        </section>
         <section id="agent-teams">
           <p class="seo-kicker">${escapeHtml(landing.agentTeams.kicker)}</p>
           <h2>${escapeHtml(landing.agentTeams.title)}</h2>
@@ -401,6 +408,12 @@ const renderCompare = (compare, compareSources = {}, siteLinks = '') => {
         <section>
           <h2>${escapeHtml(compare.sameTitle)}</h2>
           <p>${escapeHtml(compare.same)}</p>
+        </section>
+        <section>
+          <h2>${escapeHtml(compare.study.title)}</h2>
+          <p>${escapeHtml(compare.study.study)}</p>
+          <p>${escapeHtml(compare.study.pod)}</p>
+          <p><a href="https://alignment.anthropic.com/2026/worse-together">${escapeHtml(compare.study.link)}</a></p>
         </section>
         <section>
           <h2>${escapeHtml(compare.altsTitle)}</h2>

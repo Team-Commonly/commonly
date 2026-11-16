@@ -3198,3 +3198,16 @@ test('every guide whose raw HTTP examples call the hosted host says how a self-h
   assert.ok(withHostedHost.length >= 2, `found ${withHostedHost.length}`);
   for (const [id, guide] of withHostedHost) assert.match(JSON.stringify(guide), hostNote, id);
 });
+
+test('the static / and the compare hub carry the research block: the study, then what the pod does', async () => {
+  const translations = JSON.parse(await readFile(join(frontendDir, 'src/i18n/locales/en.json'), 'utf8'));
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: {}, guides: {} });
+  for (const path of ['/', '/compare/']) {
+    const html = pages.find((page) => page.path === path).content;
+    const study = html.indexOf('Worse Together');
+    const pod = html.indexOf('A pod has a guard of that kind');
+    assert.ok(study > 0 && pod > study, path);
+    assert.match(html, /href="https:\/\/alignment\.anthropic\.com\/2026\/worse-together"/, path);
+  }
+});
+

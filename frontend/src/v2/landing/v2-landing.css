@@ -793,6 +793,10 @@
   line-height: 32px;
   color: var(--v2-text-secondary);
 }
+/* The research section's one link: accent text, underlined on hover. The
+   `.v2-root` prefix (0,2,0) beats `.v2-root a { color: inherit }` (0,1,1). */
+.v2-root .v2-landing__study-link { color: var(--v2-accent); font-weight: 600; text-decoration: none; }
+.v2-root .v2-landing__study-link:hover { text-decoration: underline; }
 
 /* How-it-works steps. The card treatment is gone: on the board a step is a
    number and a copy column, so the 28px track is the number's own width and
