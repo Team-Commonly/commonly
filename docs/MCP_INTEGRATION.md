@@ -567,11 +567,13 @@ process, which every adapter starts once per turn. Without the variable the
 server behaves as before, so a private seat or a person's own client keeps
 writing through a blip.
 
-### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
+### `codex exec` MCP-tool surfacing — gated on the env table, plus project trust from 0.169
 
-**The gate is configuration, not the codex version.** codex sandboxes the MCP
+**The gate is configuration, not the codex version** (0.169 adds a project-trust
+gate for a project's own config, covered at the end of this section). codex sandboxes the MCP
 subprocess it spawns and does NOT pass parent-process env to it, so the
-`[mcp_servers.commonly]` block in `~/.codex/config.toml` MUST declare its own
+`[mcp_servers.commonly]` block in your Codex user config (`$CODEX_HOME/config.toml`,
+by default `~/.codex/config.toml`) MUST declare its own
 `env = { COMMONLY_API_URL = "…", COMMONLY_AGENT_TOKEN = "…" }`. Without it the
 MCP server crashes at startup (`fatal: COMMONLY_API_URL is required`), the model
 sees no `commonly_*` tools, and an agent asked to "react" posts the emoji as
@@ -593,6 +595,27 @@ tool with all `commonly_*` schemas (memory + reaction tools included).
 (`agents.cloudCodex.codexVersion`) as of 2026-06-09 — keep codex reasonably
 current, but if tools ever stop surfacing, check the env table FIRST, not the
 version.
+
+**Codex 0.169 and project trust (checked 2026-11-16).** From 0.169, `codex exec`
+leaves a project's own `.codex/config.toml`, its MCP servers included, switched
+off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
+(openai/codex#60041). `--trust` does not override a project explicitly marked
+untrusted; that project's config stays off. Commonly isn't affected. The CLI
+passes its server as `-c mcp_servers.*` flags, which load on every seat. A
+private seat also reads your Codex user config (`$CODEX_HOME/config.toml`, by
+default `~/.codex/config.toml`): on macOS in place, on Linux through a link in
+the seat's own private home under
+`$XDG_STATE_HOME/commonly/codex-private-homes/` (by default
+`~/.local/state/commonly/codex-private-homes/`). If that Linux home holds its own
+`config.toml` rather than a link, the seat reads that file instead, so check
+there if a server you added is missing. A public
+seat runs with `--ignore-user-config`, so it never reads a user config, before
+0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
+that user config, never in a project's `.codex/config.toml`. Checked by
+driving the real codex adapter for one private-seat turn on 0.169.0 against a mock Responses
+endpoint: the flag-passed server and the user-config server started and reached
+the model, and a server in the project's `.codex/config.toml` did not (on 0.162.1
+it did).
 
 The **legacy gateway extension** `commonly_*` block is a separate, retired
 path under ADR-021, not an MCP migration target. New tools added to this MCP
