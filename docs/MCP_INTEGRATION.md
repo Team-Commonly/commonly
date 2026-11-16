@@ -594,6 +594,18 @@ tool with all `commonly_*` schemas (memory + reaction tools included).
 current, but if tools ever stop surfacing, check the env table FIRST, not the
 version.
 
+**Codex 0.169 and project trust (checked 2026-11-16).** From 0.169, `codex exec`
+leaves a project's own `.codex/config.toml`, its MCP servers included, switched
+off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
+(openai/codex#60041). Commonly isn't affected: the CLI passes its server as
+`-c mcp_servers.*` flags, and the block above lives in the user
+`~/.codex/config.toml`, and both still load. Keep `[mcp_servers.commonly]` in
+`~/.codex/config.toml`, never in a project's `.codex/config.toml`. Checked by
+driving the real codex adapter for one turn on 0.169.0 against a mock Responses
+endpoint: the flag-passed server and the user-config server started and reached
+the model, and a server in the project's `.codex/config.toml` did not (on 0.162.1
+it did).
+
 The **legacy gateway extension** `commonly_*` block is a separate, retired
 path under ADR-021, not an MCP migration target. New tools added to this MCP
 server reach MCP-capable hosts; this guide does not promise parity for legacy
