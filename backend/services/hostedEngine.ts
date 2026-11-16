@@ -48,7 +48,7 @@ export const MIGRATED_FROM_DURABLE_OBJECT = 'durable-object';
  * runtime token may still be live. A migrated row with no
  * recorded state counts as unfinished, as the migration itself reads it.
  */
-export const hostedMigrationUnfinished = (installation: any): boolean => {
+const hostedMigrationUnfinished = (installation: any): boolean => {
   const hosted = readHostedConfig(installation);
   if (hosted.migratedFrom !== MIGRATED_FROM_DURABLE_OBJECT) return false;
   const raw = hosted.migration;

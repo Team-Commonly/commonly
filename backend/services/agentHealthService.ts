@@ -28,7 +28,7 @@ const AgentRuntimeObservation = require('../models/AgentRuntimeObservation');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
 const HOUR_MS = 60 * 60 * 1000;
-export const WINDOW_OPTIONS_HOURS = [24, 72, 168] as const;
+const WINDOW_OPTIONS_HOURS = [24, 72, 168] as const;
 // The unmetered trigger, as nativeRuntimeService's daily cap leaves it out.
 const UNMETERED_TRIGGER = 'first_contact';
 
@@ -61,7 +61,7 @@ const emptyBuckets = (): Buckets => ({
 // printed nothing is acked no_action with reason 'empty-output'
 // (cli/src/lib/claim-outcome.js). It is empty, not a decline. The reason text
 // itself never leaves the database.
-export const EMPTY_OUTPUT_REASON = 'empty-output';
+const EMPTY_OUTPUT_REASON = 'empty-output';
 
 /**
  * One event group to one outcome. The order matters: a recorded outcome wins,

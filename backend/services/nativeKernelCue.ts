@@ -16,7 +16,7 @@ import { DIGEST_PULL_LINE } from './digestFrame';
 // what native cannot act on goes (file tools, threading fields, the MCP
 // decision-card tool) along with "post as yourself", which native enforces
 // itself; the tool-agnostic @handle rule is kept.
-export const nativePodContextFrame = (podId: string): string => (
+const nativePodContextFrame = (podId: string): string => (
   `[${KERNEL_FRAME_TAGS.podContext}: this conversation is in pod \`${podId}\`. Reply with `
   + 'commonly_post_message; it posts as you. You cannot open or attach files here: if someone '
   + 'refers to a file they shared, say so and ask them to paste its content. To ask a person '

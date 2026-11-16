@@ -40,7 +40,7 @@ const REASON_TEXT: Record<CannotRunReason, string> = {
 
 // Inline, not metadata: the host reads content. The room already carries the
 // "can't answer" line, so the host answers the ask instead of repeating it.
-export const handoffFrame = (label: string, reason: CannotRunReason): string => `[${label} can't answer this `
+const handoffFrame = (label: string, reason: CannotRunReason): string => `[${label} can't answer this `
   + `right now (${REASON_TEXT[reason]}), and the room already says so. You are this pod's host and the person is `
   + 'waiting: answer them yourself if you can, or tell them plainly what to do next. This is addressed to you.]';
 

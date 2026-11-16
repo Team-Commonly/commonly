@@ -155,7 +155,7 @@ const buildEmailBodies = (
   };
 };
 
-export class DigestEmailService {
+class DigestEmailService {
   async sendDigestEmails(currentRun: DigestRunResult[] = []): Promise<DigestEmailResult> {
     const result: DigestEmailResult = {
       eligible: 0,

@@ -75,7 +75,7 @@ const fnv1a = (input: string): number => {
 };
 
 /** mulberry32 seeded from the string: a stable stream of numbers in [0, 1). */
-export const seededRandom = (seed: string): (() => number) => {
+const seededRandom = (seed: string): (() => number) => {
   let a = fnv1a(seed);
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

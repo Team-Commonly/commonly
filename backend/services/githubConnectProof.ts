@@ -69,7 +69,7 @@ export interface GithubConnectProofDeps {
   connectAppId: () => string;
 }
 
-export const defaultGithubConnectProofDeps = (): GithubConnectProofDeps => ({
+const defaultGithubConnectProofDeps = (): GithubConnectProofDeps => ({
   loadUserTokenRow: async (userId) => {
     if (!/^[a-f\d]{24}$/i.test(userId)) return null;
     const { default: Integration } = await import('../models/Integration');

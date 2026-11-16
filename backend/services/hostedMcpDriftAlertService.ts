@@ -33,7 +33,7 @@ const SystemSetting = require('../models/SystemSetting');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AttentionItemService = require('./attentionItemService');
 
-export const DRIFT_ALERT_SETTING_KEY = 'hostedMcp.driftAlert';
+const DRIFT_ALERT_SETTING_KEY = 'hostedMcp.driftAlert';
 
 export interface HostedMcpDriftAlertConfig {
   recipientUserId: string;
@@ -66,7 +66,7 @@ const DRIFT_ALERT_RELOG_MS = 60 * 60 * 1000;
  * own card. The card is unique per recipient and source id and is only ever
  * inserted, so a moved alert pod needs its own id or the old pod keeps the card.
  */
-export const driftAlertSourceId = (entry: HostedMcpEntry, drifted: string[], podId: string): string => {
+const driftAlertSourceId = (entry: HostedMcpEntry, drifted: string[], podId: string): string => {
   const pins = entry.tools.map((tool) => digestPinnedDefinition(entry.id, tool)).join('\n');
   const key = `${podId}\n--\n${pins}\n--\n${[...drifted].sort().join('\n')}`;
   return `drift:${entry.id}:${createHash('sha256').update(key).digest('hex').slice(0, 16)}`;

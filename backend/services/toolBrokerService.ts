@@ -115,7 +115,7 @@ export type ToolDefinition = GithubToolDefinition | HostedToolDefinition;
  * It leaves room for GitHub's 65,536-character body in multi-byte text. A PR
  * write's card is a labelled summary with its own caps (`prWriteScope.ts`).
  */
-export const APPROVAL_CARD_ARGS_MAX_BYTES = 128 * 1024;
+const APPROVAL_CARD_ARGS_MAX_BYTES = 128 * 1024;
 
 export interface BrokerCallInput {
   grantId: string;
@@ -1475,7 +1475,7 @@ export const CONNECT_UNSUPPORTED_TOOLS: ReadonlySet<string> = new Set([
   'github.close_issue',
   'github.comment_on_issue',
 ]);
-export const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
+const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
   + 'close or comment on them. Nothing was changed on GitHub.';
 
 const connectCannotUse = (definition: ToolDefinition, connection: ToolConnection): boolean => (

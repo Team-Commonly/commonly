@@ -35,7 +35,7 @@ const maskPath = (pathname: string): string => {
 };
 
 // Origin plus path: no userinfo, query string or fragment.
-export const reduceUrl = (raw: string): string => {
+const reduceUrl = (raw: string): string => {
   const scheme = /^([a-z][a-z\d+.-]*):/i.exec(raw);
   if (scheme && /^(data|blob|javascript)$/i.test(scheme[1])) return `${scheme[1]}:`;
   const isProtocolRelative = raw.startsWith('//');

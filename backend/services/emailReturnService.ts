@@ -16,7 +16,7 @@ const store = require('../repositories/emailReturnRepository');
  * OAuth refusals), so a signed-out click still counts once they sign in.
  */
 
-export const EMAIL_KINDS = ['digest', 'needs-you', 'mention', 'waiting'] as const;
+const EMAIL_KINDS = ['digest', 'needs-you', 'mention', 'waiting'] as const;
 export type EmailKind = typeof EMAIL_KINDS[number];
 
 const TAG = /^(digest|needs-you|mention|waiting)\.([a-f0-9]{24})$/;
@@ -79,5 +79,5 @@ export default {
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  EMAIL_KINDS, newSendId, tagFor, parseTag, tagUrl, noteSend, recordEmailReturn, emailReturnCounts,
+  newSendId, tagFor, parseTag, tagUrl, noteSend, recordEmailReturn, emailReturnCounts,
 };

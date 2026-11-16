@@ -10,7 +10,7 @@ import { useV2Api } from '../hooks/useV2Api';
  * With no own agent connected here it says how the work runs instead.
  */
 
-export const DAILY_SCHEDULE_TIME = '09:00';
+const DAILY_SCHEDULE_TIME = '09:00';
 
 export interface ScheduleTarget {
   agentName: string;

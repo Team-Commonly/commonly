@@ -118,7 +118,7 @@ const asPathValues = (value: unknown): string[] => {
 };
 
 /** Extract only path-shaped fields; command text is intentionally not parsed. */
-export const extractToolPaths = (payload: any): string[] => {
+const extractToolPaths = (payload: any): string[] => {
   const declared = asPathValues(payload?.paths || payload?.resolvedPaths);
   return Array.from(new Set(
     declared

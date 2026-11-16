@@ -179,7 +179,7 @@ const V2GithubPrCard: React.FC<V2GithubPrCardProps> = ({ owner, repo, number }) 
 // Match a github.com PR URL anywhere in a string. Capture (owner, repo, number).
 // Anchored to a word boundary on either side so it doesn't match URLs nested
 // inside other tokens.
-export const GITHUB_PR_URL_RE = /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g;
+const GITHUB_PR_URL_RE = /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g;
 
 export interface ParsedGithubPr {
   owner: string;

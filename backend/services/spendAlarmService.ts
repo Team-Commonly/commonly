@@ -44,7 +44,7 @@ const PRICES: { match: RegExp; price: ModelPrice }[] = [
 // not fire on today's traffic.
 export const UNPRICED_MODEL: ModelPrice = { input: 15, output: 75 };
 
-export const priceForModel = (model: string | null | undefined): ModelPrice => (
+const priceForModel = (model: string | null | undefined): ModelPrice => (
   PRICES.find((row) => row.match.test(String(model || '')))?.price || UNPRICED_MODEL
 );
 
@@ -68,9 +68,9 @@ export const SANDBOX_USD_PER_SECOND = SANDBOX_SHAPE.vcpu * E2B_USD_PER_VCPU_SECO
 const EXA_USD_PER_SEARCH = 7 / 1000;
 const EXA_USD_PER_PAGE_TEXT = 1 / 1000;
 const SEARCH_RESULT_PAGES = 5;
-export const WEB_SEARCH_USD = EXA_USD_PER_SEARCH + SEARCH_RESULT_PAGES * EXA_USD_PER_PAGE_TEXT;
+const WEB_SEARCH_USD = EXA_USD_PER_SEARCH + SEARCH_RESULT_PAGES * EXA_USD_PER_PAGE_TEXT;
 
-export const spendThresholdUsd = (): number => {
+const spendThresholdUsd = (): number => {
   const raw = Number(process.env.SPEND_ALARM_USD_PER_DAY);
   return Number.isFinite(raw) && raw > 0 ? raw : 2;
 };

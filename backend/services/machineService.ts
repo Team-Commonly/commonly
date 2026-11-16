@@ -8,8 +8,8 @@ import { issueDaemonCredential } from './daemonCredentialService';
 
 // A daemon reports regularly; read paths derive offline from the last report
 // rather than writing stale state merely because somebody opened the page.
-export const MACHINE_OFFLINE_AFTER_MS = 90_000;
-export const MAX_MACHINES_PER_OWNER = 20;
+const MACHINE_OFFLINE_AFTER_MS = 90_000;
+const MAX_MACHINES_PER_OWNER = 20;
 
 export interface MachineView {
   id: string;
@@ -287,7 +287,7 @@ export async function machineHasLiveAuthorization(
 // 'native-windows' (no OS sandbox; Codex runs on its own profiles) and
 // 'unsandboxed-opted-in' (the user's --unsandboxed). 'default' turns it off.
 // Anything else (an older daemon sends nothing) leaves the last report standing.
-export const HOST_SANDBOX_REPORTS = {
+const HOST_SANDBOX_REPORTS = {
   unconfined: ['unsandboxed-opted-in', 'native-windows'] as readonly string[],
   confined: 'default',
 } as const;
@@ -377,8 +377,6 @@ export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTo
 }
 
 module.exports = {
-  MACHINE_OFFLINE_AFTER_MS,
-  MAX_MACHINES_PER_OWNER,
   normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,

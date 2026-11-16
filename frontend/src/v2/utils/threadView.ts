@@ -151,7 +151,7 @@ export const plainPreviewText = (content: string): string => String(content || '
   .slice(0, PREVIEW_MAX_CHARS);
 
 /** The chip's preview of one reply: who, and one line of what they said. */
-export const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
+const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
   const who = participantOf(m);
   const summary = String(m.summary || m.payload?.summary || '').trim();
   const isCard = CARD_PAYLOAD_KINDS.has(String(m.payload?.kind || ''));

@@ -36,8 +36,8 @@ const { isListedPodMember } = require('../utils/isPodMember');
  */
 
 const MIN = 60 * 1000;
-export const MENTION_EMAIL_DELAY_MS = 15 * MIN;
-export const MENTION_EMAIL_WINDOW_MS = 6 * 60 * MIN;
+const MENTION_EMAIL_DELAY_MS = 15 * MIN;
+const MENTION_EMAIL_WINDOW_MS = 6 * 60 * MIN;
 // The first pass after a deploy must not mail out the backlog, and a row a
 // long outage held back is the digest's by then.
 const CATCH_UP_MS = 2 * 60 * MIN;
@@ -278,5 +278,5 @@ export default { sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClose
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
   sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClosed, stampPodReadOnRequest,
-  MENTION_EMAIL_DELAY_MS, MENTION_EMAIL_WINDOW_MS, MENTION_EMAIL_LEASE_MS, primaryUrl, unsubscribeTokenFor,
+  MENTION_EMAIL_LEASE_MS, primaryUrl, unsubscribeTokenFor,
 };

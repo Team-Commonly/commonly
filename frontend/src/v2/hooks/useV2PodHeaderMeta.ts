@@ -20,7 +20,7 @@ export interface V2StarterSteps { connect: boolean; firstTask: boolean }
 const CONNECT_AGENT_REF = 'onboarding:connect-agent';
 const FIRST_TASK_REF = 'onboarding:first-task';
 
-export const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
+const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
   const connect = tasks.find((task) => task.sourceRef === CONNECT_AGENT_REF);
   const firstTask = tasks.find((task) => task.sourceRef === FIRST_TASK_REF);
   if (!connect && !firstTask) return null;

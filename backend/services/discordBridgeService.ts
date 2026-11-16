@@ -87,7 +87,7 @@ const idOf = (value: unknown): string => {
  * echo of an outbound line included, so nothing loops), any webhook, and any
  * system message.
  */
-export const isIgnoredDiscordMessage = (message: DiscordInboundMessage | null | undefined): boolean => (
+const isIgnoredDiscordMessage = (message: DiscordInboundMessage | null | undefined): boolean => (
   !message
   || !message.id
   || message.author?.bot === true
@@ -160,7 +160,7 @@ const attachmentUrls = (message: DiscordInboundMessage): string[] => {
 };
 
 /** The pod line: the text as typed (mentions stay text), then each attachment as a link. */
-export const renderDiscordInboundContent = (message: DiscordInboundMessage): string => {
+const renderDiscordInboundContent = (message: DiscordInboundMessage): string => {
   const body = [String(message.content || '').trim(), ...attachmentUrls(message)].filter(Boolean).join('\n');
   if (!body) return '';
   const name = message.member?.displayName || message.author?.globalName || message.author?.username;
@@ -337,7 +337,7 @@ const podForSend = async (podId: string): Promise<{ name?: string; members?: unk
 };
 
 /** `[Pod] **Agent**: text`, the shape the Slack and Telegram lines take, in 2000 characters. */
-export const renderDiscordAgentLine = (opts: { podName: string; name: string; content: string }): string => {
+const renderDiscordAgentLine = (opts: { podName: string; name: string; content: string }): string => {
   const tag = defuseMassMentions(escapeDiscordMarkdown(opts.podName));
   const prefix = `[${tag}] **${defuseMassMentions(escapeDiscordMarkdown(opts.name))}**: `;
   return fitWithin(prefix + defuseMassMentions(String(opts.content || '')), DISCORD_CONTENT_LIMIT);
@@ -346,7 +346,7 @@ export const renderDiscordAgentLine = (opts: { podName: string; name: string; co
 // Discord has no reply-to-rule path yet (no relayMap reader on inbound), so the
 // card sends the reader to the pod rather than asking for a reply here. The
 // link sits in angle brackets so Discord does not unfurl it.
-export const renderDiscordDecisionCard = (opts: {
+const renderDiscordDecisionCard = (opts: {
   card: DecisionRelayCard;
   name: string;
   link: string;
@@ -561,14 +561,10 @@ module.exports = {
   discordInboundAdapter,
   discordRelayAdapter,
   discordWebhookPacing,
-  renderDiscordAgentLine,
-  renderDiscordDecisionCard,
   DISCORD_CONTENT_LIMIT,
   escapeDiscordMarkdown,
   defuseMassMentions,
   fitWithin,
-  isIgnoredDiscordMessage,
-  renderDiscordInboundContent,
   relayDiscordMessageToPod,
   relayDiscordMessageForIntegration,
 };
