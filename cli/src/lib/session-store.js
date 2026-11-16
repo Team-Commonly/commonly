@@ -32,7 +32,7 @@ const noticesFile = (agentName) => join(sessionsDir(), `${agentName}.notices.jso
 const MAX_HANDLED_EVENTS = 500;
 const handledEventsCache = new Map();
 
-// Everything under ~/.commonly is private (D275). These files hold per-(agent,
+// Everything under ~/.commonly is private. These files hold per-(agent,
 // pod) session IDs and event rings; keep the dir and its files owner-only, and
 // tighten an existing dir or file that a pre-0.1.309 CLI left group/world-
 // readable. A mode arg applies only when the path is created, so each write

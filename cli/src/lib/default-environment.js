@@ -49,7 +49,7 @@ export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'openco
 // adapters/pi.js), and neither is handed the default block (see above). The
 // attach gate (agent.js resolveAttachSandbox) reads this set, not the default
 // one, or an explicitly configured public Goose or pi seat is refused before its
-// adapter runs (D247 walk, 11-04; F113b).
+// adapter runs (11-04; F113b).
 export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi']);
 
 // Adapters that may receive a room grant: each confines a public seat AND keeps

@@ -138,11 +138,11 @@ describe('install', () => {
     ]);
   });
 
-  // D171: a systemd user unit without lingering starts at the user's login, not
+  // A systemd user unit without lingering starts at the user's login, not
   // at boot, so on a headless box nobody logs in to it never comes back after a
   // reboot. The install turns lingering on and says "survives reboots" only when
   // logind's own linger file shows it is on.
-  describe('linux lingering (D171)', () => {
+  describe('linux lingering', () => {
     const username = 'sam';
     const lingerPath = lingerFile(username);
 

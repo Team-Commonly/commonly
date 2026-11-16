@@ -567,7 +567,7 @@ const preparePrivateCodexHome = async (ctx, childEnv) => {
   return { home, source, realSource, others, links };
 };
 
-// `login: false` is the proxy route (D250): codex authenticates with the
+// `login: false` is the proxy route: codex authenticates with the
 // per-turn token, so the public home gets no link to the person's Codex login,
 // and a link an earlier turn left is removed.
 const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
@@ -1128,7 +1128,7 @@ const privatePermissionProfileFlags = ({
 // F188: the host's OpenAI-compatible model route, for a public seat. That seat
 // runs with `--ignore-user-config`, so config.toml's `openai_base_url` never
 // loads, and codex-cli 0.162.1 does not read the OPENAI_BASE_URL env either
-// (Growth's D252 walk, 11-05): a host routed at LiteLLM or another
+// (Growth's walk, 11-05): a host routed at LiteLLM or another
 // OpenAI-compatible endpoint sent every turn to api.openai.com and got a 401.
 // The env is the declaration, as ANTHROPIC_BASE_URL is for the claude adapter;
 // buildArgs passes it on as `-c openai_base_url=...`, the top-level key the
@@ -1186,7 +1186,7 @@ export const codexAuthKind = async (operatorHome, source = {}) => {
   return mode === 'apikey' ? 'apikey' : 'login';
 };
 
-// D250: the F188 route leaves the key in codex's own environment. With
+// The F188 route leaves the key in codex's own environment. With
 // CODEX_API_KEY in the seat's environment (codex's own name for an exec key),
 // the key stays on the host behind the per-turn loopback proxy, as a Claude
 // seat's ANTHROPIC_API_KEY does, and codex gets a provider entry naming the
@@ -1249,7 +1249,7 @@ const buildArgs = ({
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
-  // when its operator opted this run out of the OS sandbox (D245, native
+  // when its operator opted this run out of the OS sandbox (native
   // Windows only: Codex can't enforce a profile's read denies there).
   const keepsOwnPolicy = trustedContainerPerimeter || operatorUnconfined;
   const privateProfile = !publicSandbox && !keepsOwnPolicy;
@@ -1690,7 +1690,7 @@ export default {
         }
       }
       // F387: only a cloud-codex pod sets the perimeter env
-      // (sandbox/codex-perimeter.js), and only the operator's own D245 opt-in
+      // (sandbox/codex-perimeter.js), and only the operator's own opt-in
       // sets hostUnconfined. Every other private seat runs under the private
       // permission profile.
       const trustedContainerPerimeter = codexTrustedPerimeter(ctx.env || process.env);
@@ -1877,7 +1877,7 @@ export default {
       const contextTokens = newSessionId
         ? (ctx._codexContextTokens || codexContextTokens)({ codexHome: codexHomeFor(childEnv), sessionId: newSessionId })
         : null;
-      // D247: the reply receipt names the model and effort this spawn passed
+      // The reply receipt names the model and effort this spawn passed
       // (`--model`, `model_reasoning_effort`); codex's own stream does not
       // restate them.
       const effort = ctx.environment?.effort;

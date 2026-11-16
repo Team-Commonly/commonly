@@ -24,7 +24,7 @@ import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 import { codexTrustedPerimeter } from './codex-perimeter.js';
 import { CLI } from '../cli-hint.js';
 
-// D245: the Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
+// The Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
 export const UNSANDBOXED_FLAG = '--unsandboxed';
 
 // The Seatbelt modes come from mode.js, as grant-broker-guard's do, so a mode
@@ -177,7 +177,7 @@ export const windowsSandboxMessage = (adapterName) => {
     'so by default this agent cannot listen for @mentions from native Windows. You can:',
     `  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
       + ' then run these same commands there.',
-    // D245: the user's own choice, never a default (sandbox/windows-unsandboxed.js).
+    // The user's own choice, never a default (sandbox/windows-unsandboxed.js).
     ...(adapterName === 'claude'
       ? [`  - Run it without an OS sandbox: add ${UNSANDBOXED_FLAG}`
         + ` (${CLI} agent run <name> ${UNSANDBOXED_FLAG}, or ${CLI} daemon install ${UNSANDBOXED_FLAG}).`
@@ -195,7 +195,7 @@ export const hostSandboxRefusal = ({
   environment,
   adapterName,
   platform = process.platform,
-  // D245: the user's own opt-in for this run (windows-unsandboxed.js
+  // The user's own opt-in for this run (windows-unsandboxed.js
   // hostUnconfinedForRun). Never derived from the environment.
   hostUnconfined = false,
   // The person asked for the opt-in, whether or not the seat qualified. Only
@@ -224,7 +224,7 @@ export const hostSandboxRefusal = ({
     // (walked on byo-linux.yml, walk=private-codex). Where bubblewrap can't
     // start, every turn would fail at session start, so the seat is refused
     // before its first poll, unless the person ran it unconfined by their own
-    // --unsandboxed (D245, as on Windows: only with every pod confirmed
+    // --unsandboxed (as on Windows: only with every pod confirmed
     // private). Never unconfined without being asked.
     if (platform === 'linux' && trust !== 'workspace' && !codexTrustedPerimeter(env)) {
       if (hostUnconfined === true) return null;

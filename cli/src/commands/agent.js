@@ -1468,7 +1468,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   // Two different things can be missing, so the refusal names the one that is:
-  // the D247 walk read "requires public trust" on a seat whose trust WAS public.
+  // the walk read "requires public trust" on a seat whose trust WAS public.
   if (mode === 'workspace' || mode === 'read-only') {
     if (!confined) {
       throw new Error(
@@ -1553,7 +1553,7 @@ export const performAttach = async ({
       });
       if (codexRefusal) throw new Error(codexRefusal);
     }
-    // D245: native Windows has neither sandbox, so its refusal names Windows
+    // Native Windows has neither sandbox, so its refusal names Windows
     // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
     // refuses there, as before; only the words differ.
     const windowsRefusal = () => new Error(adapterName === 'dsh'
@@ -1816,7 +1816,7 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
-// D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod about
+// An 11-04 walk: a Qwen seat whose post tool was declined told the pod about
 // checkpoints, first_contact and re-serving. The model wrote that, not the
 // wrapper, so the fix is an instruction and not a filter on its text: a filter
 // would also eat a pod that is discussing these words. It speaks only to a
@@ -1899,7 +1899,7 @@ const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to t
   + FAILURE_ON_COMMENT;
 
 // Where a mention's answer goes is the kernel's line, in the item body: since
-// D278 (2026-11-09) a top-level @mention in a shared pod is answered in that
+// Since 2026-11-09 a top-level @mention in a shared pod is answered in that
 // message's thread, the same as a mention inside a thread. The wrapper used to
 // add its own line beside a person's top-level mention saying to answer
 // top-level (F212, #3499/#3511); it adds no placement line now, so the item
@@ -2052,7 +2052,7 @@ const extractPrompt = (event) => {
 // cancel grace, and the wall-clock backstop past the adapter's own timeout.
 export { supervisedRunPolicy };
 
-// Codex turns are supervised by default (D211): a turn that stops making
+// Codex turns are supervised by default: a turn that stops making
 // progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
 // opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
 export const superviseRunsByDefault = (adapterName, env = process.env) => {
@@ -2102,7 +2102,7 @@ export const performRun = ({
   localKey = null,
   podId = null,
   environment = null,
-  // D245: the user's own Windows opt-in for this run; reaches the adapter's
+  // The user's own Windows opt-in for this run; reaches the adapter's
   // spawn context only (never the environment).
   hostUnconfined = false,
   // F187: this Windows Codex run was opted in with every pod confirmed private.
@@ -2146,7 +2146,7 @@ export const performRun = ({
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
   reportRuntime = false,
-  // D247: a listener seat (no daemon) reads the model and effort its owner
+  // A listener seat (no daemon) reads the model and effort its owner
   // saved on the server before each turn. Off for daemon seats, whose daemon
   // projects the same values into `environment`.
   readSavedControls = false,
@@ -2401,7 +2401,7 @@ export const performRun = ({
   // a conversation that read the workspace, whatever claude's resume would
   // find from another folder.
   let lastPlacementReason = null;
-  // D247: the model and effort this turn spawns with. A listener seat reads
+  // The model and effort this turn spawns with. A listener seat reads
   // its saved controls first; then an effort is dropped only when the device
   // listed its levels and this one is not among them.
   let savedControlsNoticeShown = false;
@@ -2436,7 +2436,7 @@ export const performRun = ({
       }
     }
     // Dropped only when the device listed its levels and this one is not
-    // among them; with nothing reported the harness decides (D247).
+    // among them; with nothing reported the harness decides.
     seatEnvironment = reportRuntime && desiredEnvironment
       && effortRefusedByDevice(inventory, desiredEnvironment.effort)
       ? { ...desiredEnvironment, effort: undefined } : desiredEnvironment;
@@ -3188,7 +3188,7 @@ export const performRun = ({
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
-    // D245 item 4: how long the runtime ran, for the reply receipt.
+    // How long the runtime ran, for the reply receipt.
     let spawnDurationMs;
     let observedSpawn = false;
     // What a failed spawn threw, read only for its fixed reason code (F370 #11).
@@ -3473,7 +3473,7 @@ export const performRun = ({
           maxChunks: maxChatChunks,
           uploadName: `${agentName}-reply-${event._id}.md`,
           log: (line) => log(`[${event.type}] ${line}`),
-          // D245 item 4: the wrapper's own account of this turn.
+          // The wrapper's own account of this turn.
           receipt: buildReplyReceipt({
             adapterName: adapter.name,
             stats: result.stats,
@@ -5825,7 +5825,7 @@ Docs:
         bootstrapped = true;
       }
 
-      // D245: on native Windows the user may choose to run without an OS
+      // On native Windows the user may choose to run without an OS
       // sandbox, by typing the flag or by installing the daemon with it (the
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
