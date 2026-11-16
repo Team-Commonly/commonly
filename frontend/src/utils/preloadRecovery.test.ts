@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   installPreloadRecovery,
+  MAX_RECORDED_BUILDS,
   PRELOAD_RELOAD_KEY,
   shouldReloadAfterPreloadError,
 } from './preloadRecovery';
@@ -20,7 +21,7 @@ describe('shouldReloadAfterPreloadError', () => {
   it('reloads on the first failure and records the build', () => {
     const store = memoryStore();
     expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(true);
-    expect(store.getItem(PRELOAD_RELOAD_KEY)).toBe('build-a');
+    expect(JSON.parse(store.getItem(PRELOAD_RELOAD_KEY) as string)).toEqual(['build-a']);
   });
 
   it('never reloads the same build twice, however far apart the failures are', () => {
@@ -39,10 +40,32 @@ describe('shouldReloadAfterPreloadError', () => {
     expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(false);
   });
 
+  it('does not reload a build again after another build came between (A -> B -> A)', () => {
+    // CodeRabbit on #4182: keeping only the latest build let a rollback, or a
+    // rolling deploy serving index.html and chunks from pods on different
+    // builds, bounce the tab between them.
+    const store = memoryStore();
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(true);
+    expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(true);
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(false);
+    expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(false);
+  });
+
+  it(`keeps at most ${MAX_RECORDED_BUILDS} builds, dropping the oldest`, () => {
+    const store = memoryStore();
+    for (let i = 0; i <= MAX_RECORDED_BUILDS; i += 1) shouldReloadAfterPreloadError(store, `build-${i}`);
+    const kept = JSON.parse(store.getItem(PRELOAD_RELOAD_KEY) as string);
+    expect(kept).toHaveLength(MAX_RECORDED_BUILDS);
+    expect(kept).not.toContain('build-0');
+    expect(shouldReloadAfterPreloadError(store, `build-${MAX_RECORDED_BUILDS}`)).toBe(false);
+  });
+
   it('treats an unknown stored value as no previous reload', () => {
     const store = memoryStore();
     store.setItem(PRELOAD_RELOAD_KEY, '{"corrupt":');
     expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(true);
+    store.setItem(PRELOAD_RELOAD_KEY, '"build-a"');
+    expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(true);
   });
 
   it('does not reload when there is no storage to guard the loop with', () => {

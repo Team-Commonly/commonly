@@ -231,7 +231,9 @@ fires `vite:preloadError` for a failed CSS preload and for a failed import
 alike, and `frontend/src/utils/preloadRecovery.ts` reloads the page once in
 answer (F541). A tab reloads at most once per build (the release), however far
 apart the failures are, so a file that's really gone can't loop. A tab left
-open across a deploy gets one reload onto the new build. With no
+open across a deploy gets one reload onto the new build. The tab remembers
+every build it reloaded for, so a rollback, or a rolling deploy serving pages
+and chunks from pods on different builds, can't bounce it between them. With no
 sessionStorage, the tab doesn't reload at all. The error still throws, so it
 still reaches Sentry. The boundary reporter writes its session record only
 after the report is captured, so a reload that cuts off the Sentry chunk

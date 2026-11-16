@@ -5,26 +5,40 @@
 // window. We reload once, so the visitor gets the current build instead of a
 // broken page.
 //
-// A tab reloads at most once per build. The guard records the build that
-// reloaded, not a time, so a chunk of this build that keeps failing can't
-// reload the tab again, however far apart the failures are. A tab left open
-// across a deploy reloads once onto the new build, and that build gets its own
-// one reload. With no storage to record it, the tab doesn't reload at all.
+// A tab reloads at most once per build. The guard records every build that
+// has reloaded, not a time, so a chunk of a recorded build that keeps failing
+// can't reload the tab again, however far apart the failures are. A tab left
+// open across a deploy reloads once onto the new build, and that build gets
+// its own one reload. During a rolling deploy, index.html and the chunks can
+// come from pods on different builds; with every build recorded, the tab can't
+// bounce between them (CodeRabbit on #4182, A -> B -> A). With no storage to
+// record it, the tab doesn't reload at all.
 //
 // The handler never calls preventDefault. Vite then throws the original error
 // as it would without us (the error boundary and Sentry see it), rather than
 // resolving the import to undefined.
 
-export const PRELOAD_RELOAD_KEY = 'commonly:preload-reloaded-build';
+export const PRELOAD_RELOAD_KEY = 'commonly:preload-reloaded-builds';
+export const MAX_RECORDED_BUILDS = 20;
 
 type GuardStore = Pick<Storage, 'getItem' | 'setItem'>;
+
+const recordedBuilds = (raw: string | null): string[] => {
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.filter((b): b is string => typeof b === 'string') : [];
+  } catch {
+    return [];
+  }
+};
 
 export const shouldReloadAfterPreloadError = (store: GuardStore | null, build: string): boolean => {
   // With nowhere to record the reload, one more failure could loop the tab.
   if (!store) return false;
   try {
-    if (store.getItem(PRELOAD_RELOAD_KEY) === build) return false;
-    store.setItem(PRELOAD_RELOAD_KEY, build);
+    const builds = recordedBuilds(store.getItem(PRELOAD_RELOAD_KEY));
+    if (builds.includes(build)) return false;
+    store.setItem(PRELOAD_RELOAD_KEY, JSON.stringify([...builds, build].slice(-MAX_RECORDED_BUILDS)));
     return true;
   } catch {
     return false;
