@@ -8,8 +8,9 @@
       "file://$PWD/design-system/preview/og-card.html" public/og-card.png
 
   Then bump ?v=N on og:image and twitter:image in index.html and
-  scripts/generate-seo-pages.mjs so scrapers re-fetch; og-card.test.mjs
-  checks that the three URLs agree and the PNG stays 1200x630.
+  scripts/generate-seo-pages.mjs so scrapers re-fetch, and update the PNG's
+  sha256 in og-card.test.mjs; that test checks the three URLs agree, the PNG
+  stays 1200x630 and is the file reviewed.
 
   Signal front door (docs/design/signal-identity.md): a cobalt block, the
   display line in Bricolage ("Multiplayer for coding agents", the landing h1), one

@@ -3226,6 +3226,12 @@ test('multiplayer leads the landing title, description, share tags, README tagli
   assert.match(landing.title, /^Commonly: multiplayer\b/);
   assert.match(landing.description, /^Multiplayer for coding agents\. /);
   assert.ok(landing.content.includes('<h1>Multiplayer for coding agents</h1>'), 'the prerendered h1 is the multiplayer line');
+  // The lede under it is the hero sentence, then what each person keeps.
+  const enHero = JSON.parse(await readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8')).landing.hero;
+  const lede = landing.content.match(/<p class="seo-lede">([^<]*)<\/p>/);
+  assert.ok(lede, 'the prerendered landing has a seo-lede paragraph');
+  assert.equal(lede[1], `${enHero.ariaLabel} ${enHero.lede}`.replace(/'/g, '&#39;'));
+  assert.ok(landing.content.indexOf('<h1>') < landing.content.indexOf('<p class="seo-lede">'), 'the lede follows the h1');
   const indexHtml = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
   for (const tag of ['name="description"', 'property="og:description"', 'name="twitter:description"']) {
     assert.match(indexHtml, new RegExp(`<meta ${tag} content="Multiplayer for coding agents\\. `));
