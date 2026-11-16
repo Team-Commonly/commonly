@@ -59,19 +59,15 @@ describe('stranger journey', () => {
     }
   });
 
-  test('finished Jobs outlive the history window, so only the history limit prunes scheduled runs', () => {
-    // A TTL shorter than the history window races the CronJob's own cleanup and
-    // emits a FailedDelete Warning on every prune (GCP alert, 2026-11-16).
+  test('only the history limits clean up finished Jobs, never a TTL as well', () => {
+    // A TTL alongside the history limits races them: both delete the same Job
+    // and the loser emits a FailedDelete Warning (GCP alert, 2026-11-16). No
+    // TTL length avoids it, because deploy runs and mixed outcomes put a Job of
+    // any age at the head of the prune.
     const template = read('templates/journey/stranger-journey.yaml');
-    const ttl = Number(template.match(/ttlSecondsAfterFinished: (\d+)/)[1]);
-    const limits = [...template.matchAll(/(?:successful|failed)JobsHistoryLimit: (\d+)/g)].map((m) => Number(m[1]));
-    const schedule = read('values.yaml').match(/\nstrangerJourney:[\s\S]*?\n {2}schedule: "([^"]+)"/)[1];
-    const [minute, hours, ...rest] = schedule.split(' ');
-    expect(rest).toEqual(['*', '*', '*']);
-    expect(minute).toMatch(/^\d+$/);
-    const runsPerDay = hours.split(',').length;
-    const windowSeconds = (Math.max(...limits) / runsPerDay) * 86400;
-    expect(ttl).toBeGreaterThan(windowSeconds);
+    expect(template).not.toMatch(/^\s*ttlSecondsAfterFinished:/m);
+    expect(template).toMatch(/\n {2}successfulJobsHistoryLimit: [1-9]\d*\n/);
+    expect(template).toMatch(/\n {2}failedJobsHistoryLimit: [1-9]\d*\n/);
   });
 
   test('the sink token reaches the Job only where the sink is on, and only from its Secret', () => {

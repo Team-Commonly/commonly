@@ -37,12 +37,11 @@ spec:
       # flaky step behind a later pass.
       backoffLimit: 0
       activeDeadlineSeconds: 900
-      # Longer than the history window (3 runs at two a day = 36h), so the
-      # CronJob's history limit prunes its own runs first. A TTL inside that
-      # window raced the limit: both deleted the same Job and the loser logged
-      # a FailedDelete Warning that GCP mails out as an alert. The TTL still
-      # cleans up the Deploy Dev runs made with `kubectl create job --from`.
-      ttlSecondsAfterFinished: 259200
+      # No ttlSecondsAfterFinished: the history limits above are the only
+      # cleanup. Every run is owned by this CronJob, including the deploy runs
+      # made with `kubectl create job --from`, so the limits prune all of them.
+      # A TTL raced the limit: both deleted the same Job and the loser logged a
+      # FailedDelete Warning that GCP mails out as an alert.
       template:
         metadata:
           labels:
