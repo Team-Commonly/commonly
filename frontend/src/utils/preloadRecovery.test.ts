@@ -3,7 +3,6 @@ import path from 'path';
 import {
   installPreloadRecovery,
   PRELOAD_RELOAD_KEY,
-  PRELOAD_RELOAD_WINDOW_MS,
   shouldReloadAfterPreloadError,
 } from './preloadRecovery';
 
@@ -18,41 +17,36 @@ const memoryStore = () => {
 const preloadError = () => new Event('vite:preloadError', { cancelable: true });
 
 describe('shouldReloadAfterPreloadError', () => {
-  it('reloads on the first failure and records when', () => {
+  it('reloads on the first failure and records the build', () => {
     const store = memoryStore();
-    expect(shouldReloadAfterPreloadError(store, 1_000_000)).toBe(true);
-    expect(store.getItem(PRELOAD_RELOAD_KEY)).toBe('1000000');
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(true);
+    expect(store.getItem(PRELOAD_RELOAD_KEY)).toBe('build-a');
   });
 
-  it('does not reload again inside the window, so a missing file cannot loop', () => {
+  it('never reloads the same build twice, however far apart the failures are', () => {
+    // CodeRabbit on #4182: a time window let a chunk that fails more than a
+    // minute after each load reload the tab every cycle. Time no longer counts.
     const store = memoryStore();
-    shouldReloadAfterPreloadError(store, 1_000_000);
-    expect(shouldReloadAfterPreloadError(store, 1_000_000 + PRELOAD_RELOAD_WINDOW_MS - 1)).toBe(false);
+    shouldReloadAfterPreloadError(store, 'build-a');
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(false);
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(false);
   });
 
-  it('reloads again once the window has passed (the next deploy)', () => {
+  it('gives a new build its own one reload (a tab left open across a deploy)', () => {
     const store = memoryStore();
-    shouldReloadAfterPreloadError(store, 1_000_000);
-    expect(shouldReloadAfterPreloadError(store, 1_000_000 + PRELOAD_RELOAD_WINDOW_MS)).toBe(true);
+    shouldReloadAfterPreloadError(store, 'build-a');
+    expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(true);
+    expect(shouldReloadAfterPreloadError(store, 'build-b')).toBe(false);
   });
 
-  it('treats a corrupt stored value as no previous reload', () => {
+  it('treats an unknown stored value as no previous reload', () => {
     const store = memoryStore();
-    store.setItem(PRELOAD_RELOAD_KEY, 'not-a-number');
-    expect(shouldReloadAfterPreloadError(store, 1_000_000)).toBe(true);
-    store.setItem(PRELOAD_RELOAD_KEY, '-5');
-    expect(shouldReloadAfterPreloadError(store, 2_000_000)).toBe(true);
-  });
-
-  it('holds a stamp from the future (a clock step back) until the window passes it: no reload, never a loop', () => {
-    const store = memoryStore();
-    store.setItem(PRELOAD_RELOAD_KEY, String(1_000_000 + 30_000));
-    expect(shouldReloadAfterPreloadError(store, 1_000_000)).toBe(false);
-    expect(shouldReloadAfterPreloadError(store, 1_000_000 + 30_000 + PRELOAD_RELOAD_WINDOW_MS)).toBe(true);
+    store.setItem(PRELOAD_RELOAD_KEY, '{"corrupt":');
+    expect(shouldReloadAfterPreloadError(store, 'build-a')).toBe(true);
   });
 
   it('does not reload when there is no storage to guard the loop with', () => {
-    expect(shouldReloadAfterPreloadError(null, 1_000_000)).toBe(false);
+    expect(shouldReloadAfterPreloadError(null, 'build-a')).toBe(false);
   });
 
   it('does not reload when storage throws', () => {
@@ -60,12 +54,12 @@ describe('shouldReloadAfterPreloadError', () => {
       getItem: () => { throw new Error('blocked'); },
       setItem: () => { throw new Error('blocked'); },
     };
-    expect(shouldReloadAfterPreloadError(throwing, 1_000_000)).toBe(false);
+    expect(shouldReloadAfterPreloadError(throwing, 'build-a')).toBe(false);
   });
 
   it('does not reload when the guard cannot be written', () => {
     const readOnly = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
-    expect(shouldReloadAfterPreloadError(readOnly, 1_000_000)).toBe(false);
+    expect(shouldReloadAfterPreloadError(readOnly, 'build-a')).toBe(false);
   });
 });
 
@@ -74,7 +68,7 @@ describe('installPreloadRecovery', () => {
 
   it('reloads once when Vite reports a failed chunk or CSS preload, and leaves the error to throw', () => {
     const reload = jest.fn();
-    const uninstall = installPreloadRecovery({ reload, now: () => 5_000_000 });
+    const uninstall = installPreloadRecovery({ reload, build: 'build-a' });
     const first = preloadError();
     window.dispatchEvent(first);
     expect(reload).toHaveBeenCalledTimes(1);
@@ -98,7 +92,7 @@ describe('installPreloadRecovery', () => {
 
   it('stops listening after uninstall', () => {
     const reload = jest.fn();
-    installPreloadRecovery({ reload, now: () => 9_000_000 })();
+    installPreloadRecovery({ reload, build: 'build-a' })();
     window.dispatchEvent(preloadError());
     expect(reload).not.toHaveBeenCalled();
   });

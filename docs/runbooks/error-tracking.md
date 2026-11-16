@@ -229,11 +229,15 @@ opened before a deploy asking for a file the new image no longer serves (a
 missing `/assets/*` answers 404). The other is a dropped connection. The helper
 fires `vite:preloadError` for a failed CSS preload and for a failed import
 alike, and `frontend/src/utils/preloadRecovery.ts` reloads the page once in
-answer (F541). A second failure in the same tab within a minute doesn't reload
-again, so a file that's really gone can't loop. The error still throws, so it
-still reaches Sentry. A few events right after a roll are tabs recovering. A
-steady count on one release means an asset that really fails, so look at the
-page path and what that page loads lazily.
+answer (F541). A tab reloads at most once per build (the release), however far
+apart the failures are, so a file that's really gone can't loop. A tab left
+open across a deploy gets one reload onto the new build. With no
+sessionStorage, the tab doesn't reload at all. The error still throws, so it
+still reaches Sentry. The boundary reporter writes its session record only
+after the report is captured, so a reload that cuts off the Sentry chunk
+doesn't hide the error on the next load. A few events right after a roll are
+tabs recovering. A steady count on one release means an asset that really
+fails, so look at the page path and what that page loads lazily.
 
 ## Self-hosted behavior and rollback
 
