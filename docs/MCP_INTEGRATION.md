@@ -597,8 +597,8 @@ version.
 **Codex 0.169 and project trust (checked 2026-11-16).** From 0.169, `codex exec`
 leaves a project's own `.codex/config.toml`, its MCP servers included, switched
 off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
-(openai/codex#60041). Commonly isn't affected: the CLI passes its server as
-`-c mcp_servers.*` flags, and the block above lives in the user
+(openai/codex#60041). Commonly isn't affected. The CLI passes its server as
+`-c mcp_servers.*` flags, the block above lives in the user
 `~/.codex/config.toml`, and both still load. Keep `[mcp_servers.commonly]` in
 `~/.codex/config.toml`, never in a project's `.codex/config.toml`. Checked by
 driving the real codex adapter for one turn on 0.169.0 against a mock Responses
