@@ -112,9 +112,9 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
 ## What keeps a page away from Steel
 
 The gate token is a Secret in the namespace, so it is exactly as private as
-the namespace's Secrets. Two workloads already read those Secrets (the backend
-and ops-runner run as `agent-provisioner`), and both hold the token in their
-env. A port-forward into the pod reaches Steel's loopback port directly.
+the namespace's Secrets. The backend can already read those Secrets (it runs as
+`agent-provisioner` with its token), and it and ops-runner both hold the gate
+token in their env. ops-runner mounts no Kubernetes token (F539). A port-forward into the pod reaches Steel's loopback port directly.
 
 Inside the pod, Steel's API (`:3001`) takes no credentials and answers any
 origin. Chrome's DevTools port (`:9222`) accepts any origin. A page that
