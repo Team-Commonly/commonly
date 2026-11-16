@@ -47,6 +47,13 @@ spec:
         # api-keys / NODE_PATH / certs as backend.
         # ===================================================================
         env:
+        # ops-runner only (F539): it mounts no token, so it has no
+        # service-account namespace file, and scripts such as staging-seed read
+        # their namespace from here instead.
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         # Node Environment
         - name: NODE_ENV
           value: {{ .Values.backend.env.nodeEnv }}

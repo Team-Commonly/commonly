@@ -47,11 +47,21 @@ const podSpecOf = (doc) => {
   return null;
 };
 
+// Without a token the service-account namespace file is gone too, and backend
+// scripts read it to know where they run (backend/scripts/staging-seed.ts falls
+// back to POD_NAMESPACE, and refuses without either). So a backend-image
+// workload that mounts no token gets its namespace from the Downward API.
+const backendImage = (docs) => docs.find((d) => d.kind === 'Deployment' && d.metadata.name === 'backend')
+  ?.spec.template.spec.containers[0].image;
+const setsPodNamespace = (spec) => (spec.containers || []).every((c) => (c.env || []).some((e) => e.name === 'POD_NAMESPACE'
+  && e.valueFrom?.fieldRef?.fieldPath === 'metadata.namespace'));
+
 const failures = [];
 let checked = 0;
 for (const lane of Object.keys(lanes)) {
   const docs = render(lane);
   const accounts = new Map(docs.filter((d) => d.kind === 'ServiceAccount').map((d) => [d.metadata.name, d]));
+  const image = backendImage(docs);
   for (const doc of docs) {
     const spec = podSpecOf(doc);
     if (!spec) continue;
@@ -63,6 +73,9 @@ for (const lane of Object.keys(lanes)) {
     const mounts = spec.automountServiceAccountToken ?? accounts.get(account)?.automountServiceAccountToken ?? true;
     if (mounts !== false) {
       failures.push(`${lane}: ${doc.kind}/${name} runs as ${PROVISIONER} and mounts its token; set automountServiceAccountToken: false or give it its own account`);
+    } else if (image && (spec.containers || []).some((c) => c.image === image) && !setsPodNamespace(spec)) {
+      failures.push(`${lane}: ${doc.kind}/${name} runs the backend image with no token, so it has no service-account namespace file; `
+        + 'set POD_NAMESPACE from fieldRef metadata.namespace');
     }
   }
 }
