@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D288: the owner of a fresh workspace sees the Get started bar in place of
+// The owner of a fresh workspace sees the Get started bar in place of
 // the board chip; anyone else, or a pod whose steps are done, keeps the chip.
 // Step 1 opens Bring your own; step 2 opens the composer on the person's agent.
 import React from 'react';
@@ -87,7 +87,7 @@ const ByoPage = () => {
 
 afterEach(() => { mockAgentStates = []; mockPost = null; });
 
-describe('V2Thread Get started bar (D288)', () => {
+describe('V2Thread Get started bar', () => {
   // F516: an owner who made an agent and never ran its command comes back to
   // that agent by name, and step 1 opens that agent's page, not a blank form.
   test('an agent of theirs that never connected is named, and step 1 opens its connect page', async () => {

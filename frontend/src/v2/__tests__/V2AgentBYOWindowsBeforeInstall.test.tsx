@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Keep setup request assertions independent of funnel telemetry.
 jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
-// Windows, before and after install (D245). Until 11-04 the page told a
+// Windows, before and after install. Until 11-04 the page told a
 // Windows visitor, before install, that the agent would not answer @mentions
 // (11-02: four agents made on Windows never ran). The listener now runs on
 // Windows without a sandbox, so the page defaults to Windows from the browser,
@@ -170,7 +170,7 @@ describe('V2AgentBYO on Windows', () => {
     expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
   });
 
-  // Cofounder 11-14: Codex on Windows lists every route that works: this pod
+  // Decided 11-14: Codex on Windows lists every route that works: this pod
   // as given, WSL 2 in any pod, or hosted.
   const ways = () => screen.getByTestId('byo-listen-windows-codex-ways');
 

@@ -93,7 +93,7 @@
   .v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold) { min-height: 44px; }
   .v2-agent-settings { padding: 16px; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
-  /* D223 (TASK-730): the same 52px phone top bar feature pages get from
+  /* (TASK-730): the same 52px phone top bar feature pages get from
      .v2-feature__header. The page pads 16px, so the bar bleeds out of it. */
   .v2-agent-settings > .v2-page-head {
     display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; min-height: 52px;

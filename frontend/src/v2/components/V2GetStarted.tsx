@@ -5,7 +5,7 @@ import { trackUsage } from '../utils/usageEvents';
 import type { V2StarterSteps } from '../hooks/useV2PodHeaderMeta';
 import type { WelcomePick } from '../utils/welcomePick';
 
-// D288: the first-run bar, as the first-run artboard draws it. It puts the two
+// The first-run bar, as the first-run artboard draws it. It puts the two
 // starter tasks sign-up seeds on screen in place of the "3 to do" chip. Only
 // the current step acts; a done step is struck through, a later one waits.
 // The invite step stays on the board (Sam's call), and the bar leaves once

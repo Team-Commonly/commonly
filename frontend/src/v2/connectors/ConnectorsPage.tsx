@@ -100,7 +100,7 @@ const ConnectorsPage: React.FC = () => {
   // ---- tools ----
   const grants = m.grants || [];
   const toolGranted = (entry: ToolCatalogEntry): boolean => entryIsGranted(entry, grants, m.now);
-  // D248 (c): the builtin GitHub card with no connection only says an admin
+  // the builtin GitHub card with no connection only says an admin
   // installs the App. A non-admin who can connect the hosted GitHub entry
   // themselves is shown that card alone, not a second GitHub they cannot use.
   const hostedGithubOffered = m.catalog.some((entry) => (
@@ -346,7 +346,7 @@ const ConnectorsPage: React.FC = () => {
   );
 
   // A live grant whose entry is gone is still access (TASK-752), so it keeps a
-  // tile in the Tools grid, in the grid's own shape (TASK-754, D223). The
+  // tile in the Tools grid, in the grid's own shape (TASK-754). The
   // server's `connector` names it when the catalogue cannot (TASK-753).
   const renderOrphanTile = ([key, group]: [string, ToolGrant[]]) => (
     <ConnectorTile

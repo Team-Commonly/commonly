@@ -1,4 +1,4 @@
-// Artifacts, d215 #s-artifacts-signal (approved 11-03, D242).
+// Artifacts, d215 #s-artifacts-signal (approved 11-03).
 // Every file and page shared in your pods, newest first, from one query:
 // GET /api/artifacts. The inspector's Files pane is the same query with
 // podId fixed; this page is the query with podId as a filter. Rows group by

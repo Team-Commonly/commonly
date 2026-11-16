@@ -12,7 +12,7 @@ import {
 } from '../githubStars';
 
 /**
- * D153. The landing page shows the repo's live star count, read from GitHub's
+ * The landing page shows the repo's live star count, read from GitHub's
  * public API. No number is ever shown unless GitHub gave one.
  */
 

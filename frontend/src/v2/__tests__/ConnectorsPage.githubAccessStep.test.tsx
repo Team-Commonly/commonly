@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D248: GitHub's App user token reads nothing until the App is installed, so the
+// GitHub's App user token reads nothing until the App is installed, so the
 // connect flow has two more returns. `installed` comes back from "Install &
 // Authorize" with no state of ours; `connected&next=access` is a connect that
 // still has no installation. Both name the provider and link its page only from

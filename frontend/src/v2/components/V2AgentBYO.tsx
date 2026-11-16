@@ -136,7 +136,7 @@ export const checkedInSinceIssue = (
   && data.lastUsedAt
   && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000,
 );
-// D247: OpenCode can't start from the page's key: a public OpenCode seat needs
+// OpenCode can't start from the page's key: a public OpenCode seat needs
 // a provider and a key file on that Mac (adapters/opencode.js), so it is
 // connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
 // is typed into its own line first, because a pasted block would feed its own
@@ -193,9 +193,9 @@ type MachineRow = {
   createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
-  // What the daemon found installed there (D247): marks and sorts the adapter list.
+  // What the daemon found installed there: marks and sorts the adapter list.
   runtimeInventory?: HarnessDeviceRow[];
-  // D245: the daemon runs with no sandbox. Only a native Windows daemon reports
+  // The daemon runs with no sandbox. Only a native Windows daemon reports
   // this (cli hostSandboxReport), and the CLI gives its seats no grant broker.
   hostUnconfined?: boolean;
   // The CLI version its daemon last reported running; null when too old to say.
@@ -217,7 +217,7 @@ type MachineAdapter = string;
 // since F96 (#3395), and Codex under its own sandbox, which uses bubblewrap
 // there (walked on prod 11-05, run 41994906534). Native
 // Windows has no sandbox for either, so there the listener runs unconfined and
-// the page says so (D245). PowerShell has no `export`, so a Windows visitor
+// the page says so. PowerShell has no `export`, so a Windows visitor
 // gets PowerShell lines for both commands (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
 // The install route's memory-handoff refusal codes (installHandoffMemory.ts).
@@ -256,7 +256,7 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
   { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
 ];
-// Windows runs either CLI without a sandbox (D245): the command is PowerShell
+// Windows runs either CLI without a sandbox: the command is PowerShell
 // lines, and the page says beside it that nothing confines the agent there.
 // Codex on Linux walked on prod 11-05 (run 41994906534: published CLI, Codex
 // 0.164.0, a fresh Ubuntu runner, an API key through a model gateway). A
@@ -281,7 +281,7 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 const STALL_REASONS: ByoStallReason[] = ['node-missing', 'not-run', 'other'];
 
 // Claude Code and Codex keep the OS rules above. No other harness answers from
-// the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
+// the page's key: OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
 // Codex on Windows has no sandbox, so a public pod refuses it. Before a pod is
 // known there's nothing to refuse yet, so only a pod that isn't private rules it
@@ -412,7 +412,7 @@ const V2AgentBYO: React.FC = () => {
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
   const [listenAdapter, setListenAdapter] = useState<string>(prefill.adapter || 'claude');
-  // D247: every harness `agent run --adapter` accepts, from the server. The
+  // Every harness `agent run --adapter` accepts, from the server. The
   // two the page always offered stand in until it arrives.
   // Read fourth in the mount sequence below, once.
   const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>(FALLBACK_HARNESSES);
@@ -956,7 +956,7 @@ const V2AgentBYO: React.FC = () => {
         // No daemon machines — the "on my computer" card simply doesn't show.
       }
       // Fourth, and once: the page works on the two-harness fallback until
-      // the full list arrives (D247).
+      // the full list arrives.
       if (!catalogRequested.current) {
         catalogRequested.current = true;
         try {
@@ -1202,7 +1202,7 @@ const V2AgentBYO: React.FC = () => {
           // the server's own pick (default, or a persona's instance).
           ...(secondInstance ? { instanceId: secondInstance } : {}),
           scopes: DEFAULT_INSTALL_SCOPES,
-          // D247: the runner, model and effort travel with the agent, so
+          // The runner, model and effort travel with the agent, so
           // Settings shows them and the listener reads them before each turn.
           // Any adapter besides Claude Code and Codex must be declared here, or
           // `agent run` refuses to start it.
@@ -1739,7 +1739,7 @@ const V2AgentBYO: React.FC = () => {
   // The daemon block leads the start form in BYO mode (F370) and otherwise sits
   // in Other ways to connect, on the start form and the result page, so the
   // stop-on-close line can point to it from the result.
-  // On Windows `daemon install` registers a logon task (D245).
+  // On Windows `daemon install` registers a logon task.
   // A new computer's setup installs the current CLI, so it takes any instance.
   // Computers already on file that can't take this instance get the same line,
   // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
@@ -1784,7 +1784,7 @@ const V2AgentBYO: React.FC = () => {
       <p className="v2-byo__hint">{t(machinesNeedUpdate ? 'agentByo.addComputer.afterUpdate' : 'agentByo.addComputer.after')}</p>
     </div>
   ) : null;
-  // D247: a runner other than Claude Code and Codex takes the place of the
+  // A runner other than Claude Code and Codex takes the place of the
   // install button with what works for it. OpenCode gets its own Mac lines;
   // the rest a plain line naming what can answer instead.
   const hostedName = t('agentByo.mode.hosted');

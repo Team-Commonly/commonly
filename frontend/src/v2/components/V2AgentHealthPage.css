@@ -1,4 +1,4 @@
-/* Agent health (/v2/agents/health), from the D115 frame:
+/* Agent health (/v2/agents/health), from the design frame:
    docs/design/artboards/d115/index.html. Tokens only (--v2-*), so light, dark
    and auto switch together. The head and body classes are Your team's
    (.v2-team__head, .v2-team__body); this sheet draws the table, the bar and

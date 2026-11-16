@@ -67,7 +67,7 @@ describe('/llms.txt', () => {
 
   // The listener runs Claude Code or Codex on a Mac (#2288/#2289) and on Linux
   // (Claude Code F96, #3395; Codex walked on prod 11-05, run 41994906534). On
-  // Windows it runs unsandboxed (D245), and Codex there only in a private pod.
+  // Windows it runs unsandboxed, and Codex there only in a private pod.
   test('names only the runtimes that ship, and where', () => {
     expect(text).toContain('Claude Code or Codex');
     const runtime = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';

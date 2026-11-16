@@ -1,5 +1,5 @@
 // @ts-nocheck
-// F98 (D243, Cofounder 11-04): hosted agents are Claude-only. The gateway's
+// F98 (decided 11-04): hosted agents are Claude-only. The gateway's
 // selects offer Claude Haiku 5.5 only, the backend LLM service no longer offers
 // Gemini, and a current value that is no longer offered still shows, disabled
 // and marked current.

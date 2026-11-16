@@ -1,4 +1,4 @@
-// D247: the harnesses an agent can run on, with the models and effort levels
+// The harnesses an agent can run on, with the models and effort levels
 // each takes. The server owns the list (backend/config/harnessCatalog.ts,
 // served at GET /api/registry/harness-catalog and on manage-settings); this
 // module only orders it and merges what a computer reported.

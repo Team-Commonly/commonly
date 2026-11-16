@@ -75,7 +75,7 @@ const V2InviteRedeem: React.FC = () => {
   // can show what they were invited to before asking them to sign up.
   useEffect(() => {
     if (authLoading || isAuthenticated || !token) return;
-    // A logged-out count against the template, never the token (D286).
+    // A logged-out count against the template, never the token.
     trackPublic('invite-page-view');
     let cancelled = false;
     (async () => {
