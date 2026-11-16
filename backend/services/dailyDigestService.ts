@@ -235,7 +235,10 @@ export class DailyDigestService {
       const inPod = await Pod.exists({
         _id: episode.podId,
         $or: [{ members: episode.installedBy }, { 'members.userId': episode.installedBy }],
-      }).catch(() => null);
+      }).catch((error: Error) => {
+        console.warn("[daily-digest] stalled installer's pod could not be read:", error.message);
+        return null;
+      });
       if (inPod) ids.set(person, episode.installedBy);
     }
     return [...ids.values()];
