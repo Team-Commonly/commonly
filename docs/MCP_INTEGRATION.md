@@ -601,10 +601,11 @@ off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
 (openai/codex#60041). `--trust` does not override a project explicitly marked
 untrusted; that project's config stays off. Commonly isn't affected. The CLI
 passes its server as `-c mcp_servers.*` flags, which load on every seat. A
-private seat also reads the user `~/.codex/config.toml`, where the block above
-lives. A public seat runs with `--ignore-user-config`, so it never reads that
+private seat also reads the user config, where the block above lives:
+`$CODEX_HOME/config.toml`, which is `~/.codex/config.toml` when `CODEX_HOME` is
+unset. A public seat runs with `--ignore-user-config`, so it never reads that
 file, before 0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
-`~/.codex/config.toml`, never in a project's `.codex/config.toml`. Checked by
+that user config, never in a project's `.codex/config.toml`. Checked by
 driving the real codex adapter for one private-seat turn on 0.169.0 against a mock Responses
 endpoint: the flag-passed server and the user-config server started and reached
 the model, and a server in the project's `.codex/config.toml` did not (on 0.162.1
