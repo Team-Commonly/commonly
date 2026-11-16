@@ -54,7 +54,7 @@
 /* Phones (≤760): the frame draws these keys at their desktop size (28 small keys and
    28 icon keys, 24 small-segment options), so the rows stay 48. The primitives' 44px
    phone size is undone here; each key takes its 44px touch area from an invisible
-   ::before centred on it (Cofounder ruling 11-04: the pick wins on look, no tap target
+   ::before centred on it (Ruling 11-04: the pick wins on look, no tap target
    under 44). */
 @media (max-width: 760px) {
   .v2-settings__guide { display: grid; width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
@@ -653,7 +653,7 @@
 }
 
 
-/* D223 (TASK-688): the artboard's 64px head spans the pane edge to edge and only the
+/* (TASK-688): the artboard's 64px head spans the pane edge to edge and only the
    body below it scrolls, so the settings route drops the feature body padding and the
    legacy wrapper's max-width, the same way connectors does. */
 .v2-feature--settings > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }

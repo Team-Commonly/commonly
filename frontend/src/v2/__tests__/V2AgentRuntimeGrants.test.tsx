@@ -234,7 +234,7 @@ test('shows this agent grant and requires a second click to revoke through the e
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant-1/revoke', undefined, expect.anything()));
 });
 
-// D247: whether a viewer may save is the server's call (runtimeEditable →
+// Whether a viewer may save is the server's call (runtimeEditable →
 // onSaveRuntime). Without it the controls are read-only; with it a listener
 // agent is as editable as a daemon one.
 test('model changes delegate to the shared settings hook; without a save the controls are read-only', async () => {

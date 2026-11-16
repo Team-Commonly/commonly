@@ -94,7 +94,7 @@ const isWorkingTask = (task: TaskItem): boolean => (
 );
 
 
-// D215 (TASK-691): the panel folds. Each group is one 44px row at rest and
+// (TASK-691): the panel folds. Each group is one 44px row at rest and
 // opens on demand, except Needs you, which starts open. What a person opens or
 // closes stays that way for the session.
 export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
@@ -178,7 +178,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
   const closeDm = useCloseAgentRoom(onPodChanged);
-  // D215 (TASK-734): the panel head switches between the pod and its threads.
+  // (TASK-734): the panel head switches between the pod and its threads.
   const [view, setView] = useState<InspectorView>('pod');
   useEffect(() => { setView('pod'); }, [pod?._id]);
   const threads = useMemo(() => threadRowsFrom(detail.messages || []), [detail.messages]);
@@ -331,7 +331,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   return (
     <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
-        {/* D215: a Pod | Threads segment, then members, manage and Hide panel. */}
+        {/* A Pod | Threads segment, then members, manage and Hide panel. */}
         <div className="v2-workspace-inspector__head">
           <V2Segmented<InspectorView>
             className="v2-workspace-inspector__view"
@@ -559,7 +559,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           </p>
         ) : (
           <div className="v2-pod-join-settings">
-            {/* D215: two exclusive values read better side by side than as radios. */}
+            {/* Two exclusive values read better side by side than as radios. */}
             <V2Segmented
               ariaLabel={t('podsSidebar.create.whoCanJoin')}
               value={joinPolicy}

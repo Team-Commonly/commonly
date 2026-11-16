@@ -1,7 +1,7 @@
 import { matchPath } from 'react-router-dom';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 
-// First-party usage events (D286). Fixed names, route templates and enum
+// First-party usage events. Fixed names, route templates and enum
 // props only: never typed text, a message, a token, or a path with an id in
 // it. The server holds the same allowlists and drops anything outside them;
 // this side only avoids sending what would be dropped anyway.

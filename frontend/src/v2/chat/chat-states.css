@@ -1,4 +1,4 @@
-/* Pod chat · states the d215 frame does not draw (S3d, D223 lift).
+/* Pod chat · states the d215 frame does not draw (S3d).
 
    Every rule here moved out of v2.css unchanged: empty and starter states,
    catch-up, delivery hints, cards and other chat-only surfaces the frame has
@@ -202,7 +202,7 @@
 .v2-root button.v2-chat__start {
   min-height: 32px;
   padding: 6px 12px;
-  /* D215 keys: the Signal key material (secondary) and fill (primary) the
+  /* Design keys: the Signal key material (secondary) and fill (primary) the
      lifted surfaces already wear, at the frame's 10px radius. */
   border: 1px solid var(--v2-key-edge);
   border-radius: var(--v2-r-10);
@@ -1088,7 +1088,7 @@
 
 /* A readable connector call: the verb, then the tool's own name as meta. The
    gap is a column gap, so a tool name that wraps onto its own line starts
-   flush left rather than indented (Cofounder at 390). */
+   flush left rather than indented (at 390). */
 .v2-approval__action--tool {
   display: flex;
   flex-wrap: wrap;
@@ -1311,7 +1311,7 @@
 }
 
 /* Off-frame: on a phone the consent controls are touch targets, so Approve,
-   Decline and the exact-arguments toggle reach 44px (D223 exception). */
+   Decline and the exact-arguments toggle reach 44px (design exception). */
 @media (max-width: 480px) {
   .v2-root button.v2-approval__btn {
     min-height: 44px;

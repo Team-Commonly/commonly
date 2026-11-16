@@ -275,7 +275,7 @@ describe('BYO listener snippet', () => {
   // person's own login; Codex on Linux walked on prod 11-05, run 41994906534,
   // with an API key through a model gateway). Native Windows has no sandbox, so the
   // listener runs unconfined there and the page says so beside the PowerShell
-  // lines (D245). The Windows MCP command goes through cmd /c (windows-latest).
+  // lines. The Windows MCP command goes through cmd /c (windows-latest).
   describe('where the listener runs', () => {
     const realUserAgent = window.navigator.userAgent;
     const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
@@ -323,7 +323,7 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
       expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
       const note = screen.getByTestId('byo-listen-windows');
-      // D164: these lines answered an @mention on prod with the published
+      // These lines answered an @mention on prod with the published
       // CLI (byo-windows.yml run 41926949969), so the note says Claude Code
       // works there from 0.1.243, the first release with the Windows npm fix.
       expect(note).toHaveTextContent(/^Claude Code answers @mentions on Windows with CLI 0\.1\.243 or newer\. Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);

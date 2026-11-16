@@ -1,5 +1,5 @@
 // The connect command, built as a pure string for bash/zsh and for PowerShell
-// (D245, #2141 part 1). PowerShell has no `export`, and its double-quoted
+// (#2141 part 1). PowerShell has no `export`, and its double-quoted
 // strings treat ` as the escape and expand $, so the key is escaped without
 // assuming anything about its alphabet.
 import { checkedInSinceIssue, connectSnippet, powerShellQuote } from '../components/V2AgentBYO';

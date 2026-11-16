@@ -20,7 +20,7 @@ interface V2SegmentedProps<T extends string> {
 }
 
 /**
- * D215 segmented control: two or three exclusive values side by side. It is a
+ * Design segmented control: two or three exclusive values side by side. It is a
  * radiogroup, so arrow keys move the choice and only the checked option sits
  * in the tab order.
  */

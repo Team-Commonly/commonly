@@ -20,7 +20,7 @@ describe('V2MobileTabs', () => {
       </MemoryRouter>,
     );
 
-    // D215: the label is a word; the count rides the icon as a cobalt badge.
+    // The label is a word; the count rides the icon as a cobalt badge.
     expect(screen.getAllByRole('button').map((b) => b.querySelector('.v2-mobile-tabs__label')?.textContent)).toEqual(['Pods', 'Needs you', 'Team', 'Settings']);
     const badge = document.querySelector('.v2-mobile-tabs__icon .v2-mobile-tabs__count');
     expect(badge).toHaveTextContent('3');

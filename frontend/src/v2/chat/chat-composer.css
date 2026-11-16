@@ -1,4 +1,4 @@
-/* Pod chat · composer and mention picker (S3c, D223 lift of the d215 chat
+/* Pod chat · composer and mention picker (S3c, lift of the d215 chat
    frame).
 
    Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
@@ -105,12 +105,12 @@
 }
 
 @media (max-width: 760px) {
-  /* The phone keys draw at 32px and take touches at 44px (D223 standing
+  /* The phone keys draw at 32px and take touches at 44px (standing
      rule, 11-01): a pseudo-element extends the hit area, the box stays.
      z-index keeps it above later positioned siblings such as the transcript. */
   .v2-root button.v2-composer__plus,
   .v2-root button.v2-composer__send { position: relative; z-index: 1; }
-  /* The drawn 32x32 stays (D223); the primitives' 44px phone size does not apply. */
+  /* The drawn 32x32 stays; the primitives' 44px phone size does not apply. */
   .v2-root button.v2-composer__plus,
   .v2-root button.v2-composer__send { width: 32px; height: 32px; }
   .v2-root button.v2-composer__plus::after,
@@ -124,7 +124,7 @@
 
 .v2-composer {
   flex: 0 0 auto;
-  /* D215 (TASK-734): a floating card, radius 14 on the pop shadow, no border. */
+  /* (TASK-734): a floating card, radius 14 on the pop shadow, no border. */
   margin: 4px 18px 16px;
   border: 0;
   border-radius: var(--v2-r-14, 14px);
@@ -149,7 +149,7 @@
 .v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; }
 
 
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
+/* Look from the design primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
 .v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
 
 /* Disabled while a file uploads: the primitive's ghost hover has no :disabled guard. */
@@ -258,9 +258,9 @@
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-p v2p-ib, with
+/* Look from the design primitives (primitives.css): v2p-b v2p-b-p v2p-ib, with
    the frame's up-arrow glyph. Empty, Send is disabled but drawn as at rest
-   (D215); while a send is in flight it keeps the old progress look. */
+  ; while a send is in flight it keeps the old progress look. */
 .v2-root button.v2-composer__send {
   flex: 0 0 32px;
   margin-bottom: 0;

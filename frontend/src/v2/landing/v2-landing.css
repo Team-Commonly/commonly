@@ -216,7 +216,7 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
-/* D38: the Discord door. Its own row under the keys and the install line, set
+/* The Discord door. Its own row under the keys and the install line, set
    like the demo caption (14/20, on-accent) so it reads as a line on the band,
    not a third button. Underlined at rest because it is the only plain link on
    the band; the underline thickens on hover. */
@@ -274,7 +274,7 @@
   flex-direction: column;
   gap: 22px;
 }
-/* The landing's ONE uppercase eyebrow (D225; 11-04 audit, finding 14). It
+/* The landing's ONE uppercase eyebrow (11-04 audit, finding 14). It
    earns the place: it is the hero's credential (open source, the licence), set
    once on the band above the h1. Every other label on the page is sentence-case
    mono with no tracking: the section kickers, the trusted line, the tier names

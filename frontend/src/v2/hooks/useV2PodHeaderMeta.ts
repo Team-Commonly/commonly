@@ -7,7 +7,7 @@ import { useSocket } from '../../context/SocketContext';
 // failed read leaves the header without that fragment rather than blank.
 // The open count then follows the board's own live wire: a task_updated for
 // this pod re-reads it, and so does a reconnect that may have missed one.
-// The same read carries the two starter tasks sign-up seeds (D288): the
+// The same read carries the two starter tasks sign-up seeds: the
 // first-run bar shows their state and stands in for the count until both
 // are done.
 

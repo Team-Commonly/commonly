@@ -2257,7 +2257,7 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     expect(await within(form).findByText('Only a Claude Code, Codex or OpenCode agent can be named on a grant.')).toBeInTheDocument();
   });
 
-  // D252: a private pi, Qwen or Goose seat holds a grant only as a public agent.
+  // A private pi, Qwen or Goose seat holds a grant only as a public agent.
   // It is told that, not that its harness can't hold one.
   it('an agent on a public-only harness that is not public is offered disabled, saying it must run as a public agent', async () => {
     const form = await openAdd([candidate({ nameable: false, reason: 'public_only', sandbox: 'unknown' })]);

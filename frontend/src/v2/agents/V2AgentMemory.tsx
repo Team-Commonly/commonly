@@ -118,7 +118,7 @@ export const journalDay = (header: string, language: string) => {
   return day.toLocaleDateString(language || undefined, { month: 'short', day: 'numeric' });
 };
 
-// The D215 frame without entries: same nav and body, the state sits inside it.
+// The design frame without entries: same nav and body, the state sits inside it.
 const MemoryShell: React.FC<{ loading: boolean; message: string; loadingLabel: string; query: string; setQuery: (q: string) => void; searchLabel: string; navLabel: string; groupLabel: (id: GroupId, fallback: string) => string }> = ({ loading, message, loadingLabel, query, setQuery, searchLabel, navLabel, groupLabel }) => (
   <div className="v2m-mem">
     <nav className="v2m-mnav" aria-label={navLabel}>

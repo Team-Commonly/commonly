@@ -353,9 +353,9 @@ describe('direction C threading restyle (PR 2b)', () => {
   });
 });
 
-// D278: answers land in the mention's thread, so the asker's own thread opens
+// Answers land in the mention's thread, so the asker's own thread opens
 // for them and everyone else's chip previews the latest reply.
-describe('D278: threads that hold an answer to me', () => {
+describe('threads that hold an answer to me', () => {
   const at = (min) => `2026-11-09T10:${String(min).padStart(2, '0')}:00.000Z`;
   // The read-tracking epoch (#3831 D1): before every fixture message here.
   const EPOCH = '2026-11-09T09:00:00.000Z';

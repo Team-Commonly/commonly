@@ -393,7 +393,7 @@
 }
 .v2-root a.v2-byo__cursor-link:hover { text-decoration: underline; }
 /* ADR-026 D1: one-paste computer setup, shown only while no machine exists. */
-/* A card: the D215 ring and soft shadow at r9, not a 1px border at r6 (rulings 11-04). */
+/* A card: the design ring and soft shadow at r9, not a 1px border at r6 (rulings 11-04). */
 .v2-byo__add-computer {
   display: flex;
   flex-direction: column;

@@ -1,7 +1,7 @@
 // @ts-nocheck
 // The "i" hint must answer a desktop click. With a mouse, hovering opens it
 // before the click lands, and the click used to toggle it shut under the cursor,
-// so a click looked like it did nothing (D215 crawl, 2026-11-04).
+// so a click looked like it did nothing (crawl, 2026-11-04).
 import React from 'react';
 import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import V2Hint from '../components/V2Hint';

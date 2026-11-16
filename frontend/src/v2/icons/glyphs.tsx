@@ -51,7 +51,7 @@ export type MarkName = 'attention' | 'mirror' | 'off';
 
 export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close' | 'chat' | 'plug' | 'play' | 'more' | 'out';
 
-/** D215 sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
+/** Design sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
 export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ name, size }) => {
   switch (name) {
     case 'pencil':
@@ -112,7 +112,7 @@ export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ 
 
 export type RecordGlyphName = 'play' | 'term' | 'block' | 'key' | 'download' | 'back' | 'clock' | 'dot' | 'activity';
 
-/** D215 task record (s-task-record): one mark per entry kind, plus the page's keys. */
+/** Design task record (s-task-record): one mark per entry kind, plus the page's keys. */
 export const RecordGlyph: React.FC<{ name: RecordGlyphName; size?: number }> = ({ name, size }) => {
   switch (name) {
     case 'play':

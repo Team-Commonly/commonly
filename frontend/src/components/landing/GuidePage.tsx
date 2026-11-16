@@ -59,7 +59,7 @@ interface Guide {
   title: string;
   description: string;
   provenance: GuideProvenance;
-  /** D295 (F430): set together with `answer` when a guide's pass lands. */
+  /** set together with `answer` when a guide's pass lands. */
   revised?: string;
   answer?: string;
   intro: string[];

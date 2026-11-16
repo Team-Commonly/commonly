@@ -223,7 +223,7 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
 // Scout's welcome is the message offering one of these. Older welcomes carry no
 // ask start, so the connect start identifies them too.
 const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
-// D286 Q2: which welcome start a person picked, as a fixed name. Starts the
+// which welcome start a person picked, as a fixed name. Starts the
 // welcome doesn't offer send nothing.
 const welcomeStartKind = (start: V2Start): string | null => {
   if (start.action === WELCOME_HOSTED_ACTION) return 'hosted';
@@ -412,7 +412,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // A reply visible flat before its root arrived must stay flat. Otherwise
     // prepending an older page relocates it into a resting thread chip.
     flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
-    // D278: who is reading, and their read points, so each chip can preview
+    // Who is reading, and their read points, so each chip can preview
     // its latest reply and count what this person hasn't read.
     return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids, {
       viewerId: currentUser?._id || null,
@@ -1787,7 +1787,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
 
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
   // The private workspace is never shared (the placement-B privacy ruling).
-  // D288: there the card waits for the person's own agent, not Scout, and its
+  // There the card waits for the person's own agent, not Scout, and its
   // press makes a new pod with that agent in it and invites into that one.
   const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
   // Scout's chat messages carry its display name, not its per-user username,
@@ -2186,7 +2186,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
-  // Header meta (D215, TASK-734): board chip, three member faces and "+N",
+  // Header meta (TASK-734): board chip, three member faces and "+N",
   // then bound channels. The counts moved into the faces' label.
   const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
   const memberCountText = t('podChat.header.members', { count: humanMemberCount });
@@ -2197,7 +2197,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const moreMembers = Math.max(0, (members || []).length - faceMembers.length);
   const facesLabel = `${memberCountText}, ${agentCountText}`;
   const metaParts: React.ReactNode[] = [];
-  // D215: the board is a chip with a glyph and the count, a status and a door at once.
+  // The board is a chip with a glyph and the count, a status and a door at once.
   const boardLabel = headerMeta.boardOpen !== null ? t('podChat.header.boardOpen', { count: headerMeta.boardOpen }) : '';
   const boardChip = (compact: boolean) => (
     <button
@@ -2250,7 +2250,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   if (isDirectPod) {
     metaParts.push(...directChips);
   }
-  // D288: the owner's first run shows the starter steps under the header in
+  // The owner's first run shows the starter steps under the header in
   // place of the board chip, until both are done.
   const starter = headerMeta.starter;
   const showGetStarted = Boolean(viewerOwnsPod && !isDirectPod && !isReadOnly && starter
@@ -2346,7 +2346,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 ) : (
                   <>
                     <h1>{pod.name}</h1>
-                    {/* D215: a pencil on the title, shown on hover or focus. */}
+                    {/* A pencil on the title, shown on hover or focus. */}
                     {viewerOwnsPod && (
                       <button
                         type="button"
@@ -2363,7 +2363,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            {/* The phone head carries the board chip alone (D215 phone frame);
+            {/* The phone head carries the board chip alone (the phone frame);
                 the member faces live in the panel there. */}
             {/* The phone head draws "DM" alone (d215 390 frame). */}
             {isDirectPod ? (
@@ -2393,7 +2393,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 <span>{t('podChat.header.invite')}</span>
               </button>
             )}
-            {/* D215: the open panel carries its own Hide button, so the
+            {/* The open panel carries its own Hide button, so the
                 header offers the toggle only while the panel is hidden. */}
             {onToggleInspector && inspectorCollapsed && (
               <button

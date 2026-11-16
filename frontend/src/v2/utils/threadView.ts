@@ -20,7 +20,7 @@ export type ThreadViewItem =
     participants: V2ThreadParticipant[];
     lastActivityAt: string | null;
     replies: V2Message[];
-    /** D278: the newest reply, for the chip's one-line preview. */
+    /** The newest reply, for the chip's one-line preview. */
     latestReply?: ThreadLatestReply | null;
     /** Replies the viewer hasn't read. 0 when they have no read point. */
     unreadCount?: number;
@@ -168,7 +168,7 @@ const parseMs = (iso: string | null | undefined): number | null => {
 };
 
 /**
- * The viewer's read point in one thread (D278), in ms, or null for none.
+ * The viewer's read point in one thread, in ms, or null for none.
  *
  * With a stored `lastReadAt`: the later of it and the viewer's own newest
  * message in the thread, the root included (writing in a thread means you saw

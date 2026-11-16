@@ -61,7 +61,7 @@ test('the folded summary counts devices in Chinese', async () => {
   expect(await screen.findByText('1台 CLI 设备')).toBeInTheDocument();
 });
 
-test('a fold of only revoked devices counts them in Chinese (D44)', async () => {
+test('a fold of only revoked devices counts them in Chinese', async () => {
   axios.get.mockResolvedValue({ data: { devices: [{ ...device, revokedAt: '2026-10-20T09:30:00.000Z' }] } });
   render(<V2DevicesPanel asFold showHeading={false} />);
 
