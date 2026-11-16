@@ -5,8 +5,9 @@
 // window. We reload once, so the visitor gets the current build instead of a
 // broken page.
 //
-// A tab reloads at most once per build. The guard records every build that
-// has reloaded, not a time, so a chunk of a recorded build that keeps failing
+// A tab reloads at most once per build. The guard records the last
+// MAX_RECORDED_BUILDS builds that reloaded, not a time (a build that drops
+// out of that list could reload once more), so a chunk of a recorded build that keeps failing
 // can't reload the tab again, however far apart the failures are. A tab left
 // open across a deploy reloads once onto the new build, and that build gets
 // its own one reload. During a rolling deploy, index.html and the chunks can
