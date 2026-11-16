@@ -269,6 +269,10 @@ const createOrUpdateDeployment = async ({
         metadata: { labels },
         spec: {
           serviceAccountName: 'agent-provisioner',
+          // The gateway runs agent turns and never calls the Kubernetes API,
+          // and this account can read every Secret in the namespace and exec
+          // into pods. So it gets no token (F533).
+          automountServiceAccountToken: false,
           ...(nodeSelector ? { nodeSelector } : {}),
           ...(tolerations ? { tolerations } : {}),
           containers: [
