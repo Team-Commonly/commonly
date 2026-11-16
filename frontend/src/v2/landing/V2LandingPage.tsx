@@ -212,6 +212,7 @@ interface Stats {
 // The hero copy: the rotating term sits inside one sentence, and the sentence
 // is stated once on the h1's aria-label.
 const heroCopy = (t: (key: string) => string) => ({
+  title: t('landing.hero.title'),
   ariaLabel: t('landing.hero.ariaLabel'),
   titlePrefix: t('landing.hero.titlePrefix'),
   terms: [
@@ -557,27 +558,27 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__hero" ref={bandRef}>
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
+            {/* "Multiplayer" is what Commonly is for, so it is the h1. The
+                sentence under it says what that means, with the rotating term. */}
+            <h1 className="v2-landing__title" aria-label={hero.title}><StaggerWords text={hero.title} /></h1>
             {/* The rotating term must sit INSIDE the sentence frame so
-                grammars that wrap the object work: en "Chat with your ___"
-                (empty suffix), zh 「与你的___对话」. Never concatenate a
-                translated sentence around the term at one end only. */}
-            <h1 className="v2-landing__title" aria-label={hero.ariaLabel}>
-              {hero.titlePrefix && <StaggerWords text={hero.titlePrefix} />}
-              {/* The prefix gets its own line in both locales: inline, zh 把 was
-                  pushed off the term's line at 320. */}
-              <br />
-              <RotatingTerm terms={hero.terms} />
-              {hero.titleSuffix && (
-                // TASK-215: the sentence is stated once, on the h1's aria-label,
-                // so this span is decoration like the rotator above it. Without
-                // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                // The suffix always takes its own line: inline, the widest term
-                // pushed it to a third line at 1440 and the h1 jumped ~84px.
-                <span className="v2-landing__title-suffix v2-landing__title-suffix--own-line" aria-hidden="true">
-                  {hero.titleSuffix}
-                </span>
-              )}
-            </h1>
+                grammars that wrap the object work: en "Bring ___ into one pod.",
+                zh 「把___带进同一个 Pod。」. Never concatenate a translated
+                sentence around the term at one end only. A paragraph may not
+                carry an aria-label (TASK-216), so the sentence is content in a
+                clipped span, and the rotating words beside it are decoration. */}
+            <p className="v2-landing__bring">
+              <span className="v2-landing__wedge-sr">{hero.ariaLabel}</span>
+              <span aria-hidden="true">
+                {/* A space after "Bring", none after 把: CJK sets the term flush. */}
+                {hero.titlePrefix && <>{hero.titlePrefix}{/[A-Za-z]$/.test(hero.titlePrefix) ? ' ' : ''}</>}
+                <RotatingTerm terms={hero.terms} />
+                {hero.titleSuffix && (
+                  // TASK-211: nowrap keeps the zh suffix whole on a wrap.
+                  <span className="v2-landing__title-suffix">{hero.titleSuffix}</span>
+                )}
+              </span>
+            </p>
             <p className="v2-landing__lede">{hero.lede}</p>
 
             <div className="v2-landing__hero-actions">

@@ -3211,3 +3211,29 @@ test('the static / and the compare hub carry the research block: the study, then
   }
 });
 
+
+test('multiplayer leads the landing title, description, share tags, README tagline and llms.txt, because it is what Commonly is for', async () => {
+  const [translationText, useCaseText, guideText, llms, readme] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+    readFile(resolve(frontendDir, '../README.md'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) });
+  const landing = pages.find((page) => page.path === '/');
+  assert.match(landing.title, /^Commonly: multiplayer\b/);
+  assert.match(landing.description, /^Multiplayer for coding agents\. /);
+  assert.ok(landing.content.includes('<h1>Multiplayer for coding agents</h1>'), 'the prerendered h1 is the multiplayer line');
+  const indexHtml = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+  for (const tag of ['name="description"', 'property="og:description"', 'name="twitter:description"']) {
+    assert.match(indexHtml, new RegExp(`<meta ${tag} content="Multiplayer for coding agents\\. `));
+  }
+  for (const tag of ['property="og:title"', 'name="twitter:title"']) {
+    assert.match(indexHtml, new RegExp(`<meta ${tag} content="Commonly: multiplayer for coding agents"`));
+  }
+  // The first prose line an LLM reads, and the first line under the README's name.
+  assert.match(llms.split('\n').find((line) => line.startsWith('> ')), /\bmultiplayer\b/);
+  assert.match(readme.split('\n').find((line) => line.startsWith('**')), /^\*\*Multiplayer for coding agents: one pod for your team/);
+});

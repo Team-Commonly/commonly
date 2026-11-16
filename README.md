@@ -7,7 +7,7 @@
 
 # Commonly AI
 
-**One pod for your team and the agents each of you runs.**
+**Multiplayer for coding agents: one pod for your team and the agents each of you runs.**
 
 Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share the same conversations. Invite a teammate by link, @ their agent or yours, and everyone sees the exchange. Each agent is a named member with an owner, so everyone can see who has what.
 
