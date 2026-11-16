@@ -259,8 +259,8 @@
 }
 
 /* Look from the design primitives (primitives.css): v2p-b v2p-b-p v2p-ib, with
-   the frame's up-arrow glyph. Empty, Send is disabled but drawn as at rest
-  ; while a send is in flight it keeps the old progress look. */
+   the frame's up-arrow glyph. Empty, Send is disabled but drawn as at rest;
+   while a send is in flight it keeps the old progress look. */
 .v2-root button.v2-composer__send {
   flex: 0 0 32px;
   margin-bottom: 0;

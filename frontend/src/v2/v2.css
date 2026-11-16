@@ -4485,7 +4485,7 @@ body.modern-ui.v2-canvas {
    390), not the primitives' 44px phone size, which made this bar 58 tall and pushed
    the list down (#3373). Each option keeps a 44px touch area through a transparent
    ::before; the segment sits alone in its row, so no neighbour's area covers it.
-   The bar keys and rows stay at the 44px floor (Ruling 11-04). */
+   The bar keys and rows stay at the 44px floor (decided 11-04). */
 @media (max-width: 760px) {
   .v2-pods-aside--page .v2-pods__view .v2p-seg button { position: relative; height: 28px; }
   .v2-pods-aside--page .v2-pods__view .v2p-seg button::before {

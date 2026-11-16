@@ -1088,7 +1088,7 @@
 
 /* A readable connector call: the verb, then the tool's own name as meta. The
    gap is a column gap, so a tool name that wraps onto its own line starts
-   flush left rather than indented (at 390). */
+   flush left rather than indented (seen at 390px). */
 .v2-approval__action--tool {
   display: flex;
   flex-wrap: wrap;
