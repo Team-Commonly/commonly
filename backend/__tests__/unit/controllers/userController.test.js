@@ -154,7 +154,7 @@ describe('User Controller', () => {
     // F543: the User model has no bio field, so a bio save was dropped by the
     // strict schema while the call still said it worked. Nothing shipped sends
     // one; a caller that does is told so instead of seeing a silent no-op.
-    it.each([['a bio'], ['']])('refuses a bio (%j) rather than dropping it and reporting success', async (bio) => {
+    it.each([['a bio'], [''], [null]])('refuses a bio (%j) rather than dropping it and reporting success', async (bio) => {
       User.findByIdAndUpdate = jest.fn();
       const req = { user: { id: 'u1' }, body: { displayName: 'Lily Shen', bio } };
       const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
