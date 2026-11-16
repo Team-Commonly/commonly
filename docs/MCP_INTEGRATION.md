@@ -572,7 +572,8 @@ writing through a blip.
 **The gate is configuration, not the codex version** (0.169 adds a project-trust
 gate for a project's own config, covered at the end of this section). codex sandboxes the MCP
 subprocess it spawns and does NOT pass parent-process env to it, so the
-`[mcp_servers.commonly]` block in `~/.codex/config.toml` MUST declare its own
+`[mcp_servers.commonly]` block in your Codex user config (`$CODEX_HOME/config.toml`,
+by default `~/.codex/config.toml`) MUST declare its own
 `env = { COMMONLY_API_URL = "…", COMMONLY_AGENT_TOKEN = "…" }`. Without it the
 MCP server crashes at startup (`fatal: COMMONLY_API_URL is required`), the model
 sees no `commonly_*` tools, and an agent asked to "react" posts the emoji as
@@ -601,10 +602,12 @@ off in a folder Codex hasn't trusted, until `codex exec --trust` is run there
 (openai/codex#60041). `--trust` does not override a project explicitly marked
 untrusted; that project's config stays off. Commonly isn't affected. The CLI
 passes its server as `-c mcp_servers.*` flags, which load on every seat. A
-private seat also reads the user config, where the block above lives:
-`$CODEX_HOME/config.toml`, which is `~/.codex/config.toml` when `CODEX_HOME` is
-unset. A public seat runs with `--ignore-user-config`, so it never reads that
-file, before 0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
+private seat also reads a Codex user config: normally yours, linked into its
+private home (`$CODEX_HOME/config.toml`, by default `~/.codex/config.toml`). On
+Linux, a seat whose private home already holds its own `config.toml`, not a link,
+reads that file instead, so check there if a server you added is missing. A public
+seat runs with `--ignore-user-config`, so it never reads a user config, before
+0.169 or after. For your own Codex, keep `[mcp_servers.commonly]` in
 that user config, never in a project's `.codex/config.toml`. Checked by
 driving the real codex adapter for one private-seat turn on 0.169.0 against a mock Responses
 endpoint: the flag-passed server and the user-config server started and reached
