@@ -10,10 +10,10 @@
 export type ByoHandoffAdapter = 'claude' | 'codex' | 'opencode' | 'dsh';
 export type ByoHandoffOs = 'mac' | 'linux' | 'windows';
 
-export const BYO_HANDOFF_ADAPTERS: readonly ByoHandoffAdapter[] = [
+const BYO_HANDOFF_ADAPTERS: readonly ByoHandoffAdapter[] = [
   'claude', 'codex', 'opencode', 'dsh',
 ];
-export const BYO_HANDOFF_OSES: readonly ByoHandoffOs[] = ['mac', 'linux', 'windows'];
+const BYO_HANDOFF_OSES: readonly ByoHandoffOs[] = ['mac', 'linux', 'windows'];
 // Adapters whose Windows setup is the Bring your own page, not the card's lines.
 export const CONNECT_PAGE_ON_WINDOWS: ReadonlySet<ByoHandoffAdapter> = new Set<ByoHandoffAdapter>(['claude', 'codex']);
 

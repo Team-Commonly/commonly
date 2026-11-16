@@ -48,7 +48,7 @@ export const SCREENS = new Set([
 ]);
 
 // Logged-out events. A value, where a name takes one, comes from its enum.
-export const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
+const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
   'page-view': null,
   'cta-click': ['hero-start', 'nav-signup', 'guide-inline', 'compare-inline', 'pricing'],
   'register-view': null,
@@ -88,7 +88,7 @@ const header = (req: Headers, name: string): string => {
 export const privacySignal = (req: Headers): boolean => header(req, 'dnt') === '1' || header(req, 'sec-gpc') === '1';
 
 // Accounts carry no country, so the request's CF-IPCountry decides the region.
-export const optInRegion = (req: Headers): boolean => {
+const optInRegion = (req: Headers): boolean => {
   const country = header(req, 'cf-ipcountry').toUpperCase();
   return !country || country === 'XX' || country === 'T1' || OPT_IN_COUNTRIES.has(country);
 };
@@ -260,8 +260,8 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
 // nothing else (F399). The row holds the reason and the day: no user, country,
 // IP, pod or screen. A person's own opt-out, the EU/UK default and DNT/GPC are
 // never counted, since each promises that nothing is recorded.
-export const USAGE_DROP = 'usage-drop';
-export const USAGE_STATES = ['settings-get-failed'] as const;
+const USAGE_DROP = 'usage-drop';
+const USAGE_STATES = ['settings-get-failed'] as const;
 export type UsageState = typeof USAGE_STATES[number];
 
 export async function countUsageState(state: UsageState): Promise<void> {

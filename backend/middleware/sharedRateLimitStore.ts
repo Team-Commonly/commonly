@@ -67,7 +67,7 @@ let sharedClientStarted = false;
 // (local dev without Redis). The connection's own errors are logged here, once
 // per outage, with Redis's message (a WRONGPASS reads as one); node-redis
 // never puts the password in it.
-export const rateLimitRedis = (): RateLimitRedis | null => {
+const rateLimitRedis = (): RateLimitRedis | null => {
   if (process.env.NODE_ENV === 'test' || !process.env.REDIS_HOST) return null;
   if (!sharedClientStarted) {
     sharedClientStarted = true;
@@ -207,5 +207,5 @@ export class SharedRateLimitStore implements Store {
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  COMMAND_TIMEOUT_MS, DECREMENT_SCRIPT, INCREMENT_SCRIPT, SharedRateLimitStore, rateLimitRedis,
+  COMMAND_TIMEOUT_MS, DECREMENT_SCRIPT, INCREMENT_SCRIPT, SharedRateLimitStore,
 };

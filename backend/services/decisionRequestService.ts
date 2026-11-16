@@ -135,7 +135,7 @@ export const normalizeOptions = (value: unknown): DecisionOptionInput[] => {
   });
 };
 
-export const MAX_DECIDERS = 5;
+const MAX_DECIDERS = 5;
 
 type Decider = { userId: string; username: string };
 

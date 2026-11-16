@@ -42,7 +42,7 @@ export type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensem
 
 // Kinds only appear inside the All view (walk-1 miss 3). Order is the
 // order a person scans them: work first, direct last.
-export const POD_KIND_ORDER: PodKind[] = [
+const POD_KIND_ORDER: PodKind[] = [
   'team', 'community', 'chat', 'study', 'games', 'ensemble', 'admin', 'direct',
 ];
 
@@ -110,7 +110,7 @@ const writeOpenKinds = (kinds: Set<PodKind>) => {
   }
 };
 
-export const podMessageTime = (pod: V2Pod): number => {
+const podMessageTime = (pod: V2Pod): number => {
   const value = pod.lastMessage?.createdAt || pod.createdAt;
   const timestamp = value ? new Date(value).getTime() : 0;
   return Number.isNaN(timestamp) ? 0 : timestamp;
@@ -154,7 +154,7 @@ export const groupPodsByKind = (pods: V2Pod[]): Array<{ kind: PodKind; pods: V2P
     .filter((group) => group.pods.length > 0);
 };
 
-export const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
+const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
   [...pods].sort((left, right) => (
     podMessageTime(right) - podMessageTime(left) || left._id.localeCompare(right._id)
   ))

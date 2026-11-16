@@ -28,10 +28,10 @@
 
 export const KERNEL_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set(['native', 'hosted']);
 
-export const KERNEL_OWNED_CONFIG_KEYS: readonly string[] = ['hosted', 'schedule'];
+const KERNEL_OWNED_CONFIG_KEYS: readonly string[] = ['hosted', 'schedule'];
 
 /** What the native runtime reads to decide what a turn costs and can do. */
-export const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [
+const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [
   'model',
   'tools',
   'systemPrompt',

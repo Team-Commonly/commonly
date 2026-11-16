@@ -121,7 +121,7 @@ const idOf = (value: unknown): string => {
 };
 
 /** The pod's creator, still a listed member (TASK-168), or an instance admin. */
-export const hasPodAuthority = (
+const hasPodAuthority = (
   user: { _id?: unknown; id?: unknown; role?: string } | null | undefined,
   pod: { createdBy?: unknown; members?: unknown[] } | null | undefined,
 ): boolean => {

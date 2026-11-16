@@ -4,7 +4,7 @@ export const UI_LINK_HOSTS = new Set([
 // Suffix rules: a single-label Atlassian Cloud site (acme.atlassian.net) and a single-label
 // Sentry org (my-organization.sentry.io). Nothing deeper.
 const SITE_SUFFIX = /^[a-z0-9-]+\.(atlassian\.net|sentry\.io)$/;
-export function isCardHost(hostname: string): boolean {
+function isCardHost(hostname: string): boolean {
   return UI_LINK_HOSTS.has(hostname) || SITE_SUFFIX.test(hostname);
 }
 export function cardHref(raw: unknown): URL | null {

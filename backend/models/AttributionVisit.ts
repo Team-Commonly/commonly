@@ -5,7 +5,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 // most VISIT_REFS_PER_DAY NEW refs a day (the rest count under OTHER_REF), and
 // a day's row is dropped VISIT_RETENTION_DAYS after it was first written.
 export const VISIT_REFS_PER_DAY = 50;
-export const VISIT_RETENTION_DAYS = 180;
+const VISIT_RETENTION_DAYS = 180;
 // The overflow row. '~' cannot appear in a ref (utils/signupRef.ts), so no real
 // code, not even one named "other", ever shares it.
 export const OTHER_REF = '~other';

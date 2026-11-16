@@ -460,5 +460,4 @@ export {
   provisionGateway,
   deleteGateway,
   generateGatewayToken,
-  resolveBaseUrl,
 };

@@ -15,7 +15,7 @@ interface TabPod {
  * order applies here: the curated display name, then a non-default instance
  * id, then the username.
  */
-export const memberTabLabel = (member: V2PodMember): string => {
+const memberTabLabel = (member: V2PodMember): string => {
   const resolved = member.displayLabel?.trim();
   if (member.isBot && resolved) return resolved;
   const display = member.botMetadata?.displayName?.trim();

@@ -42,6 +42,16 @@ Leave `backend/vendor/seats/**` out of the count. It is a vendored copy of `pack
 ## Proving a candidate
 
 1. Word-match the name across every tracked file except `_external/`, not only `backend/` and `frontend/`. Any hit outside the declaring file moves the candidate to the inventory, even an unrelated one. This over-rejects on purpose.
-2. Count uses inside the declaring file. A symbol that is used there loses only its `export` keyword. A symbol that appears only in its own declaration has no callers and can be deleted, after checking what the deletion strands. A word match misses a default export, because `const x = require('./mod')` can bind it under any name. When the symbol is the module's default, list the importers by module path and read how each one uses the binding.
+2. Count uses inside the declaring file. A symbol that is used there loses only its `export` keyword. A symbol that appears only in its own declaration has no callers and can be deleted, after checking what the deletion strands. A word match misses a default export, because `const x = require('./mod')` can bind it under any name. When the symbol is the module's default, list the importers by module path and read how each one uses the binding. A text count of the name counts every binding that shares it, so trace each binding instead of trusting the count. In batch 3, `removeAsset` matched five times in `vectorSearchService.ts`: a live class method and its call (`this.removeAsset`), and a module-level wrapper with the same name, its `service.removeAsset` call, and its export entry. The wrapper itself had no caller, which ESLint's `no-unused-vars` caught once the `export` was gone. Lint the changed files as a second check.
 3. Types: a dropped `export` on a type has no runtime effect. `tsc` catches a remaining importer in non-test code only, since tests are not type-checked: backend `tsconfig.json` lists 21 `.ts` and 997 `.js` test files, but `checkJs` is off and the 21 `.ts` tests carry `@ts-nocheck`, and `tsconfig.typescheck.json` and `tsconfig.build.json` exclude tests. The frontend has 134 files with `@ts-nocheck`. For tests, the word match in step 1 is the proof.
 4. Frontend `export default`: list every importer of the module, including `jest.mock` and `import()`. If all of them take the named export, the default goes. `tsc` rejects a missed default import in `.ts` and `.tsx`, but not in a `jest.mock` factory.
+
+## Batches so far
+
+| Batch | PR | knip unused exports (before → after) | Change |
+|---|---|---|---|
+| 1 | #3731 | 378 → 344 (config not recorded) | 40 symbols |
+| 2 | #3907 | 440 → 400 | 40 un-exports |
+| 3 | #4183 | 393 → 259, on main d88b2da37 | 134 un-exports, including their `export { }` and `module.exports = { }` entries |
+
+After batch 3, the name-clean exports left are 30 in auth, grant, credential, secret, session and webhook-verification modules (a Tier 2 batch) and 5 that need a deletion, not an un-export: `setActiveClaimProvider`, `resetActiveClaimProvider` and `_test` in `agentHookService.ts`, `removeAsset` in `vectorSearchService.ts`, and `openGrant` in `frontend/src/v2/__testkit__/connectorsKit.tsx`. Types (512) are untouched.

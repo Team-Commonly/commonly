@@ -238,7 +238,7 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // offer was refused and the post still said the card had gone out. So once a
 // call in a response fails, a later post in that response is held, and the model
 // posts in its next step, with the failure in front of it.
-export const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
+const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
 
 // F530: the read-before-commit hold a connected agent gets on its post and its
 // task claim (#2580, agentSendFreshness). A hosted agent keeps no read cursor,
@@ -255,7 +255,7 @@ const UNSEEN_HELD_TOOLS: ReadonlySet<string> = new Set([
   'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
   'commonly_offer_own_agent', 'commonly_claim_task',
 ]);
-export const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
+const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
   `Not posted: ${failed.name}, called earlier in this same response, did not succeed (${failed.error}). `
   + 'Read its result above, then post your reply in your next step, saying what actually happened.'
 );
@@ -1026,7 +1026,7 @@ export const settleAnswerThread = async (
 // address the agent had written itself became one it could open (#2249).
 // Null on any failure, which byOtherAuthors treats as
 // "every message may be the agent's own".
-export const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
+const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
   try {
     const User = require('../models/User');
     const AgentIdentityService = require('./agentIdentityService');
@@ -2129,7 +2129,7 @@ export const connectIntentFloor = async (input: {
 // stayed silent on the first of two presses in a pod with other participants.
 // The click sends the English label whatever the language, and no language is
 // stored for the person, so the floor's reply reads in English.
-export const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
+const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
   if (ctx.agentName !== 'scout') return false;
   // payload.content carries the wake frames; rawContent is the person's words.
   const pressed = (trigger.payload as { rawContent?: unknown } | null | undefined)?.rawContent;

@@ -104,7 +104,7 @@ export const wakeUser = async (
 };
 
 /** Calls the API server with the pod's own service account. */
-export const inClusterKube = (): KubeCall => {
+const inClusterKube = (): KubeCall => {
   const host = process.env.KUBERNETES_SERVICE_HOST;
   const port = process.env.KUBERNETES_SERVICE_PORT || '443';
   if (!host) throw new Error('not running in a cluster');

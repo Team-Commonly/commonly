@@ -64,12 +64,12 @@ const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { perUserInstanceId } = require('./personaHireService');
 const { deletePodCascade } = require('./podDeletionService');
 
-export const SYNTHETIC_USERNAME = /^eng-smoke-journey-\d{10}$/;
-export const SYNTHETIC_EMAIL_DOMAIN = '@ops.commonly.invalid';
+const SYNTHETIC_USERNAME = /^eng-smoke-journey-\d{10}$/;
+const SYNTHETIC_EMAIL_DOMAIN = '@ops.commonly.invalid';
 // The same domain as a query, written as a literal rather than escaped from
 // the string at runtime.
 const SYNTHETIC_EMAIL = /@ops\.commonly\.invalid$/i;
-export const SYNTHETIC_SEAT_PREFIX = 'eng-smoke-journey-';
+const SYNTHETIC_SEAT_PREFIX = 'eng-smoke-journey-';
 const DEFAULT_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
 interface PgPool {
@@ -330,5 +330,5 @@ export const purgeSyntheticAccounts = async (
 
 // CJS compat, same shape as sibling services.
 module.exports = {
-  purgeSyntheticAccounts, isSyntheticAccount, SYNTHETIC_USERNAME, SYNTHETIC_EMAIL_DOMAIN,
+  purgeSyntheticAccounts, isSyntheticAccount,
 };

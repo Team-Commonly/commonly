@@ -600,7 +600,7 @@ export const assessEntryTools = (
  * working session. Injectable, because the intake slice measures the real
  * value against the vendor rather than inheriting this default.
  */
-export const HOSTED_MCP_DRIFT_TTL_MS = 5 * 60 * 1000;
+const HOSTED_MCP_DRIFT_TTL_MS = 5 * 60 * 1000;
 
 export interface HostedMcpDriftRow {
   /**

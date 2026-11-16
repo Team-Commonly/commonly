@@ -106,7 +106,7 @@ export const interactionActorId = (interaction: DiscordInteraction): string => S
 );
 
 /** The row binds exactly the guild and channel the command was typed in. */
-export const isBoundToChannel = (row: DiscordCommandRow, guildId: string, channelId: string): boolean => (
+const isBoundToChannel = (row: DiscordCommandRow, guildId: string, channelId: string): boolean => (
   Boolean(guildId) && Boolean(channelId)
   && String(row.config?.serverId || '') === guildId
   && String(row.config?.channelId || '') === channelId
@@ -222,7 +222,7 @@ const joinPerPod = (blocks: Array<{ podName: string; text: string }>): string =>
 );
 
 /** The rows bound to the channel the command came from. Every row is re-checked, not just queried. */
-export const findBoundRows = async (guildId: string, channelId: string): Promise<DiscordCommandRow[]> => {
+const findBoundRows = async (guildId: string, channelId: string): Promise<DiscordCommandRow[]> => {
   if (!guildId || !channelId) return [];
   const rows = await Integration.find({
     type: 'discord',
@@ -258,7 +258,7 @@ const runSettingsCommand = async (
 };
 
 /** The /tldr text: the summary's title, then its body, the way Telegram sends it. */
-export const renderDiscordTldr = (summary: { title?: string; content?: string }): string => {
+const renderDiscordTldr = (summary: { title?: string; content?: string }): string => {
   const title = defuseMassMentions(escapeDiscordMarkdown(String(summary.title || 'Pod Summary')));
   const body = defuseMassMentions(escapeDiscordMarkdown(String(summary.content || '')));
   return `**${title}**\n\n${body}`;
@@ -377,10 +377,7 @@ module.exports = {
   discordApplicationCommands,
   isDiscordRelayCommand,
   interactionActorId,
-  isBoundToChannel,
   mayChangeRelaySettings,
-  findBoundRows,
   resetSummaryCooldowns,
-  renderDiscordTldr,
   handleDiscordRelayCommand,
 };

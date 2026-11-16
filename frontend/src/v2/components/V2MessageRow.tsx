@@ -463,7 +463,7 @@ const SENTENCE_BREAK = /(?<=[.!?])(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms)\.)\s+(
 const CLOSING_MAX_CHARS = 240;
 // The message's last sentence when it's a question, since that's often what the reader has to
 // answer. Null when anything else comes after it, a code block for one.
-export const closingQuestion = (el: HTMLElement): string | null => {
+const closingQuestion = (el: HTMLElement): string | null => {
   const blocks = el.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
   const last = blocks[blocks.length - 1]?.textContent?.trim();
   if (!last || !ENDS_IN_QUESTION.test(last) || !el.textContent?.trim().endsWith(last)) return null;

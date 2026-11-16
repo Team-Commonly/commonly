@@ -100,7 +100,7 @@ assertNoHostedMcpInstallableCollisions(HOSTED_MCP_ENTRIES);
  * offerable only when this instance has both values in its environment; the
  * catalogue still owns the client kind, never the credentials (§4).
  */
-export const hostedMcpToolInstallables = (
+const hostedMcpToolInstallables = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, ToolInstallableMeta> => {

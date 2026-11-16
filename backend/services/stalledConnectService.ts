@@ -52,7 +52,7 @@ const MINUTE_MS = 60 * 1000;
  * needed. The window exists so someone who installs and immediately runs the
  * command is never nudged mid-setup.
  */
-export const CONNECT_PATIENCE_MINUTES = Number(
+const CONNECT_PATIENCE_MINUTES = Number(
   process.env.STALLED_CONNECT_PATIENCE_MINUTES || 15,
 );
 

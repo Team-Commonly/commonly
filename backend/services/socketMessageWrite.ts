@@ -38,7 +38,7 @@ export interface MessageSendFailure {
 // What a person's socket send may be. The only socket composer is the legacy
 // ChatRoom, which sends `text` and `image`; v2 posts over HTTP. The other
 // types are written by the platform, not by a chat client.
-export const SOCKET_MESSAGE_TYPES: readonly string[] = ['text', 'image'];
+const SOCKET_MESSAGE_TYPES: readonly string[] = ['text', 'image'];
 
 export const MESSAGE_TYPE_NOT_ALLOWED = {
   message: 'This message type cannot be sent.',

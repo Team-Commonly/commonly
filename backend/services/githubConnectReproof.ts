@@ -26,7 +26,7 @@ import {
   type GithubConnectProofDeps,
 } from './githubConnectProof';
 
-export const PROOF_CACHE_MS = 60 * 1000;
+const PROOF_CACHE_MS = 60 * 1000;
 
 interface CachedProof {
   until: number;

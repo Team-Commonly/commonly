@@ -143,7 +143,7 @@ const refPath = (branch: string): string => branch.split('/').map(encodeURICompo
 
 export { GITHUB_APP_NAMES, githubAppOfConfig, type GitHubAppName };
 
-export class GitHubAppNotConfiguredError extends Error {
+class GitHubAppNotConfiguredError extends Error {
   code = 'github_app_not_configured';
 
   constructor(public app: GitHubAppName) {
@@ -152,7 +152,7 @@ export class GitHubAppNotConfiguredError extends Error {
 }
 
 /** A Connect token request that names no single, valid repository id. */
-export class GitHubRepositoryRequiredError extends Error {
+class GitHubRepositoryRequiredError extends Error {
   code = 'github_repository_required';
 
   constructor() {

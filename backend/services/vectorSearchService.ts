@@ -653,7 +653,6 @@ const rebuildIndex = async (podId: unknown): Promise<{ indexed: number; errors: 
 
 export {
   VectorSearchService,
-  getServiceForPod,
   indexAsset,
   removeAsset,
   search,

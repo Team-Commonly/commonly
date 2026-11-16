@@ -148,10 +148,10 @@ function recordFirstStart(id: string, startId: string): void {
   }
 }
 
-export const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
+const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
 export type ByoOpenedOs = typeof BYO_OPENED_OS[number];
 
-export const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
+const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
   typeof value === 'string' && (BYO_OPENED_OS as readonly string[]).includes(value)
     ? value as ByoOpenedOs
     : undefined
