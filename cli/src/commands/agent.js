@@ -186,6 +186,7 @@ import {
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 import { CLI } from '../lib/cli-hint.js';
+import { reportRunStopped } from '../lib/run-stopped.js';
 
 // F167: shared by attach, init and register.
 const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
@@ -5964,6 +5965,8 @@ Docs:
           // On Windows the page's lines are PowerShell's ($env:…), and in Command
           // Prompt they set nothing, so this is where that run lands.
           console.error(noRunTokenMessage({ name, agentArg }));
+          // Nothing reached the server yet, so say which stop this was (F551).
+          await reportRunStopped({ agentName: agentArg, reason: 'no-token' });
           process.exit(1);
         }
         const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;

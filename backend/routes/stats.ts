@@ -148,6 +148,57 @@ router.post('/byo-step', rateLimit({
   return res.json({ ok: true });
 });
 
+// F551: `agent run` stopped before its first server call because it had no
+// key (the two `$env:` lines pasted into Command Prompt, or skipped). With no
+// key it can't sign in, so this takes no auth: it names the agent, and only a
+// BYO agent of that name made in the last day gets a row, owned by whoever
+// installed it. Fixed fields only, one row per installation and reason. It
+// answers 204 before the lookup, so neither the answer nor its timing says
+// which names exist.
+const RUN_STOP_REASONS = new Set(['no-token']);
+const RUN_PLATFORMS = new Set(['win32', 'darwin', 'linux']);
+const RUN_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+router.post('/run-stopped', rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
+}), async (req: any, res: any) => {
+  // Strings only: String() on a crafted object ({ toString: null }) throws
+  // here, before the try, in a handler anyone can call.
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+  const agentName = typeof req.body?.agentName === 'string' ? req.body.agentName.toLowerCase() : '';
+  if (!RUN_STOP_REASONS.has(reason) || !RUN_NAME.test(agentName)) return res.status(204).end();
+  const platform = RUN_PLATFORMS.has(req.body?.platform) ? req.body.platform : null;
+  const nodeMajor = Number.isInteger(req.body?.nodeMajor) && req.body.nodeMajor > 0 && req.body.nodeMajor < 100
+    ? req.body.nodeMajor : null;
+  res.status(204).end();
+  try {
+    const installs = await AgentInstallation.find({
+      agentName,
+      status: 'active',
+      'config.runtime.runtimeType': 'webhook',
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    }).select('_id installedBy').limit(5).lean();
+    await Promise.all((installs as Array<{ _id: unknown; installedBy: unknown }>).map((install) => recordByoEvent(
+      install.installedBy,
+      'run-stopped',
+      {
+        reason,
+        installationId: install._id,
+        ...(platform ? { platform } : {}),
+        ...(nodeMajor ? { nodeMajor } : {}),
+      },
+      `run-stopped:${String(install._id)}:${reason}`,
+    )));
+  } catch (err: any) {
+    console.warn('[byo-telemetry] run-stopped lookup failed:', err?.message);
+  }
+});
+
 // Usage events. Both endpoints answer 204 for anything they choose not to
 // keep (a switched-off person, DNT/GPC, the daily cap), so a client can't
 // probe which rule applied. A 400 names the rule, never the submitted value.
