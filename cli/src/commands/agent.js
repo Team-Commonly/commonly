@@ -290,7 +290,7 @@ export const NO_AGENT_CLI_CODE = 'no_agent_cli';
  */
 export const noRunTokenMessage = ({ name, agentArg = name, platform = process.platform }) => {
   const set = platform === 'win32'
-    ? 'In PowerShell, not Command Prompt, set $env:COMMONLY_API_URL and $env:COMMONLY_AGENT_TOKEN'
+    ? 'In PowerShell, not Command Prompt, run the $env:COMMONLY_API_URL="…" and $env:COMMONLY_AGENT_TOKEN="…" lines'
     : 'Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN';
   return `No token for '${name}'. ${set}`
     + ` (shown on the Connect your own agent page) and re-run, or:`
