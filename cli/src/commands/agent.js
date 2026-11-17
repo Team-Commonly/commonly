@@ -283,6 +283,21 @@ export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 export const NO_AGENT_CLI_CODE = 'no_agent_cli';
 
 /**
+ * What `agent run` says when no token is set. On Windows the page's lines are
+ * PowerShell: pasted into Command Prompt, the `$env:` lines set nothing and the
+ * run ends here before it reaches the server (F548), so name the shell and its
+ * form rather than `export`.
+ */
+export const noRunTokenMessage = ({ name, agentArg = name, platform = process.platform }) => {
+  const set = platform === 'win32'
+    ? 'In PowerShell, not Command Prompt, set $env:COMMONLY_API_URL and $env:COMMONLY_AGENT_TOKEN'
+    : 'Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN';
+  return `No token for '${name}'. ${set}`
+    + ` (shown on the Connect your own agent page) and re-run, or:`
+    + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`;
+};
+
+/**
  * A saved seat with no enforced sandbox: an adapter that takes one, no
  * workspace, and an environment that is absent or enforces nothing (a record
  * from before bootstrap applied the default, or one attached without an
@@ -5810,11 +5825,7 @@ Docs:
           process.exit(1);
         }
         if (!record) {
-          console.error(
-            `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
-            + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
-          );
+          console.error(noRunTokenMessage({ name, agentArg }));
           process.exit(1);
         }
         const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;
