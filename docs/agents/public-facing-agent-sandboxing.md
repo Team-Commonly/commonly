@@ -82,15 +82,22 @@ untrusted (F171, `cli/src/lib/environment.js` `mountSkills`):
 - Each snapshot is built in a host-private stage folder beside the workspace,
   then renamed into place after a fresh check that `.claude/skills` is the
   same directory. A replaced mount is moved out to the stage before it is
-  deleted, so the recursive delete runs in the stage. The one exception is a
-  workspace whose parent can't be written while the temp folder is on another
-  disk: the CLI warns, and the move falls back to a copy and delete in place.
+  deleted, so the recursive delete runs in the stage. Nothing is ever copied
+  or deleted at a workspace path: when the stage is on another disk (the
+  workspace's parent can't be written and the temp folder is another disk),
+  the rename fails with EXDEV and the mount is refused (`cross-disk-stage`),
+  leaving the old one in place.
 - A source that is itself a link (a `~/.claude/skills` entry into a checkout)
-  is copied as the files it points to, so the mount never writes through to
-  the source.
-- What is left is the moment between that last check and the rename. Node has
-  no `renameat`, so the rename still resolves the path. Public seats have no
-  shell to act in that gap.
+  is copied as the folder it points to, so the mount never writes through to
+  the source. A link inside a source is never followed: following
+  `credentials.json -> ~/.commonly/tokens/<agent>.json` would copy the token
+  into a folder the seat reads, past the deny rule that guards the host path.
+  A source holding any link is refused (`linked-skill-file`).
+- What is left is the moment between that last check and the renames. Node
+  has no `renameat`, so they still resolve the path. A swap there can move
+  only a directory that already carries the mount marker into the stage, and
+  put the snapshot, which holds only the source's files, where the link
+  points. Public seats have no shell to act in that gap.
 
 ## The general rule
 
