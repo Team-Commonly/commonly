@@ -1037,6 +1037,79 @@ describe('mountSkills: a source the seat controls, and what a late swap can reac
     expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
   });
 
+  test('a source under a workspace folder whose name starts with two dots is refused', async () => {
+    fs.mkdirSync(path.join(workspace, '..skills'));
+    fs.symlinkSync(path.join(host, name), path.join(workspace, '..skills', name));
+    const source = path.join(workspace, '..skills', name);
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+  });
+
+  test('a link chain that passes through the workspace is refused, though it ends outside', async () => {
+    // linked-skill -> <ws>/mine, and the seat makes mine a link to host files.
+    fs.symlinkSync(path.join(host, name), path.join(workspace, 'mine'));
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(workspace, 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+    expect(fs.existsSync(path.join(host, name, '.commonly-skill-mount'))).toBe(false);
+    expect(fs.statSync(path.join(host, name, 'agent.json')).mode & 0o200).toBeTruthy();
+  });
+
+  // macOS disks ignore case by default, so `<root>/WS` is the workspace. These
+  // run only where the temp disk does that.
+  const caselessTmp = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-case-'));
+    try {
+      fs.mkdirSync(path.join(probe, 'ws'));
+      return fs.existsSync(path.join(probe, 'WS'));
+    } finally {
+      fs.rmSync(probe, { recursive: true, force: true });
+    }
+  })();
+  const onCaselessDisk = caselessTmp ? test : test.skip;
+
+  onCaselessDisk('a chain through the workspace spelled in another case is refused', async () => {
+    fs.symlinkSync(path.join(host, name), path.join(workspace, 'mine'));
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(root, 'WS', 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+  });
+
+  onCaselessDisk('a link spelled in another case that ends inside the workspace is refused', async () => {
+    fs.mkdirSync(path.join(workspace, 'sub'));
+    fs.writeFileSync(path.join(workspace, 'sub', 'SKILL.md'), '# seat-written');
+    const outsideLink = path.join(root, 'cased-skill');
+    fs.symlinkSync(path.join(root, 'WS', 'sub'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+  });
+
+  test('a source reached through a relative link with .. parts mounts when it stays outside', async () => {
+    fs.mkdirSync(path.join(root, 'shelf'));
+    fs.writeFileSync(path.join(root, 'shelf', 'SKILL.md'), '# shelf');
+    fs.mkdirSync(path.join(root, 'links'));
+    const viaDots = path.join(root, 'links', 'shelf-skill');
+    fs.symlinkSync(path.join('..', 'shelf'), viaDots);
+
+    const result = await mountSkills({ skills: { claude: [viaDots] } }, workspace);
+
+    expect(result).toEqual({ mounted: [viaDots], conflicted: [] });
+    expect(fs.readFileSync(path.join(skillsDir, 'shelf-skill', 'SKILL.md'), 'utf8')).toBe('# shelf');
+  });
+
   test('a source that holds the workspace is refused', async () => {
     const result = await mountSkills({ skills: { claude: [root] } }, workspace);
 

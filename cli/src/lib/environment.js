@@ -15,11 +15,11 @@
  */
 
 import {
-  readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile, mkdtemp, rename, realpath,
+  readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile, mkdtemp, rename, realpath, readlink,
 } from 'fs/promises';
 import { existsSync } from 'fs';
 import {
-  isAbsolute, join, resolve as pathResolve, basename, dirname, relative,
+  isAbsolute, join, resolve as pathResolve, basename, dirname, relative, parse, sep,
 } from 'path';
 import { homedir, tmpdir } from 'os';
 import { resolveSkillSource } from './skill-prompt.js';
@@ -612,11 +612,65 @@ const makeSkillStage = async (workspacePath) => {
   }
 };
 
-// Whether `child` is `parent` or lies under it.
+// Whether `child` is `parent` or lies under it. Only a whole `..` part
+// leaves `parent`; a child named `..skills` is still inside it.
 const isWithin = (child, parent) => {
   const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  return !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`);
 };
+
+// A folder's identity on disk. Paths can't be compared as strings: macOS
+// disks ignore case and Unicode normalization by default, so `/WS` and `/ws`
+// are one folder. Read with bigint stats: inode numbers can pass 2^53.
+const folderId = (st) => `${st.dev}:${st.ino}`;
+
+// realpath, one part at a time, returning every path it passed through and
+// the identity of every real folder on the way. realpath alone gives only the
+// end, so a chain that goes through a folder the seat writes and back out
+// would look clean.
+const MAX_LINK_HOPS = 40;
+const resolveVisiting = async (target) => {
+  const abs = pathResolve(target);
+  let current = parse(abs).root;
+  const rest = abs.slice(current.length).split(sep).filter(Boolean);
+  const visited = [];
+  const folders = new Set();
+  let hops = 0;
+  while (rest.length) {
+    const part = rest.shift();
+    if (part === '.') continue;
+    if (part === '..') {
+      // `current` has no links in it, so its parent is the real parent.
+      current = dirname(current);
+      visited.push(current);
+      // eslint-disable-next-line no-await-in-loop
+      folders.add(folderId(await lstat(current, { bigint: true })));
+      continue;
+    }
+    const next = join(current, part);
+    visited.push(next);
+    // eslint-disable-next-line no-await-in-loop
+    const st = await lstat(next, { bigint: true });
+    if (!st.isSymbolicLink()) {
+      folders.add(folderId(st));
+      current = next;
+      continue;
+    }
+    hops += 1;
+    if (hops > MAX_LINK_HOPS) throw Object.assign(new Error(`too many links: ${target}`), { code: 'ELOOP' });
+    // eslint-disable-next-line no-await-in-loop
+    const link = await readlink(next);
+    if (isAbsolute(link)) current = parse(link).root;
+    rest.unshift(...link.slice(isAbsolute(link) ? parse(link).root.length : 0).split(sep).filter(Boolean));
+  }
+  return { visited, folders };
+};
+
+// Why a source that can't be resolved is refused: one that isn't there, or
+// one that can be read but not followed (a loop, no permission).
+const unresolvedReason = (err) => (
+  err?.code === 'ENOENT' || err?.code === 'ENOTDIR' ? 'missing-source' : 'unreadable-source'
+);
 
 // Whether a copied tree holds a link anywhere in it. Read in the stage, which
 // only the host writes, so nothing can change it between the copy and here.
@@ -687,7 +741,7 @@ const holdsLink = async (dir) => {
  * Returns `{ mounted, conflicted }`:
  *   - `mounted`:    string[]            — absolute source paths snapshotted
  *   - `conflicted`: Array<{path, reason}> where reason ∈
- *       'not-a-mount' | 'missing-source' | 'unsafe-skill-dir'
+ *       'not-a-mount' | 'missing-source' | 'unreadable-source' | 'unsafe-skill-dir'
  *       | 'cross-disk-stage' | 'linked-skill-file' | 'source-in-workspace'
  */
 export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks = {}) => {
@@ -710,6 +764,7 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
   await hooks.onStep?.('checked');
   const move = hooks.rename || rename;
   const workspaceReal = await realpath(workspacePath);
+  const workspaceId = folderId(await lstat(workspaceReal, { bigint: true }));
 
   for (const rawSource of sources) {
     const absSource = resolveSkillSource(rawSource, envFileDir || workspacePath);
@@ -720,11 +775,27 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
     // The seat writes its workspace, so a source there (a relative entry
     // resolves against it) could be made a link to any host folder, and
     // following it would copy that folder in. One that resolves into the
-    // workspace is the seat's own writing, and so is one that holds the
-    // workspace. All three are refused.
-    // eslint-disable-next-line no-await-in-loop
-    const realSource = await realpath(absSource);
-    if (isWithin(absSource, workspacePath) || isWithin(realSource, workspaceReal) || isWithin(workspaceReal, realSource)) {
+    // workspace is the seat's own writing, and so is one whose links pass
+    // through it on the way somewhere else, or one that holds the workspace.
+    // All of these are refused. Every way into the workspace passes through
+    // the workspace folder itself, so the walk is checked by folder identity,
+    // which no spelling of the path can dodge. realSource comes from realpath,
+    // spelled as on disk, so the copy and the string checks agree with it.
+    let resolved;
+    let realSource;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      resolved = await resolveVisiting(absSource);
+      // eslint-disable-next-line no-await-in-loop
+      realSource = await realpath(absSource);
+    } catch (err) {
+      conflicted.push({ path: absSource, reason: unresolvedReason(err) });
+      continue;
+    }
+    const entersWorkspace = resolved.folders.has(workspaceId)
+      || resolved.visited.some((step) => isWithin(step, workspaceReal) || isWithin(step, workspacePath));
+    if (isWithin(absSource, workspacePath) || entersWorkspace
+      || isWithin(realSource, workspaceReal) || isWithin(workspaceReal, realSource)) {
       conflicted.push({ path: absSource, reason: 'source-in-workspace' });
       continue;
     }
