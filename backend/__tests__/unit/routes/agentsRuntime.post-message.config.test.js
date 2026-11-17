@@ -330,14 +330,43 @@ describe('F490: the waking mention on the CAP post route', () => {
     expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
   });
 
-  it('a failed lookup checks freshness with no exemption instead of failing the post', async () => {
+  // A failed lookup must fail toward delivery: with no exemption, the unread
+  // trigger itself would count as unseen and hold the reply (CodeRabbit, #4096).
+  it('a failed lookup lets the reply through, even with its trigger still unread', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     AgentSendFreshness.deliveredTriggerIds.mockRejectedValueOnce(new Error('mongo blip'));
-    const res = await send({ content: 'done', threadRootId: '133559' });
-    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
-    expect(res.status).not.toHaveBeenCalledWith(500);
-    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
+    // The trigger is still unread, so the freshness check, if asked, would hold.
+    AgentSendFreshness.unseenMessages.mockResolvedValue({
+      code: 'unseen_messages', unseenCount: 1, messages: [{ id: '133559' }],
+    });
+    try {
+      const res = await send({ content: 'done', threadRootId: '133559' });
+      expect(res.status).not.toHaveBeenCalledWith(409);
+      expect(res.status).not.toHaveBeenCalledWith(500);
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('trigger lookup failed'), 'mongo blip');
+    } finally {
+      AgentSendFreshness.unseenMessages.mockResolvedValue(null);
+      warn.mockRestore();
+    }
+  });
+
+  it('a failed lookup still runs the pod authorization check first', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentSendFreshness.deliveredTriggerIds.mockRejectedValue(new Error('mongo blip'));
+    try {
+      const req = {
+        params: { podId: 'pod-2' }, body: { content: 'done', threadRootId: '133559' }, agentUser: { _id: 'bot-1' },
+        agentInstallation: installation, agentInstallations: [installation],
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(AgentSendFreshness.deliveredTriggerIds).not.toHaveBeenCalled();
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    } finally {
+      AgentSendFreshness.deliveredTriggerIds.mockResolvedValue([]);
+    }
   });
 
   it('still holds what the lookup does not name', async () => {

@@ -2586,8 +2586,12 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // delivered event for this agent named is exempt, and only that message.
       const answering = [req.body?.threadRootId, req.body?.replyToMessageId]
         .filter((id) => id !== undefined && id !== null && String(id) !== '');
-      // The lookup only narrows the hold. If it fails, the guard runs as it did
-      // before F490 (no exemption) rather than failing the post (CodeRabbit).
+      // If the lookup fails, the post goes through without the hold: with no
+      // exemption the still-unread trigger would count as unseen and hold the
+      // very reply it asked for, and a failed read fails toward delivery, never
+      // toward a reply nobody sees (CodeRabbit). The pod check above and the
+      // post's own validation still run.
+      let lookupFailed = false;
       const exemptMessageIds = answering.length
         ? await AgentSendFreshness.deliveredTriggerIds({
           agentName: installation.agentName,
@@ -2595,11 +2599,13 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
           podId,
           candidateIds: answering,
         }).catch((lookupError: Error) => {
-          console.warn('[agent post] trigger lookup failed; checking freshness with no exemption:', lookupError.message);
+          console.warn('[agent post] trigger lookup failed; posting without the freshness hold:', lookupError.message);
+          lookupFailed = true;
           return [];
         })
         : [];
-      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
+      const hold = lookupFailed ? null
+        : await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
       if (hold) return res.status(409).json(hold);
     }
 
