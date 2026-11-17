@@ -2,7 +2,9 @@ import en from '../../i18n/locales/en.json';
 import zhCN from '../../i18n/locales/zh-CN.json';
 
 /**
- * Pricing copy must not promise a price we do not charge.
+ * Pricing copy must not promise a price we do not charge. Since the paid tier
+ * ended, both tiers are free, and the test below pins that no priced tier
+ * comes back without someone meaning it to.
  *
  * This exists because it already happened: the Pro card shipped carrying a
  * "Free in beta" / "公测期免费" badge directly above "$12/human/mo", and stayed
@@ -59,14 +61,15 @@ describe('landing pricing copy', () => {
     });
   });
 
-  test('Pro is priced, so the rule above actually applies to it', () => {
-    // Without this, deleting the price would silently disarm every assertion.
-    expect(isPriced(en.landing.pricing.pro)).toBe(true);
-    expect(isPriced(zhCN.landing.pricing.pro)).toBe(true);
-  });
-
-  test('the two locales price Pro identically — currency is not translated', () => {
-    expect(zhCN.landing.pricing.pro.price).toBe(en.landing.pricing.pro.price);
+  test('the paid tier is gone: no tier is priced, and no Pro, enterprise or per-human price is offered', () => {
+    Object.values(LOCALES).forEach((bundle) => {
+      const pricing = bundle.landing.pricing as Record<string, any>;
+      const tiers = Object.values(pricing).filter((v) => v && typeof v === 'object' && 'name' in v);
+      expect(tiers.map((tier) => isPriced(tier))).toEqual([false, false]);
+      expect(pricing.pro).toBeUndefined();
+      expect(pricing.enterprise).toBeUndefined();
+      expect(JSON.stringify(pricing)).not.toMatch(/\$1\d|\bPro\b|per human|每位成员/);
+    });
   });
 });
 
@@ -76,8 +79,7 @@ describe('landing pricing copy', () => {
  * no code behind them, the hosted caps are 1 agent per user on every plan, and
  * hosted agents shipped, so "coming soon" is wrong. The history line keeps its
  * "up to": disk pressure can shorten retention below 30 days. Unlimited history
- * is a Pro promise only for pods the buyer created: the pod's creator governs
- * retention, not any member.
+ * was a Pro promise, and Pro is gone from the page.
  */
 describe('landing pricing claims that code does not back', () => {
   Object.entries(LOCALES).forEach(([locale, bundle]) => {
@@ -95,15 +97,4 @@ describe('landing pricing claims that code does not back', () => {
     expect(zhCN.landing.pricing.cloud.items.history).toMatch(/^最长30天/);
   });
 
-  test('Pro unlimited history is scoped to pods the buyer creates', () => {
-    expect(en.landing.pricing.sub).toMatch(/unlimited history in pods you create/);
-    expect(zhCN.landing.pricing.sub).toMatch(/你创建的 Pod 内无限历史记录/);
-  });
-
-  test('hosted-agent turn caps are stated per agent per day, at the plan defaults', () => {
-    // 200 and 30 are the plan defaults in hostedRuntimeService.ts. Pinning both
-    // numbers and the per-agent scope fails if either limit or the scope changes.
-    expect(en.landing.pricing.pro.items.hosted).toMatch(/200 turns a day per agent, against 30 on Cloud free/);
-    expect(zhCN.landing.pricing.pro.items.hosted).toMatch(/每个智能体每天200轮，云端免费版为30轮/);
-  });
 });
