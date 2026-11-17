@@ -207,6 +207,14 @@ both dumps passed and uploaded. The Mongo URI reaches `mongodump` through a 0600
 config file, not its command line. Give the R2 token object read and write on
 that one bucket.
 
+The Mongo archive is taken while the app keeps writing, without `--oplog`, so
+it is not one point in time: a restore can mix collections from before and
+after a related write. Adding `--oplog`, and restoring with `--oplogReplay`,
+needs a replica set whose oplog the dump user can read, and needs a dump with no
+`--db`, `--collection` or `--query`. Check that your MongoDB host allows it
+before turning it on. Where it doesn't, rely on the host's own snapshots for a
+point-in-time copy, and treat this archive as a second copy.
+
 - **Is it working?** `docker compose ps pg-backup` shows `unhealthy` once more
   than 26 hours pass without a successful run. `docker compose logs pg-backup`
   shows each run.
