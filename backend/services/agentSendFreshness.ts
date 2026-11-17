@@ -10,6 +10,9 @@ type Preview = { id: string; author: string; content: string; createdAt: unknown
 type Hold = { code: 'unseen_messages'; unseenCount: number; messages: Preview[]; message: string } | null;
 
 type ReadStart = { at: Date; revision?: number };
+type UnseenOptions = {
+  seenThroughMessageId?: unknown; since?: ReadStart; ignoreIds?: string[]; exemptMessageIds?: unknown[]; limit?: number;
+};
 
 // A kernel row under the agent's own id is a notice the platform posted for it,
 // so it counts as unseen. The one exception is its install intro: that is the
@@ -126,13 +129,18 @@ async function recordCatchUp(
 // A delivered event names the message that woke the agent. That message is the
 // one the reply answers, so it is treated as seen: only messages after it hold.
 // Without this, an inline webhook reply always counts its own trigger as unseen.
+//
+// `exemptMessageIds` (F490) drops exactly those ids and nothing else: the CAP
+// post route passes the message a delivered event named, when the post answers
+// it. Unlike `seenThroughMessageId` it never marks older unread messages seen.
 // A hosted turn keeps no cursor: `since` is the point its own turn has read to,
 // and `ignoreIds` are the turn's own posts (a kernel card is stored under the
-// agent, so it would otherwise count as unseen).
+// agent, so it would otherwise count as unseen). Both id lists are dropped the
+// same way.
 async function unseenMessages(
   agentUserId: unknown, podId: unknown, {
-    seenThroughMessageId = null, since, ignoreIds = [], limit = 3,
-  }: { seenThroughMessageId?: unknown; since?: ReadStart; ignoreIds?: string[]; limit?: number } = {},
+    seenThroughMessageId = null, since, ignoreIds = [], exemptMessageIds = [], limit = 3,
+  }: UnseenOptions = {},
 ): Promise<Hold> {
   const cursor = since
     ? { readAt: since.at, readRevision: since.revision }
@@ -141,6 +149,7 @@ async function unseenMessages(
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
   const shown = Math.max(1, Math.floor(limit));
+  const dropped = [...ignoreIds, ...exemptMessageIds].map(String);
   let unseenCount: number;
   let messages: Preview[];
 
@@ -158,7 +167,7 @@ async function unseenMessages(
           AND NOT (m.id = ANY($5::int[]))
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT $6
       `, [String(podId), afterRevision, ownId, seenPgId,
-        ignoreIds.filter((id) => /^\d+$/.test(String(id))).map(Number), shown]);
+        dropped.filter((id) => /^\d+$/.test(id)).map(Number), shown]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -168,7 +177,7 @@ async function unseenMessages(
     }));
   } else {
     const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
-    const ignored = ignoreIds.filter((id) => /^[a-f\d]{24}$/i.test(String(id))).map(String);
+    const ignored = dropped.filter((id) => /^[a-f\d]{24}$/i.test(id));
     ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId, ignored, shown));
   }
 
@@ -235,7 +244,54 @@ async function unseenFromMongo(
   };
 }
 
+// F490: which messages a post answers that woke this agent. The post names a
+// thread root and/or a reply target. A delivered event answers to them when it
+// carried one of those ids as its own message or a joined one, or when its
+// mention sat inside the named thread: an agent woken in thread R answers with
+// threadRootId R, and the mention it got is a reply under R, never R itself.
+// The ids returned are the messages that event carried, nothing more. Only an
+// event for this agent, this instance and this pod counts, and only one handed
+// to the agent: delivered, or acked after. A digest row is left out, since the
+// agent may have seen it only as a count. A forged id, a pending event or
+// another agent's event names nothing.
+// An exempt id is dropped whatever its revision, so an edit to the trigger
+// after delivery no longer holds the reply; the agent already answered it.
+type CarriedPayload = { messageId?: unknown; threadRootId?: unknown; coalesced?: Array<{ messageId?: unknown }> };
+async function deliveredTriggerIds({
+  agentName, instanceId, podId, candidateIds,
+}: { agentName: string; instanceId?: string | null; podId: unknown; candidateIds: unknown[] }): Promise<string[]> {
+  const ids = Array.from(new Set(candidateIds.filter((id) => id !== null && id !== undefined && String(id) !== '')
+    .map(String)));
+  if (!ids.length) return [];
+  // A thread root is stored as the producer had it, string or number.
+  const roots = [...ids, ...ids.filter((id) => /^\d+$/.test(id)).map(Number)];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentEvent = require('../models/AgentEvent');
+  const rows = await AgentEvent.find({
+    agentName: String(agentName).toLowerCase(),
+    instanceId: instanceId || 'default',
+    podId,
+    status: { $in: ['delivered', 'acked'] },
+    deliveryMode: { $ne: 'digest' },
+    $or: [
+      { 'payload.messageId': { $in: ids } },
+      { 'payload.coalesced.messageId': { $in: ids } },
+      { 'payload.threadRootId': { $in: roots } },
+    ],
+  }).select('payload.messageId payload.threadRootId payload.coalesced.messageId').lean();
+  const named = new Set<string>();
+  for (const row of rows as Array<{ payload?: CarriedPayload }>) {
+    const carried = [row.payload?.messageId, ...(row.payload?.coalesced || []).map((entry) => entry?.messageId)]
+      .filter((id) => id !== null && id !== undefined).map(String);
+    // Joined mentions share their row's place (mentionCoalesce samePlaceFilter),
+    // so a row inside the named thread carried only messages from that thread.
+    const inThread = row.payload?.threadRootId != null && ids.includes(String(row.payload.threadRootId));
+    carried.filter((id) => inThread || ids.includes(id)).forEach((id) => named.add(id));
+  }
+  return [...named];
+}
+
 module.exports = {
-  readStart, recordRead, recordCatchUp, unseenMessages, CONTEXT_READ_MESSAGES,
+  readStart, recordRead, recordCatchUp, unseenMessages, deliveredTriggerIds, CONTEXT_READ_MESSAGES,
 };
 export {};

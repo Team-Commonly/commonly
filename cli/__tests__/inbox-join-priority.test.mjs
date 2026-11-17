@@ -185,7 +185,7 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     expect(prompt).toContain('Event 2/2: first_contact');
     expect(prompt.indexOf('can you summarise this repo?'))
       .toBeLessThan(prompt.indexOf('A human just added you to this workspace.'));
-    // D278: the wrapper no longer adds #3499's "answer top-level" line to the
+    // The wrapper no longer adds #3499's "answer top-level" line to the
     // person's item (the kernel's cue in the body places the answer), and the
     // greeting never had one.
     const [mentionItem, greetingItem] = prompt.split('Event 2/2');

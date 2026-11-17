@@ -869,14 +869,22 @@
     },
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
+      "neverConnectedBecause": "{{agentName}} 还没有连接：{{reason}}。发到这里的消息会等它连接后再处理。",
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
       "runCommand": "要连接它，请运行：",
       "copyCommand": "复制命令"
     },
+    "listenReason": {
+      "signedOut": "它那台电脑上的 {{tool}} 还没登录",
+      "missing": "它那台电脑上没装 {{tool}}",
+      "missingAny": "它那台电脑上没装 Claude Code、Codex 或 pi",
+      "nodeTooOld": "它那台电脑上的 Node 版本太旧，没法运行"
+    },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
+      "notConnectedBecause": "{{agentName}} 还没有连接：{{reason}}。",
       "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。",
       "awayTwo": "{{first}} 和 {{second}} 暂时不会回复",
       "awayMany_one": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
@@ -1139,7 +1147,6 @@
       "openApp": "打开应用",
       "getStarted": "开始使用",
       "selfHost": "自托管",
-      "talkToUs": "联系我们",
       "starGithub": "去 GitHub 点 Star",
       "starCountAria": "{{stars}}个 GitHub Star"
     },
@@ -1280,7 +1287,7 @@
         },
         "tax": {
           "title": "不按智能体收费。",
-          "text": "跑1个还是50个智能体，价格都一样。"
+          "text": "跑1个还是50个智能体，都免费。"
         }
       }
     },
@@ -1472,8 +1479,8 @@
     },
     "pricing": {
       "kicker": "定价",
-      "title": "人类占席位，智能体永远不占。",
-      "sub": "基于 Apache-2.0，自托管永久免费。托管版中，你自带的智能体在所有档位都免费且不限数量——永远如此。Pro 增加你创建的 Pod 内无限历史记录、社区收录，以及更高的托管智能体每日轮数上限。绝不按智能体收费。",
+      "title": "免费，而且开源。",
+      "sub": "Commonly 基于 Apache-2.0 开源。可以免费自托管，也可以直接用 commonly.me 上的托管实例，同样免费。你自带的智能体免费接入，跑多少个都行。",
       "zero": "$0",
       "selfHost": {
         "name": "自托管",
@@ -1487,35 +1494,17 @@
         }
       },
       "cloud": {
-        "name": "云端免费版",
+        "name": "commonly.me",
         "period": "/接入你的智能体",
-        "note": "托管在 commonly.me。你的智能体，我们的工作空间。",
+        "note": "托管实例。你的智能体，我们的工作空间。",
         "items": {
           "unlimited": "不限数量的自带智能体 —— 跑在你自己的机器上，免费接入",
           "private": "私密 Pod 与邀请制 Pod",
           "history": "最长30天消息历史",
-          "connect": "通过 webhook、CLI wrapper 或 MCP 接入",
-          "card": "无需信用卡"
+          "connect": "通过 webhook、CLI wrapper 或 MCP 接入"
         }
       },
-      "pro": {
-        "name": "Pro",
-        "price": "$12",
-        "period": "/人/月",
-        "note": "固定价格。无论你跑多少个智能体 —— 我们绝不按智能体收费。",
-        "items": {
-          "everything": "包含 Cloud free 的全部功能",
-          "history": "你创建的 Pod 内消息历史无限 —— 不再有30天过期",
-          "community": "把你的 Pod 收录进「社区」，方便团队找到",
-          "hosted": "托管智能体：每个智能体每天200轮，云端免费版为30轮 —— 我们的算力，零配置",
-          "support": "优先支持"
-        }
-      },
-      "enterprise": {
-        "name": "企业版",
-        "text": "— 私有或专属部署、SLA 和安全评审。SSO/SAML 已在计划中。"
-      },
-      "foot": "自带智能体所有档位免费 · 绝不按智能体收费 · 每位成员固定 $12 · 自托管永久免费"
+      "foot": "Apache-2.0 · 自托管永久免费 · 自带智能体免费接入"
     },
     "finalCta": {
       "titleLead": "团队早就有群聊了。",
@@ -1708,6 +1697,25 @@
       "title": "进度",
       "stat": "{{total}}个任务中已完成{{complete}}个",
       "stat_other": "{{total}}个任务中已完成{{complete}}个"
+    },
+    "conventions": {
+      "label": "工作约定",
+      "loading": "加载中…",
+      "loadError": "工作约定加载失败。",
+      "empty": "还没有工作约定。Pod 的创建者可以写下这个 Pod 怎么协作。",
+      "emptyOwner": "还没有工作约定。写下这个 Pod 怎么协作：谁负责什么、怎么回复、发消息前先查什么。这里的每个智能体每轮开始时都会读到。",
+      "setBy": "由 {{name}} 设置 · {{when}}",
+      "someone": "有人",
+      "write": "写工作约定",
+      "edit": "编辑",
+      "save": "保存",
+      "cancel": "取消",
+      "placeholder": "这个 Pod 怎么协作：谁负责什么、怎么回复、发消息前先查什么。",
+      "left_other": "还剩{{count}}个字符",
+      "over_other": "超出{{count}}个字符",
+      "conflict": "你编辑时 {{name}} 改了工作约定。对方的版本在下面，你的草稿还在。点保存会用你的版本替换对方的。",
+      "latestCleared": "（已清空）",
+      "saveError": "工作约定保存失败，请重试。"
     },
     "workspace": {
       "ariaLabel": "Pod 检视器",
@@ -2293,6 +2301,10 @@
       "harnessMissingOneLine": "{{name}} 的命令停了：那台电脑上没有安装 {{tool}}。在那台电脑上装好后，再运行一遍这一行，这里会自动确认。",
       "harnessMissingNone": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍最后一行，这里会自动确认。",
       "harnessMissingNoneOneLine": "{{name}} 的命令停了：那台电脑上没找到 Claude Code、Codex 或 pi。装好其中一个后，再运行一遍这一行，这里会自动确认。",
+      "harnessSignedOut": "{{name}} 的命令停了：那台电脑装了 {{tool}}，但还没登录。先在那台电脑上运行一次 {{command}} 登录，再运行一遍最后一行，这里会自动确认。",
+      "nodeTooOld": "{{name}} 的命令停了：那台电脑上的 Node 低于22版。到 nodejs.org 装 Node 22或更高版本，再运行一遍最后一行，这里会自动确认。",
+      "harnessSignedOutOneLine": "{{name}} 的命令停了：那台电脑装了 {{tool}}，但还没登录。先在那台电脑上运行一次 {{command}} 登录，再运行一遍这一行，这里会自动确认。",
+      "nodeTooOldOneLine": "{{name}} 的命令停了：那台电脑上的 Node 低于22版。到 nodejs.org 装 Node 22或更高版本，再运行一遍这一行，这里会自动确认。",
       "windowsPaste": "如果 Windows 终端在粘贴多行文本前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则一行都不会运行。",
       "windowsPasteOneLine": "如果 Windows 终端在粘贴前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则什么都不会运行。",
       "lineExpired": "{{name}} 还没接入，这一行就已经失效了。",
@@ -2848,16 +2860,13 @@
   "billing": {
     "title": "订阅方案",
     "tier": {
-      "free": "免费版",
       "pro": "Pro · $12/月"
     },
     "cancelling": "你的方案将在本计费周期结束时取消。在此之前仍可使用 Pro。",
-    "upgrade": "升级到 Pro —— $12/月",
     "manage": "管理订阅",
     "opening": "正在打开…",
     "errors": {
-      "generic": "暂时无法打开付款页面，请稍后再试。",
-      "notConfigured": "付款功能尚未开启，请联系我们为你开通。"
+      "generic": "暂时无法打开付款页面，请稍后再试。"
     }
   },
   "connect": {

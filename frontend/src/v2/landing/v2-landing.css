@@ -1216,12 +1216,13 @@
   background: var(--v2-text-primary);
 }
 
-/* ---------- Pricing tiers ---------- */
+/* ---------- Pricing tiers ----------
+   Two free tiers since the paid tier ended: self-host and the hosted instance. */
 .v2-landing__tiers {
   max-width: 1312px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -1236,11 +1237,6 @@
   border-radius: var(--v2-radius-lg);
   text-align: left;
 }
-/* Featured tier: a 2px cobalt rule, and the padding drops by the extra pixel
-   so Pro's contents stay on the same lines as the two beside it. Still
-   borders-not-shadows; no elevation. The name carries the cobalt too. */
-.v2-landing__tier--featured { border: 2px solid var(--v2-accent); padding: 31px; }
-.v2-landing__tier--featured .v2-landing__tier-name { color: var(--v2-accent); }
 .v2-landing__tier-name {
   font-family: var(--v2-font-mono);
   font-size: 12px;
@@ -1271,32 +1267,10 @@
   color: var(--v2-text-tertiary);
 }
 .v2-landing__tier-note { margin: 12px 0 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
-/* Pro's button is the section's one cobalt fill; the colour carries it, at the
-   base key's size and weight like the bordered ones. */
+/* The hosted tier's button is the section's one cobalt fill; the colour carries
+   it, at the base key's size and weight like the bordered one. */
 .v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; }
 
-/* Enterprise is a row, not a third box: same frame as the lists above it. */
-.v2-landing__tier-enterprise {
-  max-width: 1312px;
-  margin: 12px auto 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 24px;
-  padding: 18px 24px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  font-size: 16px;
-  line-height: 26px;
-  color: var(--v2-text-secondary);
-}
-.v2-landing__tier-enterprise strong {
-  font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--v2-text-primary);
-}
 .v2-landing__price-foot {
   max-width: 1312px;
   margin: 24px auto 0;
@@ -1416,7 +1390,6 @@
      one-column group above; its rows become a column instead — a layer's title
      sits over its own text rather than in a track beside it. */
   .v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-  .v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }
   /* Row E: at 64 the close's first line is 820.7 wide, so "chat." orphans below
      a viewport of 869 — it steps down here. The footer's column track moves
      under the wordmark and the four columns pair into 2×2. */
@@ -1553,10 +1526,8 @@
   .v2-landing__proof-stat { gap: 6px; }
   .v2-landing__proof-num { font-size: 36px; line-height: 36px; }
   .v2-landing__tier { padding: 24px; }
-  .v2-landing__tier--featured { padding: 23px; }
   .v2-landing__tier-price { font-size: 44px; line-height: 44px; }
   .v2-landing__price-list { margin: 24px 0 24px; }
-  .v2-landing__tier-enterprise { padding: 16px 18px; }
   .v2-landing__price-foot { margin-top: 20px; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
@@ -1772,7 +1743,6 @@
 :lang(zh) .v2-landing__tile-title,
 :lang(zh) .v2-landing__proof-num,
 :lang(zh) .v2-landing__tier-price,
-:lang(zh) .v2-landing__tier-enterprise strong,
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }

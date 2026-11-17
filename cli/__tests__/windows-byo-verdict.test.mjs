@@ -1,4 +1,4 @@
-// D164: what the Windows Bring-your-own walk (cli/scripts/windows-byo-smoke.mjs)
+// What the Windows Bring-your-own walk (cli/scripts/windows-byo-smoke.mjs)
 // fails on. On a pull request the published leg is mostly reported, because a
 // CLI fix reaches npm only after it merges. But this tree's leg replaces the
 // page's install line, so it cannot stand in for that line: a page that names
@@ -174,7 +174,7 @@ describe('the prod walk', () => {
   });
 });
 
-// D250: a Codex seat reaches claude-haiku-5-5 through the gateway's Responses
+// A Codex seat reaches claude-haiku-5-5 through the gateway's Responses
 // bridge, which no walk had run before. So a failed walk says whose failure it
 // was: the model route (the gateway or model refused), the harness (the turn
 // failed with no model refusal), or Commonly (the turn never failed, but the
@@ -371,7 +371,7 @@ describe('the prod verdict names whose failure it was', () => {
   });
 });
 
-// D250: each walk runs one harness, named by the dispatch.
+// Each walk runs one harness, named by the dispatch.
 
 // F435: what the CLI printed on a real Windows runner (byo-windows run 43085380141).
 const WINDOWS_CLI_OUT = [

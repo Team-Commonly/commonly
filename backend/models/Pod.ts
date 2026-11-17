@@ -123,6 +123,10 @@ export interface IPod extends Document {
   // retains its compare-and-swap tombstone on legacy and current pods.
   focus?: IPodFocus | null;
   focusRevision?: number;
+  // F124: the pod's working rules, read by every member's turns. Its own
+  // revision, for the same compare-and-swap as focus.
+  conventions?: { text: string; updatedAt: Date; updatedBy: Types.ObjectId } | null;
+  conventionsRevision?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -212,6 +216,12 @@ const PodSchema = new Schema<IPod>(
       updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     focusRevision: { type: Number },
+    conventions: {
+      text: { type: String },
+      updatedAt: { type: Date },
+      updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    },
+    conventionsRevision: { type: Number },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

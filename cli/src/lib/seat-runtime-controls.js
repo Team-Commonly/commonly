@@ -1,4 +1,4 @@
-// D247: the model and effort a seat spawns with.
+// The model and effort a seat spawns with.
 //
 // Two rules live here so the run loop and its tests share them:
 //

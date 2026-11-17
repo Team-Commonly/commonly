@@ -182,7 +182,7 @@ const PUBLIC_DENIED_TOOLS = [
   'WebFetch',
   'Bash',
   // Claude Code's shell tool on Windows. dontAsk and the Read(./**) allowlist
-  // already refuse it; named here so the deny list holds on its own (D245).
+  // already refuse it; named here so the deny list holds on its own.
   'PowerShell',
   'Write',
   'Edit',
@@ -231,7 +231,7 @@ const withWorkspaceGit = (ctx) => {
   };
 };
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
-// D245: what a Windows process needs to start at all, find its own login and
+// What a Windows process needs to start at all, find its own login and
 // open a socket. Windows keys are case-insensitive (Path, SystemRoot), so this
 // one is matched without case. None of these carries a secret.
 const PUBLIC_SAFE_ENV_WIN32 = /^(?:PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|USERPROFILE|USERNAME|USERDOMAIN|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|COMMONPROGRAMFILES|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE|OS)$/i;
@@ -635,7 +635,7 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
-// D245: Claude Code matches permission paths in POSIX form on Windows
+// Claude Code matches permission paths in POSIX form on Windows
 // (C:\Users\ada becomes /c/Users/ada), so an absolute deny written from a
 // Windows path would match nothing.
 const permissionPath = (path, platform) => (platform === 'win32'
@@ -652,7 +652,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   const home = homeOverride || homedir();
   const deny = (sub) => absoluteToolDeny(permissionPath(join(home, sub), platform));
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
-  // D245: with no OS jail (native Windows, --unsandboxed) a shell would run
+  // With no OS jail (native Windows, --unsandboxed) a shell would run
   // with the user's whole access and could read the seat's own token from its
   // environment, so `write` grants edits only there.
   // With no jail the edit tools are also scoped to the working folder: a bare
@@ -1370,7 +1370,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
 // child environment and to every detection lookup so a daemon does not report
 // a false "adapter unavailable" (or hit spawn ENOENT) merely because it was
 // started outside an interactive shell.
-const withClaudePath = (input) => {
+export const withClaudePath = (input) => {
   const output = { ...(input || process.env) };
   const localBin = join(homedir(), '.local', 'bin');
   // Windows keys are case-insensitive, and a child given both `Path` and a
@@ -1437,7 +1437,7 @@ const claudeInstallRefusal = (claudeBin) => new Error(
 );
 
 /**
- * D245: native Windows has no OS jail, and the user chose to run without one
+ * Native Windows has no OS jail, and the user chose to run without one
  * (`--unsandboxed`). Read from the spawn context only, set by `agent run`, never
  * from the environment. The seat keeps its trust, so everything the trust
  * brings except the jail still applies.
@@ -1533,7 +1533,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // unconfined seat with a public record, which is how a record can claim
   // confinement it never applies.
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
-    // D245: on native Windows, name Windows and the user's own opt-in, never
+    // On native Windows, name Windows and the user's own opt-in, never
     // macOS or bwrap advice (host-check passes an unrecognised mode through).
     if ((ctx._platform || process.platform) === 'win32') {
       throw new Error(
@@ -1876,7 +1876,7 @@ export default {
     let publicLoginBaseUrl = null;
     let loginTurn = null;
     let publicSkillArgs = [];
-    // D245: no jail to prepare for on a policy-only Windows host.
+    // No jail to prepare for on a policy-only Windows host.
     const jailed = !policyOnlyHost(ctx);
     const publicNativeSandbox = jailed && publicTrust
       && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
@@ -2009,7 +2009,7 @@ export default {
           readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
           await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
         } else if (ctx.environment?.sandbox?.trust === 'public') {
-          // A policy-only host (D245) prepares no state folder and runs the MCP
+          // A policy-only host prepares no state folder and runs the MCP
           // children unjailed, so a folder of this turn's own serves.
           ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
           await chmod(ownReadyDir, 0o700);
@@ -2086,7 +2086,7 @@ export default {
         text: turnReply(stdout, { credentials: turnCredentials(spawnCtx), publicMcp: witnessedMcp }),
         newSessionId: sessionId,
         contextTokens,
-        // D245 item 4: what the run said about itself, for the reply receipt.
+        // What the run said about itself, for the reply receipt.
         stats: claudeRunStats(stdout),
       };
     } catch (err) {

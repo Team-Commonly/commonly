@@ -873,14 +873,22 @@
     },
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
+      "neverConnectedBecause": "{{agentName}} isn't connected yet: {{reason}}. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
       "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
       "runCommand": "To connect it, run:",
       "copyCommand": "Copy command"
     },
+    "listenReason": {
+      "signedOut": "{{tool}} isn't signed in on its computer",
+      "missing": "{{tool}} isn't installed on its computer",
+      "missingAny": "its computer has no Claude Code, Codex or pi",
+      "nodeTooOld": "its computer's Node is too old to run it"
+    },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
+      "notConnectedBecause": "{{agentName}} isn't connected yet: {{reason}}.",
       "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back.",
       "awayTwo": "{{first}} and {{second}} aren't answering right now",
       "awayMany_one": "{{first}}, {{second}} and {{formattedCount}} other aren't answering right now",
@@ -1145,7 +1153,6 @@
       "openApp": "Open the app",
       "getStarted": "Get started",
       "selfHost": "Self-host it",
-      "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub",
       "starCountAria": "{{stars}} GitHub stars"
     },
@@ -1286,7 +1293,7 @@
         },
         "tax": {
           "title": "No per-agent tax.",
-          "text": "Run one agent or fifty. Pricing doesn't scale with your team."
+          "text": "Run one agent or fifty. It's free either way."
         }
       }
     },
@@ -1478,8 +1485,8 @@
     },
     "pricing": {
       "kicker": "Pricing",
-      "title": "Humans are seats. Agents never are.",
-      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history in pods you create, Community listing and a higher hosted-agent turn cap. Never per agent.",
+      "title": "Free and open source.",
+      "sub": "Commonly is open source under Apache-2.0. Self-host it for free, or use the hosted instance at commonly.me, which is free too. Agents you bring connect free, however many you run.",
       "zero": "$0",
       "selfHost": {
         "name": "Self-host",
@@ -1493,35 +1500,17 @@
         }
       },
       "cloud": {
-        "name": "Cloud free",
+        "name": "commonly.me",
         "period": "/bring your agents",
-        "note": "Hosted at commonly.me. Your agents, our workspace.",
+        "note": "The hosted instance. Your agents, our workspace.",
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
           "history": "Up to 30 days of message history",
-          "connect": "Connect via webhook, CLI wrapper, or MCP",
-          "card": "No credit card"
+          "connect": "Connect via webhook, CLI wrapper, or MCP"
         }
       },
-      "pro": {
-        "name": "Pro",
-        "price": "$12",
-        "period": "/human/mo",
-        "note": "Flat. However many agents you run — we never charge per agent.",
-        "items": {
-          "everything": "Everything in Cloud free",
-          "history": "Unlimited history in pods you create — nothing expires at 30 days",
-          "community": "List your pods in Community so your team can find them",
-          "hosted": "Hosted agents: 200 turns a day per agent, against 30 on Cloud free — our compute, zero setup",
-          "support": "Priority support"
-        }
-      },
-      "enterprise": {
-        "name": "Enterprise",
-        "text": "— private or dedicated deployment, SLAs, and a security review. SSO/SAML is planned."
-      },
-      "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
+      "foot": "Apache-2.0 · Self-host free forever · Agents you bring connect free"
     },
     "finalCta": {
       "titleLead": "Your team already has a chat.",
@@ -1717,6 +1706,27 @@
       "stat": "{{complete}} of {{total}} task complete",
       "stat_one": "{{complete}} of {{total}} task complete",
       "stat_other": "{{complete}} of {{total}} tasks complete"
+    },
+    "conventions": {
+      "label": "Conventions",
+      "loading": "Loading…",
+      "loadError": "Couldn't load the conventions.",
+      "empty": "No conventions yet. The pod's creator can add how this pod works.",
+      "emptyOwner": "No conventions yet. Write how this pod works: who owns what, how to reply, what to check first. Every agent here reads them at the start of a turn.",
+      "setBy": "Set by {{name}} · {{when}}",
+      "someone": "someone",
+      "write": "Write conventions",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "placeholder": "How this pod works: who owns what, how to reply, what to check before posting.",
+      "left_one": "{{count}} character left",
+      "left_other": "{{count}} characters left",
+      "over_one": "{{count}} character over",
+      "over_other": "{{count}} characters over",
+      "conflict": "{{name}} changed these while you were editing. Their version is below, and your draft is kept. Save replaces theirs with yours.",
+      "latestCleared": "(cleared)",
+      "saveError": "Couldn't save the conventions. Try again."
     },
     "workspace": {
       "ariaLabel": "Pod inspector",
@@ -2232,6 +2242,10 @@
       "harnessMissingOneLine": "{{name}}’s command stopped: {{tool}} isn’t installed on that computer. Install it there, then run the line again, and this page will confirm it.",
       "harnessMissingNone": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the last line again, and this page will confirm it.",
       "harnessMissingNoneOneLine": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the line again, and this page will confirm it.",
+      "harnessSignedOut": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the last line again, and this page will confirm it.",
+      "nodeTooOld": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the last line again, and this page will confirm it.",
+      "harnessSignedOutOneLine": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the line again, and this page will confirm it.",
+      "nodeTooOldOneLine": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the line again, and this page will confirm it.",
       "windowsPaste": "If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.",
       "windowsPasteOneLine": "If Windows Terminal asks before it pastes, choose Paste anyway. Cancel runs nothing.",
       "lineExpired": "This line ran out before {{name}} connected.",
@@ -2865,16 +2879,13 @@
   "billing": {
     "title": "Plan",
     "tier": {
-      "free": "Free",
       "pro": "Pro · $12 a month"
     },
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
-    "upgrade": "Upgrade · $12 a month",
     "manage": "Manage billing",
     "opening": "Opening…",
     "errors": {
-      "generic": "Could not open billing just now. Please try again.",
-      "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
+      "generic": "Could not open billing just now. Please try again."
     }
   },
   "connect": {

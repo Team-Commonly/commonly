@@ -1,5 +1,5 @@
 /**
- * TASK-784 (D164): what the daemon's computer runs, as the server stores it.
+ * TASK-784: what the daemon's computer runs, as the server stores it.
  * Metadata only: Node's platform and arch names, the OS release's leading
  * number, and this CLI's version. Nothing here may name the machine or the
  * person (no hostname, path or user name); the server drops anything else.

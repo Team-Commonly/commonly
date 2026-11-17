@@ -1000,7 +1000,7 @@ const V2LandingPage: React.FC = () => {
               <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.selfHost')}</a>
             </div>
 
-            {/* Cloud Free */}
+            {/* commonly.me, the hosted instance */}
             <div className="v2-landing__tier">
               <div className="v2-landing__tier-name">{t('landing.pricing.cloud.name')}</div>
               <div className="v2-landing__tier-price">{t('landing.pricing.zero')}<span>{t('landing.pricing.cloud.period')}</span></div>
@@ -1010,37 +1010,9 @@ const V2LandingPage: React.FC = () => {
                 <li>{t('landing.pricing.cloud.items.private')}</li>
                 <li>{t('landing.pricing.cloud.items.history')}</li>
                 <li>{t('landing.pricing.cloud.items.connect')}</li>
-                <li>{t('landing.pricing.cloud.items.card')}</li>
-              </ul>
-              <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{primaryLabel}</Link>
-            </div>
-
-            {/* Pro — featured. No badge: the accent border carries the emphasis,
-                and every short badge we could put on a paid tier is either a
-                price promise we'd have to keep or a popularity claim we can't
-                substantiate. */}
-            <div className="v2-landing__tier v2-landing__tier--featured">
-              <div className="v2-landing__tier-name">{t('landing.pricing.pro.name')}</div>
-              <div className="v2-landing__tier-price">{t('landing.pricing.pro.price')}<span>{t('landing.pricing.pro.period')}</span></div>
-              <div className="v2-landing__tier-note">{t('landing.pricing.pro.note')}</div>
-              <ul className="v2-landing__price-list">
-                <li>{t('landing.pricing.pro.items.everything')}</li>
-                <li>{t('landing.pricing.pro.items.history')}</li>
-                <li>{t('landing.pricing.pro.items.community')}</li>
-                <li>{t('landing.pricing.pro.items.hosted')}</li>
-                <li>{t('landing.pricing.pro.items.support')}</li>
               </ul>
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
             </div>
-          </div>
-
-          {/* Enterprise strip */}
-          <div className="v2-landing__tier-enterprise">
-            <div>
-              <strong>{t('landing.pricing.enterprise.name')}</strong>
-              <span> {t('landing.pricing.enterprise.text')}</span>
-            </div>
-            <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{t('landing.actions.talkToUs')}</Link>
           </div>
 
           <p className="v2-landing__price-foot">

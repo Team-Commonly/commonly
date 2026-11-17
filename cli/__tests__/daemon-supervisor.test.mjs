@@ -1348,7 +1348,7 @@ describe('heartbeat', () => {
     });
   });
 
-  test('D245: carries the local machine report (the Windows unsandboxed opt-in), re-read on every beat', async () => {
+  test('carries the local machine report (the Windows unsandboxed opt-in), re-read on every beat', async () => {
     let optedIn = true;
     const { supervisor, client } = makeHarness({
       rows: () => [],

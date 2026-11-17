@@ -98,10 +98,87 @@ describe('hostSandboxRefusal', () => {
   });
 
   test('on Linux, a missing bubblewrap stops an OpenCode seat with the install line', () => {
-    const args = { environment: connectPage, adapterName: 'opencode', platform: 'linux', detectSeatbelt: never };
+    const args = {
+      environment: connectPage, adapterName: 'opencode', platform: 'linux', detectSeatbelt: never, detectBwrapLoopback: available,
+    };
     expect(hostSandboxRefusal({ ...args, detectBwrap: available })).toBeNull();
     expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bwrap not found on PATH. Install bubblewrap: `apt install bubblewrap` (Debian/Ubuntu).') }))
       .toMatch(/^This seat runs in a bubblewrap sandbox, which is not available here\. bwrap not found on PATH\. Install bubblewrap/);
+  });
+
+  // F540: a public OpenCode seat also raises a private loopback inside the
+  // sandbox, with CAP_NET_ADMIN. A host can start the namespace and still
+  // refuse that (Ubuntu 26.04, run 43770297952), and every turn then died at
+  // its first step while the pod heard nothing.
+  describe('an OpenCode seat on a host that refuses its private network', () => {
+    const args = {
+      environment: connectPage, adapterName: 'opencode', platform: 'linux', detectBwrap: available, detectSeatbelt: never,
+    };
+    const refusedLoopback = (apparmorRestricted = true) => () => ({
+      available: false,
+      loopbackRefused: true,
+      reason: 'RTNETLINK answers: Operation not permitted',
+      apparmorRestricted,
+      ubuntuRelease: '26.04',
+      error: 'bubblewrap starts a sandbox here, but not the private network OpenCode needs inside it',
+    });
+
+    test('stops at start, in plain words, with the reason and a route that works', () => {
+      const message = hostSandboxRefusal({ ...args, detectBwrapLoopback: refusedLoopback() });
+      expect(message).toMatch(/^A connected OpenCode runs inside a bubblewrap sandbox with a private network of its own/);
+      expect(message).toContain('RTNETLINK answers: Operation not permitted');
+      expect(message).toContain('So this agent cannot listen for @mentions here yet.');
+      expect(message).toContain('choose "Run it here"');
+      expect(message).not.toMatch(/\bseat\b/i);
+      expect(message).not.toMatch(/sysctl|apparmor_restrict_unprivileged_userns|aa-disable|userns,/);
+      // Ubuntu's bubblewrap profile is what takes the capability away, so it is never offered here.
+      expect(message).not.toContain('bwrap-userns-restrict');
+    });
+
+    test('says AppArmor is why only when the restriction is on', () => {
+      expect(hostSandboxRefusal({ ...args, detectBwrapLoopback: refusedLoopback(true) })).toMatch(/AppArmor/);
+      expect(hostSandboxRefusal({ ...args, detectBwrapLoopback: refusedLoopback(false) })).not.toMatch(/AppArmor/);
+    });
+
+    test('a host that raises it runs', () => {
+      expect(hostSandboxRefusal({ ...args, detectBwrapLoopback: available })).toBeNull();
+    });
+
+    test('without the ip command it says to install iproute2', () => {
+      const message = hostSandboxRefusal({
+        ...args,
+        detectBwrapLoopback: () => ({
+          available: false, missingIp: true, error: 'needs the ip command. Install iproute2: `sudo apt install iproute2`',
+        }),
+      });
+      expect(message).toMatch(/^A connected OpenCode runs inside a bubblewrap sandbox with a private network of its own/);
+      expect(message).toContain('sudo apt install iproute2');
+      expect(message).toContain('Install iproute2 as above and run the same command again.');
+    });
+
+    test('a probe that timed out names the cause and offers no fix that does not exist', () => {
+      const message = hostSandboxRefusal({
+        ...args, detectBwrapLoopback: missing('bwrap loopback detection failed: spawnSync bwrap ETIMEDOUT'),
+      });
+      expect(message).toContain('ETIMEDOUT');
+      expect(message).not.toMatch(/run the same command again/);
+      expect(message).toContain('choose "Run it here"');
+    });
+
+    test('a refused namespace is reported first, and the network is not probed', () => {
+      const namespaceRefused = () => ({
+        available: false, namespaceRefused: true, reason: 'bwrap: setting up uid map: Permission denied', apparmorRestricted: true,
+      });
+      expect(hostSandboxRefusal({ ...args, detectBwrap: namespaceRefused, detectBwrapLoopback: never }))
+        .toContain('uid map: Permission denied');
+    });
+
+    test('only a public OpenCode seat is probed: no other seat needs the private network', () => {
+      expect(hostSandboxRefusal({ ...args, adapterName: 'claude', detectBwrapLoopback: never })).toBeNull();
+      expect(hostSandboxRefusal({
+        ...args, environment: { sandbox: { trust: 'workspace' } }, detectBwrapLoopback: never,
+      })).toBeNull();
+    });
   });
 
   // TASK-294: a workspace seat is confined by the same host mechanism as a

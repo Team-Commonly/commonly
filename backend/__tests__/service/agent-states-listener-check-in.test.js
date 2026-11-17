@@ -88,4 +88,34 @@ describe('GET /api/pods/:podId/agent-states reads listener check-ins', () => {
     await landed(AgentInstallation, { agentName: 'install-only', 'runtimeTokens.lastListenedAt': { $ne: null } });
     expect((await states())['install-only'].state).toBe('listening');
   });
+
+  // F515: a first run that stopped before waiting told the instance why, by
+  // code. The pod's "isn't connected yet" notice reads it from this row, and a
+  // check-in after the report takes it off.
+  it('a never-connected agent carries why its first run stopped, until it checks in', async () => {
+    await install('signed-out');
+    const seat = await botUser('signed-out', [{ tokenHash: 'h-signed-out', lastUsedAt: new Date() }]);
+    await User.updateOne({ _id: seat._id }, {
+      $set: { 'botMetadata.listenBlocked': { reason: 'harness-signed-out', harness: 'claude', at: new Date() } },
+    });
+    expect((await states())['signed-out']).toMatchObject({
+      state: 'never-connected', listenReason: { reason: 'harness-signed-out', harness: 'claude' },
+    });
+
+    recordListenerCheckIn(seat._id, 'h-signed-out');
+    await landed(User, { username: 'signed-out', 'agentRuntimeTokens.lastListenedAt': { $ne: null } });
+    expect((await states())['signed-out']).not.toHaveProperty('listenReason');
+  });
+
+  it('a missing harness reads as its own reason, and the newer report wins', async () => {
+    await install('no-harness');
+    const seat = await botUser('no-harness', []);
+    await User.updateOne({ _id: seat._id }, {
+      $set: {
+        'botMetadata.listenBlocked': { reason: 'node-too-old', harness: null, at: new Date(Date.now() - 60_000) },
+        'botMetadata.harnessMissing': { harness: 'codex', at: new Date() },
+      },
+    });
+    expect((await states())['no-harness'].listenReason).toEqual({ reason: 'harness-missing', harness: 'codex' });
+  });
 });

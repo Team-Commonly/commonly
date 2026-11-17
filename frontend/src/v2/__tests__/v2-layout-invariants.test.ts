@@ -1672,11 +1672,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(bareElementSelectors('textarea, form { color: red; }')).toEqual(['textarea', 'form']);
   });
 
-  test('Settings renders the account’s real plan with its appropriate billing action', () => {
+  test('Settings shows the plan row only to an existing Pro account, with manage and no upgrade', () => {
     expect(billingPanel).toContain('currentUser?.entitlements');
-    expect(billingPanel).toContain("isPro ? '/api/billing/portal' : '/api/billing/checkout'");
-    expect(billingPanel).toContain("t(isPro ? 'billing.tier.pro' : 'billing.tier.free')");
-    expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
+    expect(billingPanel).toContain('if (!isPro) return null;');
+    expect(billingPanel).toContain("'/api/billing/portal'");
+    expect(billingPanel).not.toContain('/api/billing/checkout');
+    expect(billingPanel).not.toContain('billing.upgrade');
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     // The frame reads the plan as plain text in the row value, not a chip.
@@ -5097,26 +5098,21 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     // board's own tier list margin is the base margin.
     expect(landing).not.toContain('.v2-landing__tier .v2-landing__price-list');
 
-    const featured = topLevelRuleBody(landing, '.v2-landing__tier--featured');
-    expect(featured).toContain('border: 2px solid var(--v2-accent)');
-    expect(featured).toContain('padding: 31px');
-    // Pro's button is cobalt by colour, at the base key's size and weight.
-    expect(landing).not.toContain('.v2-landing__tier--featured .v2-landing__btn');
+    // The paid tier ended, and with it the featured (Pro) card and its rules.
+    expect(landing).not.toContain('.v2-landing__tier--featured');
+    expect(landingTsx).not.toContain('tier--featured');
     expect(topLevelRuleBody(landing, '.v2-landing__tier')).toContain('padding: 32px');
     const btn = landing.match(/\.v2-landing__tier \.v2-landing__btn \{[^}]*\}/)?.[0] ?? '';
     expect(btn).toContain('width: 100%');
     expect(btn).not.toMatch(/height|padding|font-size/);
   });
 
-  test('the enterprise row is a bordered grid, and the price foot is left-aligned', () => {
-    const ent = topLevelRuleBody(landing, '.v2-landing__tier-enterprise');
-    expect(ent).toContain('grid-template-columns: minmax(0, 1fr) auto');
-    expect(ent).toContain('gap: 24px');
-    expect(ent).toContain('border: 1px solid var(--v2-border)');
-    expect(ent).toContain('border-radius: var(--v2-radius)');
-    expect(ent).not.toContain('background');
-    // Dropped from the markup with the class: the base 44/15/600 is the board's.
-    expect(landingTsx).not.toContain('btn--sm" to={appHref}}>{t(\'landing.actions.talkToUs\')}');
+  test('two free tiers and no enterprise row, and the price foot is left-aligned', () => {
+    // The paid tier ended: self-host and the hosted instance, both free.
+    expect(topLevelRuleBody(landing, '.v2-landing__tiers')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(landingTsx.match(/className="v2-landing__tier"/g)).toHaveLength(2);
+    expect(landing).not.toContain('.v2-landing__tier-enterprise');
+    expect(landingTsx).not.toContain('landing.actions.talkToUs');
     expect(topLevelRuleBody(landing, '.v2-landing__price-foot')).toContain('text-align: left');
   });
 
@@ -5148,13 +5144,9 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     );
     expect(phone).toContain('.v2-landing__proof-num { font-size: 36px; line-height: 36px; }');
     expect(phone).toContain('.v2-landing__tier { padding: 24px; }');
-    expect(phone).toContain('.v2-landing__tier--featured { padding: 23px; }');
     expect(phone).toContain('.v2-landing__tier-price { font-size: 44px; line-height: 44px; }');
     const tablet = mediaAt(landing, '@media (max-width: 900px)');
     expect(tablet).toContain('.v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }');
-    expect(tablet).toContain(
-      '.v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }',
-    );
     // The stack stays one box, so it must NOT be in the one-column group.
     expect(tablet).not.toContain('.v2-landing__tiles,');
     expect(tablet).not.toContain('.v2-landing__proof-stats');
@@ -5166,7 +5158,6 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     for (const selector of [
       '.v2-landing__team-title',
       '.v2-landing__tile-title',
-      '.v2-landing__tier-enterprise strong',
     ]) {
       expect(topLevelRuleBody(landing, selector)).toContain('letter-spacing: -0.03em');
       expect(resetBlock).toContain(`:lang(zh) ${selector}`);
