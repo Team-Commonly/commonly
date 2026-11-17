@@ -516,7 +516,7 @@ describe('opening or closing a thread persists (producer)', () => {
   });
 });
 
-describe('the read point (D278)', () => {
+describe('the read point', () => {
   const wrapper = ({ children }) => <>{children}</>;
 
   beforeEach(() => { mockPut.mockClear(); });
@@ -645,7 +645,7 @@ describe('the read point (D278)', () => {
   });
 });
 
-describe('an answer that opens the asker\'s thread does not move a reader who is up the list (D278)', () => {
+describe('an answer that opens the asker\'s thread does not move a reader who is up the list', () => {
   afterEach(() => {
     mockGet.mockImplementation(() => Promise.resolve({ podId: 'p1', defaults: { following: null }, threads: [THREAD_ROW] }));
   });

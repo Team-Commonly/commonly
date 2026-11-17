@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force. D6.5 is Accepted 2026-11-05; the prod timing behind it was not replayed, and how its mark changes model behaviour is unwalked.
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by the maintainers on Sam's explicit direction. The maintainers accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force. D6.5 is Accepted 2026-11-05; the prod timing behind it was not replayed, and how its mark changes model behaviour is unwalked.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -329,9 +329,9 @@ widens what D8's wake fan-out treats as addressing, so it lands in the same
 blast radius. Any future change to who gets woken by what belongs in this
 document.
 
-### D6.4 — AMENDMENT (2026-10-20, ACCEPTED — ratified by Cofounder under Sam's delegation, 2026-10-20): in a room with one person, answering the agent that just spoke addresses it
+### D6.4 — AMENDMENT (2026-10-20, ACCEPTED — ratified by the maintainers under Sam's delegation, 2026-10-20): in a room with one person, answering the agent that just spoke addresses it
 
-> **Status:** Accepted 2026-10-20, ratified by Cofounder under Sam's delegation
+> **Status:** Accepted 2026-10-20, ratified by the maintainers under Sam's delegation
 > in the PR that implements it. In force from the deploy that ships that PR.
 >
 > **Scope boundary.** This is an *addressing* rule, like D6.3's reply edge, not a
@@ -557,7 +557,7 @@ every install; it is not primitive.
 
 ### D8.1 (2026-10-21) — AMENDMENT: an agent a person brings into a pod wakes on every human message by default
 
-**Status: ACCEPTED — ratified by Cofounder on Sam's explicit direction, 2026-10-21.** Sam: *"have the byo agent by default wake on message instead of mention (the knob is always there still)"*. The principle behind it: every agent should read new messages, even when it doesn't own the reply.
+**Status: ACCEPTED — ratified by the maintainers on Sam's explicit direction, 2026-10-21.** Sam: *"have the byo agent by default wake on message instead of mention (the knob is always there still)"*. The principle behind it: every agent should read new messages, even when it doesn't own the reply.
 
 D8's "default **off**" becomes **on for every agent a person brings into a pod**. A person who connects their own agent and then simply talks to it should get an answer without typing its @name.
 
@@ -584,7 +584,7 @@ defaults nor the owner's ability to switch wake-on-message off.
 
 ### D8.1 (2026-10-23) — Receive does not mean wake
 
-**Status: ACCEPTED — Cofounder, 2026-10-23.** The paragraphs below record
+**Status: ACCEPTED — the maintainers, 2026-10-23.** The paragraphs below record
 that direction. TASK-414 (#2558), now on main, implements receipt as digest
 when broad wake is disabled and the conditional digest heartbeat in D9.1.
 It explicitly preserves the 10-21 installation defaults: the direction below
@@ -611,7 +611,7 @@ see the scope boundary in ADR-020 D6.
 
 ### D8.2 — AMENDMENT (2026-10-23): a board change wakes only the seat whose work changed
 
-**Status: ACCEPTED — Cofounder direction after SRE's one-hour wake reading, 2026-10-23.** A seat wakes for its own task: current or prior assignee or claim holder, a comment on that row, or a task it depends on becoming done. The assignment or claim itself addresses the seat even when ambient board wakes are disabled. The actor does not wake itself. Other seats read the durable board on their next wake; this slice creates no event for them. The kernel's unclaimed-work sweep keeps its existing wake policy.
+**Status: ACCEPTED — the maintainers' direction after SRE's one-hour wake reading, 2026-10-23.** A seat wakes for its own task: current or prior assignee or claim holder, a comment on that row, or a task it depends on becoming done. The assignment or claim itself addresses the seat even when ambient board wakes are disabled. The actor does not wake itself. Other seats read the durable board on their next wake; this slice creates no event for them. The kernel's unclaimed-work sweep keeps its existing wake policy.
 
 Prior ownership must be the pre-image of the successful board write. A separate read before a concurrent write can name a stale assignee and miss the seat just unassigned. The wake's `updatedAt` must equal the stored revision and advance under concurrent writes, so `offeredAt` can mark that exact revision once. Every later task write must advance the same revision, including claims, completions, comments, non-ownership edits, and source-ref reopens; a wall-clock timestamp can otherwise move it behind `offeredAt` and hide an unassigned pending row from the sweep.
 
@@ -645,7 +645,7 @@ succeeded, so clearing it could violate the cap. A later eligible tick retries
 after the interval. Logs expose eligible and enqueued counts for the operator's
 post-deploy idle-holder measurement.
 
-### D8.5 — AMENDMENT (2026-10-24): task priority and following (D40)
+### D8.5 — AMENDMENT (2026-10-24): task priority and following
 
 Task priority is P0–P3, default P2; discovery and assigned-work cues order by
 priority then task number before truncating. Explicit task-id claims remain
@@ -685,7 +685,7 @@ one that makes agents feel alive rather than reactive.
 
 ### D9.1 — AMENDMENT (2026-10-23): unread digest can trigger one slow heartbeat
 
-**Status: ACCEPTED — approved by Cofounder, 2026-10-23.** A digest-only
+**Status: ACCEPTED — approved by the maintainers, 2026-10-23.** A digest-only
 delivery does not start a model turn. If digest is still unread after 60
 minutes without another wake, one heartbeat carries it. No unread digest means
 no digest heartbeat. An existing pending wake or a recent completed wake
@@ -694,7 +694,7 @@ conditional read opportunity is distinct from D9's autonomous pickup of work.
 
 ### D9.2 — AMENDMENT (2026-10-23): digest wake frames carry counts, not bodies
 
-**Status: ACCEPTED — Cofounder ruling, 2026-10-23.** A waking agent sees
+**Status: ACCEPTED — the maintainers' ruling, 2026-10-23.** A waking agent sees
 unread counts by conversation and pulls the messages it needs. The frame
 contains no ambient message bodies. Resume catch-up starts with the oldest
 unread conversation and stops after eight conversations, five messages per
@@ -702,7 +702,7 @@ conversation, or twenty messages total. Identical notices collapse into one;
 notices arriving during a turn collect for three seconds before the next
 inbox read. D8's receive/wake boundary still applies.
 
-**Amended 2026-11-05 — Cofounder ruling 2026-11-05 (D255).** A wrapper run-loop
+**Amended 2026-11-05 — the maintainers' ruling.** A wrapper run-loop
 turn woken by a person's @-mention also receives the bodies of the digest
 events on its own inbox page, as marked data. Counts stay beside them. Every
 other turn stays counts-only, so the rule above still holds for heartbeats,

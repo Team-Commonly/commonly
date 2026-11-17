@@ -17,7 +17,7 @@ interface ConnectedAgent {
   podId: string;
 }
 
-export interface AgentConnectionStatus {
+interface AgentConnectionStatus {
   issued: boolean;
   connected: boolean;
   /** Latest listener check-in (the events poll or WebSocket), not any token use. */
@@ -297,7 +297,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
               <strong>{t('firstRun.steps.hello.title')}</strong>
               <span>{t('firstRun.steps.hello.text')}</span>
               {/* Shown before the agent connects, disabled, so the last step
-                  reads as one click away (D215 waiting frame). */}
+                  reads as one click away (the waiting frame). */}
               <button
                 type="button"
                 className="v2-first-run__hello"

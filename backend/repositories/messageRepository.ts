@@ -50,7 +50,7 @@ export interface PodMessage {
   [key: string]: unknown;
 }
 
-export interface ListPodMessagesOptions {
+interface ListPodMessagesOptions {
   limit?: number;
   /** ISO timestamp; only messages created strictly before it. */
   before?: string | null;
@@ -82,7 +82,7 @@ export const toPodMessage = (doc: Record<string, unknown>): PodMessage => {
     message_type: messageType,
     messageType,
     author_kind: doc.authorKind === 'kernel' || doc.author_kind === 'kernel' ? 'kernel' : null,
-    // D245: the optional message contract, read back like the PG row's columns.
+    // The optional message contract, read back like the PG row's columns.
     ...(typeof doc.summary === 'string' && doc.summary ? { summary: doc.summary } : {}),
     ...(typeof doc.kind === 'string' && doc.kind ? { kind: doc.kind } : {}),
     ...(doc.receipt && typeof doc.receipt === 'object' ? { receipt: doc.receipt } : {}),

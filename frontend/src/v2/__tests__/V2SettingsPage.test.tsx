@@ -111,7 +111,7 @@ describe('V2SettingsPage', () => {
     });
   });
 
-  // D286 (F399): the switch shows the server's value, saves a choice, and says
+  // the switch shows the server's value, saves a choice, and says
   // when the browser's DNT/GPC keeps recording off anyway.
   describe('Share product usage', () => {
     const answer = (usage: Record<string, unknown>) => (url: string) => Promise.resolve({

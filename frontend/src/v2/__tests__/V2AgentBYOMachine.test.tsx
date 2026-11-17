@@ -45,7 +45,7 @@ const machineRow = {
   id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', agentStates: [],
 };
 
-// D247: the server's harness list, as GET /api/registry/harness-catalog serves it.
+// The server's harness list, as GET /api/registry/harness-catalog serves it.
 const ladder = ['low', 'medium', 'high', 'xhigh', 'max'];
 const CATALOG = [
   { id: 'claude', label: 'Claude Code', models: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], efforts: ladder },

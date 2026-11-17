@@ -475,6 +475,45 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // F512: a person's @mention emails the recipient if they haven't opened
+    // the pod about 15 minutes later (mentionEmailService). Every five minutes
+    // gives 15 to 20; one indexed query, so it stays off the staggered set.
+    const mentionEmailJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepMentionEmails } = require('./mentionEmailService');
+          const r = await sweepMentionEmails();
+          if (r.scanned || r.failed) {
+            console.log(`[mention-email] pass scanned=${r.scanned} sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
+          }
+        } catch (error) {
+          console.error('[mention-email] pass failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+    // F522: a person waiting on an agent that never connected tells its owner,
+    // at most once per agent per 24h (waitingOwnerEmailService). Same cadence
+    // as the mention email; one bounded read of the open episodes.
+    const waitingOwnerEmailJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepWaitingOwnerEmails } = require('./waitingOwnerEmailService');
+          const r = await sweepWaitingOwnerEmails();
+          if (r.sent || r.failed) {
+            console.log(`[waiting-email] pass scanned=${r.scanned} sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
+          }
+        } catch (error) {
+          console.error('[waiting-email] pass failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     const stalledConnectJob: CronJob = cron.schedule(
       FIVE_MINUTE_PASS_SCHEDULES.stalledConnect,
       async () => {
@@ -736,6 +775,8 @@ class SchedulerService {
       skillsRefreshJob,
       onboardingSilenceJob,
       stalledConnectJob,
+      mentionEmailJob,
+      waitingOwnerEmailJob,
       missedAgentMentionJob,
       kernelWorkSweepJob,
       assignedTaskWakeJob,

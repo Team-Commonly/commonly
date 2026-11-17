@@ -587,6 +587,38 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
   }
 });
 
+// F525: the connect page's one pasted line carries a connect code, not the
+// agent's lasting key. The CLI trades it here for the key. No bearer: the
+// code is the credential, so this route has its own tight per-IP limit, and
+// the service caps redeems per code (one live code per agent).
+const connectCodeIpRateLimit = rateLimit({
+  windowMs: 10 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'connect_code_rate_limited' }),
+});
+router.post('/connect-code', connectCodeIpRateLimit, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body);
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { CONNECT_CODE_PATTERN, CONNECT_CODE_REFUSALS, redeemConnectCode } = require('../services/agentConnectCodeService');
+  if (keys.length !== 1 || keys[0] !== 'code' || typeof body.code !== 'string' || !CONNECT_CODE_PATTERN.test(body.code)) {
+    return res.status(400).json({ code: 'invalid_connect_code' });
+  }
+  res.set('Cache-Control', 'no-store');
+  try {
+    const result = await redeemConnectCode(body.code, { ip: cloudflareIpRateLimitKeyGenerator(req) });
+    if (result.outcome === 'redeemed') return res.json({ token: result.token });
+    const [status, code] = CONNECT_CODE_REFUSALS[result.outcome];
+    return res.status(status).json({ code });
+  } catch (error) {
+    console.error('Connect code redeem failed:', (error as Error).message);
+    return res.status(503).json({ code: 'connect_code_unavailable' });
+  }
+});
+
 router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     return await patchAgentRuntimeConfiguration(req, res);
@@ -694,7 +726,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       }
       : {});
 
-    // D247: the installation Settings reads the model and effort from, by the
+    // The installation Settings reads the model and effort from, by the
     // daemon projection's rule: the oldest active one that declares a seat.
     // A listener uses this row's controls only, so it runs what Settings shows.
     // Settings reads the owner's rows only, so a row this agent installed
@@ -744,7 +776,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
-        // D247: the saved model/effort, for a listener seat that has no daemon
+        // The saved model/effort, for a listener seat that has no daemon
         // projection. Two plain strings; no other environment field leaves.
         runtimeControls: runtimeControlsFor(inst?.config),
         // Which messages wake this agent in this pod, as the agent page's
@@ -2596,11 +2628,11 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
-      // D245: optional and warn-only. Problems come back as `warnings` on the
+      // Optional and warn-only. Problems come back as `warnings` on the
       // 200; they never refuse the post.
       summary,
       kind,
-      // D245 item 4: a BYO run's self-reported receipt; stored as such,
+      // A BYO run's self-reported receipt; stored as such,
       // warn-only like the contract.
       receipt,
       ...(payload !== undefined ? { payload } : {}),
@@ -2875,7 +2907,7 @@ type SectionsValidationError =
 
 // Shape of an append-mode cycles payload, after validateSectionsPayload has
 // confirmed it. Route handlers split this out and call appendCycle directly.
-export interface CyclesAppendPayload {
+interface CyclesAppendPayload {
   content: string;
   ts?: Date;
   podId?: string;

@@ -1,5 +1,5 @@
 /**
- * Agent health (D115): per-install counts for the agents in the viewer's own
+ * Agent health: per-install counts for the agents in the viewer's own
  * pods. Design: docs/architecture/fleet-health.md; frame:
  * docs/design/artboards/d115/.
  *
@@ -28,11 +28,11 @@ const AgentRuntimeObservation = require('../models/AgentRuntimeObservation');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
 const HOUR_MS = 60 * 60 * 1000;
-export const WINDOW_OPTIONS_HOURS = [24, 72, 168] as const;
+const WINDOW_OPTIONS_HOURS = [24, 72, 168] as const;
 // The unmetered trigger, as nativeRuntimeService's daily cap leaves it out.
 const UNMETERED_TRIGGER = 'first_contact';
 
-export type WakeKind = 'mention' | 'heartbeat' | 'chat' | 'decision' | 'joined';
+type WakeKind = 'mention' | 'heartbeat' | 'chat' | 'decision' | 'joined';
 const KIND_BY_TYPE: Record<string, WakeKind> = {
   'chat.mention': 'mention',
   'thread.mention': 'mention',
@@ -51,7 +51,7 @@ const HOSTED_NEEDS_YOU = new Set(['config']);
 // How far back the latest finished run is looked for, whatever the window.
 const NEEDS_YOU_LOOKBACK_MS = 30 * 24 * 3600 * 1000;
 
-export type OutcomeBucket = 'posted' | 'declined' | 'empty' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
+type OutcomeBucket = 'posted' | 'declined' | 'empty' | 'failed' | 'expired' | 'acknowledged' | 'inFlight';
 type Buckets = Record<OutcomeBucket, number> & { total: number };
 const emptyBuckets = (): Buckets => ({
   total: 0, posted: 0, declined: 0, empty: 0, failed: 0, expired: 0, acknowledged: 0, inFlight: 0,
@@ -61,7 +61,7 @@ const emptyBuckets = (): Buckets => ({
 // printed nothing is acked no_action with reason 'empty-output'
 // (cli/src/lib/claim-outcome.js). It is empty, not a decline. The reason text
 // itself never leaves the database.
-export const EMPTY_OUTPUT_REASON = 'empty-output';
+const EMPTY_OUTPUT_REASON = 'empty-output';
 
 /**
  * One event group to one outcome. The order matters: a recorded outcome wins,
@@ -82,7 +82,7 @@ export function eventOutcome(
   return 'inFlight';
 }
 
-export interface HealthWindow { hours: number; retentionHours: number; options: number[] }
+interface HealthWindow { hours: number; retentionHours: number; options: number[] }
 
 /**
  * The default is 24 hours or the event retention, whichever is shorter, and an
@@ -134,7 +134,7 @@ export interface AgentHealthRow {
   needsYou: string | null;
 }
 
-export interface AgentHealthResult { window: HealthWindow; generatedAt: string; agents: AgentHealthRow[] }
+interface AgentHealthResult { window: HealthWindow; generatedAt: string; agents: AgentHealthRow[] }
 
 export async function readAgentHealth(
   viewerId: string,

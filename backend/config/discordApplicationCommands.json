@@ -64,26 +64,31 @@
   {
     "name": "commonly-summary",
     "description": "Get the most recent summary from the linked chat pod",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "discord-status",
     "description": "Show the status of Discord integration",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "discord-enable",
     "description": "Enable webhook listener for Discord channel",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "discord-disable",
     "description": "Disable webhook listener for Discord channel",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "discord-push",
     "description": "Push Discord activity from last hour to Commonly pod now",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   }
 ]

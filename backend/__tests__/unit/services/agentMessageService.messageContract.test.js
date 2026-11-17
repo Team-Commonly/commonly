@@ -1,5 +1,5 @@
 /**
- * D245: an agent post's optional summary and kind reach the message store and
+ * An agent post's optional summary and kind reach the message store and
  * the live broadcast, and their problems come back as warnings, never as a
  * refused post. (Harness copied from agentMessageService.threadWrites.)
  */
@@ -133,7 +133,7 @@ afterEach(() => {
   }
 });
 
-describe('message contract on an agent post (D245)', () => {
+describe('message contract on an agent post', () => {
   const post = (extra) => AgentMessageService.postMessage({
     agentName: 'sprint-review', instanceId: 'default', podId: POD, content: 'Fixed the redirect.', ...extra,
   });
@@ -195,7 +195,7 @@ describe('message contract on an agent post (D245)', () => {
     expect(contract).toEqual({ summary: 'a'.repeat(120), kind: null });
   });
 
-  it('stores a self-reported receipt beside the post and broadcasts it (D245 item 4)', async () => {
+  it('stores a self-reported receipt beside the post and broadcasts it', async () => {
     const receipt = {
       adapter: 'claude', model: 'claude-opus-5-5', turns: 2, tools: ['Read'], durationMs: 9000,
     };

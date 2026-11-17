@@ -149,7 +149,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
             .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read'] },
           models: {
-            // F98 (D243): the catalog offers the hosted model only.
+            // F98: the catalog offers the hosted model only.
             supported: ['claude-haiku-5-5'],
             recommended: 'claude-haiku-5-5',
           },
@@ -180,7 +180,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
             // Listed here for the marketplace catalog only. Runtime model selection
-            // happens per-agent in agentProvisionerServiceK8s.ts. F98 (D243): the
+            // happens per-agent in agentProvisionerServiceK8s.ts. F98: the
             // catalog offers the hosted model only.
             supported: ['claude-haiku-5-5'],
             recommended: 'claude-haiku-5-5',

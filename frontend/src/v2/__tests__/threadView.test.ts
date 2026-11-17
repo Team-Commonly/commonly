@@ -137,7 +137,7 @@ describe('card metadata', () => {
   });
 });
 
-// D278: what the chip says about the newest reply and what the viewer hasn't read.
+// What the chip says about the newest reply and what the viewer hasn't read.
 describe('read point, unread count and the latest-reply preview', () => {
   const ME = 'me';
   const agent = { username: 'helper', isBot: true };

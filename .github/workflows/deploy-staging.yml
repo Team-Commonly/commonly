@@ -295,9 +295,10 @@ jobs:
           SMOKE_PW: ${{ secrets.STAGING_SMOKE_PW }}
           SMOKE_FRESH_EMAIL: ${{ secrets.STAGING_SMOKE_FRESH_EMAIL }}
           SMOKE_FRESH_PW: ${{ secrets.STAGING_SMOKE_FRESH_PW }}
-          # F437: provision + tear down one hosted agent. Advisory (a warning, not a red)
-          # until it has passed on a few deploys; then set SMOKE_HOSTED_BLOCKING: '1'.
+          # F437: provision + tear down one hosted agent. Blocking since it passed on
+          # 6 straight staging deploys (2026-11-14), so a hosted 503 now stops the roll.
           SMOKE_HOSTED: '1'
+          SMOKE_HOSTED_BLOCKING: '1'
         run: |
           set -euo pipefail
           if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ] || [ -z "${SMOKE_FRESH_EMAIL:-}" ] || [ -z "${SMOKE_FRESH_PW:-}" ]; then

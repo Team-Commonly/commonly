@@ -328,7 +328,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   return result;
 };
 
-export const getLastRefreshAt = (): Date | null => lastRefreshAt;
+const getLastRefreshAt = (): Date | null => lastRefreshAt;
 
 export default { refreshSkillsIndex, getLastRefreshAt };
 // CJS compat: let require() return the default export directly

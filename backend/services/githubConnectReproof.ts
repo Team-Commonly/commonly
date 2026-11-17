@@ -26,7 +26,7 @@ import {
   type GithubConnectProofDeps,
 } from './githubConnectProof';
 
-export const PROOF_CACHE_MS = 60 * 1000;
+const PROOF_CACHE_MS = 60 * 1000;
 
 interface CachedProof {
   until: number;
@@ -35,7 +35,7 @@ interface CachedProof {
 
 const proofCache = new Map<string, CachedProof>();
 
-export interface ConnectProofSubject {
+interface ConnectProofSubject {
   app: 'tools' | 'connect';
   rowId?: string;
   ownerUserId?: string;

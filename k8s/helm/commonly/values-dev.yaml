@@ -590,11 +590,14 @@ opsRunner:
 # Tighten pod egress (templates/network/egress-restrict.yaml); staging ran it
 # first (11-11).
 networkPolicy:
-  # Ingress, first prod step (templates/network/ingress-allow.yaml): frontend
-  # and redis only, no defaultDeny yet. A policy that selects a pod isolates
-  # it at once, so each allow is live the moment it applies: frontend admits
-  # only the ingress-nginx controller (the tunnel dials the controller, never
-  # frontend), and redis only its three clients. Rollout order and rollback:
+  # Ingress, prod steps 1 and 2 (templates/network/ingress-allow.yaml), no
+  # defaultDeny yet. A policy that selects a pod isolates it at once, so each
+  # allow is live the moment it applies: frontend admits only the
+  # ingress-nginx controller (the tunnel dials the controller, never
+  # frontend), redis only its three clients, and the agent-computer waker and
+  # steel gates only backend, backend-worker and ops-runner (the broker in the
+  # backend is their one caller; the waker scales steel through the kube API,
+  # not over HTTP). Rollout order and rollback:
   # docs/runbooks/redis-auth-and-network-policy.md.
   ingress:
     edge:
@@ -608,6 +611,8 @@ networkPolicy:
     frontend:
       enabled: true
     redis:
+      enabled: true
+    agentComputer:
       enabled: true
   egress:
     restrict:

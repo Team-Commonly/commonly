@@ -27,7 +27,7 @@ const without = (input: string, keys: string[]) => ({
   },
 });
 
-export interface RunContentWindowReport {
+interface RunContentWindowReport {
   cutoff: Date;
   matched: number;
   redacted: number;

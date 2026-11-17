@@ -70,6 +70,40 @@ describe('agent send-time freshness', () => {
     expect(Cursor.advanceReadWatermark).not.toHaveBeenCalled();
   });
 
+  // F536: a read marks messages read only when it returns every one of them,
+  // and the pod context read returns the newest 12. Past that, "read the
+  // conversation" can't clear the hold, so it names catch-up instead.
+  const holdFor = async (count) => {
+    Message.countDocuments.mockResolvedValue(count);
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+    return Freshness.unseenMessages('agent-id', 'pod-id');
+  };
+
+  it('keeps the read-first text while one context read can still clear the backlog', async () => {
+    const hold = await holdFor(Freshness.CONTEXT_READ_MESSAGES);
+    expect(hold.message).toContain('Read the conversation and try again if it still fits');
+    expect(hold.message).toContain('held until you read the conversation.');
+    expect(hold.message).not.toContain('catch-up');
+  });
+
+  it('names catch-up once the backlog is more than one context read returns', async () => {
+    const hold = await holdFor(Freshness.CONTEXT_READ_MESSAGES + 1);
+    expect(hold.message).toContain(`There are ${Freshness.CONTEXT_READ_MESSAGES + 1} unseen messages.`);
+    expect(hold.message).toContain(`returns only the newest ${Freshness.CONTEXT_READ_MESSAGES}`);
+    expect(hold.message).toContain('POST /api/agents/runtime/pods/pod-id/catch-up with confirmSkipHistory:true');
+    expect(hold.message).toContain('continueAnyway:true to send this one anyway.');
+    expect(hold.message).toContain('held until you catch up.');
+    expect(hold.message).not.toContain('held until you read the conversation.');
+    expect(hold.message).toContain("If you were asked by name, another agent's reply doesn't answer for you");
+  });
+
+  it('measures the backlog against the read the pod context actually returns', () => {
+    // eslint-disable-next-line global-require
+    const PodContextService = require('../../../services/podContextService');
+    expect(Number.isInteger(Freshness.CONTEXT_READ_MESSAGES)).toBe(true);
+    expect(PodContextService.RECENT_MESSAGES_READ).toBe(Freshness.CONTEXT_READ_MESSAGES);
+  });
+
   it('uses singular wording for one unseen message', async () => {
     Message.countDocuments.mockResolvedValue(1);
     Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
@@ -107,16 +141,45 @@ describe('agent send-time freshness', () => {
     const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
     expect(hold.unseenCount).toBe(8);
     expect(hold.messages).toEqual([expect.objectContaining({ id: '23', content: 'new plan' })]);
-    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 3');
+    expect(pool.query.mock.calls[0][0]).toContain('LIMIT $6');
+    expect(pool.query.mock.calls[0][1][5]).toBe(3);
     expect(pool.query.mock.calls[0][0]).toContain('freshness_revision >');
     expect(Message.countDocuments).not.toHaveBeenCalled();
+  });
+
+  // F530: a hosted turn keeps no cursor. It holds from the point its own turn
+  // read to, and its own posts this turn are not something it has to read.
+  it('holds from a turn baseline instead of the cursor, skipping the turn\'s own posts (PostgreSQL)', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [] });
+    await Freshness.unseenMessages('agent-id', 'pod-id', {
+      since: { at: new Date('2026-11-14T00:00:00Z'), revision: 41 }, ignoreIds: ['90', 'not-a-pg-id'], limit: 20,
+    });
+    expect(Cursor.getReadWatermark).not.toHaveBeenCalled();
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', 41, 'agent-id', null, [90], 20]);
+    expect(pool.query.mock.calls[0][0]).toContain('NOT (m.id = ANY($5::int[]))');
+  });
+
+  it('holds from a turn baseline instead of the cursor, skipping the turn\'s own posts (MongoDB)', async () => {
+    Message.countDocuments.mockResolvedValue(0);
+    const limit = jest.fn(() => ({ populate: () => ({ lean: async () => [] }) }));
+    Message.find.mockReturnValue({ sort: () => ({ limit }) });
+    const own = '507f1f77bcf86cd799439044';
+    await Freshness.unseenMessages('agent-id', 'pod-id', {
+      since: { at: new Date('2026-11-14T00:00:00Z') }, ignoreIds: [own], limit: 20,
+    });
+    expect(Cursor.getReadWatermark).not.toHaveBeenCalled();
+    const query = Message.countDocuments.mock.calls[0][0];
+    expect(query._id).toEqual({ $nin: [own] });
+    expect(query.$and[1].$or[1]).toEqual({ freshnessCommittedAt: { $gte: new Date('2026-11-14T00:00:00Z') } });
+    expect(limit).toHaveBeenCalledWith(20);
   });
 
   it('bounds the PostgreSQL unseen query by the trigger id, and only a numeric id', async () => {
     process.env.PG_HOST = 'configured';
     pool.query.mockResolvedValue({ rows: [] });
     await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: '22' });
-    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22]);
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22, [], 3]);
     expect(pool.query.mock.calls[0][0]).toContain('($4::integer IS NULL OR m.id > $4)');
     await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: 'abc' });
     expect(pool.query.mock.calls[1][1][3]).toBeNull();

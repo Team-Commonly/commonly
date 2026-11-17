@@ -50,7 +50,7 @@ export interface IFollowedThread {
 // (password-only), one, or several (GitHub + Google linked by verified
 // email). Accounts created via OAuth have no password — see the
 // conditional `required` on the password path below.
-export type AuthProviderName = 'github' | 'google';
+type AuthProviderName = 'github' | 'google';
 
 export interface IAuthProvider {
   provider: AuthProviderName;
@@ -63,7 +63,7 @@ export interface IAuthProvider {
 // carry this list; for bots it's the agent's "contacts" — who they go to
 // for codex review, planning, etc. For humans it's the people they DM
 // most. Aliases must be lowercase URL-safe.
-export type ContactSource = 'user' | 'pod' | 'system';
+type ContactSource = 'user' | 'pod' | 'system';
 
 export interface IContactEntry {
   alias: string;
@@ -137,6 +137,10 @@ export interface IUser extends Document {
   apiTokenLast4?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
+  // F476: the computer whose removal unbound this agent, until a daemon adopts
+  // it or its owner releases it. Kept out of botMetadata, which many reads send
+  // to other people whole; select: false so only the owner's placement read sees it.
+  removedMachine?: { name: string; at: Date } | null;
   isBot: boolean;
   botType: BotType;
   botMetadata: {
@@ -283,7 +287,7 @@ export interface IUser extends Document {
   getOrCreateDigestUnsubscribeToken(): string;
 }
 
-export interface IUserModel extends Model<IUser> {
+interface IUserModel extends Model<IUser> {
   mintApiTokenIfAbsent(
     userId: unknown,
     extra?: { apiTokenScopes?: string[] },
@@ -363,6 +367,11 @@ const userSchema = new Schema<IUser>({
   apiTokenLast4: { type: String, select: false },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
+  removedMachine: {
+    type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   isBot: { type: Boolean, default: false },
   botType: {
     type: String,

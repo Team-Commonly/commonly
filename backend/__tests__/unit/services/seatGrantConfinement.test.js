@@ -196,7 +196,7 @@ describe('judgeSeatConfinement — a computer that has not reported its sandbox 
   });
 });
 
-describe('judgeSeatConfinement — a seat on a computer that runs agents without a sandbox (D245)', () => {
+describe('judgeSeatConfinement — a seat on a computer that runs agents without a sandbox', () => {
   test('is refused whatever its declaration says, and admitted again once the daemon reports default', async () => {
     await bindSeat();
     // The stored declaration still reads public trust: the projection alone would admit it.

@@ -1,5 +1,5 @@
 /**
- * F164 (TASK-781, D244): installing a seat into a pod an outsider-writable
+ * F164 (TASK-781): installing a seat into a pod an outsider-writable
  * grant reaches confines its writes everywhere else (agentRuntimeAuth, 403
  * outsider_grant_runtime_narrowed). The install now says so first, naming only
  * the pods the installer can see, and the owner's settings carry the same fact.

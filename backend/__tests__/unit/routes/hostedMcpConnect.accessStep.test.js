@@ -1,4 +1,4 @@
-// D248: the callback's access step, in its own file so its callbacks stay
+// The callback's access step, in its own file so its callbacks stay
 // clear of the main callback file's per-IP rate limit (60 a window).
 // Harness copied from hostedMcpConnect.callback.test.js.
 // TASK-172 slice 3: the callback. The vendor is a stub and the row is a mock,
@@ -198,8 +198,8 @@ const outcome = (res) => {
   return result;
 };
 
-describe('hosted-mcp connect: callback access step (D248)', () => {
-  // D248: a connection that still has nothing to reach (GitHub with no App
+describe('hosted-mcp connect: callback access step', () => {
+  // A connection that still has nothing to reach (GitHub with no App
   // installation) goes straight on to the entry's access page.
   describe('access setup after connecting', () => {
     afterEach(() => {
@@ -303,7 +303,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
     });
   });
 
-  // D248 (a): GitHub's "Install & Authorize" returns to this callback with
+  // GitHub's "Install & Authorize" returns to this callback with
   // `code`, `installation_id` and `setup_action`, and no state of ours. The
   // walk on 11-04 showed "This connection attempt expired" after an install
   // that worked. It is an install outcome, not a failed connect, and its code

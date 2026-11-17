@@ -20,7 +20,7 @@ export type ThreadViewItem =
     participants: V2ThreadParticipant[];
     lastActivityAt: string | null;
     replies: V2Message[];
-    /** D278: the newest reply, for the chip's one-line preview. */
+    /** The newest reply, for the chip's one-line preview. */
     latestReply?: ThreadLatestReply | null;
     /** Replies the viewer hasn't read. 0 when they have no read point. */
     unreadCount?: number;
@@ -44,7 +44,7 @@ export interface ThreadLatestReply {
 }
 
 /** What buildThreadView needs to know about the person reading. */
-export interface ThreadViewer {
+interface ThreadViewer {
   viewerId?: string | null;
   /** The viewer's read point per root id (useV2ThreadState.readPoints). */
   readPoints?: ReadonlyMap<string, string>;
@@ -151,7 +151,7 @@ export const plainPreviewText = (content: string): string => String(content || '
   .slice(0, PREVIEW_MAX_CHARS);
 
 /** The chip's preview of one reply: who, and one line of what they said. */
-export const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
+const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
   const who = participantOf(m);
   const summary = String(m.summary || m.payload?.summary || '').trim();
   const isCard = CARD_PAYLOAD_KINDS.has(String(m.payload?.kind || ''));
@@ -168,7 +168,7 @@ const parseMs = (iso: string | null | undefined): number | null => {
 };
 
 /**
- * The viewer's read point in one thread (D278), in ms, or null for none.
+ * The viewer's read point in one thread, in ms, or null for none.
  *
  * With a stored `lastReadAt`: the later of it and the viewer's own newest
  * message in the thread, the root included (writing in a thread means you saw

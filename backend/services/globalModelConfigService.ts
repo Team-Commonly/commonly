@@ -3,24 +3,24 @@ import { agentDefaultModel, defaultChatModel, GEMINI_DIRECT_MODEL } from '../con
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
-export interface OpenRouterServiceConfig {
+interface OpenRouterServiceConfig {
   baseUrl: string;
   model: string;
 }
 
-export interface LlmServiceConfig {
+interface LlmServiceConfig {
   provider: string;
   model: string;
   contextLimit: number;
   openrouter: OpenRouterServiceConfig;
 }
 
-export interface CommunityAgentModel {
+interface CommunityAgentModel {
   primary: string;
   fallbacks: string[];
 }
 
-export interface OpenClawConfig {
+interface OpenClawConfig {
   provider: string;
   model: string;
   fallbackModels: string[];

@@ -63,7 +63,7 @@ const ABOUT_LIMIT = 160;
 
 type MigrationState = 'marked' | 'stopped' | 'done';
 
-export interface IdentityReport {
+interface IdentityReport {
   agentName: string;
   instanceId: string;
   installs: number;
@@ -79,7 +79,7 @@ export interface IdentityReport {
   error?: string;
 }
 
-export interface MigrationReport {
+interface MigrationReport {
   dryRun: boolean;
   identities: IdentityReport[];
 }

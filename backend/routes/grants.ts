@@ -214,14 +214,14 @@ const maskGrantForAgent = <T extends GrantPeople>(row: T): T => {
  *                    applies it per seat, so there is no single verdict to
  *                    report here.
  */
-export type GrantBrokerRefusalScope =
+type GrantBrokerRefusalScope =
   | 'seat'
   | 'not_installed'
   | 'unbound'
   | 'hosted'
   | 'not_evaluated';
 
-export interface GrantBrokerConfinement {
+interface GrantBrokerConfinement {
   refusal: GrantBrokerRefusal | null;
   scope: GrantBrokerRefusalScope;
 }

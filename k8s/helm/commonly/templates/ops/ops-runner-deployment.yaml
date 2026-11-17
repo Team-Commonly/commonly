@@ -26,6 +26,12 @@ spec:
         app: ops-runner
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      # Operator scripts here read Mongo and Postgres; none calls the Kubernetes
+      # API from inside the pod, and this account can read every Secret in the
+      # namespace. So no token (F539; scripts/verify-service-account-tokens-chart.js).
+      # @kubernetes/client-node falls back to localhost:8080 without one, so a
+      # script that imports a provisioner still loads.
+      automountServiceAccountToken: false
       containers:
       - name: ops-runner
         image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -41,6 +47,13 @@ spec:
         # api-keys / NODE_PATH / certs as backend.
         # ===================================================================
         env:
+        # ops-runner only (F539): it mounts no token, so it has no
+        # service-account namespace file, and scripts such as staging-seed read
+        # their namespace from here instead.
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         # Node Environment
         - name: NODE_ENV
           value: {{ .Values.backend.env.nodeEnv }}
@@ -747,10 +760,14 @@ spec:
           value: {{ .Values.backend.env.recordV1Pods | quote }}
         {{- end }}
 
-        # GCP Secret Manager credentials
+        # GCP Secret Manager credentials. The key file is mounted only without
+        # Workload Identity, so the path is set only then: pointing it at a
+        # missing file makes a Google client fail instead of using ADC (F463).
         {{- if .Values.externalSecrets.enabled }}
+        {{- if not .Values.externalSecrets.workloadIdentity.enabled }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /app/gcp/secret-access-credentials.json
+        {{- end }}
         - name: GCP_PROJECT_ID
           value: {{ .Values.externalSecrets.secretStore.projectId | quote }}
         {{- end }}

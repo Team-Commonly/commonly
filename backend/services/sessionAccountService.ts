@@ -26,9 +26,9 @@ import { isInstanceAccessRestricted, isInstanceEmailAllowed } from './instanceAc
  * site.
  */
 export type SessionAccountRefusal = 'missing' | 'banned' | 'bot' | 'restricted' | 'deleting';
-export type SessionTokenRefusal = SessionAccountRefusal | 'revoked';
+type SessionTokenRefusal = SessionAccountRefusal | 'revoked';
 
-export interface SessionAccount {
+interface SessionAccount {
   _id?: unknown;
   banned?: boolean;
   isBot?: boolean;

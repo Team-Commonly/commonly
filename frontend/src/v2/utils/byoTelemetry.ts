@@ -15,7 +15,7 @@ export type ByoStallReason = 'node-missing' | 'not-run' | 'other';
 
 // What the result page showed: the OS it set up for and whether the listener
 // could run there. Booleans and fixed names only, never the command or token.
-export interface ByoSetupContext {
+interface ByoSetupContext {
   setupOs: 'mac' | 'linux' | 'windows' | 'other';
   listenerAvailable: boolean;
   copyType?: ByoCopyType;

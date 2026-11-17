@@ -136,7 +136,7 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **Subsystems**: `/docs/SUMMARIZER_AND_AGENTS.md` · `/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md` · `/docs/database/POSTGRESQL_MIGRATION.md` · `/docs/deployment/KUBERNETES.md` · `/frontend/TESTING.md` · `/backend/TESTING.md`
 
 ### Local Skill Paths
-- `.claude/skills` is the tracked source-path symlink for local development skills; `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`. Do not recreate `.codex/skills`; it was replaced by `.agents/skills`.
+- `.claude/skills` is the tracked source-path symlink for local development skills; `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`. Do not recreate `.codex/skills`; it was replaced by `.agents/skills`. The link is relative (`../../commonly-skills`), so it dangles in a worktree that isn't a sibling of the skills checkout (one under `.claude/worktrees/`, a seat's own folder); `node scripts/link-worktree-skills.mjs` in that worktree creates the one path it expects, and `--check` reports.
 - Team-internal operating procedures are kept out of this repo; team agents reach them through the `fleet-coordination` skill.
 
 ### Knowledge-Base Discipline (IMPORTANT)

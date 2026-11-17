@@ -11,7 +11,7 @@ import type {
 } from '../models/Installable';
 
 /** A field-level error returned when a plugin cannot be made installable. */
-export interface PluginManifestValidationDetail {
+interface PluginManifestValidationDetail {
   field: string;
   message: string;
 }
@@ -34,7 +34,7 @@ export class PluginManifestValidationError extends Error {
 type AnyRecord = Record<string, any>;
 type PluginRootKind = 'claude' | 'cursor';
 
-export interface ParsedPluginInstallable {
+interface ParsedPluginInstallable {
   installableId: string;
   name: string;
   description: string;

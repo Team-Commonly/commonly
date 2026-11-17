@@ -40,9 +40,9 @@ const Installable = require('../../models/Installable');
 export { GRANT_BROKER_ID } from './grantBrokerId';
 export const GRANT_BROKER_URL = '${COMMONLY_API_URL}/api/mcp/grants/${COMMONLY_GRANT_ID}';
 
-export type ToolReadiness = { available: true } | { available: false; reason: 'not_configured' };
+type ToolReadiness = { available: true } | { available: false; reason: 'not_configured' };
 
-export interface ProjectedTool {
+interface ProjectedTool {
   name: string;
   description: string;
   requiredWriteMode: 'read' | 'write-with-confirm' | 'write';
@@ -100,7 +100,7 @@ assertNoHostedMcpInstallableCollisions(HOSTED_MCP_ENTRIES);
  * offerable only when this instance has both values in its environment; the
  * catalogue still owns the client kind, never the credentials (§4).
  */
-export const hostedMcpToolInstallables = (
+const hostedMcpToolInstallables = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, ToolInstallableMeta> => {
@@ -222,7 +222,7 @@ export const projectTools = (
     }));
 };
 
-export interface ResolvedBroker {
+interface ResolvedBroker {
   installableId: string;
   brokerId: string;
   enabledTools: string[];

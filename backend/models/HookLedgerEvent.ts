@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-export interface IHookLedgerEvent extends Document {
+interface IHookLedgerEvent extends Document {
   podId: string;
   agentId: string;
   agentName: string;

@@ -4,7 +4,7 @@
  *
  * Nothing in the request body is trusted. The installation and the repository
  * are read back from GitHub with the person's OWN GitHub App user token: the
- * one D248's hosted-MCP GitHub connection stores (`hosted-mcp` row, entry
+ * one the hosted-MCP GitHub connection stores (`hosted-mcp` row, entry
  * `github-mcp`, opened through `credentialFor`). That token is minted by the
  * Commonly Connect App, so `GET /user/installations` lists only Connect
  * installations the person can access, and
@@ -30,7 +30,7 @@ const LIST_MAX_INSTALLATIONS = 10;
 const LIST_MAX_PAGES = 3;
 const LIST_BUDGET_MS = 20_000;
 
-export type GithubConnectProofRefusalCode =
+type GithubConnectProofRefusalCode =
   | 'github_connect_required'
   | 'installation_not_visible'
   | 'installation_suspended'
@@ -45,7 +45,7 @@ export class GithubConnectProofError extends Error {
   }
 }
 
-export interface ProvenConnectRepository {
+interface ProvenConnectRepository {
   installationId: string;
   /** GitHub's own spelling, never the body's. */
   owner: string;
@@ -69,7 +69,7 @@ export interface GithubConnectProofDeps {
   connectAppId: () => string;
 }
 
-export const defaultGithubConnectProofDeps = (): GithubConnectProofDeps => ({
+const defaultGithubConnectProofDeps = (): GithubConnectProofDeps => ({
   loadUserTokenRow: async (userId) => {
     if (!/^[a-f\d]{24}$/i.test(userId)) return null;
     const { default: Integration } = await import('../models/Integration');

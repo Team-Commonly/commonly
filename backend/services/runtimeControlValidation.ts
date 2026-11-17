@@ -6,7 +6,7 @@ import { harnessCatalogEntry } from '../config/harnessCatalog';
 // Validate controls only when a bound daemon supplies a machine inventory.
 // Existing/standalone installations keep working against older daemons.
 //
-// Effort (D247): a device's own non-empty list decides. When the device has
+// Effort: a device's own non-empty list decides. When the device has
 // reported nothing for the harness, or no inventory yet, the harness
 // catalogue's ladder decides instead, so effort is never greyed out just
 // because a computer is quiet. The CLI makes the same call at spawn time.

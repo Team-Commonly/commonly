@@ -85,7 +85,7 @@ const renderChat = (detail) => render(
 );
 
 describe('V2Composer send button', () => {
-  test('the pod header carries member faces labelled with the counts (D215), not a working count', () => {
+  test('the pod header carries member faces labelled with the counts, not a working count', () => {
     const view = renderChat(makeDetail({
       pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
       members: [{ _id: 'u1', username: 'alice', isBot: false }, { _id: 'u2', username: 'bob', isBot: false }],
@@ -144,7 +144,7 @@ describe('V2Composer send button', () => {
     });
   });
 
-  // S3c (D215): Send is drawn at rest, and disabled until the draft has text.
+  // S3c: Send is drawn at rest, and disabled until the draft has text.
   test('Send is disabled, keeping its name, until the draft has text', () => {
     renderChat(makeDetail());
     expect(screen.getByRole('button', { name: /send message/i })).toBeDisabled();

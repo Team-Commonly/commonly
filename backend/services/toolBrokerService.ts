@@ -34,7 +34,7 @@ const GitHubAppService: typeof import('./githubAppService').default = require('.
 import { githubAppOfConfig, isGithubAppConfigured, type GitHubAppName } from './githubAppNames';
 import { assertConnectStillProven } from './githubConnectReproof';
 
-export interface ToolDefinitionBase {
+interface ToolDefinitionBase {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
@@ -115,7 +115,7 @@ export type ToolDefinition = GithubToolDefinition | HostedToolDefinition;
  * It leaves room for GitHub's 65,536-character body in multi-byte text. A PR
  * write's card is a labelled summary with its own caps (`prWriteScope.ts`).
  */
-export const APPROVAL_CARD_ARGS_MAX_BYTES = 128 * 1024;
+const APPROVAL_CARD_ARGS_MAX_BYTES = 128 * 1024;
 
 export interface BrokerCallInput {
   grantId: string;
@@ -149,7 +149,7 @@ export interface BrokerCallInput {
   runPodId?: string;
 }
 
-export interface BrokerCallResult {
+interface BrokerCallResult {
   callId: string;
   result: unknown;
   outcome: 'ok' | 'failed';
@@ -164,7 +164,7 @@ export interface BrokerCallResult {
 }
 
 /** What a trail row holds that only the broker knows. Carries no secret. */
-export interface UnwrittenTrailRow {
+interface UnwrittenTrailRow {
   podId?: string;
   installationId?: string;
   credentialOwnerId?: string;
@@ -1475,7 +1475,7 @@ export const CONNECT_UNSUPPORTED_TOOLS: ReadonlySet<string> = new Set([
   'github.close_issue',
   'github.comment_on_issue',
 ]);
-export const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
+const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
   + 'close or comment on them. Nothing was changed on GitHub.';
 
 const connectCannotUse = (definition: ToolDefinition, connection: ToolConnection): boolean => (
@@ -2070,7 +2070,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   }
 };
 
-export interface ApprovedToolCallInput {
+interface ApprovedToolCallInput {
   grantId: string;
   agentUserId: string;
   tool: string;

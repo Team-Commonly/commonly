@@ -2,7 +2,7 @@
  * commonly_agent_status is how Scout answers "is my agent running?". On
  * 2026-10-28 it missed a listener that was polling: the seat was installed in
  * another pod, and its key lived in the credential ledger, not on the bot User
- * (D172). Real Mongo, so the stores are the ones runtime auth writes.
+ * Real Mongo, so the stores are the ones runtime auth writes.
  */
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 

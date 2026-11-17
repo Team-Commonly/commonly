@@ -5,6 +5,10 @@ import './i18n';
 import App from './App';
 import './App.css'; // Ensure CSS is loaded
 import { captureFirstTouchRef } from './v2/utils/firstTouch';
+import { installPreloadRecovery } from './utils/preloadRecovery';
+
+// Before the first lazy import: a chunk that fails to load reloads the page once (F541).
+installPreloadRecovery();
 
 if (process.env.REACT_APP_SENTRY_DSN) {
   import('./sentry');

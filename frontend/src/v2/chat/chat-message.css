@@ -1,4 +1,4 @@
-/* Pod chat · message row (S3a, D223 lift of the d215 chat frame).
+/* Pod chat · message row (S3a, lift of the d215 chat frame).
 
    Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
    and 390, product CSS `.msg .mhead .mname .mmeta .mbody .cd .mn .fold
@@ -110,7 +110,7 @@
   text-decoration: underline;
 }
 
-/* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
+/* Design .sumrow: a run of claim lines folds to one 34px bar in the text
    column: board glyph, up to four 20px faces, "N claims · first to last",
    the run's time, a chevron. The toggle is a control with its state on
    aria-expanded. */
@@ -172,7 +172,7 @@
 
 .v2-claim-run__toggle[aria-expanded='true'] > .v2-claim-run__chev { transform: rotate(180deg); }
 
-/* D215 .sumlist: the open run lists who took what in 26px rows. */
+/* Design .sumlist: the open run lists who took what in 26px rows. */
 .v2-claim-run__list { display: grid; gap: 2px; margin: 0 0 6px 48px; padding: 4px 10px; }
 
 .v2-claim-run__list .v2-system-action-line {
@@ -203,7 +203,7 @@
 .v2-claim-run__list .v2-system-action-line time { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
 
 @media (max-width: 760px) {
-  /* D215 390: the run sits on the 40px text column. */
+  /* Design 390: the run sits on the 40px text column. */
   .v2-root button.v2-claim-run__toggle { width: calc(100% - 40px); margin-left: 40px; }
   .v2-claim-run__list { margin-left: 40px; }
 }
@@ -437,7 +437,7 @@
 }
 
 .v2-msg__content {
-  /* D215 .mbody: 14/22 in ink-2, 3px under the head. */
+  /* Design .mbody: 14/22 in ink-2, 3px under the head. */
   font-size: 14px;
   line-height: 22px;
   color: var(--v2-ink-2);
@@ -475,7 +475,7 @@
 }
 
 /* A message that mentions you gets no row highlight: the tint lives on the
-   @handle chip only (D224). The class stays as a hook for tests and selectors. */
+   @handle chip only. The class stays as a hook for tests and selectors. */
 .v2-msg--mention { background: none; }
 
 .v2-msg__content ul,
@@ -488,7 +488,7 @@
   margin: 2px 0;
 }
 
-/* D215 .cd: a mono chip on the tint with a soft inset ring. */
+/* Design .cd: a mono chip on the tint with a soft inset ring. */
 .v2-msg__content code {
   font: 500 12.5px/1 var(--v2-font-mono);
   color: var(--v2-text-primary);
@@ -824,7 +824,7 @@
 }
 
 .v2-thread .v2-msg {
-  /* D215 (TASK-734): 36px faces at radius 9, 12px to the text. */
+  /* (TASK-734): 36px faces at radius 9, 12px to the text. */
   grid-template-columns: 36px minmax(0, 1fr);
   gap: 12px;
   padding: 9px 0;
@@ -852,7 +852,7 @@
 .v2-message-row--decision { padding: 8px 0; }
 
 @media (max-width: 760px) {
-  /* D215 390: 30px faces, 10px to the text; name, meta and body keep the
+  /* Design 390: 30px faces, 10px to the text; name, meta and body keep the
      desktop 14 / 11.5 / 14-on-22 (the 15px phone type predates the frame). */
   .v2-thread .v2-msg { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
   .v2-thread .v2-msg__avatar-ghost { width: 30px; }
@@ -1048,7 +1048,7 @@
 
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
-/* Runtime label before the time on agent rows. D215 (TASK-734): plain mono,
+/* Runtime label before the time on agent rows. (TASK-734): plain mono,
    no box, joined to the time by a middle dot. */
 .v2-msg__tag {
   display: inline-block;
@@ -1129,7 +1129,7 @@
 
 .v2-root .v2-thread button.v2-msg__reaction--more { color: var(--v2-accent-text); }
 
-/* D215 .acts: a pop card at the row's top right, 2px in, r9, four 28px
+/* Design .acts: a pop card at the row's top right, 2px in, r9, four 28px
    ghost keys (Add reaction, Reply, Thread, More) with 17px glyphs. */
 .v2-thread .v2-msg__strip {
   top: 2px;

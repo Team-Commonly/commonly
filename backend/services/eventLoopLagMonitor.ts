@@ -13,7 +13,7 @@ import { monitorEventLoopDelay } from 'perf_hooks';
  * callback actually waited that long to run.
  */
 
-export interface LoopDelayHistogram {
+interface LoopDelayHistogram {
   enable(): void;
   disable(): void;
   reset(): void;

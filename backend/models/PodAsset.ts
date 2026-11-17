@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type PodAssetType =
+type PodAssetType =
   | 'summary'
   | 'integration-summary'
   | 'skill'
@@ -12,10 +12,10 @@ export type PodAssetType =
   | 'doc'
   | 'link';
 
-export type PodAssetCreatedByType = 'system' | 'user' | 'agent';
-export type PodAssetStatus = 'active' | 'archived';
+type PodAssetCreatedByType = 'system' | 'user' | 'agent';
+type PodAssetStatus = 'active' | 'archived';
 
-export interface IPodAsset extends Document {
+interface IPodAsset extends Document {
   podId: Types.ObjectId;
   type: PodAssetType;
   title: string;

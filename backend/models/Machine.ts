@@ -16,7 +16,7 @@ export interface IMachineAgentState {
 
 import type { HarnessInventory } from '../services/runtimeInventory';
 
-// TASK-784 (D164): what the daemon's computer runs, as metadata only. Each
+// TASK-784: what the daemon's computer runs, as metadata only. Each
 // field is checked against a fixed shape on the way in (machineService
 // normalizeHostReport), so no hostname, path or user name can be stored here.
 export interface IMachineHost {
@@ -40,7 +40,7 @@ export interface IMachine extends Document {
   agentStates: IMachineAgentState[];
   runtimeInventory: HarnessInventory[];
   inventoryAt: Date | null;
-  // D245: the daemon reported that its user chose to run agents without a
+  // The daemon reported that its user chose to run agents without a
   // sandbox (native Windows, `commonly daemon install --unsandboxed`). Grants
   // are refused for every seat bound to this machine while it is true.
   hostUnconfined: boolean;

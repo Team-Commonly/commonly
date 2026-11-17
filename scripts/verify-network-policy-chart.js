@@ -116,25 +116,43 @@ const DEV_EDGE = [{
 }];
 // Dev's data tier is outside the cluster, so dev renders no mongodb or email-sink.
 const DEV_INGRESS_KEYS = ['frontend', 'backend', 'litellm', 'redis', 'agentComputer', 'defaultDeny'];
+// A switch whose policy names aren't allow-<key>-ingress (ingress-allow.yaml).
+const POLICY_NAMES = {
+  agentComputer: ['allow-agent-computer-waker-ingress', 'allow-agent-computer-steel-ingress'],
+  emailSink: ['allow-email-sink-ingress'],
+};
+// Prod's agent computer users come from the private values file, so a lane
+// that checks those allows names one user to render the waker and a gate.
+const ONE_AGENT_COMPUTER_USER = ['backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'];
 const ingressLanes = {
   default: { files: lanes.default.files, on: [] },
-  // Prod's first step: frontend and redis allows, no deny. Each allow isolates
-  // the pods it selects as soon as it applies, so its clients must be whole.
+  // Prod's steps 1 and 2: frontend, redis and agent-computer allows, no deny.
+  // Each allow isolates the pods it selects as soon as it applies, so its
+  // clients must be whole.
   dev: {
     files: lanes.dev.files,
-    on: ['frontend', 'redis'],
+    setJson: ONE_AGENT_COMPUTER_USER,
+    on: ['frontend', 'redis', 'agentComputer'],
     deny: false,
     edgeIs: DEV_EDGE,
     flows: [
       ['edge', 'frontend', 80],
-      ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379], ['app=ops-runner', 'redis', 6379],
+      ...['backend', 'backend-worker', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'redis', 6379],
+        [`app=${a}`, 'agent-computer-waker', 8080], [`app=${a}`, 'agent-computer-steel', 3000]]),
     ],
     // The tunnel shares the controller's namespace but must go through it.
-    closed: [['ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
-      ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379]],
+    // Steel is reached only through the broker, never from the edge.
+    closed: [['ns:ingress-nginx/app=cloudflared-commonly-k8s', 'frontend', 80], ['app=backend', 'frontend', 80],
+      ['edge', 'redis', 6379], ['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'redis', 6379],
+      ['edge', 'agent-computer-steel', 3000], ['edge', 'agent-computer-waker', 8080],
+      ['app=commonly-bot', 'agent-computer-steel', 3000], ['app=cloud-codex', 'agent-computer-waker', 8080],
+      ['app=agent-computer-waker', 'agent-computer-steel', 3000]],
   },
   staging: {
     files: lanes.staging.files,
+    // Staging runs an ops-runner (values-staging.yaml) but no backups; its
+    // allows admit both. Render them, so those flows are checked against real pods.
+    setJson: ['backup.mongodb.enabled=true', 'backup.postgresql.enabled=true', 'opsRunner.enabled=true'],
     on: ['frontend', 'backend', 'litellm', 'redis', 'mongodb', 'emailSink', 'defaultDeny'],
     edgeApp: 'cloudflared-commonly-k8s',
     flows: [
@@ -142,6 +160,7 @@ const ingressLanes = {
       ['app=backend', 'litellm', 4000], ['app=backend-worker', 'litellm', 4000],
       ['app=backend', 'redis', 6379], ['app=backend-worker', 'redis', 6379],
       ['app=backend', 'mongodb', 27017], ['app=backend-worker', 'mongodb', 27017], ['component=backup', 'mongodb', 27017],
+      ['app=ops-runner', 'mongodb', 27017],
       ['app=backend', 'email-sink', 8080], ['app=backend-worker', 'email-sink', 8080], ['app=ops-runner', 'email-sink', 8080],
       ['component=stranger-journey', 'email-sink', 8080],
     ],
@@ -153,7 +172,7 @@ const ingressLanes = {
     setJson: [`networkPolicy.ingress.edge=${JSON.stringify(DEV_EDGE)}`, 'networkPolicy.ingress.litellm.public=true',
       ...DEV_INGRESS_KEYS.map((k) => `networkPolicy.ingress.${k}.enabled=true`),
       // One agent computer user, so the waker and a steel gate render.
-      'backend.env.agentComputerEnabled="true"', 'agentComputer.users=["0123456789abcdef01234567"]'],
+      ...ONE_AGENT_COMPUTER_USER],
     on: DEV_INGRESS_KEYS,
     edge: true,
     flows: [
@@ -165,12 +184,19 @@ const ingressLanes = {
     closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000]],
   },
 };
-const peerLabels = (spec, edgeApp) => {
+const peerLabels = (spec) => {
   if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };
-  // `ns/key=value` is a pod in another namespace; bare `key=value` is in the chart's.
-  const [nsPart, label] = spec.includes('/') ? spec.split('/') : [null, spec];
-  const [k, v] = label.split('=');
-  return { ns: nsPart, labels: { [k]: v } };
+  // `ns:<namespace>/key=value` is a pod in another namespace; bare `key=value`
+  // is in the chart's. Only the prefix names a namespace: a label key can carry
+  // its own `/` (app.kubernetes.io/name), so a bare `/` can't.
+  const m = /^ns:([^/]+)\/(.+)$/.exec(spec);
+  // A malformed prefix would read as a label key in the chart's namespace, and
+  // a closed check on it would pass vacuously.
+  if (!m && spec.startsWith('ns:')) throw new Error(`peer spec ${spec} is not ns:<namespace>/key=value`);
+  const label = m ? m[2] : spec;
+  const eq = label.indexOf('=');
+  if (eq < 1) throw new Error(`peer spec ${spec} is not key=value`);
+  return { ns: m ? m[1] : null, labels: { [label.slice(0, eq)]: label.slice(eq + 1) } };
 };
 // Does a policy's `from` admit a pod with these labels (ns null = the policy's
 // own namespace)? An ipBlock counts as admitting: pod IPs can fall inside it,
@@ -188,6 +214,41 @@ const admits = (pol, { ns, labels }, port) => (pol.spec.ingress || []).some((rul
   return portOk && fromOk;
 });
 
+// The sources a flow or closed spec stands for: every rendered pod the spec's
+// label matches in its namespace, with ALL its labels. An allow can admit by
+// another label the real pod also carries (tier: data-client on commonly-bot),
+// which a synthetic one-label pod would never show. The edge, and a pod the
+// chart doesn't render in another namespace, keep the spec's own labels.
+// `matched` is false for a chart-namespace spec that matches no rendered pod:
+// its checks would test a pod that doesn't exist, so callers fail on it.
+const sourcesFor = (spec, workloads, ns) => {
+  const src = peerLabels(spec);
+  if (spec === 'edge') return { sources: [src], matched: true };
+  const where = src.ns ?? ns;
+  const pods = workloads.filter((w) => w.metadata.namespace === where && selects({ matchLabels: src.labels }, podTemplate(w).metadata?.labels))
+    .map((w) => ({ ns: src.ns, labels: podTemplate(w).metadata.labels }));
+  if (pods.length) return { sources: pods, matched: true };
+  return { sources: [src], matched: src.ns !== null };
+};
+// The destination pods for `app=<toApp>` (F520), with ALL their labels, the
+// mirror of sourcesFor: an allow can select the destination by another label it
+// carries (component: cache on redis), which a synthetic { app } pod never
+// matches, so a closed check would pass without testing it. `matched` is false
+// when nothing by that name renders.
+const targetsFor = (toApp, workloads, ns) => {
+  const pods = workloads.filter((w) => w.metadata.namespace === ns && podTemplate(w).metadata?.labels?.app === toApp)
+    .map((w) => podTemplate(w).metadata.labels);
+  return pods.length ? { targets: pods, matched: true } : { targets: [{ app: toApp }], matched: false };
+};
+// One verdict per (source, destination) pair: does some allow selecting that
+// destination admit that source on the port?
+const admittedFrom = (allows, sources, targets, port) => sources.flatMap((src) => targets.map((dest) => allows
+  .some((p) => selects(p.spec.podSelector, dest) && admits(p, src, port))));
+// A flow holds only if every real source reaches every real destination pod; a
+// closed check holds only if no pair is admitted.
+const flowHolds = (allows, sources, targets, port) => admittedFrom(allows, sources, targets, port).every(Boolean);
+const closedHolds = (allows, sources, targets, port) => !admittedFrom(allows, sources, targets, port).some(Boolean);
+
 for (const [lane, cfg] of Object.entries(ingressLanes)) {
   const args = ['template', 'commonly-verify', chart];
   for (const f of cfg.files) args.push('-f', f);
@@ -202,7 +263,7 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   }
   if (cfg.deny === false) {
     expect(!deny, `${lane}: default-deny-ingress renders, want the allows alone`);
-    const want = cfg.on.map((k) => `allow-${k}-ingress`).sort();
+    const want = cfg.on.flatMap((k) => POLICY_NAMES[k] || [`allow-${k}-ingress`]).sort();
     const got = allows.map((p) => p.metadata.name).sort();
     expect(JSON.stringify(got) === JSON.stringify(want), `${lane}: ingress allows are ${got.join(', ')}, want ${want.join(', ')}`);
   } else {
@@ -230,12 +291,15 @@ for (const [lane, cfg] of Object.entries(ingressLanes)) {
   if (cfg.edgeApp) {
     expect(podsOf(cfg.edgeApp).length > 0, `${lane}: the edge ${cfg.edgeApp} is not rendered in ${ns}`);
   }
-  const admitted = (from, toApp, port) => allows.some((p) => selects(p.spec.podSelector, { app: toApp }) && admits(p, peerLabels(from), port));
-  for (const [from, toApp, port] of cfg.flows) {
-    expect(admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is refused`);
-  }
-  for (const [from, toApp, port] of cfg.closed) {
-    expect(!admitted(from, toApp, port), `${lane}: ${from} -> ${toApp}:${port} is admitted, want refused`);
+  for (const [kind, list, holds, want] of [['flow', cfg.flows, flowHolds, 'is refused'], ['closed', cfg.closed, closedHolds, 'is admitted, want refused']]) {
+    for (const [from, toApp, port] of list) {
+      const { sources, matched } = sourcesFor(from, workloads, ns);
+      const { targets, matched: targetMatched } = targetsFor(toApp, workloads, ns);
+      // A renamed label would leave the check passing on a pod that doesn't exist.
+      expect(matched, `${lane}: ${kind} source ${from} matches no rendered pod in ${ns}`);
+      expect(targetMatched, `${lane}: ${kind} destination app=${toApp} matches no rendered pod in ${ns}`);
+      expect(holds(allows, sources, targets, port), `${lane}: ${from} -> ${toApp}:${port} ${want}`);
+    }
   }
   // Every Service's pods are admitted on the port the Service sends to. With no
   // deny, only the pods an allow selects are isolated, so only they are checked.
@@ -268,6 +332,67 @@ expect(probe({ namespaceSelector: {} }), 'admits(): a namespaceSelector {} peer 
 expect(probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'n' } } }), 'admits(): a peer naming the own namespace does not admit its pods');
 expect(!probe({ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'other' } } }), 'admits(): a peer naming another namespace admits same-namespace pods');
 expect(probe({ ipBlock: { cidr: '0.0.0.0/0' } }), 'admits(): an ipBlock peer is treated as refusing');
+
+// sourcesFor() and the two checks (F504): a closed check must catch an allow
+// that admits a real pod by a label other than the one the spec names, a flow
+// must fail when one of the spec's pods is cut off by its other labels, and
+// a pod in another namespace is never taken for the chart's.
+{
+  const pod = (name, nsName, labels) => ({ kind: 'Deployment', metadata: { namespace: nsName, name }, spec: { template: { metadata: { labels } } } });
+  const bot = pod('bot', 'n', { app: 'commonly-bot', tier: 'data-client' });
+  const twin = pod('bot-2', 'n', { app: 'commonly-bot' });
+  const elsewhere = pod('bot-m', 'm', { app: 'commonly-bot', tier: 'data-client' });
+  const byTier = { metadata: { namespace: 'n' }, spec: { podSelector: { matchLabels: { app: 'redis' } },
+    ingress: [{ from: [{ podSelector: { matchLabels: { tier: 'data-client' } } }], ports: [{ port: 6379 }] }] } };
+  const of = (spec, pods) => sourcesFor(spec, pods, 'n').sources;
+  const REDIS = [{ app: 'redis' }];
+  expect(!closedHolds([byTier], of('app=commonly-bot', [bot]), REDIS, 6379),
+    'sourcesFor(): an allow admitting app=commonly-bot by its tier label passes the closed check');
+  expect(closedHolds([byTier], [peerLabels('app=commonly-bot')], REDIS, 6379),
+    'sourcesFor() probe: the synthetic one-label pod should miss the tier allow');
+  expect(!closedHolds([byTier], of('app=commonly-bot', [twin, bot]), REDIS, 6379),
+    'closedHolds(): a closed check passes though one app=commonly-bot pod is admitted');
+  expect(!flowHolds([byTier], of('app=commonly-bot', [bot, twin]), REDIS, 6379),
+    'flowHolds(): a flow passes though one app=commonly-bot pod is refused');
+  expect(closedHolds([byTier], of('app=commonly-bot', [twin, elsewhere]), REDIS, 6379),
+    "sourcesFor(): a pod in another namespace is read as the chart's");
+  expect(sourcesFor('app=gone', [bot], 'n').matched === false, 'sourcesFor(): a spec matching no rendered pod reads as matched');
+  const remote = sourcesFor('ns:m/app=commonly-bot', [bot, elsewhere], 'n');
+  expect(remote.matched && remote.sources.length === 1 && remote.sources[0].ns === 'm' && remote.sources[0].labels.tier === 'data-client',
+    'sourcesFor(): a rendered pod in another namespace keeps only its spec labels');
+  expect(sourcesFor('ns:x/app=y', [bot], 'n').matched, 'sourcesFor(): an unrendered pod in another namespace reads as unmatched, though the chart cannot render it');
+}
+
+// targetsFor() itself (F520): an allow selecting the destination by a label
+// other than app must count for a closed check, and a flow must reach every
+// destination pod, not just one.
+{
+  const pod = (name, labels) => ({ kind: 'Deployment', metadata: { namespace: 'n', name }, spec: { template: { metadata: { labels } } } });
+  const cache = pod('redis', { app: 'redis', component: 'cache' });
+  const plain = pod('redis-2', { app: 'redis' });
+  const toCache = { metadata: { namespace: 'n' }, spec: { podSelector: { matchLabels: { component: 'cache' } },
+    ingress: [{ from: [{ podSelector: { matchLabels: { app: 'commonly-bot' } } }], ports: [{ port: 6379 }] }] } };
+  const bot = [{ ns: null, labels: { app: 'commonly-bot' } }];
+  expect(!closedHolds([toCache], bot, targetsFor('redis', [cache], 'n').targets, 6379),
+    'targetsFor(): an allow selecting redis by its component label passes the closed check');
+  expect(closedHolds([toCache], bot, [{ app: 'redis' }], 6379),
+    'targetsFor() probe: the synthetic { app } destination should miss the component allow');
+  expect(!flowHolds([toCache], bot, targetsFor('redis', [cache, plain], 'n').targets, 6379),
+    'targetsFor(): a flow passes though one redis pod refuses it');
+  expect(targetsFor('gone', [cache], 'n').matched === false, 'targetsFor(): an app with no rendered pod reads as matched');
+  const elsewhere = { kind: 'Deployment', metadata: { namespace: 'm', name: 'redis' }, spec: { template: { metadata: { labels: { app: 'redis', tier: 'other' } } } } };
+  const found = targetsFor('redis', [plain, elsewhere], 'n').targets;
+  expect(found.length === 1 && !found[0].tier, 'targetsFor(): a same-named pod in another namespace is taken for the chart\'s');
+}
+
+// peerLabels() itself: a prefixed label key carries a `/` of its own, so it
+// must stay a label in the chart's namespace. Read as a namespace, its closed
+// check would pass without testing anything.
+const parsed = (spec) => JSON.stringify(peerLabels(spec));
+expect(parsed('app.kubernetes.io/name=x') === JSON.stringify({ ns: null, labels: { 'app.kubernetes.io/name': 'x' } }),
+  `peerLabels(): app.kubernetes.io/name=x reads as ${parsed('app.kubernetes.io/name=x')}, want a prefixed label in the chart's namespace`);
+expect(parsed('ns:ingress-nginx/app.kubernetes.io/name=x') === JSON.stringify({ ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'x' } }),
+  `peerLabels(): ns:ingress-nginx/app.kubernetes.io/name=x reads as ${parsed('ns:ingress-nginx/app.kubernetes.io/name=x')}`);
 
 // An edge peer must name pods: a bare namespaceSelector or an ipBlock would
 // admit whole namespaces or address ranges to frontend and backend.

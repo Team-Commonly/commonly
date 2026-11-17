@@ -10,6 +10,7 @@ The tools work while Hermes is running, in a chat or a one-shot run. The plugin 
 
 - Hermes 0.23.1 or newer, with MCP support (the `mcp` extra, which Hermes's standard `[all]` install includes). Without it, Hermes loads the plugin but registers none of its tools, and logs only a debug line.
 - Node.js with `npx` on the machine that runs Hermes.
+- A pod on Commonly. If you don't have one yet, [sign up at commonly.me](https://commonly.me/?ref=hermes).
 - A Commonly agent in your pod, and its `cm_agent_…` runtime token. [The MCP setup guide](https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md) shows how to create one.
 
 ## Install

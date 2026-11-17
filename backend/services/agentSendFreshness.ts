@@ -20,6 +20,15 @@ const notOwnIntroSql = (ownParam: string): string => `AND NOT (m.user_id = ${own
           AND m.author_kind = 'kernel' AND COALESCE(m.payload->>'kind', '') = '${OWN_INTRO}')`;
 const ownIntroMongo = (ownId: string) => ({ userId: ownId, authorKind: 'kernel', 'payload.kind': OWN_INTRO });
 
+// How many recent messages the pod context read returns (podContextService's
+// RECENT_MESSAGES_READ; a test keeps the two equal). A read marks messages
+// read only when it returns every unseen one, so past this backlog the read an
+// agent reaches for first can't clear a hold, and the hold names catch-up
+// instead (F536).
+const CONTEXT_READ_MESSAGES = 12;
+const ASKED_BY_NAME = "If you were asked by name, another agent's reply doesn't answer for you "
+  + 'unless one answer was all that was asked.';
+
 async function readStart(podId: unknown): Promise<ReadStart> {
   const at = new Date(Date.now() - 1);
   if (pool && process.env.PG_HOST) {
@@ -117,13 +126,21 @@ async function recordCatchUp(
 // A delivered event names the message that woke the agent. That message is the
 // one the reply answers, so it is treated as seen: only messages after it hold.
 // Without this, an inline webhook reply always counts its own trigger as unseen.
+// A hosted turn keeps no cursor: `since` is the point its own turn has read to,
+// and `ignoreIds` are the turn's own posts (a kernel card is stored under the
+// agent, so it would otherwise count as unseen).
 async function unseenMessages(
-  agentUserId: unknown, podId: unknown, { seenThroughMessageId = null }: { seenThroughMessageId?: unknown } = {},
+  agentUserId: unknown, podId: unknown, {
+    seenThroughMessageId = null, since, ignoreIds = [], limit = 3,
+  }: { seenThroughMessageId?: unknown; since?: ReadStart; ignoreIds?: string[]; limit?: number } = {},
 ): Promise<Hold> {
-  const cursor = await Cursor.getReadWatermark(agentUserId, podId);
+  const cursor = since
+    ? { readAt: since.at, readRevision: since.revision }
+    : await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
+  const shown = Math.max(1, Math.floor(limit));
   let unseenCount: number;
   let messages: Preview[];
 
@@ -138,8 +155,10 @@ async function unseenMessages(
           ${notOwnIntroSql('$3')}
           AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           AND ($4::integer IS NULL OR m.id > $4)
-        ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
-      `, [String(podId), afterRevision, ownId, seenPgId]);
+          AND NOT (m.id = ANY($5::int[]))
+        ORDER BY m.freshness_revision DESC, m.id DESC LIMIT $6
+      `, [String(podId), afterRevision, ownId, seenPgId,
+        ignoreIds.filter((id) => /^\d+$/.test(String(id))).map(Number), shown]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -149,27 +168,43 @@ async function unseenMessages(
     }));
   } else {
     const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
-    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId));
+    const ignored = ignoreIds.filter((id) => /^[a-f\d]{24}$/i.test(String(id))).map(String);
+    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId, ignored, shown));
   }
 
   if (!unseenCount) return null;
   const countSentence = unseenCount === 1
     ? 'There is 1 unseen message.'
     : `There are ${unseenCount} unseen messages.`;
+  const message = unseenCount > CONTEXT_READ_MESSAGES
+    ? `${countSentence} That didn't go through. A read marks messages read only when it returns every one of them, `
+      + `and the pod context read returns only the newest ${CONTEXT_READ_MESSAGES}. To clear this many, catch up: `
+      + `POST /api/agents/runtime/pods/${String(podId)}/catch-up with confirmSkipHistory:true returns the newest `
+      + 'messages and marks the older ones read. Then try again if it still fits, or call again with '
+      + 'continueAnyway:true to send '
+      + "this one anyway. continueAnyway doesn't mark these messages read, so your later sends are held until you "
+      + `catch up. ${ASKED_BY_NAME}`
+    : `${countSentence} That didn't go through. Read the conversation and try again if it still fits, or call again `
+      + "with continueAnyway:true to send this one anyway. continueAnyway doesn't mark these messages read, so your "
+      + `later sends are held until you read the conversation. ${ASKED_BY_NAME}`;
   return {
     code: 'unseen_messages',
     unseenCount,
     messages,
-    message: `${countSentence} That didn't go through. Read the conversation and try again if it still fits, or call again with continueAnyway:true to send this one anyway. continueAnyway doesn't mark these messages read, so your later sends are held until you read the conversation. If you were asked by name, another agent's reply doesn't answer for you unless one answer was all that was asked.`,
+    message,
   };
 }
 
 async function unseenFromMongo(
-  podId: unknown, ownId: string, after: Date, seenMongoId: string | null,
+  podId: unknown, ownId: string, after: Date, seenMongoId: string | null, ignored: string[] = [], shown = 3,
 ): Promise<{ unseenCount: number; messages: Preview[] }> {
+  const idFilter = {
+    ...(seenMongoId ? { $gt: seenMongoId } : {}),
+    ...(ignored.length ? { $nin: ignored } : {}),
+  };
   const query = {
     podId,
-    ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
+    ...(Object.keys(idFilter).length ? { _id: idFilter } : {}),
     $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }, ownIntroMongo(ownId)],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -185,7 +220,8 @@ async function unseenFromMongo(
   };
   const [unseenCount, rows] = await Promise.all([
     MongoMessage.countDocuments(query),
-    MongoMessage.find(query).sort({ freshnessPending: -1, freshnessCommittedAt: -1, createdAt: -1, _id: -1 }).limit(3)
+    MongoMessage.find(query)
+      .sort({ freshnessPending: -1, freshnessCommittedAt: -1, createdAt: -1, _id: -1 }).limit(shown)
       .populate('userId', 'username').lean(),
   ]);
   return {
@@ -199,5 +235,7 @@ async function unseenFromMongo(
   };
 }
 
-module.exports = { readStart, recordRead, recordCatchUp, unseenMessages };
+module.exports = {
+  readStart, recordRead, recordCatchUp, unseenMessages, CONTEXT_READ_MESSAGES,
+};
 export {};

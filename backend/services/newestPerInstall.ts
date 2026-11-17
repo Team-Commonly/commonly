@@ -13,12 +13,12 @@
 
 const PAIRS_PER_PIPELINE = 50;
 
-export interface InstallLike {
+interface InstallLike {
   agentName?: string | null;
   instanceId?: string | null;
 }
 
-export interface InstallPair {
+interface InstallPair {
   agentName: string;
   instanceId: string;
 }
