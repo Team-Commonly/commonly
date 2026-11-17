@@ -23,7 +23,7 @@ import { spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { homedir } from 'os';
 import {
-  basename, dirname, isAbsolute, join, resolve,
+  basename, dirname, isAbsolute, join, relative, resolve,
 } from 'path';
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
@@ -480,6 +480,100 @@ export const detectSeatbelt = () => {
   }
 };
 
+// F122: which host folders a workspace seat may read through its
+// sandbox.filesystem.read-outside. An allowlist, not a list of where
+// credentials live: such a list lags every new token file (an Opus review found
+// eleven under ~/.commonly that one missed). Inside the home folder:
+//   - a folder whose first name under home starts with a dot is refused, except
+//     HOST_READ_DOT_ALLOW (the CLI's logs);
+//   - ~/Library is refused (keychains, browser and app data);
+//   - the home folder itself, and any folder that holds it (`/`, /Users), are
+//     refused.
+// Anything else in home (a project tree) is admitted read-only, with the
+// workspace's own credential denies (.env*, .commonly, .codex, .npmrc, .yarnrc)
+// applied beneath it. Outside home only HOST_READ_SYSTEM_ALLOW is admitted: the
+// temp folders hold every seat's per-turn runtime token (same uid, so their
+// 0700 mode is no fence), and /System/Volumes/Data firmlink spellings of home
+// are refused with everything else not on the list (second Opus review).
+//
+// Paths are compared canonically and case-folded. APFS is case-insensitive and
+// so is Seatbelt's subpath match, while path.relative and the JS realpathSync
+// keep the case they were given: `~/.SSH` would otherwise pass a check for
+// `.ssh` and still read ~/.ssh.
+export const HOST_READ_DOT_ALLOW = Object.freeze(['.commonly/logs']);
+export const HOST_READ_SYSTEM_ALLOW = Object.freeze(['/var/log', '/private/var/log', '/Library/Logs']);
+
+// The real path, with the real case, of the longest prefix that exists, plus
+// the rest as given. Resolved once: the result is both checked and granted.
+const canonicalPath = (path) => {
+  const absolute = resolve(path);
+  let existing = absolute;
+  const rest = [];
+  for (;;) {
+    try {
+      return join(realpathSync.native(existing), ...rest);
+    } catch {
+      const parent = dirname(existing);
+      if (parent === existing) return absolute;
+      rest.unshift(basename(existing));
+      existing = parent;
+    }
+  }
+};
+
+const foldedWithin = (outer, inner) => {
+  const rel = relative(outer.toLowerCase(), inner.toLowerCase());
+  return rel === '' || (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel));
+};
+
+// A dot folder or dotfile anywhere along the path, not only directly under
+// home: ~/Projects/repo/.commonly is a token folder too (CodeRabbit on #4111).
+// The one exception is inside HOST_READ_DOT_ALLOW.
+const dotComponent = (canonical, home) => {
+  if (HOST_READ_DOT_ALLOW.some((allowed) => foldedWithin(join(home, allowed), canonical))) {
+    const allowed = HOST_READ_DOT_ALLOW.find((a) => foldedWithin(join(home, a), canonical));
+    const below = relative(join(home, allowed).toLowerCase(), canonical.toLowerCase());
+    return below.split('/').find((name) => name.startsWith('.')) || null;
+  }
+  return canonical.split('/').find((name) => name.startsWith('.')) || null;
+};
+
+const hostReadRefusal = (canonical, home) => {
+  if (foldedWithin(canonical, home)) return 'it holds your home folder';
+  const dot = dotComponent(canonical, home);
+  if (dot) {
+    return `${dot} is a dot folder or dotfile, and those are not readable from a seat `
+      + `(only ${HOST_READ_DOT_ALLOW.map((a) => `~/${a}`).join(', ')} is)`;
+  }
+  if (!foldedWithin(home, canonical)) {
+    return HOST_READ_SYSTEM_ALLOW.some((allowed) => foldedWithin(allowed, canonical))
+      ? null
+      : `outside your home folder only ${HOST_READ_SYSTEM_ALLOW.join(', ')} are readable from a seat`;
+  }
+  const rel = relative(home.toLowerCase(), canonical.toLowerCase());
+  const [first] = rel.split('/');
+  if (first === 'library') return '~/Library holds keychains and app data';
+  if (first.startsWith('.')
+    && !HOST_READ_DOT_ALLOW.some((allowed) => foldedWithin(join(home, allowed), canonical))) {
+    return `the folders under ~/${first.split('/')[0]} are not readable from a seat `
+      + `(of the dot folders, only ${HOST_READ_DOT_ALLOW.map((a) => `~/${a}`).join(', ')} is)`;
+  }
+  return null;
+};
+
+// Each entry resolved once, refused on the first that fails, in the order given.
+export const resolveHostReadDirectories = (entries, home = homedir()) => {
+  const canonicalHome = canonicalPath(home);
+  return entries.map((entry) => {
+    const canonical = canonicalPath(entry);
+    const reason = hostReadRefusal(canonical, canonicalHome);
+    if (reason) {
+      throw new Error(`refusing sandbox.filesystem.read-outside ${entry}: ${reason}.`);
+    }
+    return canonical;
+  });
+};
+
 export const buildSeatbeltProfile = ({
   workspacePath,
   workspaceAccess = 'write',
@@ -489,6 +583,14 @@ export const buildSeatbeltProfile = ({
   executablePaths = [],
   readOnlyPaths = [],
   readOnlyDirectories = [],
+  // F122: host folders a workspace seat names in sandbox.filesystem.read-outside,
+  // admitted read-only. Unlike readOnlyDirectories (folders the adapter itself
+  // prepared), these come from the seat's spec, which the server can write, so
+  // each passes resolveHostReadDirectories first and the turn is refused
+  // otherwise.
+  hostReadDirectories = [],
+  // The home folder those rules are judged against. Tests pass a temp one.
+  hostReadHome = homedir(),
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
   // 'open' (the default) or 'loopback': only the listed loopback ports.
@@ -533,6 +635,8 @@ export const buildSeatbeltProfile = ({
   for (const path of denyWritePaths) assertAbsolutePath(path, 'denyWritePaths entry');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
+  for (const path of hostReadDirectories) assertAbsolutePath(path, 'hostReadDirectories entry');
+  const grantedHostReads = [...new Set(resolveHostReadDirectories(hostReadDirectories, hostReadHome))];
   for (const port of loopbackNetworkPorts) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
@@ -582,7 +686,10 @@ export const buildSeatbeltProfile = ({
   const resolvedState = pinnedRealpath(statePath, 'state folder');
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
   const resolvedReadOnlyPaths = [...new Set(readOnlyPaths.map(realpathOrSelf))];
-  const resolvedReadOnlyDirectories = [...new Set(readOnlyDirectories.map(realpathOrSelf))];
+  const resolvedReadOnlyDirectories = [...new Set([
+    ...readOnlyDirectories.map(realpathOrSelf),
+    ...grantedHostReads,
+  ])];
   const executables = [...new Set(
     [resolvedExecutable, process.execPath, ...executablePaths]
       .filter(Boolean)
@@ -619,6 +726,12 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence ${subpath(path)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(path)}"))`,
   ].join('\n'))).join('\n');
+  // The adapter's own read-only inputs, without the host read grants.
+  const adapterReadOnlyRules = resolvedReadOnlyPaths.map((path) => (
+    `(allow file-read* file-test-existence ${literal(path)})`
+  )).concat(resolvedReadOnlyDirectories.filter((path) => !grantedHostReads.includes(path)).map((path) => (
+    `(allow file-read* file-test-existence ${subpath(path)})`
+  ))).join('\n');
   // A symlinked entry is held at both its name and its target, so the write
   // cannot land through whichever path the link resolves to.
   const readOnlyWorkspaceRules = [...new Set(readOnlyWorkspaceEntries.flatMap((entry) => {
@@ -654,6 +767,16 @@ export const buildSeatbeltProfile = ({
     loopbackNetworkRules,
     mcpRule,
     readOnlyRules,
+    // Beneath a host read folder, every dot folder and dotfile is denied, the
+    // same rule its request passed: a project tree holds other repos' .env
+    // files, .commonly token folders, .ssh keys and .aws credentials. One rule
+    // on the leading dot covers every name, in any case (CodeRabbit on #4129).
+    ...grantedHostReads.map((dir) => `(deny file-read* file-write* ${regexUnder(dir, '\\.[^/]*(/.*)?$')})`),
+    // Later rules win, so a grant that holds the workspace, or a folder the
+    // adapter itself prepared, would hide its .git and dotfiles. Those allows
+    // are stated again here, and the workspace's credential denies follow them
+    // (CodeRabbit on #4111).
+    ...(grantedHostReads.length ? [workspaceRule, adapterReadOnlyRules] : []),
     // The workspace is intentionally readable, but credential-like nested
     // paths are not. Explicit deny wins over the broad workspace allow.
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
