@@ -36,7 +36,7 @@ const expandHome = (p) => {
 // mechanisms that do exist are named instead.
 const MACOS_MESSAGE = 'bwrap is Linux-only. On macOS a public seat runs under Seatbelt '
   + '(sandbox.mode workspace or read-only).';
-// D245: native Windows has no sandbox for agents. WSL runs the Linux one,
+// Native Windows has no sandbox for agents. WSL runs the Linux one,
 // Claude Code included since F96, and host-check.js offers it; this message
 // names the native path, which is the user's own opt-in
 // (sandbox/windows-unsandboxed.js).

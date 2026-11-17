@@ -108,7 +108,7 @@ const drainMicrotasks = async () => {
 let savedGitConfig;
 
 
-// D245 item 4: a reply the wrapper posts carries its receipt (lib/reply-receipt.js).
+// A reply the wrapper posts carries its receipt (lib/reply-receipt.js).
 const reply = (content, extra = {}) => ({
   content,
   receipt: expect.objectContaining({ adapter: expect.any(String), durationMs: expect.any(Number) }),
@@ -168,7 +168,7 @@ describe('performRun', () => {
     })]]));
   });
 
-  // D247: an empty device effort list says nothing about the level, so the
+  // An empty device effort list says nothing about the level, so the
   // saved effort reaches the harness. Only a non-empty list that leaves it out
   // drops it.
   test.each([
@@ -233,7 +233,7 @@ describe('performRun', () => {
     expect(settled[0][1]).toEqual({ event: 'settled', outcome: 'failed', reason: 'claude-signed-out' });
   });
 
-  // D247: a listener seat (no daemon) spawns with the model and effort its
+  // A listener seat (no daemon) spawns with the model and effort its
   // owner saved on the server, read before the turn; the reply receipt names them.
   test('a listener seat spawns with the model and effort saved on the server', async () => {
     const mockPost = jest.fn().mockResolvedValue({});
@@ -2088,7 +2088,7 @@ describe('performRun', () => {
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
   });
 
-  // D278 (2026-11-09): an answer to a top-level mention in a shared pod belongs
+  // Since 2026-11-09: an answer to a top-level mention in a shared pod belongs
   // in that message's thread. The kernel's cue in the item body says so; the
   // wrapper's old line saying to answer top-level (F212) must not come back
   // beside it, or the item carries two instructions that disagree.

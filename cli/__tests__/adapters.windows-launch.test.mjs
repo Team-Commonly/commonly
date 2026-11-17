@@ -186,7 +186,7 @@ describe('codex adapter on Windows', () => {
 
   test('spawn() launches codex.exe directly, no shell, prompt verbatim as the last element', async () => {
     const { impl, calls } = recorder({ stdout: '{"type":"turn.completed"}\n', codexOutput: 'ok' });
-    // A private Codex seat runs on native Windows only by its operator's D245
+    // A private Codex seat runs on native Windows only by its operator's
     // opt-in (F387), which the run hands the adapter as hostUnconfined.
     await codex.spawn(INJECTION, {
       environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl, hostUnconfined: true,

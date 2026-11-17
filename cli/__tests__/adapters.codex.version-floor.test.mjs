@@ -235,7 +235,7 @@ describe('a Windows launch that cannot be resolved', () => {
 });
 
 // F387: a private seat keeps its own execution policy only in a cloud-codex pod
-// or when its operator opted the run out (D245). Anywhere else it runs under
+// or when its operator opted the run out. Anywhere else it runs under
 // the private permission profile, whose keys need the same tested version.
 const podEnv = () => ({
   PATH: '/nonexistent', HOME: root, CODEX_HOME: join(root, 'operator'), COMMONLY_CODEX_TRUSTED_PERIMETER: '1',

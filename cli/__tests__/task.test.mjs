@@ -39,7 +39,7 @@ const sink = () => {
 const depsFor = (fetchImpl, out) => ({ env: ENV, fetchImpl, log: out.log, error: out.error });
 
 const row = (over = {}) => ({
-  taskId: 'TASK-669', title: 'D214 gap', status: 'pending', priority: 'P1', assignee: 'wren', claimedByMe: false, ...over,
+  taskId: 'TASK-669', title: 'gap fix', status: 'pending', priority: 'P1', assignee: 'wren', claimedByMe: false, ...over,
 });
 
 describe('task ids and status words', () => {
@@ -88,7 +88,7 @@ describe('list', () => {
     expect(api.calls[0]).toMatchObject({ method: 'GET', path: `/api/v1/tasks/${POD}`, auth: 'Bearer cm_agent_test' });
     expect(api.calls[0].search).toBe('?status=pending%2Cclaimed');
     expect(out.lines).toHaveLength(2);
-    expect(out.lines[0]).toBe('TASK-669  pending  P1  wren  D214 gap');
+    expect(out.lines[0]).toBe('TASK-669  pending  P1  wren  gap fix');
   });
 
   test('--mine keeps only the rows this identity holds', async () => {
@@ -278,7 +278,7 @@ describe('close', () => {
 
     expect(code).toBe(0);
     expect(api.calls[0]).toMatchObject({ method: 'POST', path: `/api/v1/tasks/${POD}/TASK-669/complete`, body: { prUrl: pr } });
-    expect(out.lines[0]).toBe('TASK-669  done  P1  wren  D214 gap');
+    expect(out.lines[0]).toBe('TASK-669  done  P1  wren  gap fix');
   });
 
   test('a seat that is neither creator nor holder gets the 409 as one plain line', async () => {

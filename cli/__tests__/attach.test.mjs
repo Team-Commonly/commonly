@@ -94,7 +94,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     })).toThrow(/stub adapter can't enforce sandbox\.mode=workspace\. On macOS, these adapters can: claude, codex, goose, opencode, pi, qwen\./);
   });
 
-  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112, D247)', () => {
+  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112)', () => {
     let message = '';
     try {
       resolveAttachSandbox({ environment: { sandbox: { mode: 'read-only', trust: 'public' } }, adapterName: 'stub' });
@@ -105,7 +105,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     expect(message).not.toMatch(/needs sandbox\.trust/);
   });
 
-  test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
+  test('a public Goose seat attaches under the sandbox its adapter enforces (F113)', () => {
     // Goose confines public turns with Seatbelt or bwrap (adapters/goose.js),
     // but this gate read ADAPTERS_WITH_DEFAULT_SANDBOX, the set that receives
     // the daemon's default block. Goose is left out of that set only because a
@@ -654,7 +654,7 @@ describe('performAttach', () => {
     expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });
 
-  // D245: on native Windows a confined --env names Windows and the user's own
+  // On native Windows a confined --env names Windows and the user's own
   // opt-in, never macOS or bwrap advice. Attach still refuses there: only the
   // message changes.
   const attachConfined = async ({ adapterName, mode, platform, seatbelt, bwrap }) => {

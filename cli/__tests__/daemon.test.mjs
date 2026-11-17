@@ -107,7 +107,7 @@ describe('daemon credential storage', () => {
     expect(() => loadDaemonRecord()).toThrow(/permissions are insecure/i);
   });
 
-  test('D245: on Windows the mode bits are not a permission (Node reports 0o666 whatever the ACL), so they are not checked', () => {
+  test('on Windows the mode bits are not a permission (Node reports 0o666 whatever the ACL), so they are not checked', () => {
     saveDaemonRecord(daemonRecord);
     fs.chmodSync(daemonRecordPath(), 0o644);
     fs.chmodSync(path.dirname(daemonRecordPath()), 0o755);
@@ -424,7 +424,7 @@ describe('formatSeatLine', () => {
   });
 });
 
-describe('firstSupervisionPass (D245: the launcher watch is armed before the first tick)', () => {
+describe('firstSupervisionPass (the launcher watch is armed before the first tick)', () => {
   const fakeSupervisor = (order) => ({
     tick: jest.fn(async () => { order.push('tick'); }),
     heartbeat: jest.fn(async () => { order.push('heartbeat'); }),
