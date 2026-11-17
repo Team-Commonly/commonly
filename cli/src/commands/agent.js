@@ -180,6 +180,7 @@ import {
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 import { CLI } from '../lib/cli-hint.js';
+import { reportRunStopped } from '../lib/run-stopped.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -5849,6 +5850,8 @@ Docs:
           process.exit(1);
         }
         if (!record) {
+          // Nothing reached the server yet, so say which stop this was (F549).
+          await reportRunStopped({ agentName: agentArg, reason: 'no-token' });
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
