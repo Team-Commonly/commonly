@@ -38,7 +38,7 @@
  * SECOND attempt mounts the routes (TASK-168 acceptance 3) without a database.
  */
 
-export interface PgBootState {
+interface PgBootState {
   /** True once connect + initialize succeeded and the routes are mounted. */
   mounted: boolean;
   /** Total connect attempts made, synchronous and background. */
@@ -63,9 +63,9 @@ export const pgBootState: PgBootState = {
   mountedAt: null,
 };
 
-export type LogFn = (message: string, error?: unknown) => void;
+type LogFn = (message: string, error?: unknown) => void;
 
-export interface PgBootDeps {
+interface PgBootDeps {
   /** Mounts the PG message routes. Called exactly once, only after a proven connection. */
   mountRoutes: () => void;
   /** `connectPG` — resolves the pool, or null when the attempt failed. */
@@ -87,7 +87,7 @@ export interface PgBootDeps {
   backgroundIntervalMs?: number;
 }
 
-export interface PgBootHandle {
+interface PgBootHandle {
   start: () => Promise<boolean>;
   stopBackground: () => void;
   state: PgBootState;

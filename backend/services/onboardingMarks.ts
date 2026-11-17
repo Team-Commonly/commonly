@@ -54,7 +54,7 @@ const byoConnectionAttemptMarked = new Set<string>();
 const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
-export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
+type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
 const SURFACE_MARKS: readonly SurfaceMark[] = [
   'inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt',
 ];
@@ -148,10 +148,10 @@ function recordFirstStart(id: string, startId: string): void {
   }
 }
 
-export const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
-export type ByoOpenedOs = typeof BYO_OPENED_OS[number];
+const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
+type ByoOpenedOs = typeof BYO_OPENED_OS[number];
 
-export const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
+const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
   typeof value === 'string' && (BYO_OPENED_OS as readonly string[]).includes(value)
     ? value as ByoOpenedOs
     : undefined
@@ -388,7 +388,7 @@ export function markSurface(userId: unknown, mark: SurfaceMark): void {
 
 /**
  * verifiedAt is the first time a person's email link turned `verified` from
- * false to true, so the email-verify leg can be timed from register (D141). It
+ * false to true, so the email-verify leg can be timed from register. It
  * records nothing for an account that never took that step: Google and GitHub
  * sign-ups, an instance with no mail configured, a password reset, and anyone
  * verified before this mark shipped. Measuring starts at deploy.

@@ -1,4 +1,4 @@
-// D245 item 4: the receipt the wrapper reports with a reply. Self-reported by
+// The receipt the wrapper reports with a reply. Self-reported by
 // design; the server stamps and bounds it (backend/services/byoReceipt.ts).
 import { jest } from '@jest/globals';
 import { buildReplyReceipt, claudeRunStats } from '../src/lib/reply-receipt.js';

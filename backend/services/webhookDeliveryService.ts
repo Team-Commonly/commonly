@@ -6,7 +6,7 @@ const WebhookDelivery = require('../models/WebhookDelivery');
 
 export const WEBHOOK_DELIVERY_TTL_MS = 24 * 60 * 60 * 1000;
 
-export type WebhookDeliveryClaim = 'claimed' | 'duplicate' | 'unavailable';
+type WebhookDeliveryClaim = 'claimed' | 'duplicate' | 'unavailable';
 
 export const claimDelivery = async (
   provider: string,

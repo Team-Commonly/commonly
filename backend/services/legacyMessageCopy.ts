@@ -35,14 +35,14 @@ const MongoMessage = require('../models/Message') as {
   countDocuments: (filter: Record<string, unknown>) => Promise<number>;
 };
 
-export interface LegacyMessageDoc {
+interface LegacyMessageDoc {
   _id: { toString(): string };
   podId: { toString(): string };
   userId: { toString(): string };
   content: string;
   messageType?: string;
   authorKind?: 'kernel' | null;
-  // D245: the optional message contract; copied as stored.
+  // The optional message contract; copied as stored.
   summary?: string | null;
   kind?: string | null;
   receipt?: unknown;

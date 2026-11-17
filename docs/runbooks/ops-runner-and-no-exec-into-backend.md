@@ -58,8 +58,19 @@ exec on its node can do it again. `ops-runner` is the fix.
   DRY-extracted into a helper because the backend env block contains blank lines
   that `nindent` would re-indent, which would change backend's rendered bytes.)
 - Gated by `.Values.opsRunner.enabled` (default **true**; `values-staging.yaml`
-  sets it **false**). Pinned to the spot pool in `values-dev.yaml`. No Service,
+  sets it **true** as well, since staging's Mongo policy admits it). Pinned to the spot pool in `values-dev.yaml`. No Service,
   no Ingress, no probes. Small requests (50m / 128Mi).
+- **No Kubernetes token** (`automountServiceAccountToken: false`, F539). It runs as
+  the `agent-provisioner` account, which can read every Secret in the namespace,
+  and nothing run here calls the Kubernetes API from inside the pod: the scripts
+  read and write Mongo and Postgres, and some call the backend or a vendor over
+  HTTP. With no token there is no service-account namespace file either, so the
+  pod sets `POD_NAMESPACE` from the Downward API (staging-seed reads it). A
+  script that imports a provisioner still loads
+  (`@kubernetes/client-node` falls back to `localhost:8080` without a token), but
+  a provisioner *call* from here fails. Provision and reprovision through the
+  backend's admin API instead. `scripts/verify-service-account-tokens-chart.js`
+  fails the chart if the token comes back.
 
 ## Operator checklist
 

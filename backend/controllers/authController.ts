@@ -867,10 +867,16 @@ exports.login = async (req: any, res: any) => {
     // Moderation and the team gate apply only after a valid password, so
     // neither refusal discloses whether a guessed address has an account.
     if (user.banned) {
-      return res.status(403).json({ error: 'This account has been suspended.' });
+      return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
     }
-    if (!isInstanceEmailAllowed(user.email) || (isInstanceAccessRestricted() && !user.verified)) {
+    if (!isInstanceEmailAllowed(user.email)) {
       return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED' });
+    }
+    // F518: an allowed address whose mail isn't verified yet. Same code (the
+    // register page keys on it); the reason lets the login page say "verify"
+    // instead of "limited to the team". The password already matched.
+    if (isInstanceAccessRestricted() && !user.verified) {
+      return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED', reason: 'unverified' });
     }
 
     // Verification is a post-login reminder, not an authentication wall.

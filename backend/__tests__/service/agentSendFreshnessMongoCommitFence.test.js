@@ -152,6 +152,46 @@ describe('agent freshness: delayed Mongo-only write', () => {
     expect(hold.unseenCount).toBe(22);
     expect(hold.messages[0].content).toBe('delayed older timestamp');
   });
+  // F536, from Growth's #2580 prod walk: a fresh webhook agent was held at 35
+  // unseen, its context reads never cleared it, and the hold said only "read
+  // the conversation". Past one context read, the hold names catch-up, and
+  // following it clears the hold.
+  it('names catch-up for a backlog one context read cannot clear, and catch-up clears it', async () => {
+    const count = Freshness.CONTEXT_READ_MESSAGES + 23;
+    const old = new Date(Date.now() - 60000);
+    await Message.collection.insertMany(Array.from({ length: count }, (_, i) => ({
+      podId, userId: peerId, content: `backlog ${i}`, messageType: 'text', createdAt: new Date(old.getTime() + i),
+    })));
+    const start = await Freshness.readStart(podId);
+    const contextTail = await Message.find({ podId }).sort({ createdAt: -1 })
+      .limit(Freshness.CONTEXT_READ_MESSAGES).lean();
+    const ids = contextTail.map((row) => String(row._id));
+    await Freshness.recordRead(agentId, podId, start, ids);
+    expect(await Cursor.findById(`${agentId}:${podId}`).lean()).toBeNull();
+
+    const hold = await Freshness.unseenMessages(agentId, podId);
+    expect(hold.unseenCount).toBe(count);
+    expect(hold.message).toContain(`POST /api/agents/runtime/pods/${podId}/catch-up with confirmSkipHistory:true`);
+    expect(hold.message).toContain('held until you catch up.');
+
+    expect(await Freshness.recordCatchUp(agentId, podId, start, ids))
+      .toEqual({ skippedCount: count - Freshness.CONTEXT_READ_MESSAGES });
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+  });
+
+  it('keeps the read-first text for a backlog one context read clears', async () => {
+    await Message.collection.insertMany(Array.from({ length: 3 }, (_, i) => ({
+      podId, userId: peerId, content: `small ${i}`, messageType: 'text', createdAt: new Date(Date.now() - 1000 + i),
+    })));
+    const hold = await Freshness.unseenMessages(agentId, podId);
+    expect(hold.message).toContain('Read the conversation and try again if it still fits');
+    expect(hold.message).not.toContain('catch-up');
+    const start = await Freshness.readStart(podId);
+    const tail = await Message.find({ podId }).sort({ createdAt: -1 }).limit(Freshness.CONTEXT_READ_MESSAGES).lean();
+    await Freshness.recordRead(agentId, podId, start, tail.map((row) => String(row._id)));
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+  });
+
   it.each([false, true])('explicitly catches up thousands of rows (existing cursor: %s), preserving later commits', async (existing) => {
     const old = new Date(Date.now() - 60000);
     if (existing) await Cursor.create({

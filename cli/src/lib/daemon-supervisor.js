@@ -92,7 +92,7 @@ export const createDaemonSupervisor = ({
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
   runtimeInventory = async () => undefined,
-  // Machine-level facts for the check-in, read locally each beat (D245: the
+  // Machine-level facts for the check-in, read locally each beat (the
   // Windows unsandboxed opt-in). Never derived from anything the server sent.
   machineReport = () => ({}),
   resolveAdapter, // async (runtime) => adapter name for THIS machine

@@ -34,6 +34,7 @@ jest.mock('../../../models/AgentCredential', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
+  updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   // Non-forced issuance mints only into a token-less row, in one conditional
   // write; null means the row already holds a token. Tests that mint say so.
   mintApiTokenIfAbsent: jest.fn(() => Promise.resolve(null)),
@@ -68,6 +69,13 @@ const registryRoutes = require('../../../routes/registry');
 const app = express();
 app.use(express.json());
 app.use('/api/registry', registryRoutes);
+
+// supertest's request(server) listens on [::]:0 and then calls 127.0.0.1, so on a
+// host with another IPv4 listener on that port the request reaches the wrong
+// server (F466: a 404 or 503 that is not ours). Listen on loopback once.
+let server;
+beforeAll(() => new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); }));
+afterAll(() => new Promise((resolve) => { server.close(resolve); }));
 
 describe('agent runtime tokens', () => {
   beforeEach(() => {
@@ -106,7 +114,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Local dev' });
 
@@ -116,6 +124,58 @@ describe('agent runtime tokens', () => {
     expect(installation.runtimeTokens.length).toBe(1);
     expect(installation.save).toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalled();
+  });
+
+  // F515/F457: key A's run reported a stop, then key B was issued 20 s later.
+  // The page's poll allows a minute of skew before B's issue, so A's report
+  // would read as B's. Minting B clears both stop reports.
+  const issueFor = async (agentUser) => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({
+      agentName: 'commonly-bot', podId: 'pod-1', instanceId: 'default', status: 'active',
+      runtimeTokens: [], save: jest.fn().mockResolvedValue(true),
+    });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    return request(server).post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens').send({ label: 'B' });
+  };
+  const keyAReported = () => ({
+    _id: 'bot-1',
+    agentRuntimeTokens: [],
+    botMetadata: { listenBlocked: { reason: 'harness-signed-out', harness: 'codex', at: new Date(Date.now() - 20_000) } },
+    save: jest.fn().mockResolvedValue(true),
+  });
+
+  it("a new key clears the last key's stop reports", async () => {
+    User.updateOne.mockClear();
+    const res = await issueFor(keyAReported());
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^cm_agent_/);
+    expect(User.updateOne).toHaveBeenCalledWith(
+      { _id: 'bot-1' },
+      { $unset: { 'botMetadata.listenBlocked': '', 'botMetadata.harnessMissing': '' } },
+    );
+  });
+
+  it('an issue that hands back no new key clears nothing', async () => {
+    User.updateOne.mockClear();
+    const agentUser = keyAReported();
+    agentUser.agentRuntimeTokens = [{ tokenHash: 'h', createdAt: new Date() }];
+    const res = await issueFor(agentUser);
+    expect(res.status).toBe(200);
+    expect(res.body.existing).toBe(true);
+    expect(User.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('a failed clear still issues the key', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    User.updateOne.mockRejectedValueOnce(new Error('mongo down'));
+    const res = await issueFor(keyAReported());
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^cm_agent_/);
+    warn.mockRestore();
   });
 
   // An agent Commonly runs in-process
@@ -133,7 +193,7 @@ describe('agent runtime tokens', () => {
     AgentInstallation.exists.mockResolvedValueOnce({ _id: 'inst-1' });
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/registry/pods/pod-1/agents/${agentName}/runtime-tokens`)
       .send({ label: 'try it' });
     return { res, agentUser };
@@ -171,7 +231,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/maya-agent/runtime-tokens')
       .send({ label: 'racing a migration' });
 
@@ -227,7 +287,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach' });
 
@@ -262,7 +322,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/sam-claude/runtime-tokens')
       .send({ label: 'BYO MCP — initial issue' });
 
@@ -303,7 +363,7 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach', force: true });
 
@@ -352,14 +412,14 @@ describe('agent runtime tokens', () => {
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
-    const existing = await request(app)
+    const existing = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach' });
     expect(existing.status).toBe(200);
     expect(existing.body.existing).toBe(true);
     expect(existing.body.token).toBeUndefined();
 
-    const rotated = await request(app)
+    const rotated = await request(server)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
       .send({ label: 'Re-attach', force: true });
     expect(rotated.status).toBe(200);
@@ -403,7 +463,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens');
 
     expect(res.status).toBe(200);
@@ -438,7 +498,7 @@ describe('agent runtime tokens', () => {
       token: 'cm_token_123', createdAt: new Date('2026-01-01T00:00:00Z'),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/registry/pods/pod-1/agents/clawd-bot/user-token')
       .send({ scopes: ['agent:events:read', 'agent:messages:write', 'invalid:scope'] });
 
@@ -464,11 +524,11 @@ describe('agent runtime tokens', () => {
     };
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
-    const existing = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
+    const existing = await request(server).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
     expect(existing.body).toMatchObject({ existing: true, token: null, requiresRotation: true });
     expect(agentUser.generateApiToken).not.toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalledTimes(1);
-    const rotated = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
+    const rotated = await request(server).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
     expect(rotated.body).toMatchObject({ existing: false, token: 'cm_new' });
     expect(agentUser.generateApiToken).toHaveBeenCalledTimes(1);
     expect(agentUser.save).toHaveBeenCalledTimes(2);
@@ -500,7 +560,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
@@ -535,7 +595,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
@@ -563,7 +623,7 @@ describe('agent runtime tokens', () => {
     };
     User.findOne.mockReturnValue(query);
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+    const res = await request(server).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ hasToken: true, scopes: ['agent:context:read'], scopeMode: 'scoped' });
@@ -585,7 +645,7 @@ describe('agent runtime tokens', () => {
       }),
     });
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+    const res = await request(server).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ hasToken: false, scopes: [], scopeMode: 'none' });
@@ -613,7 +673,7 @@ describe('agent runtime tokens', () => {
     };
     User.findOne.mockResolvedValue(agentUser);
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
 
     expect(res.status).toBe(200);

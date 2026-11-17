@@ -201,7 +201,7 @@ WantedBy=default.target
 `;
 };
 
-// D171: a systemd user unit is started by the user's own systemd manager, and
+// A systemd user unit is started by the user's own systemd manager, and
 // without lingering that manager starts at the user's login, not at boot. On a
 // headless box nobody logs in to, the daemon would then stay down after every
 // reboot. logind records lingering as one file per user, so that file is what

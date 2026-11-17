@@ -16,7 +16,7 @@
  */
 import type { DerivedInitiativeStatus, InitiativeInput } from './initiativeStatus';
 
-export interface NudgeTask {
+interface NudgeTask {
   _id: unknown;
   podId: unknown;
   taskNum?: number | null;
@@ -24,14 +24,14 @@ export interface NudgeTask {
   prUrl?: string | null;
 }
 
-export interface NudgeInitiative extends InitiativeInput {
+interface NudgeInitiative extends InitiativeInput {
   _id: unknown;
   title: string;
   owner?: { userId?: unknown; agentUserId?: unknown } | null;
   nudges?: Array<{ episodeStart: Date | string; nudgedAt: Date | string }>;
 }
 
-export type StallNudge =
+type StallNudge =
   | { state: 'not-stalled' }
   | { state: 'already-nudged'; episodeStart: Date }
   | { state: 'no-pod'; episodeStart: Date }

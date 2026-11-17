@@ -1,14 +1,14 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type SummaryType = 'posts' | 'chats' | 'daily-digest';
-export type QuoteSentiment = 'positive' | 'negative' | 'neutral' | 'humorous' | 'insightful';
-export type InsightType = 'trend' | 'sentiment_shift' | 'new_topic' | 'consensus' | 'disagreement' | 'revelation';
-export type InsightImpact = 'low' | 'medium' | 'high';
-export type OverallSentiment = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
-export type EnergyLevel = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
-export type EngagementQuality = 'superficial' | 'moderate' | 'deep' | 'intense';
+type SummaryType = 'posts' | 'chats' | 'daily-digest';
+type QuoteSentiment = 'positive' | 'negative' | 'neutral' | 'humorous' | 'insightful';
+type InsightType = 'trend' | 'sentiment_shift' | 'new_topic' | 'consensus' | 'disagreement' | 'revelation';
+type InsightImpact = 'low' | 'medium' | 'high';
+type OverallSentiment = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
+type EnergyLevel = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
+type EngagementQuality = 'superficial' | 'moderate' | 'deep' | 'intense';
 
-export interface ISummary extends Document {
+interface ISummary extends Document {
   type: SummaryType;
   podId?: Types.ObjectId;
   title: string;
@@ -28,6 +28,7 @@ export interface ISummary extends Document {
     sources?: string[];
     eventId?: string;
     emailedAt?: Date;
+    stalledMarks?: Array<{ episodeId: string; fields: string[]; line?: string }>;
   };
   analytics: {
     timeline: Array<{
@@ -100,6 +101,17 @@ const summarySchema = new Schema<ISummary>({
     emailedAt: { type: Date },
     // A scheduled daily digest's person and local day (DailyDigestService.digestKey).
     digestKey: { type: String },
+    // F502: the stalled-connect lines this digest carries, which the email
+    // marks delivered only once SMTP has accepted it. Declared or stripped.
+    stalledMarks: {
+      type: [new Schema({
+        episodeId: { type: String, required: true },
+        fields: [{ type: String }],
+        // The digest line the mark stands for: only a line the email shows is used up.
+        line: { type: String },
+      }, { _id: false })],
+      default: undefined,
+    },
   },
   analytics: {
     timeline: [

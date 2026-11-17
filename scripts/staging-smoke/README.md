@@ -8,8 +8,8 @@ Checks: `/api/health/ready` 200 · seeded non-admin login · `/v2` home + a pod 
 + Bring-your-own render with no console errors · left rail no horizontal scroll at 1440 & 390px ·
 **a FRESH no-grants user sees at least one connectable tool as a visible row on `/v2/connectors`,
 not buried in `.v2-connectors__inactive-fold`** (guards the #2504 fold regression — never-connected
-offers must not be hidden from new users). The hosted-agent-answers check is skipped until staging
-has an LLM key (`SMOKE_HOSTED=1` to enable).
+offers must not be hidden from new users) · with `SMOKE_HOSTED=1`, one hosted agent provisions and
+tears down (F437: staging once 503'd every hosted provision with nothing red).
 
 ## Run locally
 ```
@@ -21,6 +21,7 @@ SMOKE_EMAIL=... SMOKE_PW=... npm run smoke
 - `SMOKE_BASE` (default https://staging.commonly.me), `SMOKE_API` (default https://api-staging.commonly.me)
 - `SMOKE_EMAIL` / `SMOKE_PW` — a **non-admin** staging test user (in CI: secrets `STAGING_SMOKE_EMAIL` / `STAGING_SMOKE_PW`; locally a 0600 file, never printed)
 - `SMOKE_FRESH_EMAIL` / `SMOKE_FRESH_PW` — a **separate FRESH no-grants** account for the connectors-fold check, kept grant-free so dead grants can't mask the bug (in CI: secrets `STAGING_SMOKE_FRESH_EMAIL` / `STAGING_SMOKE_FRESH_PW`, which `deploy-staging.yml` requires). **Required — if unset the check FAILS, never skips green.** The check first asserts the account has 0 live grants, then that at least one connectable tool renders as a real row outside the inactive fold.
-- `SMOKE_HOSTED=1` — also check a hosted-agent reply (needs a staging LLM key)
+- `SMOKE_HOSTED=1` — also provision and tear down one hosted agent (`/api/hosted/provision` then `/deprovision`)
+- `SMOKE_HOSTED_BLOCKING=1` — make a hosted failure a red instead of a warning (CI sets it)
 
 Exit 0 = all green; non-zero = a blocking check failed → prod promotion must not proceed.

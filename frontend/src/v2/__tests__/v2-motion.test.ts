@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-// D220: the motion contract from the d215 motion spec. Tokens, one global
+// The motion contract from the d215 motion spec. Tokens, one global
 // reduced-motion switch, folds by size, and no blanket transitions.
 const v2Dir = path.join(__dirname, '..');
 const v2css = fs.readFileSync(path.join(v2Dir, 'v2.css'), 'utf8');
@@ -12,7 +12,7 @@ const cssFiles = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes:
   return entry.name.endsWith('.css') ? [full] : [];
 });
 
-describe('v2 motion (D220)', () => {
+describe('v2 motion', () => {
   test('the tokens are one curve and three durations on :root', () => {
     const root = /:root \{\n  --v2-dur-fast: 120ms;\n  --v2-dur: 200ms;\n  --v2-dur-slow: 320ms;\n  --v2-ease: cubic-bezier\(0\.2, 0, 0, 1\);\n\}/;
     expect(v2css).toMatch(root);

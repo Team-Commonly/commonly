@@ -20,13 +20,13 @@ describe('V2BillingPanel', () => {
     expect(screen.queryByText(/free in beta|included during beta/i)).not.toBeInTheDocument();
   });
 
-  test('shows Free and the $12 monthly upgrade action without a Pro entitlement', () => {
+  test('shows nothing without a Pro entitlement: the paid tier has ended, so there is no upgrade', () => {
     (useAuth as jest.Mock).mockReturnValue({ currentUser: { entitlements: { pro: false } } });
-    render(<V2BillingPanel />);
+    const { container } = render(<V2BillingPanel />);
 
-    expect(screen.getByText('Free')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upgrade · $12 a month' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Manage billing' })).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByText(/upgrade|\$12/i)).not.toBeInTheDocument();
   });
 
   test('can defer the section heading to Settings without hiding the current tier', () => {
@@ -37,18 +37,14 @@ describe('V2BillingPanel', () => {
     expect(screen.getByText('Pro · $12 a month')).toBeInTheDocument();
   });
 
-  test('sends a Free account to checkout and a Pro account to billing management', async () => {
+  test('sends a Pro account to billing management and never to checkout', async () => {
     (axios.post as jest.Mock).mockRejectedValue(new Error('no redirect in unit test'));
-    (useAuth as jest.Mock).mockReturnValue({ currentUser: { entitlements: { pro: false } } });
-    const { rerender } = render(<V2BillingPanel />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Upgrade · $12 a month' }));
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/billing/checkout', {}));
-    await screen.findByRole('alert');
-
     (useAuth as jest.Mock).mockReturnValue({ currentUser: { entitlements: { pro: true } } });
-    rerender(<V2BillingPanel />);
+    render(<V2BillingPanel />);
+
     fireEvent.click(screen.getByRole('button', { name: 'Manage billing' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/billing/portal', {}));
+    await screen.findByRole('alert');
+    expect(axios.post).not.toHaveBeenCalledWith('/api/billing/checkout', expect.anything());
   });
 });

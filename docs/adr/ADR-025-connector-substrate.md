@@ -605,7 +605,7 @@ authorized by that machinery; it neither widens a grant nor lets another agent b
 agent's authority. No per-agent external credential, new grant kind, or grant-schema migration
 is proposed; agents still authenticate to Commonly as themselves.
 
-### First use: internal writer and reviewer GitHub Apps (D52)
+### First use: internal writer and reviewer GitHub Apps
 
 The writer App and reviewer App use separate connections and principals, each restricted to the
 repositories and permissions its role needs. Within each role, actions relay the actual Commonly

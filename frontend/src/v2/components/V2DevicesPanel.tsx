@@ -15,7 +15,7 @@ interface Device {
 
 interface V2DevicesPanelProps {
   showHeading?: boolean;
-  /** Settings row: a one-line summary that expands to the list (D215, TASK-688). */
+  /** Settings row: a one-line summary that expands to the list (TASK-688). */
   asFold?: boolean;
 }
 
@@ -73,7 +73,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
         ? when.toLocaleTimeString(appDateLocale(), { hour: 'numeric', minute: '2-digit' })
         : when.toLocaleDateString(appDateLocale(), { month: 'short', day: 'numeric' });
     };
-    // D44: "None" above a list of revoked devices read as a contradiction, so a
+    // "None" above a list of revoked devices read as a contradiction, so a
     // fold whose devices are all revoked says so.
     const revokedCount = devices.length - live.length;
     const summary = loading ? t('settings.devices.loadingShort') : error ? t('settings.devices.loadFailedShort')

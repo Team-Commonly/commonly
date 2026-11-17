@@ -23,6 +23,9 @@ jest.mock('../../../services/stoppedMentionService', () => ({
   noteStoppedMention: jest.fn(),
   noteUnreachableAgentDm: jest.fn(),
 }));
+jest.mock('../../../services/unsandboxedPodLineService', () => ({
+  noteUnsandboxedMention: jest.fn().mockResolvedValue(false),
+}));
 jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
   noteOfflineMention: jest.fn().mockResolvedValue(false),
@@ -38,6 +41,7 @@ const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { noteStoppedMention, noteUnreachableAgentDm } = require('../../../services/stoppedMentionService');
 const { noteNeverConnectedMention, noteOfflineMention } = require('../../../services/neverConnectedMentionService');
+const { noteUnsandboxedMention } = require('../../../services/unsandboxedPodLineService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const peer = {
@@ -181,6 +185,48 @@ describe('a mention of an agent that never connected', () => {
 
     expect(noteNeverConnectedMention).toHaveBeenCalled();
     expect(noteNeverConnectedMention.mock.calls[0][0].podId).toBe('pod-1');
+  });
+});
+
+describe('a mention of an agent that has been run without a sandbox', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    noteUnsandboxedMention.mockResolvedValue(false);
+  });
+
+  it('asks whether to tell the person, with a plain pod id and the default instance', async () => {
+    setup();
+    await AgentMentionService.enqueueMentions({
+      podId: { toString: () => 'pod-1' },
+      message: { _id: '900', content: '@nova hello', createdAt: new Date() },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(noteUnsandboxedMention.mock.calls[0][0]).toMatchObject({
+      podId: 'pod-1', agentName: 'nova', instanceId: 'default', senderId: 'user-1', messageId: '900',
+    });
+  });
+
+  it('is not asked when an agent mentions it', async () => {
+    setup({ sender: peer });
+    await mention({ sender: peer });
+    expect(noteUnsandboxedMention).not.toHaveBeenCalled();
+  });
+
+  it('a notice that never finishes holds up neither the send nor the wake', async () => {
+    setup();
+    noteUnsandboxedMention.mockReturnValue(new Promise(() => {}));
+    const result = await mention();
+    expect(result.enqueued).toEqual(['nova']);
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+
+  it('a failed notice still queues the mention', async () => {
+    setup();
+    noteUnsandboxedMention.mockRejectedValueOnce(new Error('pg down'));
+    const result = await mention();
+    expect(result.enqueued).toEqual(['nova']);
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
   });
 });
 
@@ -371,5 +417,27 @@ describe('an agent that went offline (F300)', () => {
       username: human.username,
     });
     expect(result.enqueued).toEqual(['nova']);
+  });
+});
+
+// F522 contract: waitingOwnerEmailService.waitingOn reads a never-connected
+// agent's pending mentions by these fields. If the enqueue path renames one,
+// the owner email goes quiet with no other test failing, so pin them here.
+describe('the fields the waiting-owner email reads', () => {
+  it('a person\'s mention carries type, agent, pod, sender id, username and the human stamp', async () => {
+    setup();
+    await mention();
+    const event = AgentEventService.enqueue.mock.calls.map(([e]) => e).find((e) => e.type === 'chat.mention');
+    expect(event).toMatchObject({
+      agentName: 'nova', instanceId: 'default', podId: 'pod-1', type: 'chat.mention',
+      payload: expect.objectContaining({ userId: 'user-1', username: 'priya', senderIsHuman: true }),
+    });
+  });
+
+  it('an agent\'s mention is stamped as not human, so it never counts', async () => {
+    setup({ sender: peer });
+    await mention({ sender: peer });
+    const event = AgentEventService.enqueue.mock.calls.map(([e]) => e).find((e) => e.agentName === 'nova');
+    expect(event?.payload?.senderIsHuman).not.toBe(true);
   });
 });

@@ -7,7 +7,7 @@ import { useSocket } from '../../context/SocketContext';
 // failed read leaves the header without that fragment rather than blank.
 // The open count then follows the board's own live wire: a task_updated for
 // this pod re-reads it, and so does a reconnect that may have missed one.
-// The same read carries the two starter tasks sign-up seeds (D288): the
+// The same read carries the two starter tasks sign-up seeds: the
 // first-run bar shows their state and stands in for the count until both
 // are done.
 
@@ -20,7 +20,7 @@ export interface V2StarterSteps { connect: boolean; firstTask: boolean }
 const CONNECT_AGENT_REF = 'onboarding:connect-agent';
 const FIRST_TASK_REF = 'onboarding:first-task';
 
-export const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
+const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
   const connect = tasks.find((task) => task.sourceRef === CONNECT_AGENT_REF);
   const firstTask = tasks.find((task) => task.sourceRef === FIRST_TASK_REF);
   if (!connect && !firstTask) return null;
@@ -28,7 +28,7 @@ export const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
   return { connect: !connect || connect.status === 'done', firstTask: !firstTask || firstTask.status === 'done' };
 };
 
-export interface V2PodHeaderMeta {
+interface V2PodHeaderMeta {
   boardOpen: number | null;
   channels: string[];
   starter: V2StarterSteps | null;

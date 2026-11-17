@@ -115,7 +115,7 @@ export interface InstallResponse {
   boundPodId?: string;
 }
 
-export interface InstallErrorResponse {
+interface InstallErrorResponse {
   code?: string;
   error?: string;
   boundPodId?: string;
@@ -228,7 +228,7 @@ export const installErrorResponse = (error: unknown): { status?: number; data?: 
 // The server refuses with this code from POST and PATCH /api/integrations
 // (backend/services/chatRelay/bindSurface.ts); the page says it in the reader's
 // language. Null for any other refusal, so each caller keeps its own fallback.
-export const SHARED_SURFACE_REFUSAL_CODE = 'shared_surface_needs_pod_authority';
+const SHARED_SURFACE_REFUSAL_CODE = 'shared_surface_needs_pod_authority';
 
 export const sharedSurfaceRefusal = (
   t: (key: string, options: { defaultValue: string }) => string,
@@ -255,7 +255,7 @@ export const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string 
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
 
-export const connectorCreatorId = (connector: Connector | null | undefined): string => {
+const connectorCreatorId = (connector: Connector | null | undefined): string => {
   const createdBy = connector?.createdBy;
   if (!createdBy) return '';
   return typeof createdBy === 'object' ? String(createdBy._id || '') : String(createdBy);

@@ -339,7 +339,7 @@ export async function pruneStaleInstallations(
   return { deleted, failures };
 }
 
-export async function runCleanup(): Promise<void> {
+async function runCleanup(): Promise<void> {
   try {
     const eventDays = resolveDays('INSTALLATION_STALENESS_EVENT_DAYS', DEFAULT_STALENESS_EVENT_DAYS);
     const pruneDays = resolveDays('INSTALLATION_PRUNE_AFTER_STALE_DAYS', DEFAULT_PRUNE_AFTER_STALE_DAYS);

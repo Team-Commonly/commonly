@@ -242,6 +242,7 @@ describe('GET /api/users/me/agent-connection', () => {
     expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastListenedAt');
     expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastUsedAt');
     expect(select.mock.calls[0][0]).toContain('botMetadata.harnessMissing');
+    expect(select.mock.calls[0][0]).toContain('botMetadata.listenBlocked');
   });
 
   // F457: a quick-try run that found no harness exited before checking in.
@@ -284,5 +285,30 @@ describe('GET /api/users/me/agent-connection', () => {
 
     expect(res.body.connected).toBe(true);
     expect(res.body).not.toHaveProperty('harnessMissing');
+  });
+
+  // F515: a first run that stopped on a signed-out harness or an old Node says
+  // why, by code; the page reads it until a later listen supersedes it.
+  it('reports why a first run stopped, until the agent listens after it', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'walker-claude', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    const user = (lastListenedAt) => ({
+      botMetadata: {
+        agentName: 'walker-claude',
+        instanceId: 'default',
+        listenBlocked: { reason: 'harness-signed-out', harness: 'claude', at: new Date('2026-11-14T18:00:00.000Z') },
+      },
+      agentRuntimeTokens: [{ lastUsedAt: new Date('2026-11-14T18:00:00.000Z'), ...(lastListenedAt ? { lastListenedAt } : {}) }],
+    });
+    mockUserFind.mockReturnValue(query([user(null)]));
+    const blocked = await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+    expect(blocked.body.listenBlocked).toEqual([{
+      agentName: 'walker-claude', instanceId: 'default', reason: 'harness-signed-out', harness: 'claude', at: '2026-11-14T18:00:00.000Z',
+    }]);
+
+    mockUserFind.mockReturnValue(query([user(new Date('2026-11-14T18:05:00.000Z'))]));
+    const listening = await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+    expect(listening.body).not.toHaveProperty('listenBlocked');
   });
 });

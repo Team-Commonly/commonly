@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved, import/extensions -- TypeScript modules expose CJS exports. */
 /**
- * D278 (2026-11-09): in a shared pod, the answer to a top-level @mention lands
+ * 2026-11-09: In a shared pod, the answer to a top-level @mention lands
  * in that message's thread, however the agent addresses it. This reversed F212
  * (#3536), which kept it in the main channel. Real Postgres and real Mongo: the
  * wake comes from the real enqueueMentions, the post from the real postMessage,
@@ -18,7 +18,7 @@ jest.mock('../../config/db-pg', () => mockDbPg);
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const AGENT = { agentName: 'claude-code', instanceId: 'd278' };
 
-real('an answer to a top-level mention lands in that message\'s thread (D278)', () => {
+real('an answer to a top-level mention lands in that message\'s thread', () => {
   let database;
   let pool;
   let PGMessage;
@@ -43,7 +43,7 @@ real('an answer to a top-level mention lands in that message\'s thread (D278)', 
       [String(made._id), 'room', type, String(human._id)],
     );
     await AgentInstallation.create({
-      ...AGENT, podId: made._id, displayName: 'D278', version: '1.0.0', status: 'active', installedBy: human._id,
+      ...AGENT, podId: made._id, displayName: 'Answerer', version: '1.0.0', status: 'active', installedBy: human._id,
     });
     return made;
   };

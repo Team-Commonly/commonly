@@ -193,7 +193,7 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeSavedControls.effort).toBe('max');
   });
 
-  // D247: a listener agent (`agent run` from the connect page) has no machine
+  // A listener agent (`agent run` from the connect page) has no machine
   // binding. It is still the person's own agent, and its run reads these
   // controls from the server, so they stay editable on add and after.
   it('lets the owner edit a listener agent\'s runtime controls without a machine binding', async () => {
@@ -239,7 +239,7 @@ describe('per-installation agent settings', () => {
   });
 
   // The hosted engine floors a heartbeat to hourly per install and caps an
-  // owner's hosted heartbeats a day (hostedEngine.ts, D244). The wake panel
+  // owner's hosted heartbeats a day (hostedEngine.ts). The wake panel
   // reads both from here, so it neither offers nor previews more than runs.
   it('tells the wake panel a hosted agent\'s heartbeat floor and daily cap', async () => {
     await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {

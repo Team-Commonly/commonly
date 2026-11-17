@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { reportBoundaryError } from '../sentryReport';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import { useUsageEvents } from './hooks/useUsageEvents';
+import { useEmailReturn } from './hooks/useEmailReturn';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
@@ -17,9 +18,9 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
-// D223 shared primitives (TASK-730): the keys and segment chat and the sidebar use.
+// Design shared primitives (TASK-730): the keys and segment chat and the sidebar use.
 import './primitives/primitives.css';
-// Chat surface CSS lifted out of v2.css (D223, S3). Imported here, after
+// Chat surface CSS lifted out of v2.css (S3). Imported here, after
 // v2.css, so its rules still win the order ties they won inside v2.css (a
 // component-level import would load before v2.css: V2Layout is imported above).
 // No chat rule ties a primitive on specificity, so following primitives.css
@@ -40,7 +41,7 @@ import i18n from '../i18n';
 // whole route table, so a chunk in flight shows the same <V2Boot/> the auth
 // check already shows.
 const V2Login = React.lazy(() => import('./components/V2Login'));
-// TASK-730 (D223): the shared primitives rendered alone, for frame checks.
+// TASK-730: the shared primitives rendered alone, for frame checks.
 const V2PrimitivesPage = React.lazy(() => import('./primitives/V2PrimitivesPage'));
 const V2Register = React.lazy(() => import('./components/V2Register'));
 const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
@@ -151,7 +152,7 @@ const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 // the URL without remounting the shell. Other deep routes stay behind
 // V2RequireAuth (the `*` branch below).
 const V2PodShellGate: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, accessRestricted, loading } = useAuth();
   const location = useLocation();
   const podRoute = useMatch('/v2/pods/:podId');
 
@@ -160,7 +161,9 @@ const V2PodShellGate: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return location.pathname === '/v2' || location.pathname === '/v2/'
+    // F517: a session the allowlist just refused goes to sign-in, where the
+    // team-only line is, not the public landing.
+    return (location.pathname === '/v2' || location.pathname === '/v2/') && !accessRestricted
       ? <Navigate to="/" replace />
       : <Navigate to="/v2/login" state={{ from: location }} replace />;
   }
@@ -257,8 +260,10 @@ const V2App: React.FC = () => {
   const { t } = useTranslation();
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
-  // D286: first-party usage events, within the person's Settings choice.
+  // First-party usage events, within the person's Settings choice.
   useUsageEvents();
+  // F519: an email link's return tag, reported once signed in.
+  useEmailReturn();
   React.useEffect(() => {
     applyV2Theme(getV2Theme());
   }, []);

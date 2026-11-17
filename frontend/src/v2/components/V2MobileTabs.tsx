@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 interface V2MobileTabsProps {
-  // Total needs-you count for the person, not one pod's. D215 (TASK-691): it
+  // Total needs-you count for the person, not one pod's. (TASK-691): it
   // rides the icon as a cobalt badge, like the rail; the label stays a word.
   needsYouCount: number;
 }

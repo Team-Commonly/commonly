@@ -17,7 +17,7 @@
  * #609 guard's refusal.
  */
 
-export interface ReservedNameRefusal {
+interface ReservedNameRefusal {
   code: 'agent_name_reserved';
   error: string;
 }

@@ -14,7 +14,7 @@ test('Codex reads only native model cache and offers the intersection of support
   ] })).toEqual({ models: ['a', 'b'], efforts: ['high'] });
 });
 // codex-cli 0.162.1 spells visibility 'list' and 'hide'; a 'hide' model
-// (gpt-reserve, codex-auto-review) is not one a person should pick (D247).
+// (gpt-reserve, codex-auto-review) is not one a person should pick.
 test('Codex leaves out models the cache marks hide, as well as hidden', () => {
   const level = [{ effort: 'high' }];
   expect(codexModelsFromCache({ models: [

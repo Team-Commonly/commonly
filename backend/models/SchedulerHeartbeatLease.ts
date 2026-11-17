@@ -6,7 +6,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
  * fixed _id is the natural key: MongoDB's primary-key uniqueness makes the
  * acquire compare-and-set atomic without depending on index build timing.
  */
-export interface ISchedulerHeartbeatLease extends Document {
+interface ISchedulerHeartbeatLease extends Document {
   _id: string;
   ownerId: string;
   expiresAt: Date;

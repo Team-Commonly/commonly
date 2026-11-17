@@ -24,7 +24,7 @@ const AgentIdentityService = require('./agentIdentityService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const HostedRuntime = require('./hostedRuntimeService');
 
-export const WELCOME_HOSTED_START_ID = 'run-hosted';
+const WELCOME_HOSTED_START_ID = 'run-hosted';
 export const WELCOME_HOSTED_ACTION = 'run-hosted';
 
 interface StartLike {
@@ -51,7 +51,7 @@ const isHostedAction = (start: StartLike | null | undefined): boolean => Boolean
 );
 
 /** Whether a message payload asks for the hosted start to run in place. */
-export const offersWelcomeHostedAction = (payload: unknown): boolean => (
+const offersWelcomeHostedAction = (payload: unknown): boolean => (
   (startsOf(payload) || []).some(isHostedAction)
 );
 
@@ -60,7 +60,7 @@ export const offersWelcomeHostedAction = (payload: unknown): boolean => (
  * or null. A pod someone else created, or one with no Scout of theirs, has no
  * welcome this person may run.
  */
-export const workspaceScoutUserId = async (podId: unknown, userId: unknown): Promise<string | null> => {
+const workspaceScoutUserId = async (podId: unknown, userId: unknown): Promise<string | null> => {
   const uid = String(userId || '');
   const pid = String(podId || '');
   if (!uid || !pid) return null;
@@ -106,7 +106,7 @@ export const gateWelcomeHostedActions = async <T extends MessageLike>(
   });
 };
 
-export type WelcomeHostedStartResult =
+type WelcomeHostedStartResult =
   | { error: { status: number; body: { code: string; message: string } } }
   | {
     podId: string;

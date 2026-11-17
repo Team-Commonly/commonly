@@ -166,13 +166,17 @@ Run the registration script:
 🔧 Registering commands for integration: 507f1f77bcf86cd799439011
 🏠 Server: My Test Server
 📡 Registering slash commands with Discord...
-✅ Commands registered successfully!
-   Available commands:
-   - /commonly-summary
-   - /discord-status
-   - /discord-enable
-   - /discord-disable
+✅ Cleared this guild's old command copies.
+   The commands themselves are registered globally at boot:
+   - /mode
+   - ...
+   - /discord-push
 ```
+
+The guild call registers nothing new: every command is global (see the top of
+this page), so it only clears the per-guild copies that showed each legacy
+command twice. The list it prints is read from
+`config/discordApplicationCommands.json` (F162).
 
 ### **Step 4: Test in Discord**
 
@@ -190,6 +194,10 @@ After registration, these commands will be available in your Discord server:
 | `/discord-status` | Show the status of Discord integration | Type `/discord-status` to check health |
 | `/discord-enable` | Enable webhook listener for Discord channel | Type `/discord-enable` to start listening |
 | `/discord-disable` | Disable webhook listener for Discord channel | Type `/discord-disable` to stop listening |
+| `/discord-push` | Summarize the channel's buffered chat into the pod now | Shares `/summary`'s one-a-minute limit per channel |
+
+All five are guild-only (`contexts: [0]`). `/commonly-summary` and `/discord-push`
+answer only on a connected channel, as `/tldr` and `/summary` do (F162).
 
 ## ⚠️ **Troubleshooting**
 

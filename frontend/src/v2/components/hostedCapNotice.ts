@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 // The beta cap refusal (403 hosted_cap_reached) names the seat that holds the
 // slot, so the person can open it instead of being told only that they are
 // capped. The holders come from the server; nothing here guesses a name.
-export interface HostedCapBody {
+interface HostedCapBody {
   cap?: number;
   holders?: Array<{ agentName?: string; displayName?: string }>;
 }

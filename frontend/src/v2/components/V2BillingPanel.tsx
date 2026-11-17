@@ -4,7 +4,9 @@ import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
 
 /**
- * Plan panel on /v2/settings.
+ * Plan panel on /v2/settings. The paid tier has ended, so there is nothing to
+ * upgrade to: the panel shows only for an account that already has Pro, so an
+ * existing subscriber can still manage or cancel through the billing portal.
  */
 const Card = () => (
   <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
@@ -18,12 +20,13 @@ const V2BillingPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const isPro = Boolean((currentUser?.entitlements as { pro?: boolean } | undefined)?.pro);
 
+  if (!isPro) return null;
+
   const openBilling = async () => {
     setBusy(true);
     setError(null);
     try {
-      const endpoint = isPro ? '/api/billing/portal' : '/api/billing/checkout';
-      const response = await axios.post<{ url?: string }>(endpoint, {});
+      const response = await axios.post<{ url?: string }>('/api/billing/portal', {});
       if (!response.data?.url) throw new Error('Billing did not return a destination.');
       window.location.assign(response.data.url);
     } catch {
@@ -37,16 +40,16 @@ const V2BillingPanel: React.FC = () => {
     <div className="v2p-lrow">
       <span className="lb"><Card />{t('billing.title')}</span>
       <span className="vl">
-        <span className="v2-settings__plan">{t(isPro ? 'billing.tier.pro' : 'billing.tier.free')}</span>
+        <span className="v2-settings__plan">{t('billing.tier.pro')}</span>
       </span>
       <span className="ac">
         <button
-          className={`v2p-b v2p-b-sm ${isPro ? 'v2p-b-g' : 'v2p-b-p'}`}
+          className="v2p-b v2p-b-sm v2p-b-g"
           type="button"
           onClick={() => void openBilling()}
           disabled={busy}
         >
-          {busy ? t('billing.opening') : t(isPro ? 'billing.manage' : 'billing.upgrade')}
+          {busy ? t('billing.opening') : t('billing.manage')}
         </button>
       </span>
       {error && <span className="v2-settings__error v2-settings__error--row" role="alert">{error}</span>}

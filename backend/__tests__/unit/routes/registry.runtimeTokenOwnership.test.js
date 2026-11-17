@@ -101,6 +101,13 @@ app.use(express.json());
 app.use('/api/registry', agentTokensRouter);
 app.use('/api/registry', provisionRouter);
 
+// supertest's request(server) listens on [::]:0 and then calls 127.0.0.1, so on a
+// host with another IPv4 listener on that port the request reaches the wrong
+// server (F466: a 404 or 503 that is not ours). Listen on loopback once.
+let server;
+beforeAll(() => new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); }));
+afterAll(() => new Promise((resolve) => { server.close(resolve); }));
+
 const install = (installedBy, podId) => ({ agentName: 'quire', instanceId: 'default', status: 'active', installedBy, podId });
 
 beforeEach(() => {
@@ -113,7 +120,7 @@ beforeEach(() => {
   User.findOne.mockResolvedValue({ _id: 'bot-1', agentRuntimeTokens: [{ _id: 'tok-1', tokenHash: 'hash-1' }], save: jest.fn() });
 });
 
-const mint = (body = {}) => request(app).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);
+const mint = (body = {}) => request(server).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);
 
 describe('minting a runtime token needs the sole-installer rule, not pod membership', () => {
   test('a pod member who did not install the agent cannot mint or rotate its token', async () => {
@@ -161,14 +168,14 @@ describe('minting a runtime token needs the sole-installer rule, not pod members
 describe('revoking a runtime token needs the same rule', () => {
   test('a pod member who does not own the identity cannot revoke its tokens', async () => {
     mockInstalls = [install('user-b', 'pod-a')];
-    const res = await request(app).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
+    const res = await request(server).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
     expect(res.status).toBe(403);
     expect(User.findOne).not.toHaveBeenCalled();
   });
 
   test('the sole installer can revoke, and the revoke goes by the token hash', async () => {
     mockInstalls = [install('user-a', 'pod-a')];
-    const res = await request(app).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
+    const res = await request(server).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
     expect(res.status).toBe(200);
     // Every stored copy shares the hash, not the listed id (runtimeTokenRevoke.test.js).
     expect(mockRevokeOne).toHaveBeenCalledWith('hash-1');
@@ -178,7 +185,7 @@ describe('revoking a runtime token needs the same rule', () => {
 describe('provisioning mints a token, so it needs the same rule', () => {
   test('a pod member who does not solely own the identity cannot provision it', async () => {
     mockInstalls = [install('user-a', 'pod-a'), install('user-b', 'pod-b')];
-    const res = await request(app).post('/api/registry/pods/pod-a/agents/quire/provision').send({ force: true });
+    const res = await request(server).post('/api/registry/pods/pod-a/agents/quire/provision').send({ force: true });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('another_installer');
     expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
@@ -188,8 +195,8 @@ describe('provisioning mints a token, so it needs the same rule', () => {
 });
 
 describe('the agent user token takes the same rule', () => {
-  const issueUserToken = () => request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ scopes: [] });
-  const revokeUserToken = () => request(app).delete('/api/registry/pods/pod-a/agents/quire/user-token');
+  const issueUserToken = () => request(server).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ scopes: [] });
+  const revokeUserToken = () => request(server).delete('/api/registry/pods/pod-a/agents/quire/user-token');
 
   test('a pod member who did not install the agent is not given its user token', async () => {
     mockInstalls = [install('user-b', 'pod-a')];
@@ -247,9 +254,79 @@ describe('API user-token force rotation follows identity ownership', () => {
     mockInstalls = kind === 'shared'
       ? [install('user-a', 'pod-a'), install('user-b', 'pod-b')]
       : [install('user-b', 'pod-a')];
-    const response = await request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ force: true });
+    const response = await request(server).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ force: true });
     expect(response.status).toBe(403);
     expect(mockIssueUser).not.toHaveBeenCalled();
     expect(User.findOne).not.toHaveBeenCalled();
+  });
+});
+
+// F525: the connect page asks for a connect code beside a fresh key, for its one
+// pasted line. Asking never rotates a key that already exists.
+const mockMintCode = jest.fn();
+jest.mock('../../../services/agentConnectCodeService', () => ({
+  mintConnectCode: (...args) => mockMintCode(...args),
+}));
+
+describe('a connect code beside a freshly issued key', () => {
+  const flag = process.env.BYO_CONNECT_CODE;
+  afterAll(() => {
+    if (flag === undefined) delete process.env.BYO_CONNECT_CODE;
+    else process.env.BYO_CONNECT_CODE = flag;
+  });
+  beforeEach(() => {
+    process.env.BYO_CONNECT_CODE = '1';
+    mockInstalls = [install('user-a', 'pod-a')];
+    mockMintCode.mockReset();
+    mockMintCode.mockResolvedValue({ code: 'cmc_AAAAAAAAAAAAAAAAAAAAAA', expiresAt: new Date('2026-11-15T00:30:00Z') });
+  });
+
+  test('is returned with the new key when asked for', async () => {
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      token: 'cm_agent_new', connectCode: 'cmc_AAAAAAAAAAAAAAAAAAAAAA', connectCodeExpiresAt: '2026-11-15T00:30:00.000Z',
+    });
+    expect(mockMintCode).toHaveBeenCalledWith({ agentUserId: 'bot-1', rawToken: 'cm_agent_new' });
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  test('is not minted, and nothing is rotated, when the agent already has a key', async () => {
+    mockIssue.mockResolvedValueOnce({ existing: true, message: 'Agent already has a runtime token.' });
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  test('a forced reconnect, the one path that rotates, gets a code for its new key', async () => {
+    const res = await mint({ force: true, connectCode: true });
+    expect(res.status).toBe(200);
+    expect(mockRevoke).toHaveBeenCalledTimes(1);
+    expect(res.body.connectCode).toBe('cmc_AAAAAAAAAAAAAAAAAAAAAA');
+  });
+
+  test('is not minted while BYO_CONNECT_CODE is off, so the page keeps its key lines', async () => {
+    delete process.env.BYO_CONNECT_CODE;
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_agent_new');
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+  });
+
+  test('is not minted unless asked for', async () => {
+    const res = await mint();
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+  });
+
+  test('a failed mint still returns the key, without a code', async () => {
+    mockMintCode.mockRejectedValueOnce(new Error('down'));
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_agent_new');
+    expect(res.body.connectCode).toBeUndefined();
   });
 });

@@ -41,6 +41,16 @@ class MessageReaction {
     return (result.rowCount || 0) > 0;
   }
 
+  /** Whether this user holds any reaction on the message (F550: a reaction closes a wake). */
+  static async hasReactionBy(messageId: string | number, userId: string): Promise<boolean> {
+    if (!/^\d+$/.test(String(messageId))) return false;
+    const result = await pool.query(
+      'SELECT 1 FROM message_reactions WHERE message_id = $1 AND user_id = $2 LIMIT 1',
+      [Number(messageId), userId],
+    );
+    return (result.rowCount || 0) > 0;
+  }
+
   /** Remove (idempotent — DELETE matches at most one row per the unique key). */
   static async remove(messageId: string | number, userId: string, emoji: string): Promise<void> {
     await pool.query(

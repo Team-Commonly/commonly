@@ -18,7 +18,7 @@
 import { createHash } from 'crypto';
 import type { Model, Schema } from 'mongoose';
 
-export type StoreMode = 'mongo' | 'dual' | 'pg-read' | 'pg';
+type StoreMode = 'mongo' | 'dual' | 'pg-read' | 'pg';
 const MODES: readonly StoreMode[] = ['mongo', 'dual', 'pg-read', 'pg'];
 
 type Doc = Record<string, unknown>;
@@ -26,7 +26,7 @@ type Row = Record<string, unknown>;
 type Id = unknown;
 
 /** What the helper needs from a Postgres table. Rows carry their id column. */
-export interface PgAdapter {
+interface PgAdapter {
   /** Writes the row unless the stored one is at `version` or newer; true when applied. */
   upsert(row: Row, version: number): Promise<boolean>;
   /** Deletes the row unless the stored one is at `version` or newer. */
@@ -184,7 +184,7 @@ const plain = (doc: Doc | null): Doc | null => {
 const FLAG_CACHE_MS = 5000;
 const PG_UPDATE_ATTEMPTS = 5;
 
-export interface DualStoreOptions {
+interface DualStoreOptions {
   name: string;
   model: Model<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   pg: PgAdapter;
@@ -196,7 +196,7 @@ export interface DualStoreOptions {
   sampleRate?: number;
 }
 
-export interface DualStore {
+interface DualStore {
   create(doc: Doc): Promise<Doc>;
   /** `undefined` unsets a field. Null when there is no such document. */
   update(id: Id, fields: Doc): Promise<Doc | null>;

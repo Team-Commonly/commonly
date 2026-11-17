@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShellGlyph } from '../icons/glyphs';
 
-// TASK-730 (D223): the d215 Settings frame (#s-settings) rebuilt from the
+// TASK-730: the d215 Settings frame (#s-settings) rebuilt from the
 // shared primitives alone. Same groups, rows and order as the artboard; the
 // values are fixtures, so the structural diff is what this proves.
 const seg = (items: string[], on: string, label: string) => (

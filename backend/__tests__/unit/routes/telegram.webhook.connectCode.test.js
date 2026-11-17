@@ -75,7 +75,7 @@ describe('/commonly-enable hardening', () => {
     jest.clearAllMocks();
     resetEnableAttempts();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
-    // Verification always runs (hardening H1, D137 A9); these tests exercise
+    // Verification always runs (hardening H1); these tests exercise
     // the enable handler, not auth, so they send the configured secret and use
     // a stubbed delivery-claim store, same as telegram.webhook.test.js.
     process.env.TELEGRAM_SECRET_TOKEN = SECRET;
@@ -138,7 +138,7 @@ describe('/commonly-enable hardening', () => {
     expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/private chat/i);
   });
 
-  // F143 (Cofounder, 11-04) narrowed this arm: a legacy (buffer) row still
+  // F143 (11-04) narrowed this arm: a legacy (buffer) row still
   // binds a group, when the pod's creator minted it.
   it('still binds a legacy (buffer) integration from a group, minted by the pod creator', async () => {
     Integration.findOne = jest.fn()
@@ -247,7 +247,7 @@ describe('/commonly-enable hardening', () => {
   });
 });
 
-// F143 (Cofounder, 11-04): a Telegram group, supergroup or channel is read by
+// F143 (11-04): a Telegram group, supergroup or channel is read by
 // people outside the pod, so binding one takes authority over the POD. The chat
 // type is only known here, at redemption, so the rule runs here, against the
 // row's creator — the person whose code it is (connect-code re-mints keep it).

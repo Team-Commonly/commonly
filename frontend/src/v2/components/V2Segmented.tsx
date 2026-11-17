@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 
-export interface V2SegmentedOption<T extends string> {
+interface V2SegmentedOption<T extends string> {
   value: T;
   label: React.ReactNode;
   // A count rendered after the label in the muted mono face ("All 64").
@@ -20,7 +20,7 @@ interface V2SegmentedProps<T extends string> {
 }
 
 /**
- * D215 segmented control: two or three exclusive values side by side. It is a
+ * Design segmented control: two or three exclusive values side by side. It is a
  * radiogroup, so arrow keys move the choice and only the checked option sits
  * in the tab order.
  */

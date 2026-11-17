@@ -3,7 +3,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 // Minimal durable deletion intent. Retain the opaque identity after User is
 // gone so an upload already in flight cannot strand bytes on a cleanup error.
 // No email, profile, password or token material belongs on this record.
-export interface IAccountDeletion extends Document {
+interface IAccountDeletion extends Document {
   _id: Types.ObjectId;
   createdAt: Date;
   lastSweptAt?: Date;

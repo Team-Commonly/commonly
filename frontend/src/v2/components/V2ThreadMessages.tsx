@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
 import { WELCOME_HOSTED_ACTION, type WelcomeHostedStartState } from '../hooks/useWelcomeHostedStart';
+import { orderStarts, primaryStartIds, type WelcomePick } from '../utils/welcomePick';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import V2MessageRow from './V2MessageRow';
@@ -15,13 +16,13 @@ import V2Fold from './V2Fold';
 
 // Scout's start that asks nothing of the person (id in SCOUT_STARTS,
 // backend/config/native-agents/scout.ts). It sends itself as their first message.
-export const ASK_START_ID = 'ask-scout';
+export { ASK_START_ID } from '../utils/welcomePick';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
 // A transcript load shorter than this never shows a spinner.
 const SPINNER_DELAY_MS = 300;
-// D278: at most this many threads open themselves for the asker at once.
+// At most this many threads open themselves for the asker at once.
 const MAX_AUTO_OPEN = 3;
 // An open thread marks itself read once it has sat rendered this long.
 const MARK_READ_DEBOUNCE_MS = 600;
@@ -36,7 +37,7 @@ interface V2ThreadMessagesProps {
   threadView: ThreadViewItem[];
   threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'>
     & Partial<Pick<UseV2ThreadState, 'setCollapsed' | 'markRead' | 'ready'>>;
-  /** The person reading. Their own unanswered-then-answered threads open for them (D278). */
+  /** The person reading. Their own unanswered-then-answered threads open for them. */
   viewerId?: string | null;
   /**
    * A thread opened itself. The caller follows the new height only if the
@@ -47,6 +48,8 @@ interface V2ThreadMessagesProps {
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
   ownerConnectLinks?: Map<string, string>;
+  // F509: ids of join notes whose agent is listening now.
+  connectedIntroIds?: Set<string>;
   agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
@@ -56,6 +59,8 @@ interface V2ThreadMessagesProps {
   // Scout's starts, keyed by the message that offers them; already filtered to
   // the ones still available to this person (V2Thread).
   startsByMessageId?: Map<string, V2Start[]>;
+  /** How the person chose their first agent; decides which starts get the filled key. */
+  welcomePick?: WelcomePick;
   onStart?: (start: V2Start, messageId: string) => void;
   startsDisabled?: boolean;
   // The welcome's hosted start while it runs in place, or after it failed.
@@ -66,6 +71,8 @@ interface V2ThreadMessagesProps {
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
   hasMore: boolean;
+  /** First minute back: the message the "New since your last visit" divider sits above. */
+  newSinceMessageId?: string | null;
   loadingOlder: boolean;
   onLoadOlder: () => void;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
@@ -90,6 +97,8 @@ interface V2ThreadMessagesProps {
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
   afterMessage?: { messageId: string; content: React.ReactNode };
+  /** A start that draws itself (its own state and controls), or null for a plain button. */
+  renderStart?: (start: V2Start, messageId: string) => React.ReactNode;
   agentDeliveryHint?: { messageId: string; mentionHandle: string; wokenAgent?: string } | null;
   // A pod with no installed agent answers nothing by construction, so there is
   // no handle to suggest — a different row, in the same slot.
@@ -156,6 +165,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   settledDecisionByMessageId,
   agentDisplayNames,
   ownerConnectLinks,
+  connectedIntroIds,
   agentTags,
   agentAuthorKeys,
   onAuthorClick,
@@ -163,6 +173,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onReply,
   onThread,
   startsByMessageId,
+  welcomePick,
   onStart,
   startsDisabled = false,
   hostedStart = null,
@@ -171,6 +182,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onDecisionRuled,
   onAimAtThread,
   hasMore,
+  newSinceMessageId = null,
   loadingOlder,
   onLoadOlder,
   edgeRef,
@@ -184,6 +196,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   starterPanel,
   emptyState,
   afterMessage,
+  renderStart,
   agentDeliveryHint,
   noAgentsHint,
   onAddAgent,
@@ -225,7 +238,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // The resting state of a thread is the chip (ux-lead 64476 (4)). Which
   // roots are open is a session gesture held here; the server `collapsed`
   // row is written to match on each open/close (it still drives the wake
-  // path), but a fresh mount shows chips. The one exception (D278): a thread
+  // path), but a fresh mount shows chips. The one exception: a thread
   // whose root I wrote opens for me while it holds an agent reply I haven't
   // read — see the asker auto-open below.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
@@ -239,7 +252,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       return next;
     });
   }, []);
-  // D278 asker auto-open. Per root, the newest agent reply (ms) already acted
+  // Asker auto-open. Per root, the newest agent reply (ms) already acted
   // on: the thread opened for it, was passed over by the cap, or was closed by
   // hand after it. Only a newer unread agent reply opens that thread again.
   const settledAgentAtRef = useRef<Map<string, number>>(new Map());
@@ -264,7 +277,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     threadState.setCollapsed?.(rootId, !open);
   }, [threadState, threadView]);
 
-  // The asker's view (D278): a thread whose root I wrote and that holds an
+  // The asker's view: a thread whose root I wrote and that holds an
   // agent reply I haven't read opens for me, on mount and as replies land.
   // Waits for the state fetch, or a thread I already read would open on its
   // own-message fallback before the server's read point arrives. The open is
@@ -492,8 +505,14 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               return previousRuling ? rulingMessage(previous.message, previousRuling) : previous.message;
             })()
             : undefined;
+          const newSince = newSinceMessageId !== null && String(message.id) === newSinceMessageId;
           return (
             <React.Fragment key={message.id}>
+              {newSince && (
+                <div className="v2-chat__new-since" data-testid="new-since-divider" data-new-since-divider="" role="separator" aria-label={t('podChat.newSince')}>
+                  <span className="v2-chat__new-since-label" aria-hidden="true">{t('podChat.newSince')}</span>
+                </div>
+              )}
               <V2MessageRow
                 message={renderedMessage}
                 sourceMessageId={settledRuling ? message.id : undefined}
@@ -502,6 +521,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
                 ownerConnectLinks={ownerConnectLinks}
+                introConnectedNow={Boolean(connectedIntroIds?.has(String(message.id)))}
                 agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
@@ -509,18 +529,22 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onReply={onReply}
                 onThread={onThread}
                 onQuoteNavigate={onQuoteNavigate}
-                grouped={isGroupedWithPrevious(renderedMessage, previousMessage)}
+                grouped={!newSince && isGroupedWithPrevious(renderedMessage, previousMessage)}
               />
               {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
                 <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>
-                  {startsByMessageId?.get(String(message.id))?.map((start, _index, starts) => {
-                    // One ink key per welcome: the hosted start where it is
-                    // offered, otherwise the start that asks nothing of you.
-                    const primary = start.action === WELCOME_HOSTED_ACTION
-                      || (start.id === ASK_START_ID && !starts.some((other) => other.action === WELCOME_HOSTED_ACTION));
+                  {(() => {
+                    const starts = startsByMessageId?.get(String(message.id)) || [];
+                    // The filled keys follow the person's pick, the same way the
+                    // Get started bar does (utils/welcomePick.ts).
+                    const primaryIds = primaryStartIds(starts, welcomePick ?? null);
+                    return orderStarts(starts, primaryIds).map((start) => ({ start, primary: primaryIds.has(start.id) }));
+                  })().map(({ start, primary }) => {
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';
+                    const drawn = renderStart?.(start, String(message.id));
+                    if (drawn) return <React.Fragment key={start.id}>{drawn}</React.Fragment>;
                     return (
                       <React.Fragment key={start.id}>
                         <button
@@ -591,7 +615,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           const open = openClaimRuns.has(item.key);
           const first = item.messages[0].payload?.taskId ?? '';
           const last = item.messages[item.messages.length - 1].payload?.taskId ?? '';
-          // D215 .sumrow: up to four distinct claimers' faces and the run's
+          // Design .sumrow: up to four distinct claimers' faces and the run's
           // last time. The accessible name stays the one-line label.
           const claimers = item.messages.filter((message, claimIndex) => item.messages
             .findIndex((other) => (other.user_id || other.payload?.actorName) === (message.user_id || message.payload?.actorName)) === claimIndex)
@@ -710,6 +734,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
                     ownerConnectLinks={ownerConnectLinks}
+                    introConnectedNow={Boolean(connectedIntroIds?.has(String(reply.id)))}
                     agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}

@@ -59,6 +59,17 @@ describe('stranger journey', () => {
     }
   });
 
+  test('only the history limits clean up finished Jobs, never a TTL as well', () => {
+    // A TTL alongside the history limits races them: both delete the same Job
+    // and the loser emits a FailedDelete Warning (GCP alert, 2026-11-16). No
+    // TTL length avoids it, because deploy runs and mixed outcomes put a Job of
+    // any age at the head of the prune.
+    const template = read('templates/journey/stranger-journey.yaml');
+    expect(template).not.toMatch(/^\s*ttlSecondsAfterFinished:/m);
+    expect(template).toMatch(/\n {2}successfulJobsHistoryLimit: [1-9]\d*\n/);
+    expect(template).toMatch(/\n {2}failedJobsHistoryLimit: [1-9]\d*\n/);
+  });
+
   test('the sink token reaches the Job only where the sink is on, and only from its Secret', () => {
     const template = read('templates/journey/stranger-journey.yaml');
     const block = template.slice(template.indexOf('{{- if .Values.email.sink.enabled }}'), template.indexOf('volumeMounts'));

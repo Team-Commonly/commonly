@@ -717,3 +717,460 @@ describe('mountSkills refuses a linked .claude or .claude/skills (F171)', () => 
     expect(fs.lstatSync(path.join(workspace, '.claude', 'skills')).isDirectory()).toBe(true);
   });
 });
+
+// F171 race residual: the check above reads .claude/skills, then the mount
+// writes. A writer in the workspace could swap the directory for a link in
+// between. Every write now happens in a host-private stage, and the workspace
+// sees one re-checked rename; the old mount is moved out before it is deleted.
+describe('mountSkills writes nothing through a .claude/skills swapped mid-mount (F171)', () => {
+  let root;
+  let workspace;
+  let outside;
+  let skillSrc;
+  let name;
+  let skillsDir;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171race-'));
+    workspace = path.join(root, 'ws');
+    outside = path.join(root, 'outside');
+    skillSrc = path.join(root, 'src', 'my-skill');
+    skillsDir = path.join(workspace, '.claude', 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(outside);
+    fs.mkdirSync(skillSrc, { recursive: true });
+    fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), '# my skill', 'utf8');
+    name = path.basename(skillSrc);
+    // A marked directory outside the workspace, where a swapped link would
+    // send the refresh's delete and copy.
+    fs.mkdirSync(path.join(outside, name));
+    fs.writeFileSync(path.join(outside, name, '.commonly-skill-mount'), 'mounted-from: elsewhere\n');
+    fs.writeFileSync(path.join(outside, name, 'keep.txt'), 'real work');
+  });
+  afterEach(() => {
+    const thaw = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) thaw(full);
+        else if (e.isFile()) fs.chmodSync(full, 0o644);
+      }
+    };
+    thaw(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const outsideTree = () => fs.readdirSync(path.join(outside, name)).sort()
+    .map((e) => [e, fs.readFileSync(path.join(outside, name, e), 'utf8')]);
+  const swapForLink = () => {
+    fs.renameSync(skillsDir, path.join(workspace, '.claude', 'skills-real'));
+    fs.symlinkSync(outside, skillsDir);
+  };
+  const mountWithSwapAt = async (at) => {
+    let swapped = false;
+    const result = await mountSkills({ skills: { claude: [skillSrc] } }, workspace, null, {
+      onStep: (step) => {
+        if (step === at && !swapped) { swapForLink(); swapped = true; }
+      },
+    });
+    return { result, swapped };
+  };
+  const before = () => [['.commonly-skill-mount', 'mounted-from: elsewhere\n'], ['keep.txt', 'real work']];
+
+  test.each(['checked', 'staged'])('a swap after the %s step is refused, and the target is left as it was', async (at) => {
+    // An earlier mount, so the refresh has something to replace.
+    expect((await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).mounted).toEqual([skillSrc]);
+
+    const { result, swapped } = await mountWithSwapAt(at);
+
+    expect(swapped).toBe(true);
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: skillSrc, reason: 'unsafe-skill-dir' }] });
+    expect(outsideTree()).toEqual(before());
+    expect(fs.lstatSync(skillsDir).isSymbolicLink()).toBe(true);
+  });
+
+  test('the first mount into an empty slot is refused the same way', async () => {
+    const { result, swapped } = await mountWithSwapAt('staged');
+
+    expect(swapped).toBe(true);
+    expect(result.conflicted).toEqual([{ path: skillSrc, reason: 'unsafe-skill-dir' }]);
+    expect(outsideTree()).toEqual(before());
+  });
+
+  test('a mount with no swap lands, and leaves no stage folder behind', async () => {
+    const siblingsBefore = fs.readdirSync(root).sort();
+
+    expect(await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).toEqual({ mounted: [skillSrc], conflicted: [] });
+    expect(await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).toEqual({ mounted: [skillSrc], conflicted: [] });
+
+    const slot = path.join(skillsDir, name);
+    expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('# my skill');
+    expect(fs.existsSync(path.join(slot, '.commonly-skill-mount'))).toBe(true);
+    expect(fs.statSync(path.join(slot, 'SKILL.md')).mode & 0o777).toBe(0o444);
+    expect(fs.readdirSync(root).sort()).toEqual(siblingsBefore);
+    expect(fs.readdirSync(skillsDir)).toEqual([name]);
+  });
+});
+
+// F171 gate: a skill source that is itself a link (common: ~/.claude/skills
+// entries link into a checkout) was copied as a link, so the mount wrote
+// through to the source: the marker landed in it and its files went 0444.
+describe('mountSkills snapshots a linked skill source as real files (F171)', () => {
+  let root;
+  let workspace;
+  let realSrc;
+  let linkSrc;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171src-'));
+    workspace = path.join(root, 'ws');
+    realSrc = path.join(root, 'checkout', 'my-skill');
+    linkSrc = path.join(root, 'skills', 'my-skill');
+    fs.mkdirSync(workspace);
+    fs.mkdirSync(realSrc, { recursive: true });
+    fs.mkdirSync(path.dirname(linkSrc));
+    fs.writeFileSync(path.join(realSrc, 'SKILL.md'), '# my skill', 'utf8');
+    fs.chmodSync(path.join(realSrc, 'SKILL.md'), 0o644);
+    fs.symlinkSync(realSrc, linkSrc);
+  });
+  afterEach(() => {
+    for (const dir of [realSrc, path.join(workspace, '.claude', 'skills', 'my-skill')]) {
+      if (!fs.existsSync(dir) || fs.lstatSync(dir).isSymbolicLink()) continue;
+      for (const e of fs.readdirSync(dir)) fs.chmodSync(path.join(dir, e), 0o644);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('the mount is a real directory, and the source is left as it was', async () => {
+    expect(await mountSkills({ skills: { claude: [linkSrc] } }, workspace)).toEqual({ mounted: [linkSrc], conflicted: [] });
+
+    const slot = path.join(workspace, '.claude', 'skills', 'my-skill');
+    expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('# my skill');
+    expect(fs.existsSync(path.join(realSrc, '.commonly-skill-mount'))).toBe(false);
+    expect(fs.statSync(path.join(realSrc, 'SKILL.md')).mode & 0o777).toBe(0o644);
+  });
+});
+
+// F171 review: when the stage is on another disk, a rename fails with EXDEV.
+// The old fallback copied the snapshot in and then ran a recursive delete at
+// the workspace path, which a .claude/skills swapped between the two steps
+// sends outside. An EXDEV now refuses the mount and leaves the old one alone.
+describe('mountSkills never copies and deletes through the workspace path (F171 review)', () => {
+  let root;
+  let workspace;
+  let outside;
+  let skillSrc;
+  let skillsDir;
+  const name = 'my-skill';
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171exdev-'));
+    workspace = path.join(root, 'ws');
+    outside = path.join(root, 'outside');
+    skillSrc = path.join(root, 'src', name);
+    skillsDir = path.join(workspace, '.claude', 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(path.join(outside, name), { recursive: true });
+    fs.writeFileSync(path.join(outside, name, '.commonly-skill-mount'), 'mounted-from: elsewhere\n');
+    fs.writeFileSync(path.join(outside, name, 'keep.txt'), 'real work');
+    fs.mkdirSync(skillSrc, { recursive: true });
+    fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), '# my skill', 'utf8');
+  });
+  afterEach(() => {
+    const thaw = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) thaw(full);
+        else if (e.isFile()) fs.chmodSync(full, 0o644);
+      }
+    };
+    thaw(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  // A rename that fails as it would across disks, after swapping
+  // .claude/skills for a link to `outside`, the moment the old fallback's
+  // copy-then-delete left open.
+  const crossDiskRenameWithSwap = () => async () => {
+    if (!fs.lstatSync(skillsDir).isSymbolicLink()) {
+      fs.renameSync(skillsDir, path.join(workspace, '.claude', 'skills-real'));
+      fs.symlinkSync(outside, skillsDir);
+    }
+    throw Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+  };
+
+  test('a refresh across disks is refused, and neither the old mount nor the swap target is touched', async () => {
+    expect((await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).mounted).toEqual([skillSrc]);
+
+    const result = await mountSkills({ skills: { claude: [skillSrc] } }, workspace, null, { rename: crossDiskRenameWithSwap() });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: skillSrc, reason: 'cross-disk-stage' }] });
+    expect(fs.readdirSync(path.join(outside, name)).sort()).toEqual(['.commonly-skill-mount', 'keep.txt']);
+    expect(fs.readFileSync(path.join(outside, name, 'keep.txt'), 'utf8')).toBe('real work');
+    const kept = path.join(workspace, '.claude', 'skills-real', name);
+    expect(fs.readFileSync(path.join(kept, 'SKILL.md'), 'utf8')).toBe('# my skill');
+  });
+
+  test('a first mount across disks is refused and writes nothing', async () => {
+    const result = await mountSkills({ skills: { claude: [skillSrc] } }, workspace, null, {
+      rename: async () => { throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' }); },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: skillSrc, reason: 'cross-disk-stage' }] });
+    expect(fs.readdirSync(skillsDir)).toEqual([]);
+  });
+});
+
+// F171 review: the source's own link is followed (a ~/.claude/skills entry
+// into a checkout), but a link inside the source was followed too, so a
+// `credentials.json -> ~/.commonly/tokens/x.json` came into the workspace as
+// the token's bytes. A source holding any link of its own is now refused.
+describe('mountSkills refuses a skill source that holds a link (F171 review)', () => {
+  let root;
+  let workspace;
+  let skillSrc;
+  let secret;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171nested-'));
+    workspace = path.join(root, 'ws');
+    skillSrc = path.join(root, 'src', 'my-skill');
+    secret = path.join(root, 'tokens', 'agent.json');
+    fs.mkdirSync(workspace);
+    fs.mkdirSync(path.join(skillSrc, 'nested'), { recursive: true });
+    fs.mkdirSync(path.dirname(secret));
+    fs.writeFileSync(secret, 'cm_agent_planted_secret');
+    fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), '# my skill', 'utf8');
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const workspaceBytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return workspaceBytes(full);
+    return e.isFile() ? [fs.readFileSync(full, 'utf8')] : [];
+  });
+
+  test.each([['at the top of the source', 'credentials.json'], ['in a folder of the source', path.join('nested', 'creds.json')]])(
+    'a link %s is refused, and its target never reaches the workspace',
+    async (_where, rel) => {
+      fs.symlinkSync(secret, path.join(skillSrc, rel));
+
+      const result = await mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+
+      expect(result).toEqual({ mounted: [], conflicted: [{ path: skillSrc, reason: 'linked-skill-file' }] });
+      expect(workspaceBytes(workspace).join('\n')).not.toContain('cm_agent_planted_secret');
+      expect(fs.existsSync(path.join(workspace, '.claude', 'skills', 'my-skill'))).toBe(false);
+    },
+  );
+
+  test('a source with no link inside still mounts', async () => {
+    expect(await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).toEqual({ mounted: [skillSrc], conflicted: [] });
+  });
+});
+
+// F171 review, second pass. A seat can write its own workspace, so a source
+// there (a relative entry resolves against it) can be made a link to host
+// files; the source's own link must not be followed from inside it. And the
+// renames still resolve the path, so whatever a swap moves into the stage is
+// deleted only when it is a link or one of our marked mounts.
+describe('mountSkills: a source the seat controls, and what a late swap can reach (F171 review)', () => {
+  let root;
+  let workspace;
+  let host;
+  let skillsDir;
+  const name = 'my-skill';
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171late-'));
+    workspace = path.join(root, 'ws');
+    host = path.join(root, 'host');
+    skillsDir = path.join(workspace, '.claude', 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(path.join(host, name), { recursive: true });
+    fs.writeFileSync(path.join(host, name, 'agent.json'), 'cm_agent_planted_secret');
+  });
+  afterEach(() => {
+    const thaw = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) thaw(full);
+        else if (e.isFile()) fs.chmodSync(full, 0o644);
+      }
+    };
+    thaw(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const bytesUnder = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return bytesUnder(full);
+    return e.isFile() ? [fs.readFileSync(full, 'utf8')] : [];
+  });
+  const stages = () => fs.readdirSync(root).filter((e) => e.startsWith('.commonly-skill-stage-'));
+
+  test.each([['a relative entry', `skills/${name}`], ['an absolute path', null]])(
+    'a source inside the workspace that links to host files is refused (%s)',
+    async (_how, rel) => {
+      fs.mkdirSync(path.join(workspace, 'skills'));
+      fs.symlinkSync(path.join(host, name), path.join(workspace, 'skills', name));
+      const source = rel || path.join(workspace, 'skills', name);
+
+      const result = await mountSkills({ skills: { claude: [source] } }, workspace);
+
+      expect(result.mounted).toEqual([]);
+      expect(result.conflicted).toEqual([{ path: path.join(workspace, 'skills', name), reason: 'source-in-workspace' }]);
+      expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+    },
+  );
+
+  test('a source outside the workspace that links into it is refused', async () => {
+    fs.mkdirSync(path.join(workspace, 'mine'));
+    fs.writeFileSync(path.join(workspace, 'mine', 'SKILL.md'), '# seat-written');
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(workspace, 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+  });
+
+  test('a source under a workspace folder whose name starts with two dots is refused', async () => {
+    fs.mkdirSync(path.join(workspace, '..skills'));
+    fs.symlinkSync(path.join(host, name), path.join(workspace, '..skills', name));
+    const source = path.join(workspace, '..skills', name);
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+  });
+
+  test('a link chain that passes through the workspace is refused, though it ends outside', async () => {
+    // linked-skill -> <ws>/mine, and the seat makes mine a link to host files.
+    fs.symlinkSync(path.join(host, name), path.join(workspace, 'mine'));
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(workspace, 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+    expect(fs.existsSync(path.join(host, name, '.commonly-skill-mount'))).toBe(false);
+    expect(fs.statSync(path.join(host, name, 'agent.json')).mode & 0o200).toBeTruthy();
+  });
+
+  // macOS disks ignore case by default, so `<root>/WS` is the workspace. These
+  // run only where the temp disk does that.
+  const caselessTmp = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-case-'));
+    try {
+      fs.mkdirSync(path.join(probe, 'ws'));
+      return fs.existsSync(path.join(probe, 'WS'));
+    } finally {
+      fs.rmSync(probe, { recursive: true, force: true });
+    }
+  })();
+  const onCaselessDisk = caselessTmp ? test : test.skip;
+
+  onCaselessDisk('a chain through the workspace spelled in another case is refused', async () => {
+    fs.symlinkSync(path.join(host, name), path.join(workspace, 'mine'));
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(root, 'WS', 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+    expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+  });
+
+  onCaselessDisk('a link spelled in another case that ends inside the workspace is refused', async () => {
+    fs.mkdirSync(path.join(workspace, 'sub'));
+    fs.writeFileSync(path.join(workspace, 'sub', 'SKILL.md'), '# seat-written');
+    const outsideLink = path.join(root, 'cased-skill');
+    fs.symlinkSync(path.join(root, 'WS', 'sub'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+  });
+
+  test('a source reached through a relative link with .. parts mounts when it stays outside', async () => {
+    fs.mkdirSync(path.join(root, 'shelf'));
+    fs.writeFileSync(path.join(root, 'shelf', 'SKILL.md'), '# shelf');
+    fs.mkdirSync(path.join(root, 'links'));
+    const viaDots = path.join(root, 'links', 'shelf-skill');
+    fs.symlinkSync(path.join('..', 'shelf'), viaDots);
+
+    const result = await mountSkills({ skills: { claude: [viaDots] } }, workspace);
+
+    expect(result).toEqual({ mounted: [viaDots], conflicted: [] });
+    expect(fs.readFileSync(path.join(skillsDir, 'shelf-skill', 'SKILL.md'), 'utf8')).toBe('# shelf');
+  });
+
+  test('a source that holds the workspace is refused', async () => {
+    const result = await mountSkills({ skills: { claude: [root] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: root, reason: 'source-in-workspace' }] });
+  });
+
+  test('a source swapped for a link after it was resolved is refused, and the link target is not touched', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      onStep: (step) => {
+        if (step !== 'resolved') return;
+        fs.renameSync(source, `${source}-real`);
+        fs.symlinkSync(path.join(host, name), source);
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'linked-skill-file' }] });
+    expect(fs.readdirSync(path.join(host, name))).toEqual(['agent.json']);
+    expect(fs.statSync(path.join(host, name, 'agent.json')).mode & 0o222).not.toBe(0);
+  });
+
+  test('a swap between the slot check and the move keeps whatever it moved, and deletes nothing', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+    expect((await mountSkills({ skills: { claude: [source] } }, workspace)).mounted).toEqual([source]);
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      onStep: (step) => {
+        if (step !== 'slot-checked') return;
+        fs.renameSync(skillsDir, path.join(workspace, '.claude', 'skills-real'));
+        fs.symlinkSync(host, skillsDir);
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'unsafe-skill-dir' }] });
+    // The unmarked host folder the swap sent into the stage is still on disk.
+    const kept = stages().map((s) => path.join(root, s, 'old', 'agent.json')).filter((f) => fs.existsSync(f));
+    expect(kept.map((f) => fs.readFileSync(f, 'utf8'))).toEqual(['cm_agent_planted_secret']);
+  });
+
+  test('when the second rename fails, the old mount is kept, not deleted', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+    expect((await mountSkills({ skills: { claude: [source] } }, workspace)).mounted).toEqual([source]);
+
+    let calls = 0;
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      rename: async (from, to) => {
+        calls += 1;
+        if (calls === 1) return fs.promises.rename(from, to);
+        throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'cross-disk-stage' }] });
+    const kept = stages().map((s) => path.join(root, s, 'old', 'SKILL.md')).filter((f) => fs.existsSync(f));
+    expect(kept).toHaveLength(1);
+  });
+});

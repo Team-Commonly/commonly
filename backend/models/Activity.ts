@@ -1,13 +1,13 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type ActivityType = 'message' | 'skill_created' | 'approval_needed' | 'agent_action' | 'pod_event';
-export type ActivityActorType = 'human' | 'agent' | 'system';
-export type ActivityApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type ActivityVisibility = 'public' | 'pod' | 'private';
-export type ActivitySourceType = 'message' | 'summary' | 'approval' | 'event';
-export type ActivityFilter = 'all' | 'humans' | 'agents' | 'skills';
+type ActivityType = 'message' | 'skill_created' | 'approval_needed' | 'agent_action' | 'pod_event';
+type ActivityActorType = 'human' | 'agent' | 'system';
+type ActivityApprovalStatus = 'pending' | 'approved' | 'rejected';
+type ActivityVisibility = 'public' | 'pod' | 'private';
+type ActivitySourceType = 'message' | 'summary' | 'approval' | 'event';
+type ActivityFilter = 'all' | 'humans' | 'agents' | 'skills';
 
-export interface IActivityReply {
+interface IActivityReply {
   actorId?: Types.ObjectId;
   actorName?: string;
   actorType: 'human' | 'agent';
@@ -15,7 +15,7 @@ export interface IActivityReply {
   createdAt: Date;
 }
 
-export interface IActivity extends Document {
+interface IActivity extends Document {
   type: ActivityType;
   actor: {
     id?: Types.ObjectId;
@@ -68,7 +68,7 @@ export interface IActivity extends Document {
   reject(userId: Types.ObjectId, notes?: string): Promise<IActivity>;
 }
 
-export interface IActivityModel extends Model<IActivity> {
+interface IActivityModel extends Model<IActivity> {
   createFromMessage(message: { content: string; _id?: Types.ObjectId; id?: string }, pod: { _id: Types.ObjectId }, user: { _id: Types.ObjectId; username?: string; verified?: boolean }): Promise<IActivity>;
   createSkillActivity(summary: { content?: string; _id?: Types.ObjectId; metadata?: { sources?: string[] } }, pod: { _id: Types.ObjectId; name: string }): Promise<IActivity>;
   createApprovalRequest(options: { podId: Types.ObjectId; requestedBy: Types.ObjectId; agentName: string; scopes: string[]; content?: string }): Promise<IActivity>;

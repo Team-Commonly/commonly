@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types, Model } from 'mongoose';
 
 export const INVITE_SOURCES = ['pod-menu', 'first-agent-post', 'scout-first-session', 'solo-pod', 'workspace-own-agent'] as const;
 
-export interface IPodInvite extends Document {
+interface IPodInvite extends Document {
   token: string;
   podId: Types.ObjectId;
   createdBy: Types.ObjectId;

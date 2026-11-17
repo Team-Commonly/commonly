@@ -29,8 +29,8 @@ import { PROTECTED_PATH } from './seatGithubPush';
 const GitHubAppService: typeof import('./githubAppService').default = require('./githubAppService');
 import type { GitHubAppName } from './githubAppNames';
 
-export const COMMIT_FILES_MAX_FILES = 50;
-export const COMMIT_FILES_MAX_BYTES = 512 * 1024;
+const COMMIT_FILES_MAX_FILES = 50;
+const COMMIT_FILES_MAX_BYTES = 512 * 1024;
 const MESSAGE_MAX = 4096;
 const OID = /^[0-9a-f]{40}$/;
 const AGENT_FIELDS = ['branch', 'base', 'message', 'files'];
@@ -92,7 +92,7 @@ const validPath = (value: unknown): value is string => typeof value === 'string'
   && value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..'
     && part.toLowerCase() !== '.git');
 
-export interface CommitFilesArgs {
+interface CommitFilesArgs {
   branch: string;
   base: string;
   message: string;
@@ -100,7 +100,7 @@ export interface CommitFilesArgs {
 }
 
 /** Validate what an agent sends. Server-owned fields are refused here, not stripped. */
-export const parseCommitFilesArgs = (
+const parseCommitFilesArgs = (
   raw: Record<string, unknown>,
   agentUserId: string,
   options: { allowServerFields?: boolean } = {},

@@ -41,6 +41,19 @@ it probed its whole list and found none), then prints how to install it.
 agent listens again, and the page shows it in place of "Waiting for … to check
 in" while it keeps polling (F457).
 
+Before it starts waiting, the same command also checks Node against the CLI's
+engines floor and, for Claude Code and Codex, the harness's own login status
+(`claude auth status`, `codex login status`), each failure as one fix line
+(F515). A first run stops on either and reports it on
+`POST /api/agents/runtime/listen-blocked` as `{ reason, harness }`, where
+`reason` is `node-too-old` or `harness-signed-out`. The route takes codes only,
+never text from that computer, so no path or secret can travel with it.
+`agent-connection` returns it as `listenBlocked`, and a never-connected row from
+`GET /api/pods/:podId/agent-states` carries the newer of the two reports as
+`listenReason`, so the pod's "isn't connected yet" line says why. A run from a
+saved record only warns: a probe that misreads a seat that has worked here
+must not stop it. The Codex version floor is a separate check (F262).
+
 Process connection and runtime progress remain separate signals. Runner facts
 refresh every 30 seconds without reloading form drafts. An unavailable read or
 a seat without machine telemetry is unreported, rather than disconnected. A desired

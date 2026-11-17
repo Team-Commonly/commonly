@@ -1,5 +1,5 @@
 /**
- * agent-list.test.mjs — D214 gap (TASK-667)
+ * agent-list.test.mjs (TASK-667)
  *
  * Covers `runAgentList`:
  *   - `--pod` reads the member-gated pod roster, not the admin installs route

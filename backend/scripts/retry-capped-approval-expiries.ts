@@ -60,7 +60,8 @@ export const requeueCappedExpiries = async (approvalIds: string[]): Promise<numb
   if (!approvalIds.length) return 0;
   const result = await ApprovalAction.updateMany(
     { ...CAPPED, _id: { $in: approvalIds } },
-    { $set: { expiryRetryCount: 0 } },
+    // F206: due now, so the sweep's next read selects it.
+    { $set: { expiryRetryCount: 0, expiryRetryNextAt: new Date() } },
   );
   return result.modifiedCount ?? 0;
 };

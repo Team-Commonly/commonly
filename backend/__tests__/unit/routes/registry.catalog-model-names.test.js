@@ -15,7 +15,7 @@ describe('catalog model names', () => {
     expect(offenders).toEqual([]);
   });
 
-  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the catalog
+  // F98 (11-04): hosted agents are Claude-only, and the catalog
   // offers Haiku only (Sonnet comes later, under a cap). Legacy pins still run:
   // nativeModelFor maps them server-side. These fields are what the catalog says.
   const HOSTED_MODEL = 'claude-haiku-5-5';

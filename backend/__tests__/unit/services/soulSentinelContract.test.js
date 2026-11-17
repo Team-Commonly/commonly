@@ -68,7 +68,7 @@ describe('SOUL footer — the NO_REPLY passage matches the sanitizer', () => {
   });
 });
 
-// F233, D247: a seat on this driver reads neither the CLI wrapper's frame nor
+// F233: a seat on this driver reads neither the CLI wrapper's frame nor
 // the hosted one, so the SOUL footer says this.
 describe('the SOUL footer says how a failure should read', () => {
   it('in plain words, leaving out runtime terms', () => {

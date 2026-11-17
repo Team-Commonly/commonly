@@ -1,4 +1,4 @@
-export const HOSTED_NO_SHARED_OWNER = 'hosted_no_shared_owner';
+const HOSTED_NO_SHARED_OWNER = 'hosted_no_shared_owner';
 
 /**
  * Nobody who hosts this agent shares a pod with the person opening a DM, so no

@@ -6,6 +6,7 @@ jest.mock('../../../models/pg/Message', () => ({}));
 jest.mock('../../../models/pg/Pod', () => ({}));
 jest.mock('../../../config/db-pg', () => ({ pool: { query: mockQuery } }));
 jest.mock('../../../services/avatarService', () => ({ normalizeAvatarUrl: jest.fn((value) => value) }));
+jest.mock('../../../services/accountDeletionState', () => ({ isAccountDeleting: jest.fn().mockResolvedValue(false) }));
 
 const AgentIdentityService = require('../../../services/agentIdentityService');
 

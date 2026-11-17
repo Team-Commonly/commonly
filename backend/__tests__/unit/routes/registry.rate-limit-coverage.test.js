@@ -1,5 +1,5 @@
 /**
- * D175 follow-up: scoping the catalog limiter to catalog routes must not strip
+ * Follow-up: scoping the catalog limiter to catalog routes must not strip
  * rate limiting from the routers mounted after it. They used to inherit the
  * catalog's router-level limiter; they now share a registry-wide IP limiter
  * mounted right after the catalog, and generate-avatar (which calls a paid
@@ -18,7 +18,7 @@ jest.mock('../../../utils/agentManifestRegistry', () => ({
   normalizePublishPayload: jest.fn(),
 }));
 
-describe('registry rate-limit coverage (D175)', () => {
+describe('registry rate-limit coverage', () => {
   it('mounts a registry-wide limiter directly after the catalog router', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry.ts'), 'utf8');
     const mounts = [...src.matchAll(/router\.use\((require\('\.\/registry\/([a-z-]+)'\)|rateLimit\()/g)]

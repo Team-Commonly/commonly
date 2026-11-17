@@ -16,7 +16,7 @@ const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { isHiddenFromDefaultListing } = require('./podListing');
 
-export interface RelayPolicyIntegration {
+interface RelayPolicyIntegration {
   scope?: string;
   podId?: unknown;
   config?: {

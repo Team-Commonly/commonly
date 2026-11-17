@@ -19,8 +19,9 @@
  * "Confined" is what the adapters enforce, not what the file declares: a public
  * or workspace trust, or a shape one adapter enforces with no trust (claude's
  * `bwrap` mode, dsh's `isConfinedDsh` shape). Any other `sandbox.mode` with no
- * trust is spawned bare (claude, codex) or refused at spawn, so it is
- * unconfined here, and `mode: 'none'` always is.
+ * trust is unconfined here: claude, opencode and qwen spawn it bare, codex
+ * runs its private profile (workspace writable, network on), and the rest
+ * refuse it. `mode: 'none'` always is.
  *
  * A legacy pod with no joinPolicy is reported 'open', and that is not only a
  * default: an agent may self-install into a pod an agent created unless it is
@@ -49,6 +50,9 @@ const ADAPTER_OWN_CONFINEMENT = {
   claude: (sandbox) => sandbox?.mode === 'bwrap',
   dsh: isConfinedDshShape,
 };
+
+/** True when the adapter enforces this sandbox shape with no trust (claude bwrap, dsh's one shape). */
+export const adapterConfinesItself = (adapterName, sandbox) => Boolean(ADAPTER_OWN_CONFINEMENT[adapterName]?.(sandbox));
 
 export const seatRunsUnconfined = ({ environment, adapterName }) => {
   if (UNCONFINED_UNCHECKED_ADAPTERS.has(adapterName)) return false;

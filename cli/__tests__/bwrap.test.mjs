@@ -50,7 +50,7 @@ describe('detectBwrap namespace probe', () => {
 
   test('installed and able to start a namespace: available', () => {
     const { spawn, calls } = linux([ok, ok]);
-    expect(detectBwrap({ spawn, platform: 'linux' })).toEqual({ available: true, path: 'bwrap' });
+    expect(detectBwrap({ spawn, platform: 'linux' })).toEqual({ available: true, path: 'bwrap', bindFd: false });
     expect(calls[1]).toEqual(['bwrap', '--unshare-all', '--ro-bind', '/', '/', 'true']);
   });
 
@@ -120,6 +120,68 @@ describe('detectBwrap namespace probe', () => {
     expect(res.error).toMatch(/^bwrap not found on PATH\. Install bubblewrap/);
     expect(res.namespaceRefused).toBeUndefined();
     expect(calls).toHaveLength(1);
+  });
+});
+
+// F211: --bind-fd arrived in 0.10.0 and was backported to 0.6.3, so it is read
+// from the usage text, not the version.
+describe('detectBwrap descriptor-bind probe', () => {
+  const ok = { status: 0, stdout: 'bubblewrap 0.11.0', stderr: '' };
+  const probe = (help) => {
+    const calls = [];
+    const results = [ok, ok, help];
+    const spawn = (cmd, args) => { calls.push([cmd, ...args]); return results.shift(); };
+    return { spawn, calls };
+  };
+
+  test('a bwrap whose usage lists --bind-fd binds descriptors', () => {
+    const { spawn, calls } = probe({ status: 0, stdout: '    --bind-fd FD DEST            Bind open directory or path fd on DEST\n' });
+    expect(detectBwrap({ spawn, platform: 'linux' })).toEqual({ available: true, path: 'bwrap', bindFd: true });
+    expect(calls[2]).toEqual(['bwrap', '--help']);
+  });
+
+  test('an older bwrap, or a usage read that fails, keeps the path binds', () => {
+    expect(detectBwrap({ spawn: probe({ status: 0, stdout: '    --bind SRC DEST  Bind mount the host path SRC on DEST\n' }).spawn, platform: 'linux' }).bindFd).toBe(false);
+    expect(detectBwrap({ spawn: probe({ status: 1, stdout: '--bind-fd' }).spawn, platform: 'linux' }).bindFd).toBe(false);
+    expect(detectBwrap({ spawn: probe({ error: new Error('ETIMEDOUT') }).spawn, platform: 'linux' }).bindFd).toBe(false);
+  });
+});
+
+describe('wrapArgvWithBwrap with descriptor binds (F211)', () => {
+  const originalPlatform = process.platform;
+  beforeEach(() => { Object.defineProperty(process, 'platform', { value: 'linux' }); });
+  afterEach(() => { Object.defineProperty(process, 'platform', { value: originalPlatform }); });
+  const triples = (argv) => argv.flatMap((arg, i) => (
+    /^--(ro-)?bind(-fd|-try)?$/.test(arg) ? [[arg, argv[i + 1], argv[i + 2]]] : []));
+
+  test('mounts the workspace and a held entry from their child descriptors', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/work/given', workspaceSource: '/real/project',
+      readOnlyWorkspaceEntries: ['.git'], bindFds: { workspace: 3, entries: { '.git': 4 } },
+    });
+    expect(triples(argv)).toContainEqual(['--bind-fd', '3', '/work/given']);
+    expect(triples(argv)).toContainEqual(['--ro-bind-fd', '4', '/work/given/.git']);
+    expect(triples(argv).filter(([, src]) => src.startsWith('/real/project'))).toEqual([]);
+  });
+
+  test('a read-only workspace mounts read-only from its descriptor', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/work/given', workspaceReadOnly: true, bindFds: { workspace: 3 },
+    });
+    expect(triples(argv)).toContainEqual(['--ro-bind-fd', '3', '/work/given']);
+  });
+
+  test('an entry without a descriptor keeps its path bind', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/work/given', workspaceSource: '/real/project', workspaceReadOnly: true,
+      readOnlyWorkspaceEntries: ['.git'], bindFds: { workspace: 3, entries: {} },
+    });
+    expect(triples(argv)).toContainEqual(['--ro-bind-try', '/real/project/.git', '/work/given/.git']);
+  });
+
+  test.each([[0], [2], [-1], ['3'], [3.5]])('refuses %p as a child descriptor', (fd) => {
+    expect(() => wrapArgvWithBwrap(['claude'], {}, { workspacePath: '/w', bindFds: { workspace: fd } }))
+      .toThrow(/child descriptors of 3 or more/);
   });
 });
 

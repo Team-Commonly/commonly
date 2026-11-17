@@ -216,7 +216,7 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
-/* D38: the Discord door. Its own row under the keys and the install line, set
+/* The Discord door. Its own row under the keys and the install line, set
    like the demo caption (14/20, on-accent) so it reads as a line on the band,
    not a third button. Underlined at rest because it is the only plain link on
    the band; the underline thickens on hover. */
@@ -274,7 +274,7 @@
   flex-direction: column;
   gap: 22px;
 }
-/* The landing's ONE uppercase eyebrow (D225; 11-04 audit, finding 14). It
+/* The landing's ONE uppercase eyebrow (11-04 audit, finding 14). It
    earns the place: it is the hero's credential (open source, the licence), set
    once on the band above the h1. Every other label on the page is sentence-case
    mono with no tracking: the section kickers, the trusted line, the tier names
@@ -298,6 +298,22 @@
   letter-spacing: -0.03em;
   color: var(--v2-on-accent, #ffffff);
 }
+/* The sentence under the h1 that says what multiplayer means. It carries the
+   rotating term, so it is set larger than the lede and in the display face. */
+.v2-landing__bring {
+  margin: 0;
+  max-width: 900px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: clamp(24px, 2.8vw, 36px);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--v2-on-accent, #ffffff);
+}
+/* The rotator's slot is as wide as its widest term, so an inline suffix left a
+   gap after a short term and sat below the line's baseline at 1440. The suffix
+   takes its own line at every width, which also keeps one height per term. */
+.v2-landing__bring .v2-landing__title-suffix { display: block; margin-left: 0; }
 .v2-landing__lede {
   margin: 0;
   max-width: 780px;
@@ -793,6 +809,10 @@
   line-height: 32px;
   color: var(--v2-text-secondary);
 }
+/* The research section's one link: accent text, underlined on hover. The
+   `.v2-root` prefix (0,2,0) beats `.v2-root a { color: inherit }` (0,1,1). */
+.v2-root .v2-landing__study-link { color: var(--v2-accent); font-weight: 600; text-decoration: none; }
+.v2-root .v2-landing__study-link:hover { text-decoration: underline; }
 
 /* How-it-works steps. The card treatment is gone: on the board a step is a
    number and a copy column, so the 28px track is the number's own width and
@@ -1196,12 +1216,13 @@
   background: var(--v2-text-primary);
 }
 
-/* ---------- Pricing tiers ---------- */
+/* ---------- Pricing tiers ----------
+   Two free tiers since the paid tier ended: self-host and the hosted instance. */
 .v2-landing__tiers {
   max-width: 1312px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -1216,11 +1237,6 @@
   border-radius: var(--v2-radius-lg);
   text-align: left;
 }
-/* Featured tier: a 2px cobalt rule, and the padding drops by the extra pixel
-   so Pro's contents stay on the same lines as the two beside it. Still
-   borders-not-shadows; no elevation. The name carries the cobalt too. */
-.v2-landing__tier--featured { border: 2px solid var(--v2-accent); padding: 31px; }
-.v2-landing__tier--featured .v2-landing__tier-name { color: var(--v2-accent); }
 .v2-landing__tier-name {
   font-family: var(--v2-font-mono);
   font-size: 12px;
@@ -1251,32 +1267,10 @@
   color: var(--v2-text-tertiary);
 }
 .v2-landing__tier-note { margin: 12px 0 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
-/* Pro's button is the section's one cobalt fill; the colour carries it, at the
-   base key's size and weight like the bordered ones. */
+/* The hosted tier's button is the section's one cobalt fill; the colour carries
+   it, at the base key's size and weight like the bordered one. */
 .v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; }
 
-/* Enterprise is a row, not a third box: same frame as the lists above it. */
-.v2-landing__tier-enterprise {
-  max-width: 1312px;
-  margin: 12px auto 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 24px;
-  padding: 18px 24px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  font-size: 16px;
-  line-height: 26px;
-  color: var(--v2-text-secondary);
-}
-.v2-landing__tier-enterprise strong {
-  font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--v2-text-primary);
-}
 .v2-landing__price-foot {
   max-width: 1312px;
   margin: 24px auto 0;
@@ -1396,7 +1390,6 @@
      one-column group above; its rows become a column instead — a layer's title
      sits over its own text rather than in a track beside it. */
   .v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-  .v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }
   /* Row E: at 64 the close's first line is 820.7 wide, so "chat." orphans below
      a viewport of 869 — it steps down here. The footer's column track moves
      under the wordmark and the four columns pair into 2×2. */
@@ -1478,8 +1471,8 @@
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
   /* TASK-213 (option 1): on a phone the suffix takes its own
-     line, so the title is 「与你的 / <term> / 对话」 at every width and only the
-     term rotates. Without this the h1 is 94.6px under three of the four terms
+     line, so the hero sentence (under the h1 since the multiplayer h1) is
+     「把 / <term> / 带进同一个 Pod。」 at every width and only the term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
      section below jumped 46px once per cycle (measured on main abe19fe0 and
      again on #2033). `margin-left: 0` is part of the rule rather than tidying:
@@ -1533,10 +1526,8 @@
   .v2-landing__proof-stat { gap: 6px; }
   .v2-landing__proof-num { font-size: 36px; line-height: 36px; }
   .v2-landing__tier { padding: 24px; }
-  .v2-landing__tier--featured { padding: 23px; }
   .v2-landing__tier-price { font-size: 44px; line-height: 44px; }
   .v2-landing__price-list { margin: 24px 0 24px; }
-  .v2-landing__tier-enterprise { padding: 16px 18px; }
   .v2-landing__price-foot { margin-top: 20px; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
@@ -1739,6 +1730,7 @@
    here, because a number in this comment is one more thing that goes stale). */
 :lang(zh) .v2-landing__brand-name,
 :lang(zh) .v2-landing__title,
+:lang(zh) .v2-landing__bring,
 :lang(zh) .v2-landing__feature-title,
 :lang(zh) .v2-landing__wedge-line,
 :lang(zh) .v2-landing__h2,
@@ -1751,7 +1743,6 @@
 :lang(zh) .v2-landing__tile-title,
 :lang(zh) .v2-landing__proof-num,
 :lang(zh) .v2-landing__tier-price,
-:lang(zh) .v2-landing__tier-enterprise strong,
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }
@@ -1800,13 +1791,11 @@
 /* zh terms break only between words (keep-all); the ZWSP in eachOwnAgent is the
    one permitted break point, so 每个人 / 自己的智能体 at 320. */
 :lang(zh) .v2-landing__rotator { word-break: keep-all; }
-/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shares line 2
-   with 队友的智能体 and wraps for the other two terms, so the h1 jumped 63–84px on
-   every rotation. The suffix takes its own line in that band, as TASK-213 does on
-   phones. Measured steady from 320 to 1920 with this rule; en has no suffix element. */
+/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shared line 2
+   with 队友的智能体 and wrapped for the other two terms, so the hero sentence (then
+   the h1) jumped 63–84px on every rotation. The suffix takes its own line in that
+   band, as TASK-213 does on phones; `.v2-landing__bring` now sets it on its own line
+   at every width, so this band rule is belt and braces. */
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }
-/* Hero option 1 (short line, rotating term): the suffix always takes its own
-   line, so the h1 keeps one height under every term at 320, 390 and 1440. */
-.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }

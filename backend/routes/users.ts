@@ -32,6 +32,8 @@ const {
 } = require('../controllers/userController');
 
 const { defaultUsageEvents, privacySignal } = require('../services/usageEvents');
+// eslint-disable-next-line global-require
+const emailReturns = require('../services/emailReturnService');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const agentConnectionReadLimit = rateLimit({
@@ -181,7 +183,8 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     })
       .select(
         'botMetadata.agentName botMetadata.instanceId '
-        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt botMetadata.harnessMissing',
+        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt botMetadata.harnessMissing '
+        + 'botMetadata.listenBlocked',
       )
       .lean();
 
@@ -201,6 +204,11 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     // F457: a quick-try run that found no harness exits before it checks in.
     // Its report stands until this agent listens again after it.
     const harnessMissing: { agentName: string; instanceId: string; harness: string | null; at: string }[] = [];
+    // F515: a first run that stopped before waiting says why, by reason code,
+    // and stands until the same listen.
+    const listenBlocked: {
+      agentName: string; instanceId: string; reason: string; harness: string | null; at: string;
+    }[] = [];
     for (const agentUser of agentUsers || []) {
       const agentName = String(agentUser.botMetadata?.agentName || '').trim().toLowerCase();
       const instanceId = String(agentUser.botMetadata?.instanceId || 'default').trim().toLowerCase();
@@ -222,6 +230,18 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
           at: missingAt.toISOString(),
         });
       }
+      const blocked = (agentUser.botMetadata as any)?.listenBlocked;
+      const blockedAt = blocked?.at ? new Date(blocked.at) : null;
+      if (typeof blocked?.reason === 'string' && blockedAt && !Number.isNaN(blockedAt.getTime())
+        && (!ownListen || blockedAt > ownListen.at)) {
+        listenBlocked.push({
+          agentName: (identity as any).agentName,
+          instanceId: (identity as any).instanceId,
+          reason: blocked.reason,
+          harness: typeof blocked.harness === 'string' ? blocked.harness : null,
+          at: blockedAt.toISOString(),
+        });
+      }
     }
 
     return res.json({
@@ -239,6 +259,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         podId: latestConnection.identity.podId,
       } : null,
       ...(harnessMissing.length ? { harnessMissing } : {}),
+      ...(listenBlocked.length ? { listenBlocked } : {}),
     });
   } catch (error) {
     console.error('Error reading agent connection status:', error);
@@ -276,7 +297,7 @@ router.post('/me/timezone', profileWriteIngressLimit, auth, profileWriteUserLimi
 });
 
 // GET/PUT /me/usage-events: the Settings switch for product usage events
-// (D286). Unset follows the region: off in the EU, EEA and UK until the person
+// Unset follows the region: off in the EU, EEA and UK until the person
 // turns it on, on elsewhere. A DNT or GPC signal keeps recording off whatever
 // the switch says, and the reply says so, so the page can tell the person why.
 // Ahead of auth and keyed by the Cloudflare address, the shape CodeQL reads as
@@ -322,6 +343,24 @@ router.put('/me/usage-events', usageSettingLimit, profileWriteIngressLimit, auth
     console.warn('[users] usage setting write failed:', (error as Error).message);
     return res.status(500).json({ msg: 'Failed to save the setting' });
   }
+});
+
+// POST /me/email-return { tag }: the app shell saw ?em=<kind>.<send id> on a
+// signed-in load (F519). Recorded only for the email's own recipient, once,
+// and only when usage events are on for this person under the same rules as
+// above (the switch, the regional default, DNT/GPC). 204 either way, so the
+// reply says nothing about whether a tag exists.
+router.post('/me/email-return', usageSettingLimit, auth, async (req: any, res: any) => {
+  try {
+    const user = await User.findById(req.userId).select('preferences isBot').lean();
+    const state = user && !user.isBot ? usageEventsState(req, user.preferences?.usageEvents) : null;
+    if (state?.usageEvents && !state.browserSignal) {
+      await emailReturns.recordEmailReturn(req.userId, req.body?.tag);
+    }
+  } catch (error) {
+    console.warn('[users] email return failed:', (error as Error).message);
+  }
+  return res.status(204).end();
 });
 
 module.exports = router;

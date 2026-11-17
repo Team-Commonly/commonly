@@ -388,7 +388,7 @@ describe('V2PodsSidebar — direction C', () => {
     expect(document.querySelector('.v2-pods-aside--page')).toBeTruthy();
   });
 
-  test('the phone page folds search behind its title-bar icon, and closing it keeps focus (D223)', () => {
+  test('the phone page folds search behind its title-bar icon, and closing it keeps focus', () => {
     renderSidebar(fleet, null, { variant: 'page' });
     const toggle = document.querySelector<HTMLButtonElement>('.v2-pods__search-open');
     expect(screen.queryByRole('searchbox')).toBeNull();
@@ -464,7 +464,7 @@ describe('V2PodsSidebar — direction C', () => {
     mockPinned.add('sharpen');
     renderSidebar(fleet, null);
     // A screen reader reaches each pin by swiping, without the press and hold
-    // (Cofounder 11-04): never aria-hidden, never out of the tab order, and named
+    // (decided 11-04): never aria-hidden, never out of the tab order, and named
     // for the pod it pins so one row's pin is told from the next.
     const pins = screen.getAllByRole('button', { name: /^(Pin|Unpin) / });
     expect(pins).toHaveLength(8);
@@ -505,7 +505,7 @@ describe('V2PodsSidebar — direction C', () => {
       fireEvent.pointerUp(row, { pointerType: 'touch' });
       fireEvent.click(row);
       expect(screen.getByTestId('current-path').textContent).toBe(before);
-      // A tap on the revealed pin pins the pod, still without opening it (Cofounder 11-04:
+      // A tap on the revealed pin pins the pod, still without opening it (decided 11-04:
       // press and hold is how a touch user pins).
       mockTogglePin.mockClear();
       fireEvent.pointerDown(pin, { pointerType: 'touch' });
