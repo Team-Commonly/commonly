@@ -167,7 +167,9 @@ router.post('/run-stopped', rateLimit({
   keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
   handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
 }), async (req: any, res: any) => {
-  const reason = String(req.body?.reason || '');
+  // Strings only: String() on a crafted object ({ toString: null }) throws
+  // here, before the try, in a handler anyone can call.
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
   const agentName = typeof req.body?.agentName === 'string' ? req.body.agentName.toLowerCase() : '';
   if (!RUN_STOP_REASONS.has(reason) || !RUN_NAME.test(agentName)) return res.status(204).end();
   const platform = RUN_PLATFORMS.has(req.body?.platform) ? req.body.platform : null;

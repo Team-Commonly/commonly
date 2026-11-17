@@ -100,6 +100,9 @@ describe('POST /api/stats/run-stopped (F551)', () => {
     ['a missing name', { reason: 'no-token' }],
     ['a name sent as an array', { reason: 'no-token', agentName: ['a1'] }],
     ['a name sent as an object', { reason: 'no-token', agentName: { $ne: '' } }],
+    ['a reason sent as an array', { reason: ['no-token'], agentName: 'a1' }],
+    // String() on this throws, which before the 204 left the request hanging.
+    ['a reason object String() cannot convert', { reason: { toString: null }, agentName: 'a1' }],
   ])('drops %s without a lookup, still 204', async (_label, body) => {
     const res = await post(body);
     await settle();
