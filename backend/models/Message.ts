@@ -4,7 +4,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 // regex-sniffed out of `content`. The union and the schema enum below are
 // declared independently — change BOTH.
 export type MessageType = 'text' | 'image' | 'system' | 'card';
-export type MessageAuthorKind = 'kernel' | null;
+type MessageAuthorKind = 'kernel' | null;
 
 export interface IMessage extends Document {
   podId: Types.ObjectId;
@@ -13,7 +13,7 @@ export interface IMessage extends Document {
   messageType: MessageType;
   /** Trusted Commonly-authored prose posted beside an agent identity. */
   authorKind?: MessageAuthorKind;
-  // D245: the optional message contract (services/messageContract.ts).
+  // The optional message contract (services/messageContract.ts).
   summary?: string | null;
   receipt?: unknown;
   kind?: string | null;
@@ -55,7 +55,7 @@ const MessageSchema = new Schema<IMessage>({
   // Ordinary human and agent posts remain null.
   authorKind: { type: String, enum: ['kernel', null], default: null },
   summary: { type: String },
-  // D245 item 4: self-reported BYO receipt (services/byoReceipt.ts).
+  // Self-reported BYO receipt (services/byoReceipt.ts).
   receipt: { type: Object },
   kind: { type: String },
   payload: { type: Schema.Types.Mixed },

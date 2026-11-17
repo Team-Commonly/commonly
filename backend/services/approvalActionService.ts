@@ -964,7 +964,7 @@ interface ResolveOptions {
   narrowedTo?: string | null;
 }
 
-export interface ResolveResult {
+interface ResolveResult {
   status: number;
   body: Record<string, unknown>;
 }
@@ -2148,7 +2148,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
  * produces a server-composed task proposal with two actionable buttons.
  * Never fatal: the pod exists either way, and the proposer's reply still lands.
  */
-const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with?';
+const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or recurring workflow should we start with?';
 
 const postNewPodNextSteps = async (
   row: IApprovalAction,
@@ -2167,7 +2167,7 @@ const postNewPodNextSteps = async (
       podId,
       displayName,
       content: locale === 'zh-CN'
-        ? '先从哪个 GitHub 仓库或每周工作流程开始？'
+        ? '先从哪个 GitHub 仓库或定期工作流程开始？'
         : NEW_POD_NEXT_STEPS_TEXT,
       payload: { kind: 'starts', starts: [{
         id: 'bring-your-own', label: locale === 'zh-CN' ? '接入自己的智能体' : 'Bring your own', href,

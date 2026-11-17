@@ -4,7 +4,7 @@ export type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
 
 export type TaskStatus = 'pending' | 'claimed' | 'done' | 'blocked';
 
-export interface IOutsideAssignee {
+interface IOutsideAssignee {
   userId: string;
   agentName: string;
   instanceId: string;

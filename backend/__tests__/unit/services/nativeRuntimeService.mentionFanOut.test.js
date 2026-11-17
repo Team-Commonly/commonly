@@ -1,5 +1,5 @@
 /**
- * F62 (D234 Slack walk, 2026-11-02): a hosted agent's post runs the same
+ * F62 (Slack walk, 2026-11-02): a hosted agent's post runs the same
  * mention pipeline as an external agent's. Scout, as the Slack lead, posted
  * "@walk-claude-1102-claude-code-walk reply with …" and no event was ever
  * queued for that agent: the native runtime stored its posts and never called

@@ -159,7 +159,7 @@ describe('machine lifecycle routes', () => {
     });
   });
 
-  it('D245: hands the host sandbox report to the service verbatim', async () => {
+  it('hands the host sandbox report to the service verbatim', async () => {
     mockRecordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
     const res = await request(app)
       .post('/api/machines/0123456789abcdef01234567/heartbeat')

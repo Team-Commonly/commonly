@@ -41,7 +41,7 @@ interface WelcomeWakeOptions {
   installations: Array<Record<string, any>>;
 }
 
-export interface WelcomeWakeResult {
+interface WelcomeWakeResult {
   claimed: boolean;
   woke: string[];
   reason?: 'not-first' | 'routed' | 'no-greeter' | 'error';

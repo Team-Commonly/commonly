@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // Counted in Redis, so the budgets below hold across replicas, not per pod.
 const { SharedRateLimitStore } = require('../middleware/sharedRateLimitStore');
+const { secondsUntilReset } = require('../middleware/rateLimitObserver');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const { loginEmailOf } = require('../utils/loginEmail');
@@ -74,8 +75,23 @@ function requireBrowserJwt(req: AuthReq, res: Res): boolean {
 // `X-Forwarded-For` once `app.set('trust proxy', true)` is enabled. Skipped
 // under NODE_ENV=test so the suites that hammer these endpoints in tight loops
 // don't get throttled.
-const rateLimitHandler = (message: string) => (_req: unknown, res: Res) =>
-  res.status(429).json({ message, code: 'rate_limited' });
+//
+// The body says when to try again (`retryAfterSeconds`, from the limiter's
+// window) and what was counted (`scope`: this network, or failed sign-ins for
+// one address), so a page can say both in its own words without showing
+// `message`, which is for logs and API callers.
+const rateLimitHandler = (message: string, scope: 'network' | 'account' = 'network') => (
+  req: { rateLimit?: { resetTime?: unknown } },
+  res: Res,
+) => {
+  const retryAfterSeconds = secondsUntilReset(req.rateLimit?.resetTime, new Date());
+  return res.status(429).json({
+    message,
+    code: 'rate_limited',
+    scope,
+    ...(retryAfterSeconds === null ? {} : { retryAfterSeconds }),
+  });
+};
 
 // Account creation is rare — 10/hour/IP blocks signup-spam while leaving room
 // for shared-IP households and the odd retry.
@@ -119,7 +135,7 @@ const loginAccountLimiter = rateLimit({
   skipSuccessfulRequests: true,
   skip: (req: { body?: { email?: unknown } }) => process.env.NODE_ENV === 'test' || !loginEmailOf(req.body),
   keyGenerator: loginEmailRateLimitKeyGenerator,
-  handler: rateLimitHandler('rate limit exceeded: 10 failed sign-ins for this address per 15 minutes'),
+  handler: rateLimitHandler('rate limit exceeded: 10 failed sign-ins for this address per 15 minutes', 'account'),
 });
 
 // Device start mints a server-side authorization request; poll needs room for

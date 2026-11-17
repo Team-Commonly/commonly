@@ -8,10 +8,10 @@ import { issueDaemonCredential } from './daemonCredentialService';
 
 // A daemon reports regularly; read paths derive offline from the last report
 // rather than writing stale state merely because somebody opened the page.
-export const MACHINE_OFFLINE_AFTER_MS = 90_000;
-export const MAX_MACHINES_PER_OWNER = 20;
+const MACHINE_OFFLINE_AFTER_MS = 90_000;
+const MAX_MACHINES_PER_OWNER = 20;
 
-export interface MachineView {
+interface MachineView {
   id: string;
   machineId: string;
   name: string;
@@ -23,7 +23,7 @@ export interface MachineView {
   agentStates: IMachineAgentState[];
   runtimeInventory: HarnessInventory[];
   inventoryAt: Date | null;
-  // D245: this computer's daemon reported running agents without a sandbox.
+  // This computer's daemon reported running agents without a sandbox.
   hostUnconfined: boolean;
   // The CLI version its daemon last reported running (TASK-784's host report),
   // or null for a daemon too old to report one. The BYO page offers a second
@@ -59,7 +59,7 @@ export function normalizeAgentStates(raw: unknown): IMachineAgentState[] | null 
     .filter((entry): entry is IMachineAgentState => entry !== null);
 }
 
-// TASK-784 (D164): what a daemon says its computer runs. Every field is
+// TASK-784: what a daemon says its computer runs. Every field is
 // checked against a fixed shape, and anything else is dropped, so the row can
 // only ever hold a platform name, a number, an arch name and a version: no
 // hostname, path or user name, whatever a caller sends. The names are Node's
@@ -126,7 +126,7 @@ export async function noteMachineAnswered(
   }
 }
 
-export interface MachineListView {
+interface MachineListView {
   machines: MachineView[];
   offlineAfterMs: number;
 }
@@ -282,12 +282,12 @@ export async function machineHasLiveAuthorization(
   });
 }
 
-// D245: what a daemon says about its host's confinement on each check-in.
+// What a daemon says about its host's confinement on each check-in.
 // Both native-Windows values turn grant refusal on for the machine's seats:
 // 'native-windows' (no OS sandbox; Codex runs on its own profiles) and
 // 'unsandboxed-opted-in' (the user's --unsandboxed). 'default' turns it off.
 // Anything else (an older daemon sends nothing) leaves the last report standing.
-export const HOST_SANDBOX_REPORTS = {
+const HOST_SANDBOX_REPORTS = {
   unconfined: ['unsandboxed-opted-in', 'native-windows'] as readonly string[],
   confined: 'default',
 } as const;
@@ -377,8 +377,6 @@ export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTo
 }
 
 module.exports = {
-  MACHINE_OFFLINE_AFTER_MS,
-  MAX_MACHINES_PER_OWNER,
   normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,
@@ -390,7 +388,7 @@ module.exports = {
 };
 Object.assign(module.exports, exports);
 
-export interface MachinePlatformStats {
+interface MachinePlatformStats {
   total: number;
   // null is "not reported": a machine an older CLI registered and that has not
   // checked in from a newer one since.

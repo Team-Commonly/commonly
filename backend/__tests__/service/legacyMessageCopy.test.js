@@ -162,7 +162,7 @@ d('TASK-503: copy a legacy Mongo message into PostgreSQL', () => {
     expect((await pgRowsFor(doc._id))[0]).toMatchObject({ payload, author_kind: 'kernel' });
   });
 
-  test('the message contract survives the copy (D245)', async () => {
+  test('the message contract survives the copy', async () => {
     const receipt = { adapter: 'codex', turns: 1, source: 'self-reported' };
     // A Mongo document claiming another source is re-stamped on the copy.
     const doc = await insertFallback('contract', { summary: 'Fixed it', kind: 'result', receipt: { ...receipt, source: 'server' } });

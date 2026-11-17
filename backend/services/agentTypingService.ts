@@ -17,7 +17,7 @@ interface SocketIOLike {
 
 let ioRef: SocketIOLike | null = null;
 
-export interface TypingAgent {
+interface TypingAgent {
   podId: unknown;
   agentName: string;
   instanceId?: string;

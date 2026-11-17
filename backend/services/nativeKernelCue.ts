@@ -16,7 +16,7 @@ import { DIGEST_PULL_LINE } from './digestFrame';
 // what native cannot act on goes (file tools, threading fields, the MCP
 // decision-card tool) along with "post as yourself", which native enforces
 // itself; the tool-agnostic @handle rule is kept.
-export const nativePodContextFrame = (podId: string): string => (
+const nativePodContextFrame = (podId: string): string => (
   `[${KERNEL_FRAME_TAGS.podContext}: this conversation is in pod \`${podId}\`. Reply with `
   + 'commonly_post_message; it posts as you. You cannot open or attach files here: if someone '
   + 'refers to a file they shared, say so and ask them to paste its content. To ask a person '
@@ -67,7 +67,7 @@ const TOOL_NAME = /commonly_[a-z_]+/g;
 // A frame that teaches NO_REPLY keeps it. Dropping such a frame whole because
 // one sentence names a tool native lacks would also drop "return NO_REPLY as
 // your ENTIRE reply", and an agent without it posts its private reasoning
-// (AX-43). So there only the offending sentences go (Cofounder's follow-up on
+// (AX-43). So there only the offending sentences go (follow-up on
 // #2261); a frame left without NO_REPLY, or still naming a foreign tool, is
 // dropped.
 const SENTENCE_BREAK = /(?<=[.!?])\s+/;

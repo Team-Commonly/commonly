@@ -1,5 +1,5 @@
 /**
- * TASK-597 (D155, ADR-008): a workspace merge that conflicts becomes a decision
+ * TASK-597 (ADR-008): a workspace merge that conflicts becomes a decision
  * request, not a failed turn.
  *
  * A LayerFS `branch.merge` refuses atomically on a conflict: nothing is created
@@ -23,13 +23,13 @@ import type { DecisionClass } from './decisionRequestService';
 // the line and both sides as arrays of lines. A text modify/delete or
 // delete/modify carries one hunk with the kept side's lines. A binary conflict,
 // such as /.git/index, has no hunks.
-export interface WorkspaceMergeHunk {
+interface WorkspaceMergeHunk {
   line: number;
   ours: string[];
   theirs: string[];
 }
 
-export interface WorkspaceMergeConflict {
+interface WorkspaceMergeConflict {
   path: string;
   kind: string;
   blocks?: number;
@@ -41,12 +41,12 @@ export interface WorkspaceMergeConflict {
 // second arguments, each a branch name (`ref`) and the head it merged
 // (`node`). `mergeBase` is the common ancestor. `conflictsTruncated` says the
 // merge listed only some conflicting paths.
-export interface WorkspaceMergeSource {
+interface WorkspaceMergeSource {
   ref: string;
   node: string;
 }
 
-export interface WorkspaceMergeRefusal {
+interface WorkspaceMergeRefusal {
   sources: WorkspaceMergeSource[];
   mergeBase: string;
   conflicts: WorkspaceMergeConflict[];
@@ -55,13 +55,13 @@ export interface WorkspaceMergeRefusal {
 
 // The heads the person decided on. The re-run passes them back to the merge
 // (as `expect`), so it refuses if either side moved after the card was shown.
-export interface WorkspaceMergeBinding {
+interface WorkspaceMergeBinding {
   ours: WorkspaceMergeSource;
   theirs: WorkspaceMergeSource;
   mergeBase: string;
 }
 
-export interface WorkspaceConflictRequest {
+interface WorkspaceConflictRequest {
   title: string;
   question: string;
   context: string;

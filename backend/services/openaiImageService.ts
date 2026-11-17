@@ -21,7 +21,7 @@ type OpenAIImageSize =
 type OpenAIImageStyle = 'vivid' | 'natural';
 type OpenAIImageQuality = 'standard' | 'hd';
 
-export interface GenerateImageParams {
+interface GenerateImageParams {
   prompt: string;
   size?: OpenAIImageSize;
   model?: OpenAIImageModel;
@@ -29,7 +29,7 @@ export interface GenerateImageParams {
   quality?: OpenAIImageQuality;
 }
 
-export interface GeneratedImage {
+interface GeneratedImage {
   dataUri: string;
   revisedPrompt?: string;
   model: string;

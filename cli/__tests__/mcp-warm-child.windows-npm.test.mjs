@@ -1,4 +1,4 @@
-// D164: preparing Commonly's tools on native Windows. The warm runs `npm view`
+// Preparing Commonly's tools on native Windows. The warm runs `npm view`
 // and `npm install`, and on Windows `npm` is npm.cmd, which Node cannot spawn
 // without a shell (ENOENT). So the warm never finished there, and a public
 // seat refused every turn with public_mcp_unavailable: the page's Windows

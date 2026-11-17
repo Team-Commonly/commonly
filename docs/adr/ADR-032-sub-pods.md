@@ -252,7 +252,7 @@ during Phase 0. It is an operator re-membership with no code dependency.
    each seat's ambient setting?
 5. **Done without an owner.** If the owner leaves P (and so, by cascade, C), who can mark C done? The proposal is P's owner.
 
-**Proposed answers (Cofounder recommendation, for Sam to ratify at review):**
+**Proposed answers (the maintainers' recommendation, for Sam to ratify at review):**
 1. N = 5, a UI suggestion only, revisited once the after-measure is in.
 2. One level only in v1; the API refuses deeper nesting.
 3. A grant reaches a child only by attenuating the parent's grant: never wider, never a direct grant.

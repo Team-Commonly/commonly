@@ -4,6 +4,7 @@ import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import { Trans, useTranslation } from 'react-i18next';
+import { authErrorText } from '../utils/authErrorText';
 
 // Forgot-password request form. The backend always answers generically
 // (no account enumeration), so the success state is unconditional once
@@ -25,8 +26,7 @@ const V2ForgotPassword: React.FC = () => {
       await axios.post('/api/auth/forgot-password', { email: email.trim() });
       setDone(true);
     } catch (err) {
-      const e1 = err as { response?: { data?: { message?: string; error?: string } } };
-      setError(e1.response?.data?.error || e1.response?.data?.message || t('auth.forgot.errors.failed'));
+      setError(authErrorText(err, t, 'forgot'));
     } finally {
       setSubmitting(false);
     }

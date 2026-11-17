@@ -74,7 +74,7 @@ describe('per-agent Wake and Pods settings', () => {
     expect(await screen.findByLabelText("Ask me before anyone else's request runs")).toBeDisabled();
   });
 
-  it('shows all three message-wake choices without first opting in (D173)', async () => {
+  it('shows all three message-wake choices without first opting in', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
         boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,

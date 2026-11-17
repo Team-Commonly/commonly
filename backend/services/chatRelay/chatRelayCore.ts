@@ -70,7 +70,7 @@ export const relayModeOf = (integration: ChatRelayIntegration): RelayMode => (
 
 // /mute pauses ALL outbound relay to the chat, escalations and decision cards
 // included — mute means mute; /status shows it, and it self-expires.
-export const activeMuteUntil = (
+const activeMuteUntil = (
   integration: ChatRelayIntegration,
   now: Date = new Date(),
 ): Date | null => {
@@ -160,7 +160,7 @@ const muteMinutesOf = (arg?: string): number | null => {
   return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
 };
 
-export interface RelayCommandAuthority {
+interface RelayCommandAuthority {
   /**
    * Whether the platform proved the caller may change this connector's relay
    * settings. Omitted means the platform's surface already proves it (a
@@ -279,7 +279,7 @@ export interface ChatRelayAdapter<I extends ChatRelayIntegration = ChatRelayInte
 // different question than the gate read does: the label means "this person's
 // gate for that pod is off", not "this connector owns that pod", which is what
 // the predicate's pod-scoped arm answers.
-export const cardHoldReasonFor = (
+const cardHoldReasonFor = (
   integration: ChatRelayIntegration,
   podId: string,
 ): 'paused' | 'gate_off' | null => {
@@ -312,7 +312,7 @@ const recordCardVerdict = async (
  * deciders goes to every bound chat, as before. A card with deciders goes only
  * to a chat whose linked Commonly user is one of them.
  */
-export const cardIsForIntegration = (
+const cardIsForIntegration = (
   card: DecisionRelayCard | undefined,
   integration: { config?: object | null } | null | undefined,
 ): boolean => {
@@ -323,7 +323,7 @@ export const cardIsForIntegration = (
   return card.deciders.some((decider) => String(decider.userId) === String(linked));
 };
 
-export const podLinkFor = (podId: string, podMessageId?: string | null, card?: DecisionRelayCard): string => {
+const podLinkFor = (podId: string, podMessageId?: string | null, card?: DecisionRelayCard): string => {
   const base = publicAppUrl();
   return card && podMessageId
     ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
@@ -442,7 +442,7 @@ export interface InboundRelayAdapter<I = any, E = any> {
  * `chatId`, and both are honest only in a 1:1 private chat (#1289 inbound,
  * F2 outbound). A row with no `chatId` yet has nothing to judge.
  */
-export const PRIVATE_CHAT_LIVE_RELAY_REFUSAL = 'Live relay requires a private chat with the bot; '
+const PRIVATE_CHAT_LIVE_RELAY_REFUSAL = 'Live relay requires a private chat with the bot; '
   + 'this connector is bound to a group';
 export const privateChatLiveRelayRefusal = (row: LiveRelayRow): string | null => {
   const config = row.config || {};
@@ -504,7 +504,7 @@ const assertProvenSender = (sender: ProvenSender): string => {
  * Keyed by the integration as well, because one message reaches every row
  * bound to its channel and each row's pod should get it once.
  */
-export const INBOUND_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+const INBOUND_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
 export const claimInboundMessage = async (
   provider: string,
   integrationId: unknown,
@@ -515,7 +515,7 @@ export const claimInboundMessage = async (
   return claimDelivery(provider, `inbound:${String(integrationId)}:${externalMessageId}`, INBOUND_CLAIM_TTL_MS);
 };
 
-export interface InboundAuthor {
+interface InboundAuthor {
   pod: { type?: string; members?: unknown[] };
   linkedUser: { username?: string; profilePicture?: string };
 }

@@ -11,7 +11,7 @@ import getApiBaseUrl from '../../utils/apiBaseUrl';
 export const daemonSetupCommand = (apiUrl: string = getApiBaseUrl()): string =>
   `npx -y @commonlyai/cli@latest daemon setup --instance ${apiUrl.replace(/\/+$/, '')}`;
 
-export type DaemonSetupOs = 'unix' | 'windows';
+type DaemonSetupOs = 'unix' | 'windows';
 
 // The line for the computer being set up. On Windows it names npx.cmd:
 // PowerShell runs the .ps1 shim for a bare `npx`, and Windows 11's default

@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D288: the owner of a fresh workspace sees the Get started bar in place of
+// The owner of a fresh workspace sees the Get started bar in place of
 // the board chip; anyone else, or a pod whose steps are done, keeps the chip.
 // Step 1 opens Bring your own; step 2 opens the composer on the person's agent.
 import React from 'react';
@@ -13,10 +13,13 @@ jest.mock('../../context/SocketContext', () => ({
 }));
 
 let mockTasks = [];
+let mockAgentStates = [];
+let mockPost = null;
 jest.mock('axios', () => {
   const mock = {
-    get: jest.fn((url) => Promise.resolve({ data: String(url).startsWith('/api/v1/tasks/') ? { tasks: mockTasks } : {} })),
-    post: jest.fn(() => Promise.resolve({ data: {} })),
+    get: jest.fn((url) => Promise.resolve({ data: String(url).startsWith('/api/v1/tasks/') ? { tasks: mockTasks }
+      : String(url).endsWith('/agent-states') ? { agents: mockAgentStates } : {} })),
+    post: jest.fn((url) => (mockPost && String(url) === '/api/hosted/welcome-start' ? mockPost() : Promise.resolve({ data: {} }))),
     patch: jest.fn(),
     delete: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
@@ -51,11 +54,11 @@ const starterTasks = (connect, firstTask) => [
   { status: 'pending', sourceRef: 'onboarding:invite-teammate' },
 ];
 
-const renderThread = ({ owner = 'u1', agents = [] } = {}) => {
+const renderThread = ({ owner = 'u1', agents = [], messages = [] } = {}) => {
   const detail = {
     pod: { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: owner },
     members: [{ _id: 'u1', username: 'alice', isBot: false }],
-    messages: [],
+    messages,
     agents,
     sendMessage: jest.fn(),
     loading: false,
@@ -77,9 +80,55 @@ const renderThread = ({ owner = 'u1', agents = [] } = {}) => {
 
 const boardChips = () => document.querySelectorAll('button.v2-pod-header__board');
 
-const ByoPage = () => <p>byo page pod={new URLSearchParams(useLocation().search).get('pod')}</p>;
+const ByoPage = () => {
+  const params = new URLSearchParams(useLocation().search);
+  return <p>byo page pod={params.get('pod')} name={params.get('name') || ''} reconnect={params.get('reconnect') || ''}</p>;
+};
 
-describe('V2Thread Get started bar (D288)', () => {
+afterEach(() => { mockAgentStates = []; mockPost = null; });
+
+describe('V2Thread Get started bar', () => {
+  // F516: an owner who made an agent and never ran its command comes back to
+  // that agent by name, and step 1 opens that agent's page, not a blank form.
+  test('an agent of theirs that never connected is named, and step 1 opens its connect page', async () => {
+    mockTasks = starterTasks(false, false);
+    mockAgentStates = [
+      { agentName: 'scout', instanceId: 'default', state: 'listening', isOwner: false },
+      { agentName: 'walk-pending', instanceId: 'default', displayName: 'Walk Pending', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(step).toHaveTextContent('Finish connecting Walk Pending'));
+    fireEvent.click(step);
+    expect(await screen.findByText(/^byo page/)).toHaveTextContent('byo page pod=pod-1 name=walk-pending reconnect=1');
+  });
+
+  test('once step 1 is done, its row never reads "Finish connecting"', async () => {
+    mockTasks = starterTasks(true, false);
+    mockAgentStates = [
+      { agentName: 'walk-pending', instanceId: 'default', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(require('axios').default.get).toHaveBeenCalledWith('/api/pods/pod-1/agent-states', expect.anything()));
+    expect(step).toHaveTextContent('Connect your first agent');
+    expect(step).not.toHaveTextContent('Finish connecting');
+  });
+
+  test('someone else\'s unconnected agent, or one with no connect path, keeps the plain step', async () => {
+    mockTasks = starterTasks(false, false);
+    mockAgentStates = [
+      { agentName: 'theirs', instanceId: 'default', state: 'never-connected', isOwner: false, connectPodId: 'pod-1' },
+      { agentName: 'mine-no-path', instanceId: 'default', state: 'never-connected', isOwner: true },
+    ];
+    renderThread();
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(require('axios').default.get).toHaveBeenCalledWith('/api/pods/pod-1/agent-states', expect.anything()));
+    expect(step).toHaveTextContent('Connect your first agent');
+    fireEvent.click(step);
+    expect(await screen.findByText(/^byo page/)).toHaveTextContent('byo page pod=pod-1 name= reconnect=');
+  });
+
   test('the owner with both steps open sees the bar and no board chip; step 1 opens Bring your own', async () => {
     mockTasks = starterTasks(false, false);
     renderThread();
@@ -136,5 +185,76 @@ describe('V2Thread Get started bar (D288)', () => {
     renderThread();
     await waitFor(() => expect(boardChips().length).toBeGreaterThan(0));
     expect(screen.queryByTestId('get-started')).not.toBeInTheDocument();
+  });
+});
+
+// The PH walk (2026-11-14): the bar and Scout's welcome named different first
+// steps. Both now follow one pick.
+describe('the bar and Scout\'s welcome name the same first step', () => {
+  const welcome = {
+    id: 'welcome', pod_id: 'pod-1', user_id: 'scout-1', content: "I'm Scout.", message_type: 'text',
+    created_at: '2026-11-14T10:00:00.000Z', user: { username: 'scout', isBot: true },
+    payload: { kind: 'starts', starts: [
+      { id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' },
+      { id: 'ask-scout', label: 'Show me what you can do' },
+      { id: 'connect-agent', label: 'Connect an agent I already use' },
+    ] },
+  };
+  const inked = () => [...document.querySelectorAll('.v2-chat__start--primary')].map((key) => key.textContent);
+
+  test('no pick: the bar offers both choices and Scout inks the same two', async () => {
+    mockTasks = starterTasks(false, false);
+    renderThread({ messages: [welcome] });
+    expect(await screen.findByTestId('get-started-choice')).toBeInTheDocument();
+    expect(screen.getByTestId('get-started-run-hosted')).toHaveTextContent('Run an agent here');
+    expect(screen.getByTestId('get-started-connect')).toHaveTextContent('Connect your own agent');
+    expect(inked()).toEqual(['Run an agent here', 'Connect an agent I already use']);
+  });
+
+  test('asked to connect their own: the bar\'s step 1 is connecting, and the hosted start is no longer inked', async () => {
+    mockTasks = starterTasks(false, false);
+    const asked = {
+      id: 'mine', pod_id: 'pod-1', user_id: 'u1', content: 'Connect an agent I already use', message_type: 'text',
+      created_at: '2026-11-14T10:01:00.000Z', user: { _id: 'u1', username: 'alice', isBot: false },
+    };
+    renderThread({ messages: [welcome, asked] });
+    const step = await screen.findByTestId('get-started-connect');
+    expect(step).toHaveTextContent('Connect your first agent');
+    expect(screen.queryByTestId('get-started-choice')).not.toBeInTheDocument();
+    expect(inked()).toEqual(['Open Bring your own']);
+  });
+
+  test('a hosted start from the bar shows "Starting…" in the bar and takes no second press', async () => {
+    mockTasks = starterTasks(false, false);
+    mockPost = () => new Promise(() => {});
+    renderThread({ messages: [welcome] });
+    fireEvent.click(await screen.findByTestId('get-started-run-hosted'));
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(step).toHaveTextContent('Starting'));
+    expect(step).toBeDisabled();
+    expect(step).toHaveAttribute('aria-busy', 'true');
+  });
+
+  test('a hosted start that fails leaves both choices, so connecting their own is still offered', async () => {
+    mockTasks = starterTasks(false, false);
+    mockPost = () => Promise.reject(Object.assign(new Error('refused'), { response: { status: 409, data: { code: 'hosted_cap_reached' } } }));
+    renderThread({ messages: [welcome] });
+    fireEvent.click(await screen.findByTestId('get-started-run-hosted'));
+    await waitFor(() => expect(document.querySelector('.v2-chat__start-note--error')).not.toBeNull());
+    expect(screen.getByTestId('get-started-choice')).toBeInTheDocument();
+    expect(screen.getByTestId('get-started-connect')).toHaveTextContent('Connect your own agent');
+    expect(inked()).toEqual(['Run an agent here', 'Connect an agent I already use']);
+  });
+
+  test('an agent of theirs waiting to connect counts as picking bring-your-own', async () => {
+    mockTasks = starterTasks(false, false);
+    mockAgentStates = [
+      { agentName: 'walk-pending', instanceId: 'default', displayName: 'Walk Pending', state: 'never-connected', isOwner: true, connectPodId: 'pod-1' },
+    ];
+    renderThread({ messages: [welcome] });
+    const step = await screen.findByTestId('get-started-connect');
+    await waitFor(() => expect(step).toHaveTextContent('Finish connecting Walk Pending'));
+    expect(screen.queryByTestId('get-started-choice')).not.toBeInTheDocument();
+    expect(inked()).toEqual(['Connect an agent I already use']);
   });
 });

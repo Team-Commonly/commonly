@@ -10,7 +10,7 @@
 // none, is the platform's. A payload naming no kind is not: a native run
 // stamps `{ runId, runPodId }` on the agent's own replies.
 
-export type PlatformAuthoredKind = 'system_line' | 'platform_post';
+type PlatformAuthoredKind = 'system_line' | 'platform_post';
 
 interface MessageShape {
   message_type?: string | null;

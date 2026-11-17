@@ -49,7 +49,7 @@ describe('V2Inspector', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Most cases read a group's content, so they start with every group open.
-    // The fold itself is covered by the 'D215 panel fold' cases below.
+    // The fold itself is covered by the 'panel fold' cases below.
     sessionStorage.setItem(INSPECTOR_OPEN_KEY, JSON.stringify(['needs-you', 'agents', 'files', 'join']));
     mockPatch.mockResolvedValue({ id: 'pod-1', joinPolicy: 'invite-only' });
     mockGet.mockImplementation((url: string) => {
@@ -70,7 +70,7 @@ describe('V2Inspector', () => {
     });
   });
 
-  test('D215 panel fold: Needs you starts open, the rest are closed rows that open on demand', async () => {
+  test('panel fold: Needs you starts open, the rest are closed rows that open on demand', async () => {
     sessionStorage.removeItem(INSPECTOR_OPEN_KEY);
     renderInspector({
       currentUserId: 'owner-1',
@@ -168,7 +168,7 @@ describe('V2Inspector', () => {
     ]);
   });
 
-  test('the head switches between the pod and its threads, newest activity first (D215, TASK-734)', () => {
+  test('the head switches between the pod and its threads, newest activity first (TASK-734)', () => {
     const messages = [
       { id: '10', content: 'Older root', created_at: '2026-10-31T01:00:00Z', user: { username: 'ada' }, thread_root_id: null },
       { id: '11', content: 'reply', created_at: '2026-10-31T01:05:00Z', user: { username: 'bo' }, thread_root_id: 10 },

@@ -1,4 +1,4 @@
-// D245 item 4: the receipt a BYO agent's computer reports with a reply — which
+// The receipt a BYO agent's computer reports with a reply — which
 // adapter and model made it, how many turns, which tools, how long. Hosted
 // replies have a run trace the server wrote (AgentRun); a BYO reply had
 // nothing. This is the BYO side, and it is only ever what the agent's
@@ -22,7 +22,7 @@ export const RECEIPT_LIMITS = Object.freeze({
   durationMs: 24 * 60 * 60 * 1000,
 });
 
-export type ReceiptWarningCode =
+type ReceiptWarningCode =
   | 'receipt_not_object'
   | 'receipt_unknown_field'
   | 'receipt_invalid_adapter'
@@ -35,7 +35,7 @@ export type ReceiptWarningCode =
   | 'receipt_tools_truncated'
   | 'receipt_empty';
 
-export interface ReceiptWarning {
+interface ReceiptWarning {
   code: ReceiptWarningCode;
   message: string;
 }
@@ -93,7 +93,7 @@ export const normalizeReceipt = (raw: unknown): { receipt: ByoReceipt | null; wa
     if (isName(input.model, NAME, RECEIPT_LIMITS.model)) receipt.model = input.model;
     else warnings.push({ code: 'receipt_invalid_model', message: 'receipt.model must be a model id; it was not stored.' });
   }
-  // D247: the effort level the wrapper passed to its harness, as a level name.
+  // The effort level the wrapper passed to its harness, as a level name.
   if (input.effort !== undefined) {
     if (isName(input.effort, ADAPTER, RECEIPT_LIMITS.effort)) receipt.effort = input.effort;
     else warnings.push({ code: 'receipt_invalid_effort', message: 'receipt.effort must be an effort level name; it was not stored.' });

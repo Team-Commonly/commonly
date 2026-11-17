@@ -47,7 +47,7 @@ const accessPage = githubMcpAccessPage();
 
 const INSTALLATIONS_TIMEOUT_MS = 5000;
 
-// D248: a GitHub App user token reads nothing until the person installs the
+// A GitHub App user token reads nothing until the person installs the
 // App on an account and picks repositories. GET /user/installations lists the
 // installations this token can see; none means the next step is the install
 // page. Anything unreadable answers false: a wrong "no" only skips a shortcut.

@@ -1,4 +1,4 @@
-// TASK-782: the callback's reach step, beside D248's access step and on the same
+// TASK-782: the callback's reach step, beside the access step and on the same
 // harness (copied from hostedMcpConnect.accessStep.test.js), in its own file for
 // the same per-IP rate-limit reason.
 // TASK-172 slice 3: the callback. The vendor is a stub and the row is a mock,

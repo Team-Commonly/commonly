@@ -1,12 +1,12 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type DiscordPermission =
+type DiscordPermission =
   | 'read_messages'
   | 'send_messages'
   | 'read_message_history'
   | 'manage_webhooks';
 
-export interface IDiscordMessageHistory {
+interface IDiscordMessageHistory {
   messageId?: string;
   content?: string;
   author?: string;
@@ -14,7 +14,7 @@ export interface IDiscordMessageHistory {
   attachments?: string[];
 }
 
-export interface IDiscordIntegration extends Document {
+interface IDiscordIntegration extends Document {
   integrationId: Types.ObjectId;
   serverId: string;
   serverName: string;

@@ -1,4 +1,4 @@
-/* Pod chat · the pod inspector (S3c, D223 lift of the d215 chat frame and
+/* Pod chat · the pod inspector (S3c, lift of the d215 chat frame and
    the #3176 inspector frame).
 
    Source: docs/design/artboards/d215/index.html, data-surface="chat" at
@@ -128,7 +128,7 @@
   white-space: nowrap;
 }
 
-/* ---------- D215 panel fold (TASK-691) ----------
+/* ---------- design panel fold (TASK-691) ----------
    Needs you, Agents, Files and Who can join are each one 44px row at rest and
    open on demand. The section titles lost their mono captions; an icon and a
    count say the same thing. Members and manage are icon buttons in the head. */
@@ -138,7 +138,7 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  /* D215 (TASK-734): Pod | Threads on the left, the icon keys on the right.
+  /* (TASK-734): Pod | Threads on the left, the icon keys on the right.
      S3c: the frame's .ihead pads 8 10 all round. */
   padding: 8px 10px;
 }
@@ -249,7 +249,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  /* D215 .gbody: rows 2px apart. */
+  /* Design .gbody: rows 2px apart. */
   gap: 2px;
 }
 
@@ -370,7 +370,7 @@
 
 .v2-workspace-inspector__task-meta { color: var(--v2-text-muted); }
 
-/* D215 .nrow: a Needs-you item is a 32px row in ink-2 with an inbox glyph.
+/* Design .nrow: a Needs-you item is a 32px row in ink-2 with an inbox glyph.
    The frame's P1/P2 badge has no data behind it (V2AttentionItem carries no
    priority), so the agent name keeps that slot. The "N need you" link row
    above the items is not drawn and keeps its look. */

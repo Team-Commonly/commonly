@@ -10,7 +10,7 @@ import { chatRelayDirectRowTypes, chatRelayEventHandlers, chatRelayIntegrationTy
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { handleGithubGig } = require('../githubGigService');
 
-export interface ChatMessageEventPayload {
+interface ChatMessageEventPayload {
   podId: string;
   agentUsername: string;
   displayName: string;
@@ -21,7 +21,7 @@ export interface ChatMessageEventPayload {
   noOutboundRelay?: boolean;
 }
 
-export type InternalEventHandler = (
+type InternalEventHandler = (
   payload: ChatMessageEventPayload & { integration: IIntegration },
 ) => Promise<void>;
 

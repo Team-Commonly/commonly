@@ -26,6 +26,7 @@ jest.mock('axios', () => {
     get: jest.fn(() => Promise.resolve({ data: {} })),
     post: jest.fn(() => Promise.resolve({ data: {} })),
     patch: jest.fn(),
+    put: jest.fn(() => Promise.resolve({ data: {} })),
     delete: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
     interceptors: {
@@ -232,11 +233,25 @@ describe('V2Thread — a first message that asks nothing', () => {
     expect(primary[0]).toHaveTextContent(ASK);
   });
 
-  test('where the hosted start is offered, it keeps the ink key and the ask start is bordered', () => {
-    renderThread([withAsk([{ id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' }])]);
-    const primary = startsGroup().querySelectorAll('.v2-chat__start--primary');
-    expect(primary).toHaveLength(1);
-    expect(primary[0]).toHaveTextContent('Run an agent here');
+  const HOSTED = { id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' };
+
+  test('before any pick, hosting and connecting are equal ink keys, first in the row, and the ask start is bordered', () => {
+    renderThread([withAsk([HOSTED])]);
+    const primary = [...startsGroup().querySelectorAll('.v2-chat__start--primary')].map((key) => key.textContent);
+    expect(primary).toEqual(['Run an agent here', 'Connect an agent I already use']);
+    const all = [...startsGroup().querySelectorAll('.v2-chat__start')].map((key) => key.textContent);
+    expect(all.slice(0, 2)).toEqual(primary);
+  });
+
+  test('after the person asks to connect their own, the hosted start stops competing and Bring your own is the ink key', async () => {
+    const sent = {
+      id: 'mine', pod_id: 'pod-1', user_id: 'u1', content: CONNECT, message_type: 'text',
+      created_at: at(5), user: { _id: 'u1', username: 'maya', isBot: false },
+    };
+    renderThread([withAsk([HOSTED]), sent]);
+    const groups = await screen.findAllByRole('group', { name: 'Ways to start' });
+    const inked = groups.flatMap((group) => [...group.querySelectorAll('.v2-chat__start--primary')].map((key) => key.textContent));
+    expect(inked).toEqual(['Open Bring your own']);
   });
 
   test('one tap sends it as the person\'s own message', async () => {
@@ -835,5 +850,89 @@ describe("V2Thread — Scout's starts under zh-CN", () => {
       },
     }]);
     expect(screen.getByText('不用安装，它就在这里回复你。')).toBeInTheDocument();
+  });
+});
+
+describe("V2Thread — Scout's recurring workflow, as a daily run", () => {
+  const axios = jest.requireMock('axios').default;
+  const PROMPT = 'We review support tickets every Friday';
+  const SCHEDULE = { id: 'schedule-daily', label: 'Run it every day', action: 'schedule-daily', prompt: PROMPT };
+  const ADD_WORKFLOW = { ...ADD, title: `Set up a recurring workflow: ${PROMPT}`, sourceRef: undefined };
+  const own = { agentName: 'maya-claude', instanceId: 'default', displayName: 'Maya Claude', state: 'listening', isOwner: true, hosted: false };
+  const serve = (agents, schedule = null) => {
+    axios.get.mockImplementation((url) => {
+      if (typeof url === 'string' && url.endsWith('/agent-states')) return Promise.resolve({ data: { agents } });
+      if (typeof url === 'string' && url.includes('/manage-settings?')) {
+        return Promise.resolve({ data: { installations: [{ podId: 'pod-1', schedule }] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+  };
+  // The thread PUTs its read point too; only the schedule's own calls count here.
+  const scheduleCalls = () => axios.put.mock.calls.filter(([url]) => String(url).includes('/schedule?'));
+  beforeEach(() => { axios.put.mockClear(); });
+  afterEach(() => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {} }));
+    axios.put.mockImplementation(() => Promise.resolve({ data: {} }));
+  });
+
+  test("with no agent of the owner's connected here, it says it runs on an @mention and offers no schedule", async () => {
+    serve([{ ...own, isOwner: false }, { ...own, agentName: 'mine-hosted', hosted: true }]);
+    renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])]);
+    expect(await screen.findByTestId('daily-schedule-mention-only')).toHaveTextContent(
+      'This runs when someone @mentions an agent here. Connect your own agent to have it run every day.',
+    );
+    expect(screen.queryByTestId('daily-schedule-start')).not.toBeInTheDocument();
+    expect(scheduleCalls()).toHaveLength(0);
+  });
+
+  test('one click sets a daily run on the owner\'s own agent, then shows the next run and a one-click off', async () => {
+    serve([own]);
+    axios.put.mockImplementation((url, body) => Promise.resolve({ data: String(url).includes('/schedule?')
+      ? { settings: { schedule: body.enabled ? { ...body, nextRun: 'tomorrow' } : { enabled: false, time: '09:00', timezone: 'UTC', prompt: PROMPT } } } : {} }));
+    renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])]);
+    const start = await screen.findByRole('button', { name: 'Have Maya Claude run it every day at 9:00 AM' });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(start);
+    await waitFor(() => expect(scheduleCalls()).toHaveLength(1));
+    const [url, body] = scheduleCalls()[0];
+    expect(url).toBe('/api/registry/agents/maya-claude/manage-settings/pods/pod-1/schedule?instanceId=default');
+    expect(body).toEqual(expect.objectContaining({ enabled: true, time: '09:00', prompt: PROMPT }));
+    expect(typeof body.timezone).toBe('string');
+    const on = await screen.findByTestId('daily-schedule-on');
+    expect(on.textContent).toMatch(/^Maya Claude runs this every day at 9:00 AM \(.+\)\. Next run: tomorrow at 9:00 AM\.$/);
+    expect(document.body.textContent).not.toMatch(/weekly/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off the daily run' }));
+    await waitFor(() => expect(scheduleCalls()).toHaveLength(2));
+    expect(scheduleCalls()[1][1]).toEqual({ enabled: false });
+    expect(await screen.findByRole('button', { name: 'Have Maya Claude run it every day at 9:00 AM' })).toBeInTheDocument();
+  });
+
+  test('an existing daily job on another prompt is named, and setting this one says it replaces it', async () => {
+    serve([own], { enabled: true, time: '07:30', timezone: 'UTC', prompt: 'Post the standup' });
+    renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])]);
+    expect(await screen.findByRole('button', { name: 'Have Maya Claude run this every day at 9:00 AM instead' })).toBeInTheDocument();
+    expect(screen.getByText('Maya Claude already runs a different daily job here at 7:30 AM. Setting this one replaces it.')).toBeInTheDocument();
+  });
+
+  test('a failed save says so and keeps the offer', async () => {
+    serve([own]);
+    axios.put.mockImplementation((url) => (String(url).includes('/schedule?')
+      ? Promise.reject(new Error('403')) : Promise.resolve({ data: {} })));
+    renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])]);
+    const start = await screen.findByRole('button', { name: 'Have Maya Claude run it every day at 9:00 AM' });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(start);
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't set the daily run. Try again.");
+    expect(screen.getByRole('button', { name: 'Have Maya Claude run it every day at 9:00 AM' })).toBeInTheDocument();
+  });
+
+  test('someone who does not own the pod sees neither the offer nor the note', async () => {
+    serve([own]);
+    renderThread([nextSteps([ADD_WORKFLOW, BRING_OWN, SCHEDULE])], jest.fn(), { pod: { ...OWN_POD, createdBy: 'someone-else' } });
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+    expect(screen.queryByTestId('daily-schedule-start')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('daily-schedule-mention-only')).not.toBeInTheDocument();
   });
 });

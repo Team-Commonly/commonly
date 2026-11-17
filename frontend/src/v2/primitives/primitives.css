@@ -1,4 +1,4 @@
-/* TASK-730 (D223) shared primitives, lifted from the d215 artboard's product
+/* TASK-730 shared primitives, lifted from the d215 artboard's product
    CSS (docs/design/artboards/d215/index.html, `.app` block). Class names carry
    a v2p- prefix so they cannot collide with the existing v2 chip, dot, pane and
    button rules. Colours and shape come only from the --v2-* tokens in v2.css;

@@ -1,4 +1,4 @@
-# First-party usage events (D286)
+# First-party usage events
 
 Commonly records which screens signed-in people open and which buttons they press, by fixed name. Logged-out visitors are counted per page per day. It uses no third-party SDK, pixel or vendor, and never records typed text. This page covers how it works and the rules the server enforces. The setup-step records it builds on are in [byo-funnel-telemetry.md](byo-funnel-telemetry.md).
 
@@ -76,11 +76,11 @@ growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
 
 When a published page is added or removed, regenerate `backend/config/publicPages.json` from `buildPageDefinitions`. The test `the backend knows every published page path` fails until you do.
 
-## Sent by the first-run bar (D288)
+## Sent by the first-run bar
 
 `get-started-click` carries `step: connect | first-task`, one per click on the Get started bar's current step. Read it beside the starter tasks' done times to see whether the bar moved anyone.
 
-## Sent by the teammate card (D288)
+## Sent by the teammate card
 
 `teammate-card-shown` (once per pod and placement per page load), `teammate-card-click` and `teammate-card-dismiss`, each with `where: workspace | pod`. `workspace` is the card in the person's own workspace, whose press makes a new pod with their agent in it; `pod` is every other placement.
 

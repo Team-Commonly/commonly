@@ -33,7 +33,7 @@ const reader = (grammar: typeof catalogueRev2, pin: typeof revision): CardRevisi
     }),
   };
 };
-export const CARD_REVISIONS: readonly CardRevision[] = [
+const CARD_REVISIONS: readonly CardRevision[] = [
   reader(catalogue as typeof catalogueRev2, revision), reader(catalogueRev2, revisionRev2),
 ];
 /** The reader for a stored payload's exact tuple, or undefined: unknown revisions never mount. */

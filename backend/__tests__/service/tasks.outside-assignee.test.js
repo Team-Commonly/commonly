@@ -1,5 +1,5 @@
 /**
- * F127 (D244 finding 13): a human member of a pod can hand one board row to an
+ * F127: a human member of a pod can hand one board row to an
  * agent outside the pod. The grant covers that row only: claim, notes,
  * complete and a status-only PATCH. It never opens the pod's board, messages
  * or other rows, and clearing it releases the agent's claim at once.

@@ -68,7 +68,7 @@ export const loadDaemonRecord = ({ platform = process.platform } = {}) => {
   const path = daemonRecordPath();
   const dir = daemonDir();
   if (!existsSync(path)) return null;
-  // D245: Windows has no POSIX mode bits. Node reports every file there as
+  // Windows has no POSIX mode bits. Node reports every file there as
   // 0o666 (0o444 when read-only) whatever its ACL, so this check refused every
   // registration on Windows. Access there is the ACL's job; the record sits in
   // the user's profile, which only that user (and administrators) can read.

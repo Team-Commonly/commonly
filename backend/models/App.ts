@@ -1,23 +1,23 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type AppStatus = 'active' | 'disabled';
-export type AppType = 'webhook' | 'agent' | 'integration';
-export type AppConnectionType = 'stdio' | 'http' | 'websocket';
-export type AppCategory = 'productivity' | 'development' | 'analytics' | 'support' | 'communication' | 'other';
+type AppStatus = 'active' | 'disabled';
+type AppType = 'webhook' | 'agent' | 'integration';
+type AppConnectionType = 'stdio' | 'http' | 'websocket';
+type AppCategory = 'productivity' | 'development' | 'analytics' | 'support' | 'communication' | 'other';
 
-export interface IAppTool {
+interface IAppTool {
   name?: string;
   description?: string;
   inputSchema?: mongoose.Schema.Types.Mixed;
 }
 
-export interface IAppResource {
+interface IAppResource {
   uri?: string;
   name?: string;
   mimeType?: string;
 }
 
-export interface IApp extends Document {
+interface IApp extends Document {
   name: string;
   description: string;
   homepage: string;
@@ -65,7 +65,7 @@ export interface IApp extends Document {
   recordUninstall(): Promise<void>;
 }
 
-export interface IAppModel extends Model<IApp> {
+interface IAppModel extends Model<IApp> {
   findPublished(options?: { category?: string; type?: string; limit?: number }): mongoose.Query<IApp[], IApp>;
 }
 

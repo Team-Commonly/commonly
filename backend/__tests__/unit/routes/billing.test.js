@@ -54,7 +54,13 @@ const ORIGINAL_ENV = process.env;
 describe('/api/billing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...ORIGINAL_ENV, STRIPE_SECRET_KEY: 'sk_test', STRIPE_PRICE_ID: 'price_1', STRIPE_WEBHOOK_SECRET: 'whsec' };
+    process.env = {
+      ...ORIGINAL_ENV,
+      STRIPE_SECRET_KEY: 'sk_test',
+      STRIPE_PRICE_ID: 'price_1',
+      STRIPE_WEBHOOK_SECRET: 'whsec',
+      BILLING_CHECKOUT_ENABLED: 'true',
+    };
     mockSave.mockResolvedValue(undefined);
     mockCurrentUser.value = { _id: 'u-1', email: 'a@b.c', isBot: false, billing: { customerId: 'cus_1' }, save: mockSave };
     mockSessionsCreate.mockResolvedValue({ url: 'https://checkout.stripe.test/s/1' });
@@ -224,6 +230,27 @@ describe('/api/billing', () => {
       const res = await request(app).post('/api/billing/checkout').send({});
       expect(res.status).toBe(503);
       expect(mockSessionsCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  // The paid tier has ended: checkout is closed unless an operator opens it,
+  // while the portal and webhook keep working for existing subscribers.
+  describe('with checkout closed (BILLING_CHECKOUT_ENABLED unset or not "true")', () => {
+    test.each([undefined, 'false', '1', 'TRUE'])('checkout answers 410 and never reaches Stripe (%s)', async (value) => {
+      if (value === undefined) delete process.env.BILLING_CHECKOUT_ENABLED;
+      else process.env.BILLING_CHECKOUT_ENABLED = value;
+      const res = await request(app).post('/api/billing/checkout').send({});
+      expect(res.status).toBe(410);
+      expect(res.body.error).toBe('checkout_closed');
+      expect(mockSessionsCreate).not.toHaveBeenCalled();
+      expect(mockSave).not.toHaveBeenCalled();
+    });
+
+    test('the portal still opens, so a subscriber can cancel', async () => {
+      delete process.env.BILLING_CHECKOUT_ENABLED;
+      const res = await request(app).post('/api/billing/portal').send({});
+      expect(res.status).toBe(200);
+      expect(res.body.url).toContain('billing.stripe.test');
     });
   });
 

@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface INeedsYouEmail extends Document {
+interface INeedsYouEmail extends Document {
   attentionItemId: Types.ObjectId;
   recipientUserId: Types.ObjectId;
   clickToken: string;

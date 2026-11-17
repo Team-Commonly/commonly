@@ -10,9 +10,9 @@
 const HookLedgerEvent = require('../models/HookLedgerEvent');
 
 export const HOOK_EVENT_TYPES = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const;
-export type HookEventType = typeof HOOK_EVENT_TYPES[number];
+type HookEventType = typeof HOOK_EVENT_TYPES[number];
 
-export interface ActiveWorkClaim {
+interface ActiveWorkClaim {
   claimId?: string;
   agentId?: string;
   agentUserId?: string;
@@ -24,7 +24,7 @@ export interface ActiveWorkClaim {
   expiresAt?: Date | string | number;
 }
 
-export interface HookDecision {
+interface HookDecision {
   permissionDecision: 'allow' | 'deny';
   eventId: string;
   event: HookEventType;
@@ -118,7 +118,7 @@ const asPathValues = (value: unknown): string[] => {
 };
 
 /** Extract only path-shaped fields; command text is intentionally not parsed. */
-export const extractToolPaths = (payload: any): string[] => {
+const extractToolPaths = (payload: any): string[] => {
   const declared = asPathValues(payload?.paths || payload?.resolvedPaths);
   return Array.from(new Set(
     declared

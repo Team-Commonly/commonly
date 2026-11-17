@@ -47,6 +47,12 @@ jest.mock('../../../models/User', () => ({
 
 jest.mock('../../../models/AuditLog', () => ({ create: jest.fn(() => Promise.resolve()) }));
 
+const mockNoteUnsandboxed = jest.fn(() => Promise.resolve(0));
+jest.mock('../../../services/unsandboxedPodLineService', () => ({
+  ...jest.requireActual('../../../services/unsandboxedPodLineService'),
+  noteUnsandboxedPodSettingsChange: (...args) => mockNoteUnsandboxed(...args),
+}));
+
 // Route module pulls in a wide surface; stub the parts irrelevant here.
 jest.mock('../../../controllers/podController', () => ({
   updatePodParent: jest.fn(),
@@ -256,9 +262,9 @@ describe('POST /api/pods/:id/visibility', () => {
     });
   });
 
-  // Listing to Community is a paid capability (Pro). The asymmetry below is
-  // the important part: promotion is gated, demotion never is.
-  describe('Community listing is gated on the Pro entitlement', () => {
+  // Listing to Community is for admins and existing Pro accounts. The asymmetry
+  // below is the important part: promotion is gated, demotion never is.
+  describe('Community listing is gated to admins and existing Pro accounts', () => {
     const asFreeUser = () => {
       const User = require('../../../models/User');
       User.findById.mockReturnValue({
@@ -268,11 +274,12 @@ describe('POST /api/pods/:id/visibility', () => {
       });
     };
 
-    test('a free owner gets 402 and the pod is not written', async () => {
+    test('a free owner gets 403 with no upsell, and the pod is not written', async () => {
       asFreeUser();
       const res = await setVisibility('community');
-      expect(res.status).toBe(402);
-      expect(res.body.error).toBe('pro_required');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('community_listing_admin_only');
+      expect(res.body.message).not.toMatch(/paid|plan|upgrade|pro\b/i);
       expect(podSave).not.toHaveBeenCalled();
       expect(mockPod.value.communityListed).toBe(false);
     });
@@ -283,7 +290,7 @@ describe('POST /api/pods/:id/visibility', () => {
         select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve({ role: 'user' })) })),
       });
       const res = await setVisibility('community');
-      expect(res.status).toBe(402);
+      expect(res.status).toBe(403);
     });
 
     // Paywalling the exit would turn a lapsed subscription into an unwanted
@@ -310,5 +317,52 @@ describe('POST /api/pods/:id/visibility', () => {
       expect(res.status).toBe(200);
       expect(mockPod.value.communityListed).toBe(true);
     });
+  });
+});
+
+// An agent started without a sandbox answers only in an invite-only pod that
+// isn't public or listed. The owner's change that ends that is said in the pod.
+describe('a change that takes the pod out of an unsandboxed agent\'s reach', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    podSave.mockResolvedValue(undefined);
+    // eslint-disable-next-line global-require
+    const User = require('../../../models/User');
+    User.findById.mockReturnValue({
+      select: jest.fn(() => ({
+        lean: jest.fn(() => Promise.resolve({ role: 'user', entitlements: { pro: true } })),
+      })),
+    });
+  });
+
+  test('opening an invite-only pod to join is noted', async () => {
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    expect((await setJoinPolicy('open')).status).toBe(200);
+    expect(mockNoteUnsandboxed).toHaveBeenCalledWith({ podId: 'pod-1' });
+  });
+
+  test('listing an invite-only pod in Community is noted', async () => {
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    expect((await setVisibility('community')).status).toBe(200);
+    expect(mockNoteUnsandboxed).toHaveBeenCalledWith({ podId: 'pod-1' });
+  });
+
+  test.each([
+    ['closing an open pod', () => setJoinPolicy('invite-only'), { joinPolicy: 'open' }],
+    ['listing a pod that was already open', () => setVisibility('community'), { joinPolicy: 'open' }],
+    ['unlisting a pod', () => setVisibility('private'), { joinPolicy: 'invite-only', publicRead: true, communityListed: true }],
+    ['saving the same policy', () => setJoinPolicy('invite-only'), { joinPolicy: 'invite-only' }],
+  ])('%s is not', async (_what, act, over) => {
+    mockPod.value = pod(over);
+    expect((await act()).status).toBe(200);
+    expect(mockNoteUnsandboxed).not.toHaveBeenCalled();
+  });
+
+  test('a failed notice never fails the save', async () => {
+    mockNoteUnsandboxed.mockRejectedValueOnce(new Error('pg down'));
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    const res = await setJoinPolicy('open');
+    expect(res.status).toBe(200);
+    expect(podSave).toHaveBeenCalledTimes(1);
   });
 });

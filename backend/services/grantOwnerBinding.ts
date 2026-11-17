@@ -13,12 +13,12 @@ import Integration from '../models/Integration';
  * whose binding cannot be proven is left unbound. Revoke and seat-grant read
  * refuse unbound grants.
  */
-export interface GrantBindingGrant {
+interface GrantBindingGrant {
   connectionId: string;
   createdAt: Date | string;
 }
 
-export interface GrantBindingRow {
+interface GrantBindingRow {
   _id: unknown;
   installationId?: string | null;
   config?: { installationId?: string | null; linkedUserId?: unknown } | null;
@@ -26,7 +26,7 @@ export interface GrantBindingRow {
   createdAt: Date | string;
 }
 
-export interface GrantBinding {
+interface GrantBinding {
   connectionRowId: string;
   ownerId: string;
 }
@@ -69,7 +69,7 @@ export const resolveGrantBinding = (
   return ownerId ? { connectionRowId: String(row._id), ownerId } : null;
 };
 
-export interface GrantOwnerBackfillResult {
+interface GrantOwnerBackfillResult {
   scanned: number;
   bound: number;
   unbound: number;

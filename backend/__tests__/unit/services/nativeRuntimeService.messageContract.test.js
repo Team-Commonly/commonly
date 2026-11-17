@@ -80,10 +80,10 @@ const says = (content) => ({
 
 const { hostedNativeSystemPrompt } = require('../../../services/hostedEngine');
 
-// D245: hosted native posts adopt the message contract. The model sets the
+// Hosted native posts adopt the message contract. The model sets the
 // summary and kind on its own post; the runtime sets kind on the posts it
 // composes; nothing is refused for them (warn-only).
-describe('native posts carry the message contract (D245)', () => {
+describe('native posts carry the message contract', () => {
   const savedEnv = { ...process.env };
   const postOnly = { ...install, config: { ...install.config, tools: ['commonly_post_message'] } };
   beforeEach(() => {
@@ -151,7 +151,7 @@ describe('native posts carry the message contract (D245)', () => {
   });
 });
 
-describe('the hosted prompt says how a failure should read (F111, D247)', () => {
+describe('the hosted prompt says how a failure should read (F111)', () => {
   test('in plain words, leaving out runtime terms unless they were asked about', () => {
     const prompt = hostedNativeSystemPrompt('Scout');
     expect(prompt).toContain('say in plain words what didn\'t work and what they can do next');
@@ -160,7 +160,7 @@ describe('the hosted prompt says how a failure should read (F111, D247)', () => 
   });
 });
 
-describe('the hosted posting instructions cue the contract inline (D245)', () => {
+describe('the hosted posting instructions cue the contract inline', () => {
   test('names the six kinds and the one-line summary next to the post instruction', () => {
     const prompt = hostedNativeSystemPrompt('Scout');
     const postLine = prompt.split('\n').find((line) => line.includes('calling commonly_post_message once'));

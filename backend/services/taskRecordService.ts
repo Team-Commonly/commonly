@@ -7,7 +7,7 @@ import { BOARD_ACTOR, emitRecord, type RecordActor, type RecordLineInput } from 
 
 export type TaskStatus = 'pending' | 'claimed' | 'done' | 'blocked' | string;
 
-export type TaskTransition = {
+type TaskTransition = {
   podId: unknown;
   task: { _id?: unknown; taskId?: unknown; updatedAt?: Date | null } | null | undefined;
   from: TaskStatus | null | undefined;

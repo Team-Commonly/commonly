@@ -34,6 +34,7 @@ jest.mock('../../../models/AgentCredential', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
+  updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   // Non-forced issuance mints only into a token-less row, in one conditional
   // write; null means the row already holds a token. Tests that mint say so.
   mintApiTokenIfAbsent: jest.fn(() => Promise.resolve(null)),
@@ -123,6 +124,58 @@ describe('agent runtime tokens', () => {
     expect(installation.runtimeTokens.length).toBe(1);
     expect(installation.save).toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalled();
+  });
+
+  // F515/F457: key A's run reported a stop, then key B was issued 20 s later.
+  // The page's poll allows a minute of skew before B's issue, so A's report
+  // would read as B's. Minting B clears both stop reports.
+  const issueFor = async (agentUser) => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({
+      agentName: 'commonly-bot', podId: 'pod-1', instanceId: 'default', status: 'active',
+      runtimeTokens: [], save: jest.fn().mockResolvedValue(true),
+    });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    return request(server).post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens').send({ label: 'B' });
+  };
+  const keyAReported = () => ({
+    _id: 'bot-1',
+    agentRuntimeTokens: [],
+    botMetadata: { listenBlocked: { reason: 'harness-signed-out', harness: 'codex', at: new Date(Date.now() - 20_000) } },
+    save: jest.fn().mockResolvedValue(true),
+  });
+
+  it("a new key clears the last key's stop reports", async () => {
+    User.updateOne.mockClear();
+    const res = await issueFor(keyAReported());
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^cm_agent_/);
+    expect(User.updateOne).toHaveBeenCalledWith(
+      { _id: 'bot-1' },
+      { $unset: { 'botMetadata.listenBlocked': '', 'botMetadata.harnessMissing': '' } },
+    );
+  });
+
+  it('an issue that hands back no new key clears nothing', async () => {
+    User.updateOne.mockClear();
+    const agentUser = keyAReported();
+    agentUser.agentRuntimeTokens = [{ tokenHash: 'h', createdAt: new Date() }];
+    const res = await issueFor(agentUser);
+    expect(res.status).toBe(200);
+    expect(res.body.existing).toBe(true);
+    expect(User.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('a failed clear still issues the key', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    User.updateOne.mockRejectedValueOnce(new Error('mongo down'));
+    const res = await issueFor(keyAReported());
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^cm_agent_/);
+    warn.mockRestore();
   });
 
   // An agent Commonly runs in-process

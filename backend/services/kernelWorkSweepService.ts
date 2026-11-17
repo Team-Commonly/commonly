@@ -421,7 +421,7 @@ class KernelWorkSweepService {
 }
 
 // Re-exported so the wake path and any future consumer name the same actor.
-export { KERNEL_ACTOR, LIVE_STATES, MAX_RESCUE_DEFERRALS };
+export { KERNEL_ACTOR };
 export default KernelWorkSweepService;
 // CJS compat: let require() return the class directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports

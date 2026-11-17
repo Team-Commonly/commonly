@@ -19,7 +19,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
  * arrive that we cannot map to a user (unknown customer, deleted account) and
  * we still must not process it twice.
  */
-export interface IBillingEvent extends Document {
+interface IBillingEvent extends Document {
   eventId: string;
   type: string;
   customerId?: string;

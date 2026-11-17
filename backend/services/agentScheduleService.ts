@@ -37,7 +37,7 @@ export const CATCH_UP_MINUTES = 60;
 const MINUTES_PER_DAY = 24 * 60;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-export interface AgentSchedule {
+interface AgentSchedule {
   enabled: boolean;
   time: string;
   timezone: string;
@@ -113,6 +113,24 @@ export const dueDay = (schedule: Pick<AgentSchedule, 'time' | 'timezone'>, now: 
     return clock.minutes - target <= CATCH_UP_MINUTES ? clock.day : null;
   }
   return clock.minutes + MINUTES_PER_DAY - target <= CATCH_UP_MINUTES ? dayBefore(clock.day) : null;
+};
+
+/**
+ * When the dispatcher will next run this schedule, in the words a person reads:
+ * 'now' when a tick inside the catch-up window would fire it, 'today' when
+ * today's time is still ahead and today hasn't fired, otherwise 'tomorrow'.
+ * It reads `lastFiredOn` because a day that already fired (another job's
+ * included: the install has one schedule) is skipped.
+ */
+export const nextRunWhen = (
+  schedule: Pick<AgentSchedule, 'time' | 'timezone' | 'lastFiredOn'>,
+  now: Date = new Date(),
+): 'now' | 'today' | 'tomorrow' => {
+  const due = dueDay(schedule, now);
+  if (due && schedule.lastFiredOn !== due) return 'now';
+  const [hours, minutes] = schedule.time.split(':').map(Number);
+  const clock = localClock(now, schedule.timezone);
+  return clock.minutes < hours * 60 + minutes && schedule.lastFiredOn !== clock.day ? 'today' : 'tomorrow';
 };
 
 export const buildScheduleContent = (prompt: string, podId: unknown): string => [

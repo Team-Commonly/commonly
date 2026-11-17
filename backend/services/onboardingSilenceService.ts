@@ -107,7 +107,7 @@ export const SILENCE_THRESHOLD_MINUTES = Number(
 );
 
 /** "Newcomer" — how long after signup a silence still counts as onboarding. */
-export const ONBOARDING_WINDOW_DAYS = Number(
+const ONBOARDING_WINDOW_DAYS = Number(
   process.env.ONBOARDING_SILENCE_WINDOW_DAYS || 7,
 );
 
@@ -120,7 +120,7 @@ export const ONBOARDING_WINDOW_DAYS = Number(
  * makes opening idempotent — the same drop-proof-by-re-derivation argument
  * ux-lead's stalled-connect spec uses to prefer a cron over a delayed event.
  */
-export const SCAN_LOOKBACK_HOURS = Number(
+const SCAN_LOOKBACK_HOURS = Number(
   process.env.ONBOARDING_SILENCE_LOOKBACK_HOURS || 24,
 );
 
@@ -197,7 +197,7 @@ const pgQuery = async (text: string, params: unknown[]): Promise<{ rows: PgMessa
  * enqueued" (a producer bug) can be told apart from "enqueued and never acked"
  * (a runtime bug). Afterwards both look like an empty queue.
  */
-export const snapshotAgentEvents = async (
+const snapshotAgentEvents = async (
   podId: string,
   since: Date,
   until: Date,

@@ -149,6 +149,7 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     const cue = mockEnqueue.mock.calls[0][0].payload.content;
     expect(cue).toContain('Reply with exactly this one line: Design Studio is ready. Open it and answer one question to get your first task.');
     expect(cue).not.toContain('weekly workflow');
+    expect(cue).not.toContain('recurring workflow');
     expect(cue).not.toContain('in a sentence or two');
   });
 
@@ -162,6 +163,7 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     const cue = mockEnqueue.mock.calls[0][0].payload.content;
     expect(cue).toContain('Reply with exactly this one line: 设计工作室 已建好。打开它，回答一个问题，就能拿到第一个任务。');
     expect(cue).not.toContain('weekly workflow');
+    expect(cue).not.toContain('recurring workflow');
     expect(cue).not.toContain('in a sentence or two');
   });
 

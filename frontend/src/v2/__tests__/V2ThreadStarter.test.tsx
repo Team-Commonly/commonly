@@ -248,7 +248,8 @@ describe('V2Thread starter prompts', () => {
     expect(screen.getByRole('button', {
       name: "Here's what I'm working on — where can you help?",
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'What should I ask you first?' })).toBeInTheDocument();
+    // A job, not an introduction: answer from sources and cite them (Claude Tag's company-brain job).
+    expect(screen.getByRole('button', { name: 'Answer from what you can read, and link your sources:' })).toBeInTheDocument();
 
     fireEvent.click(prompt);
 
@@ -760,7 +761,7 @@ describe('second-person prompt placements', () => {
     expect(axios.get.mock.calls.filter(([url]) => url.endsWith('/invites'))).toHaveLength(0);
     expect(axios.post).not.toHaveBeenCalled();
   });
-  // D288: the person's own agent answering in the workspace offers the card,
+  // The person's own agent answering in the workspace offers the card,
   // and its press opens a new pod with that agent, never the workspace.
   test('the person\'s own agent answering in the workspace offers a card that invites into a new pod', async () => {
     const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
@@ -811,7 +812,7 @@ describe('second-person prompt placements', () => {
     const detail = withReply();
     detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
     renderChat(detail);
-    // The state read here carries no read-tracking epoch (D278), so the
+    // The state read here carries no read-tracking epoch, so the
     // viewer's own thread does not open itself: it rests as a chip.
     fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
@@ -848,7 +849,7 @@ describe('second-person prompt placements', () => {
     fireEvent.scroll(list);
   };
   // A smooth follow from the top left the edge sentinel in view, so the older page loaded and
-  // its prepend stopped the follow about 2,000px short (the D215 use walk).
+  // its prepend stopped the follow about 2,000px short (the design use walk).
   describe('opening a pod', () => {
     const scrollHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight');
     beforeEach(() => {

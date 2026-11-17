@@ -40,7 +40,7 @@ it('counts each arrival for the ref on today', async () => {
   expect(Object.keys(rows[0]).sort()).toEqual(['__v', '_id', 'count', 'createdAt', 'day', 'ref', 'updatedAt']);
 });
 
-// Cofounder on #2281: the table is bounded. A day holds at most
+// Review on #2281: the table is bounded. A day holds at most
 // VISIT_REFS_PER_DAY distinct refs; a new ref past that counts as 'other', and a
 // ref already counted that day keeps its own row.
 it('past the daily ref cap, a new ref counts as other; a known one keeps its row', async () => {
@@ -59,7 +59,7 @@ it('past the daily ref cap, a new ref counts as other; a known one keeps its row
 });
 
 // sprint-review on #2282: junk could spend a day's slots before a real campaign
-// link arrived, which was then counted as overflow. Cofounder's call: campaign
+// link arrived, which was then counted as overflow. The call: campaign
 // codes are a list (system_settings 'attribution.refs'), and they always keep
 // their own row; everything else competes for the day's cap, afresh each day.
 const today = () => new Date().toISOString().slice(0, 10);
@@ -188,7 +188,7 @@ it('an unreadable list means x', async () => {
   read.mockRestore();
 });
 
-// Cofounder on #2282: a real ref named "other" must not share the overflow row.
+// Review on #2282: a real ref named "other" must not share the overflow row.
 it('the overflow row cannot be named by a real ref', async () => {
   const day = new Date().toISOString().slice(0, 10);
   await send({ ref: 'other' });
