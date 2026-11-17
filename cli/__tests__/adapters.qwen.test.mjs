@@ -462,7 +462,7 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
           return fakeChild();
         },
       });
-      // F110 (D247 walk, 11-04): a public seat is offered the Commonly tools,
+      // F110 (11-04): a public seat is offered the Commonly tools,
       // so it must be able to call them in a non-interactive run, the way the
       // public Claude seat's --allowedTools carries mcp__commonly__*. Before,
       // commonly_post_message came back "declined, and this non-interactive

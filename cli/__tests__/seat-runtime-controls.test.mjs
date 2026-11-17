@@ -2,7 +2,7 @@ import {
   savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice,
 } from '../src/lib/seat-runtime-controls.js';
 
-describe('seat runtime controls (D247)', () => {
+describe('seat runtime controls', () => {
   test('an effort passes through when the device reported no levels', () => {
     expect(effortRefusedByDevice({ models: null, efforts: [] }, 'xhigh')).toBe(false);
     expect(effortRefusedByDevice(null, 'xhigh')).toBe(false);

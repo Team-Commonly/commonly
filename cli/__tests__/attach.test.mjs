@@ -94,7 +94,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     })).toThrow(/stub adapter can't enforce sandbox\.mode=workspace\. On macOS, these adapters can: claude, codex, goose, opencode, pi, qwen\./);
   });
 
-  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112, D247)', () => {
+  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112)', () => {
     let message = '';
     try {
       resolveAttachSandbox({ environment: { sandbox: { mode: 'read-only', trust: 'public' } }, adapterName: 'stub' });
@@ -105,7 +105,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     expect(message).not.toMatch(/needs sandbox\.trust/);
   });
 
-  test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
+  test('a public Goose seat attaches under the sandbox its adapter enforces (F113)', () => {
     // Goose confines public turns with Seatbelt or bwrap (adapters/goose.js),
     // but this gate read ADAPTERS_WITH_DEFAULT_SANDBOX, the set that receives
     // the daemon's default block. Goose is left out of that set only because a
@@ -654,7 +654,7 @@ describe('performAttach', () => {
     expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });
 
-  // D245: on native Windows a confined --env names Windows and the user's own
+  // On native Windows a confined --env names Windows and the user's own
   // opt-in, never macOS or bwrap advice. Attach still refuses there: only the
   // message changes.
   const attachConfined = async ({ adapterName, mode, platform, seatbelt, bwrap }) => {
@@ -876,6 +876,41 @@ describe('performAttach', () => {
       .rejects.toThrow(/different memory/);
     expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_old');
     expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
+  });
+
+  // F167: the narrowing confirmation the install route asks for.
+  test('--confirm-narrowing sends confirmNarrowing: true, and attach omits it by default', async () => {
+    const plain = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({ client: plain, adapterName: 'stub', agentName: 'plain', podId: 'pod-1' });
+    const plainBody = plain.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+    expect(plainBody).not.toHaveProperty('confirmNarrowing');
+
+    const confirmed = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({
+      client: confirmed, adapterName: 'stub', agentName: 'ok', podId: 'pod-1', confirmNarrowing: true,
+    });
+    expect(confirmed.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      confirmNarrowing: true,
+    }));
+  });
+
+  test('a narrowing refusal tells the person the flag, not the API field', async () => {
+    const client = makeClient();
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      if (route === '/api/registry/install') {
+        throw Object.assign(new Error('x'), {
+          status: 409,
+          body: {
+            code: 'outsider_grant_narrowing_confirm_required',
+            message: 'It would stop writing in Ops. Send confirmNarrowing: true to install anyway.',
+          },
+        });
+      }
+      return post(route, body);
+    });
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'narrow', podId: 'pod-1' }))
+      .rejects.toThrow('It would stop writing in Ops. Re-run with --confirm-narrowing to install anyway.');
   });
 
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {

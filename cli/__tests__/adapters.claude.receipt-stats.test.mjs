@@ -1,4 +1,4 @@
-// D245 item 4: the Claude adapter hands the run's own stats to the reply
+// The Claude adapter hands the run's own stats to the reply
 // receipt. Without this wiring every receipt test stays green while Claude
 // receipts lose their model, turns and tools.
 import { describe, expect, test } from '@jest/globals';

@@ -605,6 +605,37 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
   }
 });
 
+// F515: a first `agent run` that finds this computer's Node too old, or its
+// harness installed but signed out, stops before it starts waiting. It says why
+// here first, by reason code only: free text from a computer could carry a path
+// or a secret. GET /api/users/me/agent-connection and the pod's agent states
+// show it to the owner until the agent listens again.
+const LISTEN_BLOCKED_REASONS = new Set(['node-too-old', 'harness-signed-out']);
+router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body).sort();
+  const harness = typeof body.harness === 'string' ? harnessCatalogEntry(body.harness) : null;
+  const valid = keys.length === 2 && keys[0] === 'harness' && keys[1] === 'reason'
+    && LISTEN_BLOCKED_REASONS.has(body.reason)
+    // A sign-in names the harness it is about; Node names none.
+    && (body.reason === 'harness-signed-out' ? Boolean(harness) : body.harness === null);
+  if (!valid) return res.status(400).json({ code: 'invalid_listen_blocked_report' });
+  // A legacy installation token whose bot User the middleware couldn't find has
+  // no identity to hold the report: say so, not a generic 503.
+  if (!req.agentUser?._id) return res.status(401).json({ code: 'agent_identity_required' });
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, {
+      $set: {
+        'botMetadata.listenBlocked': { reason: body.reason, harness: harness ? harness.id : null, at: new Date() },
+      },
+    });
+    return res.json({ recorded: true });
+  } catch (error) {
+    console.error('Listen-blocked report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'listen_blocked_report_unavailable' });
+  }
+});
+
 // F525: the connect page's one pasted line carries a connect code, not the
 // agent's lasting key. The CLI trades it here for the key. No bearer: the
 // code is the credential, so this route has its own tight per-IP limit, and
@@ -2629,7 +2660,33 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         instanceId: installation.instanceId || 'default',
         displayName: installation.displayName,
       });
-      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
+      // F490: a reply to the message that woke this agent does not count that
+      // message as unseen. A thread read never advances the read cursor, so an
+      // agent that read only the thread and answered in it was held on its own
+      // trigger, and the hold taught it continueAnyway. Only a message a
+      // delivered event for this agent named is exempt, and only that message.
+      const answering = [req.body?.threadRootId, req.body?.replyToMessageId]
+        .filter((id) => id !== undefined && id !== null && String(id) !== '');
+      // If the lookup fails, the post goes through without the hold: with no
+      // exemption the still-unread trigger would count as unseen and hold the
+      // very reply it asked for, and a failed read fails toward delivery, never
+      // toward a reply nobody sees (CodeRabbit). The pod check above and the
+      // post's own validation still run.
+      let lookupFailed = false;
+      const exemptMessageIds = answering.length
+        ? await AgentSendFreshness.deliveredTriggerIds({
+          agentName: installation.agentName,
+          instanceId: installation.instanceId || 'default',
+          podId,
+          candidateIds: answering,
+        }).catch((lookupError: Error) => {
+          console.warn('[agent post] trigger lookup failed; posting without the freshness hold:', lookupError.message);
+          lookupFailed = true;
+          return [];
+        })
+        : [];
+      const hold = lookupFailed ? null
+        : await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
       if (hold) return res.status(409).json(hold);
     }
 

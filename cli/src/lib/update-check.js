@@ -1,6 +1,6 @@
 /**
  * "Your CLI is N versions behind" — one line at `agent run` and `daemon run`
- * start-up (TASK-660, D213).
+ * start-up (TASK-660).
  *
  * A seat pinned to an old CLI fails in ways that look like platform bugs, and
  * nothing on the seat said it was old. This prints one line when the installed

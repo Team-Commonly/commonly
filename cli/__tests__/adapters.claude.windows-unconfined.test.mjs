@@ -1,4 +1,4 @@
-// D245, the review of #3388 (B2): on native Windows the user's --unsandboxed
+// The review of #3388 (B2): on native Windows the user's --unsandboxed
 // skips the OS jail ONLY. The seat keeps its trust, so the public tool policy
 // and the sanitized environment still apply: on a host with no OS isolation
 // that policy is the whole boundary. The opt-in reaches the adapter as

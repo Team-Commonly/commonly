@@ -28,6 +28,10 @@ export const SPAWN_FAILURE_CLASS = Object.freeze({
   // supervisor, a walk). The provider never refused anything, so the retry
   // comes at the normal poll interval and the circuit stays shut.
   SIGNALED: 'signaled',
+  // F491: a host-side gate exited 75 (EX_TEMPFAIL) without running the turn,
+  // e.g. the memory gate during a host hold. Not a failure: the event is kept
+  // with no strike, the circuit stays shut, and the retry backs off.
+  HOST_DEFERRED: 'host_deferred',
 });
 
 // How many outside signals in a row go uncounted before they count again. A
@@ -39,12 +43,28 @@ export const EXTERNAL_SIGNAL_GRACE = 3;
 // its own: a stream's error or the adapter's own kill never carries it.
 export const isExternalSignal = (error) => error?.externalSignal === true;
 
+// Set by adapterFailure (`markHostDeferral`) on a bare exit 75.
+export const isHostDeferral = (error) => error?.hostDeferred === true;
+
+// A host hold can last an hour or more (the 11-13 memory hold ran 96 minutes),
+// so the deferred retry starts at a minute and doubles to the usual ceiling:
+// 1, 2, 4, 8, then 15 minutes, and a long hold claims rarely.
+export const HOST_DEFERRAL_RETRY_BASE_MS = 60 * 1000;
+// How long a run of deferrals with no good spawn goes uncounted. Past it, an
+// adapter that exits 75 on every spawn is a fault (a gate stuck shut, a
+// misconfigured wrapper) and backs the seat off as any failure does, so its
+// events still release instead of waiting forever. A run with a gap of over
+// two retry ceilings starts again (agent.js), so a released event that comes
+// back later gets a new grace; the kernel's requeue attempts cap is the outer
+// bound on that, and retires it after a few such rounds.
+export const HOST_DEFERRAL_MAX_MS = 2 * 60 * 60 * 1000;
+
 // A stalled probe costs one first-output window, so the wait starts short and
 // doubles to the usual ceiling: 2, 4, 8, then 15 minutes.
 export const SPAWN_STALL_RETRY_BASE_MS = 2 * 60 * 1000;
 
 export const SPAWN_CIRCUIT_THRESHOLD = 3;
-// Base ceiling before the stable per-agent 0–20% anti-herd offset.
+// Fallback ceiling when an error has no usable reset clock.
 export const SPAWN_RETRY_MAX_MS = 15 * 60 * 1000;
 export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 
@@ -143,6 +163,16 @@ const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[
 const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
+// The zone is an IANA name: Area/Location (America/Port-au-Prince, Etc/GMT+5)
+// or a bare UTC/GMT, as a CI box or container seat reports. An unknown name
+// fails Intl below and keeps the fallback.
+const QUOTA_RESET_RE = /\bresets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\((UTC|GMT|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)\)/i;
+const QUOTA_RESET_MARGIN_MS = 2 * 60 * 1000;
+// A stated reset is the old account's. A person who hits quota can switch to
+// another account (`/login`), and the seat must notice that within the hour,
+// not at the old account's reset hours later. So a far reset probes hourly,
+// and a near one still waits for it (CTO on #4108).
+export const QUOTA_RESET_MAX_WAIT_MS = 60 * 60 * 1000;
 
 const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
 
@@ -229,6 +259,46 @@ const applyJitter = (delayMs, jitterRatio) => {
   return Math.round(delayMs * (1 + safeJitter));
 };
 
+// Claude names the local reset clock in its quota error. Waiting for that
+// clock avoids repeatedly launching a seat that cannot answer before then.
+// If the hint is absent or malformed, keep the ordinary bounded retry path.
+export const quotaResetDelay = (error, now = Date.now()) => {
+  const match = QUOTA_RESET_RE.exec(errorText(error));
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  const target = ((hour % 12) + (match[3].toLowerCase() === 'pm' ? 12 : 0)) * 60 + minute;
+  let formatter;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: match[4], hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+  } catch {
+    return null;
+  }
+  const localMinute = (instant) => {
+    const parts = Object.fromEntries(formatter.formatToParts(instant).map(({ type, value }) => [type, value]));
+    return Number(parts.hour) * 60 + Number(parts.minute);
+  };
+  const nowMinute = localMinute(now);
+  const wallMinutes = (target - nowMinute + 1440) % 1440;
+  // At or just after the named minute, the message may be a stale failure
+  // from the old quota window. Probe on the ordinary cooldown instead of
+  // assuming the next reset is nearly 24 hours away.
+  if (wallMinutes === 0 || wallMinutes > 1430) return null;
+  let resetAt = now - (now % 60000) + wallMinutes * 60 * 1000;
+  // Crossing a daylight-saving boundary can shift the initial wall-clock
+  // estimate by an hour. Reconcile against the target in the named zone.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const difference = (target - localMinute(resetAt) + 1440) % 1440;
+    if (difference === 0) break;
+    resetAt += (difference > 720 ? difference - 1440 : difference) * 60 * 1000;
+  }
+  if (resetAt <= now || localMinute(resetAt) !== target) return null;
+  return resetAt - now + QUOTA_RESET_MARGIN_MS;
+};
+
 /**
  * Return the next probe delay and whether the circuit is open.
  *
@@ -243,8 +313,21 @@ export const spawnRetryPolicy = ({
   jitterRatio = 0,
   // The run loop's call: an outside signal still inside its grace (F293).
   externalSignal = false,
+  // The run loop's call: the nth host deferral in a row, still inside
+  // HOST_DEFERRAL_MAX_MS (F491). 0 when this failure isn't one.
+  hostDeferrals = 0,
 }) => {
   const safeIntervalMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5000;
+  if (Number.isInteger(hostDeferrals) && hostDeferrals > 0) {
+    return {
+      failureClass: SPAWN_FAILURE_CLASS.HOST_DEFERRED,
+      circuitOpen: false,
+      delayMs: applyJitter(
+        Math.min(SPAWN_RETRY_MAX_MS, HOST_DEFERRAL_RETRY_BASE_MS * (2 ** (hostDeferrals - 1))),
+        jitterRatio,
+      ),
+    };
+  }
   if (externalSignal) {
     return {
       failureClass: SPAWN_FAILURE_CLASS.SIGNALED,
@@ -261,10 +344,18 @@ export const spawnRetryPolicy = ({
     failureClass === SPAWN_FAILURE_CLASS.QUOTA
     || failureClass === SPAWN_FAILURE_CLASS.CONFIGURATION
   ) {
+    const resetDelay = failureClass === SPAWN_FAILURE_CLASS.QUOTA
+      ? quotaResetDelay(error)
+      : null;
     return {
       failureClass,
       circuitOpen: true,
-      delayMs: applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio),
+      // Spread the reset probe by at most 24 seconds, not a percentage of
+      // the entire wait: a six-hour hint must not add an hour of lag.
+      delayMs: resetDelay === null
+        ? applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio)
+        : Math.min(resetDelay, QUOTA_RESET_MAX_WAIT_MS)
+          + applyJitter(QUOTA_RESET_MARGIN_MS, jitterRatio) - QUOTA_RESET_MARGIN_MS,
     };
   }
 

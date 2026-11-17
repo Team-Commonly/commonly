@@ -1,5 +1,5 @@
 /**
- * D245: the Windows form of `commonly daemon install` (ADR-026 D1).
+ * The Windows form of `commonly daemon install` (ADR-026 D1).
  *
  * macOS has launchd and Linux has systemd; Windows has Task Scheduler. A
  * per-user task needs no administrator, so the install stays a one-liner a

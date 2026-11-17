@@ -1,6 +1,6 @@
 /**
  * What a turn woken by a person holds of the pod's unread messages (ADR-018
- * D9.2, Cofounder ruling 2026-11-05, D255), on the real run loop.
+ * D9.2, decided 2026-11-05), on the real run loop.
  *
  * The fake server models `recordRead`: every /messages read advances the cursor
  * over a page that covers the unseen messages, as the kernel does. A design that
