@@ -62,7 +62,7 @@ describe('packages/seats', () => {
     const hermes = createHermesAdapter();
     expect(hermes.requiresModel).toBe(false);
     await expect(hermes.validateEnvironment({ sandbox: { trust: 'public' } }))
-      .rejects.toThrow('no enforced confinement adapter exists');
+      .rejects.toThrow('Commonly has no sandbox for Hermes yet');
   });
 
   // The CLI re-exports the package module, except the key-file resolver it
