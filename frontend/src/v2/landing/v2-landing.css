@@ -216,7 +216,7 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
-/* D38: the Discord door. Its own row under the keys and the install line, set
+/* The Discord door. Its own row under the keys and the install line, set
    like the demo caption (14/20, on-accent) so it reads as a line on the band,
    not a third button. Underlined at rest because it is the only plain link on
    the band; the underline thickens on hover. */
@@ -274,7 +274,7 @@
   flex-direction: column;
   gap: 22px;
 }
-/* The landing's ONE uppercase eyebrow (D225; 11-04 audit, finding 14). It
+/* The landing's ONE uppercase eyebrow (11-04 audit, finding 14). It
    earns the place: it is the hero's credential (open source, the licence), set
    once on the band above the h1. Every other label on the page is sentence-case
    mono with no tracking: the section kickers, the trusted line, the tier names
@@ -298,6 +298,22 @@
   letter-spacing: -0.03em;
   color: var(--v2-on-accent, #ffffff);
 }
+/* The sentence under the h1 that says what multiplayer means. It carries the
+   rotating term, so it is set larger than the lede and in the display face. */
+.v2-landing__bring {
+  margin: 0;
+  max-width: 900px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: clamp(24px, 2.8vw, 36px);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--v2-on-accent, #ffffff);
+}
+/* The rotator's slot is as wide as its widest term, so an inline suffix left a
+   gap after a short term and sat below the line's baseline at 1440. The suffix
+   takes its own line at every width, which also keeps one height per term. */
+.v2-landing__bring .v2-landing__title-suffix { display: block; margin-left: 0; }
 .v2-landing__lede {
   margin: 0;
   max-width: 780px;
@@ -793,6 +809,10 @@
   line-height: 32px;
   color: var(--v2-text-secondary);
 }
+/* The research section's one link: accent text, underlined on hover. The
+   `.v2-root` prefix (0,2,0) beats `.v2-root a { color: inherit }` (0,1,1). */
+.v2-root .v2-landing__study-link { color: var(--v2-accent); font-weight: 600; text-decoration: none; }
+.v2-root .v2-landing__study-link:hover { text-decoration: underline; }
 
 /* How-it-works steps. The card treatment is gone: on the board a step is a
    number and a copy column, so the 28px track is the number's own width and
@@ -1478,8 +1498,8 @@
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
   /* TASK-213 (option 1): on a phone the suffix takes its own
-     line, so the title is 「与你的 / <term> / 对话」 at every width and only the
-     term rotates. Without this the h1 is 94.6px under three of the four terms
+     line, so the hero sentence (under the h1 since the multiplayer h1) is
+     「把 / <term> / 带进同一个 Pod。」 at every width and only the term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
      section below jumped 46px once per cycle (measured on main abe19fe0 and
      again on #2033). `margin-left: 0` is part of the rule rather than tidying:
@@ -1739,6 +1759,7 @@
    here, because a number in this comment is one more thing that goes stale). */
 :lang(zh) .v2-landing__brand-name,
 :lang(zh) .v2-landing__title,
+:lang(zh) .v2-landing__bring,
 :lang(zh) .v2-landing__feature-title,
 :lang(zh) .v2-landing__wedge-line,
 :lang(zh) .v2-landing__h2,
@@ -1800,13 +1821,11 @@
 /* zh terms break only between words (keep-all); the ZWSP in eachOwnAgent is the
    one permitted break point, so 每个人 / 自己的智能体 at 320. */
 :lang(zh) .v2-landing__rotator { word-break: keep-all; }
-/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shares line 2
-   with 队友的智能体 and wraps for the other two terms, so the h1 jumped 63–84px on
-   every rotation. The suffix takes its own line in that band, as TASK-213 does on
-   phones. Measured steady from 320 to 1920 with this rule; en has no suffix element. */
+/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shared line 2
+   with 队友的智能体 and wrapped for the other two terms, so the hero sentence (then
+   the h1) jumped 63–84px on every rotation. The suffix takes its own line in that
+   band, as TASK-213 does on phones; `.v2-landing__bring` now sets it on its own line
+   at every width, so this band rule is belt and braces. */
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }
-/* Hero option 1 (short line, rotating term): the suffix always takes its own
-   line, so the h1 keeps one height under every term at 320, 390 and 1440. */
-.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }

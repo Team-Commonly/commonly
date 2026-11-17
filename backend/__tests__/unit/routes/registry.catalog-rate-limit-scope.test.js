@@ -1,5 +1,5 @@
 /**
- * D175 — the catalog's IP limiter must stay on the catalog's own routes.
+ * The catalog's IP limiter must stay on the catalog's own routes.
  *
  * registry.ts mounts catalogRouter ahead of pod-agents, files, install and
  * the rest. A `catalogRouter.use(limiter)` therefore ran for EVERY
@@ -19,7 +19,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 const catalogRouter = require('../../../routes/registry/catalog');
 
-describe('catalog rate limiter scope (D175)', () => {
+describe('catalog rate limiter scope', () => {
   const layers = catalogRouter.stack;
 
   it('has no router-level middleware that would run for later registry routers', () => {

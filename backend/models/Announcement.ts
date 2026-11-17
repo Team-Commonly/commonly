@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface IAnnouncement extends Document {
+interface IAnnouncement extends Document {
   podId: Types.ObjectId;
   title: string;
   content: string;

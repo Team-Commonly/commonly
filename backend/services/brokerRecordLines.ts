@@ -15,7 +15,7 @@ export const OPTS = Object.freeze([
   Object.freeze({ optionId: 'decline', kind: 'reject_once' }),
 ]);
 
-export type BrokerCall = {
+type BrokerCall = {
   /** tool_calls.call_id, ApprovalAction.toolCall.callId. */
   toolCallId: string;
   /** The exact tool name. The broker holds no agent-written title, so it is also the title and question. */

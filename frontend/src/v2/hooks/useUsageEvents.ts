@@ -7,7 +7,7 @@ import {
 } from '../utils/usageEvents';
 
 /**
- * Signed-in usage events (D286): reads the person's Settings choice, then sends
+ * Signed-in usage events: reads the person's Settings choice, then sends
  * one app-open per UTC day and a screen-view per route. Until the choice is
  * known, events wait in memory; if it's off (or the request fails) they're
  * dropped. The server applies the same rules on its side.

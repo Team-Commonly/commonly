@@ -691,7 +691,7 @@ export const claimableConditions = (
   { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
 ];
 
-export type TaskLeaseState = 'unleased' | 'held' | 'lapsed';
+type TaskLeaseState = 'unleased' | 'held' | 'lapsed';
 
 // `claimableConditions` above is a QUERY PREDICATE — it selects rows, and for the
 // CAS it also takes the caller. It cannot LABEL a row, and a rescuer needs the

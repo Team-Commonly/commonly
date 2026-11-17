@@ -50,7 +50,7 @@ export interface IFollowedThread {
 // (password-only), one, or several (GitHub + Google linked by verified
 // email). Accounts created via OAuth have no password — see the
 // conditional `required` on the password path below.
-export type AuthProviderName = 'github' | 'google';
+type AuthProviderName = 'github' | 'google';
 
 export interface IAuthProvider {
   provider: AuthProviderName;
@@ -63,7 +63,7 @@ export interface IAuthProvider {
 // carry this list; for bots it's the agent's "contacts" — who they go to
 // for codex review, planning, etc. For humans it's the people they DM
 // most. Aliases must be lowercase URL-safe.
-export type ContactSource = 'user' | 'pod' | 'system';
+type ContactSource = 'user' | 'pod' | 'system';
 
 export interface IContactEntry {
   alias: string;
@@ -289,7 +289,7 @@ export interface IUser extends Document {
   getOrCreateDigestUnsubscribeToken(): string;
 }
 
-export interface IUserModel extends Model<IUser> {
+interface IUserModel extends Model<IUser> {
   mintApiTokenIfAbsent(
     userId: unknown,
     extra?: { apiTokenScopes?: string[] },

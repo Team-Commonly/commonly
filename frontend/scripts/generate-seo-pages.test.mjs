@@ -26,7 +26,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 120);
+  assert.equal(pages.length, 125);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -40,6 +40,10 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/compare/agent-relay/',
     '/compare/orca/',
     '/compare/mosaic/',
+    '/compare/agentes-chat/',
+    '/compare/cursor-projects/',
+    '/compare/reason-network/',
+    '/compare/concord/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -148,6 +152,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/claude-code-team-collaboration/',
     '/guides/claude-code-and-codex-in-one-team-chat/',
     '/guides/multi-agent-workspace-software-teams/',
+    '/guides/always-on-agent-in-a-pod/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -185,7 +190,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 96);
+  assert.equal(guidePages.length, 97);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -2428,7 +2433,7 @@ test('every page but home names its place in a BreadcrumbList, ending at itself 
 test('every guide Article carries an image (F397)', async () => {
   const articles = (await realPages()).flatMap((page) => page.schema['@graph'].filter((node) => node['@type'] === 'Article'));
   assert.ok(articles.length >= 89);
-  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=7', article['@id']);
+  for (const article of articles) assert.equal(article.image, 'https://commonly.me/og-card.png?v=8', article['@id']);
 });
 
 test('a long title drops the site suffix, then its subtitle; one with neither to drop stops the build (F397)', () => {
@@ -2795,7 +2800,7 @@ test('a revised guide gets the answer block, Sam as a Person and nothing else ab
   const inputs = await loadSiteInputs();
   const revised = Object.entries(inputs.guides).filter(([, guide]) => guide.revised);
   assert.equal(revised.length, Object.keys(inputs.guides).length);
-  assert.equal(revised.length, 96);
+  assert.equal(revised.length, 97);
   const pages = buildPageDefinitions(inputs);
   for (const [id, guide] of revised) {
     const page = pages.find((item) => item.path === `/guides/${id}/`);
@@ -2910,7 +2915,7 @@ const compareFixture = () => ({
 test('every compare data file builds through the one template, in listOrder, with every source dated', async () => {
   const dir = resolve(frontendDir, 'src/content/compare');
   const loaded = loadCompareSources(dir);
-  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic']);
+  assert.deepEqual(Object.keys(loaded), ['openagents', 'github-agent-hq', 'buzz', 'multica', 'paperclip', 'humanlayer', 'raft', 'agent-relay', 'orca', 'mosaic', 'agentes-chat', 'cursor-projects', 'reason-network', 'concord']);
   for (const id of Object.keys(loaded)) {
     const data = JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8'));
     assert.equal(loaded[id].markdown, compareMarkdown(data));
@@ -3192,4 +3197,49 @@ test('every guide whose raw HTTP examples call the hosted host says how a self-h
     .filter(([, guide]) => guide.sections.some((section) => (section.codeBlocks || []).some((block) => callsHostedHost(block.code))));
   assert.ok(withHostedHost.length >= 2, `found ${withHostedHost.length}`);
   for (const [id, guide] of withHostedHost) assert.match(JSON.stringify(guide), hostNote, id);
+});
+
+test('the static / and the compare hub carry the research block: the study, then what the pod does', async () => {
+  const translations = JSON.parse(await readFile(join(frontendDir, 'src/i18n/locales/en.json'), 'utf8'));
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: {}, guides: {} });
+  for (const path of ['/', '/compare/']) {
+    const html = pages.find((page) => page.path === path).content;
+    const study = html.indexOf('Worse Together');
+    const pod = html.indexOf('A pod has a guard of that kind');
+    assert.ok(study > 0 && pod > study, path);
+    assert.match(html, /href="https:\/\/alignment\.anthropic\.com\/2026\/worse-together"/, path);
+  }
+});
+
+
+test('multiplayer leads the landing title, description, share tags, README tagline and llms.txt, because it is what Commonly is for', async () => {
+  const [translationText, useCaseText, guideText, llms, readme] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+    readFile(resolve(frontendDir, '../README.md'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) });
+  const landing = pages.find((page) => page.path === '/');
+  assert.match(landing.title, /^Commonly: multiplayer\b/);
+  assert.match(landing.description, /^Multiplayer for coding agents\. /);
+  assert.ok(landing.content.includes('<h1>Multiplayer for coding agents</h1>'), 'the prerendered h1 is the multiplayer line');
+  // The lede under it is the hero sentence, then what each person keeps.
+  const enHero = JSON.parse(await readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8')).landing.hero;
+  const lede = landing.content.match(/<p class="seo-lede">([^<]*)<\/p>/);
+  assert.ok(lede, 'the prerendered landing has a seo-lede paragraph');
+  assert.equal(lede[1], `${enHero.ariaLabel} ${enHero.lede}`.replace(/'/g, '&#39;'));
+  assert.ok(landing.content.indexOf('<h1>') < landing.content.indexOf('<p class="seo-lede">'), 'the lede follows the h1');
+  const indexHtml = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+  for (const tag of ['name="description"', 'property="og:description"', 'name="twitter:description"']) {
+    assert.match(indexHtml, new RegExp(`<meta ${tag} content="Multiplayer for coding agents\\. `));
+  }
+  for (const tag of ['property="og:title"', 'name="twitter:title"']) {
+    assert.match(indexHtml, new RegExp(`<meta ${tag} content="Commonly: multiplayer for coding agents"`));
+  }
+  // The first prose line an LLM reads, and the first line under the README's name.
+  assert.match(llms.split('\n').find((line) => line.startsWith('> ')), /\bmultiplayer\b/);
+  assert.match(readme.split('\n').find((line) => line.startsWith('**')), /^\*\*Multiplayer for coding agents: one pod for your team/);
 });

@@ -75,7 +75,7 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
 export const connectSnippet = ({
-  os, apiUrl, token, agentName, adapter, allow = '', instanceId = null,
+  os, apiUrl, token, agentName, adapter, allow = '', instanceId = null, connectCode = null,
 }: {
   os: ConnectSnippetOs;
   apiUrl: string;
@@ -84,6 +84,7 @@ export const connectSnippet = ({
   adapter: string;
   allow?: string;
   instanceId?: string | null;
+  connectCode?: string | null;
 }): string => {
   // F306: a second instance (the same name, another instanceId) holds its own
   // key, so its run line names the instance; the CLI then saves that key beside
@@ -92,16 +93,50 @@ export const connectSnippet = ({
   // Linux and Windows smokes lift it from this file whole.
   const instanceFlag = instanceId && instanceId !== 'default' && /^[A-Za-z0-9._-]{1,64}$/.test(instanceId)
     ? ` --instance-id ${instanceId}` : '';
+  const runArgs = `agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}`;
+  // One line with a connect code in place of the key: the CLI trades the code
+  // for the key itself, and the code stops working once the agent connects or
+  // after 30 minutes, so the line holds nothing worth keeping in shell
+  // history. PowerShell 5.1 has no &&, hence `; if ($?) { … }`. A code in any
+  // other shape falls back to the four lines.
+  if (connectCode && /^cmc_[A-Za-z0-9_-]{22}$/.test(connectCode)) {
+    return os === 'windows'
+      ? `${CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ')}; if ($?) { commonly.cmd ${runArgs} --api-url ${powerShellQuote(apiUrl)} --connect ${powerShellQuote(connectCode)} --unsandboxed }`
+      : `${CLI_INSTALL_COMMAND} && commonly ${runArgs} --api-url ${apiUrl} --connect ${connectCode}`;
+  }
   const env = os === 'windows'
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
     : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
   return [
     os === 'windows' ? CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ') : CLI_INSTALL_COMMAND,
     ...env,
-    `${os === 'windows' ? 'commonly.cmd' : 'commonly'} agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `${os === 'windows' ? 'commonly.cmd' : 'commonly'} ${runArgs}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
-// D247: OpenCode can't start from the page's key: a public OpenCode seat needs
+// The runtime-tokens answer when a connect code was asked for and issued
+// (connectCode plus when it stops working). Absent on an instance that
+// doesn't issue codes, and then the page keeps the four lines.
+interface IssuedConnectCode { connectCode?: string; connectCodeExpiresAt?: string }
+export const connectCodeOf = (res: IssuedConnectCode | null | undefined): { connectCode: string | null; connectCodeExpiresAt: number | null } => {
+  const code = typeof res?.connectCode === 'string' ? res.connectCode : null;
+  const at = code && res?.connectCodeExpiresAt ? Date.parse(res.connectCodeExpiresAt) : NaN;
+  return { connectCode: code, connectCodeExpiresAt: Number.isFinite(at) ? at : null };
+};
+// True when the caller's latest listener check-in (an events poll or socket
+// connect) is this agent's, same name and same instance, made after this key
+// was issued, with a minute's slack for clock skew. A tool call, the MCP
+// server included, doesn't count.
+export const checkedInSinceIssue = (
+  data: { connected?: boolean; connectedAgent?: { agentName?: string; instanceId?: string }; lastUsedAt?: string } | null | undefined,
+  issued: { agentName: string; issuedAt: number; instanceId?: string | null },
+): boolean => Boolean(
+  data?.connected
+  && String(data.connectedAgent?.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
+  && String(data.connectedAgent?.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
+  && data.lastUsedAt
+  && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000,
+);
+// OpenCode can't start from the page's key: a public OpenCode seat needs
 // a provider and a key file on that Mac (adapters/opencode.js), so it is
 // connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
 // is typed into its own line first, because a pasted block would feed its own
@@ -158,9 +193,9 @@ type MachineRow = {
   createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
-  // What the daemon found installed there (D247): marks and sorts the adapter list.
+  // What the daemon found installed there: marks and sorts the adapter list.
   runtimeInventory?: HarnessDeviceRow[];
-  // D245: the daemon runs with no sandbox. Only a native Windows daemon reports
+  // The daemon runs with no sandbox. Only a native Windows daemon reports
   // this (cli hostSandboxReport), and the CLI gives its seats no grant broker.
   hostUnconfined?: boolean;
   // The CLI version its daemon last reported running; null when too old to say.
@@ -182,7 +217,7 @@ type MachineAdapter = string;
 // since F96 (#3395), and Codex under its own sandbox, which uses bubblewrap
 // there (walked on prod 11-05, run 41994906534). Native
 // Windows has no sandbox for either, so there the listener runs unconfined and
-// the page says so (D245). PowerShell has no `export`, so a Windows visitor
+// the page says so. PowerShell has no `export`, so a Windows visitor
 // gets PowerShell lines for both commands (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
 // The install route's memory-handoff refusal codes (installHandoffMemory.ts).
@@ -221,7 +256,7 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
   { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
 ];
-// Windows runs either CLI without a sandbox (D245): the command is PowerShell
+// Windows runs either CLI without a sandbox: the command is PowerShell
 // lines, and the page says beside it that nothing confines the agent there.
 // Codex on Linux walked on prod 11-05 (run 41994906534: published CLI, Codex
 // 0.164.0, a fresh Ubuntu runner, an API key through a model gateway). A
@@ -246,7 +281,7 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 const STALL_REASONS: ByoStallReason[] = ['node-missing', 'not-run', 'other'];
 
 // Claude Code and Codex keep the OS rules above. No other harness answers from
-// the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
+// the page's key: OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
 // Codex on Windows has no sandbox, so a public pod refuses it. Before a pod is
 // known there's nothing to refuse yet, so only a pod that isn't private rules it
@@ -355,7 +390,11 @@ const V2AgentBYO: React.FC = () => {
   const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
   const [issued, setIssued] = useState<{
     token: string; agentName: string; podId: string; issuedAt: number; instanceId?: string | null;
+    // A connect code for the one-line command, where the server issues one.
+    connectCode?: string | null; connectCodeExpiresAt?: number | null;
   } | null>(null);
+  // The connect code ran out before the agent connected: the line can't work any more.
+  const [connectCodeExpired, setConnectCodeExpired] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
   const [showHostedOffer, setShowHostedOffer] = useState(false);
   const offeredPanels = useRef(new Set<string>());
@@ -373,7 +412,7 @@ const V2AgentBYO: React.FC = () => {
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
   const [listenAdapter, setListenAdapter] = useState<string>(prefill.adapter || 'claude');
-  // D247: every harness `agent run --adapter` accepts, from the server. The
+  // Every harness `agent run --adapter` accepts, from the server. The
   // two the page always offered stand in until it arrives.
   // Read fourth in the mount sequence below, once.
   const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>(FALLBACK_HARNESSES);
@@ -417,6 +456,16 @@ const V2AgentBYO: React.FC = () => {
   // finish the page, mention the agent, and get silence with no way to know
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
+  // A connect code stops working at its expiry. Until the agent connects, the
+  // page then says the line ran out and offers a new one.
+  useEffect(() => {
+    const at = issued?.connectCodeExpiresAt;
+    if (!at) return undefined;
+    const left = at - Date.now();
+    if (left <= 0) { setConnectCodeExpired(true); return undefined; }
+    const timer = setTimeout(() => setConnectCodeExpired(true), left);
+    return () => clearTimeout(timer);
+  }, [issued?.connectCodeExpiresAt]);
   // F457: the issued agent's run stopped before checking in because its
   // harness wasn't on that computer. F515 adds a signed-out harness and an old
   // Node. Keyed to the issue, like stallReport.
@@ -505,6 +554,9 @@ const V2AgentBYO: React.FC = () => {
   const linkInstance = sanitizeAgentName(name) === prefill.name ? prefill.instanceId : 'default';
   const secondInstance = linkInstance !== 'default' && !personaCard ? linkInstance : null;
   const hostedOffered = Boolean(hosting?.configured) && !hostedHeld && !(hosting?.full && !hosting.held) && !secondInstance;
+  // The hosted offer panel on the result page, which shows its own error.
+  const hostedOfferShown = Boolean(issued) && listenerAvailable && showHostedOffer && !hasCopied
+    && hostedOffered && listenState !== 'listening';
   // "Run it here" counts only once the instance says it can host: a hosted
   // link must not arm a hosted install before, or without, that answer. A
   // machine link for a second instance falls back the same way, unless the
@@ -907,7 +959,7 @@ const V2AgentBYO: React.FC = () => {
         // No daemon machines — the "on my computer" card simply doesn't show.
       }
       // Fourth, and once: the page works on the two-harness fallback until
-      // the full list arrives (D247).
+      // the full list arrives.
       if (!catalogRequested.current) {
         catalogRequested.current = true;
         try {
@@ -1153,7 +1205,7 @@ const V2AgentBYO: React.FC = () => {
           // the server's own pick (default, or a persona's instance).
           ...(secondInstance ? { instanceId: secondInstance } : {}),
           scopes: DEFAULT_INSTALL_SCOPES,
-          // D247: the runner, model and effort travel with the agent, so
+          // The runner, model and effort travel with the agent, so
           // Settings shows them and the listener reads them before each turn.
           // Any adapter besides Claude Code and Codex must be declared here, or
           // `agent run` refuses to start it.
@@ -1236,9 +1288,9 @@ const V2AgentBYO: React.FC = () => {
       }
       // An agent can have a token from another pod. A nonrotating issue
       // returns existing:true in that case, so no key is revoked here.
-      const tokenRes = await api.post<{ token?: string; existing?: boolean }>(
+      const tokenRes = await api.post<{ token?: string; existing?: boolean } & IssuedConnectCode>(
         `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}/runtime-tokens`,
-        { label: 'BYO MCP — initial issue', ...(secondInstance ? { instanceId: secondInstance } : {}) },
+        { label: 'BYO MCP — initial issue', connectCode: true, ...(secondInstance ? { instanceId: secondInstance } : {}) },
       );
       if (tokenRes?.existing) {
         setPendingReplacement({ agentName: cleanName, podId, instanceId: linkInstance });
@@ -1249,8 +1301,10 @@ const V2AgentBYO: React.FC = () => {
         setError(t('agentByo.errors.tokenEmpty'));
       } else {
         setIssued({
-          token: tok, agentName: cleanName, podId, issuedAt: Date.now(), instanceId: secondInstance,
+          token: tok, agentName: cleanName, podId, issuedAt: Date.now(), instanceId: secondInstance, ...connectCodeOf(tokenRes),
         });
+        setConnectCodeExpired(false);
+        setLineCheck(null);
         setListenState('waiting');
         setMemoryText('');
         setMemoryDone(false);
@@ -1282,15 +1336,20 @@ const V2AgentBYO: React.FC = () => {
       // agent is the default instance, never the link's, so a replacement
       // can't rotate another instance's key.
       const instanceId = target.instanceId || linkInstance;
-      const tokenRes = await api.post<{ token?: string }>(
+      const tokenRes = await api.post<{ token?: string } & IssuedConnectCode>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
-        { label: 'BYO MCP — replacement', force: true, instanceId },
+        { label: 'BYO MCP — replacement', force: true, instanceId, connectCode: true },
       );
       if (!tokenRes?.token) {
         setError(t('agentByo.errors.tokenEmpty'));
         return;
       }
-      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: instanceId === 'default' ? null : instanceId });
+      setIssued({
+        token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: instanceId === 'default' ? null : instanceId,
+        ...connectCodeOf(tokenRes),
+      });
+      setConnectCodeExpired(false);
+      setLineCheck(null);
       setListenState('waiting');
       setMemoryText('');
       setMemoryDone(false);
@@ -1367,6 +1426,44 @@ const V2AgentBYO: React.FC = () => {
     return () => clearTimeout(timer);
   }, [issued?.issuedAt]);
 
+  // A new line replaces the key, which would cut off anything already using it.
+  // So the page asks once more first: the poll may have stopped, or missed a
+  // late check-in by seconds. If this agent listened since the key was issued,
+  // it is connected and nothing is replaced. If any of the person's agent keys
+  // made any authenticated call since then (the read can't say which key, so
+  // this one may be in use, by the MCP or Cursor setup below, say), replacing
+  // waits for a second press. A failed read replaces nothing.
+  const [lineCheck, setLineCheck] = useState<'failed' | 'inUse' | null>(null);
+  const lineChecking = useRef(false);
+  const getNewLine = async (confirmed = false) => {
+    if (!issued || lineChecking.current) return;
+    const target = { agentName: issued.agentName, podId: issued.podId, instanceId: issued.instanceId || 'default' };
+    if (confirmed) { setLineCheck(null); void replaceRunningKey(target); return; }
+    let data;
+    lineChecking.current = true;
+    try {
+      ({ data } = await axios.get('/api/users/me/agent-connection'));
+    } catch {
+      setLineCheck('failed');
+      return;
+    } finally {
+      lineChecking.current = false;
+    }
+    if (checkedInSinceIssue(data, issued)) {
+      setLineCheck(null);
+      setListenState('listening');
+      byoStep('listen-confirmed');
+      return;
+    }
+    const usedAt = data?.lastToolUseAt ? new Date(data.lastToolUseAt).getTime() : NaN;
+    if (Number.isFinite(usedAt) && usedAt >= issued.issuedAt - 60_000) {
+      setLineCheck('inUse');
+      return;
+    }
+    setLineCheck(null);
+    void replaceRunningKey(target);
+  };
+
   // Poll the kernel for THIS agent's first listener check-in after
   // issuance (an events poll or socket connect, not a tool call).
   // `/api/users/me/agent-connection` reports the caller's latest
@@ -1379,9 +1476,12 @@ const V2AgentBYO: React.FC = () => {
     if (!issued || listenState !== 'waiting') return undefined;
     let cancelled = false;
     const startedAt = Date.now();
+    // A connect code works for 30 minutes, so the page keeps watching at least
+    // that long: an agent that connects late must never read as "ran out".
+    const pollFor = Math.max(15 * 60 * 1000, (issued.connectCodeExpiresAt ?? 0) - startedAt + 60_000);
     const timer = setInterval(async () => {
       if (cancelled) return;
-      if (Date.now() - startedAt > 15 * 60 * 1000) {
+      if (Date.now() - startedAt > pollFor) {
         setListenState('timeout');
         byoStep('listen-timeout');
         return;
@@ -1409,12 +1509,7 @@ const V2AgentBYO: React.FC = () => {
         setHarnessMissingReport(latest ? {
           key: issued, reason: latest.reason, harness: typeof latest.harness === 'string' ? latest.harness : null,
         } : null);
-        if (!data?.connected) return;
-        const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
-          === issued.agentName.toLowerCase();
-        const afterIssue = data.lastUsedAt
-          && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000; // clock-skew slack
-        if (sameAgent && afterIssue) {
+        if (checkedInSinceIssue(data, issued)) {
           setListenState('listening');
           byoStep('listen-confirmed');
         }
@@ -1599,8 +1694,13 @@ const V2AgentBYO: React.FC = () => {
       adapter: listenAdapter,
       allow: allowFlag,
       instanceId: issued.instanceId,
+      connectCode: issued.connectCode,
     })
     : '';
+  // The page speaks of "the line" only when it shows one (the server issued a
+  // code in the shape the line takes); otherwise of the four lines, as before.
+  const oneLine = Boolean(listenSnippet) && !listenSnippet.includes('\n');
+  const lineCopy = (key: string) => (oneLine ? `${key}OneLine` : key);
   // Pasted into PowerShell, each line ends with a newline and runs, so without a
   // final one the fourth line, the one that starts the agent, sits at the prompt
   // until Enter. A windows-latest probe (Win11, PS 5.1, 11-13) showed exactly
@@ -1608,6 +1708,22 @@ const V2AgentBYO: React.FC = () => {
   // adds one on Windows. connectSnippet stays as it is, since the Windows smoke
   // lifts it from this file and runs its exact lines.
   const listenCopyText = listenSnippet && setupOs === 'windows' ? `${listenSnippet}\n` : listenSnippet;
+  // A hand copy (select, then Ctrl+C) of the same lines posts the same step as
+  // the button and, on Windows, gets the same final newline when the selection
+  // reaches the run line, so the pasted run line runs too (11-15: a Windows
+  // seat's key was never used and no copy step was ever recorded).
+  const handCopyListen = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    copiedIssuedContent();
+    markCopiedKind('listen');
+    byoStep('cli-command-copied', 'listen');
+    if (setupOs !== 'windows' || !listenSnippet) return;
+    const selected = window.getSelection()?.toString() || '';
+    const runLine = listenSnippet.trimEnd().split('\n').pop()?.trim() || '';
+    if (!runLine || selected.endsWith('\n') || !selected.trimEnd().endsWith(runLine)) return;
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', `${selected}\n`);
+    event.preventDefault();
+  };
 
   const cursorSnippet = issued
     ? JSON.stringify({
@@ -1637,7 +1753,7 @@ const V2AgentBYO: React.FC = () => {
   // The daemon block leads the start form in BYO mode (F370) and otherwise sits
   // in Other ways to connect, on the start form and the result page, so the
   // stop-on-close line can point to it from the result.
-  // On Windows `daemon install` registers a logon task (D245).
+  // On Windows `daemon install` registers a logon task.
   // A new computer's setup installs the current CLI, so it takes any instance.
   // Computers already on file that can't take this instance get the same line,
   // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
@@ -1682,7 +1798,7 @@ const V2AgentBYO: React.FC = () => {
       <p className="v2-byo__hint">{t(machinesNeedUpdate ? 'agentByo.addComputer.afterUpdate' : 'agentByo.addComputer.after')}</p>
     </div>
   ) : null;
-  // D247: a runner other than Claude Code and Codex takes the place of the
+  // A runner other than Claude Code and Codex takes the place of the
   // install button with what works for it. OpenCode gets its own Mac lines;
   // the rest a plain line naming what can answer instead.
   const hostedName = t('agentByo.mode.hosted');
@@ -2378,7 +2494,7 @@ const V2AgentBYO: React.FC = () => {
             )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
+                ? `${t(lineCopy(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs'), {
                   tool: listenToolLabel,
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
                 : t(listenAdapter === 'codex' && setupOs === 'windows' ? 'agentByo.listen.unavailableCodexWindows'
@@ -2417,13 +2533,65 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 <Trans
-                  i18nKey={listenAdapter === 'codex' ? 'agentByo.listen.windowsCodex' : 'agentByo.listen.windowsNote'}
+                  i18nKey={lineCopy(listenAdapter === 'codex' ? 'agentByo.listen.windowsCodex' : 'agentByo.listen.windowsNote')}
                   components={{ cmd: <code />, name: <>{issued.agentName}</> }}
                 />
               </p>
             )}
+            {/* Codex on Windows: every route that works, whether or not this pod
+                qualifies. Invite-only with --unsandboxed, WSL 2 (Codex under
+                bubblewrap there, in any pod), or hosted. The WSL lines are the
+                page's Linux lines, walked on Ubuntu, not yet inside WSL. */}
+            {setupOs === 'windows' && listenAdapter === 'codex' && (
+              <div className="v2-byo__listen-note v2-byo__codex-ways" data-testid="byo-listen-windows-codex-ways">
+                <p>{t('agentByo.listen.windowsCodexWays')}</p>
+                <ul>
+                  {listenerAvailable && podIsConfirmedPrivate(repoPod) && (
+                    <li data-testid="byo-codex-way-invite">
+                      <Trans i18nKey={lineCopy('agentByo.listen.windowsCodexWayInvite')} components={{ cmd: <code /> }} />
+                    </li>
+                  )}
+                  <li data-testid="byo-codex-way-wsl">
+                    <Trans
+                      i18nKey={lineCopy('agentByo.listen.windowsCodexWayWsl')}
+                      components={{
+                        cmd: <code />,
+                        linux: (
+                          <button
+                            type="button"
+                            className="v2-byo__link"
+                            data-testid="byo-codex-way-wsl-linux"
+                            onClick={() => setSetupOs('linux')}
+                          />
+                        ),
+                      }}
+                    />
+                  </li>
+                  {/* With no listener the won't-answer line above carries the one Run it here button. */}
+                  {hostedOffered && listenerAvailable && (
+                    <li data-testid="byo-codex-way-hosted">
+                      <Trans
+                        i18nKey="agentByo.listen.windowsCodexWayHosted"
+                        components={{
+                          hosted: (
+                            <button
+                              type="button"
+                              className="v2-byo__link"
+                              data-testid="byo-codex-way-hosted-button"
+                              disabled={submitting}
+                              onClick={startHostedInstead}
+                            />
+                          ),
+                        }}
+                      />
+                      {error && !hostedOfferShown && <span className="v2-byo__error" role="alert"> {error}</span>}
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
             {listenerAvailable && (
-              <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
+              <div className="v2-byo__command" onCopy={handCopyListen}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
@@ -2435,18 +2603,38 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
+            {/* The connect code ran out before the page saw the agent connect.
+                A new line replaces the key, so getNewLine checks first whether
+                the agent connected or a key is in use. */}
+            {listenerAvailable && oneLine && connectCodeExpired && listenState !== 'listening' && (
+              <p className="v2-byo__listen-note v2-byo__listen-note--stopped" role="status" data-testid="byo-line-expired">
+                {lineCheck === 'inUse'
+                  ? t('agentByo.listen.lineKeyInUse', { name: issued.agentName })
+                  : t('agentByo.listen.lineExpired', { name: issued.agentName })}{' '}
+                <button
+                  type="button"
+                  className="v2-byo__link"
+                  disabled={submitting}
+                  data-testid="byo-line-new"
+                  onClick={() => { void getNewLine(lineCheck === 'inUse'); }}
+                >
+                  {t(lineCheck === 'inUse' ? 'agentByo.listen.replaceKey' : 'agentByo.listen.newLine')}
+                </button>
+                {lineCheck === 'failed' && <> {t('agentByo.listen.lineCheckFailed', { name: issued.agentName })}</>}
+              </p>
+            )}
             {/* Windows Terminal asks before a multi-line paste, with Paste anyway
                 focused; Cancel runs none of the lines (windows-latest probe, 11-13). */}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows-paste">
-                {t('agentByo.listen.windowsPaste')}
+                {t(lineCopy('agentByo.listen.windowsPaste'))}
               </p>
             )}
             {/* No Windows hint: the .cmd lines never meet PowerShell's script
                 policy, and we don't ask people to loosen it (F342). */}
             {listenerAvailable && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t('agentByo.listen.npmPermission')}
+                {t(lineCopy('agentByo.listen.npmPermission'))}
               </p>
             )}
             {listenerAvailable && !machinesNeedUpdate && (
@@ -2467,18 +2655,18 @@ const V2AgentBYO: React.FC = () => {
                   ? (
                     <span data-testid="byo-listen-harness-missing">
                       {harnessMissingReport.reason === 'node-too-old'
-                        ? t('agentByo.listen.nodeTooOld', { name: issued.agentName })
+                        ? t(lineCopy('agentByo.listen.nodeTooOld'), { name: issued.agentName })
                         : harnessMissingReport.reason === 'harness-signed-out' && harnessMissingReport.harness
-                          ? t('agentByo.listen.harnessSignedOut', {
+                          ? t(lineCopy('agentByo.listen.harnessSignedOut'), {
                             name: issued.agentName,
                             tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
                             command: harnessMissingReport.harness === 'codex' ? 'codex login' : harnessMissingReport.harness,
                           })
                           : harnessMissingReport.harness
-                            ? t('agentByo.listen.harnessMissing', {
+                            ? t(lineCopy('agentByo.listen.harnessMissing'), {
                               name: issued.agentName, tool: harnessLabel(harnessCatalog, harnessMissingReport.harness),
                             })
-                            : t('agentByo.listen.harnessMissingNone', { name: issued.agentName })}
+                            : t(lineCopy('agentByo.listen.harnessMissingNone'), { name: issued.agentName })}
                     </span>
                   )
                   : missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
@@ -2494,7 +2682,7 @@ const V2AgentBYO: React.FC = () => {
               <p className="v2-byo__listen-note" data-testid="byo-listen-stall">
                 {stallReason ? (
                   <span data-testid="byo-listen-stall-help">
-                    {t(`agentByo.listen.stallHelp.${stallReason}`)}
+                    {t(stallReason === 'other' ? 'agentByo.listen.stallHelp.other' : lineCopy(`agentByo.listen.stallHelp.${stallReason}`))}
                   </span>
                 ) : (
                   <>
@@ -2588,11 +2776,11 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && listenAdapter === 'codex' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
-                {t('agentByo.listen.reachCodex')}
+                {t(lineCopy('agentByo.listen.reachCodex'))}
               </p>
             )}
           </div>
-          <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>
+          <p data-testid="byo-key-once">{t(listenerAvailable ? lineCopy('agentByo.result.keyOnce') : 'agentByo.result.keyOnce', { name: issued?.agentName || '' })}</p>
 
           {listenAdapter === 'claude' && (() => {
             const mcpBlock = (
@@ -2766,7 +2954,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && listenerAvailable && showHostedOffer && !hasCopied && hostedOffered && listenState !== 'listening' && (
+          {hostedOfferShown && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>

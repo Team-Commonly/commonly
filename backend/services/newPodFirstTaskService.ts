@@ -1,4 +1,5 @@
 import { fetchTextFromAllowedHost } from './outboundUrlGuard';
+import { SCHEDULE_PROMPT_MAX_CHARS } from './agentScheduleService';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -6,7 +7,8 @@ const Pod = require('../models/Pod');
 const AgentMessageService = require('./agentMessageService');
 
 const GITHUB_API = new Map([['api.github.com', 'https://api.github.com/']]);
-const MAX_ISSUES_BYTES = 256 * 1024;
+// Thirty issues with long templated bodies can pass 256 KB; past the cap the read fails outright.
+const MAX_ISSUES_BYTES = 1024 * 1024;
 
 interface ProjectRepo { owner: string; repo: string }
 interface FirstTaskOnboarding {
@@ -51,8 +53,18 @@ const workflowFromMessage = (content: string): boolean => {
     && /(每周|每天|每月|问题|任务|客户|反馈|邮件|报告|项目|会议|工单|消息)/u.test(content);
 };
 
+// A first task should be small. Teams mark those, so a labelled issue wins
+// over the newest one, which is as likely to be an epic or a discussion.
+const STARTER_LABELS = ['good first issue', 'bug', 'help wanted'];
+const starterRank = (labels: unknown): number => {
+  if (!Array.isArray(labels)) return STARTER_LABELS.length;
+  const names = labels.map((label) => String((label as { name?: unknown })?.name ?? label).toLowerCase());
+  const index = STARTER_LABELS.findIndex((wanted) => names.includes(wanted));
+  return index < 0 ? STARTER_LABELS.length : index;
+};
+
 const firstOpenIssue = async ({ owner, repo }: ProjectRepo): Promise<{ title: string; number: number } | null> => {
-  const url = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=10`;
+  const url = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=30`;
   const result = await fetchTextFromAllowedHost(url, {
     allowedOrigins: GITHUB_API,
     maxBytes: MAX_ISSUES_BYTES,
@@ -61,8 +73,12 @@ const firstOpenIssue = async ({ owner, repo }: ProjectRepo): Promise<{ title: st
   if (!result.ok) return null;
   const issues = JSON.parse(result.text);
   if (!Array.isArray(issues)) return null;
-  const issue = issues.find((item) => !item.pull_request
+  const candidates = issues.filter((item) => item && !item.pull_request
     && typeof item.title === 'string' && Number.isSafeInteger(item.number) && item.number > 0);
+  // Stable: within a rank, GitHub's order (newest first) decides.
+  const issue = candidates
+    .map((item, index) => ({ item, index, rank: starterRank(item.labels) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)[0]?.item;
   return issue ? { title: taskText(issue.title), number: issue.number } : null;
 };
 
@@ -87,6 +103,7 @@ export const proposeNewPodFirstTask = async ({
   let title: string;
   let sourceRef: string | undefined;
   let note: string;
+  let schedulePrompt: string | undefined;
   try {
     if (repo) {
       let issue: { title: string; number: number } | null = null;
@@ -100,11 +117,20 @@ export const proposeNewPodFirstTask = async ({
         ? `https://github.com/${repo.owner}/${repo.repo}/issues/${issue.number}`
         : undefined;
       note = issue
-        ? (zh ? `从 ${repo.owner}/${repo.repo} 的公开议题中选了一个：` : `From ${repo.owner}/${repo.repo}'s open issues: `)
+        ? (zh
+          ? `从 ${repo.owner}/${repo.repo} 未关闭的议题中选了一个，你的智能体可以在讨论串里处理并提交 PR：`
+          : `From ${repo.owner}/${repo.repo}'s open issues. Your agent can work on it in a thread and open a PR: `)
         : (zh ? '目前无法读取公开议题。这项任务可以先启动项目：' : 'I couldn’t read an open issue. This task can start the project: ');
     } else {
-      title = zh ? `建立每周工作流程：${input}` : `Set up a weekly workflow: ${input}`;
+      title = zh ? `建立定期工作流程：${input}` : `Set up a recurring workflow: ${input}`;
       note = zh ? '建议的第一项任务：' : 'Suggested first task: ';
+      // The pod's own client offers a daily run of it on the owner's own
+      // connected agent (agentScheduleService), and says plainly when none is here.
+      // The whole instruction, not the 150-character title: a limit at the
+      // end ("don't close tickets") must reach the daily run. Capped where
+      // the schedule itself is.
+      schedulePrompt = content.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()
+        .slice(0, SCHEDULE_PROMPT_MAX_CHARS);
     }
     title = taskText(title);
     await AgentMessageService.postMessage({
@@ -125,6 +151,10 @@ export const proposeNewPodFirstTask = async ({
             id: 'bring-your-own', label: zh ? '接入自己的智能体' : 'Bring your own',
             href: `/v2/agents/byo?pod=${encodeURIComponent(podId)}`,
           },
+          ...(schedulePrompt ? [{
+            id: 'schedule-daily', label: zh ? '每天运行' : 'Run it every day',
+            action: 'schedule-daily', prompt: schedulePrompt,
+          }] : []),
         ],
       },
     });

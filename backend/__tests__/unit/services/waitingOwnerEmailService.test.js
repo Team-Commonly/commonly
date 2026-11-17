@@ -1,6 +1,6 @@
 // F522: a teammate @mentions an agent that was installed and never connected.
 // The mention waits in the agent's queue and nothing answers; the owner heard
-// nothing until the digest's +24h line. Ruling (Cofounder, 11-14): one email
+// nothing until the digest's +24h line. Decided 11-14: one email
 // to the owner, at most once per agent per 24h, "<teammate> is waiting on
 // <agent> in <pod>", with the finish-connecting link and a return tag. F512's
 // rules: written by people only, never about the owner's own mentions, and

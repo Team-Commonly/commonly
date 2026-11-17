@@ -47,7 +47,7 @@ interface FunnelResponse {
   };
 }
 
-// TASK-784 (D164): /api/admin/analytics/machines. Daemon machines by platform
+// TASK-784: /api/admin/analytics/machines. Daemon machines by platform
 // (with how many had an agent answer a person) and by CLI version. null is a
 // machine that has not reported, registered by an older CLI.
 interface MachineStatsResponse {

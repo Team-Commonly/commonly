@@ -68,7 +68,7 @@ export const SPAWN_ABSOLUTE_LIFETIME_SECONDS = 24 * 60 * 60;
 
 export const MAX_SPAWN_ID_LENGTH = 128;
 
-export interface SeatCredentialRow {
+interface SeatCredentialRow {
   _id: Types.ObjectId | string;
   ownerUserId: Types.ObjectId | string;
   agentUserId?: Types.ObjectId | null;
@@ -77,7 +77,7 @@ export interface SeatCredentialRow {
   label?: string;
 }
 
-export interface MintSpawnCredentialInput {
+interface MintSpawnCredentialInput {
   seat: SeatCredentialRow;
   spawnId: unknown;
   ttlSeconds?: unknown;
@@ -93,7 +93,7 @@ export interface MintSpawnCredentialInput {
   identity?: { agentName?: unknown; instanceId?: unknown } | null;
 }
 
-export type MintSpawnCredentialResult =
+type MintSpawnCredentialResult =
   | {
       ok: true;
       token: string;
@@ -105,7 +105,7 @@ export type MintSpawnCredentialResult =
     }
   | { ok: false; code: 'child_cannot_mint' | 'invalid_spawn_id' | 'invalid_ttl' };
 
-export type RenewSpawnCredentialResult =
+type RenewSpawnCredentialResult =
   | { ok: true; expiresAt: Date; extended: boolean }
   | { ok: false; code: 'not_found' | 'not_renewable' | 'invalid_ttl' };
 

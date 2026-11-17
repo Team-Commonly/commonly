@@ -65,7 +65,7 @@
  * sibling's shape — otherwise a row that already holds a malformed entry would
  * be unpatchable, and refusing old records is not what this rule is for.
  */
-export type EnvironmentSpecError = { field: string; message: string };
+type EnvironmentSpecError = { field: string; message: string };
 
 const TRANSPORTS = ['http', 'stdio', 'sse'];
 

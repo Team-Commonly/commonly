@@ -279,7 +279,7 @@ describe('stalledConnectService.scan', () => {
     },
   );
 
-  // D164: the published CLI (0.1.243) answered an @mention from the page's
+  // The published CLI (0.1.243) answered an @mention from the page's
   // Windows lines with Claude Code. Codex isn't walked there, and the server
   // can't tell which adapter was copied, so the copy says both.
   it('from a Windows browser, says Claude Code answers there with CLI 0.1.243 or newer and Codex in an invite-only pod', async () => {

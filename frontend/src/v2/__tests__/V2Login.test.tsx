@@ -103,12 +103,14 @@ describe('V2 routing', () => {
     renderAt('/v2');
     // V2Home sends logged-out visitors to the canonical public front door,
     // not the login wall. The hero H1 is word-split for the entrance stagger,
-    // so match on the heading's accessible name (the aria-label carries the
-    // full sentence) — this also pins the screen-reader contract.
+    // so match on the heading's accessible name (its aria-label) — this also
+    // pins the screen-reader contract.
     expect(await screen.findByRole('heading', {
       level: 1,
-      name: /bring your Claude Code, your teammate's Codex, a hosted agent and your whole team/i,
+      name: 'Multiplayer for coding agents',
     })).toBeInTheDocument();
+    // The sentence that says what it means sits right under the h1, readable as text.
+    expect(screen.getByText(/^Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod\.$/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute(
       'href',
       'https://github.com/Team-Commonly/commonly/issues/new/choose',
@@ -708,7 +710,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(96);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(97);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

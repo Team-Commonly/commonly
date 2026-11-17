@@ -22,7 +22,7 @@ export interface V2ThreadState {
   following: boolean | null;
   collapsed: boolean;
   /**
-   * My read point in this thread (D278): ISO, or null when I have never
+   * My read point in this thread: ISO, or null when I have never
    * opened it. Older servers omit it, which reads the same as null.
    */
   lastReadAt?: string | null;
@@ -32,7 +32,7 @@ interface ThreadStateResponse {
   podId: string;
   defaults: { following: boolean | null };
   threads: V2ThreadState[];
-  /** D278 read-tracking epoch; null or absent when the server can't say. */
+  /** Read-tracking epoch; null or absent when the server can't say. */
   readTrackingSince?: string | null;
 }
 
@@ -70,7 +70,7 @@ export interface UseV2ThreadState {
    */
   ready: boolean;
   /**
-   * The read-tracking epoch (D278): before it nobody could store a read
+   * The read-tracking epoch: before it nobody could store a read
    * point, so the own-message fallback never reaches behind it. Null when
    * unknown — an older server, a failed fetch, or not loaded yet.
    */

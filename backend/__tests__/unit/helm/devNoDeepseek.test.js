@@ -4,7 +4,7 @@ const { spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 const { HELM_CHART } = require('../../utils/repoRoot');
 
-// F159 (D243/F98, Cofounder 11-04): hosted agents run Claude only, and DeepSeek
+// F159 (F98, 11-04): hosted agents run Claude only, and DeepSeek
 // is deleted from dev once its calls reach zero. Stack measured 19:03:36Z 11-04
 // to 01:09Z 11-05: 396 LiteLLM calls, 394 on claude-haiku-5-5, 0 on DeepSeek
 // (PR #3421). aiProviders.deepseek gates every DeepSeek route, the key, the

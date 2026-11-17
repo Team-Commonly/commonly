@@ -15,7 +15,7 @@
  */
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 
-export interface PodAccessReq {
+interface PodAccessReq {
   user?: { _id?: unknown };
   userId?: unknown;
   // Set by agentRuntimeAuth when the caller used a cm_agent_* token. NOT
@@ -27,7 +27,7 @@ export interface PodAccessReq {
 }
 
 /** The installations agentRuntimeAuth resolved for the token's agent identity. */
-export interface AgentInstallationsReq {
+interface AgentInstallationsReq {
   agentInstallations?: Array<{ podId?: unknown; status?: unknown }>;
 }
 

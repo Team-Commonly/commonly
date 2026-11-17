@@ -1,9 +1,9 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
+type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative' | 'hosted_mcp';
 
-export interface IAttentionItem extends Document {
+interface IAttentionItem extends Document {
   recipientUserId: Types.ObjectId;
   podId: Types.ObjectId;
   kind: AttentionKind;

@@ -1,8 +1,8 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type DiscordSummaryType = 'hourly' | 'daily' | 'manual';
+type DiscordSummaryType = 'hourly' | 'daily' | 'manual';
 
-export interface IDiscordSummaryHistory extends Document {
+interface IDiscordSummaryHistory extends Document {
   integrationId: Types.ObjectId;
   summaryType: DiscordSummaryType;
   content: string;

@@ -157,7 +157,7 @@ router.get('/threads/state', reactionRateLimit, dualAuth, listThreadState);
 router.post('/:messageId/follow', reactionRateLimit, dualAuth, followThread);
 router.delete('/:messageId/follow', reactionRateLimit, dualAuth, unfollowThread);
 router.put('/:messageId/collapsed', reactionRateLimit, dualAuth, setThreadCollapsed);
-// D278: the caller's read point in a thread. Same gate and limiter as collapse;
+// The caller's read point in a thread. Same gate and limiter as collapse;
 // the chip's unread mark is computed on the client from it.
 router.put('/:messageId/read', reactionRateLimit, dualAuth, setThreadRead);
 

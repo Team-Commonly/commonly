@@ -97,7 +97,7 @@ export const REMOVAL_LEASE_MS = 60 * 1000;
 export const WRITER_LEASE_OVERRUN_MS = UPSTREAM_TIMEOUT_MS;
 
 /** The row fields this sequence reads. Deliberately loose: a strict row type hides the schema change that matters. */
-export interface RemovableConnection {
+interface RemovableConnection {
   _id?: unknown;
   type?: string;
   createdBy?: unknown;
@@ -118,7 +118,7 @@ export interface RemovableConnection {
   };
 }
 
-export interface RemovalDeps {
+interface RemovalDeps {
   now: () => Date;
   /**
    * Step 2, and the fence (F34): one write that also moves the row's
@@ -173,7 +173,7 @@ export interface RemovalDeps {
   }) => Promise<number>;
 }
 
-export type RemovalResult =
+type RemovalResult =
   | {
     removed: true;
     grantsRevoked: number;

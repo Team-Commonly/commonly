@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import publicPages from '../config/publicPages.json';
 
-// First-party usage events (D286, spec draft 2 with CTO's PASS). Every rule is
+// First-party usage events (spec draft 2). Every rule is
 // the server's: a name, screen, page, ref or prop value outside these lists is
 // dropped and never stored, and a 400 never echoes what was sent. No typed
 // text, no token, no route path with an id in it ever reaches a row.
@@ -48,7 +48,7 @@ export const SCREENS = new Set([
 ]);
 
 // Logged-out events. A value, where a name takes one, comes from its enum.
-export const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
+const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
   'page-view': null,
   'cta-click': ['hero-start', 'nav-signup', 'guide-inline', 'compare-inline', 'pricing'],
   'register-view': null,
@@ -61,7 +61,7 @@ const PUBLISHED = new Set<string>(publicPages as string[]);
 const APP_PAGES = new Set(['/register', '/login', '/invite/:token']);
 const REF_TAGS = new Set(['x', 'li', 'email', 'reddit', 'hn', 'gh', 'ph', 'docs']);
 
-// Where usage events are opt-in (Cofounder ruling 11-10): the EU, the rest of
+// Where usage events are opt-in (ruling 11-10): the EU, the rest of
 // the EEA, and the UK. Cloudflare's XX (unknown) and T1 (Tor) get the same
 // treatment, as does a request with no country at all: when we can't tell,
 // we ask first.
@@ -88,7 +88,7 @@ const header = (req: Headers, name: string): string => {
 export const privacySignal = (req: Headers): boolean => header(req, 'dnt') === '1' || header(req, 'sec-gpc') === '1';
 
 // Accounts carry no country, so the request's CF-IPCountry decides the region.
-export const optInRegion = (req: Headers): boolean => {
+const optInRegion = (req: Headers): boolean => {
   const country = header(req, 'cf-ipcountry').toUpperCase();
   return !country || country === 'XX' || country === 'T1' || OPT_IN_COUNTRIES.has(country);
 };
@@ -161,7 +161,7 @@ const ensureIndexes = (): Promise<unknown> => {
 
 const utcDayStart = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-export type UiEventCaller = { _id: unknown; username?: string; role?: string };
+type UiEventCaller = { _id: unknown; username?: string; role?: string };
 type PodRow = { _id: unknown; type?: string; members?: unknown[] };
 type PodLoader = (podId: string) => Promise<PodRow | null>;
 type CanView = (userId: unknown, pod: PodRow) => Promise<boolean>;
@@ -260,9 +260,9 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
 // nothing else (F399). The row holds the reason and the day: no user, country,
 // IP, pod or screen. A person's own opt-out, the EU/UK default and DNT/GPC are
 // never counted, since each promises that nothing is recorded.
-export const USAGE_DROP = 'usage-drop';
-export const USAGE_STATES = ['settings-get-failed'] as const;
-export type UsageState = typeof USAGE_STATES[number];
+const USAGE_DROP = 'usage-drop';
+const USAGE_STATES = ['settings-get-failed'] as const;
+type UsageState = typeof USAGE_STATES[number];
 
 export async function countUsageState(state: UsageState): Promise<void> {
   if (!USAGE_STATES.includes(state)) return;

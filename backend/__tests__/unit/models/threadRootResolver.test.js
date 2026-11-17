@@ -229,7 +229,7 @@ describe('the resolver is not consulted when there is nothing to reconcile', () 
   });
 });
 
-// Cofounder's security read, 2026-10-16 (TASK-278): with no threadRootId, a
+// The security read of 2026-10-16 (TASK-278): with no threadRootId, a
 // reply's target was never checked to be in the reply's pod. The reply joined
 // the other pod's thread, and this pod's preview showed that message's text
 // and author. Each case runs the real check and the real SQL.

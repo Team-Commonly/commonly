@@ -1,0 +1,63 @@
+name: Internal Labels Guard
+
+# This is a public repo. A comment that cites a team-internal ledger id or role
+# tells an outside reader nothing they can open; it should say the reason.
+# Only the lines a PR adds are read, so labels already on main fail no one.
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    # Only PRs under these paths run it. Keep it a non-required check: a
+    # required check that a paths filter skips leaves the PR pending forever.
+    paths:
+      - 'backend/**'
+      - 'cli/src/**'
+      - 'frontend/src/**'
+      - 'packages/**'
+      - 'docs/**'
+      - '.internal-labels-allow'
+      - 'scripts/check-internal-labels.mjs'
+      - '.github/workflows/internal-labels-guard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  internal-labels:
+    name: No internal labels on added lines
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR head, diffed against its merge base with main as it is now:
+          # the merge ref can be stale (see adr-numbering-guard.yml).
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Added lines carry no ledger id or internal role name
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No --depth and no `|| true`: a base this guard can't see must stop
+          # it, not pass it.
+          git fetch --no-tags origin main
+          if ! base=$(git merge-base FETCH_HEAD HEAD); then
+            echo "::error::No merge base between origin/main and this PR head."
+            exit 1
+          fi
+          # A PR branched before this guard landed has the workflow (from the
+          # merge ref) but not the script, so fall back to main's copy.
+          bin=$(mktemp -d)
+          if git cat-file -e "HEAD:scripts/check-internal-labels.mjs" 2>/dev/null; then
+            git show "HEAD:scripts/check-internal-labels.mjs" > "$bin/check-internal-labels.mjs"
+          else
+            git show "FETCH_HEAD:scripts/check-internal-labels.mjs" > "$bin/check-internal-labels.mjs"
+          fi
+          node "$bin/check-internal-labels.mjs" --base "$base"

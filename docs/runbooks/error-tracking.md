@@ -222,6 +222,30 @@ contexts, request headers, cookies, body and query string, breadcrumb messages
 (console text and clicked-element selectors), console arguments, and frame
 variables and source context lines.
 
+**A failed lazy chunk.** An `Error` whose culprit or top frame is an
+`HTMLLinkElement` listener in the `index-*` bundle comes from Vite's preload
+helper. A lazy chunk, or the CSS it brings, failed to load. One cause is a tab
+opened before a deploy asking for a file the new image no longer serves (a
+missing `/assets/*` answers 404). The other is a dropped connection. The helper
+fires `vite:preloadError` for a failed CSS preload and for a failed import
+alike, and `frontend/src/utils/preloadRecovery.ts` reloads the page once in
+answer (F541). A tab reloads at most once per build (the release), however far
+apart the failures are, so a file that's really gone can't loop. A tab left
+open across a deploy gets one reload onto the new build. The tab remembers the
+last 20 builds it reloaded for, so a rollback, or a rolling deploy serving
+pages and chunks from pods on different builds, can't bounce it between them.
+A build that drops out of those 20 could reload the tab once more. With no
+sessionStorage, the tab doesn't reload at all. The error still throws, so it
+still reaches Sentry. The boundary reporter writes its session record only
+after the report is captured, so a reload that cuts off the Sentry chunk
+doesn't hide the error on the next load. Capturing isn't delivering, though.
+The SDK sends the event a moment later, with `keepalive` while the payload is
+small, so a request that has started outlives the reload. A reload in the gap
+before it starts loses the event, and the record then hides it on the next
+load. A few events right after a roll are
+tabs recovering. A steady count on one release means an asset that really
+fails, so look at the page path and what that page loads lazily.
+
 ## Self-hosted behavior and rollback
 
 With the default `errorTracking.enabled: false` and no

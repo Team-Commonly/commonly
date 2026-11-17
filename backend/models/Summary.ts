@@ -1,14 +1,14 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type SummaryType = 'posts' | 'chats' | 'daily-digest';
-export type QuoteSentiment = 'positive' | 'negative' | 'neutral' | 'humorous' | 'insightful';
-export type InsightType = 'trend' | 'sentiment_shift' | 'new_topic' | 'consensus' | 'disagreement' | 'revelation';
-export type InsightImpact = 'low' | 'medium' | 'high';
-export type OverallSentiment = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
-export type EnergyLevel = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
-export type EngagementQuality = 'superficial' | 'moderate' | 'deep' | 'intense';
+type SummaryType = 'posts' | 'chats' | 'daily-digest';
+type QuoteSentiment = 'positive' | 'negative' | 'neutral' | 'humorous' | 'insightful';
+type InsightType = 'trend' | 'sentiment_shift' | 'new_topic' | 'consensus' | 'disagreement' | 'revelation';
+type InsightImpact = 'low' | 'medium' | 'high';
+type OverallSentiment = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
+type EnergyLevel = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
+type EngagementQuality = 'superficial' | 'moderate' | 'deep' | 'intense';
 
-export interface ISummary extends Document {
+interface ISummary extends Document {
   type: SummaryType;
   podId?: Types.ObjectId;
   title: string;

@@ -1,6 +1,6 @@
 /* eslint-disable global-require, import/no-unresolved, import/extensions --
    the requires must follow jest.mock, and this corpus resolves TS through the TS parser */
-// F91 (D243): native turns run on the deployment's native model (Claude Haiku
+// F91: native turns run on the deployment's native model (Claude Haiku
 // on dev), and a turn that holds a connector grant runs only on it, with no
 // fallback, so connector data never reaches another vendor. Google's Limited
 // Use for Calendar (F83) rests on this. Mocks as in the hosted-broker test.
@@ -147,7 +147,7 @@ describe('which model a native turn runs on', () => {
     expect(nativeModelFor({ ...env, configured: 'deepseek-v4-flash', connectorRun: false })).toBe(NATIVE);
   });
 
-  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only. Every pin the
+  // F98 (11-04): hosted agents are Claude-only. Every pin the
   // deployment does not offer maps to the native model server-side; the
   // stored value is left as it is.
   test.each([
@@ -313,7 +313,7 @@ describe('a content filter block', () => {
   });
 });
 
-// F103 proof for the DeepSeek delete (Cofounder's condition 1): every
+// F103 proof for the DeepSeek delete (condition 1): every
 // first-party native agent (Scout, Recorder, pod-welcomer, task-clerk,
 // pod-summarizer) still pins deepseek-v4-flash in its config, and the seed
 // installs it as a native agent with that pin. On a deployment with a native

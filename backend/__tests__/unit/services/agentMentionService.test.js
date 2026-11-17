@@ -106,7 +106,7 @@ describe('AgentMentionService', () => {
     expect(res.skipped).toEqual(['commonly-bot']);
   });
 
-  test('a message summary is never read for @mentions, so it cannot wake anyone (D245)', async () => {
+  test('a message summary is never read for @mentions, so it cannot wake anyone', async () => {
     AgentInstallation.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([
         { agentName: 'commonly-bot', instanceId: 'default', displayName: 'Commonly Bot' },
@@ -923,7 +923,7 @@ describe('AgentMentionService', () => {
       // the build while a claim reversal does.
       test('names all three verbs in the live frame', async () => {
         const content = await frame();
-        // D278: a plain post goes to the channel, except an answer to a mention.
+        // A plain post goes to the channel, except an answer to a mention.
         expect(content).toContain('a plain post goes to the channel, but an answer to a mention goes in its thread;');
         expect(content).not.toContain('a plain post defaults to the channel;');
         expect(content).toContain('replyToMessageId quotes a message');
@@ -966,11 +966,11 @@ describe('AgentMentionService', () => {
       });
     });
 
-    // D278 (2026-11-09): a top-level mention in a shared pod is answered in its
+    // 2026-11-09: A top-level mention in a shared pod is answered in its
     // own thread, and the line beside it names that thread by id. Personal
     // pods, an unreadable pod type, and a mention inside a thread (which gets
     // F245's line instead) do not get it.
-    describe('the line beside a top-level mention names its thread (D278)', () => {
+    describe('the line beside a top-level mention names its thread', () => {
       const LINE = '[This message is top-level in the channel. Answer it in its thread: send threadRootId 4242';
       const mentionIn = async (podDoc, message = { content: 'Hi @nova', id: 4242 }) => {
         setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });

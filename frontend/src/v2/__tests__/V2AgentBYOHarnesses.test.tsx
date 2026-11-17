@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D247: the add page offers every harness `commonly agent run --adapter`
+// The add page offers every harness `commonly agent run --adapter`
 // accepts, lets the person pick model and effort, and says plainly what works
 // for each one. Claude Code and Codex keep their listener command; OpenCode
 // gets its own Mac lines; the rest say what can answer instead.

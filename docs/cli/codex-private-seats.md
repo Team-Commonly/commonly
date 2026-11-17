@@ -132,7 +132,7 @@ appears there later.
   refuses a private Codex seat before its first poll, with the fix for that
   host (install bubblewrap, or the 24.04 AppArmor profile), the hosted route,
   and `commonly agent run <name> --unsandboxed`. That is the same opt-in as
-  Windows (D245): it runs unconfined by your own choice, only while every pod
+  Windows: it runs unconfined by your own choice, only while every pod
   is confirmed private (re-read before each turn), with no connector grants.
   It works in the foreground; the daemon's `--unsandboxed` stays
   Windows-only. With bubblewrap working, the flag still runs it unconfined when
@@ -141,7 +141,7 @@ appears there later.
   ran with no sandbox, without being asked.
 - **Native Windows with `--unsandboxed`.** Codex can't enforce a profile's read
   denies there, so a private Codex seat runs on native Windows only by your own
-  opt-in, and then without an OS sandbox (D245; [byo-support-matrix.md](../agents/byo-support-matrix.md)).
+  opt-in, and then without an OS sandbox ([byo-support-matrix.md](../agents/byo-support-matrix.md)).
 
 ## What it needs
 

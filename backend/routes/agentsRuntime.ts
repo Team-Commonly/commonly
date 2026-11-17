@@ -757,7 +757,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       }
       : {});
 
-    // D247: the installation Settings reads the model and effort from, by the
+    // The installation Settings reads the model and effort from, by the
     // daemon projection's rule: the oldest active one that declares a seat.
     // A listener uses this row's controls only, so it runs what Settings shows.
     // Settings reads the owner's rows only, so a row this agent installed
@@ -807,7 +807,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
-        // D247: the saved model/effort, for a listener seat that has no daemon
+        // The saved model/effort, for a listener seat that has no daemon
         // projection. Two plain strings; no other environment field leaves.
         runtimeControls: runtimeControlsFor(inst?.config),
         // Which messages wake this agent in this pod, as the agent page's
@@ -2659,11 +2659,11 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
-      // D245: optional and warn-only. Problems come back as `warnings` on the
+      // Optional and warn-only. Problems come back as `warnings` on the
       // 200; they never refuse the post.
       summary,
       kind,
-      // D245 item 4: a BYO run's self-reported receipt; stored as such,
+      // A BYO run's self-reported receipt; stored as such,
       // warn-only like the contract.
       receipt,
       ...(payload !== undefined ? { payload } : {}),
@@ -2938,7 +2938,7 @@ type SectionsValidationError =
 
 // Shape of an append-mode cycles payload, after validateSectionsPayload has
 // confirmed it. Route handlers split this out and call appendCycle directly.
-export interface CyclesAppendPayload {
+interface CyclesAppendPayload {
   content: string;
   ts?: Date;
   podId?: string;

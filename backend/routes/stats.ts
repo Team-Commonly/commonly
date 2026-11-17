@@ -148,7 +148,7 @@ router.post('/byo-step', rateLimit({
   return res.json({ ok: true });
 });
 
-// D286 usage events. Both endpoints answer 204 for anything they choose not to
+// Usage events. Both endpoints answer 204 for anything they choose not to
 // keep (a switched-off person, DNT/GPC, the daily cap), so a client can't
 // probe which rule applied. A 400 names the rule, never the submitted value.
 const {

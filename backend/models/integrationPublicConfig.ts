@@ -129,7 +129,7 @@ const withLinkedFlag = <T extends Record<string, unknown> | null | undefined>(in
 };
 
 /** The connector's creator, or an instance administrator: the row whole. */
-export const withRoutingState = <T extends Record<string, unknown> | null | undefined>(
+const withRoutingState = <T extends Record<string, unknown> | null | undefined>(
   integration: T,
 ): T => withLinkedFlag(integration);
 
@@ -138,7 +138,7 @@ export const withRoutingState = <T extends Record<string, unknown> | null | unde
  * instead of the routing state. Mutates the object it is handed, like
  * toPublicIntegrationConfig, so it is applied to a JSON projection.
  */
-export const withoutRoutingState = <T extends Record<string, unknown> | null | undefined>(
+const withoutRoutingState = <T extends Record<string, unknown> | null | undefined>(
   integration: T,
 ): T => {
   const projected = withLinkedFlag(integration);

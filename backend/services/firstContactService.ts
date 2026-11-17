@@ -42,7 +42,7 @@ const FIRST_CONTACT_CUE =
 const TOP_LEVEL_CUE =
   ' Post it top-level in the pod: do not set threadRootId or replyToMessageId, and do not reply to any earlier message.';
 
-// A team pod isn't meeting the agent the way a newcomer is. The D244 experts
+// A team pod isn't meeting the agent the way a newcomer is. The expert agents
 // opened with "What would you most like to understand?" to people mid-work.
 const TEAM_POD_CUE =
   'You were just added to a pod where people are already working. Post ONE short line saying you are '
@@ -55,7 +55,28 @@ const mentionLineCue = (handle: string): string => (
   + 'so I see your answer.)" It is part of the greeting: post one message, not two. You only see '
   + 'messages that mention you, so without that line their answer would never reach you.'
 );
+// PH walk 2026-11-14: "Mention me as @…" was friction on the very first
+// reply. An answer to an agent's question that @names the person already
+// reaches the agent (agentMentionService.resolveQuestionAnswerTarget, inside
+// its 30-minute window), so the greeting names them instead. The mention line
+// stays as the fallback when the person's name can't be read.
+const addressPersonCue = (username: string): string => (
+  ` Open the greeting with @${username}, so it is addressed to them: you only see messages that mention you, `
+  + 'and their plain answer to a question that names them reaches you. Do not ask them to mention you.'
+);
+const PERSON_HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+const personHandle = async (userId: Types.ObjectId): Promise<string | null> => {
+  try {
+    const user = await User.findById(userId).select('username').lean() as { username?: string } | null;
+    const username = String(user?.username || '');
+    return PERSON_HANDLE.test(username) ? username : null;
+  } catch (error) {
+    console.warn('[first-contact] username unavailable', (error as Error).message);
+    return null;
+  }
+};
 const HOSTED_GREETING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const LOW_SIGNAL_REPLY = /^(?:ok|okay|lgtm|yes|no|thanks|thank you|thx|hi|hey|hello)[.!?\s]*$/iu;
 
@@ -209,7 +230,11 @@ export async function maybeFireFirstContact({
       ? 'A person just started you in this pod and has not seen you speak here recently. '
       : 'A human just added you to this workspace and is seeing you for the first time. '
         + 'This is your one first impression. ';
-    const mentionCue = MENTION_HANDLE.test(handle) ? mentionLineCue(handle) : '';
+    let mentionCue = '';
+    if (MENTION_HANDLE.test(handle)) {
+      const person = await personHandle(safeUserId);
+      mentionCue = person ? addressPersonCue(person) : mentionLineCue(handle);
+    }
     const greeting = !hostedAgentUserId && await hasAnotherPerson(teamPodMembers || [], safeUserId)
       ? `${TEAM_POD_CUE}${TOP_LEVEL_CUE}`
       : `${opening}${FIRST_CONTACT_CUE}${TOP_LEVEL_CUE}${languageCue}${mentionCue}`;

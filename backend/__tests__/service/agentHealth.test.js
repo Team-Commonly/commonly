@@ -1,5 +1,5 @@
 /**
- * D115 — GET /api/agents/health (docs/architecture/fleet-health.md).
+ * GET /Api/agents/health (docs/architecture/fleet-health.md).
  *
  * Real Mongo (tier 1). Pins the three rules of the design note: the pod set is
  * the viewer's own memberships (no admin bypass, no co-member agent-dm), every

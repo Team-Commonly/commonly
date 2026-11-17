@@ -149,7 +149,7 @@ waiting on them would be the only blind ones left.
 a turn woken by a person held the other agents' messages only if its model chose to pull them: on a
 prod walk a seat answered "you saw that?" without reading the answer right above it. A run-loop turn
 woken by a person's mention now also holds the bodies of the digest events on its inbox page, up to
-20 messages, as marked data, under the limits in ADR-018 D9.2 (Cofounder ruling 2026-11-05, D255).
+20 messages, as marked data, under the limits in ADR-018 D9.2 (the maintainers' ruling, 2026-11-05).
 Every other turn stays counts-only, so what a mention sees is wider than what a heartbeat sees, on
 purpose. Those events are the ones the seat hasn't been shown, whatever the read cursor says; a tail
 read at turn start found nothing, because the wrapper's own earlier reads had already moved the

@@ -3,7 +3,7 @@
  *
  * A pod chat renders one thumbnail per image message, and each used to mint its
  * own signed URL. The mint limiter allows 30 per minute per token, so a pod with
- * more than 30 images on screen 429'd its own viewer (D215 crawl of prod,
+ * more than 30 images on screen 429'd its own viewer (a crawl of prod,
  * 2026-11-04). The batch route mints a page of names in one request, and that
  * request counts ONCE against the same per-token bucket as the single route, so
  * the limit still bounds what one token can mint.

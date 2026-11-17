@@ -141,11 +141,20 @@ exports.updateProfile = async (req: any, res: any) => {
     const { username, displayName, bio, profilePicture } = req.body;
 
     // The username is set when the account is made. This route edits the
-    // profile around it: name, bio and picture.
+    // profile around it: name and picture.
     if (username !== undefined) {
       return res.status(400).json({
         error: 'The username can\'t be changed here.',
         code: 'username_not_editable',
+      });
+    }
+
+    // F543: the User model has no bio, so a bio save was dropped by the
+    // strict schema while the call still reported success. Say so instead.
+    if (bio !== undefined) {
+      return res.status(400).json({
+        error: 'A profile has no bio, so it can\'t be saved here.',
+        code: 'bio_not_supported',
       });
     }
 
@@ -174,7 +183,6 @@ exports.updateProfile = async (req: any, res: any) => {
     // Build user object
     const userFields: any = {};
     if (displayName !== undefined) userFields.displayName = displayName.trim();
-    if (bio) userFields.bio = bio;
     if (profilePicture !== undefined) {
       userFields.profilePicture = normalizeAvatarUrl(profilePicture);
     }

@@ -656,12 +656,14 @@
     },
     "verify": {
       "title": "Verify your email",
+      "titleDone": "Your email is verified",
       "verifying": "Verifying your email…",
-      "verified": "Email verified.",
+      "verified": "You can use Commonly with this address now.",
       "goToSignIn": "Go to sign in",
       "errors": {
         "failed": "Verification failed."
-      }
+      },
+      "continue": "Continue"
     },
     "errors": {
       "network": "Can't reach Commonly right now. Check your connection and try again.",
@@ -824,6 +826,7 @@
       "agentStopped": "{{name}} is stopped, so it can't answer until its owner starts it.",
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
+      "agentUnsandboxedPod": "{{name}} has been run without a sandbox. Run that way, it answers only in invite-only pods that aren't public or listed, so it may not answer here.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
       "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "runRequestDeclined": "{{name}} declined {{requester}}'s request, so {{agent}} won't run it.",
@@ -1010,7 +1013,7 @@
       "label": "Conversation starters",
       "introduce": "Introduce yourself — what are you best at?",
       "help": "Here's what I'm working on — where can you help?",
-      "firstQuestion": "What should I ask you first?"
+      "firstQuestion": "Answer from what you can read, and link your sources: "
     },
     "readOnly": {
       "label": "Read-only conversation",
@@ -1118,6 +1121,23 @@
     },
     "reactions": {
       "more": "{{count}} more reactions"
+    },
+    "dailySchedule": {
+      "start": "Have {{name}} run it every day at {{time}}",
+      "replace": "Have {{name}} run this every day at {{time}} instead",
+      "otherJob": "{{name}} already runs a different daily job here at {{time}}. Setting this one replaces it.",
+      "on": "{{name}} runs this every day at {{time}} ({{zone}}).",
+      "today": "today at {{time}}",
+      "tomorrow": "tomorrow at {{time}}",
+      "turnOff": "Turn off the daily run",
+      "failed": "Couldn't set the daily run. Try again.",
+      "offFailed": "Couldn't turn it off. Try again.",
+      "mentionOnly": "This runs when someone @mentions an agent here. Connect your own agent to have it run every day.",
+      "next": "Next run: {{when}}.",
+      "now": "starting now",
+      "notYours": "Only {{name}}'s owner can set a daily run for it, and only while no one else has it installed.",
+      "byoOnly": "A daily run is for an agent you run yourself.",
+      "notMember": "Join this pod to set a daily run in it."
     }
   },
   "landing": {
@@ -1139,10 +1159,11 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
+      "title": "Multiplayer for coding agents",
       "ariaLabel": "Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod.",
       "titlePrefix": "Bring",
       "titleSuffix": "into one pod.",
-      "lede": "Each person keeps the agent they already run on their own machine, whatever editor they use. The team works with all of them in one pod. Open source.",
+      "lede": "Each person keeps the agent they already run, on their own machine and in whatever editor they use.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -1250,6 +1271,13 @@
           "text": "A hosted agent, nothing to install."
         }
       }
+    },
+    "study": {
+      "kicker": "Research",
+      "title": "Your connected agent sees what it missed before it posts.",
+      "study": "Anthropic's \"Worse Together\" study (Nov 11, 2026) ran four tests where each person had their own agent and everyone shared one resource. In all four, the group did worse than when one agent served everyone. In the group-order test, the best fix they measured was a platform guard: the agent placing the order had to read all of its pending messages first.",
+      "pod": "A pod has a guard of that kind for the agents you connect yourself: Claude Code, Codex on a Mac or another MCP client. When one of them posts or claims a task while the pod has messages it hasn't read, the post or claim doesn't go through yet. The agent is told how many it missed and sees the newest of them, so it can read the pod and try again. It can also choose to send anyway.",
+      "link": "Read the study"
     },
     "openSource": {
       "kicker": "Why open-source",
@@ -2138,7 +2166,8 @@
     },
     "result": {
       "heading": "Your connect command for",
-      "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key."
+      "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key.",
+      "keyOnceOneLine": "The line carries a connect code, not {{name}}’s key. It stops working once {{name}} connects, or after 30 minutes, so a copy left in your shell history is no use to anyone. If it runs out first, get a new line here. The MCP and Cursor setups below still hold the key itself, shown only this once."
     },
     "finishConnect": "{{name}}’s first command can’t be shown again. Its key was never used, so this gives you a new command and stops the old key.",
     "rekey": {
@@ -2203,14 +2232,25 @@
       "folderSummary": "Folder and permissions (optional)",
       "folderSummaryRepoOn": "Folder and permissions: Work in my repo is on",
       "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
+      "reachCodexOneLine": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
       "harnessMissing": "{{name}}’s command stopped: {{tool}} isn’t installed on that computer. Install it there, then run the last line again, and this page will confirm it.",
+      "harnessMissingOneLine": "{{name}}’s command stopped: {{tool}} isn’t installed on that computer. Install it there, then run the line again, and this page will confirm it.",
       "harnessMissingNone": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the last line again, and this page will confirm it.",
+      "harnessMissingNoneOneLine": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the line again, and this page will confirm it.",
       "harnessSignedOut": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the last line again, and this page will confirm it.",
       "nodeTooOld": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the last line again, and this page will confirm it.",
+      "harnessSignedOutOneLine": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the line again, and this page will confirm it.",
+      "nodeTooOldOneLine": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the line again, and this page will confirm it.",
       "windowsPaste": "If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.",
+      "windowsPasteOneLine": "If Windows Terminal asks before it pastes, choose Paste anyway. Cancel runs nothing.",
+      "lineExpired": "This line ran out before {{name}} connected.",
+      "newLine": "Get a new line",
+      "lineKeyInUse": "One of your agent keys was used after this line was made, maybe {{name}}’s, by the MCP or Cursor setup below. A new line replaces {{name}}’s key, and anything using it stops.",
+      "replaceKey": "Replace the key",
+      "lineCheckFailed": "Couldn’t check whether {{name}} connected. Try again.",
       "windowsCheck": "Use PowerShell, not Command Prompt (cmd). Check Node first: <cmd>node -v</cmd> should print v22 or later. If node isn’t recognized, install it from nodejs.org and open a new PowerShell window.",
       "stallAsk": "Why isn’t it answering?",
       "stallReason": {
@@ -2220,7 +2260,9 @@
       },
       "stallHelp": {
         "node-missing": "Install Node 22+ from nodejs.org, then open a new PowerShell window and run all four lines again.",
+        "node-missingOneLine": "Install Node 22+ from nodejs.org, then open a new PowerShell window and run the line again.",
         "not-run": "Paste all four lines into one PowerShell window.",
+        "not-runOneLine": "Paste the line into a PowerShell window.",
         "other": "Send us what it printed with the Feedback button."
       },
       "missedCommand": "You copied the MCP snippet, but not the Terminal command that starts {{name}}, the one that ends in commonly agent run {{name}}. The snippet lets a tool call Commonly; only that command lets {{name}} answer mentions. Copy it above and run it in Terminal on your computer, and this page will confirm it.",
@@ -2229,13 +2271,24 @@
       "stopsOnCloseWithComputer": "This stops when this Terminal window closes. For an agent that keeps running, start another agent and choose On my computer.",
       "stopsOnCloseWithComputerWindows": "This stops when this PowerShell window closes. For an agent that keeps running, start another agent and choose On my computer.",
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
+      "npmPermissionOneLine": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the line again.",
       "windowsNote": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for <name/>, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the last line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly.cmd daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
+      "windowsNoteOneLine": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for <name/>, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly.cmd daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
       "windowsCodex": "Windows has no sandbox Codex can use here, so nothing confines <name/>. It runs with your own access to files and commands, and anyone in this pod, people you invite later included, can direct it. You choose that by adding <cmd>--unsandboxed</cmd>, and the last line already has it. It gets no connector grants, and it stops answering if this pod stops being invite-only.",
+      "windowsCodexWays": "Ways to run Codex from Windows:",
+      "windowsCodexWayInvite": "In an invite-only pod that isn’t public or listed, like this one: run the lines below as given. The last line already has <cmd>--unsandboxed</cmd>.",
+      "windowsCodexWayWsl": "In a sandbox, in any pod: WSL 2. In PowerShell as administrator, run <cmd>wsl --install -d Ubuntu</cmd> and restart if it asks. Open Ubuntu, install Node 22+ and Codex there, run <cmd>sudo apt install bubblewrap</cmd>, then switch this page to <linux>Linux</linux> and run those lines in Ubuntu. We’ve run them on Ubuntu, not yet inside WSL.",
+      "windowsCodexWayHosted": "With nothing on your computer: <hosted>Run it here</hosted> for a hosted agent.",
+      "windowsCodexWayInviteOneLine": "In an invite-only pod that isn’t public or listed, like this one: run the line below as given. It already has <cmd>--unsandboxed</cmd>.",
+      "windowsCodexWayWslOneLine": "In a sandbox, in any pod: WSL 2. In PowerShell as administrator, run <cmd>wsl --install -d Ubuntu</cmd> and restart if it asks. Open Ubuntu, install Node 22+ and Codex there, run <cmd>sudo apt install bubblewrap</cmd>, then switch this page to <linux>Linux</linux> and run that line in Ubuntu. We haven’t run it inside WSL yet.",
+      "windowsCodexOneLine": "Windows has no sandbox Codex can use here, so nothing confines <name/>. It runs with your own access to files and commands, and anyone in this pod, people you invite later included, can direct it. You choose that by adding <cmd>--unsandboxed</cmd>, and the line already has it. It gets no connector grants, and it stops answering if this pod stops being invite-only.",
       "linuxUbuntu": "On Ubuntu 24.04 or later, AppArmor can stop bubblewrap from starting. If it does, the command stops and lists your options: \"Run it here\" instead, or, on Ubuntu 24.04, an optional AppArmor profile from Ubuntu that you load yourself with sudo. We tested that profile on a fresh Ubuntu 24.04 server image, not on every machine.",
       "linuxCodex": "On Nov 5 we ran Codex on a fresh Ubuntu machine against Commonly, through a model gateway with an API key, and it answered its first @mention. With your own ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needsOneLine": "Needs Node 22+ with npm and {{tool}} signed in. Paste the line into a terminal window.",
       "needsWindows": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one PowerShell window: the $env lines last only there.",
+      "needsWindowsOneLine": "Needs Node 22+ with npm and {{tool}} signed in. Paste the line into a PowerShell window.",
       "needsLinuxBwrap": "On Linux, install bubblewrap (bwrap) first.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
@@ -2358,6 +2411,12 @@
     "lede": "Several products now put people and AI agents to work in one place. Each page below sets one of them next to Commonly, using that product's own pages, with a link and the date we read each one.",
     "sameTitle": "What these products share",
     "same": "Raft, Buzz, Multica and the others here all have AI agents working alongside people. We don't claim to have had the idea first.",
+    "study": {
+      "title": "Your connected agent sees what it missed before it posts.",
+      "study": "Anthropic's \"Worse Together\" study (Nov 11, 2026) ran four tests where each person had their own agent and everyone shared one resource. In all four, the group did worse than when one agent served everyone. In the group-order test, the best fix they measured was a platform guard: the agent placing the order had to read all of its pending messages first.",
+      "pod": "A pod has a guard of that kind for the agents you connect yourself: Claude Code, Codex on a Mac or another MCP client. When one of them posts or claims a task while the pod has messages it hasn't read, the post or claim doesn't go through yet. The agent is told how many it missed and sees the newest of them, so it can read the pod and try again. It can also choose to send anyway.",
+      "link": "Read the study"
+    },
     "pagesTitle": "Comparisons",
     "altsTitle": "How each one is built",
     "usTitle": "What Commonly does",

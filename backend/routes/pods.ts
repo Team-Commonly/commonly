@@ -1,6 +1,7 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import { closeAgentRoom, reopenAgentRoom } from '../services/agentRoomCloseService';
 import { addPodMemberByUsername } from '../services/podMemberAddService';
+import { noteUnsandboxedPodSettingsChange, podQualifiesForUnsandboxed } from '../services/unsandboxedPodLineService';
 import path from 'path';
 import fs from 'fs';
 import { createHash, randomBytes } from 'crypto';
@@ -912,6 +913,20 @@ const podVisibilityRateLimit = rateLimit({
 });
 
 /**
+ * When an owner's change takes a pod out of what an agent started without a
+ * sandbox may answer in, the pod says so for each such agent. Never awaited:
+ * the setting is saved either way.
+ */
+const noteUnsandboxedLeaving = (
+  pod: { _id: { toString: () => string }; publicRead?: unknown; communityListed?: unknown; joinPolicy?: unknown },
+  qualifiedBefore: boolean,
+): void => {
+  if (!qualifiedBefore || podQualifiesForUnsandboxed(pod)) return;
+  noteUnsandboxedPodSettingsChange({ podId: pod._id.toString() })
+    .catch((error: Error) => console.warn('[unsandboxed-pod] notice failed:', error?.message));
+};
+
+/**
  * POST /api/pods/:id/visibility  { tier: 'private' | 'community' }
  *
  * ADR-016's ordered tier (private -> showcase -> community), owner-writable
@@ -956,6 +971,7 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
       type?: string;
       publicRead?: boolean;
       communityListed?: boolean;
+      joinPolicy?: string;
       createdBy?: { toString: () => string };
       save: () => Promise<unknown>;
     } | null;
@@ -1002,9 +1018,11 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
     }
 
     const listed = tier === 'community';
+    const qualifiedForUnsandboxed = podQualifiesForUnsandboxed(pod);
     pod.publicRead = listed;
     pod.communityListed = listed;
     await pod.save();
+    noteUnsandboxedLeaving(pod, qualifiedForUnsandboxed);
 
     try {
       await AuditLog.create({
@@ -1054,8 +1072,10 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
       return res.status(400).json({ error: 'pod_type_not_configurable' });
     }
     const previous = pod.joinPolicy;
+    const qualifiedForUnsandboxed = podQualifiesForUnsandboxed(pod);
     pod.joinPolicy = joinPolicy;
     await pod.save();
+    noteUnsandboxedLeaving(pod, qualifiedForUnsandboxed);
     if (previous !== joinPolicy) {
       try {
         await AuditLog.create({

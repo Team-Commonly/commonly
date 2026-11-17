@@ -38,11 +38,11 @@ const ROOM_POD_TYPES = new Set([
   'team',
 ]);
 
-export type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin' | 'direct';
+type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin' | 'direct';
 
 // Kinds only appear inside the All view (walk-1 miss 3). Order is the
 // order a person scans them: work first, direct last.
-export const POD_KIND_ORDER: PodKind[] = [
+const POD_KIND_ORDER: PodKind[] = [
   'team', 'community', 'chat', 'study', 'games', 'ensemble', 'admin', 'direct',
 ];
 
@@ -57,10 +57,10 @@ export const ROOM_POD_TYPE_LABELS: Record<string, Exclude<PodKind, 'community' |
   'agent-admin': 'admin',
 };
 
-// D215 (TASK-691): one segmented switch picks the list. It replaced the
+// (TASK-691): one segmented switch picks the list. It replaced the
 // Pinned / Recent headings and the "Everything 64 ▸" fold, whose tiny caret
 // did not read as a switch.
-export type PodListView = 'recent' | 'all' | 'pinned';
+type PodListView = 'recent' | 'all' | 'pinned';
 const POD_LIST_VIEWS: PodListView[] = ['recent', 'all', 'pinned'];
 const POD_LIST_VIEW_KEY = 'v2:pods.view';
 const KIND_OPEN_KEY = 'v2:pods.kindsOpen';
@@ -110,7 +110,7 @@ const writeOpenKinds = (kinds: Set<PodKind>) => {
   }
 };
 
-export const podMessageTime = (pod: V2Pod): number => {
+const podMessageTime = (pod: V2Pod): number => {
   const value = pod.lastMessage?.createdAt || pod.createdAt;
   const timestamp = value ? new Date(value).getTime() : 0;
   return Number.isNaN(timestamp) ? 0 : timestamp;
@@ -154,14 +154,14 @@ export const groupPodsByKind = (pods: V2Pod[]): Array<{ kind: PodKind; pods: V2P
     .filter((group) => group.pods.length > 0);
 };
 
-export const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
+const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
   [...pods].sort((left, right) => (
     podMessageTime(right) - podMessageTime(left) || left._id.localeCompare(right._id)
   ))
 );
 
 // Recent uses the same message order on every device. The sidebar passes no
-// pins since D215: with no Pinned heading above it, Recent is the whole recent
+// pins since the redesign: with no Pinned heading above it, Recent is the whole recent
 // list, pinned pods included. Callers may still exclude a set.
 export const recentPods = (
   pods: V2Pod[],
@@ -199,7 +199,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const searchToggleRef = useRef<HTMLButtonElement | null>(null);
   const [query, setQuery] = useState('');
-  // The phone page folds search behind an icon in its title bar (D223).
+  // The phone page folds search behind an icon in its title bar.
   const [searchOpen, setSearchOpen] = useState(false);
   const [listView, setListView] = useState<PodListView>(() => readListView());
   const [openKinds, setOpenKinds] = useState<Set<PodKind>>(() => readOpenKinds());
@@ -418,7 +418,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           {time && <span className="v2-pods__row-time" aria-hidden="true">{time}</span>}
         </span>
       </button>
-      {/* D215: the pin is an icon on row hover (or a touch press and hold) that takes the time's slot. */}
+      {/* The pin is an icon on row hover (or a touch press and hold) that takes the time's slot. */}
       <button
         type="button"
         className={`v2-pods__pin${isPinned ? ' v2-pods__pin--active' : ''}`}
@@ -545,7 +545,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   return (
     <aside className={`v2-pane v2-pods-aside${isPage ? ' v2-pods-aside--page' : ''}`}>
       <div className="v2-pods">
-        {/* D223 (TASK-735): the phone page leads with the artboard's title bar,
+        {/* (TASK-735): the phone page leads with the artboard's title bar,
             search as an icon beside the new-pod key. */}
         {isPage && (
           <div className="v2-pods__bar">

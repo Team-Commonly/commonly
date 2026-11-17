@@ -1,23 +1,23 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 import { agentDefaultModel } from '../config/agentDefaultModel';
 
-export type AgentProfileTone = 'friendly' | 'professional' | 'casual' | 'formal' | 'technical';
-export type AgentProfileStatus = 'active' | 'paused' | 'archived';
+type AgentProfileTone = 'friendly' | 'professional' | 'casual' | 'formal' | 'technical';
+type AgentProfileStatus = 'active' | 'paused' | 'archived';
 
-export interface IAgentProfilePersona {
+interface IAgentProfilePersona {
   tone: AgentProfileTone;
   boundaries?: string[];
   specialties?: string[];
   customInstructions?: string;
 }
 
-export interface IToolPolicy {
+interface IToolPolicy {
   allowed: string[];
   blocked?: string[];
   requireApproval?: string[];
 }
 
-export interface IContextPolicy {
+interface IContextPolicy {
   maxTokens: number;
   compactionThreshold: number;
   includeMemory: boolean;
@@ -26,7 +26,7 @@ export interface IContextPolicy {
   summaryHours: number;
 }
 
-export interface IAgentProfile extends Document {
+interface IAgentProfile extends Document {
   agentId: string;
   agentName: string;
   instanceId: string;
@@ -59,7 +59,7 @@ export interface IAgentProfile extends Document {
   incrementStats(messages?: number, tokens?: number): Promise<IAgentProfile>;
 }
 
-export interface IAgentProfileModel extends Model<IAgentProfile> {
+interface IAgentProfileModel extends Model<IAgentProfile> {
   findByPodAndId(podId: Types.ObjectId, agentId: string): mongoose.Query<IAgentProfile | null, IAgentProfile>;
   getDefaultAgent(podId: Types.ObjectId): mongoose.Query<IAgentProfile | null, IAgentProfile>;
   getActiveAgents(podId: Types.ObjectId): mongoose.Query<IAgentProfile[], IAgentProfile>;

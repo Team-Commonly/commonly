@@ -2,9 +2,9 @@
 // @sentry/react and is the lazy chunk, so this file must never import it
 // statically (sentry.test.ts guards that). Components import this file only.
 
-export type ErrorBoundaryName = 'app' | 'v2';
+type ErrorBoundaryName = 'app' | 'v2';
 
-export interface BoundaryReport {
+interface BoundaryReport {
   boundary: ErrorBoundaryName;
   componentStack?: string | null;
 }
@@ -45,17 +45,19 @@ const rememberSeen = (seen: string[]): void => {
   }
 };
 
-// Claimed before the chunk loads, so two crashes in flight can't both pass.
-const claimReport = (error: unknown, boundary: ErrorBoundaryName): boolean => {
+// Claimed in memory before the chunk loads, so two crashes in flight can't both
+// pass. The session record is written only once the report is captured: a page
+// that unloads while the chunk loads (a reload after a failed lazy chunk, F541)
+// must not leave a record for a report that never went out, or the next load
+// would skip it.
+const claimReport = (error: unknown, boundary: ErrorBoundaryName): string | null => {
   const message = error instanceof Error ? error.message : String(error);
   const key = `${boundary}:${hashText(message)}`;
-  const seen = readSeen();
-  if (seenThisLoad.has(key) || seen.includes(key)) return false;
-  if (reportsThisLoad >= MAX_REPORTS_PER_LOAD) return false;
+  if (seenThisLoad.has(key) || readSeen().includes(key)) return null;
+  if (reportsThisLoad >= MAX_REPORTS_PER_LOAD) return null;
   reportsThisLoad += 1;
   seenThisLoad.add(key);
-  rememberSeen([...seen, key]);
-  return true;
+  return key;
 };
 
 // Always resolves: a failed report stays silent, and a failed chunk load has
@@ -64,9 +66,11 @@ const claimReport = (error: unknown, boundary: ErrorBoundaryName): boolean => {
 export const reportBoundaryError = async (error: unknown, report: BoundaryReport): Promise<void> => {
   try {
     if (process.env.REACT_APP_SENTRY_DSN) {
-      if (claimReport(error, report.boundary)) {
+      const key = claimReport(error, report.boundary);
+      if (key) {
         const { captureBoundaryError } = await import('./sentry');
         captureBoundaryError(error, report);
+        rememberSeen([...readSeen(), key]);
       }
     }
   } catch {

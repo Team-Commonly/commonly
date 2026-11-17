@@ -270,7 +270,7 @@ describe('POST /api/grants naming a BYO agent', () => {
   });
 
   // F175c, F175d: pi, Qwen and Goose hold a grant only on a public seat; naming
-  // never lifts that refusal. D252: the refusal says so, rather than the general
+  // never lifts that refusal. The refusal says so, rather than the general
   // line, which still offers only the harnesses a private seat can use.
   test('a seat on a public-only harness that is not public cannot be named, and is told why', async () => {
     mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });

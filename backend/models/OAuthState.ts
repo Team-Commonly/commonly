@@ -2,7 +2,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export type OAuthProvider = 'x';
 
-export interface IOAuthState extends Document {
+interface IOAuthState extends Document {
   provider: OAuthProvider;
   state: string;
   userId: Types.ObjectId;

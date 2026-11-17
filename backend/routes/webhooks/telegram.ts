@@ -77,7 +77,7 @@ const getChatTitle = (chat: any) => (
 // Fail CLOSED (hardening study 2026-08-31, gap 4): with no TELEGRAM_SECRET_TOKEN
 // configured this used to accept anything — anyone who found the URL could post
 // updates that wake agents and drive /mode //mute. A missing secret rejects every
-// update; there is no opt-out (D137 A9 removed the dev-only bypass flag). Deploy
+// update; there is no opt-out (the dev-only bypass flag was removed). Deploy
 // note: set TELEGRAM_SECRET_TOKEN and re-register the webhook with
 // setWebhook(secret_token=...) before a live bridge points here, or Telegram's
 // deliveries (sent without the header) will 401.

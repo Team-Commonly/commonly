@@ -10,10 +10,10 @@ const Pod = require('../../models/Pod');
 const { issueSessionToken } = require('../../services/sessionTokenService');
 const { DAILY_CAP } = require('../../services/usageEvents');
 
-// D286 usage events (F399). Each block pins one load-bearing rule of the spec:
+// Usage events (F399). Each block pins one load-bearing rule of the spec:
 // allowlists, server-set fields, pod rules, consent by region and signal, the
 // daily cap, logged-out counters with no visitor state, and the TTLs.
-describe('usage events (D286)', () => {
+describe('usage events', () => {
   let app;
   let ip = 0;
   const rows = () => mongoose.connection.db.collection('ui_events');
@@ -142,7 +142,7 @@ describe('usage events (D286)', () => {
     expect(row.props).toBeUndefined();
   });
 
-  it('keeps a get-started-click step from its enum and drops any other (D288)', async () => {
+  it('keeps a get-started-click step from its enum and drops any other', async () => {
     const user = await makeUser();
     await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'first-task' } }).expect(204);
     await post(user, { name: 'get-started-click', screen: '/pods/:podId', props: { step: 'invite-teammate' } }).expect(204);
@@ -152,7 +152,7 @@ describe('usage events (D286)', () => {
     expect(found.map((row) => row.props)).toEqual([{ step: 'first-task' }, undefined, { step: 'run-hosted' }]);
   });
 
-  it('keeps the teammate card\'s where prop only for workspace or pod (D288)', async () => {
+  it('keeps the teammate card\'s where prop only for workspace or pod', async () => {
     const user = await makeUser();
     await post(user, { name: 'teammate-card-shown', screen: '/', props: { where: 'workspace' } }).expect(204);
     await post(user, { name: 'teammate-card-click', screen: '/', props: { where: 'https://x.test/?q=1' } }).expect(204);

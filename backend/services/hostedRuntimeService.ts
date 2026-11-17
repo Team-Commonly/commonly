@@ -65,7 +65,7 @@ export const hostedCaps = ({ pro = false }: { pro?: boolean } = {}) => ({
 });
 
 /** Whether a user is on pro. A missing user or a failed lookup reads as free. */
-export const ownerIsPro = async (userId: unknown): Promise<boolean> => {
+const ownerIsPro = async (userId: unknown): Promise<boolean> => {
   const id = String(userId ?? '');
   if (!/^[a-f\d]{24}$/i.test(id)) return false;
   try {
@@ -90,7 +90,7 @@ export const userRunCeilingForOwner = async (userId: unknown): Promise<number | 
   return (await ownerIsPro(userId)) && Number.isFinite(pro) && pro > 0 ? pro : free;
 };
 
-export const hostedRuntimeConfig = () => ({
+const hostedRuntimeConfig = () => ({
   url: String(process.env.HOSTED_RUNTIME_URL || '').trim().replace(/\/+$/, ''),
   adminToken: String(process.env.HOSTED_RUNTIME_ADMIN_TOKEN || '').trim(),
 });
@@ -143,7 +143,7 @@ export const countHostedAgentsForUser = async (userId: any): Promise<number> => 
     .map((row: any) => hostedIdentityKey(row.agentName, row.instanceId))).size;
 };
 
-export interface HostedInstallationSummary {
+interface HostedInstallationSummary {
   agentName: string;
   instanceId: string;
   podId: string;
@@ -237,7 +237,7 @@ const identityRows = (agentName: string, instanceId: string, extra: Record<strin
   }).collation(IDENTITY_COLLATION)
 );
 
-export interface HostedOwner {
+interface HostedOwner {
   // Null when people host the agent but none of them can carry this requester's
   // turns. The row is refused then, and never guessed at.
   ownerId: unknown;
@@ -336,7 +336,7 @@ const utcDayStart = (now = new Date()): Date => new Date(Date.UTC(
 
 // The greeting an agent posts when first added is not one of the owner's
 // turns (it fires once per person and agent), so the meter does not count it.
-export const turnsToday = async (agentName: string, instanceId: string): Promise<number> => (
+const turnsToday = async (agentName: string, instanceId: string): Promise<number> => (
   AgentEvent.countDocuments({
     agentName: String(agentName).toLowerCase(),
     instanceId: instanceId || 'default',
@@ -367,7 +367,7 @@ export const nativeTurnsToday = async (agentName: string, instanceId: string, ow
   });
 };
 
-export interface MeterResult {
+interface MeterResult {
   allowed: boolean;
   used: number;
   cap: number;
@@ -475,10 +475,8 @@ export const getAgentStatus = async (agentName: string, instanceId: string): Pro
 module.exports = {
   HOSTED_RUNTIME_TYPE,
   hostedCaps,
-  ownerIsPro,
   hostedCapsForOwner,
   userRunCeilingForOwner,
-  hostedRuntimeConfig,
   isConfigured,
   readRuntimeConfig,
   isHostedInstallation,
@@ -490,7 +488,6 @@ module.exports = {
   HOSTED_OWNER_POD_SCAN,
   resolveHostedOwner,
   retireHostedRoomRows,
-  turnsToday,
   nativeTurnsToday,
   meterAllowsTurn,
   HostedRuntimeError,

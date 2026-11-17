@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export interface IInvitationCode extends Document {
+interface IInvitationCode extends Document {
   code: string;
   createdBy: Types.ObjectId;
   note: string;

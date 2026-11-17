@@ -121,8 +121,8 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
 
         <div className="v2-rail__foot">
           {/* Help: the guide, report-a-bug and request-a-feature (2026-07-23).
-              The language switch left the rail for Settings › Look (D215,
-              TASK-691): language is not a daily act. */}
+              The language switch left the rail for Settings › Look
+              (TASK-691): language is not a daily act. */}
           <div className="v2-rail__utility">
             <V2FeedbackMenu />
           </div>

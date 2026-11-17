@@ -1,7 +1,7 @@
 # `commonly daemon setup` — daemon-first bring-up, no global install
 
 > Implementation note under [ADR-026](../adr/ADR-026-local-agent-daemon.md)
-> (the local agent daemon). F370 (D275). Added 2026-11-09.
+> (the local agent daemon). F370. Added 2026-11-09.
 
 `commonly daemon setup` is the one line the Bring-your-own page (and the Connect
 command) lead with for a fresh computer. Run through npx, it takes a stock-Node

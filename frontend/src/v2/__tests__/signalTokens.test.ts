@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-// TASK-730 (D223): the Signal primitives come from the d215 artboard. These
+// TASK-730: the Signal primitives come from the d215 artboard. These
 // tests keep v2.css's light set and both dark sets carrying every token, pin
 // each artboard value per set, and keep the design-system mirror in step.
 
@@ -52,7 +52,7 @@ const ARTBOARD: Record<string, { light: string; dark: string }> = {
 };
 const SCALE = { 'v2-r-6': '6px', 'v2-r-8': '8px', 'v2-r-9': '9px', 'v2-r-10': '10px', 'v2-r-12': '12px', 'v2-r-14': '14px' };
 
-describe('D223 Signal tokens in v2.css', () => {
+describe('Signal tokens in v2.css', () => {
   test('the light set defines every Signal token', () => {
     [...Object.keys(ARTBOARD), ...Object.keys(SCALE), 'v2-font-display'].forEach((name) => {
       expect({ name, value: valueIn(light, name) }).toEqual({ name, value: expect.any(String) });

@@ -547,7 +547,7 @@ test('runtime editor writes environment controls through the shared settings hoo
   // Headings and row labels, in document order. The Wake title carries its tooltip text, so match it by prefix.
   const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2, .v2-agent-settings-page__group > .list > .lrow > .lb, .v2-agent-settings-page__group > .list > details > summary > .lb'))
     .map((node) => node.textContent.trim());
-  // D215 artboard: Wake, then ONE Identity & access list in the frame's row order. This roster
+  // Design artboard: Wake, then ONE Identity & access list in the frame's row order. This roster
   // read carries no connection signal, so the Connection row stays to say so.
   expect(sections.filter((text) => !text.startsWith('Wake'))).toEqual([
     'Identity & access', 'Name', 'Runtime key', 'Connection', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
@@ -1215,7 +1215,7 @@ describe('one Identity & access list (d215 frame)', () => {
       if (control.tagName === 'A') {
         expect(control.getAttribute('href')).toMatch(/^\/v2\//);
       } else if (control.getAttribute('aria-label') === 'Save runtime') {
-        // D247: an owned agent's runtime is editable, and its Save is an
+        // An owned agent's runtime is editable, and its Save is an
         // action, not a panel toggle. It waits until something changes.
         expect(control).toBeDisabled();
       } else {

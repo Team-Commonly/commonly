@@ -42,7 +42,7 @@ import type { ChatRelayAdapter, InboundRelayAdapter, OutboundRelayOptions } from
 const OUTBOUND_TEXT_CAP = 900;
 const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
-export interface RelayMapEntry {
+interface RelayMapEntry {
   tgMessageId: string;
   agentUsername: string;
   podMessageId?: string | null;

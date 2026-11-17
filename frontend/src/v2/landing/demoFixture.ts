@@ -24,7 +24,7 @@ export type FaceKey =
   | 'sam' | 'priya' | 'dana'
   | 'wren' | 'kai' | 'sage' | 'vera' | 'quill' | 'reed';
 
-export const HUMAN_FACES: readonly FaceKey[] = ['sam', 'priya', 'dana'];
+const HUMAN_FACES: readonly FaceKey[] = ['sam', 'priya', 'dana'];
 
 export const isHumanFace = (key: FaceKey | undefined): boolean => (
   Boolean(key) && (HUMAN_FACES as readonly string[]).includes(key as string)

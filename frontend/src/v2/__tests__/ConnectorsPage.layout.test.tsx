@@ -287,8 +287,8 @@ describe('Connectors page: the tile surface', () => {
     expect(await screen.findByRole('button', { name: /^Revoke/ })).toBeInTheDocument();
   });
 
-  // TASK-754 (D226 #3): the grant sat under the tiles as a full-width card with
-  // its own title size, a status dot and a lone gear. Under D223 it takes the
+  // TASK-754 (#3): the grant sat under the tiles as a full-width card with
+  // its own title size, a status dot and a lone gear. Under the design it takes the
   // grid's own shape: a tile beside GitHub's, opening the same drawer.
   it('a live grant whose entry is gone is a tile in the Tools grid, not a row with a gear', async () => {
     const iso = (ms) => new Date(Date.now() + ms).toISOString();

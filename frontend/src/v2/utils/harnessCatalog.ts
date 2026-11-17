@@ -1,4 +1,4 @@
-// D247: the harnesses an agent can run on, with the models and effort levels
+// The harnesses an agent can run on, with the models and effort levels
 // each takes. The server owns the list (backend/config/harnessCatalog.ts,
 // served at GET /api/registry/harness-catalog and on manage-settings); this
 // module only orders it and merges what a computer reported.
@@ -61,7 +61,7 @@ export const grantHarnessNames = (t: Translate, catalog: HarnessCatalogEntry[] =
 // harness added to that list stops showing its line by itself.
 const NO_SANDBOX_HARNESSES = new Set(['dsh', 'hermes']);
 
-export type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly' | 'publicOnly';
+type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly' | 'publicOnly';
 
 /**
  * Why `id` can't use connectors, or null. `os` is the computer's platform where

@@ -160,7 +160,7 @@ export function mirrorContentFromSections(
   return sections?.long_term?.content ?? '';
 }
 
-export interface AppendLongTermMemoryArgs {
+interface AppendLongTermMemoryArgs {
   agentName: string;
   instanceId: string;
   content: string;
@@ -358,7 +358,7 @@ export function stampSectionsForWrite(
   return out;
 }
 
-export interface LastAgentMemoryWrite {
+interface LastAgentMemoryWrite {
   section: AgentWritableSection;
   updatedAt: Date;
 }
@@ -381,13 +381,13 @@ export const BOOKKEEPING_SECTIONS: ReadonlySet<AgentWritableSection> = new Set<A
   'runtime_meta',
 ]);
 
-export type AgentWriteKind = 'durable' | 'bookkeeping';
+type AgentWriteKind = 'durable' | 'bookkeeping';
 
 export function classifyAgentWriteSection(section: AgentWritableSection): AgentWriteKind {
   return BOOKKEEPING_SECTIONS.has(section) ? 'bookkeeping' : 'durable';
 }
 
-export interface LastAgentMemoryWriteKind {
+interface LastAgentMemoryWriteKind {
   kind: AgentWriteKind;
   updatedAt: Date;
 }
@@ -716,7 +716,7 @@ export function truncateTakeaway(
 // `lastSyncKey`/`lastSyncAt`. Drivers don't promote `system_exchanges`, so
 // a system write to it is invisible to the sync dedup contract — see
 // ADR-012 §8 (invariant 8a).
-export interface AppendSystemExchangeArgs {
+interface AppendSystemExchangeArgs {
   agentName: string;
   instanceId: string;
   kind: SystemExchangeKind;
@@ -856,7 +856,7 @@ export function truncateCycleContent(raw: unknown, max = CYCLE_CONTENT_MAX): str
   return s.slice(0, Math.max(0, max - 1)) + '…';
 }
 
-export interface AppendCycleArgs {
+interface AppendCycleArgs {
   agentName: string;
   instanceId: string;
   content: string;
@@ -871,7 +871,7 @@ export interface AppendCycleArgs {
 // audit #8 (2026-08-04): three agents mislearned this section's write surface
 // and one of them lost content to this exact silence. Returning what we did to
 // the input is the whole fix; callers surface it as `truncated` on the route.
-export interface AppendCycleResult {
+interface AppendCycleResult {
   ok: true;
   truncated: boolean;
   storedChars: number;
@@ -1057,7 +1057,7 @@ export function buildLongTermDigest(
 // Each entry's content head-truncated to `charsEach`. v1 sorts by `date`
 // descending (YYYY-MM-DD lex order matches calendar order). Returns [] when
 // the section is empty or all entries fall outside the window.
-export interface RecentDailyEntry {
+interface RecentDailyEntry {
   date: string;
   content: string;
 }
@@ -1093,7 +1093,7 @@ export function buildRecentDailyDigest(
 // in a single pass and returns the shape ready to spread into payload. Each
 // sub-field is omitted (undefined) rather than empty so the consumer can use
 // presence as the emit gate.
-export interface MemoryDigestBundle {
+interface MemoryDigestBundle {
   memoryRevision?: number;
   memoryDigest?: ISystemExchangeEntry[];
   cyclesDigest?: ICycleEntry[];
