@@ -87,6 +87,11 @@ export interface AgentStateRow {
   hosted: boolean;
   fixCommand?: string;
   /**
+   * F515: why a never-connected agent's first run stopped before it started
+   * waiting, as a code the run reported (never text from that computer).
+   */
+  listenReason?: ListenReason;
+  /**
    * The pod Bring your own can hand this agent a key in. In an agent room it's
    * another pod: the room's install is a copy, and that page refuses a DM pod.
    */
@@ -214,6 +219,38 @@ function webhookReach(installation: InstallationRow): {
   }
   if (okAt) return { state: 'reachable', lastUsedAt: okAt };
   return { state: 'unknown', lastUsedAt: null };
+}
+
+export interface ListenReason {
+  reason: 'harness-missing' | 'harness-signed-out' | 'node-too-old';
+  harness: string | null;
+}
+
+/**
+ * F515: the newest report a first run made before it stopped (no harness, a
+ * signed-out one, or an old Node), or null. Only for an agent with no listen
+ * yet: a check-in supersedes every report, and a row that has listened has no
+ * use for one.
+ */
+export function listenReasonFor(botMetadata: any): ListenReason | null {
+  const at = (value: unknown) => {
+    const date = value ? new Date(value as string | number | Date) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.getTime() : null;
+  };
+  const harnessOf = (value: unknown) => (typeof value === 'string' ? value : null);
+  const reports: Array<{ at: number; reason: ListenReason }> = [];
+  const missing = botMetadata?.harnessMissing;
+  const missingAt = at(missing?.at);
+  if (missingAt !== null) {
+    reports.push({ at: missingAt, reason: { reason: 'harness-missing', harness: harnessOf(missing.harness) } });
+  }
+  const blocked = botMetadata?.listenBlocked;
+  const blockedAt = at(blocked?.at);
+  if (blockedAt !== null && (blocked.reason === 'harness-signed-out' || blocked.reason === 'node-too-old')) {
+    reports.push({ at: blockedAt, reason: { reason: blocked.reason, harness: harnessOf(blocked.harness) } });
+  }
+  if (!reports.length) return null;
+  return reports.sort((a, b) => b.at - a.at)[0].reason;
 }
 
 export function deriveAgentState(

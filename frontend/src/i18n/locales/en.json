@@ -873,14 +873,22 @@
     },
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
+      "neverConnectedBecause": "{{agentName}} isn't connected yet: {{reason}}. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
       "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
       "runCommand": "To connect it, run:",
       "copyCommand": "Copy command"
     },
+    "listenReason": {
+      "signedOut": "{{tool}} isn't signed in on its computer",
+      "missing": "{{tool}} isn't installed on its computer",
+      "missingAny": "its computer has no Claude Code, Codex or pi",
+      "nodeTooOld": "its computer's Node is too old to run it"
+    },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
+      "notConnectedBecause": "{{agentName}} isn't connected yet: {{reason}}.",
       "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back.",
       "awayTwo": "{{first}} and {{second}} aren't answering right now",
       "awayMany_one": "{{first}}, {{second}} and {{formattedCount}} other aren't answering right now",
@@ -2232,6 +2240,10 @@
       "harnessMissingOneLine": "{{name}}’s command stopped: {{tool}} isn’t installed on that computer. Install it there, then run the line again, and this page will confirm it.",
       "harnessMissingNone": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the last line again, and this page will confirm it.",
       "harnessMissingNoneOneLine": "{{name}}’s command stopped: it found no Claude Code, Codex or pi on that computer. Install one, then run the line again, and this page will confirm it.",
+      "harnessSignedOut": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the last line again, and this page will confirm it.",
+      "nodeTooOld": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the last line again, and this page will confirm it.",
+      "harnessSignedOutOneLine": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the line again, and this page will confirm it.",
+      "nodeTooOldOneLine": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the line again, and this page will confirm it.",
       "windowsPaste": "If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.",
       "windowsPasteOneLine": "If Windows Terminal asks before it pastes, choose Paste anyway. Cancel runs nothing.",
       "lineExpired": "This line ran out before {{name}} connected.",
