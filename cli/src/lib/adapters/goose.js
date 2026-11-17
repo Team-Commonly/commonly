@@ -476,10 +476,8 @@ export default {
           const available = (ctx._detectBwrap || detectBwrap)();
           if (!available.available) throw new Error(`goose adapter: bwrap unavailable: ${available.error}`);
           [executable, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([binary, ...args], {
-            ...ctx.environment, sandbox: { ...sandbox, filesystem: {
-              ...(sandbox.filesystem || {}), 'write-outside': [home],
-            } },
-          }, { workspacePath: turnWorkspace, homePath: home,
+            ...ctx.environment, sandbox,
+          }, { workspacePath: turnWorkspace, homePath: home, homeWritablePaths: [home],
             readOnlyPaths: [tempDir, binary, process.execPath, ...mcpReadDirectories] });
         } else {
           if ((ctx._platform || process.platform) !== 'darwin') throw new Error('goose adapter: Seatbelt requires macOS');

@@ -1686,17 +1686,12 @@ export default {
           sandbox: {
             ...sandbox,
             network: { ...sandbox?.network, policy: 'restricted' },
-            filesystem: {
-              ...(sandbox?.filesystem || {}),
-              'write-outside': [
-                ...(Array.isArray(sandbox?.filesystem?.['write-outside'])
-                  ? sandbox.filesystem['write-outside'] : []),
-                openCodeHome.root,
-              ],
-            },
           },
         }, {
           workspacePath: ctx.cwd,
+          // Its own home, bound writable through opts: the spec's lists are
+          // the server's, and a public seat's are refused (F493).
+          homeWritablePaths: [openCodeHome.root],
           readOnlyPaths: [
             tempDir,
             binary,
