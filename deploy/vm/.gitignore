@@ -1,6 +1,8 @@
 # Rendered or hand-filled env files hold secrets; only the examples are tracked.
 *.env
 .env
+# commonly-bot accounts and runtime tokens, copied or written at runtime.
+commonly-bot-state/
 # Rendered from the Helm chart on each deploy (docs/deployment/single-vm.md).
 litellm/config.yaml
 # A render killed mid-write leaves its temp file here; it holds secrets too.

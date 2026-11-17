@@ -7,18 +7,19 @@ and frontend images the Helm chart deploys. The files are in `deploy/vm/`:
 |------|------------|
 | `docker-compose.yml` | The stack. Images are pulled by tag, and no host port is published. |
 | `.env.example` | Stack settings: image tag, Postgres roles, tunnel token, backup bucket. Used only to fill `${...}` in the compose file. |
-| `backend.env.example`, `litellm.env.example`, `backup.env.example` | Each service's own env, as names only. |
-| `render-env-from-k8s.sh` | Writes `backend.env`, `litellm.env` and `backup.env` from the Deployments running in a cluster. |
+| `backend.env.example`, `litellm.env.example`, `commonly-bot.env.example`, `backup.env.example` | Each service's own env, as names only. |
+| `render-env-from-k8s.sh` | Writes `backend.env`, `litellm.env`, `commonly-bot.env` and `backup.env` from the Deployments running in a cluster, and copies commonly-bot's accounts file. |
 | `backup.sh` | The nightly backup loop the `pg-backup` service runs. |
 | `postgres-init/10-roles.sh` | Creates the app and LiteLLM roles when the database is first created. |
 
 Each service sees only its own env file and the names the compose file hands it.
 The tunnel token goes only to `cloudflared`, and the bucket keys only to
-`pg-backup`. All four env files are git-ignored. Keep them at mode 0600.
+`pg-backup`. All five env files and `commonly-bot-state/` are git-ignored. Keep
+the files at mode 0600.
 
 `backend/__tests__/unit/deployment/singleVmCompose.test.js` fails in three cases:
 
-- The chart gains a backend or LiteLLM env var that is not in the example, not a
+- The chart gains a backend, LiteLLM or commonly-bot env var that is not in the example, not a
   compose override, and not excluded with a reason.
 - A compose override drifts from the chart's value without a stated reason.
 - The quoting of the rendered files stops round-tripping through `docker compose`.
@@ -31,10 +32,31 @@ The tunnel token goes only to `cloudflared`, and the bucket keys only to
 | `frontend` | `commonly-frontend:<tag>` | The prod nginx image, serving static files only. |
 | `postgres` | `postgres:16.15-alpine3.24` | Chat, the PG mirror, and LiteLLM's `litellm` schema, in the `postgres-data` volume. |
 | `litellm` | `ghcr.io/berriai/litellm:v1.106.2` | The chart's config, rendered on each deploy. |
+| `commonly-bot` | `commonly-bot:<tag>` | The summarizer agent. It polls the backend with the tokens in `commonly-bot-state/runtime.json`. |
 | `cloudflared` | `cloudflare/cloudflared:2026.1.2` | The only way in: a remotely managed tunnel, run from `TUNNEL_TOKEN`. |
 | `pg-backup` | the postgres image | Nightly `pg_dump -Fc` and `mongodump` to an R2 bucket, keeping 14 days. |
 
 MongoDB is not on the VM. The backend and the backups reach it by its URI.
+
+### commonly-bot's accounts file
+
+`commonly-bot-state/runtime.json` lists the bot's accounts, one per installed
+instance, each with its runtime token and user token. Treat it as a secret. In
+the cluster it is the `commonly-bot-config` ConfigMap. On the VM it is a file in
+`deploy/vm/commonly-bot-state/`, mounted read-write into the backend and
+read-only into the bot:
+
+- The backend writes it whenever the bot's agent is installed into a pod or
+  reprovisioned, including `reprovision-all`. With Kubernetes provisioning off,
+  the provisioner writes `COMMONLY_BOT_CONFIG_PATH` instead of the ConfigMap.
+- The bot re-reads it on every poll, so a new account starts working without a
+  restart.
+- Scale the cluster's `commonly-bot` Deployment to zero at cutover. While both
+  run against the same Mongo, both poll the same accounts.
+- The backups do not cover it. Keep a copy of the rendered file in the same
+  private place as the env files.
+- The backend writes the file as root and chowns it to uid 1000. The directory
+  stays 0700, so only that user and root can read it.
 
 Configure the tunnel's public hostnames on the Cloudflare side:
 
@@ -90,9 +112,11 @@ Configure the tunnel's public hostnames on the Cloudflare side:
 
      ```bash
      deploy/vm/render-env-from-k8s.sh --context <kube-context> --namespace <namespace> --out-dir <private dir>
-     gcloud compute scp --tunnel-through-iap --scp-flag=-p <private dir>/{backend,litellm,backup}.env <vm>:/opt/commonly/deploy/vm/
+     gcloud compute scp --tunnel-through-iap --scp-flag=-p <private dir>/{backend,litellm,commonly-bot,backup}.env <vm>:/opt/commonly/deploy/vm/
+     gcloud compute scp --tunnel-through-iap --scp-flag=-p --recurse <private dir>/commonly-bot-state <vm>:/opt/commonly/deploy/vm/
      # on the VM:
-     chmod 600 /opt/commonly/deploy/vm/*.env
+     chmod 600 /opt/commonly/deploy/vm/*.env /opt/commonly/deploy/vm/commonly-bot-state/runtime.json
+     chmod 700 /opt/commonly/deploy/vm/commonly-bot-state
      ```
 
      Delete the local copies afterwards. A value the script can't quote safely is
@@ -100,7 +124,9 @@ Configure the tunnel's public hostnames on the Cloudflare side:
      quote or at the end. Add those by hand.
    - **Fresh install.** Copy each `*.env.example` to its `.env` name, fill it by
      hand, and `chmod 600`. Each example says which values must match the
-     chart's defaults.
+     chart's defaults. Create `commonly-bot-state/` at 0700 and leave it empty:
+     the backend writes `runtime.json` when the bot's agent is first installed,
+     and the bot waits until then.
    - **Either way, fill `.env` by hand** from `.env.example`, at mode 0600.
      Postgres passwords must be URL-safe, because LiteLLM puts its password in a
      URL.
@@ -132,8 +158,8 @@ Configure the tunnel's public hostnames on the Cloudflare side:
 
 ## Deploy a SHA
 
-The Deploy Dev workflow tags the backend and frontend images with the same
-short SHA.
+The Deploy Dev workflow tags the backend, frontend and commonly-bot images with
+the same short SHA.
 
 ```bash
 cd /opt/commonly && git fetch && git checkout <sha>
@@ -251,6 +277,46 @@ wildcard.
 
 Restore MongoDB with `mongorestore --archive --gzip` against its URI only after
 you have confirmed it is the database you mean to overwrite.
+
+### Moving from the Kubernetes chart
+
+MongoDB is shared during the move, so the cluster and the VM must never both
+run. Two backends would fire every cron twice, log two Discord gateways in with
+one token, and write chat to two Postgres servers. Do it in this order, in one
+window:
+
+1. **Before the window:**
+   - Pull the images on the VM.
+   - Give the VM its **own** tunnel, never the cluster's tunnel token. Two
+     connectors on one tunnel split traffic between them.
+   - Route the tunnel's hostnames to `http://frontend:80` and
+     `http://backend:5000`, but don't point DNS at it yet.
+2. **Stop anything that would scale the cluster back up,** such as a deploy
+   workflow that upgrades the release.
+3. **Scale every writer to zero:** the backend, the worker, LiteLLM,
+   commonly-bot and any ops pod with database access. Suspend the CronJobs that
+   write. Wait until their pods are gone. From here nothing writes Postgres or
+   MongoDB.
+4. **Render the env files and the accounts file now** (`render-env-from-k8s.sh`
+   still reads the scaled-down Deployments). Copy them to the VM. Rendering
+   after the freeze means no token issued in the gap is missed.
+5. **Take the final `pg_dump`** of the current server and restore it as in
+   "Restore for real" above.
+6. **Start the stack** with `docker compose up -d --wait`.
+7. **Point the hostnames' DNS records at the VM's tunnel.** Then stop the
+   cluster's tunnel connector.
+8. **Walk sign-in, a pod, chat, an agent reply and a summarizer run.**
+
+To roll back:
+1. Point DNS back.
+2. Stop the VM's `backend`, `litellm` and `commonly-bot`.
+3. **If the VM has taken writes:** dump the VM's Postgres now and restore it
+   into the old server.
+4. Scale the cluster back up and resume the CronJobs suspended in step 3.
+5. Re-enable its deploy workflow.
+6. **If agents were installed while the VM ran:** their tokens are only in the
+   VM's accounts file. Run `reprovision-all` on the cluster so its bot gets
+   them.
 
 ## Rollback
 

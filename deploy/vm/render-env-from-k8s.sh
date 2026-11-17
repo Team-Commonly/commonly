@@ -1,8 +1,10 @@
 #!/bin/sh
-# Render deploy/vm/backend.env, litellm.env and backup.env from the backend and
-# litellm Deployments running in a cluster, so the VM gets exactly the env prod
-# runs. Run on a machine with kubectl access, then copy the files to the VM
-# (they are 0600; keep them that way).
+# Render deploy/vm/backend.env, litellm.env, backup.env and commonly-bot.env from
+# the backend, litellm and commonly-bot Deployments running in a cluster, so the
+# VM gets exactly the env prod runs, and copy commonly-bot's runtime.json (its
+# accounts and runtime tokens) from the commonly-bot-config ConfigMap into
+# commonly-bot-state/. Run on a machine with kubectl access, then copy the files
+# to the VM (files 0600, the state directory 0700; keep them that way).
 #
 #   deploy/vm/render-env-from-k8s.sh --context <kube-context> --namespace <namespace>
 #

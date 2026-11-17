@@ -38,6 +38,14 @@ TRICKY = {
 }
 
 
+RUNTIME_JSON = json.dumps({'accounts': {
+    'acct-one': {'runtimeToken': SENTINEL + 'rt1', 'userToken': SENTINEL + 'ut1',
+                 'agentName': 'commonly-bot', 'instanceId': 'acct-one'},
+    'acct-two': {'runtimeToken': SENTINEL + 'rt2', 'userToken': None,
+                 'agentName': 'commonly-bot', 'instanceId': 'acct-two'},
+}}, indent=2) + '\n'
+
+
 def secret(name, data):
     return {'kind': 'Secret', 'metadata': {'name': name},
             'data': {k: base64.b64encode(v.encode()).decode() for k, v in data.items()}}
@@ -70,8 +78,17 @@ def fixture():
         {'name': 'DATABASE_URL', 'value': 'postgresql://u:$(PG_PASSWORD)@h/db'},
         {'name': 'OPENAI_API_KEY', 'valueFrom': {'secretKeyRef': {'name': 'api-keys', 'key': 'openai', 'optional': True}}},
     ]
+    bot_env = [
+        {'name': 'NODE_ENV', 'value': 'development'},
+        {'name': 'COMMONLY_BASE_URL', 'value': 'http://backend.ns.svc:5000'},
+        {'name': 'COMMONLY_AGENT_POLL_MS', 'value': '5000'},
+        {'name': 'LITELLM_API_KEY', 'valueFrom': {'secretKeyRef': {'name': 'api-keys', 'key': 'bot-key'}}},
+        {'name': 'COMMONLY_SOCIAL_POST_TO_FEED', 'valueFrom': {'secretKeyRef': {
+            'name': 'api-keys', 'key': 'social-feed', 'optional': True}}},
+    ]
     api_keys = {n.lower(): v for n, v in TRICKY.items()}
     api_keys['master'] = SENTINEL + 'master'
+    api_keys['bot-key'] = SENTINEL + 'bot-key'
     return {
         'deployment/backend': deployment('backend', backend_env, extra_containers=['skills-init']),
         'deployment/litellm': deployment('litellm', litellm_env, extra_containers=['codex-auth-rotator']),
@@ -79,6 +96,8 @@ def fixture():
         'secret/database-credentials': secret('database-credentials', {
             'mongo-uri': 'mongodb+srv://u:' + SENTINEL + 'pw@host/db?retryWrites=true', 'pg': SENTINEL + 'pg'}),
         'configmap/models': {'kind': 'ConfigMap', 'data': {'chat': 'model-a'}},
+        'deployment/commonly-bot': deployment('commonly-bot', bot_env),
+        'configmap/commonly-bot-config': {'kind': 'ConfigMap', 'data': {'runtime.json': RUNTIME_JSON}},
     }
 
 
@@ -174,12 +193,39 @@ class RenderTest(unittest.TestCase):
         with open(os.path.join(self.cluster.out, name)) as handle:
             return handle.read()
 
-    def test_writes_three_files_at_0600(self):
+    def test_writes_every_file_at_0600(self):
         self.assertEqual(self.code, 0, self.output)
-        for name in ('backend.env', 'litellm.env', 'backup.env'):
+        for name in ('backend.env', 'litellm.env', 'backup.env', 'commonly-bot.env',
+                     os.path.join('commonly-bot-state', 'runtime.json')):
             mode = stat.S_IMODE(os.stat(os.path.join(self.cluster.out, name)).st_mode)
             self.assertEqual(mode, 0o600, name)
-        self.assertEqual(sorted(os.listdir(self.cluster.out)), ['backend.env', 'backup.env', 'litellm.env'])
+        self.assertEqual(sorted(os.listdir(self.cluster.out)),
+                         ['backend.env', 'backup.env', 'commonly-bot-state', 'commonly-bot.env', 'litellm.env'])
+        state = os.path.join(self.cluster.out, 'commonly-bot-state')
+        self.assertEqual(stat.S_IMODE(os.stat(state).st_mode), 0o700)
+        self.assertEqual(os.listdir(state), ['runtime.json'])
+
+    def test_copies_the_bot_accounts_file_verbatim_and_its_env(self):
+        with open(os.path.join(self.cluster.out, 'commonly-bot-state', 'runtime.json')) as handle:
+            self.assertEqual(handle.read(), RUNTIME_JSON)
+        self.assertIn('accounts copied', self.output)
+        bot = parse_single_quoted(self.read('commonly-bot.env'))
+        self.assertEqual(bot, {'COMMONLY_AGENT_POLL_MS': '5000', 'LITELLM_API_KEY': SENTINEL + 'bot-key'})
+        code, listed = self.cluster.run('--list-names')
+        self.assertEqual(code, 0)
+        self.assertNotIn('acct-one', listed)
+
+    def test_a_missing_bot_config_writes_nothing(self):
+        objects = fixture()
+        del objects['configmap/commonly-bot-config']
+        cluster = FakeCluster(objects)
+        try:
+            code, output = cluster.run()
+            self.assertEqual(code, 1)
+            self.assertIn('No file was written', output)
+            self.assertEqual(os.listdir(cluster.out), [])
+        finally:
+            cluster.close()
 
     def test_never_prints_a_value(self):
         self.assertNotIn(SENTINEL, self.output)

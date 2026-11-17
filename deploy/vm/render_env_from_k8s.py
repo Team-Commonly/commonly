@@ -1,12 +1,16 @@
 """Render the VM's env files from the live chart. Run through render-env-from-k8s.sh.
 
-Reads the backend and litellm Deployments in one namespace, resolves every env
-entry of their main container the way the kubelet does (value literals with
-$(VAR) references, secretKeyRef, configMapKeyRef), and writes:
+Reads the backend, litellm and commonly-bot Deployments in one namespace,
+resolves every env entry of their main container the way the kubelet does (value
+literals with $(VAR) references, secretKeyRef, configMapKeyRef), and writes:
 
-  backend.env   names in backend.env.example, from the backend container
-  litellm.env   names in litellm.env.example, from the litellm container
-  backup.env    names in backup.env.example, from the backend container
+  backend.env       names in backend.env.example, from the backend container
+  litellm.env       names in litellm.env.example, from the litellm container
+  backup.env        names in backup.env.example, from the backend container
+  commonly-bot.env  names in commonly-bot.env.example, from the commonly-bot container
+  commonly-bot-state/runtime.json
+                    the commonly-bot-config ConfigMap's runtime.json: the
+                    bot's accounts and their runtime tokens, so a secret too
 
 Values are written single-quoted, so compose does no ${...} interpolation on
 them. In a single-quoted env_file value compose v2 keeps every byte (newlines,
@@ -31,6 +35,13 @@ TARGETS = [
     ('backend.env', 'backend.env.example', 'backend', 'backend'),
     ('litellm.env', 'litellm.env.example', 'litellm', 'litellm'),
     ('backup.env', 'backup.env.example', 'backend', 'backend'),
+    ('commonly-bot.env', 'commonly-bot.env.example', 'commonly-bot', 'commonly-bot'),
+]
+
+# (ConfigMap, key, output path under --out-dir). Copied verbatim, at 0600 in a
+# 0700 directory; the backend's non-Kubernetes provisioner keeps writing it.
+CONFIG_FILES = [
+    ('commonly-bot-config', 'runtime.json', os.path.join('commonly-bot-state', 'runtime.json')),
 ]
 
 NAME_RE = re.compile(r'^([A-Z_][A-Z0-9_]*)=')
@@ -193,8 +204,22 @@ def render(kube, vm_dir, out_dir):
             n for n in list(resolved) + list(skipped) if n not in wanted)
         rendered.append((os.path.join(out_dir, out_name), '\n'.join(lines) + '\n'))
         report[out_name] = outcome
+    for configmap, key, rel_path in CONFIG_FILES:
+        data = (kube.get('configmap', configmap).get('data') or {})
+        if key not in data:
+            raise RenderError('configmap %s has no %s' % (configmap, key))
+        try:
+            accounts = json.loads(data[key]).get('accounts') or {}
+        except (ValueError, AttributeError):
+            raise RenderError('configmap %s: %s is not a JSON object' % (configmap, key)) from None
+        rendered.append((os.path.join(out_dir, rel_path), data[key]))
+        report[rel_path] = {'accounts copied': sorted(accounts)}
     # Write only after every target resolved, so a failure leaves no half set.
     for path, text in rendered:
+        directory = os.path.dirname(os.path.abspath(path))
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        if directory != os.path.abspath(out_dir):
+            os.chmod(directory, 0o700)
         write_private(path, text)
     return report
 
@@ -206,7 +231,7 @@ def print_report(report, list_names, stream):
             if not names and label != 'written':
                 continue
             stream.write('  %-44s %d\n' % (label, len(names)))
-            if list_names and label != 'written':
+            if list_names and label not in ('written', 'accounts copied'):
                 for name in names:
                     stream.write('      %s\n' % name)
 
@@ -214,7 +239,7 @@ def print_report(report, list_names, stream):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--context', required=True, help='kubectl context')
-    parser.add_argument('--namespace', required=True, help='namespace of the backend and litellm Deployments')
+    parser.add_argument('--namespace', required=True, help='namespace of the backend, litellm and commonly-bot Deployments')
     parser.add_argument('--out-dir', help='where to write the env files (default: deploy/vm)')
     parser.add_argument('--list-names', action='store_true', help='also print the names in each skipped group')
     args = parser.parse_args(argv)

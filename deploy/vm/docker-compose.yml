@@ -8,12 +8,16 @@
 #   docker compose pull
 #   docker compose up -d --wait
 #
-# Four env files, all 0600 and git-ignored (examples beside each):
-#   .env          stack settings, used only for interpolation in this file
-#   backend.env   the backend's env, rendered from the cluster by
-#                 render-env-from-k8s.sh (or filled by hand on a fresh install)
-#   litellm.env   LiteLLM's env, rendered the same way
-#   backup.env    the Mongo URI the backup service dumps
+# Five env files, all 0600 and git-ignored (examples beside each):
+#   .env              stack settings, used only for interpolation in this file
+#   backend.env       the backend's env, rendered from the cluster by
+#                     render-env-from-k8s.sh (or filled by hand on a fresh install)
+#   litellm.env       LiteLLM's env, rendered the same way
+#   commonly-bot.env  commonly-bot's env, rendered the same way
+#   backup.env        the Mongo URI the backup service dumps
+# commonly-bot-state/runtime.json (0600, in a 0700 directory, git-ignored) holds
+# commonly-bot's accounts and their runtime tokens. The backend writes it when
+# the bot's agent is installed or reprovisioned; the bot re-reads it each poll.
 # A service sees only the files and names given to it below, so the tunnel
 # token and the bucket keys never reach backend or litellm.
 #
@@ -103,8 +107,13 @@ services:
       # Mounted below from the chart's own copy.
       - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
       - SENTRY_RELEASE=${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+      # Where the non-Kubernetes provisioner writes commonly-bot's accounts
+      # (the image's default path, stated so the mount below can't drift).
+      - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
     volumes:
       - ../../k8s/helm/commonly/configs/marketplace.json:/app/packages/commonly-marketplace/marketplace.json:ro
+      # The one writable mount: commonly-bot's accounts file, shared with the bot.
+      - ./commonly-bot-state:/app/external/commonly-bot-state
     networks:
       - commonly
     healthcheck:
@@ -113,6 +122,33 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+
+  # The summarizer agent. It polls the backend for events with the runtime
+  # tokens in commonly-bot-state/runtime.json, re-read on every poll, so a newly
+  # provisioned account is picked up without a restart. Serves no port.
+  commonly-bot:
+    logging: *default-logging
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-bot:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    restart: unless-stopped
+    command: ["node", "/app/commonly-bot/index.js"]
+    depends_on:
+      backend:
+        condition: service_started
+      litellm:
+        condition: service_started
+    env_file:
+      - ./commonly-bot.env
+    environment:
+      - NODE_ENV=development
+      - COMMONLY_BASE_URL=http://backend:5000
+      - COMMONLY_AGENT_CONFIG_PATH=/app/config/runtime.json
+      - LITELLM_BASE_URL=http://litellm:4000
+      # Wait for accounts instead of exiting when runtime.json has none yet.
+      - COMMONLY_AGENT_OPTIONAL=1
+    volumes:
+      - ./commonly-bot-state:/app/config:ro
+    networks:
+      - commonly
 
   # The prod nginx image: static files only, no proxy. The API origin it calls
   # was baked in at build time (api.<domain>).

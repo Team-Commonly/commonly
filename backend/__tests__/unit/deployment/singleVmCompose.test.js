@@ -55,6 +55,7 @@ const EXCLUDED = {
     PG_PASSWORD: "only builds the chart's DATABASE_URL, which compose sets",
     CHATGPT_TOKEN_DIR: 'the ChatGPT account rotator does not run on the VM',
   },
+  'commonly-bot': {},
 };
 
 // Fixed overrides that deliberately differ from what the chart sets.
@@ -70,9 +71,14 @@ const INTENTIONAL_DIFFERENCES = {
     AGENT_PROVISIONER_K8S: 'no Kubernetes to provision agent pods into',
     AGENT_COMPUTER_ENABLED: 'the agent computer runs as cluster pods',
     SENTRY_RELEASE: "the VM's image tag",
+    COMMONLY_BOT_CONFIG_PATH: "not set by the chart (Kubernetes writes a ConfigMap); the image's default path, stated",
   },
   litellm: {
     DATABASE_URL: "LiteLLM's role on the VM's Postgres, from .env",
+  },
+  'commonly-bot': {
+    COMMONLY_BASE_URL: 'the backend service on the compose network',
+    COMMONLY_AGENT_OPTIONAL: 'waits instead of exiting while runtime.json has no account (a fresh install)',
   },
 };
 
@@ -80,6 +86,11 @@ const CHART_CONTAINERS = {
   backend: { template: 'templates/core/backend-deployment.yaml', container: 'backend', example: 'backend.env.example' },
   litellm: {
     template: 'templates/agents/litellm-deployment.yaml', container: 'litellm', example: 'litellm.env.example',
+  },
+  'commonly-bot': {
+    template: 'templates/agents/commonly-bot-deployment.yaml',
+    container: 'commonly-bot',
+    example: 'commonly-bot.env.example',
   },
 };
 
@@ -280,7 +291,12 @@ describe('single-VM env files', () => {
 
 describe('single-VM compose: safety properties', () => {
   it('runs the expected services, with no Mongo service', () => {
-    expect([...services].sort()).toEqual(['backend', 'cloudflared', 'frontend', 'litellm', 'pg-backup', 'postgres']);
+    expect([...services].sort())
+      .toEqual(['backend', 'cloudflared', 'commonly-bot', 'frontend', 'litellm', 'pg-backup', 'postgres']);
+  });
+
+  it.each(services)('%s mounts no docker socket', (service) => {
+    (compose.services[service].volumes || []).forEach((volume) => expect(volume).not.toMatch(/docker\.sock/));
   });
 
   it.each(services)('%s publishes no host port, builds nothing, restarts, and caps its log', (service) => {
@@ -312,11 +328,24 @@ describe('single-VM compose: safety properties', () => {
     expect(env).not.toHaveProperty('RUN_WORKER');
     expect(env).not.toHaveProperty('NATIVE_TURNS_ON_WORKER');
     expect(exampleNames('backend.env.example')).not.toContain('RUN_WORKER');
-    (backend.volumes || []).forEach((volume) => {
-      expect(volume).not.toMatch(/docker\.sock/);
-      expect(volume).toMatch(/:ro$/);
-    });
+    // Read-only, except the one directory it shares with commonly-bot.
+    const writable = (backend.volumes || []).filter((volume) => !/:ro$/.test(volume));
+    expect(writable).toEqual(['./commonly-bot-state:/app/external/commonly-bot-state']);
     expect(backend.healthcheck.test.join(' ')).toContain('/api/health');
+  });
+
+  it("shares commonly-bot's accounts file: the backend writes where the bot reads", () => {
+    const backendPath = serviceEnv('backend').COMMONLY_BOT_CONFIG_PATH;
+    const botPath = serviceEnv('commonly-bot').COMMONLY_AGENT_CONFIG_PATH;
+    const mountOf = (service, file) => compose.services[service].volumes
+      .map((volume) => volume.split(':'))
+      .find(([, target]) => file.startsWith(`${target}/`));
+    const [backendSource, backendTarget] = mountOf('backend', backendPath);
+    const [botSource, botTarget, botMode] = mountOf('commonly-bot', botPath);
+    expect(botSource).toBe(backendSource);
+    expect(botMode).toBe('ro');
+    expect(backendPath.slice(backendTarget.length)).toBe(botPath.slice(botTarget.length));
+    expect(readVm('.gitignore')).toMatch(/^commonly-bot-state\/$/m);
   });
 
   it('backs up with the same Postgres image the database runs, and checks before pruning', () => {
