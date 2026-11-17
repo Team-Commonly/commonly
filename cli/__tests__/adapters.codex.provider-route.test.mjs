@@ -1,5 +1,5 @@
 /**
- * adapters.codex.provider-route.test.mjs — D250 / TASK-786
+ * adapters.codex.provider-route.test.mjs — TASK-786
  *
  * A public Codex seat starts with `--ignore-user-config`, so no config.toml
  * provider applies. F188 forwards OPENAI_BASE_URL with `-c openai_base_url`,
@@ -107,7 +107,7 @@ const fakeProxy = (started, closed = []) => async (opts) => {
   };
 };
 
-describe('codex adapter — a public seat on a provider gateway (D250)', () => {
+describe('codex adapter — a public seat on a provider gateway', () => {
   test('the version probe runs without the key, like the turn it comes before', async () => {
     const probed = [];
     const { impl } = makeSpawnImpl();

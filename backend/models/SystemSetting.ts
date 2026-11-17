@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface ISystemSetting extends Document {
+interface ISystemSetting extends Document {
   key: string;
   value: unknown;
   updatedBy?: Types.ObjectId | null;

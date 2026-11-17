@@ -11,9 +11,9 @@ import type { SignupTouch } from '../utils/signupSource';
 // stamped) → consumed at /oauth/exchange (JWT issued, exchangedAt stamped).
 // The TTL index reaps abandoned attempts.
 
-export type OAuthLoginProvider = 'github' | 'google';
+type OAuthLoginProvider = 'github' | 'google';
 
-export interface IOAuthLoginState extends Document {
+interface IOAuthLoginState extends Document {
   provider: OAuthLoginProvider;
   state: string;
   browserNonceHash?: string;

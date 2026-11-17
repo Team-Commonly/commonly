@@ -79,10 +79,8 @@ const markPodReadFromMessages = ({
 };
 
 export {
-  buildPodReadCursorKey,
   readPodLastReadAt,
   writePodLastReadAt,
-  resolveMessageTimestampMs,
   resolveLatestMessageTimestampMs,
   markPodReadFromMessages,
 };

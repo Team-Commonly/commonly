@@ -1,5 +1,5 @@
 /*
- * Motion tokens (D220). One curve and three durations, on :root so portals and
+ * Motion tokens. One curve and three durations, on :root so portals and
  * the view-transition pseudo-elements can read them. Enters take --v2-dur,
  * exits and closing take --v2-dur-fast, anything that travels takes --v2-dur-slow.
  * Animate transform and opacity only; folds are the one height exception.
@@ -53,13 +53,13 @@ body.modern-ui.v2-canvas {
   /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
      #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
      sets below. */
-  /* D223 ruling (Cofounder, 11-01): the artboard's --ph (#98a2b3) is under
+  /* Design ruling (11-01): the artboard's --ph (#98a2b3) is under
      3:1 on the rail's own surface, --v2-shell-bg #eef0f4 (2.26:1), so this is
      the nearest grey that passes there: 3.05:1, and 3.47:1 on the white tab
      bar. Dark #5f6979 is 3.48:1 on the dark shell and 3.17:1 on its surface. */
   --v2-rail-icon: #828a99;
   --v2-control-outline: #667085;
-  /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
+  /* (TASK-735): the artboard's .pod.on in both themes, a neutral tint
      row whose mark alone turns cobalt. */
   --v2-row-active: #f2f4f7;
   --v2-row-active-text: #101828;
@@ -150,7 +150,7 @@ body.modern-ui.v2-canvas {
   --v2-danger: #ef4444;
   --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
-  /* TASK-687/698: board status and priority colour, the D215 B-lite choice (Sam,
+  /* TASK-687/698: board status and priority colour, the design B-lite choice (Sam,
      10-31). Blocked and P0 are red; in progress stays cobalt; P1, P2, pending and
      done stay grey, with no green. Each state keeps its shape. Dark values are in
      both dark blocks below. */
@@ -198,7 +198,7 @@ body.modern-ui.v2-canvas {
   --v2-radius-lg: 6px;
   --v2-radius-pill: 999px;
 
-  /* D223 Signal primitives (TASK-730), from the d215 artboard :root. Additive:
+  /* Design Signal primitives (TASK-730), from the d215 artboard :root. Additive:
      the old --v2-radius and --v2-shadow values above stay until PR2 moves
      consumers onto the scale. Pinned by __tests__/signalTokens.test.ts. */
   --v2-ink-2: #1d2433;
@@ -214,7 +214,7 @@ body.modern-ui.v2-canvas {
   --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 24, 40, 0.06);
   --v2-shadow-pane: 0 0 0 1px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
   --v2-shadow-pop: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
-  /* The card edge (D215): a 1px ring plus a 1px lift, no border. Cards that
+  /* The card edge: a 1px ring plus a 1px lift, no border. Cards that
      are not a .v2p-tc take it from here rather than copying the pair. */
   --v2-ring-card: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04);
   --v2-av-ring: rgba(16, 24, 40, 0.07);
@@ -253,6 +253,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
   background: var(--v2-page-bg);
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   display: flex;
@@ -262,14 +263,14 @@ body.modern-ui.v2-canvas {
   min-width: 0;
 }
 
-/* D216 dark set. Values are the artboard's dark :root (index.html, the
+/* dark set. Values are the artboard's dark :root (index.html, the
    @media + :root[data-theme="dark"] pair), mapped onto v2 token names. Scoped
    to .v2-root under the html attribute set by utils/theme.ts: explicit dark,
    or auto when the OS asks for dark. The light set is the block above.
    Not from the artboard, pending ux-lead: --v2-focus-ring, the success and
    danger text lifts, and the soft fills. Avatar and persona tints stay literal. */
 :root[data-v2-theme="dark"] .v2-root {
-    /* D223 Signal primitives (TASK-730); dark values from the d215 artboard. */
+    /* Design Signal primitives (TASK-730); dark values from the d215 artboard. */
     --v2-ink-2: #d3d8e1;
     --v2-fill-a: #f4f5f8;
     --v2-fill-b: #dce0e8;
@@ -344,7 +345,7 @@ body.modern-ui.v2-canvas {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-v2-theme="light"]) .v2-root {
-      /* D223 Signal primitives (TASK-730); dark values from the d215 artboard. */
+      /* Design Signal primitives (TASK-730); dark values from the d215 artboard. */
       --v2-ink-2: #d3d8e1;
       --v2-fill-a: #f4f5f8;
       --v2-fill-b: #dce0e8;
@@ -576,11 +577,15 @@ body.modern-ui.v2-canvas {
 /* Authenticated v2 routes reserve a compact shell row for the email
    verification reminder. The inner shell/panes must use the remaining space,
    not 100vh, or the composer and feature-page footers would clip. */
+/* Each full-height rule sets 100vh, then 100dvh: browsers that know dvh use the
+   visible height (iPhone toolbar shown, phone keyboard up), so the composer stays
+   on screen; older ones keep the 100vh line. */
 .v2-authenticated-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }
@@ -678,6 +683,7 @@ body.modern-ui.v2-canvas {
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr var(--v2-inspector-w);
   grid-template-rows: 1fr;
   height: 100vh;
+  height: 100dvh;
   width: 100%;
   background: var(--v2-shell-bg);
 }
@@ -696,6 +702,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pane {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -716,6 +723,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
@@ -766,7 +774,7 @@ body.modern-ui.v2-canvas {
   gap: 8px;
 }
 
-/* The language switch left the rail for Settings › Look (D215, TASK-691). */
+/* The language switch left the rail for Settings › Look (TASK-691). */
 
 .v2-rail__brand {
   display: flex;
@@ -786,7 +794,7 @@ body.modern-ui.v2-canvas {
   display: none;
 }
 
-/* D223 (TASK-735): the artboard's .logo, a 36px cobalt key. */
+/* (TASK-735): the artboard's .logo, a 36px cobalt key. */
 .v2-rail__brand-icon {
   width: 36px;
   height: 36px;
@@ -826,7 +834,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   justify-content: center;
   gap: 0;
-  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest, coloured
+  /* (TASK-735): the artboard's .nav, a bare 38px glyph at rest, coloured
      by --v2-rail-icon: the nearest grey to the artboard's that clears 3:1 on
      the shell (values and ratios at the token). */
   width: 38px;
@@ -1215,7 +1223,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-scrim);
 }
 
-/* D215 .v2-first-run: the pop surface at 16px, its edge carried by the pop
+/* Design .v2-first-run: the pop surface at 16px, its edge carried by the pop
    shadow rather than a border. */
 .v2-first-run {
   width: min(720px, 100%);
@@ -1331,7 +1339,7 @@ body.modern-ui.v2-canvas {
   font-weight: 600;
 }
 
-/* D215 keys: setup is the key material, hello the one filled action
+/* Design keys: setup is the key material, hello the one filled action
    (TASK-647 item 4: the card keeps one ink action). */
 .v2-root button.v2-first-run__hello,
 .v2-root a.v2-first-run__setup {
@@ -1488,6 +1496,7 @@ body.modern-ui.v2-canvas {
 .v2-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow: auto;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border-soft);
@@ -3152,7 +3161,7 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) minmax(0, 1fr);
   }
 
-  /* D215 phone: a sheet on the bottom edge, 44px touch targets. */
+  /* Design phone: a sheet on the bottom edge, 44px touch targets. */
   .v2-first-run__overlay {
     padding: 12px;
     place-items: end center;
@@ -3203,6 +3212,7 @@ body.modern-ui.v2-canvas {
     z-index: 60;
     width: min(86vw, 320px);
     height: 100vh;
+    height: 100dvh;
     transform: translateX(-100%);
     transition: transform 0.22s ease;
     box-shadow: 2px 0 24px rgba(15, 17, 21, 0.18);
@@ -4059,6 +4069,7 @@ body.modern-ui.v2-canvas {
 
   .v2-shell .v2-pane {
     height: 100vh;
+    height: 100dvh;
   }
 
   /* A pane INSIDE the authenticated shell is bounded by the shell's content box,
@@ -4214,7 +4225,7 @@ body.modern-ui.v2-canvas {
 /* ---------- Workspace thread and composer (TASK-129 PR 3) ---------- */
 
 /* The pod header shows the toggle only while the panel is hidden; the open
-   panel carries its own Hide button in its head (D215, TASK-734). */
+   panel carries its own Hide button in its head (TASK-734). */
 
 @media (max-width: 760px) {
   /* The phone artboard makes every decision option a full-width, 44px row;
@@ -4281,6 +4292,14 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-mobile-tabs { display: grid; }
+
+  /* The viewport meta asks for interactive-widget=resizes-content, so on
+     Android the keyboard shrinks the layout and this fixed bar would ride on
+     top of it, between the field and the keyboard. While a text field has
+     focus the bar steps aside and the space kept for it is given back. */
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-mobile-tabs { display: none; }
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-composer { margin-bottom: 4px; }
+  .v2-root:has(:is(textarea, [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="range"], [type="file"], [type="color"], [type="image"], [type="hidden"])):focus) .v2-feature { padding-bottom: 0; }
 }
 
 /* ---------- Workspace at scale · direction C · PR 1 (sidebar + header + 390 list page) ----------
@@ -4294,7 +4313,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-shell-bg);
 }
 
-/* D223 (TASK-735): the artboard's .pane.pods. A 14px card on the shell
+/* (TASK-735): the artboard's .pane.pods. A 14px card on the shell
    ground, its edge a shadow ring rather than a border, with the rows inset. */
 .v2-pods {
   display: flex;
@@ -4434,12 +4453,12 @@ body.modern-ui.v2-canvas {
 }
 
 /* The artboard's .b.b-s.ib: a 32px raised key holding a plus glyph. */
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-s v2p-ib. */
+/* Look from the design primitives (primitives.css): v2p-b v2p-b-s v2p-ib. */
 .v2-root button.v2-pods__new { flex: 0 0 32px; }
 
 .v2-root button.v2-pods__new[aria-expanded="true"] { background: var(--v2-surface-hover); }
 
-/* ---------- D215 sidebar controls (TASK-691) ----------
+/* ---------- Sidebar controls (TASK-691) ----------
    Controls look like controls: an icon button, a chip or a segment, never grey
    words that click. The segment is shared by the pod list (Recent · All ·
    Pinned), the panel's Who can join and Settings › Look. */
@@ -4466,7 +4485,7 @@ body.modern-ui.v2-canvas {
    390), not the primitives' 44px phone size, which made this bar 58 tall and pushed
    the list down (#3373). Each option keeps a 44px touch area through a transparent
    ::before; the segment sits alone in its row, so no neighbour's area covers it.
-   The bar keys and rows stay at the 44px floor (Cofounder ruling 11-04). */
+   The bar keys and rows stay at the 44px floor (decided 11-04). */
 @media (max-width: 760px) {
   .v2-pods-aside--page .v2-pods__view .v2p-seg button { position: relative; height: 28px; }
   .v2-pods-aside--page .v2-pods__view .v2p-seg button::before {
@@ -4590,10 +4609,10 @@ body.modern-ui.v2-canvas {
   pointer-events: none;
 }
 
-/* D215: the pin is an icon on row hover that takes the time's slot. Out of
+/* The pin is an icon on row hover that takes the time's slot. Out of
    sight at rest, pinned or not; the Pinned segment lists the pinned pods.
    Hidden by opacity with pointer-events off, so it stays in the accessibility
-   tree (a screen reader reaches it by swiping, Cofounder 11-04) but a hidden
+   tree (a screen reader reaches it by swiping; decided 11-04) but a hidden
    pin cannot catch a tap. Keyboard focus anywhere in the row shows it, and so
    does focus on the pin itself (a screen reader moving to it); a mouse click
    does not set :focus-visible, so a clicked row keeps its time. Touch screens
@@ -4638,7 +4657,7 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
-/* D223 (TASK-735): the artboard's .pod.on, in both themes. The row goes to
+/* (TASK-735): the artboard's .pod.on, in both themes. The row goes to
    the neutral tint and the mark alone turns cobalt; no full-row block, no
    accent bar. */
 .v2-root button.v2-pods__row--selected,
@@ -4821,7 +4840,7 @@ body.modern-ui.v2-canvas {
     padding: 0 6px;
     background: transparent;
     /* Icons are controls: the rail's 3:1 grey, not the artboard's 2.58:1
-       placeholder (D223 standing rule, 11-01). The label sets its own colour. */
+       placeholder (design standing rule, 11-01). The label sets its own colour. */
     color: var(--v2-rail-icon);
   }
 
@@ -4840,7 +4859,7 @@ body.modern-ui.v2-canvas {
 
   .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__icon { color: var(--v2-ink); }
 
-  /* D223 ruling (Cofounder, 11-01): the artboard's sans family, at the
+  /* Design ruling (11-01): the artboard's sans family, at the
      12px sans floor rather than its 10px. */
   .v2-mobile-tabs__label {
     font: 500 12px/14px var(--v2-font);
@@ -4851,7 +4870,7 @@ body.modern-ui.v2-canvas {
      placeholder grey here, so the label text keeps 4.5:1. */
   .v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }
 
-  /* D215: the needs-you count is a cobalt badge on the icon, not a sentence
+  /* The needs-you count is a cobalt badge on the icon, not a sentence
      in the label. */
   .v2-mobile-tabs__icon { position: relative; }
   .v2-mobile-tabs__count {
@@ -4977,7 +4996,7 @@ body.modern-ui.v2-canvas {
 .v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }
 
-/* D223 (TASK-730 shell): the artboard's 390 frame is a 52px top bar over one
+/* (TASK-730 shell): the artboard's 390 frame is a 52px top bar over one
    column. Feature pages (connectors, team, settings) share V2PageHead and the
    V2FeaturePage body, so the bar and the tighter body live here once instead
    of in each page. The tab bar's height is already reserved on .v2-feature. */
@@ -5007,7 +5026,7 @@ body.modern-ui.v2-canvas {
   .v2-feature__header.v2-page-head--wrap > .v2-page-head__actions { flex: 1 0 100%; display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; }
 }
 
-/* ---------- Motion (D220) ---------- */
+/* ---------- Motion ---------- */
 
 /* Theme switch: utils/theme.ts makes the change inside document.startViewTransition,
    and the root snapshots crossfade once. No per-element colour transitions. */

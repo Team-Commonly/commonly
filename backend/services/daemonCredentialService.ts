@@ -19,7 +19,7 @@ export const DAEMON_SCOPES = [
 // D4: forgotten-machine credentials are long lived, not permanent.
 const DAEMON_CREDENTIAL_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
 
-export interface DaemonCredential {
+interface DaemonCredential {
   _id: Types.ObjectId;
   ownerUserId: Types.ObjectId;
   machineId: string;

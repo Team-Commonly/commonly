@@ -39,7 +39,7 @@ const expandHome = (p) => {
 // mechanisms that do exist are named instead.
 const MACOS_MESSAGE = 'bwrap is Linux-only. On macOS a public seat runs under Seatbelt '
   + '(sandbox.mode workspace or read-only).';
-// D245: native Windows has no sandbox for agents. WSL runs the Linux one,
+// Native Windows has no sandbox for agents. WSL runs the Linux one,
 // Claude Code included since F96, and host-check.js offers it; this message
 // names the native path, which is the user's own opt-in
 // (sandbox/windows-unsandboxed.js).
@@ -80,6 +80,19 @@ export const bwrapReadRoots = (env) => {
 // every sandbox it starts fails (`setting up uid map: Permission denied`,
 // ubuntu run 38982219348). Starting one empty namespace is the real check.
 const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
+
+// F211: `--bind-fd`/`--ro-bind-fd` arrived in bubblewrap 0.10.0 and were
+// backported to 0.6.3, so the version number does not settle it. An older
+// bwrap dies on the unknown option, so it is read from the usage text.
+// Debian 12 ships 0.8.0 and Ubuntu 24.04 0.9.0: both keep the path binds.
+const bindFdSupported = (spawn) => {
+  try {
+    const res = spawn('bwrap', ['--help'], { encoding: 'utf8', timeout: 10_000 });
+    return !res.error && res.status === 0 && /--bind-fd\b/.test(String(res.stdout || ''));
+  } catch {
+    return false;
+  }
+};
 
 const APPARMOR_USERNS_SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
 
@@ -153,9 +166,77 @@ export const detectBwrap = ({
           + 'On Ubuntu 24.04 and later, AppArmor restricts the unprivileged user namespaces it needs.',
       };
     }
-    return { available: true, path: 'bwrap' };
+    return { available: true, path: 'bwrap', bindFd: bindFdSupported(spawn) };
   } catch (err) {
     return { available: false, error: `bwrap detection failed: ${err.message}` };
+  }
+};
+
+// OpenCode's private network: inside its own network namespace the loopback
+// bridge (opencode-loopback.mjs) raises `lo` with CAP_NET_ADMIN, then drops
+// both capabilities before the model process starts. wrapArgvWithBwrap and
+// detectBwrapLoopback share these flags so the probe asks for what the
+// sandbox will.
+export const LOOPBACK_ISOLATION_FLAGS = Object.freeze([
+  '--uid', '0', '--gid', '0',
+  '--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP',
+]);
+
+// Where the bridge looks for iproute2's `ip`. The bridge keeps its own copy
+// (only its file is bound into the sandbox); a test holds the two equal.
+export const IP_CANDIDATES = Object.freeze(['/usr/sbin/ip', '/sbin/ip', '/usr/bin/ip', '/bin/ip']);
+
+/**
+ * F540: can this host give OpenCode's sandbox its private network? detectBwrap
+ * proves bubblewrap can start a namespace; a host can do that and still refuse
+ * the capability the loopback needs. Ubuntu 26.04 does ("RTNETLINK answers:
+ * Operation not permitted", GitHub run 43770297952), and so does Ubuntu's
+ * bwrap-userns-restrict AppArmor profile, under which what bubblewrap starts
+ * gets no capabilities. So this starts the same namespace with the same flags
+ * and raises its loopback. Call it only once detectBwrap reports available.
+ */
+export const detectBwrapLoopback = ({
+  spawn = spawnSync,
+  platform = process.platform,
+  exists = existsSync,
+  readRestriction = readApparmorRestriction,
+  readRelease = readUbuntuRelease,
+} = {}) => {
+  if (platform !== 'linux') {
+    return { available: false, error: nonLinuxMessage(platform) };
+  }
+  const ip = IP_CANDIDATES.find((candidate) => exists(candidate));
+  if (!ip) {
+    return {
+      available: false,
+      missingIp: true,
+      error: 'It needs the ip command, which is not installed here. Install iproute2: '
+        + '`sudo apt install iproute2` (Debian/Ubuntu, WSL), `sudo dnf install iproute` (Fedora) '
+        + 'or `sudo pacman -S iproute2` (Arch).',
+    };
+  }
+  try {
+    const probe = spawn('bwrap', [
+      '--unshare-all', '--unshare-net', ...LOOPBACK_ISOLATION_FLAGS,
+      '--ro-bind', '/', '/', '--die-with-parent',
+      ip, 'link', 'set', 'lo', 'up',
+    ], { encoding: 'utf8', timeout: 10_000 });
+    if (probe.error || probe.status !== 0) {
+      const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
+      return {
+        available: false,
+        // As with the namespace probe: only a bwrap that ran and exited
+        // refusing says something about this host.
+        loopbackRefused: !probe.error && typeof probe.status === 'number',
+        reason,
+        apparmorRestricted: readRestriction(),
+        ubuntuRelease: readRelease(),
+        error: `bubblewrap starts a sandbox here, but not the private network OpenCode needs inside it (${reason}).`,
+      };
+    }
+    return { available: true };
+  } catch (err) {
+    return { available: false, error: `bwrap loopback detection failed: ${err.message}` };
   }
 };
 
@@ -196,10 +277,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   const flags = [
     '--unshare-all',
     ...networkFlags,
-    ...(opts.enableLoopback ? [
-      '--uid', '0', '--gid', '0',
-      '--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP',
-    ] : []),
+    ...(opts.enableLoopback ? LOOPBACK_ISOLATION_FLAGS : []),
     '--die-with-parent',
     '--new-session',
     '--proc', '/proc',
@@ -287,7 +365,23 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   if (!isAbsolute(workspaceSource)) {
     throw new Error('wrapArgvWithBwrap opts.workspaceSource must be an absolute path');
   }
-  flags.push(opts.workspaceReadOnly ? '--ro-bind' : '--bind', workspaceSource, opts.workspacePath);
+  // F211: with descriptors (the caller opened and checked the source, and
+  // passes it at this child fd), bwrap mounts the open folder, so a swap of
+  // the path after the check cannot move the mount.
+  const fds = opts.bindFds || {};
+  const childFd = (value) => {
+    if (value === undefined || value === null) return null;
+    if (!Number.isInteger(value) || value < 3) {
+      throw new Error('wrapArgvWithBwrap opts.bindFds entries must be child descriptors of 3 or more');
+    }
+    return String(value);
+  };
+  const workspaceFd = childFd(fds.workspace);
+  if (workspaceFd) {
+    flags.push(opts.workspaceReadOnly ? '--ro-bind-fd' : '--bind-fd', workspaceFd, opts.workspacePath);
+  } else {
+    flags.push(opts.workspaceReadOnly ? '--ro-bind' : '--bind', workspaceSource, opts.workspacePath);
+  }
   // Entries held read-only inside a writable workspace (its .git). Bound after
   // the workspace so they land on top of it. In a writable workspace a missing
   // entry cannot be protected — the child could create it, and a planted
@@ -297,8 +391,13 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     if (!entry || isAbsolute(entry) || entry.split(/[\\/]/).includes('..')) {
       throw new Error('wrapArgvWithBwrap opts.readOnlyWorkspaceEntries entries must be relative names inside the workspace');
     }
-    flags.push(opts.workspaceReadOnly ? '--ro-bind-try' : '--ro-bind',
-      join(workspaceSource, entry), join(opts.workspacePath, entry));
+    const entryFd = childFd(fds.entries?.[entry]);
+    if (entryFd) {
+      flags.push('--ro-bind-fd', entryFd, join(opts.workspacePath, entry));
+    } else {
+      flags.push(opts.workspaceReadOnly ? '--ro-bind-try' : '--ro-bind',
+        join(workspaceSource, entry), join(opts.workspacePath, entry));
+    }
   }
   flags.push('--chdir', opts.workspacePath);
   flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);

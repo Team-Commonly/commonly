@@ -564,7 +564,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     },
   );
 
-  // D244 dogfood: a hosted install with heartbeat on runs a real turn on its
+  // Dogfood: a hosted install with heartbeat on runs a real turn on its
   // schedule. Two bounds of its own, both counted from AgentRun and both
   // failing closed, because they are spend bounds: one heartbeat run per
   // install an hour, and HOSTED_HEARTBEAT_RUNS_PER_DAY (6) across the owner's

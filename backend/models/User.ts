@@ -50,7 +50,7 @@ export interface IFollowedThread {
 // (password-only), one, or several (GitHub + Google linked by verified
 // email). Accounts created via OAuth have no password — see the
 // conditional `required` on the password path below.
-export type AuthProviderName = 'github' | 'google';
+type AuthProviderName = 'github' | 'google';
 
 export interface IAuthProvider {
   provider: AuthProviderName;
@@ -63,7 +63,7 @@ export interface IAuthProvider {
 // carry this list; for bots it's the agent's "contacts" — who they go to
 // for codex review, planning, etc. For humans it's the people they DM
 // most. Aliases must be lowercase URL-safe.
-export type ContactSource = 'user' | 'pod' | 'system';
+type ContactSource = 'user' | 'pod' | 'system';
 
 export interface IContactEntry {
   alias: string;
@@ -137,6 +137,10 @@ export interface IUser extends Document {
   apiTokenLast4?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
+  // F476: the computer whose removal unbound this agent, until a daemon adopts
+  // it or its owner releases it. Kept out of botMetadata, which many reads send
+  // to other people whole; select: false so only the owner's placement read sees it.
+  removedMachine?: { name: string; at: Date } | null;
   isBot: boolean;
   botType: BotType;
   botMetadata: {
@@ -155,6 +159,8 @@ export interface IUser extends Document {
     hostUnconfined?: boolean;
     // F457: set by a quick-try run that found no harness.
     harnessMissing?: { harness: string | null; at: Date };
+    // F515: set by a first run that stopped before waiting, by reason code.
+    listenBlocked?: { reason: string; harness: string | null; at: Date };
     // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
@@ -283,7 +289,7 @@ export interface IUser extends Document {
   getOrCreateDigestUnsubscribeToken(): string;
 }
 
-export interface IUserModel extends Model<IUser> {
+interface IUserModel extends Model<IUser> {
   mintApiTokenIfAbsent(
     userId: unknown,
     extra?: { apiTokenScopes?: string[] },
@@ -363,6 +369,11 @@ const userSchema = new Schema<IUser>({
   apiTokenLast4: { type: String, select: false },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
+  removedMachine: {
+    type: new Schema({ name: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   isBot: { type: Boolean, default: false },
   botType: {
     type: String,
@@ -385,6 +396,16 @@ const userSchema = new Schema<IUser>({
     // probes), and when. Declared or stripped, as above.
     harnessMissing: {
       type: new Schema({ harness: { type: String, default: null }, at: { type: Date, required: true } }, { _id: false }),
+      default: undefined,
+    },
+    // F515: why a first run stopped before it started waiting (a reason code),
+    // the harness it is about, and when. Declared or stripped, as above.
+    listenBlocked: {
+      type: new Schema({
+        reason: { type: String, enum: ['node-too-old', 'harness-signed-out'], required: true },
+        harness: { type: String, default: null },
+        at: { type: Date, required: true },
+      }, { _id: false }),
       default: undefined,
     },
     // ADR-026 Phase 2 — same lesson: declared or stripped.

@@ -409,7 +409,7 @@ type WebhookDeliveryOutcome = { ok: true } | { ok: false; failure: WebhookFailur
 // that stopped answering instead of calling every URL reachable. Keyed to the
 // URL it was measured against: an outcome for an old URL starts over. Never
 // throws into delivery, and never stores the URL or the transport error text.
-export const recordWebhookDelivery = async (
+const recordWebhookDelivery = async (
   installation: InstallationDoc,
   webhookUrl: string,
   outcome: WebhookDeliveryOutcome,
@@ -450,7 +450,7 @@ export const recordWebhookDelivery = async (
  * which is not the same as an address Commonly refuses, and a redirect loop is
  * the endpoint's own HTTP answer.
  */
-export const webhookFailureOutcome = (err: unknown): WebhookDeliveryOutcome => {
+const webhookFailureOutcome = (err: unknown): WebhookDeliveryOutcome => {
   const { name, code, kind, status } = (err || {}) as { name?: string; code?: string; kind?: string; status?: number };
   if (code === RESPONSE_TOO_LARGE && typeof status === 'number' && status >= 200 && status < 300) return { ok: true };
   if (name === 'AbortError') return { ok: false, failure: 'timeout' };

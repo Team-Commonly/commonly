@@ -1,4 +1,4 @@
-/* Agent memory (TASK-732, D223 lift). Lifted from docs/design/artboards/d215
+/* Agent memory (TASK-732). Lifted from docs/design/artboards/d215
    #s-memory: the artboard's .ahead, .mem, .mnav, .gtitle, .list, .mnote, .jday,
    details.grp and .info blocks, with the frame's values and the --v2-* token
    mapping from primitives.css. Class names keep the frame's names under a v2m-
@@ -70,7 +70,7 @@
 
 /* Phone (frame 390): search first, groups become the frame's details.grp rows. */
 @media (max-width: 767px) {
-  /* D223 (TASK-730): the same 52px phone top bar feature pages get; the name
+  /* (TASK-730): the same 52px phone top bar feature pages get; the name
      shrinks and ellipsizes. */
   .v2m-page .v2p-ph { height: auto; min-height: 52px; flex-wrap: nowrap; gap: 8px; padding: 0 10px 0 12px; }
   .v2m-page .v2p-ph .sp { display: none; }

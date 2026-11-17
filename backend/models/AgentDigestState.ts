@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 /** Unread ambient events folded out of the full AgentEvent retention window. */
-export interface IAgentDigestState extends Document {
+interface IAgentDigestState extends Document {
   agentName: string;
   instanceId: string;
   podId: Types.ObjectId;

@@ -332,6 +332,10 @@ export default {
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(mode)) {
       throw new Error('public Qwen seats require an enforced sandbox');
     }
+    // F535: a public seat reads only its workspace (sandbox-option-refusal.js).
+    if (isPublic && sandbox.filesystem?.['read-outside']?.length) {
+      throw new Error('qwen adapter: public seats do not allow sandbox.filesystem.read-outside');
+    }
     const provider = ctx.environment?.provider;
     if (!provider || !ctx.environment?.model) {
       throw new Error('Qwen seats require environment.provider and environment.model');
@@ -435,7 +439,7 @@ export default {
         // honours CLI allow rules. Any seat needs its declared Commonly tools
         // approved before non-interactive execution begins, public included:
         // without it a public seat's commonly_post_message was declined
-        // (D247 walk, 11-04). Public parity with Claude's --allowedTools
+        // (11-04). Public parity with Claude's --allowedTools
         // mcp__commonly__*; the withheld tools stay in --exclude-tools above.
         // The broker parks every write for the owner itself (F175d).
         ...(allowedTools.length ? ['--allowed-tools', allowedTools.join(',')] : []),

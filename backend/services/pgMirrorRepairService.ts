@@ -66,13 +66,13 @@ interface PgPool {
   connect: () => Promise<PgClient>;
 }
 
-export interface RepairLogger {
+interface RepairLogger {
   info: (line: string) => void;
   warn: (line: string) => void;
   error: (line: string) => void;
 }
 
-export interface RepairOptions {
+interface RepairOptions {
   logger?: RepairLogger;
   /** Delivers an alert to SRE. Defaults to spendAlarmService.pageSre. */
   page?: (content: string) => Promise<void>;
@@ -137,10 +137,12 @@ const loadPool = (): PgPool | null => {
   return pool;
 };
 
+// Whole, never cut: this line is the only record that can undo a bad repair,
+// and a pod description has no length limit (F478). Repairs are rare enough
+// that a long line costs nothing.
 const verbatim = (value: unknown): string => {
   if (value === null || value === undefined) return 'null';
-  const text = String(value);
-  return JSON.stringify(text.length > 200 ? `${text.slice(0, 200)}…` : text);
+  return JSON.stringify(String(value));
 };
 
 // User labels and pictures can identify a person; the log carries a stable

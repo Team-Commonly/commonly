@@ -1,4 +1,4 @@
-# Claude route for native turns and platform calls (F91, F92, D243)
+# Claude route for native turns and platform calls (F91, F92)
 
 Hosted native agents run on Claude Haiku 5.5 through LiteLLM when
 `aiProviders.anthropic.enabled` is on (dev: on since 2026-11-04). So do the
@@ -25,7 +25,7 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   pointing `nativeModel` at another model, check that the pinned map lists it,
   or its spend counts as zero against every budget.
 - **Native turns.** The backend and ops-runner get `NATIVE_RUNTIME_MODEL`.
-  Since F98 (D243, Cofounder 11-04) hosted agents are Claude-only: a native
+  Since F98 (11-04) hosted agents are Claude-only: a native
   turn runs on it unless its installation names a model the deployment offers
   (`hostedModelsOffered`, today only `nativeModel`). Every other pin maps to it
   server-side and the stored value is left as is: the old default

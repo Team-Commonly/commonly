@@ -22,6 +22,10 @@ spec:
         component: agent-runtime
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      # commonly-bot calls LiteLLM and the Commonly API, never Kubernetes, and
+      # this account can read every Secret in the namespace. So no token (F533;
+      # scripts/verify-service-account-tokens-chart.js).
+      automountServiceAccountToken: false
       {{- if .Values.agents.commonlyBot.nodeSelector }}
       nodeSelector:
         {{- toYaml .Values.agents.commonlyBot.nodeSelector | nindent 8 }}

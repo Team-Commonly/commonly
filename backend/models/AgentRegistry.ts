@@ -2,18 +2,18 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 import { declaredRuntimeIdentity } from '../utils/runtimeIdentity';
 import { IDENTITY_COLLATION, installationIdentityFilter } from '../services/agentInstallationIdentity';
 
-export type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
-export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
-export type ManifestRuntimeType = 'standalone' | 'commonly-hosted' | 'hybrid';
-export type ManifestConnectionType = 'mcp' | 'rest' | 'websocket';
+type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
+type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
+type ManifestRuntimeType = 'standalone' | 'commonly-hosted' | 'hybrid';
+type ManifestConnectionType = 'mcp' | 'rest' | 'websocket';
 export type AgentInstallationStatus = 'active' | 'paused' | 'uninstalled' | 'error' | 'stale';
 
-export interface IManifestCapability {
+interface IManifestCapability {
   name?: string;
   description?: string;
 }
 
-export interface IManifest {
+interface IManifest {
   name: string;
   version: string;
   description?: string;
@@ -35,7 +35,7 @@ export interface IManifest {
   hooks?: { postInstall?: string; preUpdate?: string; postUpdate?: string };
 }
 
-export interface IAgentRegistry extends Document {
+interface IAgentRegistry extends Document {
   agentName: string;
   displayName: string;
   description: string;
@@ -71,7 +71,7 @@ export interface IAgentRegistry extends Document {
   updatedAt: Date;
 }
 
-export interface IAgentRegistryModel extends Model<IAgentRegistry> {
+interface IAgentRegistryModel extends Model<IAgentRegistry> {
   search(query: string, options?: { limit?: number; offset?: number; category?: string | null; registry?: string | null; verified?: boolean | null }): mongoose.Query<IAgentRegistry[], IAgentRegistry>;
   getByName(agentName: string): mongoose.Query<IAgentRegistry | null, IAgentRegistry>;
   incrementInstalls(agentName: string): Promise<mongoose.UpdateWriteOpResult>;
@@ -205,6 +205,7 @@ export interface IAgentInstallationRegistry extends Document {
   agentName: string;
   podId: Types.ObjectId;
   instanceId: string;
+  waitingEmailAt?: Date;
   displayName?: string;
   version: string;
   config?: Map<string, unknown>;
@@ -251,7 +252,7 @@ export interface IAgentInstallationRegistry extends Document {
   recordUsage(tokens?: number): Promise<IAgentInstallationRegistry>;
 }
 
-export interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
+interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
   rowInPod(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<IAgentInstallationRegistry | null>;
@@ -299,6 +300,9 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
       }, { _id: false }),
       default: undefined,
     },
+    // F522: when the owner was last emailed that a person is waiting on this
+    // never-connected agent; at most one such email per 24h.
+    waitingEmailAt: { type: Date },
     usage: {
       lastUsedAt: Date,
       totalCalls: { type: Number, default: 0 },

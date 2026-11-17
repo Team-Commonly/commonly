@@ -10,7 +10,7 @@ import { DISCORD_INVITE_URL } from '../../utils/feedbackLinks';
 import V2LandingPage from '../V2LandingPage';
 
 /**
- * D38: the Discord invite is in the hero, not only the footer. It opens the
+ * The Discord invite is in the hero, not only the footer. It opens the
  * same invite as the in-app feedback links in a new tab, in both languages. It
  * is a text link on the band, never a third key beside the two CTAs.
  */

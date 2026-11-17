@@ -15,7 +15,7 @@ import React, { createContext, createElement, useContext, useMemo } from 'react'
  */
 const V2EmbeddedContext = createContext<boolean>(false);
 
-export interface V2EmbeddedProviderProps {
+interface V2EmbeddedProviderProps {
   children: React.ReactNode;
   value?: boolean;
 }

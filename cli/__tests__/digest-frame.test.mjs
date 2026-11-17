@@ -1,6 +1,6 @@
 /**
- * The run-loop's unread-messages frame (ADR-018 D9.2, Cofounder ruling
- * 2026-11-05, D255). Pod members write this text, so the frame has to hold
+ * The run-loop's unread-messages frame (ADR-018 D9.2, decided
+ * 2026-11-05). Pod members write this text, so the frame has to hold
  * against a message written to break out of it.
  */
 import {

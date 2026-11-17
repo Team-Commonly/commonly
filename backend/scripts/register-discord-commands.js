@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Integration = require("../models/Integration");
 const DiscordService = require("../services/discordService");
+const discordApplicationCommands = require("../config/discordApplicationCommands.json");
 
 /**
  * Register Discord Slash Commands
@@ -109,12 +110,14 @@ async function registerCommandsForIntegration(integration) {
     );
 
     if (success) {
-      console.log("✅ Commands registered successfully!");
-      console.log("   Available commands:");
-      console.log("   - /commonly-summary");
-      console.log("   - /discord-status");
-      console.log("   - /discord-enable");
-      console.log("   - /discord-disable");
+      // F161: every command is registered globally at boot
+      // (scripts/deploy-discord-commands.js), so this guild call only clears
+      // the per-guild copies older registrations left behind (F162).
+      console.log("✅ Cleared this guild's old command copies.");
+      console.log("   The commands themselves are registered globally at boot:");
+      discordApplicationCommands.forEach((command) => {
+        console.log(`   - /${command.name}`);
+      });
       console.log("");
       return true;
     }

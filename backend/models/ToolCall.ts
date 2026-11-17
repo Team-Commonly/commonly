@@ -32,7 +32,7 @@ export type ToolCallOutcome = 'ok' | 'refused' | 'pending_approval' | 'failed';
  * Kept OUT of `ToolCallOutcome` so it can never be written into the column,
  * whose CHECK constraint is the storage vocabulary.
  */
-export type ToolCallDisplayOutcome = ToolCallOutcome | 'superseded';
+type ToolCallDisplayOutcome = ToolCallOutcome | 'superseded';
 
 /** A parked row is superseded when a resolved sibling of the same approval
  * exists. `approval_id` is the join: every terminal path stamps the parked
@@ -323,7 +323,7 @@ class ToolCall {
   }
 }
 
-export interface ToolCallCounts {
+interface ToolCallCounts {
   total: number;
   ok: number;
   refused: number;
@@ -334,7 +334,7 @@ export interface ToolCallCounts {
 /** A trail row as READ: `outcome` may be the derived `superseded`, which the
  * table never stores. Writes stay typed as `ToolCallRecord` so a derived value
  * can never reach the INSERT. */
-export interface ToolCallListRecord extends Omit<ToolCallRecord, 'outcome'> {
+interface ToolCallListRecord extends Omit<ToolCallRecord, 'outcome'> {
   outcome: ToolCallDisplayOutcome;
 }
 

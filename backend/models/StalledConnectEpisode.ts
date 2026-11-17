@@ -33,7 +33,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * signed up on 2026-08-15, installed a seat 77 seconds later, never ran it,
  * never spoke, and left.
  */
-export interface IStalledConnectEpisode extends Document {
+interface IStalledConnectEpisode extends Document {
   installationId: Types.ObjectId;
   podId: string;
   /** The human who installed it — the nudge is addressed to them by name. */
@@ -71,8 +71,15 @@ export interface IStalledConnectEpisode extends Document {
    */
   resolvedAt?: Date;
   resolutionMessageId?: string;
-  /** Still unconnected at +7d goes to the digest, never a second room post. */
+  /**
+   * Still unconnected goes to the installer's daily digest, never a second
+   * room post (F502; ruling 11-14): one line from +24h, when this is
+   * set, and one more from +7d, when `digestedAgainAt` is, then none. A person
+   * who never came back to the pod never saw the nudge, so the digest is the
+   * only place they hear it.
+   */
   digestedAt?: Date;
+  digestedAgainAt?: Date;
   status: 'open' | 'resolved';
 }
 
@@ -93,6 +100,7 @@ const StalledConnectEpisodeSchema = new Schema<IStalledConnectEpisode>(
     resolvedAt: { type: Date },
     resolutionMessageId: { type: String },
     digestedAt: { type: Date },
+    digestedAgainAt: { type: Date },
     status: { type: String, enum: ['open', 'resolved'], default: 'open' },
   },
   { timestamps: true, versionKey: false },
@@ -105,8 +113,12 @@ StalledConnectEpisodeSchema.index(
   { installationId: 1, tokenIssuedAt: 1 },
   { unique: true },
 );
-// The resolution sweep: which open episodes might have connected by now.
+// Open episodes by age: the digest's candidate read (F502).
 StalledConnectEpisodeSchema.index({ status: 1, nudgedAt: 1 });
+// The resolution sweep pages every open episode in _id order (F505).
+StalledConnectEpisodeSchema.index({ status: 1, _id: 1 });
+// The daily digest's read: one installer's open episodes (F502).
+StalledConnectEpisodeSchema.index({ installedBy: 1, status: 1 });
 
 const StalledConnectEpisode: Model<IStalledConnectEpisode> =
   (mongoose.models.StalledConnectEpisode as Model<IStalledConnectEpisode>)

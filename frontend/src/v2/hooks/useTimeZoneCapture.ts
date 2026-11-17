@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext';
  */
 const sentKey = (userId: string) => `commonly.timeZoneSent:${userId}`;
 
-export const browserTimeZone = (): string | null => {
+const browserTimeZone = (): string | null => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
   } catch {

@@ -1,4 +1,4 @@
-// D245: the Windows form of `commonly daemon install`, a per-user Task
+// The Windows form of `commonly daemon install`, a per-user Task
 // Scheduler task. Side effects are injected (no schtasks here); the real
 // register / kill / come-back proof is the windows-latest CI job
 // (.github/workflows/daemon-windows.yml).

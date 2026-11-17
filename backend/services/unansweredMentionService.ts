@@ -137,7 +137,7 @@ export async function messagesFromPeople(
  * an earlier turn may have answered. With `answering` (F237), the ids of the
  * messages a row carries, a post in some unrelated thread doesn't count either.
  * An answer sits at top level, replies to one of them, or lands in the thread
- * of one of them: the message's own (D278) or the thread it sits in, read from
+ * of one of them: the message's own or the thread it sits in, read from
  * its row, since a payload can leave that out (a welcome wake inside someone's
  * thread). Any carried message counts, because a joined row is answered once,
  * in one of their threads. A post elsewhere was the agent answering someone

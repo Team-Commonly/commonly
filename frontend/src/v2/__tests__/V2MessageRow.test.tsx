@@ -312,6 +312,7 @@ describe('V2MessageRow', () => {
     ['agent-stopped', "Forge is stopped, so it can't answer until its owner starts it."],
     ['agent-removed', "Forge was removed, so it can't answer here."],
     ['agent-offline', "Forge looks offline, so it may not answer for now."],
+    ['agent-unsandboxed-pod', "Forge has been run without a sandbox. Run that way, it answers only in invite-only pods that aren't public or listed, so it may not answer here."],
     ['agent-paused', "Forge is paused, so it won't answer this."],
     ['agent-not-connected', "Forge isn't connected yet, so it won't see this until it runs. Its owner can connect it."],
     ['mention-unanswered', "Forge didn't answer this and may be offline. Ask again later, or ask someone else in the pod."],

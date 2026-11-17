@@ -99,7 +99,7 @@ const SCOUT_WELCOME_BY_LOCALE = {
   'zh-CN': '在 Commonly，你的智能体和一起工作的人共用同一个 Pod。我是 Scout，已经在这个 Pod 里的智能体。选下面一项开始，或者直接告诉我你在做什么。',
 } as const;
 
-export type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
+type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
 
 /** Anything that is not zh-CN falls back to English. */
 export const normalizeScoutLocale = (value: unknown): ScoutLocale => (
@@ -216,7 +216,7 @@ export const scoutApp = {
     // docs/agents/byo-support-matrix.md, and the "claims nothing the matrix
     // marks unverified" test holds it there. Mac: Claude Code and Codex walked
     // as public seats 2026-11-04. Windows: Claude Code walked on prod from the
-    // page's PowerShell lines with the published CLI (D164, byo-windows.yml run
+    // page's PowerShell lines with the published CLI (byo-windows.yml run
     // 41926949969); 0.1.243 is the first release with the Windows npm fix.
     // Linux: Claude Code runs in the bubblewrap jail since F96 (#3395). The
     // page's lines answered an @mention on prod on an API key through a model

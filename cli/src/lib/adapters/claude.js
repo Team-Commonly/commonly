@@ -53,7 +53,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
-import { claudeRunStats } from '../reply-receipt.js';
+import { buildReplyReceipt, claudeRunStats, REPLY_RECEIPT_ENV } from '../reply-receipt.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import {
   createHash, randomBytes, randomUUID, timingSafeEqual,
@@ -91,6 +91,7 @@ import {
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
+import { closeHeldPaths, openHeldPath } from '../sandbox/bind-fd.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
@@ -115,6 +116,7 @@ import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS, publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 import { startProviderProxy } from '../provider-proxy.js';
@@ -197,7 +199,7 @@ const PUBLIC_DENIED_TOOLS = [
   'WebFetch',
   'Bash',
   // Claude Code's shell tool on Windows. dontAsk and the Read(./**) allowlist
-  // already refuse it; named here so the deny list holds on its own (D245).
+  // already refuse it; named here so the deny list holds on its own.
   'PowerShell',
   'Write',
   'Edit',
@@ -246,7 +248,7 @@ const withWorkspaceGit = (ctx) => {
   };
 };
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
-// D245: what a Windows process needs to start at all, find its own login and
+// What a Windows process needs to start at all, find its own login and
 // open a socket. Windows keys are case-insensitive (Path, SystemRoot), so this
 // one is matched without case. None of these carries a secret.
 const PUBLIC_SAFE_ENV_WIN32 = /^(?:PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|USERPROFILE|USERNAME|USERDOMAIN|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|COMMONPROGRAMFILES|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE|OS)$/i;
@@ -650,7 +652,7 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
-// D245: Claude Code matches permission paths in POSIX form on Windows
+// Claude Code matches permission paths in POSIX form on Windows
 // (C:\Users\ada becomes /c/Users/ada), so an absolute deny written from a
 // Windows path would match nothing.
 const permissionPath = (path, platform) => (platform === 'win32'
@@ -698,7 +700,7 @@ export const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     }
   };
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
-  // D245: with no OS jail (native Windows, --unsandboxed) a shell would run
+  // With no OS jail (native Windows, --unsandboxed) a shell would run
   // with the user's whole access and could read the seat's own token from its
   // environment, so `write` grants edits only there.
   // With no jail the edit tools are also scoped to the working folder: a bare
@@ -982,7 +984,7 @@ const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
   processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
-  commandResolution = {}, confined = false,
+  commandResolution = {}, confined = false, passFds = [],
 }) => new Promise((resolve, reject) => {
   // Every process the turn starts inherits this marker however it detaches,
   // so what it leaves running is stopped once the turn has closed. A confined
@@ -991,11 +993,19 @@ const runClaude = ({
   // On Windows an npm `claude.cmd` is read, not run through cmd.exe: the
   // prompt in `args` is pod content (#2141). Off Windows this is identity.
   const launch = resolveLaunch(cmd, args, { env: turn.env, ...commandResolution });
-  const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, {
-    cwd,
-    env: turn.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }, { ownGroup });
+  let proc;
+  try {
+    proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, {
+      cwd,
+      env: turn.env,
+      // F211: bind sources bwrap mounts by descriptor arrive as fds 3 and up.
+      // The child holds its own copies once spawned; bwrap closes them after
+      // mounting, and the host closes these here.
+      stdio: ['ignore', 'pipe', 'pipe', ...passFds],
+    }, { ownGroup });
+  } finally {
+    closeHeldPaths(passFds);
+  }
   observeSpawn(proc, onSpawn, controls);
   let stdout = '';
   let stderr = '';
@@ -1319,6 +1329,12 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     // read the credential (a path, not a secret). An older warm build refuses.
     const readyPath = spawnCommand ? commonlyMcpReadyFile(server, spawnCommand, ctx, { env: entry.env }) : null;
     if (readyPath) entry.env = { ...(entry.env || {}), [MCP_READY_FILE_ENV]: readyPath };
+    // F546: only our server posts replies, so only it is told what this spawn
+    // runs with.
+    if (ctx.replyReceipt && spawnCommand
+      && (isShippedCommonlyMcpCommand(server.command) || describeMcpCommand(spawnCommand)?.isCommonly)) {
+      entry.env = { ...(entry.env || {}), [REPLY_RECEIPT_ENV]: JSON.stringify(ctx.replyReceipt) };
+    }
     const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
     if (server.headers) {
       const headers = { ...server.headers };
@@ -1416,7 +1432,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
 // child environment and to every detection lookup so a daemon does not report
 // a false "adapter unavailable" (or hit spawn ENOENT) merely because it was
 // started outside an interactive shell.
-const withClaudePath = (input) => {
+export const withClaudePath = (input) => {
   const output = { ...(input || process.env) };
   const localBin = join(homedir(), '.local', 'bin');
   // Windows keys are case-insensitive, and a child given both `Path` and a
@@ -1483,7 +1499,7 @@ const claudeInstallRefusal = (claudeBin) => new Error(
 );
 
 /**
- * D245: native Windows has no OS jail, and the user chose to run without one
+ * Native Windows has no OS jail, and the user chose to run without one
  * (`--unsandboxed`). Read from the spawn context only, set by `agent run`, never
  * from the environment. The seat keeps its trust, so everything the trust
  * brings except the jail still applies.
@@ -1498,6 +1514,29 @@ const proxyPort = (proxy) => {
   if (!proxy) return null;
   const port = Number(proxy.port ?? new URL(proxy.baseURL).port);
   return Number.isInteger(port) && port > 0 ? port : null;
+};
+
+// F211: the held workspace and its .git, opened and checked, to hand bwrap as
+// descriptors. Child fd 3 is the workspace and 4 the .git (stdio is 0-2). A
+// writable workspace needs its .git (checked before this), so failing to hold
+// it refuses the turn. A read-only one whose .git is missing, a link or
+// unreadable keeps the path bind for it, which is -try there.
+// The .git is opened by its path, not under the workspace descriptor: a swap
+// between the two opens gains nothing, since whoever can make it can already
+// write that .git.
+const holdBindSources = (realpath, { write, fdPath }) => {
+  const passFds = [openHeldPath(realpath, { directory: true, ...(fdPath ? { fdPath } : {}) })];
+  const bindFds = { workspace: 3, entries: {} };
+  try {
+    passFds.push(openHeldPath(join(realpath, '.git'), fdPath ? { fdPath } : {}));
+    bindFds.entries['.git'] = 4;
+  } catch (error) {
+    if (write || !['ENOENT', 'ELOOP', 'EACCES'].includes(error?.code)) {
+      closeHeldPaths(passFds);
+      throw error;
+    }
+  }
+  return { passFds, bindFds };
 };
 
 const prepareArgv = async (innerArgv, ctx) => {
@@ -1579,7 +1618,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // unconfined seat with a public record, which is how a record can claim
   // confinement it never applies.
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
-    // D245: on native Windows, name Windows and the user's own opt-in, never
+    // On native Windows, name Windows and the user's own opt-in, never
     // macOS or bwrap advice (host-check passes an unrecognised mode through).
     if ((ctx._platform || process.platform) === 'win32') {
       throw new Error(
@@ -1668,12 +1707,13 @@ const prepareArgv = async (innerArgv, ctx) => {
     };
   }
 
+  let bwrap = null;
   if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
     // every one of its spawns with a bare ENOENT. On a non-Linux
     // host this reports the macOS-only message, same as the wrapper would.
-    const bwrap = (ctx._detectBwrap || detectBwrap)();
+    bwrap = (ctx._detectBwrap || detectBwrap)();
     if (!bwrap.available) {
       throw new Error(`${sandboxTrust} Claude agents require bwrap: ${bwrap.error}`);
     }
@@ -1715,39 +1755,53 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { claudeBin, claudeInstall } = resolveClaudeInstall(claudeEnv);
     if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
     const { statePath } = ctx.publicClaudeState;
-    const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
-      workspacePath: ctx.cwd,
-      // F200: bwrap resolves a bind source when the jail starts, after the
-      // check, so the checked realpath is the source, mounted at the path the
-      // seat was given.
-      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
-      workspaceReadOnly: !grants.includes('write'),
-      readOnlyWorkspaceEntries: ['.git'],
-      homePath: statePath,
-      // .claude (the login copy) and tmp are bound again on their own, after
-      // the state folder: a mount point cannot be renamed or replaced from
-      // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
-      // cannot swap either for a link while the host writes or removes the
-      // login there. The state preparation made both real directories.
-      writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
-      readOnlyPaths: [
-        ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
-        ...(ctx.mcpReadDirectories || []),
-        ...(ctx.workspaceGit?.readDirectories || []),
-        ...(ctx.workspaceGit?.readPaths || []),
-      ].filter(Boolean),
-      // The binaries the jail runs: claude (a user-local install is outside
-      // the default binds, and its link points into a versions folder), the
-      // node that runs the stdio MCP servers, and the git the history tool runs.
-      optionalReadOnlyPaths: [...new Set([
-        dirname(claudeBin), claudeInstall, dirname(process.execPath),
-        ctx.workspaceGit ? dirname(ctx.workspaceGit.executable) : null,
-        // A claude not found on PATH is left bare and fails at spawn; its
-        // dirname is '.', which is not a path to bind.
-      ].filter((p) => p && isAbsolute(p)))],
-    });
+    const held = bwrap?.bindFd && ctx.workspaceRealpath
+      ? holdBindSources(ctx.workspaceRealpath, { write: grants.includes('write'), fdPath: ctx._fdPath })
+      : { passFds: [], bindFds: {} };
+    let wrapped;
+    try {
+      wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
+        workspacePath: ctx.cwd,
+        // F200: bwrap resolves a bind source when the jail starts, after the
+        // check, so the checked realpath is the source, mounted at the path the
+        // seat was given. F211: where bwrap takes descriptors, the checked
+        // folder is mounted from one, so a swap in the startup window moves
+        // nothing either.
+        workspaceSource: ctx.workspaceRealpath || ctx.cwd,
+        bindFds: held.bindFds,
+        workspaceReadOnly: !grants.includes('write'),
+        readOnlyWorkspaceEntries: ['.git'],
+        homePath: statePath,
+        // .claude (the login copy) and tmp are bound again on their own, after
+        // the state folder: a mount point cannot be renamed or replaced from
+        // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
+        // cannot swap either for a link while the host writes or removes the
+        // login there. The state preparation made both real directories.
+        writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
+        readOnlyPaths: [
+          ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
+          ...(ctx.mcpReadDirectories || []),
+          ...(ctx.workspaceGit?.readDirectories || []),
+          ...(ctx.workspaceGit?.readPaths || []),
+        ].filter(Boolean),
+        // The binaries the jail runs: claude (a user-local install is outside
+        // the default binds, and its link points into a versions folder), the
+        // node that runs the stdio MCP servers, and the git the history tool runs.
+        optionalReadOnlyPaths: [...new Set([
+          dirname(claudeBin), claudeInstall, dirname(process.execPath),
+          ctx.workspaceGit ? dirname(ctx.workspaceGit.executable) : null,
+          // A claude not found on PATH is left bare and fails at spawn; its
+          // dirname is '.', which is not a path to bind.
+        ].filter((p) => p && isAbsolute(p)))],
+      });
+    } catch (error) {
+      closeHeldPaths(held.passFds);
+      throw error;
+    }
     // TASK-440 reads the transcript from the HOME the child wrote under.
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: statePath };
+    return {
+      cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: statePath, passFds: held.passFds,
+    };
   }
   if (sandboxMode === 'bwrap') {
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -1941,7 +1995,7 @@ export default {
     let publicLoginBaseUrl = null;
     let loginTurn = null;
     let publicSkillArgs = [];
-    // D245: no jail to prepare for on a policy-only Windows host.
+    // No jail to prepare for on a policy-only Windows host.
     const jailed = !policyOnlyHost(ctx);
     const publicNativeSandbox = jailed && publicTrust
       && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
@@ -2074,7 +2128,7 @@ export default {
           readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
           await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
         } else if (ctx.environment?.sandbox?.trust === 'public') {
-          // A policy-only host (D245) prepares no state folder and runs the MCP
+          // A policy-only host prepares no state folder and runs the MCP
           // children unjailed, so a folder of this turn's own serves.
           ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
           await chmod(ownReadyDir, 0o700);
@@ -2089,6 +2143,14 @@ export default {
           publicSeat: publicTrust,
           platform: ctx._platform || process.platform,
           commandResolution: { env: withClaudePath(ctx.env), ...ctx._commandResolution },
+          // Claude expands ${…} in this env, so a control holding a `$` (a model
+          // id is free text) is left out rather than handed a credential.
+          replyReceipt: buildReplyReceipt({
+            adapterName: 'claude',
+            stats: Object.fromEntries(Object.entries(
+              controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+            ).filter(([, value]) => !String(value ?? '').includes('$'))),
+          }),
         });
       }
       if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);
@@ -2115,11 +2177,14 @@ export default {
         workspacePinDirs,
         claudeEnv,
       };
-      const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
+      const {
+        cmd, args, env, childHome, passFds,
+      } = await prepareArgv(baseArgs, spawnCtx);
       armRelease();
       const stdout = await runClaude({
         cmd,
         args,
+        passFds,
         cwd: ctx.cwd,
         env,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
@@ -2151,7 +2216,7 @@ export default {
         text: turnReply(stdout, { credentials: turnCredentials(spawnCtx), publicMcp: witnessedMcp }),
         newSessionId: sessionId,
         contextTokens,
-        // D245 item 4: what the run said about itself, for the reply receipt.
+        // What the run said about itself, for the reply receipt.
         stats: claudeRunStats(stdout),
       };
     } catch (err) {
@@ -2186,6 +2251,10 @@ export default {
           publicClaudeState,
           publicSkillArgs,
           providerProxyPort: proxyPort(providerProxy),
+          // F200: the retry is the same turn in the same held folder, so it
+          // keeps the checked realpath and the pin record's deny.
+          workspaceRealpath,
+          workspacePinDirs,
           claudeEnv: withProvider(buildClaudeEnv(
             ctx.env,
             publicClaudeState,
@@ -2211,6 +2280,7 @@ export default {
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
+          passFds: retry.passFds,
           cwd: ctx.cwd,
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,

@@ -2,7 +2,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export type WaitlistStatus = 'pending' | 'invited' | 'closed';
 
-export interface IWaitlistRequest extends Document {
+interface IWaitlistRequest extends Document {
   email: string;
   name: string;
   organization: string;

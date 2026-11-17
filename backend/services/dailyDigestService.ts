@@ -11,6 +11,10 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
+const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+// eslint-disable-next-line global-require
+const PGMessage = require('../models/pg/Message');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const { cleanTimeZone, localHour, localDate } = require('../utils/timeZone');
@@ -73,6 +77,11 @@ const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
 const MAX_NEEDS_YOU = 3;
 const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
+// F502 (ruling 11-14): an agent never started gets a digest line
+// from 24h after its in-pod nudge, one more from +7d, then none.
+const STALL_FIRST_MS = 24 * 60 * 60 * 1000;
+const STALL_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_TEAMMATES = 5;
 const LINE_MAX = 200;
 
 /** What the digest knows about an agent from its User row, keyed by user id. */
@@ -88,9 +97,36 @@ interface AgentIdentity {
 interface RecapContext {
   publicPodIds?: Set<string>;
   agentIdentities?: Map<string, AgentIdentity>;
+  /** F503: what teammates wrote, from teammateLines(). */
+  teammateLines?: string[];
+  /** F502: the person's agents that never connected, from stalledLines(). */
+  stalledLines?: string[];
+}
+
+interface StalledDigest {
+  lines: string[];
+  /**
+   * Stored on the scheduled digest and written by the email, only once SMTP
+   * has accepted it (digestEmailService), so a skipped or failed send leaves
+   * the line for the next digest.
+   */
+  marks: Array<{ episodeId: string; fields: string[]; line: string }>;
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
+// F522: who is waiting on a never-connected agent. Loaded lazily (it pulls in
+// the email services), and a failed read just leaves the line without it.
+const waitingOnSafely = async (episode: any, now: Date): Promise<{ count: number; names: string[] }> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    return await require('./waitingOwnerEmailService').waitingOn(episode, now);
+  } catch (error) {
+    console.warn('[daily-digest] waiting read failed:', (error as Error).message);
+    return { count: 0, names: [] };
+  }
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const whoIsWaiting = (names: string[]): string => require('./waitingOwnerEmailService').whoIsWaiting(names);
 const isDuplicateDigest = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 export class DailyDigestService {
@@ -101,7 +137,7 @@ export class DailyDigestService {
    */
   static recapLines(
     recap: RecapLike | null | undefined,
-    { publicPodIds = new Set(), agentIdentities = new Map() }: RecapContext = {},
+    { publicPodIds = new Set(), agentIdentities = new Map(), stalledLines = [], teammateLines = [] }: RecapContext = {},
   ): string[] {
     if (!recap) return [];
     const lines: string[] = [];
@@ -121,6 +157,10 @@ export class DailyDigestService {
       const title = oneLine(item.title);
       if (title) lines.push(`Waiting on you: ${title}${item.podName ? ` (${oneLine(item.podName)})` : ''}`);
     });
+    // An agent the person added and never started waits on them too (F502).
+    lines.push(...stalledLines);
+    // A person writing to you is the next most direct pull back (F503).
+    lines.push(...teammateLines);
     (recap.agents || [])
       .map((agent) => ({ agent, identity: agentIdentities.get(String(agent.id)) }))
       .filter(({ identity }) => !identity?.guide)
@@ -154,6 +194,180 @@ export class DailyDigestService {
       lines.push(`${id}${title} is ${oneLine(task.status) || 'updated'}${pod}`);
     });
     return lines;
+  }
+
+  /**
+   * F542: the people stalledLines() would give a line at `at`, so the
+   * scheduled run never wakes a gone person to an empty digest. The same
+   * choices in the same order: an episode open 24h; the newest per
+   * installation, before the done-filter, so a replaced one never speaks; that
+   * one due (no digestedAgainAt, and no digestedAt or past +7d); its install
+   * still active; and its installer still in its pod. A read that fails
+   * never stops the run, and fails toward reaching the person: an empty
+   * digest at worst, never a missed line.
+   */
+  static async stalledInstallerIds(at: Date): Promise<unknown[]> {
+    const warn = (what: string) => (error: Error) => {
+      console.warn(`[daily-digest] stalled installers: ${what} could not be read:`, error.message);
+      return null;
+    };
+    type Episode = {
+      installationId: unknown; installedBy: unknown; podId: string;
+      nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
+    };
+    const episodes = await Promise.resolve().then(() => StalledConnectEpisode.find({
+      status: 'open',
+      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
+    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean())
+      .catch(warn('episodes')) as Episode[] | null;
+    if (!episodes) return [];
+    const newest = new Map<string, Episode>();
+    for (const episode of episodes) {
+      const key = String(episode.installationId);
+      const held = newest.get(key);
+      if (!held || new Date(episode.nudgedAt) > new Date(held.nudgedAt)) newest.set(key, episode);
+    }
+    const due = [...newest.values()].filter((episode) => !episode.digestedAgainAt
+      && (!episode.digestedAt || at.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS));
+    if (due.length === 0) return [];
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../models/AgentRegistry');
+    // null: the lookup failed, so every due install counts as active.
+    const rows = await Promise.resolve().then(() => AgentInstallation.find({
+      _id: { $in: due.map((episode) => episode.installationId) }, status: 'active',
+    }).select('_id').lean()).catch(warn('installs')) as Array<{ _id: unknown }> | null;
+    const active = rows && new Set(rows.map((row) => String(row._id)));
+    const ids = new Map<string, unknown>();
+    for (const episode of due) {
+      const person = String(episode.installedBy);
+      if (ids.has(person) || (active && !active.has(String(episode.installationId)))) continue;
+      // Same membership shapes as the digest's memberPods.
+      // eslint-disable-next-line no-await-in-loop
+      // 'unread': the lookup failed, so the person counts as in the pod.
+      const inPod = await Promise.resolve().then(() => Pod.exists({
+        _id: episode.podId,
+        $or: [{ members: episode.installedBy }, { 'members.userId': episode.installedBy }],
+      })).catch((error: Error) => warn('a pod')(error) ?? 'unread');
+      if (inPod) ids.set(person, episode.installedBy);
+    }
+    return [...ids.values()];
+  }
+
+  /**
+   * F502: a line for each agent this person installed whose stalled-connect
+   * episode is still open: from 24h after the in-pod nudge, and once more from
+   * +7d, then never. An episode first seen past +7d gets one line and both
+   * marks. Only the installer hears it, and only about a pod they are still in.
+   */
+  static async stalledLines(
+    userId: unknown,
+    memberPods: Array<{ _id: unknown; name?: string }>,
+    now: Date,
+  ): Promise<StalledDigest> {
+    const episodes = await StalledConnectEpisode.find({
+      installedBy: userId,
+      status: 'open',
+      nudgedAt: { $lte: new Date(now.getTime() - STALL_FIRST_MS) },
+    }).select('installationId podId installedBy agentName instanceId displayName tokenIssuedAt nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+      _id: unknown; installationId: unknown; podId: string; installedBy: unknown; agentName: string; instanceId?: string;
+      displayName?: string; tokenIssuedAt?: Date; nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
+    }>;
+    if (episodes.length === 0) return { lines: [], marks: [] };
+    // The sweep that closes an episode on uninstall reads a bounded batch, so
+    // an open episode is not proof the agent is still installed: read it here,
+    // or the email could name an agent the person already removed.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../models/AgentRegistry');
+    const active = new Set((await AgentInstallation.find({
+      _id: { $in: episodes.map((episode) => episode.installationId) }, status: 'active',
+    }).select('_id').lean() as Array<{ _id: unknown }>).map((row) => String(row._id)));
+    // A reissued token opens a new episode while the old one stays open; one
+    // line per installation, the newest episode's, never the same line twice.
+    // Chosen before the done-filter below, so a replaced episode never speaks
+    // late once the newest has had its two lines.
+    const newest = new Map<string, typeof episodes[number]>();
+    for (const episode of episodes) {
+      const key = String(episode.installationId);
+      const held = newest.get(key);
+      if (!held || new Date(episode.nudgedAt) > new Date(held.nudgedAt)) newest.set(key, episode);
+    }
+    const result: StalledDigest = { lines: [], marks: [] };
+    for (const episode of newest.values()) {
+      if (episode.digestedAgainAt || !active.has(String(episode.installationId))) continue;
+      const pod = memberPods.find((p) => String(p._id) === String(episode.podId));
+      if (!pod) continue;
+      const pastAgain = now.getTime() - new Date(episode.nudgedAt).getTime() >= STALL_AGAIN_MS;
+      let fields: string[];
+      if (!episode.digestedAt) fields = pastAgain ? ['digestedAt', 'digestedAgainAt'] : ['digestedAt'];
+      else if (pastAgain) fields = ['digestedAgainAt'];
+      else continue;
+      const name = oneLine(episode.displayName || episode.agentName) || 'Your agent';
+      // F522: who is waiting on it, and how many messages, from its own queue.
+      // eslint-disable-next-line no-await-in-loop
+      const waiting = await waitingOnSafely(episode, now);
+      const messages = waiting.count === 1 ? '1 message' : `${waiting.count} messages`;
+      const who = waiting.count
+        ? `. ${oneLine(whoIsWaiting(waiting.names))} left it ${messages}`
+        : '';
+      const line = `${name} isn't connected yet (${oneLine(pod.name) || 'a pod'})${who}`;
+      result.lines.push(line);
+      result.marks.push({ episodeId: String(episode._id), fields, line });
+    }
+    return result;
+  }
+
+  /**
+   * F503: one line per person per pod for what other people wrote in the
+   * recipient's private pods since `since`, newest pod first. The recap is
+   * agent work only, so without this a teammate's message never reached the
+   * digest. Agents stay out (their work is the recap's), and so do public
+   * pods: HQ chatter is not the recipient's team. A failed read gives no
+   * lines, never a false one, and says it failed: an empty digest saved on a
+   * failed read would block the hour's retry (see generateUserDailyDigest).
+   */
+  static async teammateLines(
+    userId: unknown,
+    pods: Array<{ _id: unknown; name?: string }>,
+    since: Date,
+  ): Promise<{ lines: string[]; failed: boolean }> {
+    const none = { lines: [], failed: false };
+    if (pods.length === 0) return none;
+    let rows: Array<{ podId: string; userId: string; content: string; count: number; lastAt: unknown }>;
+    try {
+      rows = await PGMessage.findByOthersSince(pods.map((pod) => String(pod._id)), String(userId), since);
+    } catch (error) {
+      console.warn('[daily-digest] teammate read failed:', (error as Error).message);
+      return { lines: [], failed: true };
+    }
+    // The read already filters both; held here too, so a change to the query
+    // can't put the reader's own words or another pod into their email.
+    const podIds = new Set(pods.map((pod) => String(pod._id)));
+    rows = rows.filter((row) => row.userId !== String(userId) && podIds.has(row.podId));
+    const authorIds = [...new Set(rows.map((row) => row.userId))].filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    if (authorIds.length === 0) return none;
+    let people: Array<{ _id: unknown; username?: string; displayName?: string }>;
+    try {
+      people = await User.find({ _id: { $in: authorIds }, isBot: { $ne: true } })
+        .select('username displayName').lean();
+    } catch (error) {
+      console.warn('[daily-digest] teammate names read failed:', (error as Error).message);
+      return { lines: [], failed: true };
+    }
+    const names = new Map(people.map((p) => [String(p._id), oneLine(p.displayName || p.username)]));
+    // One row per pod and author; the most recent writer leads.
+    const at = (value: unknown) => (value ? new Date(value as string).getTime() : 0);
+    const lines = rows
+      // The count and the words are two reads; a message deleted between them
+      // can leave a pair with no words, and a line with none says nothing.
+      .filter((row) => names.has(row.userId) && oneLine(row.content))
+      .sort((a, b) => at(b.lastAt) - at(a.lastAt))
+      .slice(0, MAX_TEAMMATES)
+      .map((row) => {
+        const podName = oneLine(pods.find((pod) => String(pod._id) === row.podId)?.name) || 'a pod';
+        const more = row.count > 1 ? ` (+${row.count - 1} more)` : '';
+        return `${names.get(row.userId)} in ${podName}: ${oneLine(row.content)}${more}`;
+      });
+    return { lines, failed: false };
   }
 
   /** Each recap agent's display label and whether it is the guide, from its User row. */
@@ -194,7 +408,9 @@ export class DailyDigestService {
         ? null
         : await ActivityService.getRecap(userId, { window: 'today' });
       const publicPods = recap
-        ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
+        // Same membership shapes as memberPods below, or a public pod stored the
+        // old way would count as private and its chatter would reach the email.
+        ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }], publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
       const memberPods = recap
         ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }] }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
@@ -209,14 +425,26 @@ export class DailyDigestService {
         { $limit: MAX_BOARD },
         { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
       ]) as Array<Record<string, unknown>> : [];
+      const publicPodIds = new Set(publicPods.map((pod) => String(pod._id)));
+      // Words written while the reader was last here, they have seen.
+      const teammatesSince = new Date(Math.max(startTime.getTime(), lastActive));
+      const teammates = recap
+        ? await DailyDigestService.teammateLines(userId, memberPods.filter((pod) => !publicPodIds.has(String(pod._id))), teammatesSince)
+        : { lines: [], failed: false };
+      const teammateLines = teammates.lines;
+      const stalled: StalledDigest = recap
+        ? await DailyDigestService.stalledLines(userId, memberPods, endTime)
+        : { lines: [], marks: [] };
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
         board: (recap.board || []).filter((row) => !followed.some((task) => (
           task.taskId === row.taskId && String(task.podId) === String(row.podId)
         ))),
       }, {
-        publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
+        publicPodIds,
         agentIdentities: await DailyDigestService.agentIdentities(recap),
+        stalledLines: stalled.lines,
+        teammateLines,
       });
       for (const task of followed) {
         const podName = memberPods.find((pod) => String(pod._id) === String(task.podId))?.name;
@@ -225,6 +453,14 @@ export class DailyDigestService {
       }
       const podCount = recap?.pods?.length || 0;
 
+      // A saved digest, even an empty one, ends the day's tries: the run skips
+      // anyone with a digest in DIGEST_REPEAT_GUARD_MS, and digestKey is unique.
+      // So an empty digest only after a failed teammate read is not saved; the
+      // throw leaves the next hour of the DIGEST_DUE_HOURS window to retry.
+      // With other lines it still sends, short the teammate lines.
+      if (lines.length === 0 && teammates.failed) {
+        throw new Error('teammate read failed; leaving the digest for the next run');
+      }
       if (lines.length === 0) {
         const emptyData = DailyDigestService.createEmptyDigest(
           user as { username: string },
@@ -248,9 +484,12 @@ export class DailyDigestService {
         });
       }
 
-      return Summary.create({
+      const digest = await Summary.create({
         type: 'daily-digest',
-        title: requireAway ? 'What your agents did while you were away' : 'What your agents did today',
+        // A teammate is in it, so "your agents" would be untrue (F503).
+        title: teammateLines.length
+          ? (requireAway ? 'What your team did while you were away' : 'What your team did today')
+          : (requireAway ? 'What your agents did while you were away' : 'What your agents did today'),
         content: lines.map((line) => `- ${line}`).join('\n'),
         timeRange: { start: startTime, end: endTime },
         metadata: {
@@ -260,9 +499,13 @@ export class DailyDigestService {
           subscribedPods: podCount,
           userId: String(userId),
           ...(digestKey ? { digestKey } : {}),
+          // Only the scheduled digest carries them: an on-demand look in the
+          // app must not use up the email's line (F502).
+          ...(requireAway && stalled.marks.length ? { stalledMarks: stalled.marks } : {}),
         },
         analytics: DailyDigestService.createEmptyDigest(user as { username: string }, startTime, endTime).analytics,
       });
+      return digest;
     } catch (error) {
       if (!isDuplicateDigest(error)) console.error(`Error generating daily digest for user ${userId}:`, error);
       throw error;
@@ -338,13 +581,20 @@ This might be a great time to start a new conversation or share something intere
       }
 
       const startTime = new Date(at.getTime() - 24 * 60 * 60 * 1000);
-      const [recentPodIds, recentWatcherIds] = await Promise.all([
+      const [recentPodIds, recentWatcherIds, stalledInstallerIds] = await Promise.all([
         Summary.distinct('podId', {
           type: { $in: ['posts', 'chats'] },
           podId: { $exists: true },
           createdAt: { $gte: startTime },
         }),
         Task.distinct('watchers', { updatedAt: { $gte: startTime } }),
+        // F502: someone whose agent never connected is often someone who never
+        // came back, so neither rule above picks them up when their +7d line
+        // falls due. Only an episode with a line due today counts, and only
+        // for an agent still installed: stalledLines() drops the rest, so a
+        // removed agent's episode would wake a gone person with nothing to say
+        // (F542).
+        DailyDigestService.stalledInstallerIds(at),
       ]);
       // Public-read pods include every signup; their activity is not a reason
       // to wake every stale account.
@@ -357,7 +607,7 @@ This might be a great time to start a new conversation or share something intere
         isBot: { $ne: true },
         $or: [
           { lastActive: { $gte: new Date(at.getTime() - 7 * 24 * 60 * 60 * 1000) } },
-          { _id: { $in: [...recentMemberIds.map((member: any) => member?.userId || member?._id || member), ...recentWatcherIds] } },
+          { _id: { $in: [...recentMemberIds.map((member: any) => member?.userId || member?._id || member), ...recentWatcherIds, ...stalledInstallerIds] } },
         ],
       }).lean() as Array<{ _id: unknown; username?: string; timezone?: string }>;
       const alreadyHave = new Set((await Summary.distinct('metadata.userId', {

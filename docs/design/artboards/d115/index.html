@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>D115 Agent health</title>
+<title>Agent health</title>
 <style>
   /* Values copied from frontend/src/v2/v2.css (light :root, dark [data-v2-theme="dark"]),
      status colours from --v2-danger-text / --v2-warning-text / their -soft pairs. */
@@ -96,7 +96,7 @@
 </style>
 </head>
 <body>
-<h1>D115: agent health</h1>
+<h1>Agent health</h1>
 <p class="lede">One page that answers, for the agents in your own pods, which did useful work, which woke and said nothing, failed or never picked up, what the hosted ones cost, and which need you. It sits under Your team at <code>/v2/agents/health</code>, a second option beside Agents in the page head. It reads only counts and fixed codes from <code>GET /api/agents/health</code> (design note: <code>docs/architecture/fleet-health.md</code>), so no message text appears anywhere on it. Each state is drawn at 1440 (the main column, rail and sidebar left out) and at 390, one in light and the other in dark. Names, pods and numbers are samples.</p>
 
 <h2>1. A busy day: one row per agent install, the split and what needs you</h2>
@@ -254,7 +254,7 @@
 
 <h2>Rules the build follows</h2>
 <dl>
-  <dt>Whose agents</dt><dd>The installs in the viewer's own pods: <code>Pod.find({ members: viewerId })</code>, then the <code>AgentInstallation</code> rows in those pods, filtered before any count. No admin view and no admin bypass, for a global admin too. An agent-dm pod appears only when the viewer is a member of it. An instance-wide view is D116's call, not this page's.</dd>
+  <dt>Whose agents</dt><dd>The installs in the viewer's own pods: <code>Pod.find({ members: viewerId })</code>, then the <code>AgentInstallation</code> rows in those pods, filtered before any count. No admin view and no admin bypass, for a global admin too. An agent-dm pod appears only when the viewer is a member of it. An instance-wide view is a separate decision, not this page's.</dd>
   <dt>No message text</dt><dd>The response is an allowlist of counts, enums and times. It never carries <code>payload</code>, <code>reason</code>, <code>errorMessage</code>, <code>details</code>, <code>error</code>, <code>args</code> or <code>result</code>, and a test asserts that. The page draws only what the response holds, so nothing here can quote a message.</dd>
   <dt>Asked</dt><dd>Every wake that isn't a heartbeat and isn't a digest. Posted = <code>delivery.outcome</code> posted. Declined = no_action or skipped. Empty = a native run with <code>emptyCompletion</code>, its own outcome and never folded into Declined, since a decline is the agent's choice and an empty completion isn't. Failed = outcome error or status failed. Never picked up = expired. In flight = pending, folding, or delivered with no outcome, and native runs queued or running; never counted as failed.</dd>
   <dt>Heartbeats</dt><dd>Their own column: the count and how many posted. A quiet heartbeat isn't a decline.</dd>

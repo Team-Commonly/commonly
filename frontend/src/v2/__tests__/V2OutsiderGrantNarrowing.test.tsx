@@ -1,5 +1,5 @@
 // @ts-nocheck
-// F164 (TASK-781, D244): the install page says, before an agent joins a pod an
+// F164 (TASK-781): the install page says, before an agent joins a pod an
 // outside-writable grant reaches, which of its pods it would stop writing in;
 // and an owner reads the runtime 403 in words, with its code kept.
 import React from 'react';

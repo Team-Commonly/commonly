@@ -1,4 +1,4 @@
-// D245 item 4: the receipt the wrapper posts with a reply, so a BYO reply
+// The receipt the wrapper posts with a reply, so a BYO reply
 // carries "how this reply was made" the way a hosted reply has its run trace.
 // It is the wrapper's own account and the server stores it as self-reported
 // (backend/services/byoReceipt.ts), which also bounds and checks every field.
@@ -35,6 +35,15 @@ export const claudeRunStats = (stdout) => {
   return stats;
 };
 
+/**
+ * F546: the receipt a spawn's Commonly MCP server attaches to the posts it
+ * makes, as JSON. An agent that answers with its own commonly_post_message
+ * call never goes through the wrapper's post, so this is how its reply names
+ * the adapter, model and effort the spawn ran with. Turns, tools and duration
+ * are only known after the turn, so they are not in it.
+ */
+export const REPLY_RECEIPT_ENV = 'COMMONLY_REPLY_RECEIPT';
+
 /** The receipt for one reply, or null when there is no adapter to name. */
 export const buildReplyReceipt = ({ adapterName, stats = {}, durationMs } = {}) => {
   if (!isName(adapterName)) return null;
@@ -43,7 +52,7 @@ export const buildReplyReceipt = ({ adapterName, stats = {}, durationMs } = {}) 
   // carries the account or project it runs in; that is not this reply's to
   // publish, so such a model id is left out.
   if (isName(stats?.model) && !/^arn:|(^|\/)projects\//i.test(stats.model)) receipt.model = stats.model;
-  // D247: the effort level the adapter passed, as a bare level name.
+  // The effort level the adapter passed, as a bare level name.
   if (isName(stats?.effort) && /^[a-z0-9][a-z0-9._-]{0,19}$/i.test(stats.effort)) receipt.effort = stats.effort;
   if (isCount(stats?.turns)) receipt.turns = stats.turns;
   if (Array.isArray(stats?.tools)) {

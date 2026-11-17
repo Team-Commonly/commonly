@@ -190,7 +190,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     expect(fs.existsSync(path.join(statePath, '.claude', '.credentials.json'))).toBe(false);
   });
 
-  // The Cofounder, 11-04 (#2784): no walk of an invite-only Linux Claude seat
+  // Decided 11-04 (#2784): no walk of an invite-only Linux Claude seat
   // was ever recorded. This is one: a real turn on the workspace jail, with the
   // login carried access-only, the transcript kept out of the project, and the
   // host's login unchanged.
@@ -263,8 +263,11 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
         // The same namespace, binds and HOME as this turn's claude, with cat as
         // the only program; the turn's per-spawn folders still exist here.
         const jail = args.slice(0, args.indexOf('--'));
+        // F211: a bwrap that binds descriptors mounts the project from fds 3
+        // and up, still open here (the host closes them once the turn spawns).
         jailRead = spawnSync('bwrap', [...jail, '--', 'cat', canaryFile], {
           env: opts.env, encoding: 'utf8', timeout: 20_000,
+          stdio: ['ignore', 'pipe', 'pipe', ...(opts.stdio || []).slice(3)],
         });
       }
       return nodeSpawn(cmd, args, opts);
@@ -286,9 +289,18 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     // 1. The jail mounts the project (and its .git) read-only, and reads the file.
     expect(jailArgs).not.toBeNull();
     const binds = (flag, p) => jailArgs.some((a, i) => a === flag && jailArgs[i + 1] === p && jailArgs[i + 2] === p);
-    expect(binds('--ro-bind', cwd)).toBe(true);
-    expect(binds('--ro-bind-try', gitDir)).toBe(true);
-    expect(binds('--bind', cwd) || binds('--bind', gitDir)).toBe(false);
+    // F211: where bwrap binds descriptors the source is a child fd, and this
+    // run is then the real proof of the descriptor path.
+    const bindsFd = (flag, p) => jailArgs.some((a, i) => a === flag && /^\d+$/.test(jailArgs[i + 1]) && jailArgs[i + 2] === p);
+    if (detectBwrap().bindFd) {
+      expect(bindsFd('--ro-bind-fd', cwd)).toBe(true);
+      expect(bindsFd('--ro-bind-fd', gitDir)).toBe(true);
+    } else {
+      expect(binds('--ro-bind', cwd)).toBe(true);
+      expect(binds('--ro-bind-try', gitDir)).toBe(true);
+    }
+    expect(binds('--bind', cwd) || binds('--bind', gitDir)
+      || bindsFd('--bind-fd', cwd) || bindsFd('--bind-fd', gitDir)).toBe(false);
     if (jailRead.status !== 0) {
       // eslint-disable-next-line no-console
       console.log('F104: cat in the jail failed', JSON.stringify({
@@ -384,7 +396,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     });
   });
 
-  // Cofounder's condition 2: a spawn near the login's expiry must not sign the
+  // Condition 2: a spawn near the login's expiry must not sign the
   // host out. The jail holds no refresh token, so it cannot rotate one; a turn
   // that would outlive the token is refused before anything is copied.
   test('near expiry, the jail cannot rotate the host login, and a turn that would outlive it is refused', async () => {

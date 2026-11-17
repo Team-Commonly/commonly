@@ -58,7 +58,7 @@ const NOT_A_PERSON = new Set(['policy']);
  * (F366, F271(d)): the task and tool lines' people and an acting agent's owner
  * are held back from it too.
  */
-export type RecordViewer = { id: string; agent?: boolean };
+type RecordViewer = { id: string; agent?: boolean };
 
 /** The entry as this viewer may read it, and the paths that changed. */
 const redactEntry = (stored: Entry, viewer: RecordViewer): { entry: Entry; fields: string[] } => {

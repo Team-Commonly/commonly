@@ -1,4 +1,4 @@
-// F143 (Cofounder, 11-04): binding a pod to a chat surface people outside the
+// F143 (11-04): binding a pod to a chat surface people outside the
 // pod can read takes authority over the POD — its creator or an instance
 // admin. A private 1:1 with the bot stays member-level. One rule, consulted by
 // every bind and retarget path; these arms pin the rule itself.

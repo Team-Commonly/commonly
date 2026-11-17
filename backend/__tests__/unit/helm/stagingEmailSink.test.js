@@ -6,7 +6,7 @@ const { HELM_CHART } = require('../../utils/repoRoot');
 
 // Staging limits sign-up to team domains, so with no email delivery register
 // refused every email sign-up (503 INSTANCE_VERIFICATION_UNAVAILABLE) and no
-// walk could reach a verification link (Cofounder 11-09). email.sink puts an
+// walk could reach a verification link (11-09). email.sink puts an
 // in-cluster stand-in for SMTP2GO there. It must stay off prod: on prod, real
 // people's verification mail would never leave the cluster.
 const chart = HELM_CHART;

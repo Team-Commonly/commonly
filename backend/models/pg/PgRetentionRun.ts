@@ -16,12 +16,12 @@ interface PgPool {
   query: (text: string, values?: unknown[]) => Promise<{ rows: Array<{ id: number | string }>; rowCount?: number }>;
 }
 
-export interface RetentionRunStart {
+interface RetentionRunStart {
   configuredRetentionDays: number | null;
   targetBytes: number | null;
 }
 
-export interface RetentionRunOutcome {
+interface RetentionRunOutcome {
   status: RetentionRunStatus;
   finalRetentionDays: number | null;
   protectedPodCount: number | null;

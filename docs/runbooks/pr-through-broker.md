@@ -100,7 +100,7 @@ token with that App's id and key only:
 
 ### What an outside team does
 
-1. **Connect GitHub** on the Tools page (the hosted-MCP GitHub entry, D248).
+1. **Connect GitHub** on the Tools page (the hosted-MCP GitHub entry).
    This stores the person's Commonly Connect user token.
 2. **Install Commonly Connect** on their account or org, and pick the
    repositories (the install page is `github.com/apps/<slug>/installations/new`).

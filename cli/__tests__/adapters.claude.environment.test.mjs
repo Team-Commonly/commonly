@@ -970,7 +970,7 @@ describe('claude adapter — ctx.environment', () => {
   });
 
   // On native Windows the refusal names Windows and the user's own opt-in,
-  // never macOS or bwrap advice (D245). Host-check passes an unrecognised mode
+  // never macOS or bwrap advice. Host-check passes an unrecognised mode
   // through, so this throw is what a Windows user sees.
   test('on win32, an unresolvable mode refuses with Windows advice, not macOS or bwrap', async () => {
     for (const trust of ['public', 'workspace']) {
@@ -1751,6 +1751,7 @@ describe('claude adapter — a workspace seat', () => {
       // Outside home: the temp folders hold other seats' per-turn tokens.
       // A dot folder deeper in the path is a token folder too (CodeRabbit).
       ['~/Projects/repo/.commonly'], ['~/Projects/repo/.env'], ['~/Projects/.ssh'],
+      ['~/Projects/repo/.commonly/tokens'], ['~/Projects/repo/.ssh/keys'],
       ['~/.commonly/logs/.hidden'],
       [os.tmpdir()], ['/var/folders'], ['/private/tmp'], ['/tmp'], ['/Users/Shared'],
       ['/Library/Keychains'], [`/System/Volumes/Data${os.homedir()}/.ssh`],
@@ -1788,6 +1789,7 @@ describe('claude adapter — a workspace seat', () => {
 describe('claude adapter — a workspace seat on Linux', () => {
   const originalPlatform = process.platform;
   let cwd;
+  let stateRoot;
   let state;
   let operatorClaude;
   const login = '{"claudeAiOauth":{"accessToken":"test-only"}}\n';
@@ -1800,7 +1802,13 @@ describe('claude adapter — a workspace seat on Linux', () => {
 
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-ws-'));
-    state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-state-'));
+    // The workspace pin lives beside the state folder (workspacePinDir), so a
+    // state made straight in tmpdir shares one tmpdir/workspace-pins with every
+    // other test and worker (F466: an ENOENT on a staged pin in CI). Give each
+    // test its own parent.
+    stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-state-'));
+    state = path.join(stateRoot, 'state');
+    fs.mkdirSync(state);
     operatorClaude = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-login-'));
     claudeInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-install-'));
     fs.writeFileSync(path.join(claudeInstall, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
@@ -1811,7 +1819,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
-    for (const dir of [cwd, state, operatorClaude, claudeInstall]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, stateRoot, operatorClaude, claudeInstall]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   // TASK-027: a jail that cannot carry claude fails closed before the login
@@ -1866,7 +1874,9 @@ describe('claude adapter — a workspace seat on Linux', () => {
       const loginPath = path.join(home, '.claude', '.credentials.json');
       const foundLogin = fs.existsSync(loginPath) ? fs.readFileSync(loginPath, 'utf8') : null;
       const sid = args[args.indexOf('--session-id') + 1];
-      const dir = path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+      // claude names the folder from its physical cwd, which is what the adapter
+      // reads back (physicalPath); on macOS tmpdir is a link, so cwd alone differs.
+      const dir = path.join(home, '.claude', 'projects', fs.realpathSync(cwd).replace(/[^a-zA-Z0-9]/g, '-'));
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${JSON.stringify({
         type: 'assistant',
@@ -1911,7 +1921,8 @@ describe('claude adapter — a workspace seat on Linux', () => {
     // inside it, F153, so the jail cannot swap them); with no write grant the
     // project is read-only.
     expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')]]);
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    // The source is the checked realpath (F200); tmpdir is itself a link on macOS.
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([fs.realpathSync(cwd), cwd]);
 
     expect(foundLogin).toBe(login);
     const copy = path.join(state, '.claude', '.credentials.json');

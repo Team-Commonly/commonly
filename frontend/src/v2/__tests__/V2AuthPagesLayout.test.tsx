@@ -48,9 +48,9 @@ const Where = () => {
   return <div>{`at ${pathname}${search}`}</div>;
 };
 
-const mount = (element, entry, login = jest.fn().mockRejectedValue(new Error('no session'))) => render(
+const mount = (element, entry, login = jest.fn().mockRejectedValue(new Error('no session')), isAuthenticated = false) => render(
   <AuthContext.Provider value={{
-    currentUser: null, user: null, token: null, loading: false, error: null, isAuthenticated: false,
+    currentUser: null, user: null, token: null, loading: false, error: null, isAuthenticated,
     register: jest.fn(), login, logout: jest.fn(), updateProfile: jest.fn(),
   }}
   >
@@ -195,12 +195,14 @@ describe('invitation required', () => {
 });
 
 describe('verify email', () => {
-  test('a verified address shows the server line as a status and goes on with the filled key', async () => {
+  test('a verified address says so in the heading and goes on to sign in with the filled key', async () => {
     axios.get.mockResolvedValue({ data: { message: 'Email verified successfully' } });
     mount(<VerifyEmail />, '/v2/verify-email?token=a+b/c');
     expect(screen.getByText(/verifying your email/i)).toBeInTheDocument();
     const verified = await screen.findByRole('status');
-    await waitFor(() => expect(verified).toHaveTextContent('Email verified successfully'));
+    // The page's own line, in its language, not the server's English.
+    await waitFor(() => expect(verified).toHaveTextContent('You can use Commonly with this address now.'));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Your email is verified');
     expect(axios.get).toHaveBeenCalledWith('/api/auth/verify-email?token=a%20b%2Fc');
     const go = screen.getByRole('button', { name: /go to sign in/i });
     expect(go).not.toHaveClass('v2-login__submit--ghost');
@@ -208,10 +210,20 @@ describe('verify email', () => {
     expect(screen.getByText('at /v2/login')).toBeInTheDocument();
   });
 
+  test('a visitor already signed in goes straight on with Continue', async () => {
+    axios.get.mockResolvedValue({ data: { message: 'Email verified successfully' } });
+    mount(<VerifyEmail />, '/v2/verify-email?token=t9', undefined, true);
+    await screen.findByRole('status');
+    expect(screen.queryByRole('button', { name: /go to sign in/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('at /v2')).toBeInTheDocument();
+  });
+
   test('a failure is the alert row, and the way out is a plain key', async () => {
     axios.get.mockRejectedValue({ response: { data: { error: 'Invalid or expired token' } } });
     mount(<VerifyEmail />, '/v2/verify-email?token=t2');
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid or expired token');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Verify your email');
     expect(screen.getByRole('button', { name: /go to sign in/i })).toHaveClass('v2-login__submit--ghost');
   });
 
@@ -288,7 +300,8 @@ describe('reset password', () => {
   });
 
   test('an expired link carries its recovery link in the alert and leaves the fields alone', async () => {
-    axios.post.mockRejectedValue({});
+    // The server's answer for a used or expired link.
+    axios.post.mockRejectedValue({ response: { status: 400, data: { error: 'Invalid or expired reset link.' } } });
     mount(<V2ResetPassword />, '/v2/reset-password?token=t');
     fill('longenough1', 'longenough1');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /update password/i })); });

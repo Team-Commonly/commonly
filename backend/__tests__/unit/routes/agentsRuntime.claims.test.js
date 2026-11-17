@@ -26,7 +26,7 @@ jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() 
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
-  req.agentUser = { botMetadata: { agentName: 'UX-Lead', instanceId: 'default' } };
+  req.agentUser = { _id: 'bot-uxlead', botMetadata: { agentName: 'UX-Lead', instanceId: 'default' } };
   next();
 });
 
@@ -49,6 +49,11 @@ jest.mock('../../../services/messageClaimHandoffService', () => ({
   release: (...a) => mockDeclineRelease(...a),
 }));
 
+const mockHasReaction = jest.fn();
+jest.mock('../../../models/pg/MessageReaction', () => ({
+  hasReactionBy: (...a) => mockHasReaction(...a),
+}));
+
 const mockTypingStart = jest.fn();
 const mockTypingStop = jest.fn();
 jest.mock('../../../services/agentTypingService', () => ({
@@ -68,6 +73,7 @@ describe('claim routes', () => {
     mockMessageExists.mockResolvedValue(true);
     mockRelease.mockResolvedValue({ released: true });
     mockDeclineRelease.mockResolvedValue({ released: true, podId: 'p1', handoff: { queued: true } });
+    mockHasReaction.mockResolvedValue(false);
   });
 
   test('claims with token-derived identity, lowercased', async () => {
@@ -325,5 +331,50 @@ describe('claim routes', () => {
     const res = await request(app).delete('/api/agents/runtime/messages/52907/claim');
     expect(res.status).toBe(200);
     expect(mockTypingStop).not.toHaveBeenCalled();
+  });
+
+  // F550: a reaction is how a seat closes a wake whose whole answer is "got it"
+  // (F483). A reaction then NO_REPLY reaches here as a decline, and a decline
+  // hands a person's message to another listener, who would answer what this
+  // seat already acknowledged. The kernel holds the fact, so it decides.
+  describe('a decline from a seat that reacted to the message', () => {
+    const decline = () => request(app).delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'declined' });
+
+    test('closes as completed, with no handoff', async () => {
+      mockHasReaction.mockResolvedValue(true);
+      mockRelease.mockResolvedValue({ released: true, podId: 'p1' });
+      const res = await decline();
+      expect(res.status).toBe(200);
+      expect(mockHasReaction).toHaveBeenCalledWith('52907', 'bot-uxlead');
+      expect(mockDeclineRelease).not.toHaveBeenCalled();
+      expect(mockRelease).toHaveBeenCalledWith(expect.objectContaining({
+        messageId: '52907', agentName: 'ux-lead', outcome: 'completed',
+      }));
+    });
+
+    test('without a reaction it stays a decline and hands off', async () => {
+      const res = await decline();
+      expect(res.status).toBe(200);
+      expect(mockDeclineRelease).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'declined' }));
+      expect(mockRelease).not.toHaveBeenCalled();
+    });
+
+    test('a failed reaction read stays a decline, so the message still reaches someone', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockHasReaction.mockRejectedValue(new Error('pg down'));
+      const res = await decline();
+      expect(res.status).toBe(200);
+      expect(mockDeclineRelease).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'declined' }));
+      warn.mockRestore();
+    });
+
+    test('a refusal is never read as an acknowledgement', async () => {
+      mockHasReaction.mockResolvedValue(true);
+      await request(app).delete('/api/agents/runtime/messages/52907/claim')
+        .send({ outcome: 'refused', reason: 'upstream-refused', status: 429 });
+      expect(mockHasReaction).not.toHaveBeenCalled();
+      expect(mockDeclineRelease).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
+    });
   });
 });

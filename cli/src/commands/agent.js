@@ -26,6 +26,7 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
+import { connectCodeRefusalLine, redeemConnectCode, savedKeyNote } from '../lib/connect-code.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -39,6 +40,9 @@ import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame, formatUnreadMessagesFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
+import {
+  harnessFindings, nodeFinding, preflightOutcome, reportListenBlocked,
+} from '../lib/run-preflight.js';
 import {
   getSession,
   getSessionEntry,
@@ -99,6 +103,7 @@ import {
 import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import { withPublicSeatMcpFlag } from '../lib/public-seat-mcp-flag.js';
 import { UNCONFINED_TURN_REFUSAL, seatRunsUnconfined, unconfinedPodRefusalReason } from '../lib/unconfined-seat-guard.js';
+import { sandboxOptionRefusal } from '../lib/sandbox-option-refusal.js';
 import {
   OUTSIDER_GRANT_MCP_UNCONFINED, outsiderGrantMcpRefusal, seatIsConfined, unshippedMcpEntries,
 } from '../lib/outsider-grant-mcp.js';
@@ -107,6 +112,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
+import { formatPodConventionsFrame } from '../lib/pod-conventions.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
@@ -135,11 +141,15 @@ import {
 } from '../lib/hooks-config.js';
 import {
   EXTERNAL_SIGNAL_GRACE,
+  HOST_DEFERRAL_MAX_MS,
+  SPAWN_RETRY_MAX_MS,
   formatRetryDelay,
   isExternalSignal,
+  isHostDeferral,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
+import { explainNarrowing, narrowingConfirmBody } from '../lib/install-narrowing.js';
 import {
   CONTENT_REFUSED_REASON,
   composeRefusalHandoff,
@@ -177,6 +187,11 @@ import {
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 import { CLI } from '../lib/cli-hint.js';
+import { reportRunStopped } from '../lib/run-stopped.js';
+
+// F167: shared by attach, init and register.
+const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
+  + '(the install says which pods first)';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -281,6 +296,21 @@ export const deleteAgentToken = (name) => {
 // just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 export const NO_AGENT_CLI_CODE = 'no_agent_cli';
+
+/**
+ * What `agent run` says when no token is set. On Windows the page's lines are
+ * PowerShell: pasted into Command Prompt, the `$env:` lines set nothing and the
+ * run ends here before it reaches the server (F548), so name the shell and its
+ * form rather than `export`.
+ */
+export const noRunTokenMessage = ({ name, agentArg = name, platform = process.platform }) => {
+  const set = platform === 'win32'
+    ? 'In PowerShell, not Command Prompt, run the $env:COMMONLY_API_URL="…" and $env:COMMONLY_AGENT_TOKEN="…" lines'
+    : 'Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN';
+  return `No token for '${name}'. ${set}`
+    + ` (shown on the Connect your own agent page) and re-run, or:`
+    + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`;
+};
 
 /**
  * A saved seat with no enforced sandbox: an adapter that takes one, no
@@ -1360,8 +1390,9 @@ export const updateAgentConfiguration = async ({
     environment = { ...environmentRuntime };
   }
   {
-    const refusal = providerRefusal(environment,
-      adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()));
+    const configAdapter = String(runtime.adapter || record.adapter || '').trim().toLowerCase();
+    const refusal = providerRefusal(environment, adapterRegistry.getAdapter(configAdapter))
+      || sandboxOptionRefusal(environment, configAdapter);
     if (refusal) throw new Error(refusal);
   }
   if (environment) config.environment = environmentForServer(environment);
@@ -1468,7 +1499,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   // Two different things can be missing, so the refusal names the one that is:
-  // the D247 walk read "requires public trust" on a seat whose trust WAS public.
+  // the walk read "requires public trust" on a seat whose trust WAS public.
   if (mode === 'workspace' || mode === 'read-only') {
     if (!confined) {
       throw new Error(
@@ -1499,6 +1530,8 @@ export const performAttach = async ({
   wakeOnMessage = false,
   memoryFrom = null,
   memoryInstance = 'default',
+  // F167: confirm the install route's narrowing warning (F164).
+  confirmNarrowing = false,
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
@@ -1530,7 +1563,7 @@ export const performAttach = async ({
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
     {
-      const refusal = providerRefusal(environment, adapter);
+      const refusal = providerRefusal(environment, adapter) || sandboxOptionRefusal(environment, adapterName, platform);
       if (refusal) throw new Error(refusal);
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
@@ -1553,7 +1586,7 @@ export const performAttach = async ({
       });
       if (codexRefusal) throw new Error(codexRefusal);
     }
-    // D245: native Windows has neither sandbox, so its refusal names Windows
+    // Native Windows has neither sandbox, so its refusal names Windows
     // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
     // refuses there, as before; only the words differ.
     const windowsRefusal = () => new Error(adapterName === 'dsh'
@@ -1690,6 +1723,7 @@ export const performAttach = async ({
     ...(memoryFrom ? {
       resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
     } : {}),
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1707,7 +1741,7 @@ export const performAttach = async ({
       ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-  });
+  }).catch((error) => { throw explainNarrowing(error); });
 
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
@@ -1816,7 +1850,7 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
-// D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod about
+// An 11-04 walk: a Qwen seat whose post tool was declined told the pod about
 // checkpoints, first_contact and re-serving. The model wrote that, not the
 // wrapper, so the fix is an instruction and not a filter on its text: a filter
 // would also eat a pod that is discussing these words. It speaks only to a
@@ -1855,6 +1889,24 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // predicate, so the line and the drop can't disagree.
 const seatPostsForItself = (environment) => (environment?.mcp || [])
   .some((server) => server?.name === COMMONLY_MCP_SERVER_NAME);
+// F483: a reaction is the third way to close a wake, beside a post and
+// NO_REPLY, for the turn whose whole answer would be "thanks" or "got it". It is
+// offered only where the spawn carries the commonly tools: the seat declares the
+// server AND its adapter wires the declared servers into the spawn. The CLI's
+// Hermes adapter passes no MCP server to Hermes (the Hermes plugin is a separate,
+// standalone install), so a Hermes seat is never told about a tool it lacks
+// (CodeRabbit on #2816). Add an adapter here only once its spawn wires `mcp`.
+const ADAPTERS_THAT_WIRE_MCP = new Set(['claude', 'codex', 'opencode', 'goose', 'pi', 'qwen', 'dsh']);
+export const seatCanReact = (adapterName, environment) => (
+  ADAPTERS_THAT_WIRE_MCP.has(String(adapterName || '')) && seatPostsForItself(environment)
+);
+const REACTION_CLOSES_A_WAKE = 'If an acknowledgement is all you would post, react to the message you would acknowledge '
+  + '(commonly_react_to_message with its message id) instead, then end with NO_REPLY.';
+// Only a shown item the seat may act on gives the reaction a target: a peer's
+// read-only item is not one, an item already settled this batch (a duplicate)
+// is only context, and an ask response or a ruling carries no id.
+export const reactableEntry = (entry) => !entry.readOnly && !entry.result
+  && Boolean(entry.event?.payload?.messageId);
 const HEARTBEAT_TEXT_IS_NOT_POSTED = 'This turn is only a heartbeat: nobody asked you anything, and your final text is not posted. '
   + 'If something needs saying, post it with commonly_post_message, then end with NO_REPLY. '
   + 'Otherwise end with NO_REPLY alone, with no summary.';
@@ -1899,7 +1951,7 @@ const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to t
   + FAILURE_ON_COMMENT;
 
 // Where a mention's answer goes is the kernel's line, in the item body: since
-// D278 (2026-11-09) a top-level @mention in a shared pod is answered in that
+// Since 2026-11-09 a top-level @mention in a shared pod is answered in that
 // message's thread, the same as a mention inside a thread. The wrapper used to
 // add its own line beside a person's top-level mention saying to answer
 // top-level (F212, #3499/#3511); it adds no placement line now, so the item
@@ -2052,7 +2104,7 @@ const extractPrompt = (event) => {
 // cancel grace, and the wall-clock backstop past the adapter's own timeout.
 export { supervisedRunPolicy };
 
-// Codex turns are supervised by default (D211): a turn that stops making
+// Codex turns are supervised by default: a turn that stops making
 // progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
 // opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
 export const superviseRunsByDefault = (adapterName, env = process.env) => {
@@ -2102,7 +2154,7 @@ export const performRun = ({
   localKey = null,
   podId = null,
   environment = null,
-  // D245: the user's own Windows opt-in for this run; reaches the adapter's
+  // The user's own Windows opt-in for this run; reaches the adapter's
   // spawn context only (never the environment).
   hostUnconfined = false,
   // F187: this Windows Codex run was opted in with every pod confirmed private.
@@ -2146,7 +2198,7 @@ export const performRun = ({
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
   reportRuntime = false,
-  // D247: a listener seat (no daemon) reads the model and effort its owner
+  // A listener seat (no daemon) reads the model and effort its owner
   // saved on the server before each turn. Off for daemon seats, whose daemon
   // projects the same values into `environment`.
   readSavedControls = false,
@@ -2182,7 +2234,7 @@ export const performRun = ({
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   {
-    const refusal = providerRefusal(environment, adapter);
+    const refusal = providerRefusal(environment, adapter) || sandboxOptionRefusal(environment, adapter?.name);
     if (refusal) throw new Error(refusal);
   }
   const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
@@ -2325,11 +2377,40 @@ export const performRun = ({
   // first EXTERNAL_SIGNAL_GRACE of them retry without counting as failures, so
   // a walk that kills three turns doesn't open the circuit on the fourth ask.
   let externalSignalStreak = 0;
+  // F491: host deferrals (a gate in front of the CLI exited 75) since the last
+  // good spawn, and when the first of them came. Inside HOST_DEFERRAL_MAX_MS
+  // they don't count, strike no event and keep the circuit shut, and the retry
+  // backs off by this streak. Past it, they count like any failure.
+  let hostDeferralStreak = 0;
+  let hostDeferralSince = null;
+  let lastHostDeferralAt = null;
+  // `graced`: this failure doesn't count, and the carried events take no strike.
   const countSpawnFailure = (err) => {
-    const graced = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
+    if (isHostDeferral(err)) {
+      // A run with no deferral for longer than the longest retry wait ended
+      // without a good spawn (claims lost, events released): a new hold starts
+      // a new run, so it isn't charged for the last one's time.
+      if (lastHostDeferralAt !== null && Date.now() - lastHostDeferralAt > 2 * SPAWN_RETRY_MAX_MS) {
+        hostDeferralStreak = 0;
+        hostDeferralSince = null;
+      }
+      lastHostDeferralAt = Date.now();
+      if (hostDeferralSince === null) hostDeferralSince = Date.now();
+      if (Date.now() - hostDeferralSince < HOST_DEFERRAL_MAX_MS) {
+        hostDeferralStreak += 1;
+        return { graced: true, externalSignal: false, hostDeferrals: hostDeferralStreak };
+      }
+    }
+    const externalSignal = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
     if (isExternalSignal(err)) externalSignalStreak += 1;
-    if (!graced) consecutiveSpawnFailures += 1;
-    return graced;
+    if (!externalSignal) consecutiveSpawnFailures += 1;
+    return { graced: externalSignal, externalSignal, hostDeferrals: 0 };
+  };
+  const resetFailureStreaks = () => {
+    externalSignalStreak = 0;
+    hostDeferralStreak = 0;
+    hostDeferralSince = null;
+    lastHostDeferralAt = null;
   };
   let pollStalled = false;
   const pollLiveness = createPollLiveness({
@@ -2401,7 +2482,7 @@ export const performRun = ({
   // a conversation that read the workspace, whatever claude's resume would
   // find from another folder.
   let lastPlacementReason = null;
-  // D247: the model and effort this turn spawns with. A listener seat reads
+  // The model and effort this turn spawns with. A listener seat reads
   // its saved controls first; then an effort is dropped only when the device
   // listed its levels and this one is not among them.
   let savedControlsNoticeShown = false;
@@ -2436,7 +2517,7 @@ export const performRun = ({
       }
     }
     // Dropped only when the device listed its levels and this one is not
-    // among them; with nothing reported the harness decides (D247).
+    // among them; with nothing reported the harness decides.
     seatEnvironment = reportRuntime && desiredEnvironment
       && effortRefusedByDevice(inventory, desiredEnvironment.effort)
       ? { ...desiredEnvironment, effort: undefined } : desiredEnvironment;
@@ -2490,7 +2571,8 @@ export const performRun = ({
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
-  const processEvent = async (event) => {
+  // `turnOptions` reaches runTurn: { withoutConventions, report } (F124).
+  const processEvent = async (event, turnOptions = {}) => {
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -2720,6 +2802,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper,
         trigger,
+        ...turnOptions,
       });
       return turnResult;
     } finally {
@@ -2918,6 +3001,7 @@ export const performRun = ({
 
   const runTurnBody = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
+    withoutConventions = false, report = null,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -3072,7 +3156,14 @@ export const performRun = ({
       throw error;
     }
     const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
-    const promptWithFocus = `${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
+    // F124: the pod's conventions, from the same read as focus, ahead of the
+    // focus frame (skill text may still be put in front of both below). A
+    // refusal-recovery turn runs without them: text every item shares can
+    // draw the refusal, and isolating items assumes the refused text is one
+    // item's own. `report` tells the batch whether this turn carried them.
+    const conventionsFrame = withoutConventions ? '' : formatPodConventionsFrame(focusRead?.conventions);
+    if (report) report.carriedConventions = Boolean(conventionsFrame);
+    const promptWithFocus = `${conventionsFrame ? `${conventionsFrame}\n\n` : ''}${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;
     let skillReadUnavailable = false;
     try {
@@ -3188,7 +3279,7 @@ export const performRun = ({
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
-    // D245 item 4: how long the runtime ran, for the reply receipt.
+    // How long the runtime ran, for the reply receipt.
     let spawnDurationMs;
     let observedSpawn = false;
     // What a failed spawn threw, read only for its fixed reason code (F370 #11).
@@ -3473,7 +3564,7 @@ export const performRun = ({
           maxChunks: maxChatChunks,
           uploadName: `${agentName}-reply-${event._id}.md`,
           log: (line) => log(`[${event.type}] ${line}`),
-          // D245 item 4: the wrapper's own account of this turn.
+          // The wrapper's own account of this turn.
           receipt: buildReplyReceipt({
             adapterName: adapter.name,
             stats: result.stats,
@@ -3714,6 +3805,8 @@ export const performRun = ({
             ? `Do not narrate the inbox. ${HEARTBEAT_TEXT_IS_NOT_POSTED}`
             : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
               + FINAL_TEXT_IS_POSTED
+              + (seatCanReact(adapter?.name, seatEnvironment) && shownEntries.some(reactableEntry)
+                ? ` ${REACTION_CLOSES_A_WAKE}` : '')
               + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
@@ -3891,8 +3984,11 @@ export const performRun = ({
   const inboxQuery = ({ inOutage = false } = {}) => {
     const carried = [...heldRetry, ...heldGreeting];
     const carriedCount = carried.filter((event) => event.deliveryMode !== 'digest').length;
+    // A host hold (F491) counts as an outage here: with the carry full, a
+    // deferred retry claims nothing new, or each one would claim a row past
+    // the prompt cap and spend its attempts on hand-backs.
     const full = carriedCount >= batchLimit
-      && (inOutage || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
+      && (inOutage || hostDeferralStreak > 0 || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
     return {
       agentName,
       instanceId,
@@ -3911,7 +4007,9 @@ export const performRun = ({
   // inside its grace (F293) is no failure of the event's either: `strike: false`
   // carries it without one, or the third kill would release it to the server's
   // requeue and the answer would wait 10–20 minutes. The grace bounds this.
-  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true } = {}) => {
+  // `passOver: false` (F491): no turn ran at all (a host deferral), so the
+  // past-cap items weren't passed over by one and keep their carry budget.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true, passOver = true } = {}) => {
     const released = [];
     let part = null;
     const carry = [];
@@ -3944,7 +4042,7 @@ export const performRun = ({
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
-        const carries = (pastCapCarries.get(id) || 0) + 1;
+        const carries = (pastCapCarries.get(id) || 0) + (passOver ? 1 : 0);
         // As above: a stop hands the item back rather than leave it to the sweep.
         if (running && carries >= PAST_CAP_MAX_CARRIES) passedOver.push(event);
         else {
@@ -4351,6 +4449,7 @@ export const performRun = ({
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
         trigger,
+        withoutConventions: true,
       });
     };
 
@@ -4361,6 +4460,7 @@ export const performRun = ({
 
     let turnResult;
     let deferredError = null;
+    const firstTurn = {};
     try {
       try {
         turnResult = await runTurn({
@@ -4371,6 +4471,7 @@ export const performRun = ({
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,
           trigger,
+          report: firstTurn,
         });
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
@@ -4406,9 +4507,9 @@ export const performRun = ({
         // only. A posted wake still settles those digests on the server, the
         // same as any counts-only turn.
         let refused = true;
-        if (turnPrompt !== plainPrompt) {
-          log('[inbox.batch] the model provider refused a turn that carried unread messages (content_refused); '
-            + 'running it once more without them');
+        if (turnPrompt !== plainPrompt || firstTurn.carriedConventions) {
+          log('[inbox.batch] the model provider refused a turn that carried unread messages or pod conventions '
+            + '(content_refused); running it once more without them');
           try {
             const before = await snapshotMessages();
             turnResult = await runTurn({
@@ -4419,6 +4520,7 @@ export const performRun = ({
               snapshotMessages,
               claimKeeper: compositeClaimKeeper,
               trigger,
+              withoutConventions: true,
             });
             for (const entry of actionEntries) entry.result = turnResult;
             refused = false;
@@ -4783,13 +4885,14 @@ export const performRun = ({
           // The unacked items are carried to the retry, not left to the
           // requeue sweep, so the delay below is when they run again.
           const scheduleBatchRetry = async (err, failedEvents) => {
-            const externalSignal = countSpawnFailure(err);
+            const { graced, externalSignal, hostDeferrals } = countSpawnFailure(err);
             const retry = spawnRetryPolicy({
               error: err,
               consecutiveFailures: consecutiveSpawnFailures,
               intervalMs,
               jitterRatio: spawnJitterRatio,
               externalSignal,
+              hostDeferrals,
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
@@ -4803,7 +4906,7 @@ export const performRun = ({
               attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
-              { strike: !externalSignal },
+              { strike: !graced, passOver: hostDeferrals === 0 },
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
@@ -4856,7 +4959,7 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
-            externalSignalStreak = 0;
+            resetFailureStreaks();
             // Notices arriving mid-turn get one bounded collection window.
             // Idle polls and batches with no model turn keep their cadence.
             completedModelTurn = true;
@@ -4908,8 +5011,19 @@ export const performRun = ({
           log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
+          const firstTurn = {};
           try {
-            result = await duringTurn(() => processEvent(event));
+            try {
+              result = await duringTurn(() => processEvent(event, { report: firstTurn }));
+            } catch (refusedErr) {
+              // F124 (CodeRabbit on #4112): the pod's conventions ride every
+              // turn, so a refusal of a turn that carried them may not be this
+              // item's own text. Run it once more without them first.
+              if (!isContentRefusal(refusedErr) || !firstTurn.carriedConventions) throw refusedErr;
+              log(`[${event.type}] the model provider refused a turn that carried pod conventions (content_refused); `
+                + 'running it once more without them');
+              result = await duringTurn(() => processEvent(event, { withoutConventions: true }));
+            }
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no
@@ -4926,16 +5040,24 @@ export const performRun = ({
               // at-least-once delivery. Stop this fetched batch immediately —
               // continuing could launch every one of the 10 returned events
               // into the same provider outage before the next poll (#782).
-              const externalSignal = countSpawnFailure(err);
+              const { graced, externalSignal, hostDeferrals } = countSpawnFailure(err);
               const retry = spawnRetryPolicy({
                 error: err,
                 consecutiveFailures: consecutiveSpawnFailures,
                 intervalMs,
                 jitterRatio: spawnJitterRatio,
                 externalSignal,
+                hostDeferrals,
               });
               nextPollDelayMs = retry.delayMs;
               retryScheduled = true;
+              // As in the batch path (F236): an open circuit's wait is walked in
+              // one-minute checks that tell newly waiting pods, never slept
+              // through whole. A stated quota reset can make it hours (F481,
+              // CodeRabbit on #4108).
+              circuitNotice = retry.circuitOpen && cantAnswerNotice(err) && !modelUnavailableFailure(err)
+                ? { error: err, remainingMs: retry.delayMs }
+                : null;
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
@@ -4944,7 +5066,7 @@ export const performRun = ({
               // eslint-disable-next-line no-await-in-loop
               if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
-              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !externalSignal });
+              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !graced });
               keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
@@ -5003,7 +5125,7 @@ export const performRun = ({
           const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
           if (eventWillSpawn && !stoodDown) {
             consecutiveSpawnFailures = 0;
-            externalSignalStreak = 0;
+            resetFailureStreaks();
           }
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
@@ -5193,6 +5315,7 @@ export const performInit = async ({
   podId,
   displayName,
   targetDir,
+  confirmNarrowing = false,
 }) => {
   const recipe = SDK_SOURCES[language];
   if (!recipe) {
@@ -5221,12 +5344,21 @@ export const performInit = async ({
   // Self-serve install (ADR-006). No publish step; the backend synthesizes
   // an ephemeral registry row when no manifest exists for this name.
   const installResult = await client.post('/api/registry/install', {
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
     version: '1.0.0',
     config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+  }).catch((error) => {
+    // The guard above proved neither file existed, so these two are this
+    // attempt's own. Remove them, or the re-run a refusal advises (F167:
+    // --confirm-narrowing) stops at that same guard before it installs.
+    for (const written of [sdkOutPath, botOutPath]) {
+      try { rmSync(written, { force: true }); } catch { /* the install error is the one to report */ }
+    }
+    throw explainNarrowing(error);
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
@@ -5404,6 +5536,7 @@ Docs:
     .requiredOption('--webhook <url>', 'Webhook URL (e.g. https://my-agent.example.com/cap)')
     .option('--secret <secret>', 'Webhook signing secret (HMAC-SHA256)')
     .option('--display <name>', 'Display name shown in the pod')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5427,6 +5560,7 @@ Docs:
         });
 
         const result = await client.post('/api/registry/install', {
+          ...narrowingConfirmBody(opts.confirmNarrowing === true),
           agentName: opts.name,
           podId: opts.pod,
           displayName: opts.display || opts.name,
@@ -5440,7 +5574,7 @@ Docs:
             },
           },
           scopes: ['context:read', 'messages:write', 'memory:read'],
-        });
+        }).catch((error) => { throw explainNarrowing(error); });
 
         const installation = result.installation || result;
         const instId = installation.instanceId || 'default';
@@ -5554,6 +5688,7 @@ Docs:
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
     .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5577,6 +5712,7 @@ Docs:
           wakeOnMessage: Boolean(opts.wakeOnMessage),
           memoryFrom: opts.memoryFrom,
           memoryInstance: opts.memoryInstance,
+          confirmNarrowing: opts.confirmNarrowing === true,
           log: (line) => console.warn(`[attach] ${line}`),
         });
 
@@ -5738,6 +5874,8 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .option('--unsandboxed', 'Native Windows, or a private Codex agent on Linux: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
+    .option('--api-url <url>', 'The Commonly instance this agent joins (the Connect your own agent page fills it in; same as COMMONLY_API_URL)')
+    .option('--connect <code>', "The connect code from the Connect your own agent page's line, traded once for this agent's key; it stops working once the agent has listened, or after 30 minutes")
     .action(async (typedName, opts) => {
       // F306: the seat this run is. `name` is the local key (the token file,
       // the log label, the daemon's plist); the server identity is the record's.
@@ -5777,6 +5915,81 @@ Docs:
           name = agentArg;
         }
       }
+      // F525: the page's one pasted line names the instance and carries a
+      // connect code, not the agent's lasting key, so the shell history it
+      // lands in keeps nothing that still works once the agent has listened.
+      // The key it trades for takes the env path's place from here on: the
+      // first run bootstraps from it, and a saved record treats it as a
+      // reissued key (adoptEnvToken).
+      // A saved agent of this name on another instance would win over the
+      // line's key and run as that one, leaving this one waiting. Checked for
+      // --api-url, and again for the instance the code is redeemed on however
+      // it was named (--api-url, COMMONLY_API_URL or the saved config).
+      const savedOrigin = (() => {
+        try { return record?.instanceUrl ? new URL(record.instanceUrl).origin : null; } catch { return null; }
+      })();
+      const refuseOtherInstance = (lineOrigin) => {
+        if (!savedOrigin || !lineOrigin || savedOrigin === lineOrigin) return;
+        console.error(`${stamp()} [${name}] This computer already runs an agent called ${agentArg} on ${savedOrigin}, `
+          + `and this line is for ${lineOrigin}. To use this line, remove that one first: `
+          + `${CLI} agent detach ${name} --force, then paste the line again.`);
+        process.exit(1);
+      };
+      if (opts.apiUrl !== undefined) {
+        let apiUrl;
+        try {
+          apiUrl = new URL(String(opts.apiUrl).trim());
+        } catch {
+          apiUrl = null;
+        }
+        if (!apiUrl || !['https:', 'http:'].includes(apiUrl.protocol) || apiUrl.search || apiUrl.hash) {
+          console.error(`${stamp()} [${name}] --api-url needs an http(s) address, such as https://api.commonly.me.`);
+          process.exit(1);
+        }
+        // As typed, less a trailing slash, as the env path keeps it.
+        const typedUrl = String(opts.apiUrl).trim().replace(/\/+$/, '');
+        refuseOtherInstance(apiUrl.origin);
+        process.env.COMMONLY_API_URL = typedUrl;
+      }
+      // F515: Node first, before anything uses the token: on a Node without
+      // fetch, the first call fails and reads as a bad token. A first run stops
+      // here and says so, telling the instance when it can; a seat with a saved
+      // record only warns.
+      const oldNode = nodeFinding();
+      const nodeOutcome = preflightOutcome(oldNode ? [oldNode] : [], { firstRun: !record });
+      for (const line of nodeOutcome.lines) console.error(`${stamp()} [${name}] ${line}`);
+      if (nodeOutcome.stop) {
+        const envToken = (process.env.COMMONLY_AGENT_TOKEN || '').trim();
+        if (envToken.startsWith('cm_agent_') && typeof fetch === 'function') {
+          await reportListenBlocked(createClient({
+            instance: (process.env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined),
+            token: envToken,
+          }), nodeOutcome.report);
+        }
+        process.exit(1);
+      }
+      let connectCodeKey = false;
+      if (opts.connect !== undefined) {
+        const instanceUrl = (process.env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
+        refuseOtherInstance((() => {
+          try { return new URL(instanceUrl).origin; } catch { return null; }
+        })());
+        const redeemed = await redeemConnectCode({ code: String(opts.connect).trim(), instanceUrl });
+        if (redeemed.token) {
+          process.env.COMMONLY_AGENT_TOKEN = redeemed.token;
+          connectCodeKey = true;
+        } else if (record) {
+          // The line again, from shell history, on the computer this agent
+          // already runs on: its code is spent or expired, or the instance
+          // can't be reached just now. The saved token is what to run.
+          console.log(`${stamp()} [${name}] ${savedKeyNote(redeemed.refusal)}`);
+        } else {
+          console.error(`${stamp()} [${name}] ${connectCodeRefusalLine(redeemed.refusal, {
+            name: agentArg, runName: name, instanceUrl, detail: redeemed.detail, status: redeemed.status,
+          })}`);
+          process.exit(1);
+        }
+      }
       let bootstrapped = false;
       const saved = record;
       const savedRefusal = record && named ? runInstanceRefusal({ record, instanceId }) : null;
@@ -5810,11 +6023,11 @@ Docs:
           process.exit(1);
         }
         if (!record) {
-          console.error(
-            `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
-            + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
-          );
+          // On Windows the page's lines are PowerShell's ($env:…), and in Command
+          // Prompt they set nothing, so this is where that run lands.
+          console.error(noRunTokenMessage({ name, agentArg }));
+          // Nothing reached the server yet, so say which stop this was (F551).
+          await reportRunStopped({ agentName: agentArg, reason: 'no-token' });
           process.exit(1);
         }
         const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;
@@ -5825,7 +6038,28 @@ Docs:
         bootstrapped = true;
       }
 
-      // D245: on native Windows the user may choose to run without an OS
+      // F515: the harness this record names, installed and signed in, before
+      // the run starts waiting. A first run has already looked for the harness
+      // (and reported a missing one); it stops on a signed-out one too, and the
+      // instance hears why, so the page and the pod can say it. A seat with a
+      // saved record only warns: a probe that reads it wrong must not stop it.
+      const harnessProblems = await harnessFindings({
+        adapterName: record.adapter,
+        adapter: getAdapter(record.adapter),
+        environment: record.environment,
+        checkInstalled: !bootstrapped,
+      });
+      const harnessOutcome = preflightOutcome(harnessProblems, { firstRun: bootstrapped });
+      for (const line of harnessOutcome.lines) console.error(`${stamp()} [${name}] ${line}`);
+      if (harnessOutcome.stop) {
+        await reportListenBlocked(
+          createClient({ instance: record.instanceUrl, token: record.runtimeToken }),
+          harnessOutcome.report,
+        );
+        process.exit(1);
+      }
+
+      // On native Windows the user may choose to run without an OS
       // sandbox, by typing the flag or by installing the daemon with it (the
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
@@ -5912,7 +6146,7 @@ Docs:
         // belongs to another name).
         if (named) name = savedAs;
         saveAgentToken(savedAs, record);
-        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from ${connectCodeKey ? 'the connect code' : 'COMMONLY_AGENT_TOKEN'} (adapter: ${record.adapter})`);
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
           `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
@@ -5984,6 +6218,11 @@ Docs:
         installedVersion: installedCliVersion(),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
+      // F262: a harness the seat's turns would refuse is named now, not on the
+      // first mention. Fired, not awaited, like the update notice above.
+      Promise.resolve(adapter.startNotice?.({ unconfined: hostUnconfined || codexUnconfined }))
+        .then((notice) => { if (notice) console.warn(`${stamp()} [${name}] ${notice}`); })
+        .catch(() => {});
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -6123,6 +6362,7 @@ Docs:
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--dir <path>', 'Target directory (default: current dir)')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -6139,6 +6379,7 @@ Docs:
           podId: opts.pod,
           displayName: opts.display,
           targetDir: pathResolve(opts.dir || process.cwd()),
+          confirmNarrowing: opts.confirmNarrowing === true,
         });
 
         console.log(`✓ Written: ${result.files.bot}`);

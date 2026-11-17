@@ -188,7 +188,7 @@ beforeEach(async () => {
     status: 'active',
     config: { runtime: { runtimeType: 'native' } },
   });
-  // The owner's own GitHub connection (D248): the user token every re-proof reads.
+  // The owner's own GitHub connection: the user token every re-proof reads.
   ownerGithub = await Integration.create({
     type: 'hosted-mcp', scope: 'user', status: 'connected', createdBy: owner._id, isActive: true,
     config: { entryId: 'github-mcp', credentialRef: 'owner-user-token', intake: 'oauth' },

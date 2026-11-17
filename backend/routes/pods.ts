@@ -1,6 +1,7 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import { closeAgentRoom, reopenAgentRoom } from '../services/agentRoomCloseService';
 import { addPodMemberByUsername } from '../services/podMemberAddService';
+import { noteUnsandboxedPodSettingsChange, podQualifiesForUnsandboxed } from '../services/unsandboxedPodLineService';
 import path from 'path';
 import fs from 'fs';
 import { createHash, randomBytes } from 'crypto';
@@ -39,6 +40,8 @@ const PodContextService = require('../services/podContextService');
 const PodMemorySearchService = require('../services/podMemorySearchService');
 // eslint-disable-next-line global-require
 const PodFocusService = require('../services/podFocusService');
+// eslint-disable-next-line global-require
+const PodConventionsService = require('../services/podConventionsService');
 // eslint-disable-next-line global-require
 const { emitPodFocusUpdated } = require('../services/taskEventService');
 
@@ -445,6 +448,28 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// F497: agent-room and agent-admin 404 a non-member (CLAUDE.md), so a refusal
+// must not confirm the room exists. True when this caller is a stranger to
+// such a room; a failed lookup keeps the route's own answer.
+const roomHiddenFrom = async (podId: string | undefined, userId: unknown): Promise<boolean> => {
+  if (!podId) return false;
+  try {
+    const pod = await Pod.findById(podId).select('_id type members').lean() as { type?: string; members?: unknown[] } | null;
+    if (!pod || !['agent-room', 'agent-admin'].includes(String(pod.type))) return false;
+    return !(pod.members || []).some((member) => String(member) === String(userId));
+  } catch (error) {
+    console.warn('[pods] room visibility lookup failed:', (error as Error).message);
+    return false;
+  }
+};
+const POD_NOT_FOUND_BODY = { message: 'Pod not found', code: 'POD_NOT_FOUND' };
+
+// First minute back: the caller's own read point in this pod's main channel.
+// eslint-disable-next-line global-require
+const { getPodReadPoint, setPodReadPoint } = require('../controllers/podReadPointController');
+router.get('/:id/read-point', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), getPodReadPoint);
+router.put('/:id/read-point', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), setPodReadPoint);
+
 router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
@@ -454,6 +479,10 @@ router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id',
     return res.status(200).json({ ...focus, permissions });
   } catch (error) {
     const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    // F497: a room a stranger may not see answers 404, as its type rules say.
+    if (e?.code === 'NOT_A_MEMBER' && await roomHiddenFrom(podId, userId)) {
+      return res.status(404).json(POD_NOT_FOUND_BODY);
+    }
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
     console.error('Error reading pod focus:', error);
     return res.status(500).json({ message: 'Failed to read pod focus' });
@@ -480,6 +509,10 @@ router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', I
     return res.status(200).json({ ...focus, permissions: { canEdit: true } });
   } catch (error) {
     const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    // F497: the write refusal must not confirm a room to a stranger either.
+    if (e?.code === 'FOCUS_EDIT_FORBIDDEN' && await roomHiddenFrom(podId, userId)) {
+      return res.status(404).json(POD_NOT_FOUND_BODY);
+    }
     if (e?.status === 409) {
       let current: unknown;
       try { current = await PodFocusService.read({ podId, userId }); } catch { /* retain the conflict response if the pod disappeared */ }
@@ -488,6 +521,59 @@ router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', I
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
     console.error('Error updating pod focus:', error);
     return res.status(500).json({ message: 'Failed to update pod focus' });
+  }
+});
+
+// F124: the pod's conventions. Members read; the creator or a global admin
+// writes, with the revision they read (409 carries the current text).
+router.get('/:id/conventions', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  try {
+    // The shared visibility rule for a pod-scoped read (CLAUDE.md), before the
+    // service's own member check: both must pass. A room a stranger may not
+    // see answers 404, as its type rules say, so the 403 doesn't confirm it.
+    const pod = await Pod.findById(podId).select('_id type members publicRead').lean() as { type?: string } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' });
+    if (!await DMService.canViewPod(userId, pod)) {
+      return ['agent-room', 'agent-admin'].includes(String(pod.type))
+        ? res.status(404).json({ message: 'Pod not found', code: 'POD_NOT_FOUND' })
+        : res.status(403).json({ message: 'Not authorized for this pod', code: 'NOT_A_MEMBER' });
+    }
+    const conventions = await PodConventionsService.read({ podId, userId });
+    const permissions = await PodConventionsService.permissions({ podId, userId });
+    return res.status(200).json({ ...conventions, permissions });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error reading pod conventions:', error);
+    return res.status(500).json({ message: 'Failed to read pod conventions' });
+  }
+});
+
+router.patch('/:id/conventions', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  const body = req.body || {};
+  try {
+    if (Object.keys(body).sort().join(',') !== 'expectedRevision,text') {
+      return res.status(400).json({ message: 'Body must contain expectedRevision and text only', code: 'INVALID_CONVENTIONS_REQUEST' });
+    }
+    if (typeof body.expectedRevision !== 'number' || !Number.isInteger(body.expectedRevision)) {
+      return res.status(400).json({ message: 'expectedRevision must be a non-negative integer', code: 'INVALID_REVISION' });
+    }
+    const conventions = await PodConventionsService.update({ podId, userId, expectedRevision: body.expectedRevision, text: body.text });
+    return res.status(200).json({ ...conventions, permissions: { canEdit: true } });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status === 409) {
+      let current: unknown;
+      try { current = await PodConventionsService.read({ podId, userId }); } catch { /* keep the conflict if the pod is gone */ }
+      return res.status(409).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}), ...(current ? { current } : {}) });
+    }
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error updating pod conventions:', error);
+    return res.status(500).json({ message: 'Failed to update pod conventions' });
   }
 });
 
@@ -680,7 +766,9 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     // eslint-disable-next-line global-require
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
-    const { deriveAgentState, keyOnlyOnPage, offersConnect } = require('../services/agentStateService');
+    const {
+      deriveAgentState, keyOnlyOnPage, listenReasonFor, offersConnect,
+    } = require('../services/agentStateService');
     // eslint-disable-next-line global-require
     const { connectPodFor } = require('../services/roomConnectService');
     // eslint-disable-next-line global-require
@@ -696,24 +784,29 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       'botMetadata.instanceId': String(inst.instanceId || 'default'),
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
-      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt')
+      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
+        + 'botMetadata.harnessMissing botMetadata.listenBlocked')
       .lean();
     const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
     const machineByIdentity = new Map<string, unknown>();
+    const listenReasonByIdentity = new Map<string, unknown>();
     (agentUsers || []).forEach((u: any) => {
       const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
       userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
       machineByIdentity.set(key, u.botMetadata?.machineId);
+      listenReasonByIdentity.set(key, listenReasonFor(u.botMetadata));
     });
 
     const callerId = String(req.user?.id || '');
-    const agents = installations.map((inst: any) => deriveAgentState(
-      inst,
-      userTokensByIdentity.get(
-        `${AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase())}:${String(inst.instanceId || 'default').toLowerCase()}`,
-      ) || [],
-      callerId,
-    ));
+    const agents = installations.map((inst: any) => {
+      const agentType = AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase());
+      const key = `${agentType}:${String(inst.instanceId || 'default').toLowerCase()}`;
+      const row = deriveAgentState(inst, userTokensByIdentity.get(key) || [], callerId);
+      // F515: why its first run stopped, by code. Never-connected only: any
+      // check-in supersedes the report, so a listened agent carries none.
+      const listenReason = row.state === 'never-connected' ? listenReasonByIdentity.get(key) : null;
+      return listenReason ? { ...row, listenReason } : row;
+    });
 
     if (pod.type === 'agent-room') {
       await Promise.all(installations.map(async (inst: any, index: number) => {
@@ -875,6 +968,20 @@ const podVisibilityRateLimit = rateLimit({
 });
 
 /**
+ * When an owner's change takes a pod out of what an agent started without a
+ * sandbox may answer in, the pod says so for each such agent. Never awaited:
+ * the setting is saved either way.
+ */
+const noteUnsandboxedLeaving = (
+  pod: { _id: { toString: () => string }; publicRead?: unknown; communityListed?: unknown; joinPolicy?: unknown },
+  qualifiedBefore: boolean,
+): void => {
+  if (!qualifiedBefore || podQualifiesForUnsandboxed(pod)) return;
+  noteUnsandboxedPodSettingsChange({ podId: pod._id.toString() })
+    .catch((error: Error) => console.warn('[unsandboxed-pod] notice failed:', error?.message));
+};
+
+/**
  * POST /api/pods/:id/visibility  { tier: 'private' | 'community' }
  *
  * ADR-016's ordered tier (private -> showcase -> community), owner-writable
@@ -919,6 +1026,7 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
       type?: string;
       publicRead?: boolean;
       communityListed?: boolean;
+      joinPolicy?: string;
       createdBy?: { toString: () => string };
       save: () => Promise<unknown>;
     } | null;
@@ -938,18 +1046,17 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
       });
     }
 
-    // Listing to Community is a paid capability. Gated on the entitlement
-    // rather than on payment state directly, so the check stays identical
-    // however billing is wired later (today an admin sets the flag, same shape
-    // as the invite-code path for cloudAgents).
+    // Listing to Community is for instance admins, plus accounts that already
+    // hold Pro until their subscription ends. There is no paid tier to buy any
+    // more, so nobody else can list, and the message says so without an upsell.
     //
     // DEMOTION IS NEVER GATED. A user whose subscription lapses must always be
     // able to make their own room private again — paywalling the exit turns a
     // billing event into an unwanted permanent disclosure.
     if (tier === 'community' && !isGlobalAdmin && actor?.entitlements?.pro !== true) {
-      return res.status(402).json({
-        error: 'pro_required',
-        message: 'Listing a pod in Community is part of the paid plan. '
+      return res.status(403).json({
+        error: 'community_listing_admin_only',
+        message: 'Listing a pod in Community is done by an instance admin. '
           + 'Your pod stays private and everything already in it is unaffected.',
       });
     }
@@ -965,9 +1072,11 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
     }
 
     const listed = tier === 'community';
+    const qualifiedForUnsandboxed = podQualifiesForUnsandboxed(pod);
     pod.publicRead = listed;
     pod.communityListed = listed;
     await pod.save();
+    noteUnsandboxedLeaving(pod, qualifiedForUnsandboxed);
 
     try {
       await AuditLog.create({
@@ -1017,8 +1126,10 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
       return res.status(400).json({ error: 'pod_type_not_configurable' });
     }
     const previous = pod.joinPolicy;
+    const qualifiedForUnsandboxed = podQualifiesForUnsandboxed(pod);
     pod.joinPolicy = joinPolicy;
     await pod.save();
+    noteUnsandboxedLeaving(pod, qualifiedForUnsandboxed);
     if (previous !== joinPolicy) {
       try {
         await AuditLog.create({

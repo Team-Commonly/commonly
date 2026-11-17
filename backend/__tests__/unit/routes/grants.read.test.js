@@ -417,7 +417,7 @@ describe('GET /api/grants/:grantId/calls', () => {
   });
 });
 
-describe('the connector a grant belongs to (TASK-753, D226)', () => {
+describe('the connector a grant belongs to (TASK-753)', () => {
   // The page names a grant by the catalogue entry that covers its tools. A hidden
   // entry, or one whose connection was removed, is absent from that catalogue,
   // so the grant itself has to carry its connector or it reads "Unknown connector".

@@ -17,7 +17,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * auto-joined to a community pod installs nothing, so first-contact never
  * fires for them — which is precisely the gap #834 reports.
  */
-export interface IPodMemberFirstMessage extends Document {
+interface IPodMemberFirstMessage extends Document {
   podId: Types.ObjectId;
   userId: Types.ObjectId;
   messageId?: string;

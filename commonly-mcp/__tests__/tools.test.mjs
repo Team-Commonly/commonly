@@ -150,6 +150,18 @@ describe('commonly_post_message', () => {
     expect(byName.commonly_post_message.inputSchema.required).toEqual(['podId', 'content']);
   });
 
+  // F546: a seat answering through this tool names how the reply was made.
+  it('attaches the reply receipt the seat set, and none when it set none', async () => {
+    const receipt = { adapter: 'claude', model: 'claude-haiku-5-5', effort: 'low' };
+    const withReceipt = Object.fromEntries(buildTools({ ...cfg, replyReceipt: receipt }).map((t) => [t.name, t]));
+    const fetchSpy = installFetch(async () => okResponse({ id: 'm3' }));
+    await withReceipt.commonly_post_message.call({ podId: 'POD123', content: 'hi' });
+    await byName.commonly_post_message.call({ podId: 'POD123', content: 'hi' });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).receipt).toEqual(receipt);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body)).not.toHaveProperty('receipt');
+    expect(byName.commonly_post_message.inputSchema.properties).not.toHaveProperty('receipt');
+  });
+
   it('forwards threadRootId — the ping-free thread continuation (#1176 backend, added here in 0.3.4)', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
     const result = await byName.commonly_post_message.call({

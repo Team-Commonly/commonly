@@ -175,6 +175,15 @@ export interface IApprovalAction extends Document {
    */
   expiryRetryClaimedAt?: Date;
   /**
+   * tool_call only (F206): when the sweep may next retry this row, written by
+   * the closing write and by every claim as `expiryRetryDueAt` of what it
+   * wrote. The sweep selects on it, so rows backing off never hide due ones.
+   * It never falls before the real due time (a later `toolCallEnding` only
+   * moves that earlier), and the sweep still checks `expiryRetryDueAt`. Unset
+   * on rows closed before F206; those are read by `resolvedAt`.
+   */
+  expiryRetryNextAt?: Date;
+  /**
    * tool_call only: when an approved call's room receipt was posted, and one
    * attempt's lease on posting it. They work as `expiryEventSentAt` and
    * `expiryEventClaimedAt` do for the wake.
@@ -238,6 +247,7 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     expiryEventSentAt: { type: Date },
     expiryEventClaimedAt: { type: Date },
     expiryRetryClaimedAt: { type: Date },
+    expiryRetryNextAt: { type: Date },
     toolCallReceiptPostedAt: { type: Date },
     toolCallReceiptClaimedAt: { type: Date },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
@@ -287,6 +297,12 @@ ApprovalActionSchema.index(
 ApprovalActionSchema.index(
   { status: 1, actionType: 1, resolvedAt: 1 },
   { name: 'tool_call_expiry_retry', partialFilterExpression: { expiryRetryCount: { $exists: true } } },
+);
+
+// F206: the sweep's due-row lookup, by the stored next attempt.
+ApprovalActionSchema.index(
+  { actionType: 1, expiryRetryNextAt: 1 },
+  { name: 'tool_call_expiry_retry_next', partialFilterExpression: { expiryRetryNextAt: { $exists: true } } },
 );
 
 export const ApprovalAction: Model<IApprovalAction> =

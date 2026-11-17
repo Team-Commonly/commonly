@@ -31,7 +31,7 @@ export type ChainOpening = {
   salt: string;
 };
 
-export type StoredChain = {
+type StoredChain = {
   runId: string;
   headSeq: number;
   headHash: string | null;

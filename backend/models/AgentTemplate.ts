@@ -1,8 +1,8 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type AgentTemplateVisibility = 'private' | 'public';
+type AgentTemplateVisibility = 'private' | 'public';
 
-export interface IAgentTemplate extends Document {
+interface IAgentTemplate extends Document {
   agentName: string;
   displayName: string;
   description: string;

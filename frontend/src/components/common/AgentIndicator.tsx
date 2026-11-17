@@ -63,7 +63,7 @@ export const isAgentUsername = (username: string | null | undefined): boolean =>
   );
 };
 
-export const getAgentInfo = (username: string | null | undefined): AgentTypeInfo | null => {
+const getAgentInfo = (username: string | null | undefined): AgentTypeInfo | null => {
   if (!username) return null;
   const lower = username.toLowerCase();
 
@@ -187,7 +187,7 @@ interface AgentNameProps {
   sx?: SxProps<Theme>;
 }
 
-export const AgentName: React.FC<AgentNameProps> = ({
+const AgentName: React.FC<AgentNameProps> = ({
   username,
   displayName,
   showBadge = true,
@@ -225,7 +225,7 @@ interface AgentTypeIndicatorProps {
   showDescription?: boolean;
 }
 
-export const AgentTypeIndicator: React.FC<AgentTypeIndicatorProps> = ({
+const AgentTypeIndicator: React.FC<AgentTypeIndicatorProps> = ({
   username,
   type,
   showDescription = false,
@@ -277,7 +277,7 @@ interface ActivitySourceBadgeProps {
   username?: string | null;
 }
 
-export const ActivitySourceBadge: React.FC<ActivitySourceBadgeProps> = ({ source, username }) => {
+const ActivitySourceBadge: React.FC<ActivitySourceBadgeProps> = ({ source, username }) => {
   const theme = useTheme();
   const agentInfo = getAgentInfo(username);
 

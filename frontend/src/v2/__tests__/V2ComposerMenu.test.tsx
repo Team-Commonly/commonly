@@ -43,7 +43,7 @@ describe('V2Composer (direction C)', () => {
     expect(container.querySelector('.v2-composer__row')).toBeTruthy();
     expect(screen.getByRole('textbox')).toHaveAttribute('rows', '1');
     expect(screen.queryByText(/posts as/)).not.toBeInTheDocument();
-    // S3c (D215): Send is drawn at rest and disabled with an empty draft.
+    // S3c: Send is drawn at rest and disabled with an empty draft.
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-haspopup', 'menu');
   });

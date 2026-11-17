@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 // POST /api/stats/byo-step; events only the backend can see (an agent's first
 // authenticated call) are written here directly, so they never depend on the
 // user keeping the page open. Fixed step names only: never a command, key or name.
-export type ServerByoStep = 'seat-registered' | 'daemon-registered';
+type ServerByoStep = 'seat-registered' | 'daemon-registered' | 'run-stopped';
 
 // A once-per-seat event is keyed by a hash of the token record's hash, so the
 // unique _id index makes concurrent first calls write one row. The hash is one-way

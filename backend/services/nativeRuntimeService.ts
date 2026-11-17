@@ -76,7 +76,7 @@ import { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } from './cloudRuntimeOwne
 
 // --- public surface --------------------------------------------------------
 
-export interface NativeRunTrigger {
+interface NativeRunTrigger {
   // The RAW event type, forwarded verbatim by agentEventService:994 — not a
   // mapped vocabulary. The previous union listed names the caller never sends
   // ('mention', 'chat.message', 'task.assigned', 'pod.join') and omitted the
@@ -121,7 +121,7 @@ const MAX_WALL_CLOCK_MS = 60_000;
 // deployment already pays for, so "no model configured" means "the normal
 // model", never "the dead one".
 const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
-// F91 (D243): the deployment's model for native turns (Claude Haiku on dev).
+// F91: the deployment's model for native turns (Claude Haiku on dev).
 // Set, it replaces the old platform default wherever that was stored (145 Scout
 // installs carry `config.model: deepseek-v4-flash`), and every turn that holds a
 // connector grant runs on it whatever the installation names, so connector data
@@ -129,7 +129,7 @@ const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
 const NATIVE_RUNTIME_MODEL = String(process.env.NATIVE_RUNTIME_MODEL || '').trim();
 const DEFAULT_MODEL = NATIVE_RUNTIME_MODEL || process.env.LITELLM_CHAT_MODEL || LEGACY_DEFAULT_MODEL;
 
-// F98 (D243, Cofounder 11-04): hosted agents are Claude-only. The models a
+// F98 (11-04): hosted agents are Claude-only. The models a
 // deployment offers hosted agents: only its native model for now (Sonnet comes
 // later, under a cap). Unset, it offers no list and nothing is mapped.
 export const hostedModelsOffered = (nativeModel: string): string[] => (nativeModel ? [nativeModel] : []);
@@ -238,8 +238,24 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // offer was refused and the post still said the card had gone out. So once a
 // call in a response fails, a later post in that response is held, and the model
 // posts in its next step, with the failure in front of it.
-export const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
-export const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
+const POST_HELD_AFTER_FAILED_CALL = 'post_held_after_failed_call';
+
+// F530: the read-before-commit hold a connected agent gets on its post and its
+// task claim (#2580, agentSendFreshness). A hosted agent keeps no read cursor,
+// so a turn holds from the point it has read to: its start, then each set of
+// messages a hold shows it. A hold is not a failure: the model sees what it
+// missed and decides again.
+export const UNSEEN_MESSAGES = 'unseen_messages';
+const UNSEEN_SHOWN_MAX = 10;
+// A hold costs one more model call. With less room than this left in the
+// turn's clock, the caps would end the run before that call and a reply that
+// would have posted becomes a failure line, so the post goes through instead.
+const UNSEEN_HOLD_HEADROOM_MS = 15_000;
+const UNSEEN_HELD_TOOLS: ReadonlySet<string> = new Set([
+  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
+  'commonly_offer_own_agent', 'commonly_claim_task',
+]);
+const postHeldAfterFailedCall = (failed: { name: string; error: string }): string => (
   `Not posted: ${failed.name}, called earlier in this same response, did not succeed (${failed.error}). `
   + 'Read its result above, then post your reply in your next step, saying what actually happened.'
 );
@@ -477,7 +493,7 @@ export const TOOLS = [
           content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
           messageType: { type: 'string', enum: ['text', 'card'] },
           payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
-          // D245: the message contract, warn-only. A bad value posts anyway
+          // The message contract, warn-only. A bad value posts anyway
           // and comes back in the result's `warnings`.
           summary: { type: 'string', description: 'One line, at most 120 characters: what this message is.' },
           kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'What kind of message this is.' },
@@ -918,6 +934,13 @@ interface DispatchContext {
   personWaiting?: boolean;
   ownAgentOfferPosted?: boolean;
   /**
+   * F530: what this turn has read to, null when it can't be read (the turn then
+   * posts unchecked, as before). seenIds are messages after that point the
+   * turn has already seen: its own posts, and those a hold showed it. held is
+   * each hold's result as sent, so a set-aside that drops it can put it back.
+   */
+  freshness?: { agentUserId: string; since: unknown; seenIds: string[]; held: string[] } | null;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -941,13 +964,13 @@ interface DispatchContext {
    * The thread this turn answers in. Every post the turn makes carries it, so
    * a mention inside a thread gets its answer in that thread (TASK-026), and a
    * top-level @mention in a shared pod gets its answer in that message's own
-   * thread (D278, answerThreadOfTrigger). Undefined otherwise: other top-level
+   * thread (answerThreadOfTrigger). Undefined otherwise: other top-level
    * triggers, and anything in a personal pod, keep the answer at the pod root.
    */
   answeringThreadRootId?: number;
   /**
    * The thread the trigger itself was posted in (TASK-026), independent of the
-   * D278 mention placement. A `progress` or `fyi` post is not the answer, so it
+   * Mention placement. A `progress` or `fyi` post is not the answer, so it
    * stays in the channel for a top-level mention — but when the trigger was
    * made inside a thread, those posts still belong in that thread, which this
    * carries. Undefined for a top-level trigger.
@@ -963,7 +986,7 @@ export const threadRootOfTrigger = (payload: unknown): number | undefined => {
 };
 
 /**
- * The thread a turn's answer goes in (D278): the thread its trigger was posted
+ * The thread a turn's answer goes in: the thread its trigger was posted
  * in, or, for a top-level chat.mention in a shared pod, that message's own
  * thread. The same rule a CAP post gets from agentAnswerService.answerRootOfWake.
  * `podType` unknown (a failed lookup) keeps the old placement: the pod root.
@@ -983,7 +1006,7 @@ export const answerThreadOfTrigger = (
  * the trigger's own message. That message can sit inside a thread (a welcome
  * wake names a member's first message, which may be a reply), and then the
  * answer goes in that thread. A message that is gone leaves the answer at the
- * pod root, as before D278, instead of failing every post the turn makes.
+ * pod root, as before the thread rule, instead of failing every post the turn makes.
  */
 export const settleAnswerThread = async (
   trigger: { type?: unknown; payload?: unknown },
@@ -1003,7 +1026,7 @@ export const settleAnswerThread = async (
 // address the agent had written itself became one it could open (#2249).
 // Null on any failure, which byOtherAuthors treats as
 // "every message may be the agent's own".
-export const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
+const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
   try {
     const User = require('../models/User');
     const AgentIdentityService = require('./agentIdentityService');
@@ -1075,6 +1098,102 @@ const fanOutAgentPost = (
   }).catch((error: Error) => console.warn('[native-runtime] post fan-out failed:', error.message));
 };
 
+const noteOwnPost = (ctx: DispatchContext, id: unknown): void => {
+  if (ctx.freshness && id !== undefined && id !== null && String(id)) ctx.freshness.seenIds.push(String(id));
+};
+
+/**
+ * F530: a set-aside that drops rounds can drop a hold's result with them, while
+ * the messages it showed already count as read. Each one dropped goes back at
+ * the end, so what the turn counts as read is still in front of the model.
+ */
+const keepHeldMessages = (ctx: DispatchContext, messages: any[]): void => {
+  (ctx.freshness?.held || []).forEach((text) => {
+    if (!messages.some((message) => typeof message?.content === 'string' && message.content.includes(text))) {
+      messages.push({ role: 'user', content: text });
+    }
+  });
+};
+
+/** F530: where a hosted turn starts reading from. Null on any failure. */
+const startTurnFreshness = async (
+  podId: string, agentName: string, instanceId: string, ownUserId: string | null,
+): Promise<DispatchContext['freshness']> => {
+  try {
+    const agentUserId = ownUserId || await resolveOwnUserId(agentName, instanceId);
+    if (!agentUserId) return null;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const since = await require('./agentSendFreshness').readStart(podId);
+    return { agentUserId, since, seenIds: [], held: [] };
+  } catch (error) {
+    console.warn('[native-runtime] freshness start unavailable; posts go unchecked:', (error as Error).message);
+    return null;
+  }
+};
+
+/**
+ * F530: the result a post or claim gets when messages landed that this turn
+ * has not seen, or null to go ahead. The messages it shows count as read; the
+ * ones it had no room to show still hold the next call. `stillRoom` is asked
+ * after the reads: a hold that would leave no time to reply lets the call
+ * through. Fails open, as the turn did before.
+ */
+const unseenHold = async (
+  ctx: DispatchContext, stillRoom: () => boolean = () => true,
+): Promise<DispatchResult | null> => {
+  const freshness = ctx.freshness;
+  if (!freshness) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Freshness = require('./agentSendFreshness');
+    // Taken before the check: a message that lands in between is shown and
+    // still held next time, never skipped.
+    const next = await Freshness.readStart(String(ctx.podId));
+    const hold = await Freshness.unseenMessages(freshness.agentUserId, ctx.podId, {
+      since: freshness.since, ignoreIds: [...freshness.seenIds], limit: UNSEEN_SHOWN_MAX,
+    });
+    if (!hold || !stillRoom()) return null;
+    const count = Number(hold.unseenCount) || 0;
+    const previews: Array<{ id: string; author: string; content: string; createdAt: unknown }> = hold.messages || [];
+    if (count > previews.length) {
+      // Some didn't fit. Moving the start past them would let the next call
+      // through unread, so only the ones shown count as seen.
+      freshness.seenIds.push(...previews.map(({ id }) => String(id)));
+    } else {
+      freshness.since = next;
+      freshness.seenIds = [];
+    }
+    const shown = previews.slice().reverse()
+      .map(({ author, content, createdAt }) => ({ author, content, createdAt }));
+    let below = count === 1 ? '1 new message came in while you were working; it is in messages.'
+      : `${count} new messages came in while you were working; they are in messages.`;
+    if (count > shown.length) {
+      below = `${count} new messages came in while you were working; the newest ${shown.length} are in messages. `
+        + 'The rest are shown the next time you try, or call commonly_read_context to read them now.';
+    }
+    const result = {
+      content: {
+        ok: false,
+        posted: false,
+        reason: UNSEEN_MESSAGES,
+        unseenCount: count,
+        messages: shown,
+        guidance: `That didn't go through: ${below} `
+          + 'Read them and decide again: go ahead if it still fits, change it if they change the answer, '
+          + 'or end the turn if what you were asked is already answered: to end it, reply with exactly NO_REPLY. '
+          + "If you were asked by name, another agent's reply doesn't answer for you unless one answer was all "
+          + 'that was asked.',
+      },
+      error: UNSEEN_MESSAGES,
+    };
+    freshness.held.push(JSON.stringify(result.content));
+    return result;
+  } catch (error) {
+    console.warn('[native-runtime] freshness check unavailable; posting unchecked:', (error as Error).message);
+    return null;
+  }
+};
+
 /**
  * What a posting tool tells the model and the run. Every tool that posts through
  * postMessage ends here, so none can answer `posted: true` over a post that
@@ -1085,7 +1204,10 @@ const postToolResult = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result: any,
 ): DispatchResult => {
-  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  if (result?.success && !result.skipped) {
+    ctx.personWaiting = false;
+    noteOwnPost(ctx, result.message?.id ?? result.message?._id);
+  }
   if (result?.refused && result.reason === 'consecutive_run_cap') {
     // The shared guidance offers an attachment, which a web-tainted turn
     // cannot make, and only another speaker clears the cap. Say only that.
@@ -1220,7 +1342,7 @@ export async function dispatchTool(
         validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
           ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
           : content);
-        // D278: a `progress` or `fyi` post is not the answer, so it does not
+        // A `progress` or `fyi` post is not the answer, so it does not
         // inherit the top-level mention's thread — it stays in the channel. If
         // the trigger itself was inside a thread, it still belongs there
         // (TASK-026). Answer kinds get the full mention placement.
@@ -1522,6 +1644,7 @@ export async function dispatchTool(
         if (!result.ok) {
           return { content: { ok: false, error: result.error }, error: 'propose_failed' };
         }
+        noteOwnPost(ctx, result.messageId);
         return {
           content: {
             ok: true,
@@ -2006,7 +2129,7 @@ export const connectIntentFloor = async (input: {
 // stayed silent on the first of two presses in a pod with other participants.
 // The click sends the English label whatever the language, and no language is
 // stored for the person, so the floor's reply reads in English.
-export const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
+const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
   if (ctx.agentName !== 'scout') return false;
   // payload.content carries the wake frames; rawContent is the person's words.
   const pressed = (trigger.payload as { rawContent?: unknown } | null | undefined)?.rawContent;
@@ -2323,7 +2446,7 @@ function formatRecentMessagesBlock(
 }
 
 /**
- * Why a hosted heartbeat doesn't run now, or null to run (D244). Both counts
+ * Why a hosted heartbeat doesn't run now, or null to run. Both counts
  * are spend bounds, so a failed count fails closed, as the per-user ceiling
  * does. A hold is acked with no AgentRun, like any other hosted decline.
  */
@@ -2674,14 +2797,22 @@ export async function runAgent(
 
   // Best-effort pod name lookup for user-message framing. Never block on it.
   let podName = 'this pod';
-  // D278: where a top-level mention's answer goes depends on it. Unknown keeps
+  // Where a top-level mention's answer goes depends on it. Unknown keeps
   // the answer at the pod root, as before.
   let podType: string | null = null;
+  // F124: the pod's conventions, from the same row. Empty when it has none.
+  let conventionsFrame = '';
   try {
     const Pod = require('../models/Pod');
     const pod = await Pod.findById(installation.podId).lean();
     if (pod?.name) podName = String(pod.name);
     if (pod?.type) podType = String(pod.type);
+    if (pod) {
+      const PodConventionsService = require('./podConventionsService');
+      conventionsFrame = PodConventionsService.formatPodConventionsFrame(
+        await PodConventionsService.readForPod({ pod }),
+      );
+    }
   } catch (err) {
     console.warn('[native-runtime] pod lookup failed:', (err as Error).message);
   }
@@ -2781,6 +2912,9 @@ export async function runAgent(
   // fetch makes neither lookup (its own user, the trigger's sender).
   const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
   if (mayFetch) dispatchCtx.ownUserId = await resolveOwnUserId(agentName, instanceId);
+  // F530: before the turn reads anything, so a message landing while it builds
+  // its context or thinks holds its post.
+  dispatchCtx.freshness = await startTurnFreshness(String(podId), agentName, instanceId, dispatchCtx.ownUserId);
 
   // Read whenever a web lookup could matter: before each model call of a turn
   // that may search or read a page, and before a lookup or a post after one. A failed read
@@ -2835,6 +2969,11 @@ export async function runAgent(
   // After the line above: the notice is our text, not the person's, so it
   // must not give an address.
   if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
+  // F124: after the given addresses are taken, so a link in the conventions is
+  // not one commonly_fetch_url may open on their strength; and in the user
+  // message, so the owner's system prompt keeps the last word. The recent
+  // messages and Scout's start cue are put in front of it below.
+  if (conventionsFrame) userMessage = `${conventionsFrame}\n\n${userMessage}`;
   // F46: when the person writing owns an agent that has never connected, Scout's
   // turn carries its start command, so the answer can't leave them stuck.
   if (agentName === 'scout' && dispatchCtx.computerRequesterId) {
@@ -2877,6 +3016,11 @@ export async function runAgent(
   await run.save();
 
   const startTime = Date.now();
+  // F530: whether the caps leave room for one more model call.
+  const roomForAnotherCall = (tokensAhead: number): boolean => (
+    Date.now() - startTime < MAX_WALL_CLOCK_MS - UNSEEN_HOLD_HEADROOM_MS
+    && run.totalTokens + tokensAhead < MAX_TOKENS
+  );
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
@@ -2953,6 +3097,7 @@ export async function runAgent(
     const kept = webResults.filter((result) => result.round < firstRound
       || (result.round === firstRound && !aside.includes(result)));
     webResults.splice(0, webResults.length, ...kept);
+    keepHeldMessages(dispatchCtx, messages);
     return { setAside: aside.length, removed: before - kept.length };
   };
 
@@ -3065,6 +3210,7 @@ export async function runAgent(
     computerResults.splice(0, computerResults.length, ...keptComputer);
     const keptWeb = webResults.filter((result) => acted || result.round <= firstRound);
     webResults.splice(0, webResults.length, ...keptWeb);
+    keepHeldMessages(dispatchCtx, messages);
     return aside.length;
   };
 
@@ -3284,6 +3430,13 @@ export async function runAgent(
         // cap would turn a held reply into a failure line.
         let failedEarlierInRound: { name: string; error: string } | null = null;
         const mayHoldPost = !recoveryRound && turnIndex < MAX_TURNS - 1;
+        // F530: a hold needs room for the call after it, this call's tokens
+        // not yet counted. Asked at each call, since a slow tool before it
+        // spends the clock.
+        const roomToHold = (): boolean => mayHoldPost && roomForAnotherCall(2 * Number(usage.total_tokens || 0));
+        // Once a call is held, every later protected call in this response is
+        // held with it: the model has not read the hold yet.
+        let unseenHeldInRound: DispatchResult | null = null;
 
         for (const tc of toolCalls) {
           const toolStart = Date.now();
@@ -3363,10 +3516,20 @@ export async function runAgent(
           // The recovery round posts at most one reply.
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
           let result: DispatchResult;
+          let unseen: DispatchResult | null = null;
           if (replied) result = { content: { ok: false, error: replied }, error: replied };
           else if (failedEarlierInRound && mayHoldPost && POSTING_NATIVE_TOOLS.has(toolName)) {
             const held = postHeldAfterFailedCall(failedEarlierInRound);
             result = { content: { ok: false, posted: false, error: held }, error: POST_HELD_AFTER_FAILED_CALL };
+          }
+          // F530. Not in the last-chance rounds, where a hold would leave no
+          // step to reply in (the same exception F317 makes).
+          else if (unseenHeldInRound && UNSEEN_HELD_TOOLS.has(toolName)) result = unseenHeldInRound;
+          else if (offeredToolNames.has(toolName) && !narrowedAway && !webTaintedAway
+            && UNSEEN_HELD_TOOLS.has(toolName) && roomToHold()
+            && (unseen = await unseenHold(dispatchCtx, roomToHold))) {
+            unseenHeldInRound = unseen;
+            result = unseen;
           }
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
@@ -3530,6 +3693,17 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
+      // F530: the written reply is a post too. Held, it goes back to the model
+      // with what it missed, unless this was the last step it had.
+      const replyHeld = textOut && !postedViaTool && !fallbackBlocked && !declinedInText
+        && !recoveryRound && turnIndex < MAX_TURNS - 1 && roomForAnotherCall(Number(usage.total_tokens || 0))
+        ? await unseenHold(dispatchCtx, () => roomForAnotherCall(Number(usage.total_tokens || 0))) : null;
+      if (replyHeld) {
+        messages.push({ role: 'assistant', content: textOut });
+        messages.push({ role: 'user', content: JSON.stringify(replyHeld.content) });
+        turnIndex += 1;
+        continue;
+      }
       if (textOut && !postedViaTool && !fallbackBlocked && !declinedInText) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
@@ -3575,7 +3749,7 @@ export async function runAgent(
       if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
         && run.turns.some((t: any) => (t.toolCalls || []).some(
           (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed'
-            && c.error !== POST_HELD_AFTER_FAILED_CALL
+            && c.error !== POST_HELD_AFTER_FAILED_CALL && c.error !== UNSEEN_MESSAGES
             && !/^duplicate_/.test(String(c.result?.result?.reason)),
         ))) {
         run.status = 'failed';

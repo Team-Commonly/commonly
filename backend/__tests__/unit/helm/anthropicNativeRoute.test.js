@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-// F91 (D243, 2026-11-04): native turns run on Claude Haiku through LiteLLM, and
+// F91 (2026-11-04): native turns run on Claude Haiku through LiteLLM, and
 // connector data (Calendar under Google's Limited Use) stays on that route: no
 // fallback names it, and native calls send disable_fallbacks
 // (nativeRuntimeService.nativeModel.test.js). The backend jest job has no helm

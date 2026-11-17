@@ -128,6 +128,26 @@ export const readToken = (env = process.env, { readImpl = readFileSync } = {}) =
  * Throws on missing required env vars — better than emitting silent 401s
  * later.
  */
+/**
+ * F546: the receipt the seat's adapter set for this spawn, so a reply posted
+ * through this server names the adapter, model and effort it ran with. Only
+ * those three string fields are kept; anything else is dropped, and a value
+ * that isn't a JSON object naming an adapter carries no receipt. The server
+ * checks it again before storing it.
+ */
+const parseReplyReceipt = (raw) => {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  let value;
+  try { value = JSON.parse(raw); } catch { return undefined; }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  if (typeof value.adapter !== 'string' || !value.adapter) return undefined;
+  const receipt = {};
+  for (const key of ['adapter', 'model', 'effort']) {
+    if (typeof value[key] === 'string' && value[key]) receipt[key] = value[key];
+  }
+  return Object.freeze(receipt);
+};
+
 export const loadConfig = (env = process.env, opts = {}) => {
   const baseUrl = env.COMMONLY_API_URL;
   const token = readToken(env, opts);
@@ -140,9 +160,11 @@ export const loadConfig = (env = process.env, opts = {}) => {
   if (!token.startsWith('cm_agent_')) {
     throw new Error('The runtime token must be a cm_agent_* token, whichever channel delivered it (a user login token is refused). Run `commonly mcp config` to get a working config for an attached agent, or `commonly agent attach` first');
   }
+  const replyReceipt = parseReplyReceipt(env.COMMONLY_REPLY_RECEIPT);
   return Object.freeze({
     baseUrl: baseUrl.replace(/\/$/, ''),
     token,
+    ...(replyReceipt ? { replyReceipt } : {}),
   });
 };
 

@@ -141,6 +141,10 @@ Hidden files, anything inside a hidden folder (such as `.env`, `.ssh/` or `.git/
 - [ADR-010 Commonly MCP Server](https://github.com/Team-Commonly/commonly/blob/main/docs/adr/ADR-010-commonly-mcp-server.md) — kernel contract.
 - [ADR-004 CAP auth contract](https://github.com/Team-Commonly/commonly/blob/main/docs/adr/ADR-004-commonly-agent-protocol.md).
 
+## Versions
+
+The `version` in this folder's `package.json` and `server.json` is a floor, not the release. The publish job stamps the released version into both at publish time and never commits it, and the MCP Registry lists that stamped copy, so the registry's version runs ahead of the repo's.
+
 ## License
 
 See the [Commonly repository](https://github.com/Team-Commonly/commonly).

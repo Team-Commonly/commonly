@@ -80,7 +80,7 @@ describe('V2AgentBYO footnote', () => {
     expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
   });
 
-  // D245: the listener runs on Windows too (unsandboxed), and on Linux with
+  // The listener runs on Windows too (unsandboxed), and on Linux with
   // either tool (Codex walked 11-05), so the footnote is the same as a Mac's.
   test.each([
     ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', ''],

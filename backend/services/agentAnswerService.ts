@@ -90,7 +90,7 @@ const threadRootOf = (payload: unknown): number | null => {
 };
 
 /**
- * D278: the thread a wake's answer belongs in, or null when it names none.
+ * The thread a wake's answer belongs in, or null when it names none.
  *
  * A wake inside a thread is answered there (F245). A top-level `chat.mention`
  * is answered in that message's own thread, so the conversation it starts,
@@ -162,7 +162,7 @@ export const JUST_ACKED_MS = 5 * 1000;
  *
  * The post goes in the thread only when every delivery agrees: each one names
  * the same thread through answerRootOfWake, either a wake inside that thread or
- * the lone top-level mention it grows under (D278). A turn holding a second
+ * the lone top-level mention it grows under. A turn holding a second
  * thread, a second top-level mention, ambient channel traffic, a heartbeat or a
  * task beside it cannot say which of them a plain post answers, so that post
  * stays as sent, and the wake cue is what asks the model to name the thread.

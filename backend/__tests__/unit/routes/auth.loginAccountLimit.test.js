@@ -77,6 +77,10 @@ describe('POST /api/auth/login per-address budget', () => {
 
     expect(res.status).toBe(429);
     expect(res.body.code).toBe('rate_limited');
+    // A page says what was counted and when to try again, in its own words.
+    expect(res.body.scope).toBe('account');
+    expect(res.body.retryAfterSeconds).toBeGreaterThan(0);
+    expect(res.body.retryAfterSeconds).toBeLessThanOrEqual(15 * 60);
     expect(login).toHaveBeenCalledTimes(10);
   });
 
@@ -104,5 +108,26 @@ describe('POST /api/auth/login per-address budget', () => {
       expect((await signIn({ $ne: null })).status).toBe(400);
     }
     expect(login).toHaveBeenCalledTimes(12);
+  });
+});
+
+// Every other limiter counts the network, and says so, with its window.
+describe('POST /api/auth/forgot-password limit body', () => {
+  const nodeEnv = process.env.NODE_ENV;
+  beforeAll(() => { process.env.NODE_ENV = 'production'; });
+  afterAll(() => { process.env.NODE_ENV = nodeEnv; });
+
+  it('refuses the 6th request from one network in an hour with scope network and a window', async () => {
+    const { forgotPassword } = require('../../../controllers/authController');
+    forgotPassword.mockImplementation((req, res) => res.json({ ok: true }));
+    const send = () => request(app).post('/api/auth/forgot-password')
+      .set('cf-connecting-ip', '203.0.113.77').send({ email: 'someone@example.com' });
+    for (let i = 0; i < 5; i += 1) expect((await send()).status).toBe(200);
+    const res = await send();
+
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'rate_limited', scope: 'network' }));
+    expect(res.body.retryAfterSeconds).toBeGreaterThan(0);
+    expect(res.body.retryAfterSeconds).toBeLessThanOrEqual(60 * 60);
   });
 });

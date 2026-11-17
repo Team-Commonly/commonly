@@ -38,13 +38,13 @@ import {
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
 /** `unbound` is the same word the grant read uses: nothing projected this seat. */
-export type SeatConfinementScope = 'seat' | 'unbound';
+type SeatConfinementScope = 'seat' | 'unbound';
 
-export interface SeatConfinementJudgement {
+interface SeatConfinementJudgement {
   refusal: GrantBrokerRefusal | null;
   scope: SeatConfinementScope;
   /**
-   * The seat's machine reported no sandbox Commonly can enforce (D245). Unlike
+   * The seat's machine reported no sandbox Commonly can enforce. Unlike
    * a declaration, no consent lifts this one (F94, ruling A).
    */
   hostUnconfined?: true;
@@ -56,7 +56,7 @@ export interface SeatConfinementJudgement {
   hostUnreported?: true;
 }
 
-export interface SeatCallerIdentity {
+interface SeatCallerIdentity {
   agentName?: unknown;
   instanceId?: unknown;
   agentUserId?: unknown;
@@ -135,7 +135,7 @@ const ownerIdsFor = async (keys: Set<string>): Promise<Set<string>> => {
  * two meanings ("judged, confinable" vs "never projected").
  */
 /**
- * D245: a seat bound to a machine whose daemon reported native Windows (with or
+ * A seat bound to a machine whose daemon reported native Windows (with or
  * without the user's own `--unsandboxed`) is refused
  * whatever its declaration says. The declaration still reads `trust: public`
  * there by design (the stored record keeps it), so the projection alone would

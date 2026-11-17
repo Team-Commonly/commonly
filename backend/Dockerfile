@@ -1,5 +1,7 @@
 # Build stage: dev dependencies are needed for tsc and never ship.
-FROM node:22 AS build
+# Both stages name the Debian release, so a change of the floating default
+# under node:22 can't move the image to a new distro unannounced.
+FROM node:22-bookworm AS build
 
 WORKDIR /app
 
@@ -16,8 +18,15 @@ RUN npm run build
 # Copy non-JS assets that tsc doesn't copy
 RUN cp -r external dist/external 2>/dev/null || true
 
-# Runtime stage
-FROM node:22
+# Runtime stage: the slim base. The full node:22 image carries a compiler
+# toolchain, kernel headers and dev libraries that nothing here runs, and they
+# were most of the live image's fixable CVEs. No production dependency builds
+# native code (the only install scripts, protobufjs and @openuidev/lang-core,
+# are plain node), playwright-core only connects to a remote browser over CDP,
+# and the only binaries the server runs are git (installed below) and docker
+# (local provisioner only). The tag floats on purpose: nothing bumps a digest
+# pin here, so each build takes the current Debian security fixes.
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
