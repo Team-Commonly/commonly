@@ -1,6 +1,6 @@
 # `commonly doctor` and the stale-CLI notice
 
-TASK-660, from D213: the Node daemon stays, and install gets harder to break
+TASK-660: the Node daemon stays, and install gets harder to break
 silently by making breakage visible. Code: `cli/src/lib/doctor.js` (checks),
 `cli/src/commands/doctor.js` (host wiring), `cli/src/lib/update-check.js`
 (notice). Tests: `cli/__tests__/doctor.test.mjs`, `cli/__tests__/update-check.test.mjs`.

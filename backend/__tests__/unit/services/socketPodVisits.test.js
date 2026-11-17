@@ -6,7 +6,7 @@ const { joinPodRoom, leavePodRoom } = require('../../../services/socketPodVisits
 const fakeSocket = () => ({
   userId: 'u1',
   connected: true,
-  data: { joinedPods: new Set(), pendingJoins: new Set() },
+  data: { joinedPods: new Set(), pendingJoins: new Map() },
   join: jest.fn(),
   leave: jest.fn(),
 });
@@ -64,6 +64,38 @@ describe('joinPodRoom', () => {
     expect(stamps.stampPodOpened).not.toHaveBeenCalled();
     expect(socket.join).not.toHaveBeenCalled();
     expect(socket.data.joinedPods.size).toBe(0);
+  });
+
+  it('join, leave, join again while the first waits: the second join still enters the room', async () => {
+    const socket = fakeSocket();
+    const stamps = fakeStamps();
+    const first = deferred();
+    const second = deferred();
+    const j1 = joinPodRoom(socket, 'p1', () => first.promise, stamps);
+    leavePodRoom(socket, 'p1', stamps);
+    const j2 = joinPodRoom(socket, 'p1', () => second.promise, stamps);
+    first.resolve({ id: 'p1' });
+    expect(await j1).toBeNull();
+    expect(socket.data.pendingJoins.has('p1')).toBe(true);
+    second.resolve({ id: 'p1' });
+    expect(await j2).toEqual({ id: 'p1' });
+    expect(socket.join).toHaveBeenCalledTimes(1);
+    expect(socket.data.joinedPods.has('p1')).toBe(true);
+    expect(stamps.stampPodOpened).toHaveBeenCalledTimes(1);
+    expect(socket.data.pendingJoins.size).toBe(0);
+  });
+
+  it('the second join finishing first is not undone by the first', async () => {
+    const socket = fakeSocket();
+    const stamps = fakeStamps();
+    const first = deferred();
+    const j1 = joinPodRoom(socket, 'p1', () => first.promise, stamps);
+    leavePodRoom(socket, 'p1', stamps);
+    expect(await joinPodRoom(socket, 'p1', async () => ({ id: 'p1' }), stamps)).toEqual({ id: 'p1' });
+    first.resolve({ id: 'p1' });
+    expect(await j1).toBeNull();
+    expect(socket.join).toHaveBeenCalledTimes(1);
+    expect(socket.data.joinedPods.has('p1')).toBe(true);
   });
 
   it('a refused join stamps nothing and leaves no pending entry', async () => {

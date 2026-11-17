@@ -1,6 +1,6 @@
 const { HARNESS_CATALOG, harnessCatalogEntry } = require('../../../config/harnessCatalog');
 
-describe('harness catalogue (D247)', () => {
+describe('harness catalogue', () => {
   it('lists every harness `commonly agent run --adapter` accepts, Claude Code and Codex first', () => {
     expect(HARNESS_CATALOG.map((entry) => entry.id))
       .toEqual(['claude', 'codex', 'opencode', 'qwen', 'goose', 'hermes', 'pi', 'dsh']);

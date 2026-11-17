@@ -39,7 +39,7 @@ export function viewTransitionName(prefix: string, id: string): string {
 // against an animationend that never comes; the CSS animation sets the real pace.
 export const EXIT_SAFETY_MS = 600;
 
-export interface ExitPresence<T> {
+interface ExitPresence<T> {
   /** What to render: the live value, or the last one while it animates out. */
   shown: T | null;
   /** True while the last value is on its way out. Render it inert. */

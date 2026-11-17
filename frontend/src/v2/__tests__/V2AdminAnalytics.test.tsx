@@ -108,7 +108,7 @@ describe('V2AdminAnalytics', () => {
     expect(screen.getByText(/Of 0 signups/)).toBeInTheDocument();
   });
 
-  // TASK-784 (D164): daemon machines by platform, with how many answered a
+  // TASK-784: daemon machines by platform, with how many answered a
   // person, and by CLI version.
   const machinesPayload = {
     total: 5,

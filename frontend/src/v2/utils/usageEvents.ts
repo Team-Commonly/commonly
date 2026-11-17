@@ -1,7 +1,7 @@
 import { matchPath } from 'react-router-dom';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 
-// First-party usage events (D286). Fixed names, route templates and enum
+// First-party usage events. Fixed names, route templates and enum
 // props only: never typed text, a message, a token, or a path with an id in
 // it. The server holds the same allowlists and drops anything outside them;
 // this side only avoids sending what would be dropped anyway.
@@ -15,7 +15,7 @@ export type UsageEventName =
   | 'get-started-click'
   | 'teammate-card-shown' | 'teammate-card-click' | 'teammate-card-dismiss';
 
-export type PublicEventName =
+type PublicEventName =
   | 'page-view' | 'cta-click' | 'register-view' | 'auth-choice' | 'register-error' | 'invite-page-view';
 
 // The V2App route table, without the /v2 mount, most specific first.

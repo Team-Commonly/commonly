@@ -1,7 +1,7 @@
 // F512: a teammate's @mention waited for the next digest. Since #2559 every
 // kind 'mention' row skips the needs-you email, which was right for agent
 // mentions (their real asks email as decision, approval, blocked or handoff)
-// and wrong for a person asking a person. Ruling (Cofounder, 11-14): one email
+// and wrong for a person asking a person. Decided 11-14: one email
 // if the person mentioned hasn't opened that pod about 15 minutes later; never
 // to the author; one per recipient per pod per 6h, later mentions ride the
 // digest; the digest opt-out applies.
@@ -360,4 +360,53 @@ test('a timeout with no answer keeps the claim: no second email on the next pass
   expect((await sweep(new Date())).failed).toBe(1);
   expect((await sweep(new Date())).sent).toBe(0);
   expect(mockSendEmail).toHaveBeenCalledTimes(1);
+});
+
+// CodeRabbit (#4144): the claim is set before the send. A pass that dies in
+// between must not lose the email for good: its lease runs out and a later
+// pass claims the row again. A finished pass leaves no lease behind.
+describe('a claim from a pass that died mid-decision', () => {
+  const crashedClaim = (row, at) => AttentionItem.collection.updateOne(
+    { _id: row._id }, { $set: { mentionEmailCheckedAt: at, mentionEmailLeaseAt: at } },
+  );
+
+  test('is claimed again once its lease runs out, and sends once', async () => {
+    const { ana, bo, pod } = await team();
+    await mention(ana, pod, '@bo ping', new Date(Date.now() - 40 * MIN));
+    const row = await AttentionItem.findOne({ kind: 'mention' }).lean();
+    const now = new Date();
+    await crashedClaim(row, new Date(now.getTime() - mentionEmail.MENTION_EMAIL_LEASE_MS + MIN));
+    expect((await sweep(now)).sent).toBe(0);
+    await crashedClaim(row, new Date(now.getTime() - mentionEmail.MENTION_EMAIL_LEASE_MS - MIN));
+    expect((await sweep(now)).sent).toBe(1);
+    expect(recipients()).toEqual([bo.email]);
+    expect((await sweep(new Date(now.getTime() + 20 * MIN))).sent).toBe(0);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test('a decided row keeps no lease, so it is never reclaimed', async () => {
+    const { ana, pod } = await team();
+    await mention(ana, pod, '@bo ping', new Date(Date.now() - 20 * MIN));
+    const now = new Date();
+    expect((await sweep(now)).sent).toBe(1);
+    const row = await AttentionItem.findOne({ kind: 'mention' }).lean();
+    expect(row.mentionEmailCheckedAt).toBeTruthy();
+    expect(row.mentionEmailLeaseAt).toBeUndefined();
+    expect((await sweep(new Date(now.getTime() + 30 * MIN))).sent).toBe(0);
+  });
+
+  test('a pass that died after claiming the window is skipped on reclaim, never sent twice', async () => {
+    const { ana, bo, pod } = await team();
+    await mention(ana, pod, '@bo ping', new Date(Date.now() - 40 * MIN));
+    const row = await AttentionItem.findOne({ kind: 'mention' }).lean();
+    const now = new Date();
+    const died = new Date(now.getTime() - mentionEmail.MENTION_EMAIL_LEASE_MS - MIN);
+    await crashedClaim(row, died);
+    await pool.query(
+      'INSERT INTO mention_email_state (recipient_user_id, pod_id, last_email_at, attention_item_id) VALUES ($1, $2, $3, $4)',
+      [String(bo._id), String(pod._id), died, String(row._id)],
+    );
+    expect((await sweep(now)).skipped).toBe(1);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
 });

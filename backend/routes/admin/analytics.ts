@@ -147,7 +147,7 @@ router.get('/funnel', adminReadLimiter, auth, adminAuth, async (req: any, res: a
   }
 });
 
-// GET /api/admin/analytics/machines (TASK-784, D164)
+// GET /api/admin/analytics/machines (TASK-784)
 // Daemon machines by platform and by CLI version, and per platform how many
 // had an agent answer a person (an @mention or a DM). Counts only. A
 // foreground `commonly agent run` registers no machine, so it is not counted.

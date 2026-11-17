@@ -4,7 +4,7 @@ import { applyV2Theme, getV2Theme, setV2Theme, subscribeV2Theme, V2_THEME_KEY } 
 
 const v2css = fs.readFileSync(path.join(__dirname, '../../v2.css'), 'utf8');
 
-describe('v2 appearance preference (D216)', () => {
+describe('v2 appearance preference', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.removeAttribute('data-v2-theme');
@@ -32,7 +32,7 @@ describe('v2 appearance preference (D216)', () => {
     expect(document.documentElement.getAttribute('data-v2-theme')).toBe('light');
   });
 
-  test('v2.css carries the D216 dark set for both explicit dark and auto', () => {
+  test('v2.css carries the dark set for both explicit dark and auto', () => {
     expect(v2css).toContain(':root[data-v2-theme="dark"] .v2-root {');
     expect(v2css).toContain('@media (prefers-color-scheme: dark) {\n  :root:not([data-v2-theme="light"]) .v2-root {');
     expect(v2css).toMatch(/:root\[data-v2-theme="dark"\] \.v2-root \{[\s\S]*?--v2-text-primary: #e8ebf1;/);

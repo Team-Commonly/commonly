@@ -25,7 +25,7 @@ const LLMSERVICE_GUARDRAILS = (
   process.env.LLMSERVICE_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
 ).split(',').map((s) => s.trim()).filter(Boolean);
 
-export interface GenerateOptions {
+interface GenerateOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;

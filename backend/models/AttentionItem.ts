@@ -1,9 +1,9 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
+type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative' | 'hosted_mcp';
 
-export interface IAttentionItem extends Document {
+interface IAttentionItem extends Document {
   recipientUserId: Types.ObjectId;
   podId: Types.ObjectId;
   kind: AttentionKind;
@@ -39,6 +39,7 @@ export interface IAttentionItem extends Document {
   // Growth's NEEDSYOU metric allowlists what counts as acted on; tell it when a value is added or a new kind starts writing one.
   resolvedBy?: 'replied' | 'acknowledged' | 'actioned' | 'missed';
   mentionEmailCheckedAt?: Date;
+  mentionEmailLeaseAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,6 +76,10 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   // F512: the mention-email pass has decided this row (sent or not). Cleared
   // again only when a send fails, so the next pass can retry it.
   mentionEmailCheckedAt: { type: Date },
+  // Set with the claim and cleared once the pass reaches an outcome. One still
+  // set past its lease means the process died mid-decision: a later pass may
+  // claim the row again (CodeRabbit on #4144).
+  mentionEmailLeaseAt: { type: Date },
 }, { timestamps: true });
 
 // A source can notify each recipient once. Retried source writes must not

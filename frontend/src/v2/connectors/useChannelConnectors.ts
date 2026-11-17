@@ -86,7 +86,7 @@ export const useChannelConnectors = () => {
   const [hostedMcpCallbackRevoke, setHostedMcpCallbackRevoke] = useState<{
     entryId: string; provider: string; revokePage: string;
   } | null>(null);
-  // D248: a GitHub App install that came back without our state. Only the
+  // A GitHub App install that came back without our state. Only the
   // entry id is kept; the catalogue names the provider, or nothing is shown.
   const [pendingAppInstalled, setPendingAppInstalled] = useState<string | null>(null);
   // A non-error callback outcome: the App was installed, or a connect still
@@ -274,7 +274,7 @@ export const useChannelConnectors = () => {
     if (loading || hostedCatalog === null) return;
     const entryId = query.get('entryId');
     const revokeAt = query.get('revokeAt');
-    // D248: connected, but nothing is reachable until the App is installed.
+    // Connected, but nothing is reachable until the App is installed.
     // The page links the entry's own access page; the query only asks for it.
     if (entryId && query.get('next') === 'access') {
       const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
@@ -1017,7 +1017,7 @@ export const useChannelConnectors = () => {
   };
 
   const catalogTypes = new Set((catalog || []).map((entry) => entry.installableId));
-  // D215: a provider this instance does not offer is not listed, so a connector
+  // A provider this instance does not offer is not listed, so a connector
   // nobody here has walked is never shown. The API still reports it (the
   // offerability contract), and someone who already installed it keeps their
   // row, which renders in the not-connectable state below.

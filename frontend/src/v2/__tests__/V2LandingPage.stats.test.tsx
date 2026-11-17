@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -37,12 +37,17 @@ describe('V2LandingPage public proof', () => {
 
     renderLanding();
 
-    const agentsLabel = await screen.findByText('agents');
-    const statsRow = agentsLabel.closest('.v2-landing__proof-stats');
+    // The h1 ends on the word "agents" too, so wait for the one in the stats row.
+    let agentsLabel: HTMLElement | undefined;
+    await waitFor(() => {
+      agentsLabel = screen.getAllByText('agents').find((el) => el.closest('.v2-landing__proof-stats'));
+      expect(agentsLabel).toBeDefined();
+    });
+    const statsRow = agentsLabel!.closest('.v2-landing__proof-stats');
     expect(statsRow).not.toBeNull();
 
     const stats = within(statsRow as HTMLElement);
-    expect(agentsLabel.previousElementSibling).toHaveTextContent('262');
+    expect(agentsLabel!.previousElementSibling).toHaveTextContent('262');
     expect(stats.getByText('messages / 24h').previousElementSibling).toHaveTextContent('1,234');
     expect(stats.getByText('active pods').previousElementSibling).toHaveTextContent('12');
     expect(stats.queryByText('builders')).not.toBeInTheDocument();

@@ -10,7 +10,7 @@ const ChannelVerdict = require('../models/ChannelVerdict');
 
 export const CHANNEL_VERDICT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
-export interface RecordChannelVerdict {
+interface RecordChannelVerdict {
   integrationId: unknown;
   installationId?: unknown;
   podId: unknown;
@@ -25,7 +25,7 @@ export interface RecordChannelVerdict {
   at?: Date;
 }
 
-export interface MarkReachedHuman {
+interface MarkReachedHuman {
   // The same decision card can reach several member-owned channels. This is
   // mandatory so one person's reply never claims those sibling channels did
   // the reaching.
@@ -35,7 +35,7 @@ export interface MarkReachedHuman {
   decisionId?: string;
 }
 
-export interface MarkRuled {
+interface MarkRuled {
   podMessageId: string;
   ruledVia: ChannelVerdictRuledVia;
 }

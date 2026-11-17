@@ -2,7 +2,7 @@
 // An upload opens in the lightbox only from its signed URL. The raw
 // `/api/uploads/<file>` path is relative to the app's origin, which serves no
 // uploads, so drawing it while the mint is in flight (or after it failed) cost a
-// 404 and a broken-image flash. The D215 crawl found it on every artifact.
+// 404 and a broken-image flash. The design crawl found it on every artifact.
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import V2Lightbox from '../components/V2Lightbox';

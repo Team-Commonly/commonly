@@ -96,7 +96,7 @@ export const hostedMcpNonceCookiePath = (entryId: string): string =>
  * pre-registered client cannot offer, since every instance would register its
  * own app with every vendor.
  */
-export interface HostedMcpClientMetadataDocument {
+interface HostedMcpClientMetadataDocument {
   client_id: string;
   client_name: string;
   redirect_uris: string[];
@@ -151,9 +151,9 @@ export interface HostedMcpClientConfiguration {
   tokenEndpointAuthMethod?: 'client_secret_basic' | 'client_secret_post';
 }
 
-export type HostedMcpEndpointKind = 'token' | 'revocation';
+type HostedMcpEndpointKind = 'token' | 'revocation';
 
-export interface HostedMcpClientRequest {
+interface HostedMcpClientRequest {
   headers: Record<string, string>;
   body: URLSearchParams;
 }

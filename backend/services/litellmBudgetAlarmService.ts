@@ -20,12 +20,12 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const axios = require('axios');
 
-export const BUDGET_ALARM_FRACTION = 0.8;
+const BUDGET_ALARM_FRACTION = 0.8;
 const PAGE_SIZE = 100;
 // A bound on pages, so a malformed total_pages cannot loop the sweep.
 const MAX_PAGES = 20;
 
-export interface LiteLLMKeyRow {
+interface LiteLLMKeyRow {
   token?: string;
   key_alias?: string | null;
   spend?: number | null;
@@ -34,7 +34,7 @@ export interface LiteLLMKeyRow {
   budget_reset_at?: string | null;
 }
 
-export interface BudgetAlarm {
+interface BudgetAlarm {
   keyAlias: string;
   spendUsd: number;
   maxBudgetUsd: number;
@@ -134,7 +134,7 @@ export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
   return { rows, incomplete: null };
 };
 
-export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string => {
+const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string => {
   const handle = mention ? ` @${mention}` : '';
   const reset = alarm.resetsAt ? ` It resets ${alarm.resetsAt}.` : '';
   return `[budget alarm] LiteLLM key ${alarm.keyAlias} has spent $${alarm.spendUsd.toFixed(2)} of its `

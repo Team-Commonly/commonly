@@ -24,7 +24,7 @@ const { isListedPodMember } = require('../utils/isPodMember');
  * not opened that pod about 15 minutes later. Before this, every 'mention'
  * row skipped email (#2559), so a teammate's ask waited for the next digest.
  *
- * Ruling (Cofounder, 11-14): mentions written by people only, since an agent's
+ * Decided 11-14: mentions written by people only, since an agent's
  * real asks already email as decision, approval, blocked or handoff. Never the
  * author (the mention writer already excludes them). One email per recipient
  * per pod per 6h; later mentions stay open and ride the digest. The digest
@@ -36,14 +36,31 @@ const { isListedPodMember } = require('../utils/isPodMember');
  */
 
 const MIN = 60 * 1000;
-export const MENTION_EMAIL_DELAY_MS = 15 * MIN;
-export const MENTION_EMAIL_WINDOW_MS = 6 * 60 * MIN;
+const MENTION_EMAIL_DELAY_MS = 15 * MIN;
+const MENTION_EMAIL_WINDOW_MS = 6 * 60 * MIN;
 // The first pass after a deploy must not mail out the backlog, and a row a
 // long outage held back is the digest's by then.
 const CATCH_UP_MS = 2 * 60 * MIN;
 // A process that dies never stamps the close, so "open now" expires.
 const OPEN_STALE_MS = 12 * 60 * MIN;
+// A claim whose pass died before reaching an outcome is reclaimable after this.
+// A pass that died after claiming the 6h window stays at most once: the window
+// refuses the second claim, so that row is skipped, never sent twice.
+export const MENTION_EMAIL_LEASE_MS = 15 * MIN;
 const BATCH = 200;
+// Unclaimed, or claimed by a pass that died mid-decision.
+const claimable = (now: Date) => ({
+  $or: [
+    { mentionEmailCheckedAt: { $exists: false } },
+    { mentionEmailLeaseAt: { $lt: new Date(now.getTime() - MENTION_EMAIL_LEASE_MS) } },
+  ],
+});
+// Gives a claim back so the next pass retries the row.
+const releaseRow = (row: any, now: Date) => AttentionItem.updateOne(
+  { _id: row._id, mentionEmailCheckedAt: now },
+  { $unset: { mentionEmailCheckedAt: 1, mentionEmailLeaseAt: 1 } },
+  { timestamps: false },
+);
 
 const validIds = (...ids: unknown[]): boolean => ids.every((id) => mongoose.isValidObjectId(id));
 
@@ -148,14 +165,27 @@ const deliver = async (user: any, row: any): Promise<void> => {
 type Outcome = 'sent' | 'skipped' | 'failed';
 
 const decide = async (row: any, now: Date): Promise<Outcome | null> => {
-  // Claim the row first: whichever pass wins decides it, once.
+  // Claim the row first: whichever pass wins decides it, once. The lease
+  // starts at the claim, not the pass: late in a long batch, the pass's own
+  // start time would leave a fresh claim almost no lease.
+  const leasedAt = new Date(Math.max(Date.now(), now.getTime()));
   const claimed = await AttentionItem.updateOne(
-    { _id: row._id, status: 'open', mentionEmailCheckedAt: { $exists: false } },
-    { $set: { mentionEmailCheckedAt: now } },
+    { _id: row._id, status: 'open', ...claimable(now) },
+    { $set: { mentionEmailCheckedAt: now, mentionEmailLeaseAt: leasedAt } },
     { timestamps: false },
   );
   if (!claimed.modifiedCount) return null;
+  const outcome = await decideClaimed(row, now);
+  // Reached an outcome: the lease ends. A release already cleared both fields.
+  await AttentionItem.updateOne(
+    { _id: row._id, mentionEmailLeaseAt: leasedAt },
+    { $unset: { mentionEmailLeaseAt: 1 } },
+    { timestamps: false },
+  );
+  return outcome;
+};
 
+const decideClaimed = async (row: any, now: Date): Promise<Outcome> => {
   if (!row.actorUserId) return 'skipped';
   const author = await User.findById(row.actorUserId).select('isBot').lean();
   if (!author || author.isBot === true) return 'skipped';
@@ -195,11 +225,7 @@ const decide = async (row: any, now: Date): Promise<Outcome | null> => {
     // Give the window and the row back, so a refused send is not a used one.
     try {
       await store.releaseWindow(recipientId, podId, now, claim.previous);
-      await AttentionItem.updateOne(
-        { _id: row._id, mentionEmailCheckedAt: now },
-        { $unset: { mentionEmailCheckedAt: 1 } },
-        { timestamps: false },
-      );
+      await releaseRow(row, now);
     } catch (releaseError) {
       console.warn('[mention-email] release after a failed send failed:', (releaseError as Error).message);
     }
@@ -226,11 +252,10 @@ export const sweepMentionEmails = async (
   const rows = await AttentionItem.find({
     kind: 'mention',
     status: 'open',
-    mentionEmailCheckedAt: { $exists: false },
     createdAt: { $lte: due, $gte: floor },
-    $or: [
-      { sourceCreatedAt: { $gte: floor, $lte: due } },
-      { sourceCreatedAt: { $exists: false } },
+    $and: [
+      claimable(now),
+      { $or: [{ sourceCreatedAt: { $gte: floor, $lte: due } }, { sourceCreatedAt: { $exists: false } }] },
     ],
   }).sort({ createdAt: 1 }).limit(BATCH).lean();
   for (const row of rows) {
@@ -243,11 +268,7 @@ export const sweepMentionEmails = async (
       result.failed += 1;
       console.warn('[mention-email] row failed; the next pass retries:', (error as Error).message);
       // eslint-disable-next-line no-await-in-loop
-      await AttentionItem.updateOne(
-        { _id: row._id, mentionEmailCheckedAt: now },
-        { $unset: { mentionEmailCheckedAt: 1 } },
-        { timestamps: false },
-      ).catch(() => undefined);
+      await releaseRow(row, now).catch(() => undefined);
     }
   }
   return result;
@@ -257,5 +278,5 @@ export default { sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClose
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
   sweepMentionEmails, stampPodOpened, stampPodRead, stampPodClosed, stampPodReadOnRequest,
-  MENTION_EMAIL_DELAY_MS, MENTION_EMAIL_WINDOW_MS, primaryUrl, unsubscribeTokenFor,
+  MENTION_EMAIL_LEASE_MS, primaryUrl, unsubscribeTokenFor,
 };

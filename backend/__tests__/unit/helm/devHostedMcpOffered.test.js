@@ -1,7 +1,7 @@
 // F82 (2026-11-04): Atlassian and Notion passed their prod agent-read walks
 // (connect, a read-only grant to a hosted agent, a real read through the broker,
 // grant revoke), so dev offers them. GitHub (github-mcp) is offered after its
-// TASK-290 non-admin walk (D248, 11-04). The rest stay hidden for the reasons
+// TASK-290 non-admin walk (11-04). The rest stay hidden for the reasons
 // values-dev.yaml gives beside each entry.
 const fs = require('fs');
 const path = require('path');

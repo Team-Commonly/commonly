@@ -1,4 +1,4 @@
-// D248: after a GitHub authorization, a person with no installation of the
+// After a GitHub authorization, a person with no installation of the
 // App has nothing for the agent to read. The entry asks GitHub which
 // installations this user token can see; none means the access step is next.
 const { githubNeedsAccessSetup } = require('../../../integrations/hostedMcp/githubMcp');

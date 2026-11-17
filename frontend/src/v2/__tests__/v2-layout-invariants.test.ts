@@ -450,7 +450,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(pane, '.v2-pod-header--direct .v2-pod-header__meta')).toContain('margin-right: auto');
   });
 
-  test('the Get started bar holds its height outside the stream and wraps to full-width steps on a phone (D288)', () => {
+  test('the Get started bar holds its height outside the stream and wraps to full-width steps on a phone', () => {
     const pane = read('../chat/chat-pane.css');
     const bar = ruleBody(pane, '.v2-get-started');
     expect(bar).toContain('flex: none');
@@ -462,6 +462,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The bar stands in for the board chip, so its board button is never hidden on a phone.
     expect(ruleBody(pane, '.v2-root button.v2-get-started__board:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     expect(phone).not.toMatch(/__board[^{]*\{[^}]*display:\s*none/);
+  });
+
+  test('step 1\'s two choices share one phone row with "or" between them', () => {
+    const pane = read('../chat/chat-pane.css');
+    const phone = blockContaining(pane, '@media (max-width: 760px)', '.v2-get-started {');
+    const keys = phone.slice(phone.indexOf('.v2-root .v2-get-started__choice button.v2-get-started__step {'));
+    const body = keys.slice(0, keys.indexOf('}'));
+    // Without order: 0 the bar's order: 2 for steps moves "or" ahead of both keys
+    // (seen at 390 on 2026-11-14).
+    expect(body).toContain('order: 0');
+    expect(body).toContain('flex: 1 1 0');
+    expect(phone).toMatch(/\.v2-get-started__choice \{[^}]*flex: 1 1 100%/);
   });
 
   test('agent Control reconnect remains an ink action with a focus edge', () => {
@@ -591,7 +603,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
-  test('the compact rail uses the artboard’s 36px logo and bare 38px nav glyphs (D223, TASK-735)', () => {
+  test('the compact rail uses the artboard’s 36px logo and bare 38px nav glyphs (TASK-735)', () => {
     const rail = ruleBody(v2, '.v2-rail');
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
     const item = ruleBody(v2, '.v2-root button.v2-rail__item');
@@ -642,7 +654,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const pill = ruleBody(v2, '.v2-pods__row-pill');
     const search = lastRuleBody(v2, '.v2-pods__search');
 
-    // D223 (TASK-735): the artboard's .pane.pods, a 14px card ringed by a
+    // (TASK-735): the artboard's .pane.pods, a 14px card ringed by a
     // shadow rather than a border, its rows inset by 10px.
     expect(panel).toContain('border: 0');
     expect(panel).toContain('padding: 12px 10px');
@@ -653,7 +665,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(search).toContain('height: 34px');
     expect(podsSidebar).toContain('<ShellGlyph name="search" size={15} />');
     // The + is the artboard's 32px raised key, a glyph rather than a character.
-    // D223: the new-pod key is the primitives' 32px secondary icon key.
+    // The new-pod key is the primitives' 32px secondary icon key.
     expect(podsSidebar).toContain('className="v2p-b v2p-b-s v2p-ib v2-pods__new"');
     expect(primitives).toMatch(/\.v2p-ib \{ width: 32px; height: 32px;/);
     expect(podsSidebar).toContain('<ShellGlyph name="plus" size={17} />');
@@ -671,7 +683,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pill).toContain('background: var(--v2-ink)');
     expect(pill).toContain('height: 18px');
     expect(podsSidebar).toContain("'podsSidebar.workspace.recent'");
-    // D215 (TASK-691): one segment replaced the Pinned / Recent headings and the
+    // (TASK-691): one segment replaced the Pinned / Recent headings and the
     // "Everything ▸" fold.
     expect(podsSidebar).toContain("'podsSidebar.workspace.all'");
     expect(podsSidebar).toContain('<V2Segmented');
@@ -679,12 +691,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain('v2-pods__search');
     expect(podsSidebar).toContain('RECENT_LIMIT');
     // Pinned has an entry point (ux-lead gate 2026-09-06): the pin control is a
-    // sibling of the row. D215: an icon on row hover or focus that takes the
+    // sibling of the row. Design: an icon on row hover or focus that takes the
     // time's slot, out of sight at rest even when pinned.
     expect(podsSidebar).toContain('togglePin(pod._id)');
     expect(podsSidebar).toContain('<ShellGlyph name="pin"');
     // At rest the pin is opacity 0 so it stays in the accessibility tree (a screen
-    // reader reaches it by swiping, Cofounder 11-04), and pointer-events none so the
+    // reader reaches it by swiping; decided 11-04), and pointer-events none so the
     // hidden pin cannot catch a tap on the time. visibility: hidden would drop it from
     // the tree and leave touch screen-reader users only the hold.
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
@@ -705,7 +717,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }\n}');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
-    // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
+    // The segment draws as the primitives' v2p-seg; v2.css keeps only its states.
     expect(segmented).toContain("'v2p-seg v2-seg'");
     expect(segmented).toContain("' on v2-seg__option--on'");
     expect(ruleBody(primitives, '.v2p-seg')).toContain('display: inline-flex');
@@ -732,7 +744,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
     expect(mobile).not.toBe('');
     expect(row).toContain('min-height: 44px');
-    // D223 (TASK-735): the 24px mark and the 13.5px name hold at 390, as drawn.
+    // (TASK-735): the 24px mark and the 13.5px name hold at 390, as drawn.
     expect(row).toContain('grid-template-columns: 24px minmax(0, 1fr) auto');
     expect(ruleBody(v2, '.v2-pods__row-mark', { within: mobile })).toBe('');
     expect(ruleBody(v2, '.v2-pods__row-name', { within: mobile })).toBe('');
@@ -745,17 +757,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pinTouch).toContain('background: transparent');
   });
 
-  test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
+  test('phone tab labels keep text contrast while the glyphs take the artboard grey', () => {
     expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
     // The glyph half: inactive tabs take the artboard's placeholder grey.
     const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-mobile-tabs__label {');
     // Icons are controls, so they take the rail's 3:1 grey, not the artboard's placeholder.
     expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-rail-icon)');
-    // D223 ruling: the artboard's sans family at the 12px sans floor.
+    // Design ruling: the artboard's sans family at the 12px sans floor.
     expect(ruleBody(v2, '.v2-mobile-tabs__label', { within: phone })).toContain('font: 500 12px/14px var(--v2-font)');
   });
 
-  test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (D223 ruling)', () => {
+  test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (design ruling)', () => {
     // Measured on the rail's own surface, --v2-shell-bg #eef0f4: the
     // artboard's #98a2b3 is 2.26:1 and #828a99 is 3.05:1.
     expect(v2).toContain('--v2-shell-bg: #eef0f4;');
@@ -763,7 +775,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 
-  test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
+  test('the phone pods page leads with the artboard title bar, search behind an icon', () => {
     expect(podsSidebar).toContain('className="v2-pods__bar"');
     expect(podsSidebar).toContain('v2-pods__search-open');
     expect(podsSidebar).toContain("size={isPage ? 'md' : 'sm'}");
@@ -786,7 +798,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(topLevelRuleBody(v2, '.v2-pods__bar')).toContain('height: 52px');
   });
 
-  // Cofounder ruling 11-04: the d215 pick wins on look, but 44px is a floor. The
+  // Ruling 11-04: the d215 pick wins on look, but 44px is a floor. The
   // view segment sits alone in its row, so it can be drawn at the frame's 28px with a
   // 44px ::before; the rows and bar keys cannot both match the frame and hold 44, so
   // they keep the floor (the two tests above).
@@ -847,7 +859,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the selected pod fills from the row token, so dark can go neutral (TASK-701)', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     expect(selected).toContain('background: var(--v2-row-active)');
-    // D223 (TASK-735): the artboard's .pod.on carries no accent bar.
+    // (TASK-735): the artboard's .pod.on carries no accent bar.
     expect(selected).not.toContain('inset 3px 0 0');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
@@ -917,13 +929,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
     // Consecutive same-author messages within the grouping window drop the
-    // header row; the ghost cell must match the D215 artboard's 36px avatar
+    // header row; the ghost cell must match the design artboard's 36px avatar
     // column or grouped text mis-aligns with headed text by exactly the
     // avatar width — a defect jsdom cannot see.
     expect(ruleBody(v2, '.v2-thread .v2-msg')).toContain('grid-template-columns: 36px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__avatar-ghost')).toContain('width: 36px');
     expect(ruleBody(v2, '.v2-msg__gutter-time')).toContain('width: 36px');
-    // S3b: the typing line is the D215 presence chip; it carries a 7px dot,
+    // S3b: the typing line is the design presence chip; it carries a 7px dot,
     // not faces, so nothing in it can take the 36px message column.
     expect(ruleBody(v2, '.v2-chat__typing-dot')).toContain('width: 7px');
     expect(thread).not.toContain('v2-chat__typing-avatars');
@@ -1061,7 +1073,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(block).toContain('.v2-shell:not(.v2-shell--feature-wide)');
     expect(block).not.toMatch(/\.v2-shell\s*\{/);
     expect(block).not.toContain('display: none');
-    // S3c (D223): the drawer rule moved to chat/chat-inspector.css in its own
+    // S3c: the drawer rule moved to chat/chat-inspector.css in its own
     // 1023px block; read that block the same way.
     const drawerStart = v2.indexOf('@media (max-width: 1023px) {\n  /* Below the 3-pane width the inspector');
     expect(drawerStart).toBeGreaterThan(-1);
@@ -1103,7 +1115,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(page).toContain('<V2Segmented');
     expect(page).toMatch(/<label className="v2a-sel">\s*<select/);
     expect(ruleBody(ac, '.v2a-sel')).toContain('box-shadow: inset 0 0 0 1px var(--v2-border)');
-    // Groups: mono section label over one primitive list; rows split by hairlines, no rail (D225).
+    // Groups: mono section label over one primitive list; rows split by hairlines, no rail.
     expect(page).toContain('className="v2p-gtitle v2a-gtitle"');
     expect(page).toContain('className="v2p-list v2a-list"');
     const row = ruleBody(ac, '.v2a-row');
@@ -1173,7 +1185,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(workspaceInspector).toContain('v2-workspace-inspector__card v2-workspace-inspector__group');
     expect(workspaceInspector).toContain("'inspector.workspace.agents'");
     expect(workspaceInspector).toContain("'inspector.workspace.needsYou'");
-    // D215: the mono captions ("agents in sharpen") are gone; each group is a
+    // The mono captions ("agents in sharpen") are gone; each group is a
     // 44px fold row at rest, and members / manage are head icon buttons.
     expect(workspaceInspector).not.toContain("'inspector.workspace.agentsIn'");
     expect(workspaceInspector).not.toContain('shortRoomName');
@@ -1190,7 +1202,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(workspaceInspector).not.toContain('v2-inspector__progress');
 
     const card = ruleBody(v2, '.v2-workspace-inspector__card');
-    // D223 (TASK-735): the artboard's details.grp, a 14px card ringed by the pane shadow.
+    // (TASK-735): the artboard's details.grp, a 14px card ringed by the pane shadow.
     expect(card).toContain('border: 0');
     expect(card).toContain('box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft))');
     expect(card).toContain('border-radius: var(--v2-r-14, 14px)');
@@ -1325,19 +1337,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // of rows and recreates the v1 island.
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: 0');
-    // D215 (TASK-734): the composer is a floating card on the pop shadow, so
+    // (TASK-734): the composer is a floating card on the pop shadow, so
     // no border draws its edge; the plus is a ghost key inside it.
     expect(ruleBody(v2, '.v2-composer')).toContain('border: 0');
     expect(ruleBody(v2, '.v2-composer')).toContain('box-shadow: var(--v2-shadow-pop');
     expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
     // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
-    // Mentions: no row wash and no bleed (D224); the tint is on the chip only.
+    // Mentions: no row wash and no bleed; the tint is on the chip only.
     expect(v2).not.toContain('.v2-chat__messages > .v2-msg--mention');
     // Threads (ux-lead 64476 (2)): the ROOT now renders inside the block, so
     // the block itself is a full-width child like any message and the INDENT
     // moved to the inner wrap (chip + rail at the text column, 36px avatar +
-    // 12px gap, D215).
+    // 12px gap).
     const block = ruleBody(v2, '.v2-thread-block');
     expect(block).toContain('width: 100%');
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 48px');
@@ -1346,7 +1358,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // made the transcript horizontally swipeable (2026-08-24; 350 vs
     // 326 scrollWidth at 390). The inner wrap must never take a width.
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).not.toContain('width');
-    // S3b: the phone indent is D215's 40px (.app.m .thr), in the 760 block.
+    // S3b: the phone indent is the design's 40px (.app.m .thr), in the 760 block.
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner', { within: mediaBlockContaining(v2, '.v2-thread .v2-thread-block__inner') })).toContain('margin-left: 40px');
     // Belt-and-braces: the transcript itself never scrolls sideways.
     expect(ruleBody(v2, '.v2-chat__messages')).toContain('overflow-x: hidden');
@@ -1540,7 +1552,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('the first-run dialog is a bottom sheet on a phone, its waiting dot still under reduced motion', () => {
-    // D215 phone: the dialog sits on the bottom edge with 44px touch targets.
+    // Design phone: the dialog sits on the bottom edge with 44px touch targets.
     const phone = mediaBlockContaining(v2, '.v2-first-run__overlay {');
     expect(ruleBody(v2, '.v2-first-run__overlay', { within: phone })).toContain('place-items: end center');
     expect(ruleBody(v2, '.v2-root button.v2-first-run__skip', { within: phone })).toContain('height: 44px');
@@ -1556,9 +1568,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
     expect(settingsPage).toContain(`<SettingsSection id="account" title={t('settings.sections.account')}>`);
-    // D215 (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
+    // (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
     expect(settingsPage).toContain(`<SettingsSection id="access" title={t('settings.sections.access')}>`);
-    // D215: the language segment lives under Look, beside the theme.
+    // The language segment lives under Look, beside the theme.
     expect(settingsPage).toContain(`<SettingsSection id="look" title={t('settings.sections.look')}>`);
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
@@ -1660,11 +1672,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(bareElementSelectors('textarea, form { color: red; }')).toEqual(['textarea', 'form']);
   });
 
-  test('Settings renders the account’s real plan with its appropriate billing action', () => {
+  test('Settings shows the plan row only to an existing Pro account, with manage and no upgrade', () => {
     expect(billingPanel).toContain('currentUser?.entitlements');
-    expect(billingPanel).toContain("isPro ? '/api/billing/portal' : '/api/billing/checkout'");
-    expect(billingPanel).toContain("t(isPro ? 'billing.tier.pro' : 'billing.tier.free')");
-    expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
+    expect(billingPanel).toContain('if (!isPro) return null;');
+    expect(billingPanel).toContain("'/api/billing/portal'");
+    expect(billingPanel).not.toContain('/api/billing/checkout');
+    expect(billingPanel).not.toContain('billing.upgrade');
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     // The frame reads the plan as plain text in the row value, not a chip.
@@ -1724,13 +1737,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(title).toContain('overflow: hidden');
   });
 
-  test('a board claim lease is the frame\'s accent mono timer on the id row (D215 .lease)', () => {
+  test('a board claim lease is the frame\'s accent mono timer on the id row (design .lease)', () => {
     expect(podBoard).toContain('className="v2-board__owner-line"');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__card-kicker')).toContain('var(--v2-font-mono)');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__owner-line')).toContain('color: var(--v2-accent-text)');
   });
 
-  test('board card actions are the frame\'s 24px icon keys in a popover bar (D215 .hv)', () => {
+  test('board card actions are the frame\'s 24px icon keys in a popover bar (design .hv)', () => {
     // Icon-only, so each key carries its old visible text as aria-label and title.
     expect(podBoard).toContain('aria-label={t(move.labelKey)}');
     expect(podBoard).toContain('title={t(move.labelKey)}');
@@ -1772,10 +1785,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
 
-  test('the composer is one line with a 32px plus menu and a 32px ink Send, disabled until there is text (D215, TASK-734)', () => {
+  test('the composer is one line with a 32px plus menu and a 32px ink Send, disabled until there is text (TASK-734)', () => {
     expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 52px');
     expect(ruleBody(v2, '.v2-composer')).toContain('border-radius: var(--v2-r-14, 14px)');
-    // D223: plus and Send are the primitives' 32px ghost and primary icon keys,
+    // Plus and Send are the primitives' 32px ghost and primary icon keys,
     // which only draw because the shell loads primitives.css after v2.css.
     expect(read('../V2App.tsx')).toMatch(/import '\.\/v2\.css';\n[^\n]*\nimport '\.\/primitives\/primitives\.css';/);
     expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
@@ -1790,7 +1803,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(primitives, '.v2p-b-p')).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
     // A bespoke look on Send would outrank the primitive (0,2,1 over 0,1,0).
     expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).not.toContain('background');
-    // S3c: Send is drawn at rest (D215) and disabled while the draft is empty;
+    // S3c: Send is drawn at rest and disabled while the draft is empty;
     // only an in-flight send takes the dimmed progress look.
     expect(composer).toContain('disabled={sending || !hasText}');
     expect(composer).not.toContain('{hasText && (');
@@ -1824,7 +1837,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('threading restyle (PR 2b): runtime tag, 20px reaction chips, two-line quote, thread chip, band, strip, white jump pill', () => {
-    // D215: the runtime is plain mono joined to the time, "claude · 1:16 AM".
+    // The runtime is plain mono joined to the time, "claude · 1:16 AM".
     expect(ruleBody(v2, '.v2-msg__tag')).toContain('font: 500 11.5px/16px var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-msg__tag')).not.toContain('background');
     expect(ruleBody(v2, '.v2-msg__tag + .v2-msg__time::before')).toContain("content: '· '");
@@ -1833,14 +1846,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-msg__quote-text')).toContain('-webkit-line-clamp: 2');
     expect(ruleBody(v2, '.v2-root .v2-thread button.v2-msg__thread-chip')).toContain('min-height: 28px');
     // S3b (#3178 / TASK-745): no band behind the root; the replies are the
-    // D215 .thr card, with no rail.
+    // Design .thr card, with no rail.
     expect(v2).not.toContain('.v2-thread-block--open {');
     const thr = ruleBody(v2, '.v2-thread .v2-thread-replies');
     expect(thr).toContain('background: var(--v2-bg-subtle)');
     expect(thr).toContain('box-shadow: inset 0 0 0 1px var(--v2-border-soft)');
     expect(thr).toContain('border-radius: 10px');
     expect(thr).not.toContain('border-left');
-    // S3a: the strip is the D215 .acts pop card (r9, 2px in, pop shadow).
+    // S3a: the strip is the design .acts pop card (r9, 2px in, pop shadow).
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('border-radius: 9px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('box-shadow: var(--v2-shadow-pop)');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('padding: 2px');
@@ -1877,7 +1890,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(threadMessages).toContain('v2-thread-block__inner');
     expect(threadMessages).toContain('const collapsed = !openRoots.has(item.rootId)');
     expect(v2).not.toContain('.v2-thread-card__reply');
-    // Thread mentions use the one chip rule; a 0,2,0 override here once beat it (D224).
+    // Thread mentions use the one chip rule; a 0,2,0 override here once beat it.
     expect(v2).not.toContain('.v2-thread .v2-msg__mention');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('background: #f2f4f7');
@@ -2017,8 +2030,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(status).not.toContain('box-shadow');
   });
 
-  test('the pod header is 64px: display 18/700 name, inline description, board chip and member faces (D215, TASK-734)', () => {
-    // D215 brings the display face back to the pod title (walk-1 ruling (b)
+  test('the pod header is 64px: display 18/700 name, inline description, board chip and member faces (TASK-734)', () => {
+    // Design brings the display face back to the pod title (walk-1 ruling (b)
     // had moved it to sans 15/600); the working count stays in the inspector.
     expect(podChat).toContain("className={`v2-thread__header v2-pod-header${isDirectPod ? ' v2-pod-header--direct' : ''}`}");
     expect(podChat).toContain('podChat.header.boardOpen');
@@ -2074,7 +2087,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const author = selectorRuleBody(v2, '.v2-thread .v2-msg__author');
     const time = ruleBody(v2, '.v2-thread .v2-msg__time');
     const actions = ruleBody(v2, '.v2-thread .v2-msg__strip');
-    // D215 (TASK-734): display title, 36px faces at radius 9 on a 1px ring,
+    // (TASK-734): display title, 36px faces at radius 9 on a 1px ring,
     // and the time in the 11.5 mono the runtime label shares.
     expect(title).toContain('var(--v2-font-display)');
     expect(avatarRule).toContain('width: 36px');
@@ -2084,7 +2097,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(author).toContain('font-size: 14px');
     expect(author).toContain('font-weight: 600');
     expect(time).toContain('font: 500 11.5px/16px var(--v2-font-mono)');
-    // S3a: the hover actions are the D215 .acts pop card.
+    // S3a: the hover actions are the design .acts pop card.
     expect(actions).toContain('border-radius: 9px');
     expect(actions).toContain('box-shadow: var(--v2-shadow-pop)');
     // These scoped rules only take effect when the chat mounts the thread
@@ -2302,15 +2315,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
-  test('the hero option 1 suffix takes its own line at every width', () => {
-    // Option 1 is "Bring / <term> / into one pod." Inline, the widest term pushed
-    // the suffix to a third line at 1440 and the h1 jumped ~84px on that term
-    // (measured 173 vs 257 on the 1440 sweep). The modifier class is set only for
-    // option 1, so the rule is unconditional and sits after the base suffix rule.
-    expect(landing).toContain('.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }');
-    expect(landing.indexOf('.v2-landing__title-suffix--own-line')).toBeGreaterThan(
-      landing.indexOf('.v2-landing__title-suffix {'),
-    );
+  test('the h1 is the multiplayer line and the rotating sentence sits under it in its own style', () => {
+    // "Multiplayer for coding agents" leads; the "Bring ___ into one pod." line
+    // moved under it, so it needs its own type size rather than the h1's.
+    expect(selectorRuleBody(landing, '.v2-landing__bring')).toContain('font-size: clamp(24px, 2.8vw, 36px)');
+    // Its suffix takes its own line at every width: inline, the widest-term slot
+    // left a gap and the suffix dropped below the baseline at 1440.
+    expect(landing).toContain('.v2-landing__bring .v2-landing__title-suffix { display: block; margin-left: 0; }');
   });
 
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
@@ -2347,7 +2358,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Join policy is now chosen at creation, but public visibility remains a
     // later act. The old option buttons lost to the global button reset (#870).
     expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
-    // S3c (D223): the pod-settings half of this shared rule moved to
+    // S3c: the pod-settings half of this shared rule moved to
     // chat/chat-inspector.css; each half keeps the flex layout.
     expect(ruleBody(v2, '.v2-pods__join-policy')).toContain('display: flex');
     expect(ruleBody(v2, '.v2-pod-join-settings')).toContain('display: flex');
@@ -2434,7 +2445,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   describe('Signal chat + inspector color contract (TASK-124)', () => {
     // The composer's send and mode buttons left with the old composer (TASK-758).
     const filledControls = [
-      // The first-run hello takes the Signal fill, the ink gradient (D215 keys).
+      // The first-run hello takes the Signal fill, the ink gradient (design keys).
       '\n.v2-root button.v2-first-run__hello {',
       '.v2-syscard__cta',
       '.v2-root button.v2-approval__btn--approve',
@@ -2486,10 +2497,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // Direction C removed the sidebar channel rows (walk-1 miss 8): the
       // live-channel dot is no longer a cobalt background in the shell.
       expect(cobalt).toEqual([
-        // S3b: D215 .presence carries a 7px cobalt dot (.dot--pulse).
+        // S3b: design .presence carries a 7px cobalt dot (.dot--pulse).
         '.v2-chat__typing-dot',
         '.v2-rail__brand-icon',
-        // D223 (TASK-735): the rail's needs-you count is the artboard's filled
+        // (TASK-735): the rail's needs-you count is the artboard's filled
         // cobalt badge.
         '.v2-rail__item-icon .MuiBadge-badge',
         '.v2-root button.v2-decision-card__choice--primary',
@@ -2622,7 +2633,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // — and card, rail, and message text share one line. Rev 2's
     // avatar-centre axis (margin 14 → x = 15) is superseded: the block no
     // longer starts at the avatar edge, so there is no avatar to aim at.
-    // S3b (#3178 / TASK-745, D215 .thr): the rail is gone. The replies are a
+    // S3b (#3178 / TASK-745, design .thr): the rail is gone. The replies are a
     // card at the block's text-column edge, and each reply is the frame's
     // 24px / 10px row. jsdom cannot see any of this, so pin the numbers.
     const card = ruleBody(v2, '.v2-thread .v2-thread-replies');
@@ -2636,7 +2647,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Ruling 9: the old unscoped reply-row overrides are deleted, not out-ranked.
     expect(v2).not.toMatch(/\n\.v2-thread-replies \.v2-msg(?:__head|__author|__time|--grouped)? \{/);
 
-    // 390: D215 .app.m .thr — 40px indent, tighter card padding.
+    // 390: design .app.m .thr — 40px indent, tighter card padding.
     const phone = mediaBlockContaining(v2, '.v2-thread .v2-thread-replies {');
     expect(ruleBody(v2, '.v2-thread .v2-thread-replies', { within: phone })).toContain('padding: 8px 10px 8px');
   });
@@ -2659,7 +2670,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(addressed).toContain('var(--v2-accent)');
   });
 
-  test('D278: the thread chip is one line at every width; the preview truncates and the count never wraps', () => {
+  test('the thread chip is one line at every width; the preview truncates and the count never wraps', () => {
     // jsdom has no layout, so a render test passes with the chip wrapping to
     // two lines at 390 or the count squeezed to "3 rep…". These are the rules
     // that hold the line: the chip may shrink (min-width: 0, max-width: 100%),
@@ -2693,7 +2704,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The unread counter is the design system's accent mark, never a fill.
     expect(ruleBody(v2, '.v2-thread .v2-thread-card__unread')).toContain('color: var(--v2-accent-text)');
     expect(ruleBody(v2, '.v2-thread .v2-thread-card__unread')).not.toContain('background');
-    // The phone rule used to wrap the chip to two lines; D278 holds it to one.
+    // The phone rule used to wrap the chip to two lines; a later rule holds it to one.
     const phone = blockContaining(read('../chat/chat-pane.css'), '@media (max-width: 640px)', '.v2-root button.v2-thread-card__main');
     expect(phone).toMatch(/\.v2-root button\.v2-thread-card__main \{[^}]*flex-wrap: nowrap/);
   });
@@ -2708,7 +2719,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // `.v2-msg__actions { opacity: 1 }` here would put chrome over every
     // message by default (reported 2026-08-23).
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
-    // S3a: D215 draws 28px keys, so touch keeps a 44px HIT AREA (28 + 2 x 8)
+    // S3a: the design draws 28px keys, so touch keeps a 44px HIT AREA (28 + 2 x 8)
     // rather than a 44px key, on coarse pointers and on phone widths.
     const coarse = blockContaining(v2, '@media (hover: none), (pointer: coarse)', '.v2-root .v2-thread button.v2-msg__action::after');
     expect(coarse).toContain(".v2-root .v2-thread button.v2-msg__action::after { content: ''; position: absolute; inset: -8px; }");
@@ -2746,7 +2757,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const resetStart = v2.indexOf('.v2-root:lang(zh) .v2-rail__brand');
     expect(resetStart).toBeGreaterThan(-1);
     expect(v2.slice(resetStart, v2.indexOf('}', resetStart))).toContain('letter-spacing: 0');
-    // A surface lifted out of v2.css (D223) carries its own resets, so read
+    // A surface lifted out of v2.css carries its own resets, so read
     // every `:lang(zh)` rule that zeroes letter-spacing, not only the shared list.
     const resetBlock = [...v2.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
       .filter(([, sels, body]) => sels.includes(':lang(zh)') && /letter-spacing:\s*0\b/.test(body))
@@ -2774,7 +2785,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // CJK glyphs fill the em box, so Latin leading leaves no white between
     // lines and 11px is below legibility. (The old composer hint this also
     // named is gone from the composer, and its rule with it: TASK-758.)
-    // Each selector's zh rule, wherever its surface file put it: the D223
+    // Each selector's zh rule, wherever its surface file put it: the design
     // lifts split the shared :lang(zh) lists by surface.
     const zhBlock = (sel: string): string => {
       const at = v2.search(new RegExp(`\\.v2-root:lang\\(zh\\) ${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[,\\s{])`));
@@ -3122,7 +3133,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("{!startSteps.includes('hire') && (");
       expect(activityPage).toContain("t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })");
       // The rail badge is the exact count at any width, in mono and never clipped.
-      // D223 (TASK-735): the artboard's .nav .bd, a filled cobalt count ringed
+      // (TASK-735): the artboard's .nav .bd, a filled cobalt count ringed
       // by the shell ground, replaced the bordered surface badge.
       const badge = ruleBody(v2, '.v2-rail__item-icon .MuiBadge-badge');
       expect(badge).toContain('var(--v2-font-mono)');
@@ -3291,7 +3302,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // the ≤760 act override is a BUTTON rule, and a row-level geometry rule in
       // there would outrank the shared rule exactly where it matters (390).
       const phone = mediaBlockContaining(v2, '.v2-chat__messages');
-      // S3b: D215 .app.m .stream is 8 12 4.
+      // S3b: design .app.m .stream is 8 12 4.
       expect(phone).toContain('padding: 8px 12px 4px');
       expect(phone).not.toMatch(/\.v2-chat__(?:delivery-hint|no-agents|starts\b)/);
       // On a phone the thread grid is narrower, so the slot follows it in its
@@ -3314,13 +3325,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // no-agent row share, so they land on the message text column too.
       expect(threadMessages).toContain('className="v2-chat__starts"');
       expect(threadMessages).toContain('v2-chat__start${primary ? \' v2-chat__start--primary\' : \'\'}');
-      // One ink key: the hosted start where offered, otherwise the start that asks nothing (walk 11-02).
-      expect(threadMessages).toMatch(/const primary = start\.action === WELCOME_HOSTED_ACTION\s*\|\| \(start\.id === ASK_START_ID && !starts\.some/);
+      // The ink keys follow the person's pick (utils/welcomePick.ts, unit-tested there).
+      expect(threadMessages).toContain('primaryStartIds(starts, welcomePick ?? null)');
       // The 44px phone minimum must come AFTER the 32px base in the sheet: at
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.
       expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('min-height: 32px');
-      // D215 keys: the Signal key and fill material, at the frame's 10px radius.
+      // Design keys: the Signal key and fill material, at the frame's 10px radius.
       expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('border-radius: var(--v2-r-10)');
       expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
       expect(ruleBody(v2, '.v2-root button.v2-chat__start.v2-chat__start--primary')).toContain('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
@@ -3894,7 +3905,7 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     expect(decls(ruleBody(byoCss, '.v2-byo__add-computer-row')).background).toBe('var(--v2-ink)');
     expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__add-computer-row .v2-byo__copy')).position).toBe('static');
     const addComputer = decls(ruleBody(byoCss, '.v2-byo__add-computer'));
-    // Rulings 11-04: a card is the D215 ring and soft shadow at r9, no 1px border.
+    // Rulings 11-04: a card is the design ring and soft shadow at r9, no 1px border.
     expect(addComputer['border-radius']).toBe('var(--v2-r-9)');
     expect(addComputer.border).toBeUndefined();
     expect(addComputer['box-shadow']).toBe('var(--v2-ring-card)');
@@ -5087,26 +5098,21 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     // board's own tier list margin is the base margin.
     expect(landing).not.toContain('.v2-landing__tier .v2-landing__price-list');
 
-    const featured = topLevelRuleBody(landing, '.v2-landing__tier--featured');
-    expect(featured).toContain('border: 2px solid var(--v2-accent)');
-    expect(featured).toContain('padding: 31px');
-    // Pro's button is cobalt by colour, at the base key's size and weight.
-    expect(landing).not.toContain('.v2-landing__tier--featured .v2-landing__btn');
+    // The paid tier ended, and with it the featured (Pro) card and its rules.
+    expect(landing).not.toContain('.v2-landing__tier--featured');
+    expect(landingTsx).not.toContain('tier--featured');
     expect(topLevelRuleBody(landing, '.v2-landing__tier')).toContain('padding: 32px');
     const btn = landing.match(/\.v2-landing__tier \.v2-landing__btn \{[^}]*\}/)?.[0] ?? '';
     expect(btn).toContain('width: 100%');
     expect(btn).not.toMatch(/height|padding|font-size/);
   });
 
-  test('the enterprise row is a bordered grid, and the price foot is left-aligned', () => {
-    const ent = topLevelRuleBody(landing, '.v2-landing__tier-enterprise');
-    expect(ent).toContain('grid-template-columns: minmax(0, 1fr) auto');
-    expect(ent).toContain('gap: 24px');
-    expect(ent).toContain('border: 1px solid var(--v2-border)');
-    expect(ent).toContain('border-radius: var(--v2-radius)');
-    expect(ent).not.toContain('background');
-    // Dropped from the markup with the class: the base 44/15/600 is the board's.
-    expect(landingTsx).not.toContain('btn--sm" to={appHref}}>{t(\'landing.actions.talkToUs\')}');
+  test('two free tiers and no enterprise row, and the price foot is left-aligned', () => {
+    // The paid tier ended: self-host and the hosted instance, both free.
+    expect(topLevelRuleBody(landing, '.v2-landing__tiers')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(landingTsx.match(/className="v2-landing__tier"/g)).toHaveLength(2);
+    expect(landing).not.toContain('.v2-landing__tier-enterprise');
+    expect(landingTsx).not.toContain('landing.actions.talkToUs');
     expect(topLevelRuleBody(landing, '.v2-landing__price-foot')).toContain('text-align: left');
   });
 
@@ -5138,13 +5144,9 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     );
     expect(phone).toContain('.v2-landing__proof-num { font-size: 36px; line-height: 36px; }');
     expect(phone).toContain('.v2-landing__tier { padding: 24px; }');
-    expect(phone).toContain('.v2-landing__tier--featured { padding: 23px; }');
     expect(phone).toContain('.v2-landing__tier-price { font-size: 44px; line-height: 44px; }');
     const tablet = mediaAt(landing, '@media (max-width: 900px)');
     expect(tablet).toContain('.v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }');
-    expect(tablet).toContain(
-      '.v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }',
-    );
     // The stack stays one box, so it must NOT be in the one-column group.
     expect(tablet).not.toContain('.v2-landing__tiles,');
     expect(tablet).not.toContain('.v2-landing__proof-stats');
@@ -5156,7 +5158,6 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     for (const selector of [
       '.v2-landing__team-title',
       '.v2-landing__tile-title',
-      '.v2-landing__tier-enterprise strong',
     ]) {
       expect(topLevelRuleBody(landing, selector)).toContain('letter-spacing: -0.03em');
       expect(resetBlock).toContain(`:lang(zh) ${selector}`);
@@ -5391,7 +5392,7 @@ describe('GitHub gig card fits the chat column', () => {
   });
 });
 
-describe('agent settings surface (D223 lift)', () => {
+describe('agent settings surface', () => {
   const css = read('../agents/v2-agent-settings-surface.css');
   test('the feature-page wrapper does not inset or cap it (v2-feature--agent-settings opt-out)', () => {
     expect(ruleBody(css, '.v2-feature--agent-settings > .v2-feature__body')).toContain('padding: 0');
@@ -5551,7 +5552,7 @@ describe('task priority and lease signals (TASK-443)', () => {
     const urgent = ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p0');
     expect(urgent).toContain('background: var(--v2-prio-p0-bg)');
     expect(urgent).toContain('color: var(--v2-prio-p0-fg)');
-    // Status and priority colour are tokens, so the D215 colour choice is a value swap.
+    // Status and priority colour are tokens, so the design colour choice is a value swap.
     expect(css).toMatch(/--v2-prio-p0-bg:\s*#b42318/);
     expect(css).toMatch(/--v2-prio-p2-fg:\s*#667085/);
     expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
@@ -5565,7 +5566,7 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(ruleBody(boardCss, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__col-dot--blocked')).toContain('background: var(--v2-status-blocked)');
   });
-  // D225: a status rail down the side of a card reads as generated UI. A card is
+  // A status rail down the side of a card reads as generated UI. A card is
   // told apart by its column and badge, never by an inset side shadow or a
   // coloured border-left. Quote and thread rails are typographic and exempt.
   test('no card selector draws a status rail (inset side shadow or coloured border-left >= 2px)', () => {
@@ -5742,7 +5743,7 @@ describe('task record layout', () => {
   test('at 390 Try again in the unavailable block is 44px tall (#3362 review)', () => {
     expect(phone).toMatch(/\.v2-feature--task-record \.v2-task-record__none \.v2-task-record__key \{ height: 44px; \}/);
   });
-  test('Done is the only filled mark, in cobalt soft; no rail or side border anywhere (D225)', () => {
+  test('Done is the only filled mark, in cobalt soft; no rail or side border anywhere', () => {
     expect(ruleBody(css, `${scope} .v2-task-record__mk--done`)).toContain('background: var(--v2-accent-soft)');
     const filled = [...bare.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].filter(([, , body]) => /var\(--v2-accent(-soft)?\)/.test(body)).map(([, sel]) => sel.trim());
     expect(filled.filter((sel) => /__mk/.test(sel))).toEqual([`${scope} .v2-task-record__mk--done`]);
@@ -5908,7 +5909,7 @@ describe('claim run summary (TASK-692)', () => {
     const css = readV2Css();
     const toggle = css.match(/\.v2-root button\.v2-claim-run__toggle \{[^}]*\}/);
     expect(toggle).not.toBeNull();
-    // S3a: the D215 .sumrow bar — 34px, r9, subtle fill, soft inset ring.
+    // S3a: the design .sumrow bar — 34px, r9, subtle fill, soft inset ring.
     expect(toggle![0]).toMatch(/box-shadow: inset 0 0 0 1px var\(--v2-border-soft\)/);
     expect(toggle![0]).toContain('height: 34px');
     expect(toggle![0]).toContain('background: var(--v2-bg-subtle)');
@@ -5954,7 +5955,7 @@ describe('pod board column scroll (TASK-698)', () => {
     expect(block).toContain('.v2-root button.v2-pod-header__invite:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }');
     // 32px keys take touches at 44px. The inset runs from the padding box,
     // inside a 1px border, so it is -7px: 30 + 2 x 7 = 44 (-6px measured 42 in a browser).
-    // The header keys and the composer keys shared one rule until D223 lifted
+    // The header keys and the composer keys shared one rule until the chat lift
     // them into separate chat files (S3b, S3c); each half keeps the same shape.
     const phoneHead = mediaBlockContaining(readV2Css(), '.v2-root button.v2-thread__back::after');
     for (const key of ['v2-thread__back', 'v2-pod-header__invite', 'v2-thread__inspector-toggle', 'v2-composer__plus', 'v2-composer__send']) {
@@ -6163,6 +6164,16 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
     expect(ruleBody(pane, '.v2-thread__edge:not([data-state="empty"])')).toContain('margin-top: auto');
     expect(ruleBody(pane, '.v2-chat__messages')).not.toContain('justify-content: flex-end');
   });
+
+  test('on a phone, a pod whose whole history is here starts at the top, not under a blank band', () => {
+    const pane = chatSheets[1];
+    const phone = pane.slice(pane.indexOf('@media (max-width: 760px) {\n  .v2-thread__edge[data-state="beginning"]'));
+    expect(phone.length).toBeGreaterThan(0);
+    expect(ruleBody(phone, '.v2-thread__edge[data-state="beginning"]')).toContain('margin-top: 0');
+    // Same specificity as the anchor rule, so it has to come after it.
+    expect(pane.indexOf('.v2-thread__edge[data-state="beginning"]'))
+      .toBeGreaterThan(pane.indexOf('.v2-thread__edge:not([data-state="empty"])'));
+  });
 });
 
 // d215 run-trace-after at 390: the page sits in the shared V2FeaturePage body,
@@ -6202,7 +6213,7 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   });
 
   test('the feature pane reserves the 58px tab bar, so the foot scrolls clear of it', () => {
-    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {') })).toContain('padding-bottom: 58px');
+    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {\n    padding-bottom: 58px') })).toContain('padding-bottom: 58px');
   });
 });
 
@@ -6360,12 +6371,12 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     }
   });
 
-  test('finding 5: a phone icon key is square, 44x44 from the primitives or the D223 32x32 in chat, never 32x44', () => {
+  test('finding 5: a phone icon key is square, 44x44 from the primitives or the design 32x32 in chat, never 32x44', () => {
     // The primitives' phone icon key grows on both axes together.
     const phone = mediaBlockContaining(primitives, '.v2p-b, .v2p-b-sm {');
     const icon = ruleBody(primitives, '.v2p-ib, .v2p-ib.v2p-b-sm', { within: phone });
     expect(icon.match(/width: (\d+)px/)?.[1]).toBe(icon.match(/height: (\d+)px/)?.[1]);
-    // The chat keys that carry the D223 44px ::after hit area draw at 32x32 on a
+    // The chat keys that carry the design 44px ::after hit area draw at 32x32 on a
     // phone. The primitives' 44px height alone would leave them 32 wide and 44 tall.
     const sizesOn = (css: string, key: string) => {
       const sizes: { width?: string; height?: string } = {};
@@ -6438,7 +6449,7 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     expect(aprofile).toContain('border-radius: 10px');
   });
 
-  test('finding 7: cards are the D215 ring at r9 and lanes are r12, never a 1px border', () => {
+  test('finding 7: cards are the design ring at r9 and lanes are r12, never a 1px border', () => {
     const card = ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card');
     expect(card).toContain('border-radius: var(--v2-r-9)');
     expect(card).toContain('box-shadow: var(--v2-ring-card)');
@@ -6529,7 +6540,7 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
     expect(css).not.toMatch(/rgba\(29, 63, 209/);
   });
 
-  test('Needs you is one hairline list: rows split by a 1px top rule, no cards, no side rails (D225)', () => {
+  test('Needs you is one hairline list: rows split by a 1px top rule, no cards, no side rails', () => {
     const list = rule('.v2-activity__list');
     expect(list).toContain('border: 1px solid var(--v2-border-soft)');
     expect(list).toContain('border-radius: var(--v2-r-12)');
@@ -6539,7 +6550,7 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
     expect(row).not.toContain('box-shadow');
     // The ⋯ menu escapes the list, so the queue list never clips.
     expect(list).not.toContain('overflow');
-    // D225: no coloured rail, inset stripe or left border anywhere on the page.
+    // No coloured rail, inset stripe or left border anywhere on the page.
     expect(css).not.toMatch(/border-left\s*:/);
     expect(css).not.toMatch(/inset\s+\d+px\s+0\s+0/);
     // No new hex: every colour is a --v2-* token (comments cite PR numbers, so strip them first).
@@ -6677,7 +6688,7 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(byoCss).not.toContain('button.v2-hint__trigger::after { content: \'\'; position: absolute; inset: -9px; }');
   });
 
-  // D247: a select with a disabled OPTION (a harness not on this computer) is
+  // A select with a disabled OPTION (a harness not on this computer) is
   // still editable. The read-only look keys on a disabled select or input only;
   // a bare :has(:disabled) also matched the option and greyed the control.
   test('agent settings: only a disabled select or input draws the read-only control', () => {
@@ -6866,5 +6877,67 @@ describe('the notice Connect link keeps its line box', () => {
     expect(overlay).toContain("content: ''");
     expect(overlay).toContain('position: absolute');
     expect(overlay).toMatch(/inset:/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full-height rules follow 100vh with 100dvh (first minute back, 11-14).
+// On a phone, 100vh is the height with the browser toolbar hidden, so a shell
+// that tall puts the composer under the toolbar or the keyboard. Each rule keeps
+// 100vh for browsers without dvh, then 100dvh, which wins where it is known.
+// jsdom has no layout, so this pins the pair; the rendered box was checked in a
+// real browser at 390.
+describe('full-height shell rules use the dynamic viewport height', () => {
+  const sheet = readV2Css();
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pair = (body: string, prop: string, inner: string) => new RegExp(
+    `${prop}: ${escape(inner.replace('VH', '100vh'))};\\s*${prop}: ${escape(inner.replace('VH', '100dvh'))};`,
+  ).test(body);
+  it.each([
+    ['.v2-root', 'height', 'VH'],
+    ['.v2-authenticated-shell', 'height', 'VH'],
+    ['.v2-shell', 'height', 'VH'],
+    ['.v2-pane', 'height', 'VH'],
+    ['.v2-pane--main', 'height', 'calc(VH - 16px)'],
+    ['.v2-modal', 'max-height', 'calc(VH - 48px)'],
+  ])('%s sets %s with 100vh then 100dvh', (selector, prop, inner) => {
+    const body = ruleBody(sheet, selector);
+    expect(body).not.toBe('');
+    expect(pair(body, prop, inner)).toBe(true);
+  });
+  it('the phone pods drawer does too', () => {
+    const body = ruleBody(sheet, '.v2-pods-aside', { within: mediaBlockContaining(sheet, '.v2-pods-aside') });
+    expect(pair(body, 'height', 'VH')).toBe(true);
+  });
+});
+
+describe('the phone tab bar steps aside for the keyboard', () => {
+  // interactive-widget=resizes-content lets the Android keyboard shrink the
+  // layout, so the fixed bar would otherwise sit between the field and it.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+  // Structural check: the exact text-entry selector, so a changed exclusion
+  // list fails here rather than hiding the bar for a focused checkbox.
+  const EXCLUDED = ['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'file', 'color', 'image', 'hidden'];
+  const TEXT_ENTRY = `:is(textarea, [contenteditable="true"], input:not(${EXCLUDED.map((t) => `[type="${t}"]`).join(', ')})):focus`;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const focused = `\\.v2-root:has\\(${escape(TEXT_ENTRY)}\\)`;
+  it('the focus selector covers text entry and leaves out non-text inputs', () => {
+    expect(css).toContain(`.v2-root:has(${TEXT_ENTRY}) .v2-mobile-tabs`);
+    // positive controls: a textarea, a contenteditable and a plain input are text entry
+    expect(TEXT_ENTRY).toMatch(/:is\(textarea, \[contenteditable="true"\], input:not\(/);
+    // negative controls: a checkbox or a radio must never count as typing
+    for (const type of ['checkbox', 'radio']) expect(TEXT_ENTRY).toContain(`[type="${type}"]`);
+    // nothing that takes text is excluded
+    for (const type of ['text', 'email', 'search', 'password', 'url', 'tel', 'number']) expect(TEXT_ENTRY).not.toContain(`[type="${type}"]`);
+  });
+  it.each([
+    ['the bar hides', String.raw`\.v2-mobile-tabs \{ display: none; \}`],
+    ['the composer gives back its bar space', String.raw`\.v2-composer \{ margin-bottom: 4px; \}`],
+    ['feature pages give back their bar space', String.raw`\.v2-feature \{ padding-bottom: 0; \}`],
+  ])('%s while a text field has focus', (_label, rule) => {
+    expect(css).toMatch(new RegExp(`${focused} ${rule}`));
+  });
+  it('the phone pane height has its dvh pair', () => {
+    expect(css).toMatch(/\.v2-shell \.v2-pane \{\s*height: 100vh;\s*height: 100dvh;\s*\}/);
   });
 });

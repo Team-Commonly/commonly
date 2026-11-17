@@ -48,7 +48,7 @@ export const MIGRATED_FROM_DURABLE_OBJECT = 'durable-object';
  * runtime token may still be live. A migrated row with no
  * recorded state counts as unfinished, as the migration itself reads it.
  */
-export const hostedMigrationUnfinished = (installation: any): boolean => {
+const hostedMigrationUnfinished = (installation: any): boolean => {
   const hosted = readHostedConfig(installation);
   if (hosted.migratedFrom !== MIGRATED_FROM_DURABLE_OBJECT) return false;
   const raw = hosted.migration;
@@ -160,7 +160,7 @@ export const hostedRunsNative = (installation: any): boolean => (
 
 /**
  * The event types a hosted agent answers: the two the Durable Object handled
- * (workers/agent-runtime agent-do.ts), plus `heartbeat` (D244 dogfood: a
+ * (workers/agent-runtime agent-do.ts), plus `heartbeat` (dogfood: a
  * self-serve user could not have a scheduled agent), plus `approval.resolved`
  * (F215: a parked write tells the agent that event is coming). Any other event
  * a hosted install receives is acked without a model call, as the Durable Object
@@ -236,13 +236,13 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
 const HOSTED_NATIVE_RECENT_MESSAGES = 8;
 
 /** The opt-in tools this instance can actually offer a hosted turn. */
-export interface HostedNativeAbilities {
+interface HostedNativeAbilities {
   webSearch: boolean;
   runCode: boolean;
 }
 
 /** The lookups one hosted reply may make, as the native runtime enforces them. */
-export interface HostedTurnLookups {
+interface HostedTurnLookups {
   searches: number;
   pages: number;
 }
@@ -288,7 +288,7 @@ export const hostedNativeSystemPrompt = (
     + '\n'
     + 'Reply to the message you were mentioned in by calling commonly_post_message once: concise, '
     + 'useful, and addressed to the pod. '
-    // D245: the cue sits in the posting instruction, not in metadata, because
+    // The cue sits in the posting instruction, not in metadata, because
     // models deprioritize structured fields (agent-runtime quick rules).
     + 'Give that post a kind (answer, result, progress, ask, fyi or error) and a summary: one '
     + 'line of at most 120 characters saying what the message is. '
@@ -320,7 +320,7 @@ export const hostedNativeSystemPrompt = (
     + '\n'
     + 'Only claim what you actually did. If a task needs a tool you do not have (for example, '
     + `${orList(missing)}), say so plainly instead of describing a result you did not observe. `
-    // D247 walk: a failing seat told the pod about checkpoints and re-serving. The
+    // A failing seat told the pod about checkpoints and re-serving. The
     // CLI wrapper's turn frame says the same (FAILURE_IN_PLAIN_WORDS in agent.js).
     + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '

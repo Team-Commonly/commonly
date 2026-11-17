@@ -462,7 +462,7 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
           return fakeChild();
         },
       });
-      // F110 (D247 walk, 11-04): a public seat is offered the Commonly tools,
+      // F110 (11-04): a public seat is offered the Commonly tools,
       // so it must be able to call them in a non-interactive run, the way the
       // public Claude seat's --allowedTools carries mcp__commonly__*. Before,
       // commonly_post_message came back "declined, and this non-interactive
@@ -484,6 +484,24 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
       if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
       else process.env.COMMONLY_MCP_HOME = prior;
     }
+  });
+});
+
+// F535: a public seat reads only its workspace.
+test('a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx) => {
+    const calls = [];
+    const error = await qwen.spawn('hello', {
+      ...ctx,
+      environment: {
+        ...ctx.environment,
+        sandbox: { ...ctx.environment.sandbox, trust: 'public', mode: 'bwrap', filesystem: { 'read-outside': ['~/.commonly'] } },
+      },
+      _spawnImpl: (...args) => { calls.push(args); return fakeChild(); },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('qwen adapter: public seats do not allow sandbox.filesystem.read-outside');
+    expect(calls).toHaveLength(0);
   });
 });
 

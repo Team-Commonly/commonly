@@ -3,13 +3,13 @@ export interface CropCenter {
   y: number;
 }
 
-export interface SquareCropRect {
+interface SquareCropRect {
   x: number;
   y: number;
   side: number;
 }
 
-export interface ImageDrawRect {
+interface ImageDrawRect {
   x: number;
   y: number;
   width: number;

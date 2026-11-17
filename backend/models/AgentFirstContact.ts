@@ -7,7 +7,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * cannot replay onboarding for an existing relationship (ADR-001 identity
  * continuity).
  */
-export interface IAgentFirstContact extends Document {
+interface IAgentFirstContact extends Document {
   userId: Types.ObjectId;
   agentName: string;
   instanceId: string;

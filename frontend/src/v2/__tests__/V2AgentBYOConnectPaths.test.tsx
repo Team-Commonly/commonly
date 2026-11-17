@@ -191,7 +191,7 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
   });
 
   // F370: one line through npx, so no `&&` chain to split per OS. On Windows it
-  // carries --unsandboxed, forwarded to `daemon setup`'s install step (D245).
+  // carries --unsandboxed, forwarded to `daemon setup`'s install step.
   test('on Windows: the quick-try line, and the daemon block as one npx line with --unsandboxed, marked recommended', async () => {
     setUserAgent(WINDOWS);
     process.env.REACT_APP_API_URL = 'https://api-dev.example.test/';

@@ -13,7 +13,7 @@
 
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-export interface IMediaObject extends Document {
+interface IMediaObject extends Document {
   key: string;
   data: Buffer;
   mime: string;
@@ -21,7 +21,7 @@ export interface IMediaObject extends Document {
   createdAt: Date;
 }
 
-export interface IMediaObjectModel extends Model<IMediaObject> {
+interface IMediaObjectModel extends Model<IMediaObject> {
   findByKey(key: string): mongoose.Query<IMediaObject | null, IMediaObject>;
 }
 

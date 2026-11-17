@@ -2,7 +2,7 @@ import {
   SCREENS, forgetUsageEvents, reportSettingsReadFailed, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
 } from '../utils/usageEvents';
 
-// D286 (F399): the client sends fixed names and route templates only, waits
+// the client sends fixed names and route templates only, waits
 // for the person's Settings choice, never sends a token in a body, and stays
 // silent under DNT/GPC or when signed out.
 describe('usage events client', () => {

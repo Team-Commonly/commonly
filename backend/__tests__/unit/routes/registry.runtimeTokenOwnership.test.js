@@ -260,3 +260,73 @@ describe('API user-token force rotation follows identity ownership', () => {
     expect(User.findOne).not.toHaveBeenCalled();
   });
 });
+
+// F525: the connect page asks for a connect code beside a fresh key, for its one
+// pasted line. Asking never rotates a key that already exists.
+const mockMintCode = jest.fn();
+jest.mock('../../../services/agentConnectCodeService', () => ({
+  mintConnectCode: (...args) => mockMintCode(...args),
+}));
+
+describe('a connect code beside a freshly issued key', () => {
+  const flag = process.env.BYO_CONNECT_CODE;
+  afterAll(() => {
+    if (flag === undefined) delete process.env.BYO_CONNECT_CODE;
+    else process.env.BYO_CONNECT_CODE = flag;
+  });
+  beforeEach(() => {
+    process.env.BYO_CONNECT_CODE = '1';
+    mockInstalls = [install('user-a', 'pod-a')];
+    mockMintCode.mockReset();
+    mockMintCode.mockResolvedValue({ code: 'cmc_AAAAAAAAAAAAAAAAAAAAAA', expiresAt: new Date('2026-11-15T00:30:00Z') });
+  });
+
+  test('is returned with the new key when asked for', async () => {
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      token: 'cm_agent_new', connectCode: 'cmc_AAAAAAAAAAAAAAAAAAAAAA', connectCodeExpiresAt: '2026-11-15T00:30:00.000Z',
+    });
+    expect(mockMintCode).toHaveBeenCalledWith({ agentUserId: 'bot-1', rawToken: 'cm_agent_new' });
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  test('is not minted, and nothing is rotated, when the agent already has a key', async () => {
+    mockIssue.mockResolvedValueOnce({ existing: true, message: 'Agent already has a runtime token.' });
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  test('a forced reconnect, the one path that rotates, gets a code for its new key', async () => {
+    const res = await mint({ force: true, connectCode: true });
+    expect(res.status).toBe(200);
+    expect(mockRevoke).toHaveBeenCalledTimes(1);
+    expect(res.body.connectCode).toBe('cmc_AAAAAAAAAAAAAAAAAAAAAA');
+  });
+
+  test('is not minted while BYO_CONNECT_CODE is off, so the page keeps its key lines', async () => {
+    delete process.env.BYO_CONNECT_CODE;
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_agent_new');
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+  });
+
+  test('is not minted unless asked for', async () => {
+    const res = await mint();
+    expect(res.body.connectCode).toBeUndefined();
+    expect(mockMintCode).not.toHaveBeenCalled();
+  });
+
+  test('a failed mint still returns the key, without a code', async () => {
+    mockMintCode.mockRejectedValueOnce(new Error('down'));
+    const res = await mint({ connectCode: true });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_agent_new');
+    expect(res.body.connectCode).toBeUndefined();
+  });
+});

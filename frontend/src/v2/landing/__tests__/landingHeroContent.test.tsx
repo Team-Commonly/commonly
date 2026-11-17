@@ -157,6 +157,31 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     expect(landingStrings(zhLanding).filter((value) => /agent/i.test(wording(value)))).toEqual([]);
   });
 
+  it('makes multiplayer the h1, with the sentence that says what it means right under it', async () => {
+    for (const [lang, locale, word] of [['en', 'en.json', /^Multiplayer for coding agents$/], ['zh-CN', 'zh-CN.json', /多人协作/]] as const) {
+      const hero = (readLocale(locale).landing as TranslationTree).hero as TranslationTree;
+      expect(String(hero.title)).toMatch(word);
+      await act(async () => { await i18n.changeLanguage(lang); });
+      try {
+        const view = renderLanding();
+        const h1 = view.container.querySelector('h1.v2-landing__title');
+        expect(h1).toHaveAttribute('aria-label', String(hero.title));
+        // The next thing after the h1 is the concrete sentence, readable as text.
+        const bring = h1!.nextElementSibling;
+        expect(bring).toHaveClass('v2-landing__bring');
+        expect(bring!.querySelector('.v2-landing__wedge-sr')).toHaveTextContent(String(hero.ariaLabel));
+        // The visible prefix runs into the term with a space in en and none in zh.
+        const visible = bring!.querySelector('[aria-hidden="true"]')!.textContent ?? '';
+        expect(visible.startsWith(lang === 'en' ? `${hero.titlePrefix} ` : `${hero.titlePrefix}${' '}`.trim())).toBe(true);
+        if (lang === 'zh-CN') expect(visible.startsWith(`${hero.titlePrefix} `)).toBe(false);
+        view.unmount();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
+    }
+    expect(String(((readLocale('en.json').landing as TranslationTree).hero as TranslationTree).ariaLabel)).toMatch(/your Claude Code, your teammate's Codex/);
+  });
+
   it('does not put OpenClaw anywhere in the rendered hero', () => {
     renderLanding();
 
@@ -248,8 +273,8 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     // must see whole (it split across lines at 390 until v2-landing.css stopped
     // the break). The declaration is pinned in v2-layout-invariants.test.ts —
     // this is the other half: that pin only means anything while the suffix
-    // still renders through `.v2-landing__title-suffix` inside the h1 it is
-    // scoped to. Inline the suffix as bare text and the CSS would have nothing
+    // still renders through `.v2-landing__title-suffix` inside the sentence
+    // under the h1. Inline the suffix as bare text and the CSS would have nothing
     // to bind to while the pin stayed green.
     const zhSuffix = (((readLocale('zh-CN.json').landing as TranslationTree).hero as TranslationTree)
       .titleSuffix) as string;
@@ -261,7 +286,7 @@ describe('V2LandingPage hero content (TASK-152)', () => {
       const node = zh.container.querySelector('.v2-landing__title-suffix');
       expect(node).not.toBeNull();
       expect(node?.textContent).toBe(zhSuffix);
-      expect(node?.closest('h1.v2-landing__title')).not.toBeNull();
+      expect(node?.closest('p.v2-landing__bring')).not.toBeNull();
       zh.unmount();
 
       // en option 1 ships its own suffix now ("into one pod."), so this control
@@ -283,53 +308,35 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     }
   });
 
-  it('leaves no fragment of the zh hero sentence exposed beside its aria-label', async () => {
-    // TASK-215. The h1 states the sentence once, on `aria-label`
-    // (V2LandingPage.tsx: "screen readers get one sentence, not fragments"),
-    // and every fragment under it is supposed to be `aria-hidden`. The rotator
-    // (line 122) and each staggered word are; the zh suffix span was not, so
-    // the accessibility tree read the sentence AND a stray 「对话」 after it —
-    // `heading "与你的 …, 以及整个团队对话。" [level=1]: 对话` — on main since
-    // #717, on every renderer. This walks the h1 rather than naming the span,
-    // so a NEW fragment added later has to declare its own aria-hidden instead
-    // of inheriting the silence this arm is checking.
-    const zhSuffix = (((readLocale('zh-CN.json').landing as TranslationTree).hero as TranslationTree)
-      .titleSuffix) as string;
-    expect(zhSuffix.length).toBeGreaterThan(0);
-
-    await act(async () => { await i18n.changeLanguage('zh-CN'); });
-    try {
-      const zh = renderLanding();
-      const h1 = zh.container.querySelector('h1.v2-landing__title');
-      expect(h1).not.toBeNull();
-      // The premise the sweep rests on: the sentence is on the label and the
-      // heading itself is announced, not hidden.
-      expect(h1?.getAttribute('aria-label')).toBeTruthy();
-      expect(h1?.getAttribute('aria-hidden')).toBeNull();
-
-      const exposed = visibleTextNodes(h1 as Element)
-        .filter((node) => !hasHiddenAncestor(node, h1 as Element))
-        .map((node) => node.textContent);
-      expect(exposed).toEqual([]);
-
-      // Non-vacuity: the sweep has to be looking at a heading that really does
-      // carry the visible fragments (the rotator stack renders every term), or
-      // an empty h1 would pass it.
-      expect(visibleTextNodes(h1 as Element).length).toBeGreaterThan(1);
-      expect(zh.container.textContent).toContain(zhSuffix);
-      zh.unmount();
-
-      // en ships an empty suffix and the rotator is hidden there too, so the
-      // control keeps this from becoming an en-shaped assertion.
-      await act(async () => { await i18n.changeLanguage('en'); });
-      const en = renderLanding();
-      const enH1 = en.container.querySelector('h1.v2-landing__title');
-      expect(
-        visibleTextNodes(enH1 as Element).filter((node) => !hasHiddenAncestor(node, enH1 as Element)),
-      ).toEqual([]);
-      en.unmount();
-    } finally {
-      await act(async () => { await i18n.changeLanguage('en'); });
+  it('leaves no fragment of the zh hero sentence exposed beside its readable copy', async () => {
+    // TASK-215, moved with the sentence: it now sits under the h1 as a
+    // paragraph, stated once in a clipped span, and every rotating or trailing
+    // fragment beside it must be aria-hidden, or the tree reads the sentence
+    // AND a stray 「带进同一个 Pod。」 after it. This walks the line rather than
+    // naming spans, so a new fragment has to declare its own aria-hidden.
+    const zhHero = (readLocale('zh-CN.json').landing as TranslationTree).hero as TranslationTree;
+    expect(String(zhHero.titleSuffix).length).toBeGreaterThan(0);
+    for (const lang of ['zh-CN', 'en'] as const) {
+      await act(async () => { await i18n.changeLanguage(lang); });
+      try {
+        const view = renderLanding();
+        const line = view.container.querySelector('p.v2-landing__bring');
+        expect(line).not.toBeNull();
+        expect(line!.getAttribute('aria-label')).toBeNull();
+        const sr = line!.querySelector('.v2-landing__wedge-sr') as Element;
+        const exposed = visibleTextNodes(line as Element)
+          .filter((node) => !hasHiddenAncestor(node, line as Element) && !sr.contains(node))
+          .map((node) => node.textContent);
+        expect(exposed).toEqual([]);
+        // Non-vacuity: the decoration is really there beside the readable copy.
+        expect(visibleTextNodes(line as Element).length).toBeGreaterThan(2);
+        // And the h1's own words are decoration under its label.
+        const h1 = view.container.querySelector('h1.v2-landing__title') as Element;
+        expect(visibleTextNodes(h1).filter((node) => !hasHiddenAncestor(node, h1))).toEqual([]);
+        view.unmount();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
     }
   });
 });

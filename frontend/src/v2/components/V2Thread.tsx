@@ -24,11 +24,15 @@ import {
 import { useCloseAgentRoom } from '../agentRoomClose';
 import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
+import V2DailySchedule, { ScheduleTarget } from './V2DailySchedule';
+import { usePodReadPoint } from '../hooks/usePodReadPoint';
+import { firstNewSinceId } from '../utils/newSince';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { useDocumentTitleText } from '../hooks/useDocumentTitle';
 import { podTabName } from '../utils/podTabName';
 import { runCommandForThisComputer } from '../utils/agentConnection';
+import { harnessLabel } from '../utils/harnessCatalog';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +42,7 @@ import type { V2InviteTab } from './V2InviteModal';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
+import { isHostedStart, type WelcomePick } from '../utils/welcomePick';
 import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
@@ -57,6 +62,8 @@ import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
 const CONNECT_START_LABEL = 'Connect an agent I already use';
 // How long a smooth follow may run before its scroll events count as the reader's.
 const FOLLOW_SETTLE_MS = 1500;
+// Room left above the "New since your last visit" divider when a pod opens on it.
+const NEW_SINCE_TOP_GAP_PX = 12;
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
@@ -101,6 +108,8 @@ interface AgentStateRow {
   noSavedKey?: boolean;
   /** A push webhook whose last delivery failed; absent from an older backend. */
   deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
+  /** F515: why a never-connected agent's first run stopped, as the code it reported. */
+  listenReason?: { reason: string; harness: string | null };
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -217,7 +226,7 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
 // Scout's welcome is the message offering one of these. Older welcomes carry no
 // ask start, so the connect start identifies them too.
 const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
-// D286 Q2: which welcome start a person picked, as a fixed name. Starts the
+// which welcome start a person picked, as a fixed name. Starts the
 // welcome doesn't offer send nothing.
 const welcomeStartKind = (start: V2Start): string | null => {
   if (start.action === WELCOME_HOSTED_ACTION) return 'hosted';
@@ -272,6 +281,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     retryHistorySearch: detailRetryHistorySearch,
   } = detail;
   const api = useV2Api();
+  // First minute back: where this person last read the pod's main channel.
+  const readPoint = usePodReadPoint(pod?._id ? String(pod._id) : null);
   const navigate = useNavigate();
   const location = useLocation();
   const refreshPodList = useCallback(() => podsState?.refresh({ silent: true }), [podsState]);
@@ -404,7 +415,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // A reply visible flat before its root arrived must stay flat. Otherwise
     // prepending an older page relocates it into a resting thread chip.
     flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
-    // D278: who is reading, and their read points, so each chip can preview
+    // Who is reading, and their read points, so each chip can preview
     // its latest reply and count what this person hasn't read.
     return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids, {
       viewerId: currentUser?._id || null,
@@ -514,6 +525,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // names it and opens its own connect page, where one click gives a new command.
   const pendingConnectAgent = useMemo(() => agentStates.find((row) => row.isOwner
     && row.state === 'never-connected' && !row.hosted && Boolean(agentConnectLink(row))) || null, [agentStates]);
+  // The daily schedule is for an agent the owner runs themselves (agentScheduleService.takesSchedule),
+  // so only their own connected, non-hosted agent here can take Scout's recurring workflow.
+  const scheduleTarget = useMemo<ScheduleTarget | null>(() => {
+    const row = agentStates.find((agent) => agent.isOwner && !agent.hosted
+      && (agent.state === 'listening' || agent.state === 'gone-dark'));
+    return row ? { agentName: row.agentName, instanceId: row.instanceId || 'default', displayName: row.displayName } : null;
+  }, [agentStates]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -522,6 +540,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       if (start.id === 'run-hosted' && viewerHoldsHostedAgent) return false;
       if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
       if (start.action === 'add-first-task') return viewerOwnsPod && Boolean(start.title);
+      // Drawn by V2DailySchedule, which also says how the work runs without one.
+      if (start.action === 'schedule-daily') return viewerOwnsPod && Boolean(pod?._id) && Boolean(start.prompt);
       if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
       return true;
     };
@@ -556,6 +576,27 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     }
     return byMessage;
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
+  // The PH walk (2026-11-14) found two first steps on one screen: the bar said
+  // "Connect your first agent" while Scout's filled key said "Run an agent
+  // here". Both now follow one pick, read from what the person did here: they
+  // started a hosted agent, or asked to connect their own (or made one that
+  // still waits to connect). With no pick, both offer the same two choices.
+  const welcomeHosted = useMemo(() => {
+    for (const [messageId, starts] of startsByMessageId) {
+      const start = starts.find(isHostedStart);
+      if (start) return { messageId, start };
+    }
+    return null;
+  }, [startsByMessageId]);
+  const welcomePick = useMemo<WelcomePick>(() => {
+    // A failed start is not a pick: the cap or an unconfigured runtime can
+    // refuse it, and the person still has connecting their own.
+    if ((hostedStart.state && hostedStart.state.status !== 'failed') || viewerHoldsHostedAgent) return 'hosted';
+    if (pendingConnectAgent) return 'byo';
+    if (viewerId && messages.some((message) => message.user_id === viewerId
+      && (message.content || '').trim() === CONNECT_START_LABEL)) return 'byo';
+    return null;
+  }, [hostedStart.state, viewerHoldsHostedAgent, pendingConnectAgent, viewerId, messages]);
   // Only rows that render with their starts count: a flat message or a thread
   // root. A reply folded into a thread card renders without starts.
   const renderedStarts = useMemo(() => threadView.flatMap((item) => {
@@ -957,6 +998,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // otherwise they count up in the Jump-to-latest pill. Explicit local sends
   // follow in the separate confirmation effect below.
   const atBottomRef = useRef(true);
+  // Real input (wheel, touch, key, pointer) on this pod's list since it opened.
+  const readerMovedRef = useRef(false);
+  useEffect(() => { readerMovedRef.current = false; }, [pod?._id]);
+  // First minute back: reaching the end of the pod counts as reading it. Read
+  // through a ref so the scroll listener always sees the newest messages.
+  const markReadIfAtEndRef = useRef<() => void>(() => {});
+  markReadIfAtEndRef.current = () => {
+    if (!readPoint.ready || !atBottomRef.current) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const newest = messages[messages.length - 1];
+    readPoint.markRead(newest?.created_at || newest?.createdAt);
+  };
   const [jumpCount, setJumpCount] = useState(0);
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
   const [scrolledUp, setScrolledUp] = useState(false);
@@ -1002,9 +1055,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       else if (Date.now() < followingUntilRef.current) return;
       atBottomRef.current = near;
       setScrolledUp(distance > el.clientHeight);
-      if (near) setJumpCount(0);
+      if (near) {
+        setJumpCount(0);
+        markReadIfAtEndRef.current();
+      }
     };
-    const onReaderInput = () => { followingUntilRef.current = 0; };
+    const onReaderInput = () => { followingUntilRef.current = 0; readerMovedRef.current = true; };
     const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -1014,12 +1070,59 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       inputs.forEach((name) => el.removeEventListener(name, onReaderInput));
     };
   }, [pod?._id]);
+  // A phone keyboard (or a rotated screen) makes the list shorter without a
+  // scroll event. Someone reading at the end stays at the end, so the newest
+  // message stays above the composer; someone reading up is left alone. "At
+  // the end" is the list's own bottom distance as it stood before the resize
+  // (kept from the last scroll or observation), not the follow flag, which a
+  // smooth follow or a late notice can leave stale, and not a figure rebuilt
+  // from post-resize values: a narrower list rewraps text and changes its
+  // scrollHeight in the same callback. The list element can remount after the
+  // first read, so the observer follows the element.
+  const resizeWatchRef = useRef<{ el: HTMLElement; observer: ResizeObserver; onScroll: () => void } | null>(null);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (resizeWatchRef.current?.el === el) return;
+    const stopWatching = () => {
+      const watch = resizeWatchRef.current;
+      watch?.observer.disconnect();
+      watch?.el.removeEventListener('scroll', watch.onScroll);
+      resizeWatchRef.current = null;
+    };
+    stopWatching();
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const bottomDistance = () => el.scrollHeight - el.scrollTop - el.clientHeight;
+    let lastHeight = el.clientHeight;
+    let lastDistance = bottomDistance();
+    // A scroll the resize itself causes (scroll anchoring) can land before the
+    // observer runs; it must not overwrite the distance from before the resize.
+    const onScroll = () => { if (el.clientHeight === lastHeight) lastDistance = bottomDistance(); };
+    const observer = new ResizeObserver(() => {
+      const height = el.clientHeight;
+      if (height < lastHeight && lastDistance < 80) {
+        el.scrollTop = el.scrollHeight;
+        atBottomRef.current = true;
+      }
+      lastHeight = height;
+      lastDistance = bottomDistance();
+    });
+    observer.observe(el);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    resizeWatchRef.current = { el, observer, onScroll };
+  });
+  useEffect(() => () => {
+    const watch = resizeWatchRef.current;
+    watch?.observer.disconnect();
+    watch?.el.removeEventListener('scroll', watch.onScroll);
+    resizeWatchRef.current = null;
+  }, []);
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
       // The first read's rows don't animate in from the top; see the landing below.
       scrollListToEnd(initialLoadComplete ? 'smooth' : 'instant');
       setJumpCount(0);
+      markReadIfAtEndRef.current();
     } else {
       setJumpCount((count) => count + 1);
     }
@@ -1235,6 +1338,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // thousands of pixels short. A deep link has its own landing.
   const landedPodRef = useRef<string | null>(null);
   useLayoutEffect(() => { landedPodRef.current = null; }, [currentPodId]);
+  // First minute back: the divider's place is fixed when the pod opens, so
+  // reading to the end (which moves the read point) doesn't take it away.
+  const [newSince, setNewSince] = useState<{ podId: string; messageId: string | null } | null>(null);
+  useLayoutEffect(() => {
+    if (!currentPodId || !readPoint.ready || !initialLoadComplete) return;
+    if (newSince?.podId === currentPodId) return;
+    setNewSince({ podId: currentPodId, messageId: firstNewSinceId(threadView, viewerId, readPoint.lastReadAt, { historyAbove: Boolean(hasMore) }) });
+  }, [currentPodId, initialLoadComplete, newSince, readPoint.ready, readPoint.lastReadAt, threadView, viewerId, hasMore]);
+  const newSinceMessageId = newSince && newSince.podId === currentPodId ? newSince.messageId : null;
+  const newSinceSettled = Boolean(newSince && newSince.podId === currentPodId);
+  const newSinceMovedPodRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Back to a tab left at the end: what arrived meanwhile has now been seen.
+    const onVisible = () => { if (document.visibilityState === 'visible') markReadIfAtEndRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
   useLayoutEffect(() => {
     if (!initialLoadComplete || !newestMessageId || landedPodRef.current === currentPodId) return;
     landedPodRef.current = currentPodId;
@@ -1243,6 +1363,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     el.scrollTop = el.scrollHeight;
     atBottomRef.current = true;
   }, [currentPodId, initialLoadComplete, landingTarget, newestMessageId]);
+  // The read point usually answers just after that landing. Once it has, and
+  // only if the reader hasn't touched the list yet, open on what changed: the
+  // divider near the top, with the older context above it. Opening the pod
+  // counts as reading it, so the point then moves to the newest message.
+  useLayoutEffect(() => {
+    if (!newSinceSettled || !currentPodId || newSinceMovedPodRef.current === currentPodId) return;
+    if (landedPodRef.current !== currentPodId) return;
+    newSinceMovedPodRef.current = currentPodId;
+    const el = messagesContainerRef.current;
+    const divider = newSinceMessageId && el ? el.querySelector<HTMLElement>('[data-new-since-divider]') : null;
+    if (el && divider && !landingTarget && !readerMovedRef.current) {
+      const top = divider.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+      el.scrollTop = Math.max(0, top - NEW_SINCE_TOP_GAP_PX);
+      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }
+    readPoint.markRead(messages[messages.length - 1]?.created_at || messages[messages.length - 1]?.createdAt);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPodId, newSinceSettled, newSinceMessageId, landingTarget, initialLoadComplete, newestMessageId]);
   const retryHistorySearch = useCallback(async () => {
     // Retry is a new automatic target search, so a previous deliberate edge
     // release must not let the sentinel bypass the fresh bounded search.
@@ -1652,7 +1790,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
 
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
   // The private workspace is never shared (the placement-B privacy ruling).
-  // D288: there the card waits for the person's own agent, not Scout, and its
+  // There the card waits for the person's own agent, not Scout, and its
   // press makes a new pod with that agent in it and invites into that one.
   const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
   // Scout's chat messages carry its display name, not its per-user username,
@@ -1707,8 +1845,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const showDirectAgentLiveness = Boolean(
     isAgentRoom && directAgent && (directAgentReach === 'never-connected' || directAgentReach === 'gone-dark'),
   );
+  // F515: why a never-connected agent's first run stopped, as one clause, or
+  // '' for a code this build doesn't know (an unknown code says nothing).
+  const listenReasonClause = (row?: AgentStateRow | null): string => {
+    const found = row?.state === 'never-connected' ? row.listenReason : undefined;
+    if (!found) return '';
+    const tool = found.harness ? harnessLabel([], found.harness) : '';
+    if (found.reason === 'harness-signed-out' && tool) return t('podChat.listenReason.signedOut', { tool });
+    if (found.reason === 'harness-missing') {
+      return tool ? t('podChat.listenReason.missing', { tool }) : t('podChat.listenReason.missingAny');
+    }
+    if (found.reason === 'node-too-old') return t('podChat.listenReason.nodeTooOld');
+    return '';
+  };
+  const directAgentReason = listenReasonClause(directAgent?.state);
   const directAgentLivenessKey = directAgentReach === 'never-connected'
-    ? 'podChat.agentRoomLiveness.neverConnected'
+    ? (directAgentReason ? 'podChat.agentRoomLiveness.neverConnectedBecause' : 'podChat.agentRoomLiveness.neverConnected')
     : 'podChat.agentRoomLiveness.goneDark';
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? runCommandForThisComputer(directAgent.state.fixCommand || '')
@@ -1737,7 +1889,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     });
   };
   const podAgentLivenessLine = (row: typeof podAgentLiveness[number]) => (
-    row.deliveryError ? webhookFailedLine(row) : row.state === 'never-connected' || !row.lastUsedAt
+    row.deliveryError ? webhookFailedLine(row) : listenReasonClause(row)
+      ? t('podChat.podAgentLiveness.notConnectedBecause', {
+        agentName: row.displayName || row.agentName, reason: listenReasonClause(row),
+      })
+      : row.state === 'never-connected' || !row.lastUsedAt
       ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
       : t('podChat.podAgentLiveness.offlineSince', {
         agentName: row.displayName || row.agentName,
@@ -2051,7 +2207,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
-  // Header meta (D215, TASK-734): board chip, three member faces and "+N",
+  // Header meta (TASK-734): board chip, three member faces and "+N",
   // then bound channels. The counts moved into the faces' label.
   const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
   const memberCountText = t('podChat.header.members', { count: humanMemberCount });
@@ -2062,7 +2218,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const moreMembers = Math.max(0, (members || []).length - faceMembers.length);
   const facesLabel = `${memberCountText}, ${agentCountText}`;
   const metaParts: React.ReactNode[] = [];
-  // D215: the board is a chip with a glyph and the count, a status and a door at once.
+  // The board is a chip with a glyph and the count, a status and a door at once.
   const boardLabel = headerMeta.boardOpen !== null ? t('podChat.header.boardOpen', { count: headerMeta.boardOpen }) : '';
   const boardChip = (compact: boolean) => (
     <button
@@ -2115,7 +2271,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   if (isDirectPod) {
     metaParts.push(...directChips);
   }
-  // D288: the owner's first run shows the starter steps under the header in
+  // The owner's first run shows the starter steps under the header in
   // place of the board chip, until both are done.
   const starter = headerMeta.starter;
   const showGetStarted = Boolean(viewerOwnsPod && !isDirectPod && !isReadOnly && starter
@@ -2211,7 +2367,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 ) : (
                   <>
                     <h1>{pod.name}</h1>
-                    {/* D215: a pencil on the title, shown on hover or focus. */}
+                    {/* A pencil on the title, shown on hover or focus. */}
                     {viewerOwnsPod && (
                       <button
                         type="button"
@@ -2228,7 +2384,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            {/* The phone head carries the board chip alone (D215 phone frame);
+            {/* The phone head carries the board chip alone (the phone frame);
                 the member faces live in the panel there. */}
             {/* The phone head draws "DM" alone (d215 390 frame). */}
             {isDirectPod ? (
@@ -2258,7 +2414,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 <span>{t('podChat.header.invite')}</span>
               </button>
             )}
-            {/* D215: the open panel carries its own Hide button, so the
+            {/* The open panel carries its own Hide button, so the
                 header offers the toggle only while the panel is hidden. */}
             {onToggleInspector && inspectorCollapsed && (
               <button
@@ -2283,6 +2439,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
               ? agentConnectLink(pendingConnectAgent)
               : `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
             onFirstTask={startFirstTask}
+            pick={welcomePick}
+            onRunHosted={welcomeHosted ? () => {
+              recordWelcomeStart(welcomeHosted.start, pod._id);
+              void hostedStart.run(welcomeHosted.messageId, welcomeHosted.start);
+            } : undefined}
+            hostedStarting={hostedStart.state?.status === 'starting'}
             onOpenBoard={() => navigate(`/v2/pods/${pod._id}/board`)}
           />
         )}
@@ -2320,6 +2482,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
+            renderStart={(start) => (start.action === 'schedule-daily' && pod?._id && start.prompt
+              ? <V2DailySchedule api={api} podId={pod._id} prompt={start.prompt} target={scheduleTarget} />
+              : null)}
+            welcomePick={welcomePick}
             onStart={isReadOnly ? undefined : (start, messageId) => {
               recordWelcomeStart(start, pod._id);
               if (start.action === 'add-first-task' && viewerOwnsPod && start.title) {
@@ -2351,6 +2517,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}
             hasMore={hasMore}
+            newSinceMessageId={newSinceMessageId}
             loadingOlder={loadingOlder}
             onLoadOlder={() => { void handleExplicitLoadOlder(); }}
             edgeRef={edgeRef}
@@ -2509,7 +2676,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                   <div className="v2-chat__agent-room-status-body">
                     {directAgent.state?.deliveryError
                       ? webhookFailedLine({ ...directAgent.state, displayName: directAgent.displayName })
-                      : t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                      : t(directAgentLivenessKey, { agentName: directAgent.displayName, reason: directAgentReason })}
                     {directAgentFixCommand && !directAgent?.state?.noSavedKey && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>

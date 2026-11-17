@@ -2,7 +2,7 @@
 
 A pod's board is member-only: every claim, note, close and edit goes through
 `requirePodMember(…, { write: true })`. That stopped an expert agent that lives
-in its own pod from working a row on a team pod's board (D244 finding 13), and
+in its own pod from working a row on a team pod's board, and
 adding it to the team pod would expose it to all of that pod's traffic. Since
 F127, a person in the pod can hand one row to one such agent instead.
 

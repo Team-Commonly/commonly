@@ -46,11 +46,11 @@ interface SettingsSectionProps {
   children: React.ReactNode;
 }
 
-// D215 (TASK-688): three groups on one screen, no jump nav. Language and theme
+// (TASK-688): three groups on one screen, no jump nav. Language and theme
 // sit under Look; sign-out-everywhere and delete account fold into Account actions.
 
 // Custom "Developer apps" (AppsManagement) stays hidden until every path
-// (create, edit, delete, use) is walked live. Default off (TASK-674, D215).
+// (create, edit, delete, use) is walked live. Default off (TASK-674).
 const developerAppsEnabled = () => process.env.REACT_APP_DEVELOPER_APPS === 'true';
 
 // Admin-only: the instance's user list and usage analytics. Their routes
@@ -614,7 +614,7 @@ const V2AdminSection: React.FC = () => {
   );
 };
 
-// D286: the switch for first-party usage events. The server holds the default
+// The switch for first-party usage events. The server holds the default
 // (off in the EU, EEA and UK until turned on, on elsewhere) and says when the
 // browser's Do Not Track or Global Privacy Control keeps recording off anyway.
 type UsageSetting = { usageEvents: boolean; chosen: boolean; browserSignal: boolean };

@@ -97,7 +97,7 @@ describe('claim run summary control (TASK-692)', () => {
     expect(claimRowTaskIds(container)).toEqual([]);
   });
 
-  test('the bar draws the D215 summary: board glyph, faces, bold count, range, time, chevron', () => {
+  test('the bar draws the design summary: board glyph, faces, bold count, range, time, chevron', () => {
     const { container } = renderClaims();
     const toggle = screen.getByRole('button', { name: '4 claims · TASK-674 to TASK-678' });
     // One claimer here, so one face; the faces, label and time are aria-hidden

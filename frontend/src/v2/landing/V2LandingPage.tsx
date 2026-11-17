@@ -209,9 +209,10 @@ interface Stats {
   agentCount?: number;
 }
 
-// The hero copy: the rotating term sits inside one sentence, and the sentence
-// is stated once on the h1's aria-label.
+// The hero copy: the h1 is the multiplayer line, and the sentence under it
+// carries the rotating term, stated once as text in a clipped span.
 const heroCopy = (t: (key: string) => string) => ({
+  title: t('landing.hero.title'),
   ariaLabel: t('landing.hero.ariaLabel'),
   titlePrefix: t('landing.hero.titlePrefix'),
   terms: [
@@ -233,9 +234,9 @@ const fmt = (n: number | undefined, locale: string): string => (
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
 // term, which must read as the full claim on its own.
-// Completes "One pod for your team and …" — the teammate's agent, then the
-// payoff. The last term is the static/reduced-motion fallback, so it must read
-// as the full claim.
+// Fills the sentence under the h1 ("Bring ___ into one pod.") — the
+// teammate's agent, then the payoff. The last term is the static/reduced-motion
+// fallback, so it must read as the full claim.
 const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const [active, setActive] = useState(0);
   const [rotating, setRotating] = useState(false);
@@ -557,27 +558,27 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__hero" ref={bandRef}>
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
+            {/* "Multiplayer" is what Commonly is for, so it is the h1. The
+                sentence under it says what that means, with the rotating term. */}
+            <h1 className="v2-landing__title" aria-label={hero.title}><StaggerWords text={hero.title} /></h1>
             {/* The rotating term must sit INSIDE the sentence frame so
-                grammars that wrap the object work: en "Chat with your ___"
-                (empty suffix), zh 「与你的___对话」. Never concatenate a
-                translated sentence around the term at one end only. */}
-            <h1 className="v2-landing__title" aria-label={hero.ariaLabel}>
-              {hero.titlePrefix && <StaggerWords text={hero.titlePrefix} />}
-              {/* The prefix gets its own line in both locales: inline, zh 把 was
-                  pushed off the term's line at 320. */}
-              <br />
-              <RotatingTerm terms={hero.terms} />
-              {hero.titleSuffix && (
-                // TASK-215: the sentence is stated once, on the h1's aria-label,
-                // so this span is decoration like the rotator above it. Without
-                // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                // The suffix always takes its own line: inline, the widest term
-                // pushed it to a third line at 1440 and the h1 jumped ~84px.
-                <span className="v2-landing__title-suffix v2-landing__title-suffix--own-line" aria-hidden="true">
-                  {hero.titleSuffix}
-                </span>
-              )}
-            </h1>
+                grammars that wrap the object work: en "Bring ___ into one pod.",
+                zh 「把___带进同一个 Pod。」. Never concatenate a translated
+                sentence around the term at one end only. A paragraph may not
+                carry an aria-label (TASK-216), so the sentence is content in a
+                clipped span, and the rotating words beside it are decoration. */}
+            <p className="v2-landing__bring">
+              <span className="v2-landing__wedge-sr">{hero.ariaLabel}</span>
+              <span aria-hidden="true">
+                {/* A space after "Bring", none after 把: CJK sets the term flush. */}
+                {hero.titlePrefix && <>{hero.titlePrefix}{/[A-Za-z]$/.test(hero.titlePrefix) ? ' ' : ''}</>}
+                <RotatingTerm terms={hero.terms} />
+                {hero.titleSuffix && (
+                  // TASK-211: nowrap keeps the zh suffix whole on a wrap.
+                  <span className="v2-landing__title-suffix">{hero.titleSuffix}</span>
+                )}
+              </span>
+            </p>
             <p className="v2-landing__lede">{hero.lede}</p>
 
             <div className="v2-landing__hero-actions">
@@ -622,7 +623,7 @@ const V2LandingPage: React.FC = () => {
                 </span>
               </div>
 
-              {/* D38: the community door sits in the hero, not only the footer.
+              {/* The community door sits in the hero, not only the footer.
                   A text link under the two keys and the install line, so it
                   never competes with the primary CTA. */}
               <p className="v2-landing__hero-community">
@@ -874,6 +875,19 @@ const V2LandingPage: React.FC = () => {
           </div>
         </section>
 
+        {/* ---- Research: the study, then what the pod does ---- */}
+        <section className="v2-landing__section v2-landing__study" data-testid="landing-study">
+          <div className="v2-landing__section-head" data-reveal>
+            <div className="v2-landing__kicker">{t('landing.study.kicker')}</div>
+            <h2 className="v2-landing__h2">{t('landing.study.title')}</h2>
+            <p className="v2-landing__sub">{t('landing.study.study')}</p>
+            <p className="v2-landing__sub">{t('landing.study.pod')}</p>
+            <p className="v2-landing__sub">
+              <a className="v2-landing__study-link" href="https://alignment.anthropic.com/2026/worse-together" target="_blank" rel="noreferrer">{t('landing.study.link')}</a>
+            </p>
+          </div>
+        </section>
+
         {/* ---- Why open-source ---- */}
         <section className="v2-landing__section v2-landing__open">
           <div className="v2-landing__open-grid" data-reveal data-reveal-stagger>
@@ -986,7 +1000,7 @@ const V2LandingPage: React.FC = () => {
               <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.selfHost')}</a>
             </div>
 
-            {/* Cloud Free */}
+            {/* commonly.me, the hosted instance */}
             <div className="v2-landing__tier">
               <div className="v2-landing__tier-name">{t('landing.pricing.cloud.name')}</div>
               <div className="v2-landing__tier-price">{t('landing.pricing.zero')}<span>{t('landing.pricing.cloud.period')}</span></div>
@@ -996,37 +1010,9 @@ const V2LandingPage: React.FC = () => {
                 <li>{t('landing.pricing.cloud.items.private')}</li>
                 <li>{t('landing.pricing.cloud.items.history')}</li>
                 <li>{t('landing.pricing.cloud.items.connect')}</li>
-                <li>{t('landing.pricing.cloud.items.card')}</li>
-              </ul>
-              <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{primaryLabel}</Link>
-            </div>
-
-            {/* Pro — featured. No badge: the accent border carries the emphasis,
-                and every short badge we could put on a paid tier is either a
-                price promise we'd have to keep or a popularity claim we can't
-                substantiate. */}
-            <div className="v2-landing__tier v2-landing__tier--featured">
-              <div className="v2-landing__tier-name">{t('landing.pricing.pro.name')}</div>
-              <div className="v2-landing__tier-price">{t('landing.pricing.pro.price')}<span>{t('landing.pricing.pro.period')}</span></div>
-              <div className="v2-landing__tier-note">{t('landing.pricing.pro.note')}</div>
-              <ul className="v2-landing__price-list">
-                <li>{t('landing.pricing.pro.items.everything')}</li>
-                <li>{t('landing.pricing.pro.items.history')}</li>
-                <li>{t('landing.pricing.pro.items.community')}</li>
-                <li>{t('landing.pricing.pro.items.hosted')}</li>
-                <li>{t('landing.pricing.pro.items.support')}</li>
               </ul>
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
             </div>
-          </div>
-
-          {/* Enterprise strip */}
-          <div className="v2-landing__tier-enterprise">
-            <div>
-              <strong>{t('landing.pricing.enterprise.name')}</strong>
-              <span> {t('landing.pricing.enterprise.text')}</span>
-            </div>
-            <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{t('landing.actions.talkToUs')}</Link>
           </div>
 
           <p className="v2-landing__price-foot">

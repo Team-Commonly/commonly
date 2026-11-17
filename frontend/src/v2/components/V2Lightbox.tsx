@@ -40,7 +40,7 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
   // upload renders only from its signed URL. The raw `/api/uploads/...` path is
   // relative to the app's origin, not the API's, and uploads need a token, so
   // drawing it while the mint is in flight (or after it failed) requested a 404
-  // and flashed a broken image (D215 crawl, 2026-11-04).
+  // and flashed a broken image (crawl, 2026-11-04).
   const [resolved, setResolved] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const isUpload = Boolean(image && /\/api\/uploads\//.test(image.src));

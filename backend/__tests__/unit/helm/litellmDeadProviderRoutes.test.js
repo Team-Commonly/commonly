@@ -59,7 +59,7 @@ describe('LiteLLM routes no request to a provider that is switched off', () => {
 
 });
 
-// F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and a name that
+// F98 (11-04): hosted agents are Claude-only, and a name that
 // answers with another vendor's model gives its caller that model with no
 // signal. F98 put the stand-ins behind litellm.legacyAliases, F103 deleted the
 // non-Gemini legacy names, and F105 moved every code default off the Gemini and

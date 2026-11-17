@@ -25,10 +25,10 @@ import { V2_CSS_FILES, readV2Css } from '../__testkit__/v2Css';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-// v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
+// v2.css plus the surface files lifted out of it: the chat sheets V2App
 // loads, and the per-surface sheets their components import (R04 BYO, S4 board,
 // R05 Connect, R06 Your team, the invite page).
-// D225 sweep (2026-11-03): every v2 stylesheet, found by walking the tree, so
+// Design sweep (2026-11-03): every v2 stylesheet, found by walking the tree, so
 // a sheet lifted out of v2.css cannot leave the floor by moving. readV2Css()
 // keeps its load order first; the rest follow in path order.
 const V2_ROOT = path.join(__dirname, '..');
@@ -126,7 +126,7 @@ const ALLOWLIST: string[] = [
   '.v2-avatar', // 11.0px — no-mono-family
   '.v2-avatar--md', // 11.0px — no-mono-family
   '.v2-avatar--sm', // 10.0px — no-mono-family
-  // Split in two by the D223 chat lift (S3d): the status half moved to
+  // Split in two by the design chat lift (S3d): the status half moved to
   // chat/chat-states.css, and the action-text half left with TASK-758.
   '.v2-chat__new-pod-status', // 11.0px — no-mono-family
   '.v2-chat__new-pod-error', // 11.0px — no-mono-family

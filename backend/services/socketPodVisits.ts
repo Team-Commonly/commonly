@@ -8,12 +8,17 @@
  * wait (the pod was left, or the socket disconnected) does nothing after it:
  * no room, no joinedPods entry, no open stamp. Otherwise the stamp, taken
  * before the wait, could read a mention as seen by someone who never saw it.
+ *
+ * pendingJoins maps a pod to the attempt now waiting on it. A quick A -> B -> A
+ * switch starts a second attempt on A while the first still waits; each
+ * attempt touches only its own entry, so the first finishing never cancels the
+ * second (CodeRabbit on #4144).
  */
 
 type PodSocket = {
   userId?: unknown;
   connected?: boolean;
-  data: { joinedPods: Set<unknown>; pendingJoins: Set<unknown> };
+  data: { joinedPods: Set<unknown>; pendingJoins: Map<unknown, object> };
   join: (room: string) => unknown;
   leave: (room: string) => unknown;
 };
@@ -30,16 +35,19 @@ export const joinPodRoom = async <Pod>(
   stamps: Stamps,
 ): Promise<Pod | null> => {
   const joinedAt = new Date();
-  socket.data.pendingJoins.add(podId);
+  const attempt = {};
+  socket.data.pendingJoins.set(podId, attempt);
   let pod: Pod | null | undefined;
   let stillWanted = false;
   try {
     pod = await authorize();
   } finally {
-    // A leave during the wait took the pod out of pendingJoins; a disconnect
-    // cleared `connected`. Read both before this join's own entry goes.
-    stillWanted = socket.connected !== false && socket.data.pendingJoins.has(podId);
-    socket.data.pendingJoins.delete(podId);
+    // A leave during the wait took this attempt out of pendingJoins; a
+    // disconnect cleared `connected`. A newer attempt on the same pod replaced
+    // the entry, and it is that attempt's to finish, so leave it alone.
+    const mine = socket.data.pendingJoins.get(podId) === attempt;
+    stillWanted = socket.connected !== false && mine;
+    if (mine) socket.data.pendingJoins.delete(podId);
   }
   if (!pod || !stillWanted) return null;
   socket.join(`pod_${podId}`);

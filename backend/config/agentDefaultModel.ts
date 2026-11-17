@@ -14,7 +14,7 @@
  * The docker-compose LiteLLM (external/litellm/config.yaml) has its own model
  * list, so a compose run sets AGENT_DEFAULT_MODEL to one of its names.
  */
-export const AGENT_DEFAULT_MODEL_FALLBACK = 'deepseek-v4-flash';
+const AGENT_DEFAULT_MODEL_FALLBACK = 'deepseek-v4-flash';
 
 export function agentDefaultModel(): string {
   return String(process.env.AGENT_DEFAULT_MODEL || '').trim() || AGENT_DEFAULT_MODEL_FALLBACK;

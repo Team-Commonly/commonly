@@ -39,7 +39,7 @@ const KIND_FILTERS: Record<ArtifactKind, Record<string, unknown>> = {
   doc: { contentType: { $not: /^(image\/|text\/html(;|$))/i } },
 };
 
-export interface ArtifactCursor { createdAt: string; id: string }
+interface ArtifactCursor { createdAt: string; id: string }
 
 // Cursor is (createdAt, _id) descending: two files uploaded in the same
 // millisecond still page without repeats or holes.
@@ -87,7 +87,7 @@ export interface ArtifactItem {
   createdAt: string | null;
 }
 
-export interface ListArtifactsInput {
+interface ListArtifactsInput {
   scopePodIds: Array<string | Types.ObjectId>;
   podId?: string | null;
   kind?: string | null;
@@ -96,7 +96,7 @@ export interface ListArtifactsInput {
   after?: string | null;
 }
 
-export interface ListArtifactsResult {
+interface ListArtifactsResult {
   items: ArtifactItem[];
   nextCursor: string | null;
   total: number;

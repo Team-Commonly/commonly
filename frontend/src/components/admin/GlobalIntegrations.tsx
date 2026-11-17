@@ -45,7 +45,7 @@ const XIcon = () => (
   </svg>
 );
 
-// F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the gateway
+// F98 (decided 11-04): hosted agents are Claude-only, and the gateway
 // offers Claude Haiku 5.5 only (Sonnet comes later, under a cap). Platform
 // features (llmService) are Claude-only too, but not Haiku-only, and they have
 // no model list here. The server always returns a full policy (what was saved,

@@ -164,7 +164,9 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimi
 agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { label, instanceId, force } = req.body || {};
+    const {
+      label, instanceId, force, connectCode,
+    } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -234,6 +236,38 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       installation,
       { ownerUserId: userId },
     );
+    // F515/F457: a stop report belongs to the run that made it. A new key means a
+    // new run, and the page's poll allows a minute of clock skew before the
+    // issue, so a report from the last key in that minute would read as this
+    // key's. Clear both when a key is minted. A failed clear leaves only that
+    // minute's overlap, so it never fails the issue.
+    if (issued?.token && agentUser?._id) {
+      try {
+        await User.updateOne(
+          { _id: agentUser._id },
+          { $unset: { 'botMetadata.listenBlocked': '', 'botMetadata.harnessMissing': '' } },
+        );
+      } catch (error) {
+        console.warn('Stop-report clear failed:', (error as Error).message);
+      }
+    }
+    // F525: the connect page asks for a connect code beside a freshly issued
+    // key, for its one pasted line. Only a new key gets one: asking never
+    // rotates a key, and an existing key's raw value isn't held to seal. A
+    // failed mint leaves the key response as it was; the page falls back to
+    // its key lines. BYO_CONNECT_CODE=1 turns it on: until the CLI that reads
+    // `--connect` is published, the published CLI would refuse the line, so
+    // the page must keep its key lines (F525).
+    if (connectCode === true && issued?.token && process.env.BYO_CONNECT_CODE === '1') {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { mintConnectCode } = require('../../services/agentConnectCodeService');
+        const minted = await mintConnectCode({ agentUserId: agentUser._id, rawToken: issued.token });
+        return res.json({ ...issued, connectCode: minted.code, connectCodeExpiresAt: minted.expiresAt });
+      } catch (error) {
+        console.warn('Connect code mint failed:', (error as { code?: string; message?: string }).code || (error as Error).message);
+      }
+    }
     return res.json(issued);
   } catch (error) {
     if ((error as { code?: string })?.code === 'in_process_agent_no_token') {

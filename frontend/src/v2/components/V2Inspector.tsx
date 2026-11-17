@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import V2PodConventions from './V2PodConventions';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
 import { compactAge, compactNow } from '../utils/compactTime';
@@ -94,10 +95,10 @@ const isWorkingTask = (task: TaskItem): boolean => (
 );
 
 
-// D215 (TASK-691): the panel folds. Each group is one 44px row at rest and
+// (TASK-691): the panel folds. Each group is one 44px row at rest and
 // opens on demand, except Needs you, which starts open. What a person opens or
 // closes stays that way for the session.
-export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
+type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'conventions' | 'join';
 export const INSPECTOR_OPEN_KEY = 'v2:inspector.openGroups';
 const DEFAULT_OPEN_GROUPS: InspectorGroup[] = ['needs-you'];
 const readOpenGroups = (): Set<InspectorGroup> => {
@@ -178,7 +179,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
   const closeDm = useCloseAgentRoom(onPodChanged);
-  // D215 (TASK-734): the panel head switches between the pod and its threads.
+  // (TASK-734): the panel head switches between the pod and its threads.
   const [view, setView] = useState<InspectorView>('pod');
   useEffect(() => { setView('pod'); }, [pod?._id]);
   const threads = useMemo(() => threadRowsFrom(detail.messages || []), [detail.messages]);
@@ -331,7 +332,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   return (
     <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
-        {/* D215: a Pod | Threads segment, then members, manage and Hide panel. */}
+        {/* A Pod | Threads segment, then members, manage and Hide panel. */}
         <div className="v2-workspace-inspector__head">
           <V2Segmented<InspectorView>
             className="v2-workspace-inspector__view"
@@ -552,6 +553,11 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           </section>
         )}
 
+        {/* F498: the pod's working rules, read by every agent turn here (F124). */}
+        {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && pod._id && renderGroup('conventions', 'pencil', t('inspector.conventions.label'), null, (
+          openGroups.has('conventions') ? <V2PodConventions key={pod._id} podId={pod._id} /> : null
+        ))}
+
         {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, !isOwner ? (
           // Members see the policy; only the owner can change it.
           <p className="v2-pods__join-policy-hint">
@@ -559,7 +565,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           </p>
         ) : (
           <div className="v2-pod-join-settings">
-            {/* D215: two exclusive values read better side by side than as radios. */}
+            {/* Two exclusive values read better side by side than as radios. */}
             <V2Segmented
               ariaLabel={t('podsSidebar.create.whoCanJoin')}
               value={joinPolicy}

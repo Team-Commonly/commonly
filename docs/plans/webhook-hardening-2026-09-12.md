@@ -17,7 +17,7 @@ existing `{ provider, deliveryId }` unique index remains compatible.
 The existing Telegram contract stays unchanged: `update_id`, a 10-minute TTL,
 and `TELEGRAM_SECRET_TOKEN` verification. (The local-dev
 `*_WEBHOOK_ALLOW_UNVERIFIED=true` escape hatches this plan named for Telegram,
-GroupMe and Discord were removed under D137 A9; verification has no opt-out.)
+GroupMe and Discord were removed; verification has no opt-out.)
 
 ## Provider identities, verification, and retention
 

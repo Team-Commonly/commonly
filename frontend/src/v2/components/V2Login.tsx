@@ -9,6 +9,7 @@ import { forgetInviteOAuthStart } from '../utils/pendingInvite';
 import V2AuthNotice from './V2AuthNotice';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { trackPublic } from '../utils/usageEvents';
+import { authErrorText } from '../utils/authErrorText';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -59,10 +60,9 @@ const V2Login: React.FC = () => {
       await login(email.trim(), password);
       navigate(destination || '/v2', { replace: true });
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string; reason?: string } }; message?: string };
-      // F518: an allowed account whose email isn't verified yet is told to verify.
-      setLocalError(e1.response?.data?.reason === 'unverified' ? t('auth.login.errors.verifyFirst')
-        : (e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed')));
+      // F518: an allowed account whose email isn't verified yet is told to
+      // verify; every other failure is the page's own line, never server text.
+      setLocalError(authErrorText(err, t, 'login'));
     } finally {
       setSubmitting(false);
     }
@@ -74,7 +74,7 @@ const V2Login: React.FC = () => {
     ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
 
-  // D286 Q1: why a provider sign-in bounced, as a fixed reason.
+  // why a provider sign-in bounced, as a fixed reason.
   useEffect(() => {
     if (!oauthErrorCode) return;
     trackPublic('register-error', oauthErrorCode === 'provider_denied' ? 'oauth-denied'

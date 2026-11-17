@@ -35,7 +35,7 @@
  *   other direction).
  */
 
-export const PERSON_AGENT_WAKE_REASON = 'person-agent-default';
+const PERSON_AGENT_WAKE_REASON = 'person-agent-default';
 
 type InstallConfig = Record<string, unknown> & {
   runtime?: { runtimeType?: unknown; host?: unknown; webhookUrl?: unknown };

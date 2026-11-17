@@ -57,7 +57,7 @@ describe('installable connector manifest readiness', () => {
     process.env.TELEGRAM_BOT_TOKEN = 'configured';
     expect(manifests.telegram.readiness()).toEqual({ available: false, reason: 'not_configured' });
 
-    // The removed bypass flag no longer makes the provider look ready (D137 A9).
+    // The removed bypass flag no longer makes the provider look ready.
     process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     expect(manifests.telegram.readiness()).toEqual({ available: false, reason: 'not_configured' });
 

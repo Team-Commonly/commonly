@@ -140,4 +140,29 @@ describe('pod context members', () => {
     expect(human).toMatchObject({ name: 'lily-shen', mention: 'lily-shen', isAgent: false });
     warn.mockRestore();
   });
+
+  // F124 (TASK-766): the CAP context carries the pod's conventions, so a BYO
+  // agent reads the same rules a native one is given.
+  it('carries the pod conventions from the same pod row, with who set them', async () => {
+    Pod.findById.mockReturnValue(chain({
+      _id: 'pod-1', name: 'Team', description: '', type: 'chat', members: [BOT_ID, HUMAN_ID],
+      conventionsRevision: 2,
+      conventions: { text: 'Reply in a thread.', updatedAt: new Date('2026-11-14T00:00:00Z'), updatedBy: HUMAN_ID },
+    }));
+    const context = await PodContextService.getPodContext({ podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none' });
+    expect(context.conventions).toEqual({
+      podId: 'pod-1',
+      revision: 2,
+      conventions: {
+        text: 'Reply in a thread.',
+        updatedAt: '2026-11-14T00:00:00.000Z',
+        updatedBy: { userId: HUMAN_ID, label: 'lily-shen' },
+      },
+    });
+  });
+
+  it('carries null conventions at revision 0 when the pod never set them', async () => {
+    const context = await PodContextService.getPodContext({ podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none' });
+    expect(context.conventions).toEqual({ podId: 'pod-1', revision: 0, conventions: null });
+  });
 });

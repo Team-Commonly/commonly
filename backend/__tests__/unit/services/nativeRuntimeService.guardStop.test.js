@@ -45,6 +45,8 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
 jest.mock('../../../services/webSearchService', () => ({ isSearchConfigured: () => false, searchWeb: jest.fn() }));
+// F530: off unless a test gives the turn its own user (User.findOne below).
+jest.mock('../../../services/agentSendFreshness', () => ({ readStart: jest.fn(), unseenMessages: jest.fn() }));
 const mockBridged = jest.fn();
 jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
   podIsBridged: (...args) => mockBridged(...args),
@@ -83,6 +85,8 @@ jest.mock('../../../models/Message', () => {
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
+const User = require('../../../models/User');
+const Freshness = require('../../../services/agentSendFreshness');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
 const {
   runAgent, HOSTED_RUN_FAILED_LINE, NATIVE_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE, ROOM_TURNS_USED_LINE, TURN_UNAVAILABLE_LINE, forgetStopLines,
@@ -381,7 +385,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
       // Marked as a failed-turn notice, so a shared pod's duplicate guard
       // cannot swallow the line for a second failed ask.
       expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
-      // D245: the runtime composed this line, so it sets its kind.
+      // The runtime composed this line, so it sets its kind.
       expect(AgentMessageService.postMessage.mock.calls[0][0].kind).toBe('error');
       // F442: it is our line, stored under the agent, so it is marked kernel
       // and the agent may not delete or rewrite it.
@@ -1668,6 +1672,80 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(result.status).toBe('failed');
       expect(savedRun.computerSetAside).toBeUndefined();
       expect(posted()).toEqual([NATIVE_RUN_FAILED_LINE]);
+    });
+    // F530: a hold's result counts what it showed as read. A set-aside that
+    // drops the round holding it must not leave the model without them.
+    describe('a hold the set-aside drops goes back in front of the model', () => {
+      const MISSED = 'Already answered: use the Claude Code CLI.';
+      beforeEach(() => {
+        User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: OWNER }) }) }));
+        Freshness.readStart.mockResolvedValue({ at: new Date('2026-11-15T10:00:00Z'), revision: 4 });
+        Freshness.unseenMessages
+          .mockResolvedValueOnce({ unseenCount: 1, messages: [{ id: '777', author: 'codex', content: MISSED, createdAt: new Date() }] })
+          .mockResolvedValue(null);
+      });
+      afterEach(() => {
+        User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) }));
+        Freshness.readStart.mockReset();
+        Freshness.unseenMessages.mockReset();
+      });
+
+      test('a written reply held after a page read, then a stop on that page', async () => {
+        chatReplies = [
+          toolCalls(fetchCall('c1', STOPPED_URL)),
+          reply('Install the CLI the blog names.'),
+          guardStop,
+          reply('Codex has it: the Claude Code CLI.'),
+        ];
+
+        const result = await runAgent(hostedInstall(), mention);
+
+        expect(result.status).toBe('succeeded');
+        expect(savedRun.webSetAside).toBe(1);
+        expect(JSON.stringify(chatBodies[2].messages)).toContain(MISSED);
+        const recovery = JSON.stringify(chatBodies[3].messages);
+        expect(recovery).not.toContain(STOPPED_TEXT);
+        expect(recovery).toContain(MISSED);
+        expect(posted()).toEqual(['Codex has it: the Claude Code CLI.']);
+      });
+
+      test('a written reply held after a computer read, then a stop on that page', async () => {
+        pages = [STOPPED_TEXT];
+        chatReplies = [
+          toolCalls(snapshotCall('c1')),
+          reply('The page says to install the CLI.'),
+          guardStop,
+          reply('Codex has it: the Claude Code CLI.'),
+        ];
+
+        const result = await runAgent(computerInstall(), mention);
+
+        expect(result.status).toBe('succeeded');
+        expect(savedRun.computerSetAside).toBe(1);
+        const retry = JSON.stringify(chatBodies[3].messages);
+        expect(retry).not.toContain(STOPPED_TEXT);
+        expect(retry).toContain(MISSED);
+        expect(posted()).toEqual(['Codex has it: the Claude Code CLI.']);
+      });
+
+      test('a held post after a computer read, whose call the stop removes', async () => {
+        pages = [STOPPED_TEXT];
+        chatReplies = [
+          toolCalls(snapshotCall('c1')),
+          toolCalls(call('c2', 'commonly_post_message', { podId: POD, content: 'The page says to install the CLI.' })),
+          guardStop,
+          reply('Codex has it: the Claude Code CLI.'),
+        ];
+
+        const result = await runAgent(computerInstall(), mention);
+
+        expect(result.status).toBe('succeeded');
+        expect(savedRun.computerSetAside).toBe(1);
+        const retry = JSON.stringify(chatBodies[3].messages);
+        expect(retry).not.toContain('The page says to install the CLI.');
+        expect(retry).toContain(MISSED);
+        expect(posted()).toEqual(['Codex has it: the Claude Code CLI.']);
+      });
     });
   });
 
