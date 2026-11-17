@@ -224,6 +224,10 @@ test('the workspace-trust refusal recommends only what Hermes can run', async ()
   expect(refusal).toMatch(/^hermes adapter: sandbox\.trust=workspace is claude-only for now\./);
   expect(refusal).toContain('claude adapter');
   expect(refusal).not.toMatch(/sandbox\.trust 'public'/);
+  // Removing trust alone leaves an invalid file when sandbox.allow is set, and a
+  // non-'none' sandbox.mode is refused next, so the guidance names both.
+  expect(refusal).toContain('sandbox.allow');
+  expect(refusal).toMatch(/sandbox\.mode other than 'none'/);
 });
 
 test('refuses a public seat before probing or spawning Hermes', async () => {
