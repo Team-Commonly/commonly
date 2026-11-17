@@ -24,38 +24,41 @@ jest.mock('mongoose', () => ({
 
 const statsRoutes = require('../../../routes/stats');
 
+const app = express();
+app.use(express.json());
+app.use('/api/stats', statsRoutes);
+
 // The query chain the route uses: find(filter).select(fields).limit(n).lean().
-const installsFound = (rows) => {
-  const chain = { select: () => chain, limit: () => chain, lean: () => Promise.resolve(rows) };
+const installsFound = (lean) => {
+  const chain = { select: () => chain, limit: () => chain, lean };
   mockFind.mockReturnValue(chain);
 };
+// The route answers before it looks anything up, so let that work finish.
+const settle = () => new Promise((resolve) => { setTimeout(resolve, 10); });
+const post = (body) => request(app).post('/api/stats/run-stopped').send(body);
 
 describe('POST /api/stats/run-stopped (F549)', () => {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/stats', statsRoutes);
-
   beforeEach(() => {
     jest.clearAllMocks();
-    installsFound([]);
+    installsFound(() => Promise.resolve([]));
   });
 
   it('needs no sign-in, and records a row for the recent BYO agent of that name, owned by its installer', async () => {
-    installsFound([{ _id: 'inst-1', installedBy: 'human-1' }]);
+    installsFound(() => Promise.resolve([{ _id: 'inst-1', installedBy: 'human-1' }]));
 
-    const res = await request(app)
-      .post('/api/stats/run-stopped')
-      .send({
-        reason: 'no-token', agentName: 'Cincono-Codex', platform: 'win32', nodeMajor: 22, 
-      });
+    const res = await post({
+      reason: 'no-token', agentName: 'Cincono-Codex', platform: 'win32', nodeMajor: 22,
+    });
+    await settle();
 
     expect(res.status).toBe(204);
     const [filter] = mockFind.mock.calls[0];
-    expect(filter).toEqual(expect.objectContaining({
+    expect(filter).toEqual({
       agentName: 'cincono-codex',
+      status: 'active',
       'config.runtime.runtimeType': 'webhook',
       createdAt: { $gte: expect.any(Date) },
-    }));
+    });
     expect(Date.now() - filter.createdAt.$gte.getTime()).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);
     expect(mockInsertOne).toHaveBeenCalledWith({
       _id: 'run-stopped:inst-1:no-token',
@@ -69,12 +72,23 @@ describe('POST /api/stats/run-stopped (F549)', () => {
     });
   });
 
+  it('answers before the lookup, so a hit and a miss take the same time', async () => {
+    installsFound(() => new Promise(() => {}));
+
+    const res = await post({
+      reason: 'no-token', agentName: 'a1', platform: 'win32', nodeMajor: 22,
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.text).toBe('');
+    expect(mockFind).toHaveBeenCalled();
+  });
+
   it('answers 204 and writes nothing when no recent agent has the name', async () => {
-    const res = await request(app)
-      .post('/api/stats/run-stopped')
-      .send({
-        reason: 'no-token', agentName: 'nobody-here', platform: 'win32', nodeMajor: 22, 
-      });
+    const res = await post({
+      reason: 'no-token', agentName: 'nobody-here', platform: 'win32', nodeMajor: 22,
+    });
+    await settle();
 
     expect(res.status).toBe(204);
     expect(mockInsertOne).not.toHaveBeenCalled();
@@ -84,8 +98,11 @@ describe('POST /api/stats/run-stopped (F549)', () => {
     ['an unknown reason', { reason: 'cm_agent_secret', agentName: 'a1' }],
     ['a malformed name', { reason: 'no-token', agentName: 'a b; drop' }],
     ['a missing name', { reason: 'no-token' }],
+    ['a name sent as an array', { reason: 'no-token', agentName: ['a1'] }],
+    ['a name sent as an object', { reason: 'no-token', agentName: { $ne: '' } }],
   ])('drops %s without a lookup, still 204', async (_label, body) => {
-    const res = await request(app).post('/api/stats/run-stopped').send(body);
+    const res = await post(body);
+    await settle();
 
     expect(res.status).toBe(204);
     expect(mockFind).not.toHaveBeenCalled();
@@ -93,13 +110,12 @@ describe('POST /api/stats/run-stopped (F549)', () => {
   });
 
   it('keeps only known platforms and a plausible Node major, never other fields', async () => {
-    installsFound([{ _id: 'inst-2', installedBy: 'human-2' }]);
+    installsFound(() => Promise.resolve([{ _id: 'inst-2', installedBy: 'human-2' }]));
 
-    await request(app)
-      .post('/api/stats/run-stopped')
-      .send({
-        reason: 'no-token', agentName: 'a1', platform: 'beos', nodeMajor: 'cm_agent_x', token: 'cm_agent_secret', 
-      });
+    await post({
+      reason: 'no-token', agentName: 'a1', platform: 'beos', nodeMajor: 'cm_agent_x', token: 'cm_agent_secret',
+    });
+    await settle();
 
     const row = mockInsertOne.mock.calls[0][0];
     expect(row).not.toHaveProperty('platform');

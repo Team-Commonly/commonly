@@ -6,7 +6,7 @@ import { resolveInstanceUrl } from './config.js';
 // nobody can tell this stop from a line that never ran. This tells the
 // server which stop it was. It carries no key: only a fixed reason, the
 // agent's name (the server matches it to a BYO agent made in the last day),
-// the platform and Node's major version. DO_NOT_TRACK=1 or
+// the platform and Node's major version. Any DO_NOT_TRACK value but 0/false, or
 // COMMONLY_TELEMETRY=0 turns it off. It never throws and gives up after
 // `timeoutMs`, so the exit it precedes is never held up for long.
 export const reportRunStopped = async ({
@@ -19,7 +19,8 @@ export const reportRunStopped = async ({
   defaultUrl = () => resolveInstanceUrl(undefined),
   timeoutMs = 2000,
 }) => {
-  if (env.DO_NOT_TRACK === '1' || env.COMMONLY_TELEMETRY === '0') return false;
+  const dnt = String(env.DO_NOT_TRACK || '').trim().toLowerCase();
+  if ((dnt && dnt !== '0' && dnt !== 'false') || env.COMMONLY_TELEMETRY === '0') return false;
   if (typeof fetchImpl !== 'function') return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

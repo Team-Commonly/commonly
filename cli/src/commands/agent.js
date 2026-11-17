@@ -5850,13 +5850,13 @@ Docs:
           process.exit(1);
         }
         if (!record) {
-          // Nothing reached the server yet, so say which stop this was (F549).
-          await reportRunStopped({ agentName: agentArg, reason: 'no-token' });
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
             + ` ${CLI} agent attach <adapter> --pod <podId> --name ${agentArg}`,
           );
+          // Nothing reached the server yet, so say which stop this was (F549).
+          await reportRunStopped({ agentName: agentArg, reason: 'no-token' });
           process.exit(1);
         }
         const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;

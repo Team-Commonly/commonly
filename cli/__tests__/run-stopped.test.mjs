@@ -37,6 +37,7 @@ describe('reportRunStopped (F549)', () => {
 
   test.each([
     ['DO_NOT_TRACK=1', { DO_NOT_TRACK: '1' }],
+    ['DO_NOT_TRACK=true', { DO_NOT_TRACK: 'true' }],
     ['COMMONLY_TELEMETRY=0', { COMMONLY_TELEMETRY: '0' }],
   ])('sends nothing under %s', async (_label, env) => {
     const fetchImpl = okFetch();
@@ -68,6 +69,10 @@ describe('reportRunStopped (F549)', () => {
     const noKey = block.slice(block.indexOf('if (!record) {'));
     const exitAt = noKey.indexOf('process.exit(1)');
 
-    expect(noKey.slice(0, exitAt)).toMatch(/await reportRunStopped\(\{ agentName: agentArg, reason: 'no-token' \}\)/);
+    const beforeExit = noKey.slice(0, exitAt);
+
+    // The message prints first, so a dead network never leaves the screen blank.
+    expect(beforeExit).toMatch(/await reportRunStopped\(\{ agentName: agentArg, reason: 'no-token' \}\)/);
+    expect(beforeExit.indexOf('console.error(')).toBeLessThan(beforeExit.indexOf('reportRunStopped'));
   });
 });

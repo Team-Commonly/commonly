@@ -152,8 +152,9 @@ router.post('/byo-step', rateLimit({
 // key (the two `$env:` lines pasted into Command Prompt, or skipped). With no
 // key it can't sign in, so this takes no auth: it names the agent, and only a
 // BYO agent of that name made in the last day gets a row, owned by whoever
-// installed it. Fixed fields only, one row per agent and reason, and always
-// 204, so a caller learns nothing about which names exist.
+// installed it. Fixed fields only, one row per installation and reason. It
+// answers 204 before the lookup, so neither the answer nor its timing says
+// which names exist.
 const RUN_STOP_REASONS = new Set(['no-token']);
 const RUN_PLATFORMS = new Set(['win32', 'darwin', 'linux']);
 const RUN_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -167,14 +168,16 @@ router.post('/run-stopped', rateLimit({
   handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
 }), async (req: any, res: any) => {
   const reason = String(req.body?.reason || '');
-  const agentName = String(req.body?.agentName || '').toLowerCase();
+  const agentName = typeof req.body?.agentName === 'string' ? req.body.agentName.toLowerCase() : '';
   if (!RUN_STOP_REASONS.has(reason) || !RUN_NAME.test(agentName)) return res.status(204).end();
   const platform = RUN_PLATFORMS.has(req.body?.platform) ? req.body.platform : null;
   const nodeMajor = Number.isInteger(req.body?.nodeMajor) && req.body.nodeMajor > 0 && req.body.nodeMajor < 100
     ? req.body.nodeMajor : null;
+  res.status(204).end();
   try {
     const installs = await AgentInstallation.find({
       agentName,
+      status: 'active',
       'config.runtime.runtimeType': 'webhook',
       createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     }).select('_id installedBy').limit(5).lean();
@@ -192,7 +195,6 @@ router.post('/run-stopped', rateLimit({
   } catch (err: any) {
     console.warn('[byo-telemetry] run-stopped lookup failed:', err?.message);
   }
-  return res.status(204).end();
 });
 
 // Usage events. Both endpoints answer 204 for anything they choose not to
