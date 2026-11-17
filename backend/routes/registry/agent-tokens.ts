@@ -236,6 +236,21 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       installation,
       { ownerUserId: userId },
     );
+    // F515/F457: a stop report belongs to the run that made it. A new key means a
+    // new run, and the page's poll allows a minute of clock skew before the
+    // issue, so a report from the last key in that minute would read as this
+    // key's. Clear both when a key is minted. A failed clear leaves only that
+    // minute's overlap, so it never fails the issue.
+    if (issued?.token && agentUser?._id) {
+      try {
+        await User.updateOne(
+          { _id: agentUser._id },
+          { $unset: { 'botMetadata.listenBlocked': '', 'botMetadata.harnessMissing': '' } },
+        );
+      } catch (error) {
+        console.warn('Stop-report clear failed:', (error as Error).message);
+      }
+    }
     // F525: the connect page asks for a connect code beside a freshly issued
     // key, for its one pasted line. Only a new key gets one: asking never
     // rotates a key, and an existing key's raw value isn't held to seal. A
