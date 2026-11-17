@@ -158,6 +158,18 @@ describe('the one pasted line with a connect code (F525)', () => {
     expect(stub.seen).toEqual([]);
   }, 90_000);
 
+  posixTest('a code redeemed on the env instance, not the saved agent\'s, stops before redeeming too', async () => {
+    stub = await stubInstance({ redeem: { status: 200, body: { token: KEY } } });
+    savedAgent('https://elsewhere.example.test');
+    const result = await run(
+      ['agent', 'run', 'newbie', '--adapter', 'claude', '--connect', CODE],
+      { cwd: join(root, 'work'), env: { ...envFor(), COMMONLY_API_URL: stub.url }, seen: stub.seen },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('This computer already runs an agent called newbie on https://elsewhere.example.test');
+    expect(stub.seen).toEqual([]);
+  }, 90_000);
+
   posixTest('an --api-url that is not an http(s) address stops with one line', async () => {
     stub = await stubInstance({ redeem: { status: 200, body: { token: KEY } } });
     const result = await run(

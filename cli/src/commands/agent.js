@@ -5905,6 +5905,20 @@ Docs:
       // The key it trades for takes the env path's place from here on: the
       // first run bootstraps from it, and a saved record treats it as a
       // reissued key (adoptEnvToken).
+      // A saved agent of this name on another instance would win over the
+      // line's key and run as that one, leaving this one waiting. Checked for
+      // --api-url, and again for the instance the code is redeemed on however
+      // it was named (--api-url, COMMONLY_API_URL or the saved config).
+      const savedOrigin = (() => {
+        try { return record?.instanceUrl ? new URL(record.instanceUrl).origin : null; } catch { return null; }
+      })();
+      const refuseOtherInstance = (lineOrigin) => {
+        if (!savedOrigin || !lineOrigin || savedOrigin === lineOrigin) return;
+        console.error(`${stamp()} [${name}] This computer already runs an agent called ${agentArg} on ${savedOrigin}, `
+          + `and this line is for ${lineOrigin}. To use this line, remove that one first: `
+          + `${CLI} agent detach ${name} --force, then paste the line again.`);
+        process.exit(1);
+      };
       if (opts.apiUrl !== undefined) {
         let apiUrl;
         try {
@@ -5918,17 +5932,7 @@ Docs:
         }
         // As typed, less a trailing slash, as the env path keeps it.
         const typedUrl = String(opts.apiUrl).trim().replace(/\/+$/, '');
-        // A saved agent of this name on another instance would win over the
-        // line's key and run as that one, leaving this one waiting.
-        const savedOrigin = (() => {
-          try { return record?.instanceUrl ? new URL(record.instanceUrl).origin : null; } catch { return null; }
-        })();
-        if (savedOrigin && savedOrigin !== apiUrl.origin) {
-          console.error(`${stamp()} [${name}] This computer already runs an agent called ${agentArg} on ${savedOrigin}, `
-            + `and this line is for ${apiUrl.origin}. To use this line, remove that one first: `
-            + `${CLI} agent detach ${name} --force, then paste the line again.`);
-          process.exit(1);
-        }
+        refuseOtherInstance(apiUrl.origin);
         process.env.COMMONLY_API_URL = typedUrl;
       }
       // F515: Node first, before anything uses the token: on a Node without
@@ -5951,6 +5955,9 @@ Docs:
       let connectCodeKey = false;
       if (opts.connect !== undefined) {
         const instanceUrl = (process.env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
+        refuseOtherInstance((() => {
+          try { return new URL(instanceUrl).origin; } catch { return null; }
+        })());
         const redeemed = await redeemConnectCode({ code: String(opts.connect).trim(), instanceUrl });
         if (redeemed.token) {
           process.env.COMMONLY_AGENT_TOKEN = redeemed.token;
