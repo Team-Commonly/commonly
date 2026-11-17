@@ -210,8 +210,9 @@ that one bucket.
 The Mongo archive is taken while the app keeps writing, without `--oplog`, so
 it is not one point in time: a restore can mix collections from before and
 after a related write. Adding `--oplog`, and restoring with `--oplogReplay`,
-needs a replica set whose oplog the dump user can read, and needs a dump with no
-`--db`, `--collection` or `--query`. Check that your MongoDB host allows it
+needs a replica set whose oplog the dump user can read, and a full dump of every
+database: no `--db`, `--collection` or `--query`, and no database name in
+`MONGO_URI`, which `mongodump` treats as `--db`. Check that your MongoDB host allows it
 before turning it on. Where it doesn't, rely on the host's own snapshots for a
 point-in-time copy, and treat this archive as a second copy.
 
