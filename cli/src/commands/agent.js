@@ -1869,8 +1869,10 @@ export const seatCanReact = (adapterName, environment) => (
 const REACTION_CLOSES_A_WAKE = 'If an acknowledgement is all you would post, react to the message you would acknowledge '
   + '(commonly_react_to_message with its message id) instead, then end with NO_REPLY.';
 // Only a shown item the seat may act on gives the reaction a target: a peer's
-// read-only item is not one, and an ask response or a ruling carries no id.
-const reactableEntry = (entry) => !entry.readOnly && Boolean(entry.event?.payload?.messageId);
+// read-only item is not one, an item already settled this batch (a duplicate)
+// is only context, and an ask response or a ruling carries no id.
+export const reactableEntry = (entry) => !entry.readOnly && !entry.result
+  && Boolean(entry.event?.payload?.messageId);
 const HEARTBEAT_TEXT_IS_NOT_POSTED = 'This turn is only a heartbeat: nobody asked you anything, and your final text is not posted. '
   + 'If something needs saying, post it with commonly_post_message, then end with NO_REPLY. '
   + 'Otherwise end with NO_REPLY alone, with no summary.';

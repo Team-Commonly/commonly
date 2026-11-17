@@ -47,7 +47,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun, reactableEntry } = await import('../src/commands/agent.js');
 const {
   getSession,
   setSession,
@@ -6343,6 +6343,62 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     expect(server.ackedIds()).not.toContain('ambient');
     expect(spawn.mock.calls.map(([prompt]) => prompt).join()).not.toContain('body-of-ambient');
     run.handle.stop();
+  });
+
+  // F483 (CodeRabbit on #4106): the reaction line needs an item the seat may act
+  // on, shown this turn, with a message id. A peer-held item or one past the cap
+  // that has the only id must not draw it, while an item with no id still spawns.
+  describe('the reaction line reads only what the seat may act on this turn', () => {
+    const REACT = 'react to the message you would acknowledge';
+    const seatWithPostTool = { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+    // An agent's rows (the payload flag plus the snapshot's isBot): not a person
+    // addressing the seat, so the turn closes on the "final text is posted" line,
+    // where the reaction line lives.
+    const agentRow = (id, overrides = {}) => inbox(id, { ...overrides, payload: { senderIsHuman: false, ...overrides.payload } });
+    const noId = (id) => agentRow(id, { payload: { messageId: undefined } });
+    const reactRun = (server, limit) => {
+      createClient.mockReturnValue(withPrivatePods(createClient()));
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const run = startRun({
+        spawn, limit, adapter: { name: 'claude', detect: stubAdapter.detect, spawn }, environment: seatWithPostTool,
+      });
+      return { spawn, run };
+    };
+
+    test('a control: an item it may act on, with an id, draws the line', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[agentRow('mine')]], agentRows: ['mine'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('a peer-held item with the only id does not', async () => {
+      const lost = agentRow('lost', { type: 'message.posted' });
+      const { spawn, run } = reactRun(fakeServer({ pages: [[lost, noId('ask')]], lostClaims: ['lost'], agentRows: ['lost', 'ask'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain('body-of-ask');
+      expect(promptOf(spawn, 0)).toContain('body-of-lost');
+      expect(promptOf(spawn, 0)).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item past the cap with the only id does not', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[noId('ask'), agentRow('later')]], agentRows: ['ask', 'later'] }), 1);
+      await drainMicrotasks();
+      const prompt = promptOf(spawn, 0);
+      expect(prompt).toContain('body-of-ask');
+      expect(prompt).not.toContain('body-of-later');
+      expect(prompt).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item already settled this batch is not a target, even when it is not read-only', () => {
+      const id = { event: { payload: { messageId: 'msg-1' } } };
+      expect(reactableEntry(id)).toBe(true);
+      expect(reactableEntry({ ...id, result: { outcome: 'no_action', reason: 'duplicate-delivery' } })).toBe(false);
+      expect(reactableEntry({ ...id, readOnly: true })).toBe(false);
+      expect(reactableEntry({ event: { payload: {} } })).toBe(false);
+    });
   });
 });
 
