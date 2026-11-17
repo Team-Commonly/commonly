@@ -38,6 +38,11 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
   const actionRef = useRef<HTMLButtonElement | null>(null);
   // Where focus goes after the editor opens or closes; null leaves it alone.
   const focusNextRef = useRef<'field' | 'action' | null>(null);
+  // The client changes whenever the session token refreshes. The read below
+  // runs per pod only, so a refresh never closes the editor, drops a draft, or
+  // orphans a save in flight; it reads through this ref to use the newest token.
+  const apiRef = useRef(api);
+  apiRef.current = api;
 
   useEffect(() => {
     const requestId = ++requestRef.current;
@@ -45,7 +50,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
     setEditing(false);
     setLatest(null);
     setSaveError(null);
-    api.get<ConventionsRead>(`/api/pods/${encodeURIComponent(podId)}/conventions`)
+    apiRef.current.get<ConventionsRead>(`/api/pods/${encodeURIComponent(podId)}/conventions`)
       .then((data) => {
         if (requestId !== requestRef.current) return;
         setRead(data);
@@ -57,7 +62,7 @@ const V2PodConventions: React.FC<{ podId: string }> = ({ podId }) => {
         // A server from before F124, or a pod this reader can't see: no section body.
         setState(error?.response?.status === 404 || error?.response?.status === 403 ? 'absent' : 'error');
       });
-  }, [api, podId]);
+  }, [podId]);
 
   useEffect(() => {
     const target = focusNextRef.current;

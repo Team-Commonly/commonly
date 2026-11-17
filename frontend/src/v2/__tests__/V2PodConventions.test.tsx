@@ -166,3 +166,36 @@ test('the field is read-only while a save is in flight, so no typing is lost', a
   expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveAttribute('readonly');
   await act(async () => { finishSave(read('Rules', { canEdit: true, revision: 2 })); });
 });
+
+test('a session token refresh keeps the editor open with the unsaved draft', async () => {
+  axios.get.mockResolvedValueOnce(read('Saved rules', { canEdit: true, revision: 3 }));
+  axios.patch.mockResolvedValueOnce(read('Unsaved draft', { canEdit: true, revision: 4, label: 'You' }));
+  const view = mount(<V2PodConventions podId="p1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Conventions' }), { target: { value: 'Unsaved draft' } });
+  await act(async () => {
+    view.rerender(<AuthContext.Provider value={{ ...auth, token: 't2' }}><V2PodConventions podId="p1" /></AuthContext.Provider>);
+  });
+  expect(screen.getByRole('textbox', { name: 'Conventions' })).toHaveValue('Unsaved draft');
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  expect(axios.patch).toHaveBeenCalledWith('/api/pods/p1/conventions', { expectedRevision: 3, text: 'Unsaved draft' }, expect.anything());
+});
+
+test('a save in flight across a token refresh still lands and frees the editor', async () => {
+  let finishSave;
+  axios.get.mockResolvedValueOnce(read('Saved rules', { canEdit: true, revision: 3 }));
+  axios.patch.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve; }));
+  const view = mount(<V2PodConventions podId="p1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Conventions' }), { target: { value: 'New rules' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+  await act(async () => {
+    view.rerender(<AuthContext.Provider value={{ ...auth, token: 't2' }}><V2PodConventions podId="p1" /></AuthContext.Provider>);
+  });
+  await act(async () => { finishSave(read('New rules', { canEdit: true, revision: 4, label: 'You' })); });
+  expect(screen.getByTestId('pod-conventions-text')).toHaveTextContent('New rules');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  expect(screen.getByRole('textbox', { name: 'Conventions' })).not.toHaveAttribute('readonly');
+  expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+});
