@@ -15,11 +15,13 @@
  */
 
 import {
-  readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile,
+  readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile, mkdtemp, rename, realpath, readlink,
 } from 'fs/promises';
 import { existsSync } from 'fs';
-import { isAbsolute, join, resolve as pathResolve, basename } from 'path';
-import { homedir } from 'os';
+import {
+  isAbsolute, join, resolve as pathResolve, basename, dirname, relative, parse, sep,
+} from 'path';
+import { homedir, tmpdir } from 'os';
 import { resolveSkillSource } from './skill-prompt.js';
 
 // ── Schema — keep the allow-list narrow; ADR-008 §invariants #1+#2 ──────────
@@ -586,6 +588,104 @@ const realSkillsDir = async (workspacePath) => {
   return dir;
 };
 
+// F171: whether .claude and .claude/skills are still the real directories
+// checked above. Nothing is created here: a missing or replaced one is a no.
+const skillsDirUnchanged = async (workspacePath, checked) => {
+  let dir = workspacePath;
+  let st = null;
+  for (const part of SKILLS_DIR_PARTS) {
+    dir = join(dir, part);
+    // eslint-disable-next-line no-await-in-loop
+    st = await lstatOrNull(dir);
+    if (!st || st.isSymbolicLink() || !st.isDirectory()) return false;
+  }
+  return st.dev === checked.dev && st.ino === checked.ino;
+};
+
+// F171: each snapshot is built in a folder only the host writes, then moved
+// into place with one rename, so a link swapped into the workspace mid-mount
+// can't steer the copy, marker or read-only writes. The workspace's parent is
+// tried first because it shares the workspace's disk, which a rename needs;
+// the system temp folder is the fallback.
+const makeSkillStage = async (workspacePath) => {
+  try {
+    return await mkdtemp(join(dirname(workspacePath), '.commonly-skill-stage-'));
+  } catch {
+    return mkdtemp(join(tmpdir(), 'commonly-skill-stage-'));
+  }
+};
+
+// Whether `child` is `parent` or lies under it. Only a whole `..` part
+// leaves `parent`; a child named `..skills` is still inside it.
+const isWithin = (child, parent) => {
+  const rel = relative(parent, child);
+  return !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`);
+};
+
+// A folder's identity on disk. Paths can't be compared as strings: macOS
+// disks ignore case and Unicode normalization by default, so `/WS` and `/ws`
+// are one folder. Read with bigint stats: inode numbers can pass 2^53.
+const folderId = (st) => `${st.dev}:${st.ino}`;
+
+// realpath, one part at a time, returning every path it passed through and
+// the identity of every real folder on the way. realpath alone gives only the
+// end, so a chain that goes through a folder the seat writes and back out
+// would look clean.
+const MAX_LINK_HOPS = 40;
+const resolveVisiting = async (target) => {
+  const abs = pathResolve(target);
+  let current = parse(abs).root;
+  const rest = abs.slice(current.length).split(sep).filter(Boolean);
+  const visited = [];
+  const folders = new Set();
+  let hops = 0;
+  while (rest.length) {
+    const part = rest.shift();
+    if (part === '.') continue;
+    if (part === '..') {
+      // `current` has no links in it, so its parent is the real parent.
+      current = dirname(current);
+      visited.push(current);
+      // eslint-disable-next-line no-await-in-loop
+      folders.add(folderId(await lstat(current, { bigint: true })));
+      continue;
+    }
+    const next = join(current, part);
+    visited.push(next);
+    // eslint-disable-next-line no-await-in-loop
+    const st = await lstat(next, { bigint: true });
+    if (!st.isSymbolicLink()) {
+      folders.add(folderId(st));
+      current = next;
+      continue;
+    }
+    hops += 1;
+    if (hops > MAX_LINK_HOPS) throw Object.assign(new Error(`too many links: ${target}`), { code: 'ELOOP' });
+    // eslint-disable-next-line no-await-in-loop
+    const link = await readlink(next);
+    if (isAbsolute(link)) current = parse(link).root;
+    rest.unshift(...link.slice(isAbsolute(link) ? parse(link).root.length : 0).split(sep).filter(Boolean));
+  }
+  return { visited, folders };
+};
+
+// Why a source that can't be resolved is refused: one that isn't there, or
+// one that can be read but not followed (a loop, no permission).
+const unresolvedReason = (err) => (
+  err?.code === 'ENOENT' || err?.code === 'ENOTDIR' ? 'missing-source' : 'unreadable-source'
+);
+
+// Whether a copied tree holds a link anywhere in it. Read in the stage, which
+// only the host writes, so nothing can change it between the copy and here.
+const holdsLink = async (dir) => {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) return true;
+    // eslint-disable-next-line no-await-in-loop
+    if (entry.isDirectory() && await holdsLink(join(dir, entry.name))) return true;
+  }
+  return false;
+};
+
 /**
  * Mount each `skills.claude[]` source into `<workspacePath>/.claude/skills/`
  * as a READ-ONLY SNAPSHOT COPY.
@@ -614,14 +714,40 @@ const realSkillsDir = async (workspacePath) => {
  *
  * A workspace whose .claude or .claude/skills is a link, or not a directory,
  * gets no mount at all: every source is reported as 'unsafe-skill-dir' and
- * nothing is written (F171).
+ * nothing is written (F171). Each snapshot is built outside the workspace and
+ * renamed into place after a fresh check, and a replaced mount is moved out
+ * before it is deleted, so a swap mid-mount is refused the same way. What is
+ * left is the moment between that check and the renames: Node has no
+ * renameat, so they still resolve the path. A swap there can move whatever
+ * has the slot's name at the link's target into the stage, and put the
+ * snapshot there. What arrives in the stage is checked there: only a link or
+ * a directory carrying MOUNT_MARKER is deleted; anything else is kept in the
+ * stage folder, beside the workspace, and reported. Nothing is ever copied or
+ * deleted at a workspace path: when the stage is on another disk, so a rename
+ * fails with EXDEV, the mount is refused ('cross-disk-stage'), and an old
+ * mount already moved out is kept rather than deleted.
+ *
+ * A source in the workspace, or one that resolves into it, is refused
+ * ('source-in-workspace'): the seat writes there, so it could make the source
+ * a link to any host folder. A source that is itself a link is copied as the
+ * folder it points to. A link inside a source is never followed: a source
+ * holding one, or swapped for one after it was resolved, is refused
+ * ('linked-skill-file'), since following it would copy whatever it names, a
+ * credential included, into a folder the seat reads. Links are judged by
+ * lstat, so a hard link is a file; only the source's owner can make one.
+ *
+ * `hooks.onStep(step)` is for tests: it runs after the check ('checked'),
+ * after each source is resolved ('resolved'), after each snapshot is built
+ * ('staged') and after the slot is read ('slot-checked'). `hooks.rename`
+ * stands in for fs.rename, so a test can fail it as another disk would.
  *
  * Returns `{ mounted, conflicted }`:
  *   - `mounted`:    string[]            — absolute source paths snapshotted
  *   - `conflicted`: Array<{path, reason}> where reason ∈
- *       'not-a-mount' | 'missing-source' | 'unsafe-skill-dir'
+ *       'not-a-mount' | 'missing-source' | 'unreadable-source' | 'unsafe-skill-dir'
+ *       | 'cross-disk-stage' | 'linked-skill-file' | 'source-in-workspace'
  */
-export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
+export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks = {}) => {
   const sources = Array.isArray(spec?.skills?.claude) ? spec.skills.claude : [];
   const mounted = [];
   const conflicted = [];
@@ -637,6 +763,11 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
       })),
     };
   }
+  const checked = await lstat(skillsDir);
+  await hooks.onStep?.('checked');
+  const move = hooks.rename || rename;
+  const workspaceReal = await realpath(workspacePath);
+  const workspaceId = folderId(await lstat(workspaceReal, { bigint: true }));
 
   for (const rawSource of sources) {
     const absSource = resolveSkillSource(rawSource, envFileDir || workspacePath);
@@ -644,41 +775,139 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
       conflicted.push({ path: absSource, reason: 'missing-source' });
       continue;
     }
-    const destPath = join(skillsDir, basename(absSource));
-
-    let slot = null;
+    // The seat writes its workspace, so a source there (a relative entry
+    // resolves against it) could be made a link to any host folder, and
+    // following it would copy that folder in. One that resolves into the
+    // workspace is the seat's own writing, and so is one whose links pass
+    // through it on the way somewhere else, or one that holds the workspace.
+    // All of these are refused. Every way into the workspace passes through
+    // the workspace folder itself, so the walk is checked by folder identity,
+    // which no spelling of the path can dodge. realSource comes from realpath,
+    // spelled as on disk, so the copy and the string checks agree with it.
+    let resolved;
+    let realSource;
     try {
       // eslint-disable-next-line no-await-in-loop
-      slot = await lstat(destPath);
+      resolved = await resolveVisiting(absSource);
+      // eslint-disable-next-line no-await-in-loop
+      realSource = await realpath(absSource);
     } catch (err) {
-      // Only ENOENT means "slot is free, proceed." EACCES / EPERM / EIO are
-      // real failures that should surface rather than becoming a confusing
-      // follow-on error from the copy below.
-      if (err.code !== 'ENOENT') throw err;
+      conflicted.push({ path: absSource, reason: unresolvedReason(err) });
+      continue;
     }
-
-    if (slot) {
-      const isLegacySymlink = slot.isSymbolicLink();
-      const isOwnedMount = slot.isDirectory() && existsSync(join(destPath, MOUNT_MARKER));
-      if (!isLegacySymlink && !isOwnedMount) {
-        // A real file, or a directory we did not create — user content.
-        conflicted.push({ path: absSource, reason: 'not-a-mount' });
+    const entersWorkspace = resolved.folders.has(workspaceId)
+      || resolved.visited.some((step) => isWithin(step, workspaceReal) || isWithin(step, workspacePath));
+    if (isWithin(absSource, workspacePath) || entersWorkspace
+      || isWithin(realSource, workspaceReal) || isWithin(workspaceReal, realSource)) {
+      conflicted.push({ path: absSource, reason: 'source-in-workspace' });
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await hooks.onStep?.('resolved');
+    const destPath = join(skillsDir, basename(absSource));
+    // eslint-disable-next-line no-await-in-loop
+    const stage = await makeSkillStage(workspacePath);
+    // Set when the stage holds something that may not be ours, so it is kept.
+    let keepStage = false;
+    try {
+      const snapshot = join(stage, 'new');
+      // A source that is a link (a ~/.claude/skills entry into a checkout)
+      // is copied as the folder it points to: a copied link would make the
+      // mount write through to the source. Links inside it are copied as
+      // links and then refused, never followed. A source swapped for a link
+      // after it was resolved arrives as a link at the snapshot's root.
+      // eslint-disable-next-line no-await-in-loop
+      await cp(realSource, snapshot, { recursive: true, verbatimSymlinks: true });
+      // eslint-disable-next-line no-await-in-loop
+      const copied = await lstat(snapshot);
+      // eslint-disable-next-line no-await-in-loop
+      if (copied.isSymbolicLink() || !copied.isDirectory() || await holdsLink(snapshot)) {
+        conflicted.push({ path: absSource, reason: 'linked-skill-file' });
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      await rm(destPath, { recursive: true, force: true });
-    }
+      await writeFile(join(snapshot, MOUNT_MARKER), `mounted-from: ${absSource}\n`, 'utf8');
+      // eslint-disable-next-line no-await-in-loop
+      await freezeFiles(snapshot);
+      // eslint-disable-next-line no-await-in-loop
+      await hooks.onStep?.('staged');
 
-    // eslint-disable-next-line no-await-in-loop
-    await cp(absSource, destPath, { recursive: true });
-    // eslint-disable-next-line no-await-in-loop
-    await writeFile(
-      join(destPath, MOUNT_MARKER),
-      `mounted-from: ${absSource}\n`,
-      'utf8',
-    );
-    // eslint-disable-next-line no-await-in-loop
-    await freezeFiles(destPath);
+      // eslint-disable-next-line no-await-in-loop
+      if (!await skillsDirUnchanged(workspacePath, checked)) {
+        conflicted.push({ path: absSource, reason: 'unsafe-skill-dir' });
+        continue;
+      }
+
+      let slot = null;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        slot = await lstat(destPath);
+      } catch (err) {
+        // Only ENOENT means "slot is free, proceed." EACCES / EPERM / EIO are
+        // real failures that should surface rather than becoming a confusing
+        // follow-on error from the rename below.
+        if (err.code !== 'ENOENT') throw err;
+      }
+
+      if (slot) {
+        const isLegacySymlink = slot.isSymbolicLink();
+        const isOwnedMount = slot.isDirectory() && existsSync(join(destPath, MOUNT_MARKER));
+        if (!isLegacySymlink && !isOwnedMount) {
+          // A real file, or a directory we did not create — user content.
+          conflicted.push({ path: absSource, reason: 'not-a-mount' });
+          continue;
+        }
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await hooks.onStep?.('slot-checked');
+
+      const retired = join(stage, 'old');
+      if (slot) {
+        // Moved out first: the recursive delete runs in the stage, never at
+        // a path inside the workspace. The move resolves the path again, so
+        // what arrived is checked in the stage, which only the host writes:
+        // only a link or one of our marked mounts is ever deleted.
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await move(destPath, retired);
+        } catch (err) {
+          if (err.code !== 'EXDEV') throw err;
+          conflicted.push({ path: absSource, reason: 'cross-disk-stage' });
+          continue;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const moved = await lstat(retired);
+        // eslint-disable-next-line no-await-in-loop
+        const marker = moved.isDirectory() ? await lstatOrNull(join(retired, MOUNT_MARKER)) : null;
+        if (!moved.isSymbolicLink() && !(marker && marker.isFile())) {
+          keepStage = true;
+          conflicted.push({ path: absSource, reason: 'unsafe-skill-dir' });
+          continue;
+        }
+      }
+
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await move(snapshot, destPath);
+      } catch (err) {
+        // The old mount, if any, is in the stage now: keep it rather than
+        // delete it with the stage.
+        keepStage = Boolean(slot);
+        if (err.code !== 'EXDEV') throw err;
+        conflicted.push({ path: absSource, reason: 'cross-disk-stage' });
+        continue;
+      }
+    } finally {
+      if (keepStage) {
+        // eslint-disable-next-line no-console
+        console.warn(`[skills] ${destPath}: the slot changed during the mount; what was there is kept in ${stage}`);
+        // eslint-disable-next-line no-await-in-loop
+        await rm(join(stage, 'new'), { recursive: true, force: true });
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await rm(stage, { recursive: true, force: true });
+      }
+    }
     mounted.push(absSource);
   }
 

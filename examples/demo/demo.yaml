@@ -53,10 +53,13 @@ sandbox:
     write-outside: []
 
 skills:
-  # Pull the user's existing Claude skills into the sandbox. Symlinked, so
-  # edits on the host propagate to the next spawn (ADR-008 invariant #5).
+  # Pull the user's existing Claude skills into the sandbox, one folder per
+  # skill. Each is copied read-only on every spawn, so host edits reach the
+  # next one (ADR-008 invariant #5). A folder of links, such as
+  # ~/.claude/skills/ itself, is refused: links inside a source are never
+  # followed (docs/agents/public-facing-agent-sandboxing.md).
   claude:
-    - ~/.claude/skills/
+    - ~/.claude/skills/my-skill
 
   # Commonly skills require the commonly-skills MCP sidecar — Phase 2 of
   # ADR-008. Leave empty for the demo recording.
