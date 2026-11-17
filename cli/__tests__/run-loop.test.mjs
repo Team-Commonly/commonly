@@ -47,7 +47,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun, reactableEntry } = await import('../src/commands/agent.js');
 const {
   getSession,
   setSession,
@@ -1524,6 +1524,61 @@ describe('performRun', () => {
     stop();
 
     expect(replyPosts(mockPost)).toHaveLength(1);
+  });
+
+  // F483: a reaction is the third way to close a wake, beside a post and
+  // NO_REPLY. Offered only where the spawn carries the commonly tools: the
+  // seat declares the server and its adapter wires it into the spawn (the
+  // CLI's Hermes adapter does not, CodeRabbit on #2816).
+  describe('a reaction as the third wake-close', () => {
+    let wakeSeq = 0;
+    const ambient = (payload = {}) => [makeEvent({
+      // An agent's mention: not a person addressing the seat, so the wake
+      // closes on the plain "final text is posted" line.
+      _id: `evt-agent-thanks-${wakeSeq += 1}`, type: 'chat.mention',
+      payload: { content: '@my-stub thanks, that fixed it', messageId: 'msg-77', senderIsHuman: false, ...payload },
+    })];
+    const promptFor = async (adapterName, environment, payload) => {
+      const mockGet = jest.fn().mockResolvedValue({ events: ambient(payload) });
+      const mockPost = jest.fn().mockResolvedValue({});
+      // A real adapter name with no enforced sandbox runs only in pods confirmed private.
+      createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: mockPost }));
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: adapterName, detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        ...(environment ? { environment } : {}),
+        setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      stop();
+      expect(spawn).toHaveBeenCalled();
+      return spawn.mock.calls[0][0];
+    };
+    const REACT = 'react to the message you would acknowledge';
+
+    test.each(['claude', 'codex', 'opencode', 'goose', 'pi', 'qwen', 'dsh'])(
+      'a %s seat with the commonly tools is offered the reaction', async (adapterName) => {
+        const prompt = await promptFor(adapterName, seatWithPostTool);
+        expect(prompt).toContain(REACT);
+        expect(prompt).toContain('Your final text is posted to the pod');
+      },
+    );
+
+    test('a Hermes seat is not, since its spawn has no commonly tools', async () => {
+      expect(await promptFor('hermes', seatWithPostTool)).not.toContain(REACT);
+    });
+
+    test('a wake with no message id shown has nothing to react to, so is not', async () => {
+      expect(await promptFor('claude', seatWithPostTool, { messageId: undefined })).not.toContain(REACT);
+    });
+
+    test('a seat without the commonly server is not', async () => {
+      expect(await promptFor('claude', { mcp: [] })).not.toContain(REACT);
+      expect(await promptFor('claude')).not.toContain(REACT);
+    });
   });
 
   test('manual heartbeat without content still runs with a safe fallback prompt', async () => {
@@ -6588,6 +6643,62 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     expect(server.ackedIds()).not.toContain('ambient');
     expect(spawn.mock.calls.map(([prompt]) => prompt).join()).not.toContain('body-of-ambient');
     run.handle.stop();
+  });
+
+  // F483 (CodeRabbit on #4106): the reaction line needs an item the seat may act
+  // on, shown this turn, with a message id. A peer-held item or one past the cap
+  // that has the only id must not draw it, while an item with no id still spawns.
+  describe('the reaction line reads only what the seat may act on this turn', () => {
+    const REACT = 'react to the message you would acknowledge';
+    const seatWithPostTool = { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+    // An agent's rows (the payload flag plus the snapshot's isBot): not a person
+    // addressing the seat, so the turn closes on the "final text is posted" line,
+    // where the reaction line lives.
+    const agentRow = (id, overrides = {}) => inbox(id, { ...overrides, payload: { senderIsHuman: false, ...overrides.payload } });
+    const noId = (id) => agentRow(id, { payload: { messageId: undefined } });
+    const reactRun = (server, limit) => {
+      createClient.mockReturnValue(withPrivatePods(createClient()));
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const run = startRun({
+        spawn, limit, adapter: { name: 'claude', detect: stubAdapter.detect, spawn }, environment: seatWithPostTool,
+      });
+      return { spawn, run };
+    };
+
+    test('a control: an item it may act on, with an id, draws the line', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[agentRow('mine')]], agentRows: ['mine'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('a peer-held item with the only id does not', async () => {
+      const lost = agentRow('lost', { type: 'message.posted' });
+      const { spawn, run } = reactRun(fakeServer({ pages: [[lost, noId('ask')]], lostClaims: ['lost'], agentRows: ['lost', 'ask'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain('body-of-ask');
+      expect(promptOf(spawn, 0)).toContain('body-of-lost');
+      expect(promptOf(spawn, 0)).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item past the cap with the only id does not', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[noId('ask'), agentRow('later')]], agentRows: ['ask', 'later'] }), 1);
+      await drainMicrotasks();
+      const prompt = promptOf(spawn, 0);
+      expect(prompt).toContain('body-of-ask');
+      expect(prompt).not.toContain('body-of-later');
+      expect(prompt).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item already settled this batch is not a target, even when it is not read-only', () => {
+      const id = { event: { payload: { messageId: 'msg-1' } } };
+      expect(reactableEntry(id)).toBe(true);
+      expect(reactableEntry({ ...id, result: { outcome: 'no_action', reason: 'duplicate-delivery' } })).toBe(false);
+      expect(reactableEntry({ ...id, readOnly: true })).toBe(false);
+      expect(reactableEntry({ event: { payload: {} } })).toBe(false);
+    });
   });
 });
 
