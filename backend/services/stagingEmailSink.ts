@@ -38,7 +38,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_CHECK_INTERVAL_MS = 5_000;
 const LINK = /https?:\/\/[^\s"'<>)]+/g;
 
-export interface SinkMessage {
+interface SinkMessage {
   id: string;
   at: string;
   to: string[];
@@ -49,7 +49,7 @@ export interface SinkMessage {
   links: string[];
 }
 
-export interface SinkConfig {
+interface SinkConfig {
   readToken: string;
   capacity?: number;
   maxConnections?: number;

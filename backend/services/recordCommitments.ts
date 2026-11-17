@@ -17,7 +17,7 @@ const format = require('../vendor/seats/src/record/format') as {
 };
 /* eslint-enable @typescript-eslint/no-require-imports, global-require */
 
-export type LineOpening = Omit<ChainOpening, 'seq'>;
+type LineOpening = Omit<ChainOpening, 'seq'>;
 
 type Actor = { type?: string; id?: string; owner?: string; onBehalfOf?: { id: string; role: string } };
 type Input = {

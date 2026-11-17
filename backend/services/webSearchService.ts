@@ -4,7 +4,7 @@
  * One function, three providers. `SEARCH_PROVIDER` picks `exa` (the default),
  * `tavily`, or `keenable` (which works without SEARCH_API_KEY; a key, if set,
  * selects its keyed endpoint), so the provider is a configuration choice, not a dependency
- * (Cofounder, 2026-10-15). Exa was chosen on the numbers: a no-card free tier,
+ * (2026-10-15). Exa was chosen on the numbers: a no-card free tier,
  * the cheapest per search after it, and page text an agent can cite.
  *
  * Results are third-party text and may carry injected instructions. The
@@ -23,14 +23,14 @@ const TEXT_LIMIT = 1500;
 const QUERY_LIMIT = 400;
 const TIMEOUT_MS = 15_000;
 
-export interface WebResult {
+interface WebResult {
   title: string;
   url: string;
   text: string;
   published?: string;
 }
 
-export interface WebSearchOutcome {
+interface WebSearchOutcome {
   provider: string;
   results: WebResult[];
 }

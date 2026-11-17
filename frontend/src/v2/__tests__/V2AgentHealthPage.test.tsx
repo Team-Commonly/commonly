@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D115 agent health page (docs/design/artboards/d115/). It draws only what
+// Design agent health page (docs/design/artboards/d115/). It draws only what
 // GET /api/agents/health returns: counts, fixed codes and times.
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';

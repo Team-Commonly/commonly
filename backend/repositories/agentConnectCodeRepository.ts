@@ -12,7 +12,7 @@ interface PgPool {
 
 const loadPool = (): PgPool | null => (require('../config/db-pg') as { pool: PgPool | null }).pool;
 
-export interface ConnectCodeRow {
+interface ConnectCodeRow {
   codeHash: string;
   agentUserId: string;
   tokenHash: string;

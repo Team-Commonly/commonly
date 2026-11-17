@@ -1,5 +1,5 @@
 /**
- * TASK-784 (D164). A daemon machine records what it runs on, metadata only:
+ * TASK-784. A daemon machine records what it runs on, metadata only:
  * the platform, the OS release major, the arch and its CLI version. Nothing
  * on the server said how many machines run on Windows, or whether any agent
  * on one ever answered a person. The machine also records when one of its

@@ -501,15 +501,33 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
         });
       }
     }
+    // F550: a seat that reacted to the message closed the wake with it (F483: a
+    // reaction, then NO_REPLY, for a turn whose whole answer was "got it"). The
+    // driver can't see that MCP call, so it reports a decline; the kernel holds
+    // the reaction, so a decline from a seat that reacted closes as completed
+    // and is not handed to another listener. A failed read keeps the decline:
+    // a second listener is better than a message nobody answers.
+    let releaseOutcome = outcome;
+    if (outcome === 'declined' && req.agentUser?._id) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const MessageReaction = require('../models/pg/MessageReaction');
+        if (await MessageReaction.hasReactionBy(String(req.params.messageId), String(req.agentUser._id))) {
+          releaseOutcome = 'completed';
+        }
+      } catch (reactionErr) {
+        console.warn('[claims] reaction read failed; keeping the decline:', (reactionErr as Error).message);
+      }
+    }
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const ClaimReleaseService = outcome === 'declined' || outcome === 'refused'
+    const ClaimReleaseService = releaseOutcome === 'declined' || releaseOutcome === 'refused'
       ? require('../services/messageClaimHandoffService')
       : require('../services/messageClaimService');
     const result = await ClaimReleaseService.release({
       messageId: req.params.messageId,
       agentName,
       instanceId,
-      ...(outcome ? { outcome } : {}),
+      ...(releaseOutcome ? { outcome: releaseOutcome } : {}),
       ...(outcome === 'refused'
         ? { reason, ...(status !== undefined ? { status } : {}) }
         : {}),
@@ -584,6 +602,37 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
   } catch (error) {
     console.error('Harness report failed:', (error as Error).message);
     return res.status(503).json({ code: 'harness_report_unavailable' });
+  }
+});
+
+// F515: a first `agent run` that finds this computer's Node too old, or its
+// harness installed but signed out, stops before it starts waiting. It says why
+// here first, by reason code only: free text from a computer could carry a path
+// or a secret. GET /api/users/me/agent-connection and the pod's agent states
+// show it to the owner until the agent listens again.
+const LISTEN_BLOCKED_REASONS = new Set(['node-too-old', 'harness-signed-out']);
+router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const body = req.body || {};
+  const keys = Object.keys(body).sort();
+  const harness = typeof body.harness === 'string' ? harnessCatalogEntry(body.harness) : null;
+  const valid = keys.length === 2 && keys[0] === 'harness' && keys[1] === 'reason'
+    && LISTEN_BLOCKED_REASONS.has(body.reason)
+    // A sign-in names the harness it is about; Node names none.
+    && (body.reason === 'harness-signed-out' ? Boolean(harness) : body.harness === null);
+  if (!valid) return res.status(400).json({ code: 'invalid_listen_blocked_report' });
+  // A legacy installation token whose bot User the middleware couldn't find has
+  // no identity to hold the report: say so, not a generic 503.
+  if (!req.agentUser?._id) return res.status(401).json({ code: 'agent_identity_required' });
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, {
+      $set: {
+        'botMetadata.listenBlocked': { reason: body.reason, harness: harness ? harness.id : null, at: new Date() },
+      },
+    });
+    return res.json({ recorded: true });
+  } catch (error) {
+    console.error('Listen-blocked report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'listen_blocked_report_unavailable' });
   }
 });
 
@@ -726,7 +775,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       }
       : {});
 
-    // D247: the installation Settings reads the model and effort from, by the
+    // The installation Settings reads the model and effort from, by the
     // daemon projection's rule: the oldest active one that declares a seat.
     // A listener uses this row's controls only, so it runs what Settings shows.
     // Settings reads the owner's rows only, so a row this agent installed
@@ -776,7 +825,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
-        // D247: the saved model/effort, for a listener seat that has no daemon
+        // The saved model/effort, for a listener seat that has no daemon
         // projection. Two plain strings; no other environment field leaves.
         runtimeControls: runtimeControlsFor(inst?.config),
         // Which messages wake this agent in this pod, as the agent page's
@@ -2611,7 +2660,33 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         instanceId: installation.instanceId || 'default',
         displayName: installation.displayName,
       });
-      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
+      // F490: a reply to the message that woke this agent does not count that
+      // message as unseen. A thread read never advances the read cursor, so an
+      // agent that read only the thread and answered in it was held on its own
+      // trigger, and the hold taught it continueAnyway. Only a message a
+      // delivered event for this agent named is exempt, and only that message.
+      const answering = [req.body?.threadRootId, req.body?.replyToMessageId]
+        .filter((id) => id !== undefined && id !== null && String(id) !== '');
+      // If the lookup fails, the post goes through without the hold: with no
+      // exemption the still-unread trigger would count as unseen and hold the
+      // very reply it asked for, and a failed read fails toward delivery, never
+      // toward a reply nobody sees (CodeRabbit). The pod check above and the
+      // post's own validation still run.
+      let lookupFailed = false;
+      const exemptMessageIds = answering.length
+        ? await AgentSendFreshness.deliveredTriggerIds({
+          agentName: installation.agentName,
+          instanceId: installation.instanceId || 'default',
+          podId,
+          candidateIds: answering,
+        }).catch((lookupError: Error) => {
+          console.warn('[agent post] trigger lookup failed; posting without the freshness hold:', lookupError.message);
+          lookupFailed = true;
+          return [];
+        })
+        : [];
+      const hold = lookupFailed ? null
+        : await AgentSendFreshness.unseenMessages(agentUser._id, podId, { exemptMessageIds });
       if (hold) return res.status(409).json(hold);
     }
 
@@ -2628,11 +2703,11 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
-      // D245: optional and warn-only. Problems come back as `warnings` on the
+      // Optional and warn-only. Problems come back as `warnings` on the
       // 200; they never refuse the post.
       summary,
       kind,
-      // D245 item 4: a BYO run's self-reported receipt; stored as such,
+      // A BYO run's self-reported receipt; stored as such,
       // warn-only like the contract.
       receipt,
       ...(payload !== undefined ? { payload } : {}),
@@ -2907,7 +2982,7 @@ type SectionsValidationError =
 
 // Shape of an append-mode cycles payload, after validateSectionsPayload has
 // confirmed it. Route handlers split this out and call appendCycle directly.
-export interface CyclesAppendPayload {
+interface CyclesAppendPayload {
   content: string;
   ts?: Date;
   podId?: string;

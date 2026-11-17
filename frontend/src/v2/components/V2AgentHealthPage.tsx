@@ -9,7 +9,7 @@ import V2TeamViewSwitch from './V2TeamViewSwitch';
 import './V2AgentHealthPage.css';
 
 /**
- * Agent health (D115): /v2/agents/health. Frame: docs/design/artboards/d115/.
+ * Agent health: /v2/agents/health. Frame: docs/design/artboards/d115/.
  * Reads GET /api/agents/health, which counts the agents in the viewer's own
  * pods and carries no message text, so nothing here can quote one.
  */

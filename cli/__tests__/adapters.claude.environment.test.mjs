@@ -970,7 +970,7 @@ describe('claude adapter — ctx.environment', () => {
   });
 
   // On native Windows the refusal names Windows and the user's own opt-in,
-  // never macOS or bwrap advice (D245). Host-check passes an unrecognised mode
+  // never macOS or bwrap advice. Host-check passes an unrecognised mode
   // through, so this throw is what a Windows user sees.
   test('on win32, an unresolvable mode refuses with Windows advice, not macOS or bwrap', async () => {
     for (const trust of ['public', 'workspace']) {

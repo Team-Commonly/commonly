@@ -39,7 +39,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/webhooks/telegram', telegramRoutes);
 
-// Verification always runs (D137 A9 removed the unverified bypass), so every
+// Verification always runs (the unverified bypass was removed), so every
 // request in this file carries the secret Telegram would send.
 const SECRET = 'test-secret';
 const telegramPost = () => request(app)

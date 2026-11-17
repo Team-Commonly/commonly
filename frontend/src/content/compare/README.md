@@ -31,4 +31,4 @@ put every competitor fact that matters into the table.
 ## Editing a live page
 
 A page Google sees change restarts its clock, so batch every edit to one page into a single pass
-(D295), and move `dateModified` and the `updated` line with it.
+and move `dateModified` and the `updated` line with it.

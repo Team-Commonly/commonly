@@ -1,4 +1,4 @@
-# D115 artboard: agent health
+# Agent health artboard
 
 The frame for the agent health page that `docs/architecture/fleet-health.md` designs. Open `index.html` in a browser. It draws four states, each at 1440 and at 390, one in light and the other in dark:
 
@@ -9,4 +9,4 @@ The frame for the agent health page that `docs/architecture/fleet-health.md` des
 
 The page lives under Your team as a second option beside Agents (`/v2/agents/health`). It shows the viewer's own pods only, with no admin view, and no message text. The rules the build follows are listed at the foot of the page, including the proposed split of failure codes into Needs you and Failed. Names, pods and numbers are samples.
 
-These frames are drawn after Sam's D215 pick, in its language, and Sam hasn't reviewed them. Every frame carries `data-state`. They live outside the D215 scorer, so `targets.json` there doesn't move. Build to this frame, and attach screenshots of the built page beside each state.
+These frames are drawn after Sam's pick of the Signal, Said Less artboard, in its language, and Sam hasn't reviewed them. Every frame carries `data-state`. They live outside that artboard's scorer, so `targets.json` there doesn't move. Build to this frame, and attach screenshots of the built page beside each state.

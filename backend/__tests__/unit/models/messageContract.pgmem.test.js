@@ -1,4 +1,4 @@
-// D245: the message contract's columns, through the SHIPPED model SQL on pg-mem.
+// The message contract's columns, through the SHIPPED model SQL on pg-mem.
 // The real-Postgres twin is __tests__/service/messageContract.realPg.test.js.
 const { newDb } = require('pg-mem');
 
@@ -38,7 +38,7 @@ beforeAll(async () => {
 
 const create = (contract) => PGMessage.create(POD, 'agent-1', 'Fixed the redirect.', 'text', null, null, null, null, null, contract);
 
-describe('message contract columns (D245)', () => {
+describe('message contract columns', () => {
   it('stores summary and kind and returns them on every message read', async () => {
     const row = await create({ summary: 'Fixed it', kind: 'result' });
     expect(row).toMatchObject({ summary: 'Fixed it', kind: 'result' });
@@ -58,7 +58,7 @@ describe('message contract columns (D245)', () => {
     expect(row).toMatchObject({ summary: null, kind: null });
   });
 
-  it('stores a receipt as JSON and returns it on both reads (D245 item 4)', async () => {
+  it('stores a receipt as JSON and returns it on both reads', async () => {
     const receipt = {
       adapter: 'claude', turns: 2, tools: ['Read'], source: 'self-reported', 
     };

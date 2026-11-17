@@ -6,7 +6,7 @@ import V2Segmented from './V2Segmented';
 type TeamView = 'agents' | 'health';
 const PATHS: Record<TeamView, string> = { agents: '/v2/agents', health: '/v2/agents/health' };
 
-/** Your team's two views, beside the page title (D115 frame). */
+/** Your team's two views, beside the page title (health frame). */
 const V2TeamViewSwitch: React.FC<{ value: TeamView }> = ({ value }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();

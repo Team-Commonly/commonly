@@ -1,4 +1,4 @@
-// Who may bind a pod to an external chat surface (F143, Cofounder 11-04).
+// Who may bind a pod to an external chat surface (F143, 11-04).
 //
 // One rule, in one place, for every chat bridge:
 //   - a SHARED surface (a Slack channel, a Discord guild channel, a Telegram
@@ -22,11 +22,11 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { isListedPodMember } = require('../../utils/isPodMember');
 
-export type SurfaceAudience = 'private-1to1' | 'shared-surface';
+type SurfaceAudience = 'private-1to1' | 'shared-surface';
 
 type SurfaceConfig = Record<string, unknown>;
 
-export interface SurfaceBindDeclaration {
+interface SurfaceBindDeclaration {
   /** Who can read the chat this config names. */
   audience: (config: SurfaceConfig) => SurfaceAudience;
   /**
@@ -121,7 +121,7 @@ const idOf = (value: unknown): string => {
 };
 
 /** The pod's creator, still a listed member (TASK-168), or an instance admin. */
-export const hasPodAuthority = (
+const hasPodAuthority = (
   user: { _id?: unknown; id?: unknown; role?: string } | null | undefined,
   pod: { createdBy?: unknown; members?: unknown[] } | null | undefined,
 ): boolean => {

@@ -12,7 +12,7 @@ const Moon = () => (
   <svg className="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" /></svg>
 );
 
-// D224 / TASK-740: the sun and moon pair from the d215 rail. It writes the same
+// TASK-740: the sun and moon pair from the d215 rail. It writes the same
 // stored preference as Settings > Theme (setV2Theme), so there is one setting.
 // An 'auto' preference shows whichever set the OS is giving; a click makes it
 // explicit.

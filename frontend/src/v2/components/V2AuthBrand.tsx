@@ -8,7 +8,7 @@ export type V2HandoffState = 'working' | 'done' | 'error';
 // Working, a cobalt dot runs the dotted wire; done, the wire is solid with a
 // check; error, an ink cross sits on it. The wire is decoration: the page's
 // title says the state in words.
-export interface V2AuthHandoff {
+interface V2AuthHandoff {
   state: V2HandoffState;
   provider: React.ReactNode;
 }

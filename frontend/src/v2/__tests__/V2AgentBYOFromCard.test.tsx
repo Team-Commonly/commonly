@@ -231,7 +231,7 @@ describe('the compact page opens only where the command exists', () => {
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
-  // D245: the PowerShell command exists on Windows, so the compact page opens there.
+  // The PowerShell command exists on Windows, so the compact page opens there.
   test('on Windows a card is compact, Codex included', async () => {
     setUserAgent(WINDOWS);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');

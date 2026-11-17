@@ -18,7 +18,7 @@ export class SlackOAuthExchangeError extends Error {
   }
 }
 
-export interface SlackOAuthGrant {
+interface SlackOAuthGrant {
   accessToken: string;
   teamId: string;
   teamName?: string;

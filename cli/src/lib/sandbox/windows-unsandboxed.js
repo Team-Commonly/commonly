@@ -1,5 +1,5 @@
 /**
- * D245: the user's own opt-in to run an agent without a sandbox on native
+ * The user's own opt-in to run an agent without a sandbox on native
  * Windows.
  *
  * Commonly confines a public seat with Seatbelt on macOS and bubblewrap on

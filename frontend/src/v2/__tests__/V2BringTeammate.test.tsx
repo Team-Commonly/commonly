@@ -154,10 +154,10 @@ test('marks: a card dismissed earlier never pings shown', () => {
   expect(mockRecordOnce).not.toHaveBeenCalled();
 });
 
-// D288: in the person's own workspace the card never shares the workspace. A
+// In the person's own workspace the card never shares the workspace. A
 // press makes an invite-only team pod, adds the agent that answered through
 // the add-to-pod route, and copies a link to that new pod.
-describe('from the workspace: a new pod with the agent in it (D288)', () => {
+describe('from the workspace: a new pod with the agent in it', () => {
   const newPodId = 'b'.repeat(24);
   const workspaceProps = {
     podId: 'workspace', podName: 'My Workspace', userId: 'person', source: 'workspace-own-agent' as const,

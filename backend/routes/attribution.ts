@@ -20,18 +20,18 @@ const { VISIT_REFS_PER_DAY, OTHER_REF } = AttributionVisit;
 // A listed campaign code (services/attributionCampaignRefs.ts) always keeps its
 // own row, so junk can never push a real campaign link into the overflow.
 // Every query here filters on day first ({day, ref} index): a query on ref
-// alone scans the whole table (114 ms per visit at 501k rows, Cofounder's
-// measure on the cross-day rule this replaced).
+// alone scans the whole table (114 ms per visit at 501k rows, measured
+// on the cross-day rule this replaced).
 
 // Every other ref competes for VISIT_REFS_PER_DAY rows a UTC day, counted afresh
 // each day: a ref already counted today keeps its row, a new one gets a row only
 // while the day has room, and the rest share the overflow row. So rows per day
 // are at most the campaign list + VISIT_REFS_PER_DAY + 1. (A cross-day "known
 // ref" rule, tried in #2283, let junk admitted once bypass the cap on every
-// later day; Cofounder chose the list instead.) The cap bounds growth, it is not
+// later day; the list was chosen instead.) The cap bounds growth, it is not
 // an exact count: the check and the write are two steps, so a burst of new refs
 // at the crossing overshoots it (1000 concurrent new refs at 49 rows gave about
-// 1045, Cofounder's measure), once a day per burst.
+// 1045, as measured), once a day per burst.
 const bucketFor = async (day: string, ref: string): Promise<string> => {
   const campaigns = await campaignRefs();
   if (campaigns.has(ref)) return ref;

@@ -46,10 +46,10 @@ import {
 } from './seatEnvironmentProjection';
 
 export type GrantProjectionIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
-export type GrantProjectionEntry = Pick<SeatEnvironmentEntry, 'podIds' | 'environment' | 'runtime'>;
-export type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
+type GrantProjectionEntry = Pick<SeatEnvironmentEntry, 'podIds' | 'environment' | 'runtime'>;
+type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
 
-export interface GrantProjectionOptions {
+interface GrantProjectionOptions {
   /**
    * The adapter the CALLER says it runs. The daemon path has none: the row's
    * own runtime names it. A run-path seat declares it, and it is judged IN
@@ -171,7 +171,7 @@ export const grantServersForIdentities = async (
  * machine owner's installations, and a run-path seat has no machine, so each
  * installer of the seat's own rows is projected in turn (the same owner set
  * `judgeSeatConfinement` reads). A row the seat installed itself (an auto-join
- * copies its source's config) is not an owner's, as in /installations (D247).
+ * copies its source's config) is not an owner's, as in /installations.
  * A refusal from any projection is reported (fail closed, as the per-call
  * judgement does), and the broker re-checks every call either way.
  *

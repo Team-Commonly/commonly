@@ -1,5 +1,5 @@
 // The thread chip. Direction C (ux-lead 64476 (3)) made it faces + count +
-// last and nothing else; ruling D278 (2026-11-09) made it preview its latest
+// last and nothing else; a 2026-11-09 ruling made it preview its latest
 // reply: the replier's face and name, one line of what they said, the count,
 // and what this person hasn't read. Reply in thread and Follow still live in
 // the expanded band's foot (V2ThreadRestyle.test), and there is no chevron.
@@ -33,7 +33,7 @@ const setup = (over: Partial<React.ComponentProps<typeof V2ThreadCard>> = {}) =>
   return { ...utils, onToggleCollapsed };
 };
 
-describe('the chip previews its latest reply (D278)', () => {
+describe('the chip previews its latest reply', () => {
   test('one line: the replier\'s face and name, the reply text, then the count', () => {
     const { container } = setup({ latestReply: latest });
     const chip = screen.getByRole('button');

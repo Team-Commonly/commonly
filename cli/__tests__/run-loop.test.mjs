@@ -47,7 +47,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun, reactableEntry } = await import('../src/commands/agent.js');
 const {
   getSession,
   setSession,
@@ -108,7 +108,7 @@ const drainMicrotasks = async () => {
 let savedGitConfig;
 
 
-// D245 item 4: a reply the wrapper posts carries its receipt (lib/reply-receipt.js).
+// A reply the wrapper posts carries its receipt (lib/reply-receipt.js).
 const reply = (content, extra = {}) => ({
   content,
   receipt: expect.objectContaining({ adapter: expect.any(String), durationMs: expect.any(Number) }),
@@ -140,6 +140,23 @@ describe('performRun', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  // F535: refuse before open. The run stops at start, before any client or spawn.
+  test.each([
+    ['opencode', { trust: 'public', network: { 'allow-hosts': ['api.example.com'] } }, 'sandbox.network.allow-hosts'],
+    ['claude', { mode: 'workspace' }, 'applies sandbox.mode=workspace only with sandbox.trust=public'],
+    ['codex', { network: { policy: 'restricted' } }, 'enforced only inside a sandbox'],
+  ])('refuses a %s seat whose sandbox option it cannot enforce', (adapterName, sandbox, message) => {
+    const spawn = jest.fn();
+    expect(() => performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: adapterName, spawn },
+      environment: { sandbox },
+    })).toThrow(message);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   test.each([429, 503, 404])('own-key mint fallback HTTP %i refuses the real turn before model spawn', async (status) => {
     const { createOwnKeyResolver } = await import('../src/lib/own-key-launch.js');
     const { openSpawnCredential } = await import('../src/lib/spawn-credential.js');
@@ -168,7 +185,7 @@ describe('performRun', () => {
     })]]));
   });
 
-  // D247: an empty device effort list says nothing about the level, so the
+  // An empty device effort list says nothing about the level, so the
   // saved effort reaches the harness. Only a non-empty list that leaves it out
   // drops it.
   test.each([
@@ -233,7 +250,7 @@ describe('performRun', () => {
     expect(settled[0][1]).toEqual({ event: 'settled', outcome: 'failed', reason: 'claude-signed-out' });
   });
 
-  // D247: a listener seat (no daemon) spawns with the model and effort its
+  // A listener seat (no daemon) spawns with the model and effort its
   // owner saved on the server, read before the turn; the reply receipt names them.
   test('a listener seat spawns with the model and effort saved on the server', async () => {
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1526,6 +1543,61 @@ describe('performRun', () => {
     expect(replyPosts(mockPost)).toHaveLength(1);
   });
 
+  // F483: a reaction is the third way to close a wake, beside a post and
+  // NO_REPLY. Offered only where the spawn carries the commonly tools: the
+  // seat declares the server and its adapter wires it into the spawn (the
+  // CLI's Hermes adapter does not, CodeRabbit on #2816).
+  describe('a reaction as the third wake-close', () => {
+    let wakeSeq = 0;
+    const ambient = (payload = {}) => [makeEvent({
+      // An agent's mention: not a person addressing the seat, so the wake
+      // closes on the plain "final text is posted" line.
+      _id: `evt-agent-thanks-${wakeSeq += 1}`, type: 'chat.mention',
+      payload: { content: '@my-stub thanks, that fixed it', messageId: 'msg-77', senderIsHuman: false, ...payload },
+    })];
+    const promptFor = async (adapterName, environment, payload) => {
+      const mockGet = jest.fn().mockResolvedValue({ events: ambient(payload) });
+      const mockPost = jest.fn().mockResolvedValue({});
+      // A real adapter name with no enforced sandbox runs only in pods confirmed private.
+      createClient.mockReturnValue(withPrivatePods({ get: mockGet, post: mockPost }));
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: adapterName, detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        ...(environment ? { environment } : {}),
+        setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      stop();
+      expect(spawn).toHaveBeenCalled();
+      return spawn.mock.calls[0][0];
+    };
+    const REACT = 'react to the message you would acknowledge';
+
+    test.each(['claude', 'codex', 'opencode', 'goose', 'pi', 'qwen', 'dsh'])(
+      'a %s seat with the commonly tools is offered the reaction', async (adapterName) => {
+        const prompt = await promptFor(adapterName, seatWithPostTool);
+        expect(prompt).toContain(REACT);
+        expect(prompt).toContain('Your final text is posted to the pod');
+      },
+    );
+
+    test('a Hermes seat is not, since its spawn has no commonly tools', async () => {
+      expect(await promptFor('hermes', seatWithPostTool)).not.toContain(REACT);
+    });
+
+    test('a wake with no message id shown has nothing to react to, so is not', async () => {
+      expect(await promptFor('claude', seatWithPostTool, { messageId: undefined })).not.toContain(REACT);
+    });
+
+    test('a seat without the commonly server is not', async () => {
+      expect(await promptFor('claude', { mcp: [] })).not.toContain(REACT);
+      expect(await promptFor('claude')).not.toContain(REACT);
+    });
+  });
+
   test('manual heartbeat without content still runs with a safe fallback prompt', async () => {
     const events = [makeEvent({
       _id: 'evt-hb-manual',
@@ -2088,7 +2160,7 @@ describe('performRun', () => {
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
   });
 
-  // D278 (2026-11-09): an answer to a top-level mention in a shared pod belongs
+  // Since 2026-11-09: an answer to a top-level mention in a shared pod belongs
   // in that message's thread. The kernel's cue in the item body says so; the
   // wrapper's old line saying to answer top-level (F212) must not come back
   // beside it, or the item carries two instructions that disagree.
@@ -2844,6 +2916,221 @@ describe('performRun', () => {
     ]);
   });
 
+  // F491: during a host memory hold the seat's gate exited 75 on every spawn;
+  // each exit counted as a failure and struck the event, so it was released to
+  // the server, re-claimed until attempts hit the cap, and failed unrun.
+  const deferredRun = ({ spawn, event }) => {
+    let served = false;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        if (served) return { events: [] };
+        served = true;
+        return { events: [event] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+    const fire = async (times) => {
+      for (let i = 0; i < times; i += 1) {
+        scheduled.shift().callback();
+        // eslint-disable-next-line no-await-in-loop
+        await drainMicrotasks();
+      }
+    };
+    const retries = () => errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
+    return { handle, mockGet, mockPost, fire, retries };
+  };
+  const heldByHost = () => Object.assign(
+    new Error('claude exited with code 75: keyed-seat-gate: kernel memory pressure critical; holding turn'),
+    { hostDeferred: true },
+  );
+
+  test('a host deferral keeps the event with no strike and no circuit, backs off, and runs it when the hold lifts', async () => {
+    const event = makeEvent({ _id: 'evt-held' });
+    const spawn = jest.fn();
+    for (let i = 0; i < 6; i += 1) spawn.mockRejectedValueOnce(heldByHost());
+    spawn.mockResolvedValue({ text: 'answered after the hold' });
+    const run = deferredRun({ spawn, event });
+
+    await drainMicrotasks();
+    await run.fire(6);
+    run.handle.stop();
+
+    expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen, e.retryAfterMs]))
+      .toEqual([
+        ['host_deferred', 0, false, 60000],
+        ['host_deferred', 0, false, 120000],
+        ['host_deferred', 0, false, 240000],
+        ['host_deferred', 0, false, 480000],
+        ['host_deferred', 0, false, 900000],
+        ['host_deferred', 0, false, 900000],
+      ]);
+    // Six deferrals past HELD_RETRY_MAX_FAILURES (3), and it was never released.
+    expect(run.retries().some((e) => /releasing/.test(e.message))).toBe(false);
+    expect(spawn).toHaveBeenCalledTimes(7);
+    // Never released: no hand-back while the run lives, so the kernel had no
+    // reason to re-claim it and raise its attempts.
+    expect(callsTo(run.mockPost, '/events/release')).toEqual([]);
+    expect(ackPosts(run.mockPost).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-held/ack']);
+  });
+
+  test('past HOST_DEFERRAL_MAX_MS a gate that exits 75 every time counts, and the event is released', async () => {
+    let clock = Date.UTC(2026, 10, 14, 0, 0, 0);
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const event = makeEvent({ _id: 'evt-stuck-gate' });
+      const spawn = jest.fn().mockImplementation(async () => { throw heldByHost(); });
+      const run = deferredRun({ spawn, event });
+
+      await drainMicrotasks();
+      // A gate stuck shut: a 75 every 20 minutes, never a gap that starts a new run.
+      for (let i = 0; i < 8; i += 1) {
+        clock += 20 * 60 * 1000;
+        // eslint-disable-next-line no-await-in-loop
+        await run.fire(1);
+      }
+      run.handle.stop();
+
+      expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen])).toEqual([
+        ...Array(6).fill(['host_deferred', 0, false]),
+        // From two hours on, it is a runtime failure like any other.
+        ['runtime', 1, false],
+        ['runtime', 2, false],
+        ['runtime', 3, true],
+      ]);
+      expect(run.retries()[8].message).toMatch(/releasing 1 event after 3 failed attempts/);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('an ask on the single-event path is deferred the same way', async () => {
+    const ask = makeEvent({
+      _id: 'evt-ask', type: 'agent.ask', payload: { question: 'what do you think?', requestId: 'req-1', fromAgent: 'nova' },
+    });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValue({ text: 'my answer' });
+    const run = deferredRun({ spawn, event: ask });
+
+    await drainMicrotasks();
+    await run.fire(4);
+    run.handle.stop();
+
+    expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.circuitOpen, e.retryAfterMs]))
+      .toEqual([
+        ['host_deferred', 0, false, 60000],
+        ['host_deferred', 0, false, 120000],
+        ['host_deferred', 0, false, 240000],
+        ['host_deferred', 0, false, 480000],
+      ]);
+    expect(run.retries()[0].message).toMatch(/^agent\.ask processing failed/);
+    expect(run.retries().some((e) => /releasing/.test(e.message))).toBe(false);
+    expect(spawn).toHaveBeenCalledTimes(5);
+  });
+
+  test('a deferral long after the last one starts a new run, not the old run past its cap', async () => {
+    let clock = Date.UTC(2026, 10, 14, 0, 0, 0);
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const spawn = jest.fn().mockImplementation(async () => { throw heldByHost(); });
+      const run = deferredRun({ spawn, event: makeEvent({ _id: 'evt-new-hold' }) });
+      await drainMicrotasks();
+      // No good spawn in between, and well past HOST_DEFERRAL_MAX_MS.
+      clock += 3 * 60 * 60 * 1000;
+      await run.fire(1);
+      run.handle.stop();
+      expect(run.retries().map((e) => [e.failureClass, e.consecutiveFailures, e.retryAfterMs])).toEqual([
+        ['host_deferred', 0, 60000],
+        ['host_deferred', 0, 60000],
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('a good spawn resets the deferral run, so a later hold starts from a minute again', async () => {
+    const event = makeEvent({ _id: 'evt-first' });
+    const later = makeEvent({ _id: 'evt-later', payload: { content: 'a second ask' } });
+    // `later` is served once, on the first poll after evt-first is acked.
+    let servedFirst = false;
+    let servedLater = false;
+    let firstAcked = false;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        if (!servedFirst) {
+          servedFirst = true;
+          return { events: [event] };
+        }
+        if (firstAcked && !servedLater) {
+          servedLater = true;
+          return { events: [later] };
+        }
+        return { events: [] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    const mockPost = jest.fn(async (route) => {
+      if (String(route).endsWith('/events/evt-first/ack')) firstAcked = true;
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(heldByHost())
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValueOnce({ text: 'first answered' })
+      .mockRejectedValueOnce(heldByHost())
+      .mockResolvedValue({ text: 'second answered' });
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+    await drainMicrotasks();
+    for (let i = 0; i < 4 && scheduled.length; i += 1) {
+      scheduled.shift().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+    handle.stop();
+    expect(firstAcked).toBe(true);
+    expect(errors.filter((e) => e.code === 'agent_spawn_retry_scheduled').map((e) => e.retryAfterMs))
+      .toEqual([60000, 120000, 60000]);
+  });
+
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
     const event = makeEvent({ _id: 'evt-quota' });
     const mockGet = jest.fn().mockResolvedValue({ events: [event] });
@@ -3034,6 +3321,91 @@ describe('performRun', () => {
       expect(spawn).toHaveBeenCalledTimes(2);
       expect(acked.size).toBe(5);
     } finally { handle.stop(); global.fetch = originalFetch; }
+  });
+
+  test('a Claude reset hint schedules the next batch after reset, not every 15 minutes', async () => {
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const event = makeEvent({ _id: 'evt-quota-reset' });
+      createClient.mockReturnValue({
+        get: jest.fn().mockResolvedValue({ events: [event] }),
+        post: jest.fn().mockResolvedValue({}),
+      });
+      const spawn = jest.fn().mockRejectedValue(new Error(
+        "claude exited with code 1: You've hit your session limit "
+        + '· resets 4:20am (America/Los_Angeles)',
+      ));
+      const scheduled = [];
+      const errors = [];
+      const handle = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        retryJitterRatio: 0,
+        setTimeoutImpl: (callback, delayMs) => {
+          scheduled.push({ callback, delayMs });
+          return 0;
+        },
+        onError: (error) => errors.push(error),
+      });
+      await drainMicrotasks();
+      handle.stop();
+
+      const delayMs = Date.parse('2026-10-23T11:22:00Z') - now;
+      expect(spawn).toHaveBeenCalledTimes(1);
+      // The circuit wait is the reset delay; the loop walks it in one-minute
+      // notice checks (F236), so the first timer is the first check.
+      expect(errors[0]).toMatchObject({
+        failureClass: 'quota', circuitOpen: true, retryAfterMs: delayMs,
+      });
+      expect(scheduled).toHaveLength(1);
+      expect(scheduled[0].delayMs).toBe(60_000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // CodeRabbit on #4108: a private consultation runs on the single-event path,
+  // which slept a whole circuit wait; it now walks it in notice checks too.
+  test('a private consultation that hits a quota reset walks the wait in one-minute checks', async () => {
+    const now = Date.parse('2026-10-23T10:57:37Z'); // 24 min before the reset
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const ask = makeEvent({
+        _id: 'evt-ask-quota', type: 'agent.ask',
+        payload: { requestId: 'req-quota', question: 'done?', fromAgent: 'peer' },
+      });
+      createClient.mockReturnValue({
+        get: jest.fn().mockResolvedValue({ events: [ask] }),
+        post: jest.fn().mockResolvedValue({}),
+      });
+      const spawn = jest.fn().mockRejectedValue(new Error(
+        "claude exited with code 1: You've hit your session limit · resets 4:20am (America/Los_Angeles)",
+      ));
+      const scheduled = [];
+      const errors = [];
+      const handle = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+        agentName: 'my-stub',
+        retryJitterRatio: 0,
+        setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; },
+        onError: (error) => errors.push(error),
+      });
+      await drainMicrotasks();
+      handle.stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(errors[0]).toMatchObject({
+        failureClass: 'quota', circuitOpen: true, retryAfterMs: Date.parse('2026-10-23T11:22:00Z') - now,
+      });
+      expect(scheduled.map(({ delayMs }) => delayMs)).toEqual([60_000]);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
@@ -5239,7 +5611,7 @@ describe('performRun — the grant broker is withheld where no daemon will judge
   });
 
   test('a non-public trust is withheld, named as its own reason', async () => {
-    const environment = { sandbox: { mode: 'workspace', trust: 'private' }, mcp: [BROKER] };
+    const environment = { sandbox: { trust: 'private' }, mcp: [BROKER] };
     const { spawned, log } = await runOnce({ environment });
     expect(spawned.mcp).toEqual([]);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('sandbox_trust_not_public'));
@@ -6288,6 +6660,62 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     expect(server.ackedIds()).not.toContain('ambient');
     expect(spawn.mock.calls.map(([prompt]) => prompt).join()).not.toContain('body-of-ambient');
     run.handle.stop();
+  });
+
+  // F483 (CodeRabbit on #4106): the reaction line needs an item the seat may act
+  // on, shown this turn, with a message id. A peer-held item or one past the cap
+  // that has the only id must not draw it, while an item with no id still spawns.
+  describe('the reaction line reads only what the seat may act on this turn', () => {
+    const REACT = 'react to the message you would acknowledge';
+    const seatWithPostTool = { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+    // An agent's rows (the payload flag plus the snapshot's isBot): not a person
+    // addressing the seat, so the turn closes on the "final text is posted" line,
+    // where the reaction line lives.
+    const agentRow = (id, overrides = {}) => inbox(id, { ...overrides, payload: { senderIsHuman: false, ...overrides.payload } });
+    const noId = (id) => agentRow(id, { payload: { messageId: undefined } });
+    const reactRun = (server, limit) => {
+      createClient.mockReturnValue(withPrivatePods(createClient()));
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const run = startRun({
+        spawn, limit, adapter: { name: 'claude', detect: stubAdapter.detect, spawn }, environment: seatWithPostTool,
+      });
+      return { spawn, run };
+    };
+
+    test('a control: an item it may act on, with an id, draws the line', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[agentRow('mine')]], agentRows: ['mine'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('a peer-held item with the only id does not', async () => {
+      const lost = agentRow('lost', { type: 'message.posted' });
+      const { spawn, run } = reactRun(fakeServer({ pages: [[lost, noId('ask')]], lostClaims: ['lost'], agentRows: ['lost', 'ask'] }), 5);
+      await drainMicrotasks();
+      expect(promptOf(spawn, 0)).toContain('body-of-ask');
+      expect(promptOf(spawn, 0)).toContain('body-of-lost');
+      expect(promptOf(spawn, 0)).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item past the cap with the only id does not', async () => {
+      const { spawn, run } = reactRun(fakeServer({ pages: [[noId('ask'), agentRow('later')]], agentRows: ['ask', 'later'] }), 1);
+      await drainMicrotasks();
+      const prompt = promptOf(spawn, 0);
+      expect(prompt).toContain('body-of-ask');
+      expect(prompt).not.toContain('body-of-later');
+      expect(prompt).not.toContain(REACT);
+      run.handle.stop();
+    });
+
+    test('an item already settled this batch is not a target, even when it is not read-only', () => {
+      const id = { event: { payload: { messageId: 'msg-1' } } };
+      expect(reactableEntry(id)).toBe(true);
+      expect(reactableEntry({ ...id, result: { outcome: 'no_action', reason: 'duplicate-delivery' } })).toBe(false);
+      expect(reactableEntry({ ...id, readOnly: true })).toBe(false);
+      expect(reactableEntry({ event: { payload: {} } })).toBe(false);
+    });
   });
 });
 

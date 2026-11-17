@@ -4,7 +4,7 @@
  * message: that text can carry the database host and port, and agent tool
  * results put an error's message straight into a model's context.
  */
-export type MessageStoreUnavailable = Error & { code: 'MESSAGE_STORE_UNAVAILABLE'; statusCode: 503 };
+type MessageStoreUnavailable = Error & { code: 'MESSAGE_STORE_UNAVAILABLE'; statusCode: 503 };
 
 export function messageStoreUnavailable(op: string, cause: unknown): MessageStoreUnavailable {
   console.error(`[message-store] PostgreSQL message ${op} failed:`, (cause as Error)?.message);

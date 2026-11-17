@@ -62,7 +62,7 @@ export const listIntegrationsRateLimit = rateLimit({
 // arrive as `x-commonly-integration-token` (routes/integrations.ts
 // extractToken), which the shared key does not read, so that form would
 // otherwise fall back to the caller's address bucket.
-export const ingestRateLimitKey = (req: RateLimitRequest): string => {
+const ingestRateLimitKey = (req: RateLimitRequest): string => {
   const ingestToken = req.get?.('x-commonly-integration-token');
   if (ingestToken) {
     return `int:${createHash('sha256').update(ingestToken).digest('hex').slice(0, 16)}`;
@@ -97,7 +97,6 @@ export const ingestIntegrationsRateLimit = rateLimit({
 
 module.exports = {
   integrationsRateLimitKey,
-  ingestRateLimitKey,
   writeIntegrationsRateLimit,
   listIntegrationsRateLimit,
   ingestIngressRateLimit,

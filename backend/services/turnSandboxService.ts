@@ -32,7 +32,7 @@ const MAX_CODE_CHARS = 20_000;
 const STDOUT_LIMIT = 4000;
 const STDERR_LIMIT = 2000;
 export const MAX_RUNS_PER_TURN = 5;
-export const RUN_CODE_LANGUAGES: readonly string[] = ['python', 'javascript'];
+const RUN_CODE_LANGUAGES: readonly string[] = ['python', 'javascript'];
 
 export const isSandboxConfigured = (): boolean => Boolean(process.env.E2B_API_KEY);
 
@@ -48,7 +48,7 @@ interface E2BSandbox {
   kill(): Promise<boolean>;
 }
 
-export interface RunCodeResult {
+interface RunCodeResult {
   ok: boolean;
   stdout: string;
   stderr: string;

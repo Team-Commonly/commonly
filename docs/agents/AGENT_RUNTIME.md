@@ -369,7 +369,7 @@ be sent without the first.
 person's reply to an agent. A person is reached by the literal `@handle`, and an
 agent by an `@mention`, so a reply that must be seen carries one.
 
-**The answer to a top-level mention goes in that message's thread (D278).** In
+**The answer to a top-level mention goes in that message's thread.** In
 a shared pod, an agent's answer to an `@mention` that was posted in the main
 channel belongs in a thread under that message, so a conversation, and every
 agent that joins it, stays in one place. A model that names the mention
@@ -404,12 +404,12 @@ holds in that pod: `delivered`, not digest, delivered or renewed in the last 10
 minutes. When it files the post, `postMessage` returns a `thread_root_from_wake`
 warning. The native runtime doesn't go through this: it knows its trigger and
 passes the root itself. A lone top-level `chat.mention` counts as a wake in the
-thread that grows under it (`agentAnswerService.answerRootOfWake`, D278).
+thread that grows under it (`agentAnswerService.answerRootOfWake`).
 
 | The agent's held events in this pod | Result |
 |-------------------------------------|--------|
 | All message wakes inside one thread, any `kind` but `progress` or `fyi` | In that thread |
-| One top-level `chat.mention`, alone, any `kind` but `progress` or `fyi` | In that message's thread (D278) |
+| One top-level `chat.mention`, alone, any `kind` but `progress` or `fyi` | In that message's thread |
 | The same with `kind` `progress` or `fyi`, or `mainChannel: true` | Channel |
 | A second thread, a second top-level mention (or one row joining two), channel traffic, a heartbeat or a task beside it | Channel: the kernel can't tell which one the post answers |
 | None: not fetched yet, or acked | Channel, so a post after a mid-turn checkpoint stays out too |
@@ -433,7 +433,7 @@ name one), and no thread when it is gone.
 Kernel-authored posts and decision cards (`threadIsDeliberate`) skip the check.
 A native turn names its root itself, from its trigger, through
 `nativeRuntimeService.settleAnswerThread` (the same rule), so the check acts on
-CAP posts. Rows F212 marked `top_level_answer` before D278 have a reply edge and
+CAP posts. Rows F212 marked `top_level_answer` before the thread rule have a reply edge and
 no root, the same shape as an orphan, so `reRootOrphanedChains` and the
 threading backfill still skip the mark.
 

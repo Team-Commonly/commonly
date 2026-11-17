@@ -8,7 +8,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * a Mongo ObjectId — the catalog is static/external.
  */
 
-export interface ISkillRating extends Document {
+interface ISkillRating extends Document {
   skillId: string;
   userId: Types.ObjectId;
   rating: number;
@@ -17,13 +17,13 @@ export interface ISkillRating extends Document {
   updatedAt: Date;
 }
 
-export interface ISkillRatingAggregate {
+interface ISkillRatingAggregate {
   count: number;
   avg: number;
   histogram: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
-export interface ISkillRatingModel extends Model<ISkillRating> {
+interface ISkillRatingModel extends Model<ISkillRating> {
   getAggregated(skillId: string): Promise<ISkillRatingAggregate>;
   getAggregatedMany(skillIds: string[]): Promise<Map<string, ISkillRatingAggregate>>;
 }

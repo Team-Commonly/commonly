@@ -6,7 +6,7 @@ import V2ThemeSwitch from '../components/V2ThemeSwitch';
 import useV2ThemePref from '../hooks/useV2ThemePref';
 import { setV2Theme, V2_THEME_KEY } from '../utils/theme';
 
-// TASK-740 (D224): the rail switch writes the one stored theme preference that
+// TASK-740: the rail switch writes the one stored theme preference that
 // Settings > Theme reads, and a change made elsewhere moves the switch.
 
 const Probe: React.FC = () => <span data-testid="pref">{useV2ThemePref()}</span>;

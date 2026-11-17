@@ -1,4 +1,4 @@
-// F403 (D286): the daily usage read Growth runs on ops-runner. Read-only and
+// F403: the daily usage read Growth runs on ops-runner. Read-only and
 // aggregate-only: per-day counts by event and by screen or step from
 // `ui_events` (signed in), and per-day hits by page from `ui_daily_counts`
 // (logged out). Our own accounts are left out: the stored isInternal stamp,

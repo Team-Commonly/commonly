@@ -21,7 +21,7 @@ interface SocketIOLike {
 
 let ioRef: SocketIOLike | null = null;
 
-export type TaskEventKind = 'created' | 'updated' | 'deleted';
+type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
 const FOUND_WORK_BATCH_INTERVAL_MS = 60 * 60 * 1000;
@@ -88,13 +88,13 @@ async function usesHostedBoardWake(
   }
 }
 
-export interface TaskEventPayload {
+interface TaskEventPayload {
   podId: string;
   task: unknown;
   kind: TaskEventKind;
 }
 
-export interface PodFocusEventPayload {
+interface PodFocusEventPayload {
   podId: string;
   revision: number;
 }

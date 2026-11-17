@@ -345,7 +345,7 @@ entry decides — without it the app's Messages tab refuses to send).
 `X-Signature-Timestamp` + raw body, key from `DISCORD_PUBLIC_KEY` as 64 hex
 characters). It is **fail-closed**: an absent key rejects every request with
 `401`, and nothing bypasses it (the old `DISCORD_WEBHOOK_ALLOW_UNVERIFIED`
-flag was removed under D137 A9 and is ignored if still set). `routes/discord.ts` uses the same key for slash-command
+flag was removed and is ignored if still set). `routes/discord.ts` uses the same key for slash-command
 interactions.
 
 ### Read the key with the bot's own token

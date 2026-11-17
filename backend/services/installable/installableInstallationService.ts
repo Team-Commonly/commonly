@@ -343,7 +343,7 @@ export const userFacingInstallationError = (reason: string) => ({
   errorMessageUserFacing: true,
 });
 
-export const diagnosticInstallationError = (error: Error) => ({
+const diagnosticInstallationError = (error: Error) => ({
   status: 'error',
   errorMessage: error.message,
   errorMessageUserFacing: false,
@@ -729,5 +729,4 @@ module.exports = {
   // Named here as well as exported above: this file's CommonJS tail replaces the
   // ES exports, so an `export const` on its own is invisible to every require().
   userFacingInstallationError,
-  diagnosticInstallationError,
-};
+  };

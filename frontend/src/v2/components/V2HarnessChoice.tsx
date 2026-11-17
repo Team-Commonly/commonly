@@ -4,7 +4,7 @@ import {
   HarnessCatalogEntry, HarnessDeviceRow, OTHER_MODEL, effortLevelsFor, harnessLabel, modelChoicesFor,
 } from '../utils/harnessCatalog';
 
-// D247: model and effort on the add-agent page, from the same catalogue
+// Model and effort on the add-agent page, from the same catalogue
 // Settings uses. The value saved is the full model id. With no harness picked
 // (auto-detect) only the model's default shows, as before.
 const V2HarnessChoice: React.FC<{

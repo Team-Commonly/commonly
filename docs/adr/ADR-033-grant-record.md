@@ -1,6 +1,6 @@
 # ADR-033: The grant record, one portable log of who let which agent do what
 
-**Status:** **Accepted** 2026-10-25 (ratified by the project's cofounder, who also served as this
+**Status:** **Accepted** 2026-10-25 (ratified by the maintainers, who also served as this
 ADR's non-Haiku review gate). **Two launch questions are called out below, and §8 lists the
 remaining decisions. Accepting this ADR does not settle any of them:**
 (1) **The decision-owner model.** Today approvals are decided by the credential owner, and decision

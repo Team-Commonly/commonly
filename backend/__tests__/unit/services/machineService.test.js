@@ -104,7 +104,7 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(cleared.agentStates).toEqual([]);
   });
 
-  it('D245: records the host sandbox report, and a heartbeat that carries none leaves it standing', async () => {
+  it('records the host sandbox report, and a heartbeat that carries none leaves it standing', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
     expect((await machineService.recordMachineHeartbeat(await Machine.findById(machine.id))).hostUnconfined).toBe(false);

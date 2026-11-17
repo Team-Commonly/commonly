@@ -19,7 +19,7 @@ const V2Hint: React.FC<V2HintProps> = ({ children, label }) => {
   const pointerFocus = useRef(false);
   // Set when hover opened the hint. A mouse click reaches the trigger only after
   // hovering it, so toggling there closed the hint under the cursor: a desktop
-  // click on "i" did nothing visible (D215 crawl, 2026-11-04). That click pins
+  // click on "i" did nothing visible (crawl, 2026-11-04). That click pins
   // the open hint instead, until blur or the next click.
   const hoverOpened = useRef(false);
   const root = useRef<HTMLSpanElement>(null);

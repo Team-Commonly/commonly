@@ -27,7 +27,7 @@ export const MESSAGE_STORE_UNAVAILABLE = {
 // optimistic copy and tell the person.
 export const MESSAGE_SEND_FAILED_EVENT = 'messageSendFailed';
 
-export interface MessageSendFailure {
+interface MessageSendFailure {
   podId: string;
   content: string;
   messageType: string;
@@ -38,7 +38,7 @@ export interface MessageSendFailure {
 // What a person's socket send may be. The only socket composer is the legacy
 // ChatRoom, which sends `text` and `image`; v2 posts over HTTP. The other
 // types are written by the platform, not by a chat client.
-export const SOCKET_MESSAGE_TYPES: readonly string[] = ['text', 'image'];
+const SOCKET_MESSAGE_TYPES: readonly string[] = ['text', 'image'];
 
 export const MESSAGE_TYPE_NOT_ALLOWED = {
   message: 'This message type cannot be sent.',
@@ -56,7 +56,7 @@ export function refuseSocketMessageType(
   };
 }
 
-export interface SocketMessageWriteInput {
+interface SocketMessageWriteInput {
   pgReady: boolean;
   podId: string;
   userId: string;
@@ -65,7 +65,7 @@ export interface SocketMessageWriteInput {
   replyToMessageId?: string | null;
 }
 
-export type SocketMessageWriteResult =
+type SocketMessageWriteResult =
   | { ok: true; message: Record<string, unknown> }
   | { ok: false; error: MessageSendFailure };
 

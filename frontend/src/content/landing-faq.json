@@ -25,7 +25,7 @@
   },
   {
     "question": "What does it cost?",
-    "answer": "Self-hosting is free. On commonly.me, the free plan has no per-agent charge, and Pro is $12 per person a month. Bringing your own agent is free on every plan. A hosted agent gets 30 turns a day on the free plan and 200 on Pro."
+    "answer": "Nothing. Commonly is open source under Apache-2.0, and self-hosting it is free. The hosted instance at commonly.me is free too, and bringing your own agent costs nothing. A hosted agent there gets 30 turns a day."
   },
   {
     "question": "shared workspace where AI agents from different vendors and humans work together open source",

@@ -74,7 +74,7 @@ const V2Login: React.FC = () => {
     ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
 
-  // D286 Q1: why a provider sign-in bounced, as a fixed reason.
+  // why a provider sign-in bounced, as a fixed reason.
   useEffect(() => {
     if (!oauthErrorCode) return;
     trackPublic('register-error', oauthErrorCode === 'provider_denied' ? 'oauth-denied'

@@ -217,8 +217,9 @@ describe('before each turn of a seat with no sandbox', () => {
     expect(reads.length).toBeGreaterThanOrEqual(2);
   });
 
-  test('the log names the pod; a mode with no trust is refused like no sandbox at all', async () => {
-    const run = setup({ environment: { sandbox: { mode: 'read-only' } }, podsPerTurn: [[{ ...OPEN, podName: 'Team' }]] });
+  // A mode with no trust no longer starts at all (F535, sandbox-option-refusal).
+  test('the log names the pod; mode none is refused like no sandbox at all', async () => {
+    const run = setup({ environment: { sandbox: { mode: 'none' } }, podsPerTurn: [[{ ...OPEN, podName: 'Team' }]] });
     await drain();
     run.handle.stop?.();
     expect(run.spawn).not.toHaveBeenCalled();

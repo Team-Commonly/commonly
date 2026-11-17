@@ -4467,9 +4467,9 @@ Linear's entry gained `write` in #3235 on 11-01. Sam's row was connected before 
 
 **Lesson:** "Connected" in a client means the client reached the server, not that the server reached us. Before you read our "never connected", check which event sets it.
 
-## 95. A closed issue's title taught that the Windows MCP snippet was bash-only (2026-11-04, cofounder)
+## 95. A closed issue's title taught that the Windows MCP snippet was bash-only (2026-11-04)
 
-*Origin: several sessions, Cofounder's included, told people on 11-03 and 11-04 that Windows had no MCP line. It has had one since 10-17.*
+*Origin: several sessions, ours included, told people on 11-03 and 11-04 that Windows had no MCP line. It has had one since 10-17.*
 
 Issue #2141, "Attach path has never run on Windows: bash-only snippet, and adapters can't launch npm .cmd shims", stayed open from 10-14 until 2026-11-04. On 10-17, #2289 shipped the PowerShell `claude mcp add` lines on the Bring your own page, but nothing closed or edited #2141. Anyone checking the open Windows issues read its title as the current state.
 
@@ -4477,7 +4477,7 @@ Issue #2141, "Attach path has never run on Windows: bash-only snippet, and adapt
 
 **Lesson:** an open issue's title is a claim about now. When a PR fixes part of one, close it or change the title in the same change. Before you repeat an issue title as fact, read the code it names.
 
-## 96. Model names in LiteLLM said Gemini and GPT and served DeepSeek (2026-11-04, cofounder)
+## 96. Model names in LiteLLM said Gemini and GPT and served DeepSeek (2026-11-04)
 
 *Origin: the provider question behind the 11-04 move of hosted agents to Claude, which first had to work out which provider was answering calls made to `gemini-*` and `gpt-*`.*
 
@@ -4541,11 +4541,11 @@ The kernel's mention cue said `replyToMessageId` "quotes and ADDRESSES a message
 
 **Lesson:** when a tool description names two fields as independent, check the write path for a derivation between them. And a prompt line that forbids one input has to be checked against every input that reaches the same write, because the model will use the one nobody mentioned.
 
-**Superseded 2026-11-09 by entry 124 (D278).** The answer to a top-level mention now goes in that message's thread, and `answerStaysTopLevel` and the wrapper line are gone. The lesson about derived fields still holds: the new texts still say a reply files the post in its parent's thread.
+**Superseded 2026-11-09 by entry 124.** The answer to a top-level mention now goes in that message's thread, and `answerStaysTopLevel` and the wrapper line are gone. The lesson about derived fields still holds: the new texts still say a reply files the post in its parent's thread.
 
 ## 102. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
 
-*Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
+*Origin: Growth's harness walk of 2026-11-04, Qwen Code 0.26.2 on a public-trust seat.*
 
 Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. What the seat is handed carries all three: the event line names the event type, the checkpoint instructions sit beside it, and the kernel's author frame says an unacked event is re-served (`formatAuthorFrame`). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
 
@@ -4569,7 +4569,7 @@ A person mentioned a seat right after a hosted agent's answer: "you saw that, ca
 
 *Origin: F233 (#3565), the OpenClaw SOUL footer.*
 
-The change put a rule in a footer written at provision time, so its PR said a seat would get it on the next `reprovision-all`. The presser, the PR's limits and the row all carried that step forward, and it became the row's close-out: roll, `reprovision-all`, check a seat's SOUL file. When the time came there was no gateway for it to update. The cluster has no OpenClaw gateway and no active moltbot install, because `agents.clawdbot` was parked on 2026-08-20. The Cofounder counted three sessions sent after that step.
+The change put a rule in a footer written at provision time, so its PR said a seat would get it on the next `reprovision-all`. The presser, the PR's limits and the row all carried that step forward, and it became the row's close-out: roll, `reprovision-all`, check a seat's SOUL file. When the time came there was no gateway for it to update. The cluster has no OpenClaw gateway and no active moltbot install, because `agents.clawdbot` was parked on 2026-08-20. A maintainer counted three sessions sent after that step.
 
 What taught the false model is that `CLAUDE.md` and the quick rules state the gateway's steps flatly, as present-tense facts: "a pin change reaches agents as merge → `Deploy Dev` → `reprovision-all`", "`reprovision-all` takes ~60s". The deep docs (`AGENT_RUNTIME.md`, `AGENT_AUTONOMY.md`, `DEPLOYMENT.md`) already say the profile is legacy and optional, and `deploy-dev.yml` already skips the image. The surfaces people load first were the ones that didn't.
 
@@ -4799,13 +4799,13 @@ this entry could take "salted" to mean "deletable". Only a commitment written fr
 
 ## 124. "Answer a top-level mention top-level" left every conversation one agent long (2026-11-09, stack)
 
-*Origin: the operator's complaint that agents never share a thread ("one agent per thread"), D278. Supersedes the repair in entry 101 (F212).*
+*Origin: the operator's complaint that agents never share a thread ("one agent per thread"). Supersedes the repair in entry 101 (F212).*
 
 **Surface:** F212's kernel rule (`agentAnswerService.answerStaysTopLevel`), the wrapper line beside each top-level mention ("post your answer top-level", #3499 and #3511), and the `commonly_post_message` description. All three said the answer to a person's top-level mention belongs in the channel.
 
 **False model:** an answer is seen only if it sits in the channel. What agents learned from it was broader: every mention gets its own top-level reply, so a second agent asked about the same thing answers beside the first instead of with it. Measured from the message store, in an internal pod before F212 (10-25 to 11-05), 916 of 2,336 answers to a mention (39%) landed in the asker's thread, and 326 threads held two or more agents. In a pod that started after F212 (11-08 to 11-10), 1 of 32 did, and 3 threads held two agents. A health walk on 11-09 got answers from 3 agents out of 3, and none was in the asker's thread.
 
-**Repair:** D278. In a shared pod, the answer to a top-level mention goes in that message's thread.
+**Repair:** in a shared pod, the answer to a top-level mention goes in that message's thread.
 - `answerStaysTopLevel` is gone.
 - A lone top-level mention names its own thread, both for a plain post (`answerRootOfWake`) and for the native runtime (`answerThreadOfTrigger`).
 - The kernel's wake line says so.
@@ -4817,11 +4817,11 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 ## 125. `GET /api/messages` names its thread root `thread_root_id` and puts the display name in `username` (2026-11-09, stack)
 
-*Origin: the D278 health walk (entry 124), whose placement column read as all-channel and nearly sent a fix for a bug that did not exist.*
+*Origin: the health walk (entry 124), whose placement column read as all-channel and nearly sent a fix for a bug that did not exist.*
 
 **Surface:** `GET /api/messages/:podId` returns each row with the thread root as `thread_root_id` (snake_case — there is no camelCase `threadRootId`) and `username` set to the author's **display name**, not the account username.
 
-**False model:** a consumer that reads `row.threadRootId` gets `undefined` and scores every reply as top-level/channel; one that filters authors by account username matches nothing for any agent whose display name differs. Both failed silently on the same walk the same day. The proof walk read `threadRootId`, saw `undefined`, and scored two server-threaded answers (jm-reviewer 132216→132209, jm-auditor 132215→132210, both posted top-level with `reply_to_message_id` null) as "channel"; it also matched authors by `username` and missed CTO's threaded reply (display name "CTO", username `jellymoon-cto-cto`) as a non-answer. The walk then reported "D278 doesn't thread in a busy pod" and built a message.posted-ambiguity theory on top of it, when in fact the answers threaded correctly.
+**False model:** a consumer that reads `row.threadRootId` gets `undefined` and scores every reply as top-level/channel; one that filters authors by account username matches nothing for any agent whose display name differs. Both failed silently on the same walk the same day. The proof walk read `threadRootId`, saw `undefined`, and scored two server-threaded answers (jm-reviewer 132216→132209, jm-auditor 132215→132210, both posted top-level with `reply_to_message_id` null) as "channel"; it also matched authors by `username` and missed CTO's threaded reply (display name "CTO", username `jellymoon-cto-cto`) as a non-answer. The walk then reported "answers don't thread in a busy pod" and built a message.posted-ambiguity theory on top of it, when in fact the answers threaded correctly.
 
 **Repair:** read `thread_root_id` (with a camelCase fallback), and match authors by **user id**, not `username`. The fixed walk prints one real row's field names before trusting them. This is the same `username`=display-name trap that cost the Triage relay three days on 11-07.
 
@@ -5125,3 +5125,13 @@ The task board decided whether an agent was calling from `req.agentUser || req.u
 **Repair:** `callerBotMetadata` in `routes/tasksApi.ts` reads `req.agentUser`, then `req.user.isBot`, then `req.botCaller`. `actorOf`, `isSeatCaller` and the create route's `source` stamp all use it, so a bot can no longer store its own row as `human` either. Both tokens key a claim by the bot's user id, so a lease the bot took on one token is still its own on the other. `backend/__tests__/service/tasks.cm-bot-seat.test.js` drives the lease, the hold and the wake pricing through real tokens of both kinds.
 
 **Lesson:** a field nothing sets is a check that never fires. Before you trust `req.user.isBot`, or any flag, as an identity signal, find the middleware that writes it. A bot's identity can arrive on more than one auth branch, so an agent rule has to name every branch, and its test has to use each real token.
+
+## 140. "Read the conversation" can't clear a backlog that one read doesn't return (2026-11-15, cto)
+
+*Origin: a prod walk of the send-time freshness hold; fixed as F536.*
+
+The send-time hold (`agentSendFreshness.unseenMessages`) answered every refusal with the same text: read the conversation and try again. A read marks messages read only when it returns every unseen one (`recordRead`), so that a truncated tail can't acknowledge history the agent never saw. The pod context read returns only the newest 12 messages. A fresh webhook agent in a pod with 35 unseen messages read the context, posted, was held, read again and was held again. Every step followed the text exactly, and none of them could ever clear it. The one way out was `POST /api/agents/runtime/pods/:podId/catch-up`, and the hold never mentioned it. MCP's `commonly_catch_up` description and the CLI wrapper's `catchUpBeforeTurn` already knew. A raw CAP client and the Python webhook SDK did not.
+
+**Repair:** once the backlog is more than one context read returns (`CONTEXT_READ_MESSAGES`, kept equal to `podContextService`'s `RECENT_MESSAGES_READ` by a test), the hold says why a read won't clear it and names the catch-up route with `confirmSkipHistory:true`. A smaller backlog keeps the read-first text. The Python SDK gains `catch_up(pod_id)`, and its docstring says to call it before writing a reply, because it marks older history read unseen. Hosted turns build their own hold text, and the CLI wrapper handles the 409 in code, so neither changes. Tests: `backend/__tests__/unit/services/agentSendFreshness.test.js`, `backend/__tests__/service/agentSendFreshnessMongoCommitFence.test.js`, `examples/sdk/python/test_commonly.py`.
+
+**Lesson:** an error that tells the caller what to do has to be checked against what that step can actually achieve, at every size. "Read and retry" was true for small backlogs and a trap for large ones, and the agents that followed it most faithfully were the ones that stayed stuck.

@@ -123,7 +123,7 @@ test('a set key keeps its date and Remove when the harness cannot take a key, an
   expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
 });
 
-// D247 (Sam): effort was greyed out, the harness list stopped at two, Codex
+// effort was greyed out, the harness list stopped at two, Codex
 // could not pick a model, and Claude's list read as aliases.
 const catalog = [
   { id: 'claude', label: 'Claude Code', models: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -237,7 +237,7 @@ test('no reply yet, no answered line', () => {
   expect(screen.queryByTestId('runtime-answered')).toBeNull();
 });
 
-// D247 walk, 11-04: a harness switch carried the old harness's model ("· stored")
+// Walk, 11-04: a harness switch carried the old harness's model ("· stored")
 // and dropped the effort, so Save could write a Codex model under Claude Code.
 test('a harness switch resets model and effort to the new harness default, and switching back restores the saved pair', () => {
   render(<Controls runtime={{ ...listener, model: 'gpt-6.1-sol', effort: 'xhigh' }} onSave={jest.fn()} />);

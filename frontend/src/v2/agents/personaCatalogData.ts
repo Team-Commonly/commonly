@@ -16,14 +16,14 @@
  * vocabulary except the ruling-1 exception.
  */
 
-export type PersonaTier = 'hosted' | 'local';
+type PersonaTier = 'hosted' | 'local';
 
-export interface PersonaSample {
+interface PersonaSample {
   ask: string;
   reply: string;
 }
 
-export interface PersonaCard {
+interface PersonaCard {
   key: string;
   /** Stable identity seed for the avatar — survives display renames. */
   avatarSeed: string;

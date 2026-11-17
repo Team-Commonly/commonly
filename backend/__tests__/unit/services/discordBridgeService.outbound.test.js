@@ -1,4 +1,4 @@
-// F132 (D249): a Discord row with live relay on carries the pod's agent lines
+// F132: a Discord row with live relay on carries the pod's agent lines
 // back to its bound channel, by mode, through the shared chat-relay core — the
 // same ladder Telegram and Slack run. What only Discord knows is pinned here:
 // the channel webhook send, the 2000-character limit, a send that can never

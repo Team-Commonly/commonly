@@ -17,7 +17,7 @@ const BYO_START_IDS = new Set(['connect-agent', 'open-byo']);
 export type WelcomePick = 'hosted' | 'byo' | null;
 
 export const isHostedStart = (start: V2Start): boolean => start.action === WELCOME_HOSTED_ACTION;
-export const isByoStart = (start: V2Start): boolean => BYO_START_IDS.has(start.id);
+const isByoStart = (start: V2Start): boolean => BYO_START_IDS.has(start.id);
 
 /**
  * The starts in one group that get the filled key.

@@ -2,7 +2,7 @@ import React from 'react';
 import './primitives.css';
 import V2SettingsFrame from './V2SettingsFrame';
 
-// TASK-730 (D223): the shared primitives rendered alone, so a surface can be
+// TASK-730: the shared primitives rendered alone, so a surface can be
 // checked against the artboard frame without the shell around it. Served at
 // /v2/_primitives. Light and dark follow the page's data-v2-theme, the same as
 // every other v2 surface.
@@ -13,7 +13,7 @@ const V2PrimitivesPage: React.FC = () => (
       <section className="v2p-pane v2p-pane--scroll" aria-label="Primitives">
         <header className="v2p-ph">
           <h1>Primitives</h1>
-          <span className="meta">D223 · TASK-730</span>
+          <span className="meta">TASK-730</span>
           <span className="sp" />
           <div className="v2p-seg" role="group" aria-label="View">
             <button type="button" className="on">Light</button>

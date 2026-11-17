@@ -1,7 +1,7 @@
 // F512: a teammate's @mention waited for the next digest. Since #2559 every
 // kind 'mention' row skips the needs-you email, which was right for agent
 // mentions (their real asks email as decision, approval, blocked or handoff)
-// and wrong for a person asking a person. Ruling (Cofounder, 11-14): one email
+// and wrong for a person asking a person. Decided 11-14: one email
 // if the person mentioned hasn't opened that pod about 15 minutes later; never
 // to the author; one per recipient per pod per 6h, later mentions ride the
 // digest; the digest opt-out applies.

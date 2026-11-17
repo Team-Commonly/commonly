@@ -24,6 +24,7 @@ import {
 import { useCloseAgentRoom } from '../agentRoomClose';
 import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
+import V2DailySchedule, { ScheduleTarget } from './V2DailySchedule';
 import { usePodReadPoint } from '../hooks/usePodReadPoint';
 import { firstNewSinceId } from '../utils/newSince';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
@@ -31,6 +32,7 @@ import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { useDocumentTitleText } from '../hooks/useDocumentTitle';
 import { podTabName } from '../utils/podTabName';
 import { runCommandForThisComputer } from '../utils/agentConnection';
+import { harnessLabel } from '../utils/harnessCatalog';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -106,6 +108,8 @@ interface AgentStateRow {
   noSavedKey?: boolean;
   /** A push webhook whose last delivery failed; absent from an older backend. */
   deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
+  /** F515: why a never-connected agent's first run stopped, as the code it reported. */
+  listenReason?: { reason: string; harness: string | null };
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -222,7 +226,7 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
 // Scout's welcome is the message offering one of these. Older welcomes carry no
 // ask start, so the connect start identifies them too.
 const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
-// D286 Q2: which welcome start a person picked, as a fixed name. Starts the
+// which welcome start a person picked, as a fixed name. Starts the
 // welcome doesn't offer send nothing.
 const welcomeStartKind = (start: V2Start): string | null => {
   if (start.action === WELCOME_HOSTED_ACTION) return 'hosted';
@@ -411,7 +415,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // A reply visible flat before its root arrived must stay flat. Otherwise
     // prepending an older page relocates it into a resting thread chip.
     flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
-    // D278: who is reading, and their read points, so each chip can preview
+    // Who is reading, and their read points, so each chip can preview
     // its latest reply and count what this person hasn't read.
     return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids, {
       viewerId: currentUser?._id || null,
@@ -521,6 +525,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // names it and opens its own connect page, where one click gives a new command.
   const pendingConnectAgent = useMemo(() => agentStates.find((row) => row.isOwner
     && row.state === 'never-connected' && !row.hosted && Boolean(agentConnectLink(row))) || null, [agentStates]);
+  // The daily schedule is for an agent the owner runs themselves (agentScheduleService.takesSchedule),
+  // so only their own connected, non-hosted agent here can take Scout's recurring workflow.
+  const scheduleTarget = useMemo<ScheduleTarget | null>(() => {
+    const row = agentStates.find((agent) => agent.isOwner && !agent.hosted
+      && (agent.state === 'listening' || agent.state === 'gone-dark'));
+    return row ? { agentName: row.agentName, instanceId: row.instanceId || 'default', displayName: row.displayName } : null;
+  }, [agentStates]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -529,6 +540,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       if (start.id === 'run-hosted' && viewerHoldsHostedAgent) return false;
       if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
       if (start.action === 'add-first-task') return viewerOwnsPod && Boolean(start.title);
+      // Drawn by V2DailySchedule, which also says how the work runs without one.
+      if (start.action === 'schedule-daily') return viewerOwnsPod && Boolean(pod?._id) && Boolean(start.prompt);
       if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
       return true;
     };
@@ -1777,7 +1790,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
 
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
   // The private workspace is never shared (the placement-B privacy ruling).
-  // D288: there the card waits for the person's own agent, not Scout, and its
+  // There the card waits for the person's own agent, not Scout, and its
   // press makes a new pod with that agent in it and invites into that one.
   const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
   // Scout's chat messages carry its display name, not its per-user username,
@@ -1832,8 +1845,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const showDirectAgentLiveness = Boolean(
     isAgentRoom && directAgent && (directAgentReach === 'never-connected' || directAgentReach === 'gone-dark'),
   );
+  // F515: why a never-connected agent's first run stopped, as one clause, or
+  // '' for a code this build doesn't know (an unknown code says nothing).
+  const listenReasonClause = (row?: AgentStateRow | null): string => {
+    const found = row?.state === 'never-connected' ? row.listenReason : undefined;
+    if (!found) return '';
+    const tool = found.harness ? harnessLabel([], found.harness) : '';
+    if (found.reason === 'harness-signed-out' && tool) return t('podChat.listenReason.signedOut', { tool });
+    if (found.reason === 'harness-missing') {
+      return tool ? t('podChat.listenReason.missing', { tool }) : t('podChat.listenReason.missingAny');
+    }
+    if (found.reason === 'node-too-old') return t('podChat.listenReason.nodeTooOld');
+    return '';
+  };
+  const directAgentReason = listenReasonClause(directAgent?.state);
   const directAgentLivenessKey = directAgentReach === 'never-connected'
-    ? 'podChat.agentRoomLiveness.neverConnected'
+    ? (directAgentReason ? 'podChat.agentRoomLiveness.neverConnectedBecause' : 'podChat.agentRoomLiveness.neverConnected')
     : 'podChat.agentRoomLiveness.goneDark';
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? runCommandForThisComputer(directAgent.state.fixCommand || '')
@@ -1862,7 +1889,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     });
   };
   const podAgentLivenessLine = (row: typeof podAgentLiveness[number]) => (
-    row.deliveryError ? webhookFailedLine(row) : row.state === 'never-connected' || !row.lastUsedAt
+    row.deliveryError ? webhookFailedLine(row) : listenReasonClause(row)
+      ? t('podChat.podAgentLiveness.notConnectedBecause', {
+        agentName: row.displayName || row.agentName, reason: listenReasonClause(row),
+      })
+      : row.state === 'never-connected' || !row.lastUsedAt
       ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
       : t('podChat.podAgentLiveness.offlineSince', {
         agentName: row.displayName || row.agentName,
@@ -2176,7 +2207,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
-  // Header meta (D215, TASK-734): board chip, three member faces and "+N",
+  // Header meta (TASK-734): board chip, three member faces and "+N",
   // then bound channels. The counts moved into the faces' label.
   const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
   const memberCountText = t('podChat.header.members', { count: humanMemberCount });
@@ -2187,7 +2218,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const moreMembers = Math.max(0, (members || []).length - faceMembers.length);
   const facesLabel = `${memberCountText}, ${agentCountText}`;
   const metaParts: React.ReactNode[] = [];
-  // D215: the board is a chip with a glyph and the count, a status and a door at once.
+  // The board is a chip with a glyph and the count, a status and a door at once.
   const boardLabel = headerMeta.boardOpen !== null ? t('podChat.header.boardOpen', { count: headerMeta.boardOpen }) : '';
   const boardChip = (compact: boolean) => (
     <button
@@ -2240,7 +2271,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   if (isDirectPod) {
     metaParts.push(...directChips);
   }
-  // D288: the owner's first run shows the starter steps under the header in
+  // The owner's first run shows the starter steps under the header in
   // place of the board chip, until both are done.
   const starter = headerMeta.starter;
   const showGetStarted = Boolean(viewerOwnsPod && !isDirectPod && !isReadOnly && starter
@@ -2336,7 +2367,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 ) : (
                   <>
                     <h1>{pod.name}</h1>
-                    {/* D215: a pencil on the title, shown on hover or focus. */}
+                    {/* A pencil on the title, shown on hover or focus. */}
                     {viewerOwnsPod && (
                       <button
                         type="button"
@@ -2353,7 +2384,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            {/* The phone head carries the board chip alone (D215 phone frame);
+            {/* The phone head carries the board chip alone (the phone frame);
                 the member faces live in the panel there. */}
             {/* The phone head draws "DM" alone (d215 390 frame). */}
             {isDirectPod ? (
@@ -2383,7 +2414,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 <span>{t('podChat.header.invite')}</span>
               </button>
             )}
-            {/* D215: the open panel carries its own Hide button, so the
+            {/* The open panel carries its own Hide button, so the
                 header offers the toggle only while the panel is hidden. */}
             {onToggleInspector && inspectorCollapsed && (
               <button
@@ -2451,6 +2482,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
+            renderStart={(start) => (start.action === 'schedule-daily' && pod?._id && start.prompt
+              ? <V2DailySchedule api={api} podId={pod._id} prompt={start.prompt} target={scheduleTarget} />
+              : null)}
             welcomePick={welcomePick}
             onStart={isReadOnly ? undefined : (start, messageId) => {
               recordWelcomeStart(start, pod._id);
@@ -2642,7 +2676,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                   <div className="v2-chat__agent-room-status-body">
                     {directAgent.state?.deliveryError
                       ? webhookFailedLine({ ...directAgent.state, displayName: directAgent.displayName })
-                      : t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                      : t(directAgentLivenessKey, { agentName: directAgent.displayName, reason: directAgentReason })}
                     {directAgentFixCommand && !directAgent?.state?.noSavedKey && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>

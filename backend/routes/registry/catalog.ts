@@ -31,7 +31,7 @@ const catalogRouter = express.Router();
 // router ahead of pod-agents, files, install and the rest, so a router-level
 // limiter ran for every /api/registry/* request and spent the catalog budget
 // on them. /v2/agents reads `/pods/:podId/agents` once per pod, and a 62-pod
-// account hit 429 on every call from its third load (D175, 10-28).
+// account hit 429 on every call from its third load (10-28).
 const catalogRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,

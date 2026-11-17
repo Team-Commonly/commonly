@@ -22,7 +22,7 @@ export { ASK_START_ID } from '../utils/welcomePick';
 const MAX_EXPANDED_REPLIES = 8;
 // A transcript load shorter than this never shows a spinner.
 const SPINNER_DELAY_MS = 300;
-// D278: at most this many threads open themselves for the asker at once.
+// At most this many threads open themselves for the asker at once.
 const MAX_AUTO_OPEN = 3;
 // An open thread marks itself read once it has sat rendered this long.
 const MARK_READ_DEBOUNCE_MS = 600;
@@ -37,7 +37,7 @@ interface V2ThreadMessagesProps {
   threadView: ThreadViewItem[];
   threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'>
     & Partial<Pick<UseV2ThreadState, 'setCollapsed' | 'markRead' | 'ready'>>;
-  /** The person reading. Their own unanswered-then-answered threads open for them (D278). */
+  /** The person reading. Their own unanswered-then-answered threads open for them. */
   viewerId?: string | null;
   /**
    * A thread opened itself. The caller follows the new height only if the
@@ -97,6 +97,8 @@ interface V2ThreadMessagesProps {
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
   afterMessage?: { messageId: string; content: React.ReactNode };
+  /** A start that draws itself (its own state and controls), or null for a plain button. */
+  renderStart?: (start: V2Start, messageId: string) => React.ReactNode;
   agentDeliveryHint?: { messageId: string; mentionHandle: string; wokenAgent?: string } | null;
   // A pod with no installed agent answers nothing by construction, so there is
   // no handle to suggest — a different row, in the same slot.
@@ -194,6 +196,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   starterPanel,
   emptyState,
   afterMessage,
+  renderStart,
   agentDeliveryHint,
   noAgentsHint,
   onAddAgent,
@@ -235,7 +238,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // The resting state of a thread is the chip (ux-lead 64476 (4)). Which
   // roots are open is a session gesture held here; the server `collapsed`
   // row is written to match on each open/close (it still drives the wake
-  // path), but a fresh mount shows chips. The one exception (D278): a thread
+  // path), but a fresh mount shows chips. The one exception: a thread
   // whose root I wrote opens for me while it holds an agent reply I haven't
   // read — see the asker auto-open below.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
@@ -249,7 +252,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       return next;
     });
   }, []);
-  // D278 asker auto-open. Per root, the newest agent reply (ms) already acted
+  // Asker auto-open. Per root, the newest agent reply (ms) already acted
   // on: the thread opened for it, was passed over by the cap, or was closed by
   // hand after it. Only a newer unread agent reply opens that thread again.
   const settledAgentAtRef = useRef<Map<string, number>>(new Map());
@@ -274,7 +277,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     threadState.setCollapsed?.(rootId, !open);
   }, [threadState, threadView]);
 
-  // The asker's view (D278): a thread whose root I wrote and that holds an
+  // The asker's view: a thread whose root I wrote and that holds an
   // agent reply I haven't read opens for me, on mount and as replies land.
   // Waits for the state fetch, or a thread I already read would open on its
   // own-message fallback before the server's read point arrives. The open is
@@ -540,6 +543,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';
+                    const drawn = renderStart?.(start, String(message.id));
+                    if (drawn) return <React.Fragment key={start.id}>{drawn}</React.Fragment>;
                     return (
                       <React.Fragment key={start.id}>
                         <button
@@ -610,7 +615,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           const open = openClaimRuns.has(item.key);
           const first = item.messages[0].payload?.taskId ?? '';
           const last = item.messages[item.messages.length - 1].payload?.taskId ?? '';
-          // D215 .sumrow: up to four distinct claimers' faces and the run's
+          // Design .sumrow: up to four distinct claimers' faces and the run's
           // last time. The accessible name stays the one-line label.
           const claimers = item.messages.filter((message, claimIndex) => item.messages
             .findIndex((other) => (other.user_id || other.payload?.actorName) === (message.user_id || message.payload?.actorName)) === claimIndex)

@@ -114,7 +114,7 @@ test('stays silent when the agent has posted in the pod since the message', asyn
 });
 
 // F237: a post in another thread is the agent talking to someone else. Under
-// D278 an answer lands in the asker's own thread (or top level), so only those
+// An answer lands in the asker's own thread (or top level), so only those
 // say the agent may have answered; the person's line still posts otherwise.
 describe('which of the agent\'s posts may have answered (F237)', () => {
   const agentPosts = (columns) => mockPool.query(

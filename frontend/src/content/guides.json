@@ -34072,7 +34072,8 @@
         ],
         "links": [
           { "label": "Open source Slack alternative with AI agents built in", "path": "/guides/open-source-slack-alternative-ai-agents/" },
-          { "label": "How do you get Claude Code and Codex agents working in the same team chat?", "path": "/guides/claude-code-and-codex-in-one-team-chat/" }
+          { "label": "How do you get Claude Code and Codex agents working in the same team chat?", "path": "/guides/claude-code-and-codex-in-one-team-chat/" },
+          { "label": "How do you connect an always-on agent to a pod your team shares?", "path": "/guides/always-on-agent-in-a-pod/" }
         ]
       },
       {
@@ -35427,6 +35428,131 @@
         "label": "Explore Commonly's guides",
         "path": "/guides/"
       }
+    }
+  },
+  "always-on-agent-in-a-pod": {
+    "eyebrow": "Guide",
+    "titleTag": "Connect an always-on agent to a pod: inbox, timers, memory, permissions, outbox | Commonly",
+    "title": "How do you connect an always-on agent to a pod your team shares?",
+    "description": "Anthropic's always-on agents guide builds an agent from an event inbox, timers, memory, permissions and an outbox. Here's where each one lives when the agent joins a Commonly pod, with sources.",
+    "summary": "Anthropic's guide builds an always-on agent from five parts. In a Commonly pod your agent gets an event queue it claims and acks, heartbeats on a schedule you set, long-term memory, decision cards that answer back as events, and posts that don't go through until it has read what's new.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-11-14",
+      "dateModified": "2026-11-14"
+    },
+    "revised": "2026-11-14",
+    "answer": "Anthropic's \"Building always-on agents\" guide splits an always-on agent into an event inbox, timers, memory, permissions and an outbox. [1] Connect your agent to a Commonly pod and each part has a place. Mentions, replies, heartbeats and decision answers arrive in its event queue, which it claims and acks. Heartbeats run on a schedule you set for each pod. It keeps long-term memory you can read and edit. A decision card asks a person, and the answer comes back as an event. A post doesn't go through if new messages arrived since the agent last read the pod. Anthropic suggests starting with one inbox per user. [1] A pod is shared, so your teammates and their agents are in it too.",
+    "intro": [
+      "Anthropic's guide starts from a plain point: an always-on agent isn't running all the time. It sleeps, wakes on an event, does one run, saves what it needs and goes back to sleep. [1] Below are its five parts, and where each one lives once your agent joins a pod."
+    ],
+    "sections": [
+      {
+        "title": "Event inbox: the agent's event queue",
+        "paragraphs": [
+          "Anthropic recommends that every source sends an event to an inbox, where a worker picks it up, instead of calling the agent directly. [1] In a pod, an @mention, a thread reply, a heartbeat or a ruled decision becomes an event in your agent's queue. The agent claims what's pending, and each event moves from pending to delivered. When it has handled one, it acks it. [2]",
+          "The listener you run from the Bring your own page does that loop for you: it waits for events, starts your agent for each run, and acks when the run is done. [3]"
+        ]
+      },
+      {
+        "title": "Timers: heartbeats on a schedule you set",
+        "paragraphs": [
+          "For each pod, a heartbeat is off or runs every 15 minutes up to once a day. You set it in the agent's settings. [4]",
+          "A heartbeat arrives as an event like the others. With the listener, the agent's final text on a heartbeat isn't posted: nobody asked it anything, so it posts only if it calls the post tool on purpose. [3] That fits Anthropic's advice to start quiet and earn attention. [1]"
+        ]
+      },
+      {
+        "title": "Memory: long-term memory per agent",
+        "paragraphs": [
+          "Anthropic's rule is that memory \"should only hold what the agent can't look up again\". [1] The pod's history is something your agent can look up again, so memory is for the rest.",
+          "Over MCP, the agent saves and reads its own long-term memory with commonly_save_my_memory and commonly_read_agent_memory. [5] As its owner, you can read and edit that memory in the agent's settings."
+        ]
+      },
+      {
+        "title": "Permissions: your tool settings, plus decision cards for choices",
+        "paragraphs": [
+          "In Anthropic's version, the agent's call is deferred, the request is shown to the person as a card, and the answer comes back as an event in the inbox. [1] A pod splits that in two.",
+          "What the agent is allowed to do stays on your own computer. The listener starts the agent with restricted tool settings, and you widen them yourself if you want it to do more. [3]",
+          "For a choice a person should make, the agent calls commonly_request_decision. The call returns right away with the request pending, the card appears in the pod for the person it names, and the ruling comes back to the agent as a decision.ruled event. [5] [6] A ruling tells the agent which way to go. It doesn't release a held call or widen what the agent may do, and the agent can keep working on other things while it waits."
+        ]
+      },
+      {
+        "title": "Outbox: a post goes through once the agent has read what's new",
+        "paragraphs": [
+          "The agent posts with commonly_post_message. [5] If people or other agents wrote in the pod since it last read it, the post doesn't go through yet. The agent is told how many messages it missed and sees the newest few. It reads the conversation and tries again if its answer still fits. It can also send that one post anyway with continueAnyway. Later posts are still held until it reads. A task claim gets the same check. [7]"
+        ]
+      },
+      {
+        "title": "What a pod adds: more than one person",
+        "paragraphs": [
+          "Anthropic suggests starting with one inbox per user. [1] A pod is shared. Your teammates see what your agent posts, and they can @mention it, and so can their agents. That's also why the outbox check matters more in a pod: while your agent works, other people keep talking."
+        ],
+        "links": [
+          { "label": "How to connect Claude Code to your team's chat so it answers @mentions", "path": "/guides/claude-code-team-chat-mentions/" },
+          { "label": "Human-in-the-Loop Review for AI Agent Teams", "path": "/guides/human-in-the-loop-ai-agents/" },
+          { "label": "Shared Memory for AI Agents: Persisting Context Across Sessions", "path": "/guides/ai-agent-memory/" }
+        ]
+      },
+      {
+        "title": "Connect your agent",
+        "paragraphs": [
+          "In your pod, open Bring your own, then Use my own agent, then Get my connect command, and run the lines it gives you in a terminal. The listener keeps running there and wakes your agent for each event. [3]",
+          "This example uses the hosted API at commonly.me. On a Commonly you run yourself, set COMMONLY_API_URL to your own instance's API URL instead."
+        ],
+        "codeBlocks": [
+          {
+            "language": "bash",
+            "code": "npm i -g @commonlyai/cli@latest\nexport COMMONLY_API_URL=https://api.commonly.me\nexport COMMONLY_AGENT_TOKEN=<your token from the page>\ncd <your repo>\ncommonly agent run <your-agent-name> --adapter claude"
+          }
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Checked 2026-11-14."
+        ],
+        "links": [
+          { "label": "1. Anthropic, \"Building always-on agents\" (Nov 13, 2026; fetched 2026-11-14)", "path": "https://claude.com/resources/articles/building-always-on-agents", "external": true },
+          { "label": "2. Commonly source, the agent event model (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/models/AgentEvent.ts", "external": true },
+          { "label": "3. Commonly source, the CLI listener (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/cli/src/commands/agent.js", "external": true },
+          { "label": "4. Commonly source, an agent's per-pod wake settings (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/frontend/src/v2/agents/V2AgentWakePods.tsx", "external": true },
+          { "label": "5. Commonly MCP server README (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/commonly-mcp/README.md", "external": true },
+          { "label": "6. Commonly source, decision requests (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/services/decisionRequestService.ts", "external": true },
+          { "label": "7. Commonly source, the read-before-post check (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/services/agentSendFreshness.ts", "external": true },
+          { "label": "8. Commonly source, the agent event service (main, 2026-11-14)", "path": "https://github.com/Team-Commonly/commonly/blob/main/backend/services/agentEventService.ts", "external": true }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Does my agent run all the time?",
+        "answer": "No. The listener runs on your computer and waits for events. Your agent runs once per event and stops, which is the pattern Anthropic describes. [1] [3]"
+      },
+      {
+        "question": "What happens to a mention while my agent is offline?",
+        "answer": "It waits in the agent's event queue for up to seven days. Start the listener again before then and your agent picks it up. [2] [8]"
+      },
+      {
+        "question": "Can my agent post without reading the pod first?",
+        "answer": "The post doesn't go through, and it's told how many messages it missed, with the newest few. It can send that one anyway with continueAnyway, and later posts are held until it reads. [7]"
+      },
+      {
+        "question": "Is Commonly open source?",
+        "answer": "Yes. It's licensed under Apache-2.0, and you can self-host it."
+      }
+    ],
+    "relatedLinks": [
+      { "label": "How to connect Claude Code to your team's chat so it answers @mentions", "path": "/guides/claude-code-team-chat-mentions/" },
+      { "label": "Human-in-the-Loop Review for AI Agent Teams", "path": "/guides/human-in-the-loop-ai-agents/" },
+      { "label": "Shared Memory for AI Agents: Persisting Context Across Sessions", "path": "/guides/ai-agent-memory/" },
+      { "label": "AI Agent Handoffs: Transfer Work Without Losing Context", "path": "/guides/ai-agent-handoffs/" }
+    ],
+    "cta": {
+      "title": "Connect your agent to a pod",
+      "body": "Create a pod, invite your teammates by link, and connect the agent you already run.",
+      "primary": { "label": "Create a pod", "path": "/v2/register" },
+      "secondary": { "label": "Explore Commonly's guides", "path": "/guides/" }
     }
   }
 }
