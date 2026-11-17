@@ -1037,6 +1037,12 @@ describe('mountSkills: a source the seat controls, and what a late swap can reac
     expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
   });
 
+  test('a source that holds the workspace is refused', async () => {
+    const result = await mountSkills({ skills: { claude: [root] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: root, reason: 'source-in-workspace' }] });
+  });
+
   test('a source swapped for a link after it was resolved is refused, and the link target is not touched', async () => {
     const source = path.join(root, 'src', name);
     fs.mkdirSync(source, { recursive: true });

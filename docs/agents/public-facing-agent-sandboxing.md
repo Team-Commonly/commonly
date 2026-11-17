@@ -85,10 +85,11 @@ untrusted (F171, `cli/src/lib/environment.js` `mountSkills`):
   deleted, so the recursive delete runs in the stage. Nothing is ever copied
   or deleted at a workspace path: when the stage is on another disk (the
   workspace's parent can't be written and the temp folder is another disk),
-  the rename fails with EXDEV and the mount is refused (`cross-disk-stage`),
-  leaving the old one in place.
-- A source in the workspace, or one that resolves into it, is refused
-  (`source-in-workspace`). The seat writes there, and a relative entry
+  the rename fails with EXDEV and the mount is refused (`cross-disk-stage`).
+  The old mount stays in place, or, if it was already moved out, is kept in
+  the stage rather than deleted.
+- A source in the workspace, one that resolves into it, or one that holds
+  it is refused (`source-in-workspace`). The seat writes there, and a relative entry
   resolves against the workspace, so it could make the source a link to any
   host folder.
 - A source that is itself a link (a `~/.claude/skills` entry into a checkout)

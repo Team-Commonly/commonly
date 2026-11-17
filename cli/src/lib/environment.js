@@ -720,10 +720,11 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
     // The seat writes its workspace, so a source there (a relative entry
     // resolves against it) could be made a link to any host folder, and
     // following it would copy that folder in. One that resolves into the
-    // workspace is the seat's own writing. Both are refused.
+    // workspace is the seat's own writing, and so is one that holds the
+    // workspace. All three are refused.
     // eslint-disable-next-line no-await-in-loop
     const realSource = await realpath(absSource);
-    if (isWithin(absSource, workspacePath) || isWithin(realSource, workspaceReal)) {
+    if (isWithin(absSource, workspacePath) || isWithin(realSource, workspaceReal) || isWithin(workspaceReal, realSource)) {
       conflicted.push({ path: absSource, reason: 'source-in-workspace' });
       continue;
     }
