@@ -37,7 +37,7 @@ const installsFound = (lean) => {
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 10); });
 const post = (body) => request(app).post('/api/stats/run-stopped').send(body);
 
-describe('POST /api/stats/run-stopped (F549)', () => {
+describe('POST /api/stats/run-stopped (F551)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     installsFound(() => Promise.resolve([]));

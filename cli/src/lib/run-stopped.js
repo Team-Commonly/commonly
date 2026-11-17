@@ -1,6 +1,6 @@
 import { resolveInstanceUrl } from './config.js';
 
-// F549: a first `agent run` with no key in its environment (the two
+// F551: a first `agent run` with no key in its environment (the two
 // `$env:` lines pasted into Command Prompt, or skipped) exits before any
 // server call, so the connect page waits on a key that never arrives and
 // nobody can tell this stop from a line that never ran. This tells the

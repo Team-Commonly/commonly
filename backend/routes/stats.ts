@@ -148,7 +148,7 @@ router.post('/byo-step', rateLimit({
   return res.json({ ok: true });
 });
 
-// F549: `agent run` stopped before its first server call because it had no
+// F551: `agent run` stopped before its first server call because it had no
 // key (the two `$env:` lines pasted into Command Prompt, or skipped). With no
 // key it can't sign in, so this takes no auth: it names the agent, and only a
 // BYO agent of that name made in the last day gets a row, owned by whoever

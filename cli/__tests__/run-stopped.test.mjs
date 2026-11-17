@@ -4,7 +4,7 @@ import { reportRunStopped } from '../src/lib/run-stopped.js';
 
 const okFetch = () => jest.fn(async () => ({ ok: true, status: 204 }));
 
-describe('reportRunStopped (F549)', () => {
+describe('reportRunStopped (F551)', () => {
   test('posts the reason, name, platform and Node major to the env instance, with no key', async () => {
     const fetchImpl = okFetch();
     const sent = await reportRunStopped({
