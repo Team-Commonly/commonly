@@ -501,15 +501,33 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
         });
       }
     }
+    // F550: a seat that reacted to the message closed the wake with it (F483: a
+    // reaction, then NO_REPLY, for a turn whose whole answer was "got it"). The
+    // driver can't see that MCP call, so it reports a decline; the kernel holds
+    // the reaction, so a decline from a seat that reacted closes as completed
+    // and is not handed to another listener. A failed read keeps the decline:
+    // a second listener is better than a message nobody answers.
+    let releaseOutcome = outcome;
+    if (outcome === 'declined' && req.agentUser?._id) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const MessageReaction = require('../models/pg/MessageReaction');
+        if (await MessageReaction.hasReactionBy(String(req.params.messageId), String(req.agentUser._id))) {
+          releaseOutcome = 'completed';
+        }
+      } catch (reactionErr) {
+        console.warn('[claims] reaction read failed; keeping the decline:', (reactionErr as Error).message);
+      }
+    }
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const ClaimReleaseService = outcome === 'declined' || outcome === 'refused'
+    const ClaimReleaseService = releaseOutcome === 'declined' || releaseOutcome === 'refused'
       ? require('../services/messageClaimHandoffService')
       : require('../services/messageClaimService');
     const result = await ClaimReleaseService.release({
       messageId: req.params.messageId,
       agentName,
       instanceId,
-      ...(outcome ? { outcome } : {}),
+      ...(releaseOutcome ? { outcome: releaseOutcome } : {}),
       ...(outcome === 'refused'
         ? { reason, ...(status !== undefined ? { status } : {}) }
         : {}),
