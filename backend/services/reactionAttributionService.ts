@@ -23,7 +23,7 @@ const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 
-export interface ReactionUser {
+interface ReactionUser {
   id: string;
   username: string;
   displayName?: string;
@@ -35,7 +35,7 @@ export interface ReactionUser {
 // IDs leak nothing useful to clients and would force them to do their
 // own lookup). Callers that need the raw IDs can still use the model
 // directly.
-export interface DecoratedReactionSummary {
+interface DecoratedReactionSummary {
   emoji: string;
   count: number;
   mine: boolean;

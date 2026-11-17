@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import './V2RunTrace.css';
 
 /** IDs come from the stored message, never from an agent-authored URL. */
-export const runTracePath = (podId: unknown, runId: unknown): string | null => (
+const runTracePath = (podId: unknown, runId: unknown): string | null => (
   typeof podId === 'string' && /^[a-f\d]{24}$/i.test(podId)
   && typeof runId === 'string' && /^[a-f\d]{24}$/i.test(runId)
     ? `/v2/pods/${podId}/runs/${runId}` : null

@@ -2,7 +2,7 @@ import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
 // eslint-disable-next-line global-require
 const axios = require('axios');
 
-export interface SendEmailOptions {
+interface SendEmailOptions {
   to: string;
   subject: string;
   textBody: string;

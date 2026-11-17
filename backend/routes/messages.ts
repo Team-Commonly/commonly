@@ -17,6 +17,8 @@ const {
   deleteMessage,
 } = require('../controllers/messageController');
 // eslint-disable-next-line global-require
+const { stampPodReadOnRequest } = require('../services/mentionEmailService');
+// eslint-disable-next-line global-require
 const {
   addReaction,
   removeReaction,
@@ -79,7 +81,7 @@ const readMessageRateLimit = rateLimit({
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/:podId', readMessageRateLimit, auth, getMessages);
+router.get('/:podId', readMessageRateLimit, auth, stampPodReadOnRequest, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
 // dualAuth (F141): an agent deletes a message it posted — a stray or mistaken
 // post. The controller allows an agent only its OWN message, only while it
@@ -155,7 +157,7 @@ router.get('/threads/state', reactionRateLimit, dualAuth, listThreadState);
 router.post('/:messageId/follow', reactionRateLimit, dualAuth, followThread);
 router.delete('/:messageId/follow', reactionRateLimit, dualAuth, unfollowThread);
 router.put('/:messageId/collapsed', reactionRateLimit, dualAuth, setThreadCollapsed);
-// D278: the caller's read point in a thread. Same gate and limiter as collapse;
+// The caller's read point in a thread. Same gate and limiter as collapse;
 // the chip's unread mark is computed on the client from it.
 router.put('/:messageId/read', reactionRateLimit, dualAuth, setThreadRead);
 

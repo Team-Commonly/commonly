@@ -1,7 +1,7 @@
 // System action lines are kernel-authored facts. They bypass the ordinary
 // message writer so they cannot create mention attention, wake agents, or
 // advance a pod's human-message unread timestamp.
-export interface SystemActionLine {
+interface SystemActionLine {
   podId: string;
   actorUserId: string;
   actorName: string;
@@ -116,7 +116,7 @@ export async function emitSystemActionLine(line: SystemActionLine): Promise<void
  * Without this line the person waits on silence. It is placed in the thread they asked in, as a reply to their
  * message, and like every system line it wakes no agent.
  */
-export interface UnansweredMentionLine extends SystemLineActor {
+interface UnansweredMentionLine extends SystemLineActor {
   agentLabel: string;
   attempts: number;
   // F452: the event is still pending, so an answer may yet come. The line
@@ -147,7 +147,7 @@ export async function emitUnansweredMentionLine(line: UnansweredMentionLine): Pr
  * sees silence. Placed as a reply to their mention, like the line above.
  * Callers dedupe with `hasNotConnectedLineToday`: one per agent per UTC day.
  */
-export interface NotConnectedLine extends SystemLineActor {
+interface NotConnectedLine extends SystemLineActor {
   agentLabel: string;
   agentKey: string;
   messageId: string | number | null;
@@ -171,7 +171,7 @@ export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void
  * as being ignored. It promises no reply: a wake can age out before a Start.
  * Callers dedupe with `hasStoppedLineSince`.
  */
-export interface StoppedLine extends SystemLineActor {
+interface StoppedLine extends SystemLineActor {
   agentLabel: string;
   agentKey: string;
   messageId: string | number | null;
@@ -192,7 +192,7 @@ export async function emitStoppedLine(line: StoppedLine): Promise<void> {
  * anywhere. The room stays open, and the message would get a 200 and nothing else.
  * Callers dedupe with `hasRemovedLineSince`.
  */
-export type RemovedLine = StoppedLine;
+type RemovedLine = StoppedLine;
 
 export async function emitRemovedLine(line: RemovedLine): Promise<void> {
   await insertSystemLine(line, `${line.agentLabel} was removed, so it can't answer here.`, {
@@ -209,12 +209,33 @@ export async function emitRemovedLine(line: RemovedLine): Promise<void> {
  * promises nothing: the agent may never come back. Callers dedupe with
  * `hasOfflineLineSince`.
  */
-export type OfflineLine = StoppedLine;
+type OfflineLine = StoppedLine;
 
 export async function emitOfflineLine(line: OfflineLine): Promise<void> {
   await insertSystemLine(line, `${line.agentLabel} looks offline, so it may not answer for now.`, {
     kind: 'system-action',
     action: 'agent-offline',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * An agent its owner has run without a sandbox, in a pod that is not
+ * invite-only, or is publicly readable or listed (unsandboxedPodLineService).
+ * Hedged on purpose: the mark is set by an unconfined start and not cleared by
+ * a later sandboxed one, so this says only what stays true ("has been run")
+ * and "may not answer".
+ * Callers dedupe with `hasUnsandboxedLineSince`.
+ */
+type UnsandboxedPodLine = StoppedLine;
+
+export async function emitUnsandboxedPodLine(line: UnsandboxedPodLine): Promise<void> {
+  const content = `${line.agentLabel} has been run without a sandbox. Run that way, it answers only in `
+    + "invite-only pods that aren't public or listed, so it may not answer here.";
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'agent-unsandboxed-pod',
     actorName: line.agentLabel,
     agentKey: line.agentKey,
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
@@ -238,7 +259,7 @@ export async function emitPausedLine(line: RemovedLine): Promise<void> {
  * F371. The owner declined someone's request to their agent. Placed beside the
  * request, so the person who asked sees the answer where they asked.
  */
-export interface RunRequestDeclinedLine extends SystemLineActor {
+interface RunRequestDeclinedLine extends SystemLineActor {
   ownerName: string;
   requesterName: string;
   agentLabel: string;
@@ -262,7 +283,7 @@ export async function emitRunRequestDeclinedLine(line: RunRequestDeclinedLine): 
  * to the owner, so it won't run. Beside the request, so the asker isn't left
  * waiting on a card that doesn't exist.
  */
-export interface RunRequestRefusedLine extends SystemLineActor {
+interface RunRequestRefusedLine extends SystemLineActor {
   agentLabel: string;
   messageId: string | number | null;
   threadRootId?: string | number | null;
@@ -307,6 +328,11 @@ export const hasOfflineLineSince = (podId: string, agentKey: string, since: Date
 /** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */
 export const hasRemovedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
   hasAgentLineSince('agent-removed', podId, agentKey, since)
+);
+
+/** Whether an unsandboxed-pod line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasUnsandboxedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-unsandboxed-pod', podId, agentKey, since)
 );
 
 /** Whether a paused line for this agent sits in the pod since `since`; no pool reads as yes. */

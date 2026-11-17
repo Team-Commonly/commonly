@@ -1,4 +1,4 @@
-// D248: the callback's access step, in its own file so its callbacks stay
+// The callback's access step, in its own file so its callbacks stay
 // clear of the main callback file's per-IP rate limit (60 a window).
 // Harness copied from hostedMcpConnect.callback.test.js.
 // TASK-172 slice 3: the callback. The vendor is a stub and the row is a mock,
@@ -117,9 +117,9 @@ const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE, ent
  * handler read the wrong shape and still look green (measured 2026-09-28 —
  * the same class of miss as the unprefixed `$set` beside it).
  */
-const storedRow = (config = {}) => ({
+const storedRow = (config = {}, status = 'pending') => ({
   _id: 'row-1',
-  status: 'pending',
+  status,
   createdBy: 'user-1',
   config: {
     entryId: 'linear',
@@ -170,8 +170,8 @@ beforeEach(() => {
  * the pre-image. Setting only the lookup would leave the claim's copy bare, and
  * an arm about what the pre-image CONTAINED would pass on the empty one.
  */
-const setStoredRow = (overrides = {}) => {
-  const row = storedRow(overrides);
+const setStoredRow = (overrides = {}, status = 'pending') => {
+  const row = storedRow(overrides, status);
   Integration.findOne.mockResolvedValue(row);
   Integration.findOneAndUpdate.mockReset();
   Integration.findOneAndUpdate
@@ -198,8 +198,8 @@ const outcome = (res) => {
   return result;
 };
 
-describe('hosted-mcp connect: callback access step (D248)', () => {
-  // D248: a connection that still has nothing to reach (GitHub with no App
+describe('hosted-mcp connect: callback access step', () => {
+  // A connection that still has nothing to reach (GitHub with no App
   // installation) goes straight on to the entry's access page.
   describe('access setup after connecting', () => {
     afterEach(() => {
@@ -243,11 +243,27 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
     // with the revoke page; the access step rides along on the same redirect.
     describe('on a reconnect that names the revoke page', () => {
       // An old pair with no recorded subject: the accounts cannot be compared,
-      // so the old token is never sent and the page is the only recovery.
+      // so the old token is never sent and the page is the only recovery. A
+      // reconnect starts from a row that is connected, as it is in the database.
       const uncomparableReconnect = () => setStoredRow({
         credentialRef: 'ref-old-access',
         refreshTokenRef: 'ref-old-refresh',
-      });
+      }, 'connected');
+
+      // The early return with the revoke page comes after the new pair is
+      // stored and the row is published as connected, never before.
+      const expectNewPairPublished = () => {
+        expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+        const { calls, invocationCallOrder } = Integration.findOneAndUpdate.mock;
+        const published = calls
+          .map((call, i) => ({ call, order: invocationCallOrder[i] }))
+          .filter(({ call: [, update] }) => update?.$set?.status === 'connected');
+        expect(published).toHaveLength(1);
+        expect(published[0].call[1].$set).toEqual(expect.objectContaining({
+          'config.credentialRef': 'ref-access', 'config.refreshTokenRef': 'ref-refresh',
+        }));
+        expect(Math.max(...connectorSecrets.put.mock.invocationCallOrder)).toBeLessThan(published[0].order);
+      };
 
       it('also sends the page on to the access step when nothing is reachable yet', async () => {
         FIXTURE_ENTRY.accessPage = 'https://github.com/apps/commonly-connect/installations/new';
@@ -262,6 +278,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
           next: 'access',
         });
         expect(FIXTURE_ENTRY.needsAccessSetup).toHaveBeenCalledWith('access-1');
+        expectNewPairPublished();
       });
 
       it('names only the revoke page when access is already set up', async () => {
@@ -275,6 +292,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
           entryId: 'linear',
           revokeAt: FIXTURE_ENTRY.revoke.page,
         });
+        expectNewPairPublished();
       });
     });
 
@@ -285,7 +303,7 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
     });
   });
 
-  // D248 (a): GitHub's "Install & Authorize" returns to this callback with
+  // GitHub's "Install & Authorize" returns to this callback with
   // `code`, `installation_id` and `setup_action`, and no state of ours. The
   // walk on 11-04 showed "This connection attempt expired" after an install
   // that worked. It is an install outcome, not a failed connect, and its code

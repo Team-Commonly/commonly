@@ -30,7 +30,7 @@ export const grantHoldsPrWrite = (grant: unknown): boolean => (
   Boolean(grant) && (grant as { prWrite?: unknown }).prWrite === true
 );
 
-export type PrWriteMintRefusal = 'pr_write_github_only' | 'pr_write_requires_confirm'
+type PrWriteMintRefusal = 'pr_write_github_only' | 'pr_write_requires_confirm'
   | 'pr_write_requires_create_pull_request' | 'pr_write_other_writes';
 
 export const prWriteMintRefusalMessage = (reason: PrWriteMintRefusal): string => ({

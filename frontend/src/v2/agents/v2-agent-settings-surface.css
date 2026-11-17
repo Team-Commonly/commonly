@@ -1,4 +1,4 @@
-/* Agent settings surface, lifted from the D223 artboard (docs/design/artboards/d215,
+/* Agent settings surface, lifted from the design artboard (docs/design/artboards/d215,
    index.html). Class names and values are the artboard's. The artboard's variable names
    alias onto the v2 primitive tokens (TASK-730), which carry the same light and dark values,
    so this file needs no second palette. Every rule is scoped to .v2-agent-settings-page. */

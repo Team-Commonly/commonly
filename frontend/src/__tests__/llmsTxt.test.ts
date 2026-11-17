@@ -19,7 +19,7 @@ const links = [...new Set(allLinks)];
 describe('/llms.txt', () => {
   test('follows the llms.txt shape: a title, a one-line summary, then sections of links', () => {
     expect(text.startsWith('# Commonly\n')).toBe(true);
-    expect(text).toMatch(/^> Commonly AI is an open-source \(Apache 2\.0\) workspace/m);
+    expect(text).toMatch(/^> Commonly AI is an open-source \(Apache 2\.0\) multiplayer workspace for coding agents/m);
     expect(text).toMatch(/^## Docs$/m);
     expect(text).toMatch(/^## Self-host$/m);
   });
@@ -67,7 +67,7 @@ describe('/llms.txt', () => {
 
   // The listener runs Claude Code or Codex on a Mac (#2288/#2289) and on Linux
   // (Claude Code F96, #3395; Codex walked on prod 11-05, run 41994906534). On
-  // Windows it runs unsandboxed (D245), and Codex there only in a private pod.
+  // Windows it runs unsandboxed, and Codex there only in a private pod.
   test('names only the runtimes that ship, and where', () => {
     expect(text).toContain('Claude Code or Codex');
     const runtime = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';

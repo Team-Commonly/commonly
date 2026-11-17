@@ -96,7 +96,7 @@ describe('V2Thread — owner-only pod rename (TASK-419)', () => {
     expect(renameButton()).toBeInTheDocument();
   });
 
-  test('D215: Rename is a pencil icon button on the title, named by aria-label and title', () => {
+  test('Rename is a pencil icon button on the title, named by aria-label and title', () => {
     renderHeader();
     const pencil = renameButton();
     expect(pencil).toHaveAttribute('title', 'Rename');
@@ -105,7 +105,7 @@ describe('V2Thread — owner-only pod rename (TASK-419)', () => {
     expect(pencil.closest('.v2-thread__title-line')).toBeTruthy();
   });
 
-  test('D215: the board count is a chip with a glyph, and it still opens the board', async () => {
+  test('the board count is a chip with a glyph, and it still opens the board', async () => {
     axios.get.mockImplementation((url) => Promise.resolve({
       data: url.includes('/api/v1/tasks/') ? { tasks: [{ status: 'pending' }, { status: 'claimed' }, { status: 'done' }] } : {},
     }));

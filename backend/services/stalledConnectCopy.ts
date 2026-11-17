@@ -35,7 +35,7 @@
  * locale signal and a server-side catalogue exist, this is where they attach,
  * and the call sites already thread it through.
  */
-export type NudgeLocale = 'en' | 'zh-CN';
+type NudgeLocale = 'en' | 'zh-CN';
 
 export type StalledConnectCopyEvidence = {
   /** First setup-command copy for this signup. */
@@ -62,7 +62,7 @@ export type StalledConnectCopyEvidence = {
  * is CI-only, and Codex is unverified, so the copy says only what holds for
  * all of them: it may not answer there yet. On Windows,
  * Claude Code answered an @mention on prod from the page's PowerShell lines
- * (D164, byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
+ * (byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
  * release with the Windows npm fix). Codex answered there too, in an
  * invite-only pod from the page's lines, on the published CLI 0.1.273
  * (byo-windows.yml run 42175092787, 2026-11-06; the support matrix's Windows

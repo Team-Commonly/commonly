@@ -13,7 +13,7 @@
 
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export interface IAuditLog extends Document {
+interface IAuditLog extends Document {
   action: string;
   fileName?: string;
   // Generic target identifier for actions that aren't file-scoped (e.g. the

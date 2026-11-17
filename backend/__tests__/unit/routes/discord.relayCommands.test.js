@@ -1,4 +1,4 @@
-// F133 (D249): the Discord bridge commands /mode /status /mute /unmute /tldr
+// F133: the Discord bridge commands /mode /status /mute /unmute /tldr
 // /summary /help, through the signed HTTP interactions endpoint and the shared
 // chat-relay core. Every accepted request here is signed with a real Ed25519
 // key, the way Discord signs them.
@@ -269,7 +269,10 @@ test('/summary defers, then edits the reply with the result', async () => {
   expect(res.body).toEqual({ type: 5, data: { flags: 64 } });
   await new Promise((resolve) => { setImmediate(resolve); });
   await new Promise((resolve) => { setImmediate(resolve); });
-  expect(runCommandForIntegration).toHaveBeenCalledWith(expect.objectContaining({ commandName: 'discord-push' }));
+  // F162: /summary hands over the slot it holds, or the push would claim it again and refuse.
+  expect(runCommandForIntegration).toHaveBeenCalledWith(expect.objectContaining({
+    commandName: 'discord-push', cooldownClaimed: true,
+  }));
   expect(axios.patch).toHaveBeenCalledWith(
     'https://discord.com/api/v10/webhooks/345678901234567890/interaction-token/messages/@original',
     { content: '✅ Queued 4 Discord message(s).', allowed_mentions: { parse: [] } },

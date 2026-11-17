@@ -123,7 +123,7 @@ describe('agentsRuntime post message installation config forwarding', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true, mentionNotices: [] });
   });
 
-  it('forwards the optional summary and kind and returns contract warnings on a 200 (D245)', async () => {
+  it('forwards the optional summary and kind and returns contract warnings on a 200', async () => {
     const handler = getRouteHandler('/pods/:podId/messages', 'post');
     const warnings = [{ code: 'kind_unknown', message: 'kind must be one of …' }];
     AgentMessageService.postMessage.mockResolvedValue({ success: true, warnings });

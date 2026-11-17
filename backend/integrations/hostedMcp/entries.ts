@@ -96,13 +96,13 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
  * endpoint. Presence is the whole decision, so no URL is ever read to infer a
  * kind, and both URLs are checked because both are handed to a person.
  */
-export interface HostedMcpRevokeTarget {
+interface HostedMcpRevokeTarget {
   page: string;
   endpoint?: string;
 }
 
 /** Why this entry's `revoke` is unusable, or null. */
-export const hostedMcpRevokeRefusal = (entry: HostedMcpEntry): string | null => {
+const hostedMcpRevokeRefusal = (entry: HostedMcpEntry): string | null => {
   const revoke = (entry as { revoke?: unknown })?.revoke;
   if (!revoke || typeof revoke !== 'object' || Array.isArray(revoke)) {
     return 'names no page (every entry names one, and an `endpoint` only when the AS advertises one)';

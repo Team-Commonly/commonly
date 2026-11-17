@@ -243,7 +243,7 @@ export const flushRecordWrites = async (): Promise<void> => {
   }
 };
 
-export type RecordExport = {
+type RecordExport = {
   runId: string | null;
   entries: number;
   head: string | null;
@@ -274,7 +274,7 @@ export async function readRecordExport(ref: ChainRef, db?: Store, page: ChainPag
   };
 }
 
-export type RecordViewExport = RecordExport & { redacted: number; unlinked: number; unopened: number };
+type RecordViewExport = RecordExport & { redacted: number; unlinked: number; unopened: number };
 
 /**
  * A chain as an open pod's reader sees it (recordRedaction), one page of it.

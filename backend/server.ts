@@ -287,7 +287,7 @@ app.use('/api/agent-computer', require('./routes/agentComputer')); // Staging-on
 // Mounted before the runtime router so the path is unambiguous.
 app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
 app.use('/api/agents/seat-activity', require('./routes/agentSeatActivity')); // Member-gated seat logs for `agent logs`
-app.use('/api/agents/health', require('./routes/agentHealth')); // D115: own-pods agent health, counts only
+app.use('/api/agents/health', require('./routes/agentHealth')); // own-pods agent health, counts only
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/activity', activityRoutes); // Activity feed
@@ -540,6 +540,10 @@ const { isListedPodMember } = require('./utils/isPodMember');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const DMServiceForSocketAuth = require('./services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const mentionEmailVisits = require('./services/mentionEmailService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const socketPodVisits = require('./services/socketPodVisits');
 
 const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) => {
   if (!podId) {
@@ -589,16 +593,19 @@ io.on('connection', (socket: any) => {
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
   socket.data.joinedPods = new Set();
+  // Joins still being authorized, so a leave during that wait is stamped (F512).
+  socket.data.pendingJoins = new Map();
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {
-    const pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    // F512: an open pod is a seen mention; the mention email reads the stamp.
+    // A join abandoned during authorization (left, disconnected) stamps nothing.
+    const pod: any = await socketPodVisits.joinPodRoom(
+      socket, podId, () => authorizeSocketPodAccess(socket, podId, 'join'), mentionEmailVisits,
+    );
     if (!pod) {
       return;
     }
-
-    socket.join(`pod_${podId}`);
-    socket.data.joinedPods.add(podId);
     console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });
@@ -609,8 +616,7 @@ io.on('connection', (socket: any) => {
       console.warn('Socket tried to leave pod without podId');
       return;
     }
-    socket.leave(`pod_${podId}`);
-    socket.data.joinedPods.delete(podId);
+    socketPodVisits.leavePodRoom(socket, podId, mentionEmailVisits);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
     await emitPresence(podId);
   });
@@ -821,6 +827,7 @@ io.on('connection', (socket: any) => {
       `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
     );
     const pods = Array.from(socket.data.joinedPods || []);
+    void mentionEmailVisits.stampPodClosed(socket.userId, pods);
     pods.forEach((podId) => {
       emitPresence(podId);
     });

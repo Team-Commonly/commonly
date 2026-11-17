@@ -1,5 +1,5 @@
 // @ts-nocheck
-// D248: GitHub's App user token reads nothing until the App is installed, so the
+// GitHub's App user token reads nothing until the App is installed, so the
 // connect flow has two more returns. `installed` comes back from "Install &
 // Authorize" with no state of ours; `connected&next=access` is a connect that
 // still has no installation. Both name the provider and link its page only from
@@ -111,7 +111,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
     expect(notice).toHaveAttribute('role', 'status');
     // GitHub's install page preselects "All repositories" and always reads
     // public repos, so the link carries the choice and what leaving it costs.
-    expect(notice).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(notice).toHaveTextContent('On GitHub, choose "Only select repositories".');
     expect(notice).toHaveTextContent(
       'Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones.',
     );

@@ -57,8 +57,9 @@ the fix is to rotate again.
 
 ### Running it on staging
 
-Staging has no ops-runner, so exec into the staging backend in namespace
-`commonly-staging`. The image already holds the compiled script at
+This was walked by exec into the staging backend in namespace
+`commonly-staging`. Staging's ops-runner has the same image and env, and sets
+`POD_NAMESPACE` for the guard below, but this recipe has not been walked there. The image already holds the compiled script at
 `dist/scripts/staging-seed.js`, plus the staging `MONGO_URI` and `PG_*`. Pin one pod,
 so that all three steps reach the same filesystem:
 

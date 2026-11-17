@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved, import/extensions -- TypeScript modules expose CJS exports. */
 /**
- * D245: the message contract's columns on real PostgreSQL. pg-mem has its own
+ * The message contract's columns on real PostgreSQL. pg-mem has its own
  * parser and type inference (review-checklist rule 55), so the migration and
  * the model's INSERT, SELECT and edit run here against a real server too.
  */
@@ -21,7 +21,7 @@ const MIGRATIONS = path.join(__dirname, '../../config/migrations');
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
 const USER = 'bbbbbbbbbbbbbbbbbbbbbb01';
 
-real('message contract columns on real PostgreSQL (D245)', () => {
+real('message contract columns on real PostgreSQL', () => {
   let database;
   let pool;
   let PGMessage;
@@ -59,7 +59,8 @@ real('message contract columns on real PostgreSQL (D245)', () => {
 
     expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql', '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql',
       '0008_pg_mirror_repair_runs.sql', '0009_message_top_level_answer.sql', '0010_record_openings.sql',
-      '0011_thread_read_point.sql']);
+      '0011_thread_read_point.sql', '0012_mention_email.sql', '0013_email_sends.sql', '0014_pod_read_point.sql',
+      '0015_agent_connect_codes.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,
@@ -117,7 +118,7 @@ real('message contract columns on real PostgreSQL (D245)', () => {
       expect(reply).toMatchObject({ summary: 'Answered', kind: 'answer', thread_root_id: root.id });
     });
 
-    it('stores a self-reported receipt as JSONB, returns it on both reads, and an edit clears it (D245 item 4)', async () => {
+    it('stores a self-reported receipt as JSONB, returns it on both reads, and an edit clears it', async () => {
       const receipt = {
         adapter: 'claude', model: 'claude-opus-5-5', turns: 3, tools: ['Read', 'Bash'], durationMs: 41250, source: 'self-reported',
       };

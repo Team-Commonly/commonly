@@ -146,3 +146,84 @@ test('the Claude Code team guide renders, says an agent team cannot be shared ac
   expect(screen.getByText(/The folder access above is for Claude Code only\. \[6\] \[10\]$/)).toBeInTheDocument();
   expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
 });
+
+test('the multi-agent workspace guide renders, says an agent team is one person\'s, and that a second claim is refused', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/multi-agent-workspace-software-teams']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'What is a multi-agent workspace for software teams?' })).toBeInTheDocument();
+  // Each answer read in the same FAQ box as its question.
+  const same = screen.getByRole('heading', { level: 3, name: "Is this the same as Claude Code's agent teams?" }).parentElement as HTMLElement;
+  expect(within(same).getByText(/^No\. An agent team is one person's sessions working together, and it can't be shared across sessions\./)).toBeInTheDocument();
+  const twice = screen.getByRole('heading', { level: 3, name: 'Can two agents end up on the same task?' }).parentElement as HTMLElement;
+  expect(within(twice).getByText(/^Not through the board\. The second claim is refused, and the agent is told who has the task\. \[4\]$/)).toBeInTheDocument();
+  expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/Codex on Windows|Codex \(Mac or Linux\)/)).toBeNull();
+  // No 'any agent' claim: you @ your own agent or a teammate's.
+  expect(screen.queryByText(/@ any agent|anyone's coding agent/)).toBeNull();
+  expect(screen.getByText(/add --allow write the first time you run it\. Grant that only in a pod where you trust everyone/)).toBeInTheDocument();
+  // The steps sit above the command, so they point down to it.
+  expect(screen.getByText(/^Each person connects their own agent with the command below\. For Codex on a Mac, use --adapter codex\. The folder access above is for Claude Code only\. \[2\] \[6\]$/)).toBeInTheDocument();
+  expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
+  expect(document.querySelector('a[href="/guides/claude-code-team-collaboration/"]')).not.toBeNull();
+});
+
+test('the Claude Code and Codex team chat guide renders both ways, keeps Codex on a Mac, and says how an agent-to-agent loop is cut off', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/claude-code-and-codex-in-one-team-chat']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'How do you get Claude Code and Codex agents working in the same team chat?' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: "Both vendors' apps in Slack" })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: "Each teammate's own agent, in one pod (Commonly)" })).toBeInTheDocument();
+  expect(screen.getByText(/ChatGPT can send repository work to a separate Codex Cloud task and bring the result back to the thread\. \[4\]$/)).toBeInTheDocument();
+  expect(screen.getByText(/^On native Windows, Codex answers only when every pod it answers in is invite-only, and only with the --unsandboxed flag\. There's no sandbox there/)).toBeInTheDocument();
+  expect(screen.getByText(/A person's @mention always goes through\. If agents keep @mentioning one agent, the pod stops passing their @mentions to it after more than three in that pod in five minutes\. \[7\]$/)).toBeInTheDocument();
+  const each = screen.getByRole('heading', { level: 3, name: 'Can Claude Code and Codex @mention each other?' }).parentElement as HTMLElement;
+  expect(within(each).getByText(/^In a Commonly pod, yes\./)).toBeInTheDocument();
+  expect(screen.getAllByText(/Codex on a Mac/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/Codex on Windows|Codex \(Mac or Linux\)|@ any agent|anyone's coding agent/)).toBeNull();
+  expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+  expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
+  expect(document.querySelector('a[href="https://developers.openai.com/codex/integrations/slack"]')).not.toBeNull();
+});
+
+test('the always-on agent guide maps the five parts to a pod, says what is held and what overrides it, and names the scope it adds', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/always-on-agent-in-a-pod']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'How do you connect an always-on agent to a pod your team shares?' })).toBeInTheDocument();
+  for (const name of [
+    "Event inbox: the agent's event queue",
+    'Timers: heartbeats on a schedule you set',
+    'Memory: long-term memory per agent',
+    'Permissions: your tool settings, plus decision cards for choices',
+    "Outbox: a post goes through once the agent has read what's new",
+    'What a pod adds: more than one person',
+  ]) expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+  expect(screen.getByText(/the ruling comes back to the agent as a decision\.ruled event\./)).toBeInTheDocument();
+  // A decision request returns at once and its ruling is advisory, so the guide must not equate it with Anthropic's deferred call.
+  expect(screen.getByText(/The call returns right away with the request pending/)).toBeInTheDocument();
+  expect(screen.getByText(/A ruling tells the agent which way to go\. It doesn't release a held call or widen what the agent may do/)).toBeInTheDocument();
+  expect(screen.queryByText(/A pod works the same way/)).toBeNull();
+  expect(screen.getByText(/It can also send that one post anyway with continueAnyway\./)).toBeInTheDocument();
+  expect(screen.getByText(/the post doesn't go through yet\./)).toBeInTheDocument();
+  // No claim about a timer the agent sets for itself, and none of the banned superlatives.
+  expect(screen.queryByText(/sets? (its own|a) (follow-up|reminder|timer)/i)).toBeNull();
+  expect(screen.queryByText(/\b(only|first) (platform|workspace|place)\b/i)).toBeNull();
+  expect(document.querySelector('a[href="https://claude.com/resources/articles/building-always-on-agents"]')).not.toBeNull();
+  expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+  // The scope line is ours: Anthropic's article recommends one inbox per user and never says it covers one person.
+  expect(screen.queryByText(/written for one person|covers one person/)).toBeNull();
+});

@@ -103,7 +103,7 @@ export interface HostedMcpEntryCommon {
    */
   accessPage?: string;
   /**
-   * D248: whether a fresh connection can reach nothing yet, so the callback
+   * Whether a fresh connection can reach nothing yet, so the callback
    * sends the person on to `accessPage` instead of back to Commonly (GitHub
    * with no installation of its App). Best effort: false on any doubt.
    */
@@ -165,7 +165,7 @@ export interface HostedMcpUpstreamTool {
  * it belongs to the intake slice, which is the first slice that has a row whose
  * credential it can decrypt.
  */
-export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
+type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
 
 /**
  * `not_granted` (F102): a write pin this row's list omits because the row's
@@ -176,7 +176,7 @@ export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'asses
 export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift' | 'not_granted';
 
 /** What the row consented to, as recorded at connect and narrowed on refresh. */
-export interface HostedMcpRowConsent {
+interface HostedMcpRowConsent {
   grantedScope?: string | null;
 }
 
@@ -600,7 +600,7 @@ export const assessEntryTools = (
  * working session. Injectable, because the intake slice measures the real
  * value against the vendor rather than inheriting this default.
  */
-export const HOSTED_MCP_DRIFT_TTL_MS = 5 * 60 * 1000;
+const HOSTED_MCP_DRIFT_TTL_MS = 5 * 60 * 1000;
 
 export interface HostedMcpDriftRow {
   /**
@@ -620,7 +620,7 @@ export interface HostedMcpUpstreamListing extends HostedMcpRowConsent {
   tools: HostedMcpUpstreamTool[];
 }
 
-export interface HostedMcpDriftCacheOptions {
+interface HostedMcpDriftCacheOptions {
   /**
    * Takes the list with THIS row's credential. Throwing means the vendor could
    * not be reached; the caller must not read that as a clean comparison. A

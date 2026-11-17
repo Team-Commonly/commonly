@@ -10,7 +10,10 @@
  * NATIVE_TURNS_ON_WORKER, which control the serving process and are not read
  * by the sleeping ops-runner, and PG_USER/PG_PASSWORD: the backend
  * may connect as its own role (backend.env.pgAppUser), while ops-runner keeps
- * backend.env.pgUser for admin writes. Both exceptions are pinned exactly below.
+ * backend.env.pgUser for admin writes. ops-runner alone sets POD_NAMESPACE from
+ * the Downward API: it mounts no service-account token, so it has no namespace
+ * file, and scripts such as staging-seed read their namespace from it (F539).
+ * Every exception is pinned exactly below.
  * Otherwise, the same (name, source) tuples,
  * where source is a
  * secretKeyRef name+key, a configMapKeyRef name+key, or a literal value. If
@@ -54,6 +57,7 @@ function extractContainerEnv(tpl, containerName) {
     if (kind === 'secret') sig = `secretKeyRef:${srcName}/${srcKey}`;
     else if (kind === 'configmap') sig = `configMapKeyRef:${srcName}/${srcKey}`;
     else if (kind === 'value') sig = cur.valueSig;
+    else if (kind === 'field') sig = `fieldRef:${srcName}`;
     else sig = 'UNKNOWN';
     tuples.push(`${cur.name}\t${sig}`);
     cur = null; kind = null; srcName = null; srcKey = null;
@@ -69,6 +73,11 @@ function extractContainerEnv(tpl, containerName) {
     if (m) { kind = 'value'; cur.valueSig = `value:${m[1].trim()}`; continue; }
     if (/^ {12}secretKeyRef:\s*$/.test(l)) { kind = 'secret'; continue; }
     if (/^ {12}configMapKeyRef:\s*$/.test(l)) { kind = 'configmap'; continue; }
+    if (/^ {12}fieldRef:\s*$/.test(l)) { kind = 'field'; continue; }
+    if (kind === 'field') {
+      m = l.match(/^ {14}fieldPath: (.+)$/);
+      if (m) { srcName = m[1].trim(); continue; }
+    }
     if (kind === 'secret' || kind === 'configmap') {
       m = l.match(/^ {14}name: (.+)$/);
       if (m) { srcName = m[1].trim(); continue; }
@@ -102,7 +111,8 @@ if (typeof describe === 'function') {
     test('ops-runner declares the same env (name + source) tuples as backend', () => {
       const pgRole = (tuple) => /^PG_(USER|PASSWORD)\t/.test(tuple);
       const withoutWorkerGate = (tuple) => !/^(RUN_WORKER|NATIVE_TURNS_ON_WORKER)\t/.test(tuple);
-      const mirrored = (tuple) => withoutWorkerGate(tuple) && !pgRole(tuple);
+      const opsOnly = (tuple) => /^POD_NAMESPACE\t/.test(tuple);
+      const mirrored = (tuple) => withoutWorkerGate(tuple) && !pgRole(tuple) && !opsOnly(tuple);
       expect([...opsTuples].filter(mirrored).sort())
         .toEqual([...backendTuples].filter(mirrored).sort());
       expect(backendTuples.filter(pgRole).sort()).toEqual([
@@ -114,6 +124,9 @@ if (typeof describe === 'function') {
         'PG_USER\tvalue:{{ .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}',
       ]);
       expect(opsTuples.every(withoutWorkerGate)).toBe(true);
+      expect(opsTuples.filter(opsOnly)).toEqual(['POD_NAMESPACE\tfieldRef:metadata.namespace']);
+      expect(backendTuples.filter(opsOnly)).toEqual([]);
+      expect([...backendTuples, ...opsTuples].some((tuple) => tuple.endsWith('\tUNKNOWN'))).toBe(false);
       expect(backendTuples.filter((tuple) => !withoutWorkerGate(tuple))).toEqual([
         'RUN_WORKER\tvalue:"1"',
         'RUN_WORKER\tvalue:"0"',

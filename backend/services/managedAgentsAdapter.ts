@@ -32,7 +32,7 @@
  * Corresponds to the body of `POST /v1/beta/agents`.
  * https://platform.claude.com/docs/en/managed-agents/quickstart#create-an-agent
  */
-export interface ManagedAgentDef {
+interface ManagedAgentDef {
   id: string; // agent id from the API
   name: string;
   model: string; // e.g. 'claude-sonnet-4-6'
@@ -46,7 +46,7 @@ export interface ManagedAgentDef {
  * Corresponds to the body of `POST /v1/beta/environments`.
  * https://platform.claude.com/docs/en/managed-agents/quickstart#create-an-environment
  */
-export interface ManagedEnvironment {
+interface ManagedEnvironment {
   id: string;
   name: string;
 }
@@ -56,7 +56,7 @@ export interface ManagedEnvironment {
  * Corresponds to `POST /v1/beta/sessions`.
  * https://platform.claude.com/docs/en/managed-agents/quickstart#create-a-session
  */
-export interface ManagedSession {
+interface ManagedSession {
   id: string;
   agentId: string;
   environmentId: string;
@@ -69,7 +69,7 @@ export interface ManagedSession {
  * `GET /v1/beta/sessions/:id/events` or the SSE `/stream` variant.
  * https://platform.claude.com/docs/en/managed-agents/quickstart#stream-events
  */
-export interface ManagedAgentsEvent {
+interface ManagedAgentsEvent {
   type:
     | 'agent.message'
     | 'tool_use'

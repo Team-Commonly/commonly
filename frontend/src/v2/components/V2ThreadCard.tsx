@@ -9,7 +9,7 @@ import V2Avatar from './V2Avatar';
  * button, no follow toggle: those live in the expanded band's foot
  * (V2ThreadMessages).
  *
- * The chip previews its latest reply. Ruling D278 (2026-11-09) superseded
+ * The chip previews its latest reply. A 2026-11-09 ruling superseded
  * 64476's "the chip is a door, not a preview — no reply bodies, no names":
  * answers to a mention now land in the mention's thread, so the main channel
  * has to show that an answer arrived. One line, tappable as a whole: the
@@ -27,7 +27,7 @@ export interface V2ThreadParticipant {
   isBot?: boolean;
 }
 
-export interface V2ThreadCardLatestReply extends V2ThreadParticipant {
+interface V2ThreadCardLatestReply extends V2ThreadParticipant {
   /** One line of plain text; empty for a card with no summary. */
   text: string;
   isCard?: boolean;
@@ -38,7 +38,7 @@ interface V2ThreadCardProps {
   participants: V2ThreadParticipant[];
   /** The newest reply. Absent on older call sites: the chip shows a face and the count. */
   latestReply?: V2ThreadCardLatestReply | null;
-  /** Replies this person hasn't read (D278). 0 shows no mark. */
+  /** Replies this person hasn't read. 0 shows no mark. */
   unreadCount?: number;
   collapsed: boolean;
   /** An item in this thread addresses me. */

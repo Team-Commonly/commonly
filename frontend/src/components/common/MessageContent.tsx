@@ -172,7 +172,6 @@ export default function MessageContent({
   );
 }
 
-export { ImagePreview, TaskCard };
 
 // Also add img handler to MarkdownContent — re-export a chat-image aware version
 export { default as MarkdownContent } from './MarkdownContent';

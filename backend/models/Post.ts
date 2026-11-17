@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface IPostSource {
+interface IPostSource {
   type: string;
   provider: string;
   externalId?: string | null;
@@ -10,7 +10,7 @@ export interface IPostSource {
   channel?: string | null;
 }
 
-export interface IPostComment {
+interface IPostComment {
   _id?: Types.ObjectId;
   userId: Types.ObjectId;
   text: string;
@@ -18,7 +18,7 @@ export interface IPostComment {
   createdAt: Date;
 }
 
-export interface IPost extends Document {
+interface IPost extends Document {
   podId?: Types.ObjectId | null;
   userId: Types.ObjectId;
   content: string;
@@ -33,7 +33,7 @@ export interface IPost extends Document {
   agentCommentsDisabled: boolean;
 }
 
-export interface IPostModel extends Model<IPost> {
+interface IPostModel extends Model<IPost> {
   getPostCount(userId: string | Types.ObjectId): Promise<number>;
   getCommentCount(userId: string | Types.ObjectId): Promise<number>;
 }

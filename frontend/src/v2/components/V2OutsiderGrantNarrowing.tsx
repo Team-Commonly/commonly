@@ -1,4 +1,4 @@
-// F164 (TASK-781, D244): when an outside-writable connector grant reaches one
+// F164 (TASK-781): when an outside-writable connector grant reaches one
 // of a seat's pods, runtime auth confines that seat's writes (403
 // `outsider_grant_runtime_narrowed`). The server works out where; these two
 // notices only say it. Pod names arrive only for pods the viewer can see;

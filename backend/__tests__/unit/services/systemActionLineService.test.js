@@ -12,6 +12,7 @@ jest.mock('../../../config/socket', () => ({
 const {
   emitOfflineLine, emitPausedLine, emitRemovedLine, emitStoppedLine, emitSystemActionLine,
   hasOfflineLineSince, hasPausedLineSince, hasRemovedLineSince, hasStoppedLineSince,
+  emitUnsandboxedPodLine, hasUnsandboxedLineSince,
 } = require('../../../services/systemActionLineService');
 
 beforeEach(() => {
@@ -113,6 +114,21 @@ describe('the stopped line', () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     await hasOfflineLineSince('pod-1', 'nova:default', since);
     expect(mockQuery.mock.calls[1][1]).toEqual(['pod-1', since, 'nova:default', 'agent-offline']);
+  });
+
+  it('says an agent last started unsandboxed may not answer in this pod, and looks for its own action', async () => {
+    await emitUnsandboxedPodLine(line);
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[2]).toBe("Nova has been run without a sandbox. Run that way, it answers only in invite-only pods that aren't public or listed, so it may not answer here.");
+    expect(JSON.parse(params[3])).toMatchObject({
+      kind: 'system-action', action: 'agent-unsandboxed-pod', agentKey: 'nova:default',
+    });
+    expect(params.slice(4)).toEqual([77, 555]);
+
+    const since = new Date('2026-11-06T00:00:00.000Z');
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    await hasUnsandboxedLineSince('pod-1', 'nova:default', since);
+    expect(mockQuery.mock.calls[1][1]).toEqual(['pod-1', since, 'nova:default', 'agent-unsandboxed-pod']);
   });
 
   it('says a removed agent is gone, promising nothing, and looks for its own action', async () => {

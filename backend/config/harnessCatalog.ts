@@ -1,4 +1,4 @@
-// D247: the one list of harnesses `commonly agent run --adapter` accepts
+// The one list of harnesses `commonly agent run --adapter` accepts
 // (cli/src/lib/adapters/index.js), with the models and effort levels each
 // takes. The add-agent page and Settings both read it, so a new model is a
 // one-line change here.

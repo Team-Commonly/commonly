@@ -7,6 +7,7 @@ const {
   buildScheduleContent,
   dueDay,
   invalidScheduleField,
+  nextRunWhen,
   takesSchedule,
 } = require('../../../services/agentScheduleService');
 
@@ -103,5 +104,27 @@ describe('a wake in a daylight saving gap', () => {
     const schedule = { time: '02:30', timezone: 'America/Los_Angeles' };
     expect(dueDay(schedule, new Date('2026-03-08T09:59:00Z'))).toBeNull();
     expect(dueDay(schedule, new Date('2026-03-08T10:00:00Z'))).toBe('2026-03-08');
+  });
+});
+
+describe('nextRunWhen', () => {
+  // 09:00 in Los Angeles is 17:00 UTC in November (PST).
+  const nine = { time: '09:00', timezone: LA };
+  it('says now inside the catch-up window: a schedule saved at 09:30 for 09:00 runs on the next tick', () => {
+    expect(nextRunWhen(nine, new Date('2026-11-14T17:30:00Z'))).toBe('now');
+  });
+  it('says today before the time, and tomorrow once the window has passed', () => {
+    expect(nextRunWhen(nine, new Date('2026-11-14T16:00:00Z'))).toBe('today');
+    expect(nextRunWhen(nine, new Date('2026-11-14T18:30:00Z'))).toBe('tomorrow');
+  });
+  it('says tomorrow when the install already fired today, another job included', () => {
+    expect(nextRunWhen({ ...nine, lastFiredOn: '2026-11-14' }, new Date('2026-11-14T16:00:00Z'))).toBe('tomorrow');
+    expect(nextRunWhen({ ...nine, lastFiredOn: '2026-11-14' }, new Date('2026-11-14T17:30:00Z'))).toBe('tomorrow');
+  });
+  it('agrees with the dispatcher just after midnight, when yesterday late slot is still catching up', () => {
+    const late = { time: '23:50', timezone: LA };
+    // 00:10 on 11-15 in LA is 08:10 UTC.
+    expect(nextRunWhen(late, new Date('2026-11-15T08:10:00Z'))).toBe('now');
+    expect(nextRunWhen({ ...late, lastFiredOn: '2026-11-14' }, new Date('2026-11-15T08:10:00Z'))).toBe('today');
   });
 });

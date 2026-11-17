@@ -1,4 +1,4 @@
-// Discord bridge commands (D249, F133): /mode /status /mute /unmute /tldr
+// Discord bridge commands (F133): /mode /status /mute /unmute /tldr
 // /summary /help, the same commands a Telegram chat has, as Discord
 // application commands.
 //
@@ -32,6 +32,7 @@ import {
   DISCORD_CONTENT_LIMIT, defuseMassMentions, escapeDiscordMarkdown, fitWithin,
 } from './discordBridgeService';
 import DISCORD_APPLICATION_COMMANDS from '../config/discordApplicationCommands.json';
+import { SUMMARY_COOLING, claimSummaryRun, resetSummaryCooldowns } from './discordSummaryCooldown';
 
 const LOG = '[discord-commands]';
 const EPHEMERAL = 64;
@@ -46,7 +47,7 @@ export const discordApplicationCommands = (): Array<{ name: string }> => DISCORD
 
 export const isDiscordRelayCommand = (name: unknown): boolean => RELAY_COMMANDS.has(String(name || ''));
 
-export interface DiscordInteraction {
+interface DiscordInteraction {
   type?: number;
   id?: string;
   token?: string;
@@ -58,7 +59,7 @@ export interface DiscordInteraction {
   data?: { name?: string; options?: Array<{ name?: string; value?: unknown }> };
 }
 
-export interface DiscordCommandRow {
+interface DiscordCommandRow {
   _id: unknown;
   podId?: unknown;
   createdBy?: unknown;
@@ -78,12 +79,12 @@ export interface DiscordCommandRow {
   };
 }
 
-export interface InteractionReply {
+interface InteractionReply {
   type: number;
   data?: { content?: string; flags?: number; allowed_mentions?: { parse: string[] } };
 }
 
-export interface DiscordCommandHandled {
+interface DiscordCommandHandled {
   /** The HTTP body for Discord's 3-second window. */
   response: InteractionReply;
   /** Work that runs after the response is sent (a deferred reply's edit). */
@@ -105,7 +106,7 @@ export const interactionActorId = (interaction: DiscordInteraction): string => S
 );
 
 /** The row binds exactly the guild and channel the command was typed in. */
-export const isBoundToChannel = (row: DiscordCommandRow, guildId: string, channelId: string): boolean => (
+const isBoundToChannel = (row: DiscordCommandRow, guildId: string, channelId: string): boolean => (
   Boolean(guildId) && Boolean(channelId)
   && String(row.config?.serverId || '') === guildId
   && String(row.config?.channelId || '') === channelId
@@ -221,7 +222,7 @@ const joinPerPod = (blocks: Array<{ podName: string; text: string }>): string =>
 );
 
 /** The rows bound to the channel the command came from. Every row is re-checked, not just queried. */
-export const findBoundRows = async (guildId: string, channelId: string): Promise<DiscordCommandRow[]> => {
+const findBoundRows = async (guildId: string, channelId: string): Promise<DiscordCommandRow[]> => {
   if (!guildId || !channelId) return [];
   const rows = await Integration.find({
     type: 'discord',
@@ -257,7 +258,7 @@ const runSettingsCommand = async (
 };
 
 /** The /tldr text: the summary's title, then its body, the way Telegram sends it. */
-export const renderDiscordTldr = (summary: { title?: string; content?: string }): string => {
+const renderDiscordTldr = (summary: { title?: string; content?: string }): string => {
   const title = defuseMassMentions(escapeDiscordMarkdown(String(summary.title || 'Pod Summary')));
   const body = defuseMassMentions(escapeDiscordMarkdown(String(summary.content || '')));
   return `**${title}**\n\n${body}`;
@@ -307,27 +308,8 @@ const editDeferredReply = async (interaction: DiscordInteraction, content: strin
 };
 
 // /summary runs the summarizer, an LLM call, so one row runs it at most once a
-// minute (F161). Claimed before the run, so two calls racing in the same
-// second still make one. Per process: a second replica keeps its own clock,
-// which at worst doubles the rate, never removes the limit.
-const SUMMARY_COOLDOWN_MS = 60_000;
-const summaryRanAt = new Map<string, number>();
-
-const claimSummaryRun = (row: DiscordCommandRow): boolean => {
-  const key = String(row._id);
-  const now = Date.now();
-  const last = summaryRanAt.get(key);
-  if (last !== undefined && now - last < SUMMARY_COOLDOWN_MS) return false;
-  summaryRanAt.set(key, now);
-  // Drop expired entries so the map stays the size of the last minute's rows.
-  summaryRanAt.forEach((at, id) => { if (now - at >= SUMMARY_COOLDOWN_MS) summaryRanAt.delete(id); });
-  return true;
-};
-
-/** Test seam: forget every row's last /summary. */
-export const resetSummaryCooldowns = (): void => { summaryRanAt.clear(); };
-
-const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again shortly.';
+// minute (F161). The clock is shared with /discord-push, which runs the same
+// call (F162; services/discordSummaryCooldown).
 
 // /summary: the channel's buffered chat → a summary → Commonly Bot in the pod,
 // the path `/discord-push` has always taken. It calls the summarizer, so it
@@ -335,7 +317,7 @@ const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again sh
 const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]): DiscordCommandHandled => {
   // Only rows with sync on run the summarizer, so only they take a slot.
   const claimed = new Set(rows
-    .filter((row) => row.config?.webhookListenerEnabled && claimSummaryRun(row))
+    .filter((row) => row.config?.webhookListenerEnabled && claimSummaryRun(row._id))
     .map((row) => String(row._id)));
   if (!claimed.size && rows.some((row) => row.config?.webhookListenerEnabled)) {
     return { response: reply(SUMMARY_COOLING) };
@@ -356,7 +338,9 @@ const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]
         }
         if (!claimed.has(String(row._id))) return { podName, text: SUMMARY_COOLING };
         try {
-          const { result } = await runCommandForIntegration({ commandName: 'discord-push', integration: row });
+          const { result } = await runCommandForIntegration({
+            commandName: 'discord-push', integration: row, cooldownClaimed: true,
+          });
           return { podName, text: String(result?.content || '❌ The summary did not run.') };
         } catch (error) {
           console.warn(`${LOG} /summary failed integration=${String(row._id)}: ${(error as Error).message}`);
@@ -393,10 +377,7 @@ module.exports = {
   discordApplicationCommands,
   isDiscordRelayCommand,
   interactionActorId,
-  isBoundToChannel,
   mayChangeRelaySettings,
-  findBoundRows,
   resetSummaryCooldowns,
-  renderDiscordTldr,
   handleDiscordRelayCommand,
 };

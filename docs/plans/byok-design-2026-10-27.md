@@ -1,8 +1,8 @@
-# Bring-your-own-key design (D81)
+# Bring-your-own-key design
 
 **Status:** proposed 2026-10-27
 **Owner:** wisp (design). Tier 2 (keys and money): Opus code gate on every implementation PR; ux-lead gates the UI section (write-only key entry, team scope).
-**Ledger:** D81 (10-25, Sam), un-parked 10-27 ~12:00 PT by the Cofounder.
+**Status:** asked for by Sam on 10-25, un-parked 10-27 ~12:00 PT.
 
 Line references are to `origin/main` at `9823d2bb`. Every claim about current code cites a file and line range. Anything marked **to verify** is a design assumption with no spike yet.
 
@@ -16,13 +16,13 @@ Line references are to `origin/main` at `9823d2bb`. Every claim about current co
 - **Native calls disable fallbacks.** The native runtime sends `disable_fallbacks: true` (`backend/services/nativeRuntimeService.ts:2092`). The LiteLLM config has no fallback to another model or vendor for the hosted DeepSeek default, and a test pins that (`backend/__tests__/unit/helm/litellmHostedFallback.test.js:8-30`, which also asserts Workers AI is not a route or fallback target).
 - **Run ceiling is per user.** `userRunCeilingForOwner` returns 120 for free and 300 for pro, from env (`backend/services/hostedRuntimeService.ts:83-89`), and applies to the owner (`backend/routes/registry/manage-settings.ts:111`).
 - **Spend is tokens, not money.** `AgentRun` records prompt, completion and total tokens and a `liteLLMCallId` (`backend/models/AgentRun.ts:61-67`, `:135-136`). The header says there are "no cost/budget fields" (`:11`). `servedModel` and `fallbacks` come from LiteLLM headers (`backend/services/nativeRuntimeService.ts:1436-1452`, `AgentRun.ts:70-72`).
-- **Stale copy.** The public legal page still says "Cloudflare Workers AI is the fallback" (`frontend/src/v2/legal/V2LegalPage.tsx:54`). That contradicts D81(a) and the removal in #2718, which is in prod. It is a copy fix, out of scope for this note, and listed in §7.
+- **Stale copy.** The public legal page still says "Cloudflare Workers AI is the fallback" (`frontend/src/v2/legal/V2LegalPage.tsx:54`). That contradicts the decision that a user key never falls back to ours, and the removal in #2718, which is in prod. It is a copy fix, out of scope for this note, and listed in §7.
 
 ## Constraints that bind the design
 
 1. **Confined-modes ruling (Lily):** a harness's own credential path exposes its bearer to tool env and config. A key must never reach an agent process or tool env. (`agentProviderKey.ts:15-17`.)
-2. **No brokering of Claude usage (Stack L6, Anthropic's Claude Code terms, Cofounder ruling B, 10-25):** we never pay for, resell or intermediate a user's Claude subscription, and we never hold a subscription or session token. Hosted agents reach Claude only through the model API, with the user's own Anthropic API key or ours.
-3. **Our key is the default, not the fallback.** A failed or exhausted user key fails the turn visibly. It never falls back onto our key (D81(a)).
+2. **No brokering of Claude usage (Stack L6, Anthropic's Claude Code terms, ruling B, 10-25):** we never pay for, resell or intermediate a user's Claude subscription, and we never hold a subscription or session token. Hosted agents reach Claude only through the model API, with the user's own Anthropic API key or ours.
+3. **Our key is the default, not the fallback.** A failed or exhausted user key fails the turn visibly. It never falls back onto our key.
 
 ## 1. Model-layer keys, per user and per team, routed per request
 
@@ -56,7 +56,7 @@ The source is resolved once, at turn start. It is recorded on `AgentRun` as `key
 - BYO CLI seats already run the person's own Claude Code or Codex binary, signed in on their own machine. No grant is needed, and we hold nothing.
 - The only harness-layer key path that exists (opencode, `agentProviderKey.ts:13-24`) passes a **vendor API key**, not a subscription. Extending it to another harness re-opens the confined-modes problem. Keep it confined to `public` plus a confined mode, as today.
 
-**Decision for Sam/Lily:** confirm that "harness layer = out of scope for hosted; BYO CLI stays as today" closes D81(2). If Sam wants a per-run harness grant for API keys in a confined sandbox, that is a separate design, and it is the only way the harness layer returns.
+**Decision for Sam/Lily:** confirm that "harness layer = out of scope for hosted; BYO CLI stays as today" closes that question. If Sam wants a per-run harness grant for API keys in a confined sandbox, that is a separate design, and it is the only way the harness layer returns.
 
 ## 3. Write-only UI
 
@@ -117,6 +117,6 @@ Both of the first two must be decided before PR 1 ships. Neither is settled in t
 - **Team-admin authorization for model keys (§6.3):** the "owner or team role check" is named but not defined. Decide it together with the persistence owner.
 
 - **Scope precedence (§1a):** whether team beats user or user beats team, and whether "team" means the pod or the workspace.
-- **Harness layer (§2):** Sam or Lily to confirm "out of scope for hosted" closes D81(2).
+- **Harness layer (§2):** Sam or Lily to confirm "out of scope for hosted" closes that question.
 - **Team cap semantics (§4):** a team key carries its own cap, separate from member run ceilings. Confirm.
 - **Spike result (§1, §4):** if LiteLLM cannot scope deployments per key, PR 2 changes shape. This note would then go back to review.

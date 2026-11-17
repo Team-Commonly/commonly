@@ -1,4 +1,4 @@
-// D216 appearance preference for v2. 'auto' follows the OS (the default when
+// Appearance preference for v2. 'auto' follows the OS (the default when
 // nothing is stored); 'light' and 'dark' force a set. The choice lives on the
 // <html> element as data-v2-theme, and the CSS in v2.css reads it.
 export type V2ThemePref = 'auto' | 'light' | 'dark';

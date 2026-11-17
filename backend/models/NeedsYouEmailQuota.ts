@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface INeedsYouEmailQuota extends Document {
+interface INeedsYouEmailQuota extends Document {
   recipientUserId: Types.ObjectId;
   day: string;
   count: number;

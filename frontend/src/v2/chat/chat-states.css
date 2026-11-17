@@ -1,4 +1,4 @@
-/* Pod chat · states the d215 frame does not draw (S3d, D223 lift).
+/* Pod chat · states the d215 frame does not draw (S3d).
 
    Every rule here moved out of v2.css unchanged: empty and starter states,
    catch-up, delivery hints, cards and other chat-only surfaces the frame has
@@ -202,7 +202,7 @@
 .v2-root button.v2-chat__start {
   min-height: 32px;
   padding: 6px 12px;
-  /* D215 keys: the Signal key material (secondary) and fill (primary) the
+  /* Design keys: the Signal key material (secondary) and fill (primary) the
      lifted surfaces already wear, at the frame's 10px radius. */
   border: 1px solid var(--v2-key-edge);
   border-radius: var(--v2-r-10);
@@ -448,14 +448,20 @@
 }
 
 /* The way to a key, for the agents Bring your own can connect. */
+/* The link sits inline after the notice text. A min-height on it grew the
+   line it wrapped onto, which opened a tall gap at phone width, so the tap
+   target is an overlay that takes no layout space. */
 .v2-root a.v2-chat__agent-room-connect {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  margin-top: 2px;
+  position: relative;
   color: var(--v2-accent);
   font-weight: 600;
   text-decoration: none;
+}
+
+.v2-root a.v2-chat__agent-room-connect::after {
+  content: '';
+  position: absolute;
+  inset: -6px -4px;
 }
 
 .v2-root a.v2-chat__agent-room-connect:hover {
@@ -463,7 +469,62 @@
 }
 
 @media (max-width: 760px) {
-  .v2-root a.v2-chat__agent-room-connect { min-height: 44px; }
+  .v2-root a.v2-chat__agent-room-connect::after { inset: -14px -6px; }
+  /* Away-list rows sit 4 px apart: a full overlay would reach into the row
+     above and take a tap meant for that row's Connect. */
+  .v2-root .v2-chat__agents-away a.v2-chat__agent-room-connect::after { inset: -4px -6px; }
+}
+
+/* F510: the member pointer's action reads like the Connect link beside it,
+   and its dismiss sits at the row's end. A button's padding grows its line
+   even under all: unset, so the tap target is an overlay that takes no space. */
+.v2-root button.v2-chat__member-add-agent {
+  all: unset;
+  position: relative;
+  cursor: pointer;
+  color: var(--v2-accent);
+  font-weight: 600;
+}
+
+.v2-root button.v2-chat__member-add-agent::after {
+  content: '';
+  position: absolute;
+  inset: -6px -4px;
+}
+
+.v2-root button.v2-chat__member-add-agent:hover {
+  text-decoration: underline;
+}
+
+.v2-root button.v2-chat__member-add-agent-dismiss {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  border-radius: 8px;
+  color: var(--v2-text-muted);
+}
+
+.v2-root button.v2-chat__member-add-agent-dismiss:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-chat__member-add-agent:focus-visible,
+.v2-root button.v2-chat__member-add-agent-dismiss:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+}
+
+@media (max-width: 760px) {
+  .v2-root button.v2-chat__member-add-agent::after { inset: -12px -6px; }
+  .v2-root button.v2-chat__member-add-agent-dismiss { width: 44px; height: 44px; margin: -12px -12px -12px 0; }
 }
 
 .v2-root button.v2-chat__agent-room-copy {
@@ -1027,7 +1088,7 @@
 
 /* A readable connector call: the verb, then the tool's own name as meta. The
    gap is a column gap, so a tool name that wraps onto its own line starts
-   flush left rather than indented (Cofounder at 390). */
+   flush left rather than indented (seen at 390px). */
 .v2-approval__action--tool {
   display: flex;
   flex-wrap: wrap;
@@ -1250,7 +1311,7 @@
 }
 
 /* Off-frame: on a phone the consent controls are touch targets, so Approve,
-   Decline and the exact-arguments toggle reach 44px (D223 exception). */
+   Decline and the exact-arguments toggle reach 44px (design exception). */
 @media (max-width: 480px) {
   .v2-root button.v2-approval__btn {
     min-height: 44px;

@@ -120,7 +120,7 @@ describe('Scout onboarding knowledge', () => {
 
   // docs/agents/byo-support-matrix.md: Claude Code and Codex walked as public
   // seats on a Mac (2026-11-04); Claude Code walked on native Windows on prod
-  // with the published CLI (D164, run 41926949969), and works there with CLI
+  // with the published CLI (run 41926949969), and works there with CLI
   // 0.1.243 or newer; on Linux or WSL it runs in the bubblewrap jail (F96),
   // walked on prod on an API key (run 41945040493) and CI-only on a login;
   // Codex on Linux runs under its own sandbox, walked on prod on an API key (run
@@ -179,7 +179,7 @@ describe('Scout onboarding knowledge', () => {
     ].forEach((claim) => expect(prompt).not.toMatch(claim));
   });
 
-  // D164: the published CLI answered an @mention from the page's Windows
+  // The published CLI answered an @mention from the page's Windows
   // lines on prod (byo-windows.yml run 41926949969). The public content a
   // visitor reads must say what the matrix and Scout say, not the old
   // "doesn't answer @mentions" on Windows.
@@ -215,7 +215,7 @@ describe('Scout onboarding knowledge', () => {
   });
 
   // The prompt is the only guard before the card, so the pairs
-  // it may go out for are listed, not inferred. D164: the card lands on the
+  // it may go out for are listed, not inferred. The card lands on the
   // connect page, which gives a Windows browser its PowerShell lines, and the
   // server gates the card by name and adapter only, so Claude Code on native
   // Windows joins the list now that it is walked there.
@@ -247,9 +247,9 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: point them to "Use my own agent" on the Bring your own page, which shows the Linux command \(it needs bubblewrap installed\), offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
     expect(prompt).toMatch(/For Codex on Linux or WSL, do not propose a connect card either: point them to "Use my own agent" on the Bring your own page, where they choose Codex under Adapter, press "Get my connect command", and then pick Linux among the operating-system buttons above the command \(the page starts on Claude, and a WSL user's browser reports Windows\), then copy the Linux command \(it needs bubblewrap installed\), or offer "Run it here"\. For Codex on native Windows, offer running it in WSL 2 or "Run it here", and say plainly why: it has no sandbox there, so it runs with their own access and anyone in the pod can direct it\./);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
-    // D245: the page no longer says Claude Code can't run on Windows. Its note
+    // The page no longer says Claude Code can't run on Windows. Its note
     // describes an opt-in --unsandboxed listener and names neither "Run it
-    // here" nor the MCP command. D164: the published CLI answered an @mention
+    // here" nor the MCP command. The published CLI answered an @mention
     // from those lines on prod, so the note says it works with 0.1.243 or
     // newer, as Scout's prompt does, and Scout proposes the card there.
     expect(en.agentByo.listen.windowsNote).toMatch(/^Claude Code answers @mentions on Windows with CLI 0\.1\.243 or newer\. Windows has no sandbox/);
@@ -396,7 +396,7 @@ describe('Scout running-state claims', () => {
 
   // A BYO seat's intro is posted at install and says nothing is running it.
   // Scout read that message hours later and told a connected user their agent
-  // was not running (D172, 2026-10-28).
+  // was not running (2026-10-28).
   test('checks live status before any running-or-not claim', () => {
     expect(prompt).toContain('Call it before you say anything about whether an agent is running');
     expect(prompt).toContain('Never judge that from earlier messages');

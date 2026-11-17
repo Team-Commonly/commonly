@@ -1,4 +1,4 @@
-/* Pod chat · pane, stream, thread, presence and header (S3b, D223 lift of
+/* Pod chat · pane, stream, thread, presence and header (S3b, lift of
    the d215 chat frame).
 
    Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
@@ -38,7 +38,7 @@
      mis-sized row makes the whole pane horizontally swipeable (the
      thread-block did exactly that; mobile report 2026-08-24). */
   overflow-x: hidden;
-  /* D215 .stream: 10 28 6; phone 8 12 4 below. */
+  /* Design .stream: 10 28 6; phone 8 12 4 below. */
   padding: 10px 28px 6px;
   display: flex;
   flex-direction: column;
@@ -92,7 +92,7 @@
   margin-inline: 0;
 }
 
-/* Agent presence (D215 .presence): a chip, not a row. It keeps its slot
+/* Agent presence (design .presence): a chip, not a row. It keeps its slot
    between the scroller and the composer (moving it into the scroller would
    touch history anchoring), so its left edge adds the stream's 28px gutter to
    the frame's 48px text column. The pulsing cobalt dot carries "alive";
@@ -251,7 +251,7 @@
   .v2-thread-card {
     flex-wrap: wrap;
   }
-  /* D215 .app.m .thr .tfoot: the open thread's replies are on screen, so the
+  /* Design .app.m .thr .tfoot: the open thread's replies are on screen, so the
      count gives way (screen readers still hear it) and Follow takes the right
      edge, keeping the foot on one line. Follow is drawn at 32px like the keys
      beside it; its ring takes the hit area to 44px (52 across) and reaches 6px
@@ -279,7 +279,7 @@
   }
   .v2-root button.v2-thread-card__main {
     flex: 0 1 auto;
-    flex-wrap: nowrap; /* D278: one line at 390; the preview truncates instead */
+    flex-wrap: nowrap; /* One line at 390; the preview truncates instead */
   }
 }
 
@@ -297,7 +297,7 @@
 .v2-thread__header {
   flex: 0 0 auto;
   box-sizing: border-box;
-  /* D215 (TASK-734): the pane head is 64px, title left at 24px. */
+  /* (TASK-734): the pane head is 64px, title left at 24px. */
   min-height: 64px;
   padding: 0 20px 0 24px;
   border-bottom: 1px solid var(--v2-border-soft);
@@ -328,7 +328,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-primary);
-  /* D215 (TASK-734) brings the display face back to the pod title, at 18/700
+  /* The design (TASK-734) brings the display face back to the pod title, at 18/700
      with the artboard's tracking. */
   font: 700 18px/24px var(--v2-font-display);
   letter-spacing: -0.025em;
@@ -340,17 +340,17 @@
   max-width: 100%;
 }
 
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib. */
+/* Look from the design primitives (primitives.css): v2p-b v2p-b-g v2p-ib. */
 .v2-root button.v2-thread__inspector-toggle { flex: 0 0 32px; }
 
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-s v2p-b-sm. */
+/* Look from the design primitives (primitives.css): v2p-b v2p-b-s v2p-b-sm. */
 .v2-root button.v2-pod-header__invite { flex: 0 0 auto; }
 
 /* On a phone the label would take the pod name's width, so the button keeps
    only its glyph, square like the inspector toggle. The label stays in the
    accessibility tree as the button's name. */
 @media (max-width: 760px) {
-  /* The phone head's keys are ghosts (D215 phone frame), Invite included. */
+  /* The phone head's keys are ghosts (the phone frame), Invite included. */
   .v2-root button.v2-pod-header__invite {
     width: 32px;
     height: 32px;
@@ -400,7 +400,7 @@
   .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 }
 
-/* Pod header (D215, TASK-734): 64px, display 18/700 title, description
+/* Pod header (TASK-734): 64px, display 18/700 title, description
    inline, then the board chip and the member faces on the right. */
 .v2-pod-header .v2-thread__header-row {
   min-height: 64px;
@@ -456,7 +456,7 @@
 
 .v2-pod-header__more { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
 
-/* D215: the board is a chip, a board glyph and the count. */
+/* The board is a chip, a board glyph and the count. */
 .v2-root button.v2-pod-header__board {
   display: inline-flex;
   height: 24px;
@@ -476,8 +476,8 @@
 
 .v2-root button.v2-pod-header__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
-/* D288: the first-run bar (first-run artboard). It sits under the header, out
-   of the stream, so the stream stays bottom-anchored (D215). Only the current
+/* The first-run bar (first-run artboard). It sits under the header, out
+   of the stream, so the stream stays bottom-anchored. Only the current
    step is a key; a done step is struck, a later one waits. */
 .v2-get-started {
   flex: none;
@@ -489,7 +489,7 @@
   background: var(--v2-bg-subtle);
 }
 .v2-get-started__sp { flex: 1; }
-.v2-get-started__title { margin-right: 4px; color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); }
+.v2-get-started__title { margin-right: 4px; color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); white-space: nowrap; }
 .v2-root button.v2-get-started__step {
   box-sizing: border-box;
   display: inline-flex;
@@ -527,7 +527,14 @@
 .v2-get-started__step--now .v2-get-started__n { background: var(--v2-accent-fill); color: var(--v2-on-accent); }
 .v2-root button.v2-get-started__step--done { text-decoration: line-through; text-decoration-color: var(--v2-border); }
 .v2-get-started__step--done .v2-get-started__n { background: var(--v2-accent-soft); color: var(--v2-accent-text); }
-.v2-get-started__count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+.v2-get-started__count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); white-space: nowrap; }
+/* Step 1 before the person picks: the same two choices as Scout's welcome,
+   as equal keys under one step number. */
+.v2-get-started__choice { display: inline-flex; align-items: center; gap: 6px; }
+.v2-get-started__choice > .v2-get-started__n { background: var(--v2-accent-fill); color: var(--v2-on-accent); }
+.v2-get-started__or { color: var(--v2-text-muted); font: 500 12px/1 var(--v2-font); }
+.v2-root .v2-get-started__choice button.v2-get-started__step { padding: 0 10px; }
+.v2-root button.v2-get-started__step:disabled { opacity: 0.6; cursor: default; }
 /* The bar stands in for the board chip, so it keeps the way to the board. */
 .v2-root button.v2-get-started__board { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; margin-left: 4px; background: transparent; border: 1px solid var(--v2-border-soft); border-radius: 6px; color: var(--v2-text-muted); font: 500 12px/1 var(--v2-font); cursor: pointer; white-space: nowrap; }
 .v2-root button.v2-get-started__board:hover { color: var(--v2-text-primary); border-color: var(--v2-border); }
@@ -541,6 +548,10 @@
   /* The board button shares the title's line; the steps wrap below at full width. */
   .v2-root button.v2-get-started__board { order: 1; margin-left: 0; }
   .v2-root button.v2-get-started__step { order: 2; height: 36px; flex: 1 1 100%; }
+  /* The two choices share one row, each half of it. */
+  .v2-get-started__choice { order: 2; flex: 1 1 100%; min-width: 0; }
+  /* order: 0 undoes the bar's order: 2 for steps, which would move "or" ahead of both keys. */
+  .v2-root .v2-get-started__choice button.v2-get-started__step { order: 0; flex: 1 1 0; min-width: 0; justify-content: center; white-space: normal; line-height: 1.2; text-align: center; }
   .v2-root button.v2-get-started__step > svg:last-child { margin-left: auto; }
   .v2-get-started__sp, .v2-get-started__count { display: none; }
 }
@@ -594,7 +605,7 @@
 
 .v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
 
-/* D215: rename is a pencil on the title, out of sight until the title line is
+/* Rename is a pencil on the title, out of sight until the title line is
    hovered or the pencil has keyboard focus. Touch screens show it at rest, behind
    the "i" at phone width (see the phone rules below). */
 .v2-root button.v2-pod-header__rename-open { opacity: 0; }
@@ -609,7 +620,7 @@
 .v2-root button.v2-thread__back { display: none; }
 
 @media (max-width: 760px) {
-  /* D215 phone head: 52px, back, title, board chip, panel. */
+  /* Design phone head: 52px, back, title, board chip, panel. */
   .v2-thread__header { min-height: 52px; padding: 0 10px 0 12px; }
   .v2-pod-header .v2-thread__header-row {
     box-sizing: border-box;
@@ -623,7 +634,7 @@
   .v2-root button.v2-thread__back,
   .v2-root button.v2-pod-header__invite,
   .v2-root button.v2-thread__inspector-toggle { position: relative; z-index: 1; }
-  /* D223 standing rule: these keys draw at 32x32 and take touches at 44 through
+  /* Design standing rule: these keys draw at 32x32 and take touches at 44 through
      the ::after below, so they opt out of the primitives' 44px phone size. */
   .v2-root button.v2-thread__back,
   .v2-root button.v2-thread__inspector-toggle { width: 32px; height: 32px; }
@@ -703,13 +714,23 @@
   padding: 6px 0 10px;
 }
 
-/* D215 .stream bottom-anchors: a conversation shorter than the pane sits on
+/* Design .stream bottom-anchors: a conversation shorter than the pane sits on
    the composer, not under the header, so a new pod's welcome is read where the
    reader types. The edge takes the slack above it; once rows overflow the
    auto margin resolves to 0 and scrolling is untouched. An empty pod keeps
    its empty state where it is. */
 .v2-thread__edge:not([data-state="empty"]) {
   margin-top: auto;
+}
+
+/* PH walk 2026-11-14: on a phone a new pod's whole first conversation fits,
+   and the slack above it read as an empty screen under the Get started bar
+   (about 170px at 390). When the pod's history is all here, it starts at the
+   top. A longer pod overflows, and then the auto margin above is 0 anyway. */
+@media (max-width: 760px) {
+  .v2-thread__edge[data-state="beginning"] {
+    margin-top: 0;
+  }
 }
 
 .v2-thread__edge-line {
@@ -729,6 +750,31 @@
 }
 
 .v2-root button.v2-thread__edge-line { cursor: pointer; }
+
+/* First minute back: "New since your last visit". It means unread, one of the
+   accent's named uses (the unread counter), so the label and its hairlines
+   take the accent text colour; the mono 11px voice matches the edge line. The
+   hairlines are pseudo-elements at reduced opacity, never a coloured stripe. */
+.v2-chat__new-since {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+  color: var(--v2-accent-text);
+}
+.v2-chat__new-since::before,
+.v2-chat__new-since::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.v2-chat__new-since-label {
+  flex: none;
+  font: 500 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
 
 .v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
 
@@ -806,7 +852,7 @@
 
 .v2-thread__jump-count { color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
 
-/* Thread chip (D278, 2026-11-09): one line — the latest replier's face and
+/* Thread chip (2026-11-09): one line — the latest replier's face and
    name, their reply ellipsized, · N replies, and the unread counter. Only the
    preview (then the name) gives way; the count and counter never shrink or
    wrap, at 390 included. */
@@ -856,7 +902,7 @@
 
 .v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
 
-/* Expanded thread (D215 .thr, #3178 / TASK-745): the root stays a plain
+/* Expanded thread (design .thr, #3178 / TASK-745): the root stays a plain
    transcript row and the replies sit under it in their own card at the text
    column (36px avatar + 12px gap = 48px). The band that once wrapped root and
    replies, and the rail beside the replies, are gone. */
@@ -877,7 +923,7 @@
   box-shadow: inset 0 0 0 1px var(--v2-border-soft);
 }
 
-/* D215 .thr .rmsg: 24px avatar, 10px gap, 18px head, 13px name, 13.5/20 body. */
+/* Design .thr .rmsg: 24px avatar, 10px gap, 18px head, 13px name, 13.5/20 body. */
 .v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 0; margin: 0; }
 /* A UI card posted as a reply keeps its own 4px stack gap. uiCard.css now loads
    before this sheet, so the reply rule above would otherwise win the tie. */
@@ -896,7 +942,7 @@
 
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; border-radius: var(--v2-r-6, 6px); font-size: 12px; }
 
-/* D215 .tfoot: Reply in thread (secondary key), Collapse (ghost key, chevron
+/* Design .tfoot: Reply in thread (secondary key), Collapse (ghost key, chevron
    turned up), the count pushed right, Follow after it. */
 .v2-thread-replies__foot {
   display: flex;
@@ -951,7 +997,7 @@
 
 @media (max-width: 760px) {
   .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
-  /* D215 .app.m .thr: 40px indent, tighter card, 32px foot keys. The drawn
+  /* Design .app.m .thr: 40px indent, tighter card, 32px foot keys. The drawn
      key keeps 32px; an invisible ring takes the hit area to 44px. */
   .v2-thread .v2-thread-block__inner { margin-left: 40px; }
   .v2-thread .v2-thread-replies { padding: 8px 10px 8px; }

@@ -65,7 +65,7 @@ const MAX_REASON_LENGTH = 200;
  * (which names the host): the address or the response is not allowed, the
  * host does not resolve, or the destination redirected too many times.
  */
-export type OutboundRefusalKind = 'refused' | 'unresolved' | 'redirects';
+type OutboundRefusalKind = 'refused' | 'unresolved' | 'redirects';
 
 class OutboundUrlRefusedError extends Error {
   readonly code = OUTBOUND_URL_REFUSED;
@@ -228,7 +228,7 @@ const METADATA_HOSTNAMES = new Set(['metadata.google.internal', 'metadata.google
  * `reserved`: unspecified, link-local (which holds the cloud metadata
  *   endpoint), multicast, broadcast and other reserved space; never allowed.
  */
-export type AddressClass = 'public' | 'private' | 'reserved';
+type AddressClass = 'public' | 'private' | 'reserved';
 
 const ipv4ToInt = (address: string): number => address.split('.')
   .reduce((acc, octet) => (acc * 256) + Number(octet), 0);
@@ -590,7 +590,7 @@ const FETCH_HEADERS: Readonly<Record<string, string>> = Object.freeze({
     + 'application/rss+xml;q=0.9, application/atom+xml;q=0.9',
 });
 
-export interface PublicPageResult {
+interface PublicPageResult {
   ok: boolean;
   status: number;
   /** The final hop's media type, lowercased, without parameters. */
@@ -645,7 +645,7 @@ export const getFromPublicAddress = async (rawUrl: string): Promise<PublicPageRe
 // ── A credentialed request to a hosted-MCP vendor (TASK-253) ────────────────
 
 /** A vendor reply as the guard read it. `location` is set on a 3xx, which is never followed. */
-export interface VendorEndpointResult {
+interface VendorEndpointResult {
   status: number;
   mcpSessionId?: string;
   contentType: string;

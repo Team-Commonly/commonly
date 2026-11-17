@@ -387,6 +387,40 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
     expect(row).toEqual({ username: 'Deleted user', profile_picture: null });
   });
 
+  // F478: bob has no PG row. His deletion starts after the re-read: the
+  // receipt is written, then its anonymizing UPDATE matches nothing. The
+  // repair's INSERT must not leave his real name on a row that outlives him.
+  it('anonymizes a missing user it inserts while that account is being deleted', async () => {
+    const id = (x) => String(x._id);
+    const AccountDeletion = require('../../models/AccountDeletion');
+    const realFindById = User.findById.bind(User);
+    jest.spyOn(User, 'findById').mockImplementation((userId) => {
+      const query = realFindById(userId);
+      if (String(userId) !== id(bob)) return query;
+      return {
+        select: async (fields) => {
+          const doc = await query.select(fields);
+          await AccountDeletion.create({ _id: bob._id });
+          await pg.query("UPDATE users SET username = 'Deleted user', profile_picture = NULL WHERE _id = $1", [id(bob)]);
+          return doc;
+        },
+      };
+    });
+    const report = await run({ apply: true });
+    const row = (await pg.query('SELECT username, profile_picture FROM users WHERE _id = $1', [id(bob)])).rows[0];
+    expect(row).toEqual({ username: 'Deleted user', profile_picture: null });
+    expect(report.counts.repairs_failed).toBe(0);
+  });
+
+  // F478: the log line is the only record that can undo a repair.
+  it('logs a long pod description whole, so a bad repair can be undone from the log', async () => {
+    const long = 'x'.repeat(450);
+    await pg.query('UPDATE pods SET description = $2 WHERE id = $1', [String(podA._id), long]);
+    await run();
+    const line = lines.map(([, l]) => l).find((l) => l.includes(`pods id=${podA._id} field=description`));
+    expect(line).toContain(`before=${JSON.stringify(long)}`);
+  });
+
   it('never overwrites a tombstone row, even while the Mongo user still exists', async () => {
     const id = (x) => String(x._id);
     // accountDeletionService anonymizes PG before it deletes the Mongo row.

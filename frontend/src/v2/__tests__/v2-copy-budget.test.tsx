@@ -60,7 +60,7 @@ describe('page head copy budget', () => {
 
   test('phone disclosure keeps its trigger in the title row and uses the shared focus ring', () => {
     const css = readV2Css();
-    // The chat half of this rule moved to chat/chat-pane.css (D223, S3b).
+    // The chat half of this rule moved to chat/chat-pane.css (S3b).
     expect(css).toContain('.v2-page-head__identity .v2-hint--open { display: contents; }');
     expect(css).toContain('.v2-thread__title-line .v2-hint--open { display: contents; }');
     expect(css).toContain('.v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }');

@@ -142,7 +142,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   const codexConfig = windowsCodexConfigPath(process.env);
   if (adapter === 'codex') {
     mkdirSync(dirname(codexConfig), { recursive: true });
-    writeFileSync(codexConfig, codexSystemConfig(MODEL_GATEWAY));
+    writeFileSync(codexConfig, codexSystemConfig(MODEL_GATEWAY, MODEL));
   } else {
     MANAGED_DIRS.forEach((dir) => {
       mkdirSync(dir, { recursive: true });

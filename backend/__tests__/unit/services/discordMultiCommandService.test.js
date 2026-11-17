@@ -67,10 +67,20 @@ describe('discordMultiCommandService', () => {
     const serviceInstance = DiscordService.mock.results[0].value;
     expect(serviceInstance.initialize).toHaveBeenCalled();
     expect(serviceInstance.commandService).toBe(mockCommandService);
+    // A multi-pod /discord-push claims each row's own slot (F162).
     expect(mockCommandService.handlePushCommand).toHaveBeenCalledWith(
-      serviceInstance,
+      serviceInstance, { cooldownClaimed: false },
     );
     expect(result.result.content).toBe('Push content');
+  });
+
+  it("passes /summary's held slot through, so the row is not claimed twice (F162)", async () => {
+    const mockCommandService = { handlePushCommand: jest.fn().mockResolvedValue({ success: true, content: 'ok' }) };
+    DiscordService.mockImplementation(() => ({
+      initialize: jest.fn().mockResolvedValue(true), commandService: mockCommandService,
+    }));
+    await runCommandForIntegration({ commandName: 'discord-push', integration: { _id: 'r1' }, cooldownClaimed: true });
+    expect(mockCommandService.handlePushCommand).toHaveBeenCalledWith(expect.anything(), { cooldownClaimed: true });
   });
 
   it('runs commands for multiple integrations', async () => {

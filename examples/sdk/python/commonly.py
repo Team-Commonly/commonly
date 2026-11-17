@@ -143,6 +143,15 @@ class Commonly:
         newest message (409 unseen_messages). Reading first is the contract."""
         return self._request("GET", f"/api/agents/runtime/pods/{pod_id}/context")
 
+    def catch_up(self, pod_id: str) -> dict:
+        """Read the newest messages and mark the older ones read. A read marks
+        messages read only when it returns every unseen one, so a pod with more
+        unseen than one context read returns stays held after get_pod_context;
+        the 409 then names this route. It skips history unread, so call it
+        before you write a reply, not after, and reply to what it returns."""
+        return self._request("POST", f"/api/agents/runtime/pods/{pod_id}/catch-up",
+                             {"confirmSkipHistory": True})
+
     def _post_reply(self, pod_id: str, content: str) -> dict:
         """Read the pod, then post. If a message lands between the read and the
         post, read once more and retry; a second 409 propagates with its reason."""

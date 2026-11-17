@@ -52,14 +52,14 @@ const MINUTE_MS = 60 * 1000;
  * needed. The window exists so someone who installs and immediately runs the
  * command is never nudged mid-setup.
  */
-export const CONNECT_PATIENCE_MINUTES = Number(
+const CONNECT_PATIENCE_MINUTES = Number(
   process.env.STALLED_CONNECT_PATIENCE_MINUTES || 15,
 );
 
 /** Cap on installs examined per pass; the candidate set is normally ~45. */
 const CANDIDATE_LIMIT = 500;
 
-export interface StalledScanResult {
+interface StalledScanResult {
   candidates: number;
   nudged: Array<{ episodeId: string; agentName: string; podId: string; installer: string }>;
   resolved: Array<{ episodeId: string; agentName: string; podId: string }>;
@@ -71,7 +71,7 @@ export interface StalledScanResult {
   skippedNoListener: number;
 }
 
-export interface TokenEpisodeKey {
+interface TokenEpisodeKey {
   /** max(createdAt) across BOTH stores — the episode identity. */
   issuedAt: Date | null;
   /** Which store minted it. Matters; see the expiry asymmetry below. */
@@ -516,6 +516,8 @@ const nudgeOnce = async ({
  * confirmation is not optional polish: it is the second half of the same
  * feature.
  */
+export const RESOLVE_PAGE_SIZE = 200;
+
 const resolveConnected = async ({
   now, result,
 }: { now: Date; result: StalledScanResult }): Promise<void> => {
@@ -530,11 +532,9 @@ const resolveConnected = async ({
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
 
-  const open = await StalledConnectEpisode.find({ status: 'open' }).limit(200).lean();
-  const tokensBySeat = await botTokensForMany((open as Array<Record<string, any>>).map((ep) => ({
-    agentName: String(ep.agentName), instanceId: String(ep.instanceId),
-  })));
-  const resolveEpisode = async (ep: Record<string, any>): Promise<void> => {
+  const resolveEpisode = async (
+    ep: Record<string, any>, tokensBySeat: Map<string, BotTokens>,
+  ): Promise<void> => {
     const install = await AgentInstallation.findById(ep.installationId).lean();
     // Close with no post. Plain `resolve`, not `resolveActioned`: nobody
     // started the agent the nudge asked about.
@@ -656,15 +656,34 @@ const resolveConnected = async ({
       episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
     });
   };
-  for (const ep of open as Array<Record<string, any>>) {
-    // One episode's failed lookup must not end the pass for the ones after it.
-    // The failed episode stays open and is tried again on the next pass, so a
-    // lookup error fails toward silence, never toward a false "connected".
-    try {
-      await resolveEpisode(ep);
-    } catch (error) {
-      console.warn('[stalled-connect] resolution check failed:', (error as Error).message);
+  // Every open episode, a page at a time in _id order (F505). A never-
+  // connected episode stays open for good, so the open set only grows; one
+  // unsorted batch of 200 left whatever fell outside it open forever, with no
+  // resolution post, and the digest could still call a connected agent
+  // "not connected yet".
+  let after: unknown = null;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const page = await StalledConnectEpisode.find({ status: 'open', ...(after ? { _id: { $gt: after } } : {}) })
+      .sort({ _id: 1 }).limit(RESOLVE_PAGE_SIZE).lean() as Array<Record<string, any>>;
+    if (!page.length) break;
+    // eslint-disable-next-line no-await-in-loop
+    const tokensBySeat = await botTokensForMany(page.map((ep) => ({
+      agentName: String(ep.agentName), instanceId: String(ep.instanceId),
+    })));
+    for (const ep of page) {
+      // One episode's failed lookup must not end the pass for the ones after it.
+      // The failed episode stays open and is tried again on the next pass, so a
+      // lookup error fails toward silence, never toward a false "connected".
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await resolveEpisode(ep, tokensBySeat);
+      } catch (error) {
+        console.warn('[stalled-connect] resolution check failed:', (error as Error).message);
+      }
     }
+    if (page.length < RESOLVE_PAGE_SIZE) break;
+    after = page[page.length - 1]._id;
   }
 };
 

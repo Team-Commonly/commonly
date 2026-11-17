@@ -23,7 +23,7 @@ router.use(require('./registry/manage-grants'));
 router.use(require('./registry/templates'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/catalog'));
-// Every router mounted below shares this per-IP budget (D175). It used to
+// Every router mounted below shares this per-IP budget. It used to
 // share the catalog's 120/min, which a per-pod read like /v2/agents spends in
 // two page loads. Routers above it (runtime, grants, templates) are not
 // covered, as before. Sized for fan-out: a 62-pod account is ~125 requests

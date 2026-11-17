@@ -51,7 +51,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
   useEffect(() => { setHarness(savedHarness); }, [savedHarness]);
   useEffect(() => { setModel(runtime.model || ''); setOtherModel(false); }, [runtime.model]);
   useEffect(() => { setEffort(runtime.effort || ''); }, [runtime.effort]);
-  // D247: hosted and native turns read their own run config; every other
+  // Hosted and native turns read their own run config; every other
   // agent the person owns is editable on add and after. Whether this viewer
   // may save is the server's call (runtimeEditable → onSave).
   const hosted = runtime.host === 'cloud' || ['hosted', 'internal', 'native'].includes(runtime.runtimeType || '');

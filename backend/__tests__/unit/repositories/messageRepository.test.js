@@ -77,7 +77,7 @@ describe('listPodMessages', () => {
 });
 
 describe('toPodMessage', () => {
-  it('carries the D245 summary and kind when the document has them', () => {
+  it('carries the summary and kind when the document has them', () => {
     const row = toPodMessage({
       _id: 'm2', podId: 'p1', userId: 'u1', content: 'Fixed the redirect.', summary: 'Fixed it', kind: 'result',
     });

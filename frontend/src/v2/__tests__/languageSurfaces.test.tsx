@@ -106,7 +106,7 @@ describe('language surfaces derive from the registry', () => {
     }
   });
 
-  // D215 (TASK-691): language is not a daily act, so the switch left the rail
+  // (TASK-691): language is not a daily act, so the switch left the rail
   // for Settings › Look (covered in V2SettingsPage.test).
   it('keeps the language menu off the rail', () => {
     render(

@@ -43,7 +43,7 @@ export const getAvatarColor = (avatarId: string | undefined | null): string => {
 export const FACE_PRESET_PREFIX = 'bigsmile:';
 // Agents use the same scheme with their own species (Sam: owners can edit an
 // agent's avatar too). One resolver, two prefixes — the prefix IS the kind.
-export const ROBOT_PRESET_PREFIX = 'bottts:';
+const ROBOT_PRESET_PREFIX = 'bottts:';
 
 const PRESET_KINDS: Array<{ prefix: string; kind: AvatarKind }> = [
   { prefix: FACE_PRESET_PREFIX, kind: 'human' },
