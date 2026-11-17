@@ -19,7 +19,7 @@ import {
 } from 'fs/promises';
 import { existsSync } from 'fs';
 import {
-  isAbsolute, join, resolve as pathResolve, basename, dirname,
+  isAbsolute, join, resolve as pathResolve, basename, dirname, relative,
 } from 'path';
 import { homedir, tmpdir } from 'os';
 import { resolveSkillSource } from './skill-prompt.js';
@@ -612,6 +612,12 @@ const makeSkillStage = async (workspacePath) => {
   }
 };
 
+// Whether `child` is `parent` or lies under it.
+const isWithin = (child, parent) => {
+  const rel = relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+};
+
 // Whether a copied tree holds a link anywhere in it. Read in the stage, which
 // only the host writes, so nothing can change it between the copy and here.
 const holdsLink = async (dir) => {
@@ -655,26 +661,34 @@ const holdsLink = async (dir) => {
  * renamed into place after a fresh check, and a replaced mount is moved out
  * before it is deleted, so a swap mid-mount is refused the same way. What is
  * left is the moment between that check and the renames: Node has no
- * renameat, so they still resolve the path. A swap there can move a directory
- * that already carries MOUNT_MARKER, and nothing else, into the stage, and put
- * the snapshot where the link points. Nothing is ever copied or deleted at a
- * workspace path: when the stage is on another disk, so a rename fails with
- * EXDEV, the mount is refused ('cross-disk-stage') and the old one stays.
+ * renameat, so they still resolve the path. A swap there can move whatever
+ * has the slot's name at the link's target into the stage, and put the
+ * snapshot there. What arrives in the stage is checked there: only a link or
+ * a directory carrying MOUNT_MARKER is deleted; anything else is kept in the
+ * stage folder, beside the workspace, and reported. Nothing is ever copied or
+ * deleted at a workspace path: when the stage is on another disk, so a rename
+ * fails with EXDEV, the mount is refused ('cross-disk-stage'), and an old
+ * mount already moved out is kept rather than deleted.
  *
- * A source that is itself a link is copied as the folder it points to. A link
- * inside a source is never followed: a source holding one is refused
- * ('linked-skill-file'), since following it would copy whatever it names,
- * a credential included, into a folder the seat reads.
+ * A source in the workspace, or one that resolves into it, is refused
+ * ('source-in-workspace'): the seat writes there, so it could make the source
+ * a link to any host folder. A source that is itself a link is copied as the
+ * folder it points to. A link inside a source is never followed: a source
+ * holding one, or swapped for one after it was resolved, is refused
+ * ('linked-skill-file'), since following it would copy whatever it names, a
+ * credential included, into a folder the seat reads. Links are judged by
+ * lstat, so a hard link is a file; only the source's owner can make one.
  *
- * `hooks.onStep(step)` is for tests: it runs after the check ('checked') and
- * after each snapshot is built ('staged'). `hooks.rename` stands in for
- * fs.rename, so a test can fail it as another disk would.
+ * `hooks.onStep(step)` is for tests: it runs after the check ('checked'),
+ * after each source is resolved ('resolved'), after each snapshot is built
+ * ('staged') and after the slot is read ('slot-checked'). `hooks.rename`
+ * stands in for fs.rename, so a test can fail it as another disk would.
  *
  * Returns `{ mounted, conflicted }`:
  *   - `mounted`:    string[]            — absolute source paths snapshotted
  *   - `conflicted`: Array<{path, reason}> where reason ∈
  *       'not-a-mount' | 'missing-source' | 'unsafe-skill-dir'
- *       | 'cross-disk-stage' | 'linked-skill-file'
+ *       | 'cross-disk-stage' | 'linked-skill-file' | 'source-in-workspace'
  */
 export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks = {}) => {
   const sources = Array.isArray(spec?.skills?.claude) ? spec.skills.claude : [];
@@ -695,6 +709,7 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
   const checked = await lstat(skillsDir);
   await hooks.onStep?.('checked');
   const move = hooks.rename || rename;
+  const workspaceReal = await realpath(workspacePath);
 
   for (const rawSource of sources) {
     const absSource = resolveSkillSource(rawSource, envFileDir || workspacePath);
@@ -702,19 +717,36 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
       conflicted.push({ path: absSource, reason: 'missing-source' });
       continue;
     }
+    // The seat writes its workspace, so a source there (a relative entry
+    // resolves against it) could be made a link to any host folder, and
+    // following it would copy that folder in. One that resolves into the
+    // workspace is the seat's own writing. Both are refused.
+    // eslint-disable-next-line no-await-in-loop
+    const realSource = await realpath(absSource);
+    if (isWithin(absSource, workspacePath) || isWithin(realSource, workspaceReal)) {
+      conflicted.push({ path: absSource, reason: 'source-in-workspace' });
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await hooks.onStep?.('resolved');
     const destPath = join(skillsDir, basename(absSource));
     // eslint-disable-next-line no-await-in-loop
     const stage = await makeSkillStage(workspacePath);
+    // Set when the stage holds something that may not be ours, so it is kept.
+    let keepStage = false;
     try {
       const snapshot = join(stage, 'new');
       // A source that is a link (a ~/.claude/skills entry into a checkout)
       // is copied as the folder it points to: a copied link would make the
       // mount write through to the source. Links inside it are copied as
-      // links and then refused, never followed.
+      // links and then refused, never followed. A source swapped for a link
+      // after it was resolved arrives as a link at the snapshot's root.
       // eslint-disable-next-line no-await-in-loop
-      await cp(await realpath(absSource), snapshot, { recursive: true, verbatimSymlinks: true });
+      await cp(realSource, snapshot, { recursive: true, verbatimSymlinks: true });
       // eslint-disable-next-line no-await-in-loop
-      if (await holdsLink(snapshot)) {
+      const copied = await lstat(snapshot);
+      // eslint-disable-next-line no-await-in-loop
+      if (copied.isSymbolicLink() || !copied.isDirectory() || await holdsLink(snapshot)) {
         conflicted.push({ path: absSource, reason: 'linked-skill-file' });
         continue;
       }
@@ -750,24 +782,56 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null, hooks 
           conflicted.push({ path: absSource, reason: 'not-a-mount' });
           continue;
         }
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await hooks.onStep?.('slot-checked');
+
+      const retired = join(stage, 'old');
+      if (slot) {
         // Moved out first: the recursive delete runs in the stage, never at
-        // a path inside the workspace. The two renames pair the same two
-        // disks, so an EXDEV comes from this first one, before anything moved.
+        // a path inside the workspace. The move resolves the path again, so
+        // what arrived is checked in the stage, which only the host writes:
+        // only a link or one of our marked mounts is ever deleted.
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await move(destPath, retired);
+        } catch (err) {
+          if (err.code !== 'EXDEV') throw err;
+          conflicted.push({ path: absSource, reason: 'cross-disk-stage' });
+          continue;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const moved = await lstat(retired);
+        // eslint-disable-next-line no-await-in-loop
+        const marker = moved.isDirectory() ? await lstatOrNull(join(retired, MOUNT_MARKER)) : null;
+        if (!moved.isSymbolicLink() && !(marker && marker.isFile())) {
+          keepStage = true;
+          conflicted.push({ path: absSource, reason: 'unsafe-skill-dir' });
+          continue;
+        }
       }
 
       try {
         // eslint-disable-next-line no-await-in-loop
-        if (slot) await move(destPath, join(stage, 'old'));
-        // eslint-disable-next-line no-await-in-loop
         await move(snapshot, destPath);
       } catch (err) {
+        // The old mount, if any, is in the stage now: keep it rather than
+        // delete it with the stage.
+        keepStage = Boolean(slot);
         if (err.code !== 'EXDEV') throw err;
         conflicted.push({ path: absSource, reason: 'cross-disk-stage' });
         continue;
       }
     } finally {
-      // eslint-disable-next-line no-await-in-loop
-      await rm(stage, { recursive: true, force: true });
+      if (keepStage) {
+        // eslint-disable-next-line no-console
+        console.warn(`[skills] ${destPath}: the slot changed during the mount; what was there is kept in ${stage}`);
+        // eslint-disable-next-line no-await-in-loop
+        await rm(join(stage, 'new'), { recursive: true, force: true });
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await rm(stage, { recursive: true, force: true });
+      }
     }
     mounted.push(absSource);
   }

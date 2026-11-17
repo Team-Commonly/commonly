@@ -87,17 +87,28 @@ untrusted (F171, `cli/src/lib/environment.js` `mountSkills`):
   workspace's parent can't be written and the temp folder is another disk),
   the rename fails with EXDEV and the mount is refused (`cross-disk-stage`),
   leaving the old one in place.
+- A source in the workspace, or one that resolves into it, is refused
+  (`source-in-workspace`). The seat writes there, and a relative entry
+  resolves against the workspace, so it could make the source a link to any
+  host folder.
 - A source that is itself a link (a `~/.claude/skills` entry into a checkout)
   is copied as the folder it points to, so the mount never writes through to
   the source. A link inside a source is never followed: following
   `credentials.json -> ~/.commonly/tokens/<agent>.json` would copy the token
   into a folder the seat reads, past the deny rule that guards the host path.
-  A source holding any link is refused (`linked-skill-file`).
+  A source holding any link, or swapped for one after it was resolved, is
+  refused (`linked-skill-file`). So a folder of links, such as
+  `~/.claude/skills/` itself, can't be a source; list each skill instead.
+  Links are judged by `lstat`, so a hard link counts as a file, and only the
+  source's owner can make one.
 - What is left is the moment between that last check and the renames. Node
   has no `renameat`, so they still resolve the path. A swap there can move
-  only a directory that already carries the mount marker into the stage, and
-  put the snapshot, which holds only the source's files, where the link
-  points. Public seats have no shell to act in that gap.
+  whatever has the slot's name at the link's target into the stage, and put
+  the snapshot, which holds only the source's files, there. What arrives is
+  checked in the stage, which only the host writes: only a link or a folder
+  carrying the mount marker is deleted. Anything else is kept in the stage
+  folder beside the workspace and reported, so a swap there moves a folder
+  but never deletes it. Public seats have no shell to act in that gap.
 
 ## The general rule
 

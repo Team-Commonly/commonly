@@ -969,3 +969,129 @@ describe('mountSkills refuses a skill source that holds a link (F171 review)', (
     expect(await mountSkills({ skills: { claude: [skillSrc] } }, workspace)).toEqual({ mounted: [skillSrc], conflicted: [] });
   });
 });
+
+// F171 review, second pass. A seat can write its own workspace, so a source
+// there (a relative entry resolves against it) can be made a link to host
+// files; the source's own link must not be followed from inside it. And the
+// renames still resolve the path, so whatever a swap moves into the stage is
+// deleted only when it is a link or one of our marked mounts.
+describe('mountSkills: a source the seat controls, and what a late swap can reach (F171 review)', () => {
+  let root;
+  let workspace;
+  let host;
+  let skillsDir;
+  const name = 'my-skill';
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-env-f171late-'));
+    workspace = path.join(root, 'ws');
+    host = path.join(root, 'host');
+    skillsDir = path.join(workspace, '.claude', 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(path.join(host, name), { recursive: true });
+    fs.writeFileSync(path.join(host, name, 'agent.json'), 'cm_agent_planted_secret');
+  });
+  afterEach(() => {
+    const thaw = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) thaw(full);
+        else if (e.isFile()) fs.chmodSync(full, 0o644);
+      }
+    };
+    thaw(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const bytesUnder = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return bytesUnder(full);
+    return e.isFile() ? [fs.readFileSync(full, 'utf8')] : [];
+  });
+  const stages = () => fs.readdirSync(root).filter((e) => e.startsWith('.commonly-skill-stage-'));
+
+  test.each([['a relative entry', `skills/${name}`], ['an absolute path', null]])(
+    'a source inside the workspace that links to host files is refused (%s)',
+    async (_how, rel) => {
+      fs.mkdirSync(path.join(workspace, 'skills'));
+      fs.symlinkSync(path.join(host, name), path.join(workspace, 'skills', name));
+      const source = rel || path.join(workspace, 'skills', name);
+
+      const result = await mountSkills({ skills: { claude: [source] } }, workspace);
+
+      expect(result.mounted).toEqual([]);
+      expect(result.conflicted).toEqual([{ path: path.join(workspace, 'skills', name), reason: 'source-in-workspace' }]);
+      expect(bytesUnder(path.join(workspace, '.claude')).join('\n')).not.toContain('cm_agent_planted_secret');
+    },
+  );
+
+  test('a source outside the workspace that links into it is refused', async () => {
+    fs.mkdirSync(path.join(workspace, 'mine'));
+    fs.writeFileSync(path.join(workspace, 'mine', 'SKILL.md'), '# seat-written');
+    const outsideLink = path.join(root, 'linked-skill');
+    fs.symlinkSync(path.join(workspace, 'mine'), outsideLink);
+
+    const result = await mountSkills({ skills: { claude: [outsideLink] } }, workspace);
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: outsideLink, reason: 'source-in-workspace' }] });
+  });
+
+  test('a source swapped for a link after it was resolved is refused, and the link target is not touched', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      onStep: (step) => {
+        if (step !== 'resolved') return;
+        fs.renameSync(source, `${source}-real`);
+        fs.symlinkSync(path.join(host, name), source);
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'linked-skill-file' }] });
+    expect(fs.readdirSync(path.join(host, name))).toEqual(['agent.json']);
+    expect(fs.statSync(path.join(host, name, 'agent.json')).mode & 0o222).not.toBe(0);
+  });
+
+  test('a swap between the slot check and the move keeps whatever it moved, and deletes nothing', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+    expect((await mountSkills({ skills: { claude: [source] } }, workspace)).mounted).toEqual([source]);
+
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      onStep: (step) => {
+        if (step !== 'slot-checked') return;
+        fs.renameSync(skillsDir, path.join(workspace, '.claude', 'skills-real'));
+        fs.symlinkSync(host, skillsDir);
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'unsafe-skill-dir' }] });
+    // The unmarked host folder the swap sent into the stage is still on disk.
+    const kept = stages().map((s) => path.join(root, s, 'old', 'agent.json')).filter((f) => fs.existsSync(f));
+    expect(kept.map((f) => fs.readFileSync(f, 'utf8'))).toEqual(['cm_agent_planted_secret']);
+  });
+
+  test('when the second rename fails, the old mount is kept, not deleted', async () => {
+    const source = path.join(root, 'src', name);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), '# my skill');
+    expect((await mountSkills({ skills: { claude: [source] } }, workspace)).mounted).toEqual([source]);
+
+    let calls = 0;
+    const result = await mountSkills({ skills: { claude: [source] } }, workspace, null, {
+      rename: async (from, to) => {
+        calls += 1;
+        if (calls === 1) return fs.promises.rename(from, to);
+        throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+      },
+    });
+
+    expect(result).toEqual({ mounted: [], conflicted: [{ path: source, reason: 'cross-disk-stage' }] });
+    const kept = stages().map((s) => path.join(root, s, 'old', 'SKILL.md')).filter((f) => fs.existsSync(f));
+    expect(kept).toHaveLength(1);
+  });
+});
