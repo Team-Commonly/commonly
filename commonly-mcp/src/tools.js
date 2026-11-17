@@ -271,7 +271,11 @@ export const buildTools = (config, { onFailure } = {}) => {
       call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => trackPost(podId, request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind },
+        body: {
+          content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind,
+          // F546: set by the seat's adapter, never by the model.
+          ...(config.replyReceipt ? { receipt: config.replyReceipt } : {}),
+        },
       }))),
     },
     {

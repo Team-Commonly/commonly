@@ -172,7 +172,9 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
     const call = await spawnWith(declaration({ COMMONLY_API_URL: '${COMMONLY_API_URL}' }));
     // The DECLARATION is what must stay untouched: no entry asked for the
     // credential, so none was rewritten.
-    expect(call.declared).toEqual({ COMMONLY_API_URL: '${COMMONLY_API_URL}' });
+    // (The reply receipt, F546, is not a credential and is added either way.)
+    const { COMMONLY_REPLY_RECEIPT: _receipt, ...declared } = call.declared;
+    expect(declared).toEqual({ COMMONLY_API_URL: '${COMMONLY_API_URL}' });
     // The runtime environment is a different surface with a different rule: the
     // PATH goes in for every spawn that minted a file, because a hook child
     // resolves its credential from it, and the VALUE never does. The location

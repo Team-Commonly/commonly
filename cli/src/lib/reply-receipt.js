@@ -35,6 +35,15 @@ export const claudeRunStats = (stdout) => {
   return stats;
 };
 
+/**
+ * F546: the receipt a spawn's Commonly MCP server attaches to the posts it
+ * makes, as JSON. An agent that answers with its own commonly_post_message
+ * call never goes through the wrapper's post, so this is how its reply names
+ * the adapter, model and effort the spawn ran with. Turns, tools and duration
+ * are only known after the turn, so they are not in it.
+ */
+export const REPLY_RECEIPT_ENV = 'COMMONLY_REPLY_RECEIPT';
+
 /** The receipt for one reply, or null when there is no adapter to name. */
 export const buildReplyReceipt = ({ adapterName, stats = {}, durationMs } = {}) => {
   if (!isName(adapterName)) return null;
