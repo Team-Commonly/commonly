@@ -237,7 +237,11 @@ describe('single-VM env files', () => {
   });
 
   it('every example carries names only, never a value', () => {
-    ['.env.example', 'backend.env.example', 'litellm.env.example', 'backup.env.example'].forEach((file) => {
+    // Every *.example in the folder, so a new service's example can't be missed.
+    const examples = fs.readdirSync(VM_DIR).filter((file) => file.endsWith('.example'));
+    expect(examples).toEqual(expect.arrayContaining(['.env.example', 'backend.env.example',
+      'litellm.env.example', 'backup.env.example', 'commonly-bot.env.example']));
+    examples.forEach((file) => {
       readVm(file).split('\n').filter((line) => line && !line.startsWith('#'))
         .forEach((line) => expect({ file, line }).toEqual({ file, line: expect.stringMatching(/^[A-Z][A-Z0-9_]*=$/) }));
     });
