@@ -1039,18 +1039,17 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
       });
     }
 
-    // Listing to Community is a paid capability. Gated on the entitlement
-    // rather than on payment state directly, so the check stays identical
-    // however billing is wired later (today an admin sets the flag, same shape
-    // as the invite-code path for cloudAgents).
+    // Listing to Community is for instance admins, plus accounts that already
+    // hold Pro until their subscription ends. There is no paid tier to buy any
+    // more, so nobody else can list, and the message says so without an upsell.
     //
     // DEMOTION IS NEVER GATED. A user whose subscription lapses must always be
     // able to make their own room private again — paywalling the exit turns a
     // billing event into an unwanted permanent disclosure.
     if (tier === 'community' && !isGlobalAdmin && actor?.entitlements?.pro !== true) {
-      return res.status(402).json({
-        error: 'pro_required',
-        message: 'Listing a pod in Community is part of the paid plan. '
+      return res.status(403).json({
+        error: 'community_listing_admin_only',
+        message: 'Listing a pod in Community is done by an instance admin. '
           + 'Your pod stays private and everything already in it is unaffected.',
       });
     }

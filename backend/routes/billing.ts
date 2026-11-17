@@ -24,6 +24,15 @@ const checkoutLimit = rateLimit({
 const FRONTEND = () => publicAppUrl();
 
 /**
+ * Is new checkout open? Commonly no longer sells a paid tier, so checkout is
+ * closed unless an operator sets BILLING_CHECKOUT_ENABLED=true. This is a
+ * separate switch from STRIPE_ENABLED on purpose: unsetting the Stripe key
+ * would also close the portal and the webhook, and existing subscribers still
+ * need both to cancel and to have the cancellation recorded.
+ */
+const CHECKOUT_ENABLED = (): boolean => process.env.BILLING_CHECKOUT_ENABLED === 'true';
+
+/**
  * Did Stripe reject the request because the CUSTOMER we named does not exist?
  *
  * `billing.customerId` is a cache of a Stripe-side object, not identity — and
@@ -66,6 +75,9 @@ const attachCustomer = async (stripe: any, user: any): Promise<string> => {
  */
 router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
   try {
+    if (!CHECKOUT_ENABLED()) {
+      return res.status(410).json({ error: 'checkout_closed' });
+    }
     if (!billingService.STRIPE_ENABLED()) {
       return res.status(503).json({ error: 'billing_not_configured' });
     }
@@ -120,7 +132,8 @@ router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
 });
 
 /**
- * POST /api/billing/portal — manage or cancel.
+ * POST /api/billing/portal — manage or cancel. Stays open while checkout is
+ * closed, until the last subscription has ended.
  *
  * Self-serve cancellation is not a nicety: without it every downgrade becomes
  * a support email, and a user who cannot find the exit disputes the charge
@@ -144,7 +157,7 @@ router.post('/portal', checkoutLimit, auth, async (req: any, res: any) => {
     // Unlike checkout, a stale customer is NOT re-created here: a fresh
     // customer has no subscription, so the portal would open empty and imply
     // the subscription vanished. `no_subscription` is both true and
-    // actionable — the UI tells them to subscribe.
+    // actionable.
     if (isMissingCustomer(err)) {
       console.warn('[billing] portal requested for a customer unknown to Stripe');
       return res.status(400).json({ error: 'no_subscription' });
