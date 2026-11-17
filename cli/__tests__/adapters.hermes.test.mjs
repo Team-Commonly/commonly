@@ -218,6 +218,14 @@ test('reports a non-zero cold-home probe status without suggesting a reinstall',
   });
 });
 
+test('the workspace-trust refusal recommends only what Hermes can run', async () => {
+  const refusal = await hermes.validateEnvironment({ sandbox: { trust: 'workspace' } }).catch((err) => err.message);
+
+  expect(refusal).toMatch(/^hermes adapter: sandbox\.trust=workspace is claude-only for now\./);
+  expect(refusal).toContain('claude adapter');
+  expect(refusal).not.toMatch(/sandbox\.trust 'public'/);
+});
+
 test('refuses a public seat before probing or spawning Hermes', async () => {
   const probe = jest.fn();
   const child = jest.fn();

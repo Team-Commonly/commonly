@@ -232,7 +232,8 @@ export const createHermesAdapter = ({
     // run bare while the unconfined-seat guard reads it as confined.
     if (environment?.sandbox?.trust === 'workspace') {
       throw new Error('hermes adapter: sandbox.trust=workspace is claude-only for now. '
-        + "Declare sandbox.trust 'public' for this seat, or attach it with the claude adapter.");
+        + "Attach this agent with the claude adapter, or remove sandbox.trust 'workspace' from its environment file. "
+        + 'Hermes has no sandbox yet, so it runs with no sandbox.trust at all.');
     }
     if (effectiveTrust(environment?.sandbox?.trust) === 'public') {
       throw new Error('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat. '
