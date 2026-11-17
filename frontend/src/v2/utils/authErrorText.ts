@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-export type AuthErrorPage = 'login' | 'register' | 'forgot' | 'reset';
+type AuthErrorPage = 'login' | 'register' | 'forgot' | 'reset';
 
 interface AuthErrorBody {
   code?: string;

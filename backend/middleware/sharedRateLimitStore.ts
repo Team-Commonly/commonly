@@ -43,7 +43,7 @@ end
 return 0
 `;
 
-export interface RateLimitRedis {
+interface RateLimitRedis {
   isReady: boolean;
   eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
   del(key: string): Promise<unknown>;

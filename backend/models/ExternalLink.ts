@@ -25,7 +25,7 @@ const EXTERNAL_LINK_TYPES: ExternalLinkType[] = [
   'other_link',
 ];
 
-export interface IExternalLink extends Document {
+interface IExternalLink extends Document {
   podId: Types.ObjectId;
   name: string;
   type: ExternalLinkType;

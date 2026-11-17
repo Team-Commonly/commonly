@@ -33,7 +33,7 @@ import { installationIdentityFilter } from './agentInstallationIdentity';
 
 export type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
 
-export type OwnershipCheck =
+type OwnershipCheck =
   | { owned: true }
   | { owned: false; failure: OwnershipFailure };
 
@@ -217,7 +217,7 @@ export const takeBackInstallation = async (
 };
 
 /** Explain a genuine second installer to the first installer in Settings. */
-export type RuntimeIdentityBlocker = { podName: string; installerName: string };
+type RuntimeIdentityBlocker = { podName: string; installerName: string };
 export const describeRuntimeIdentityBlockers = async (
   ownerUserId: unknown,
   agentName: string,

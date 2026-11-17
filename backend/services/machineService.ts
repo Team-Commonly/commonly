@@ -11,7 +11,7 @@ import { issueDaemonCredential } from './daemonCredentialService';
 const MACHINE_OFFLINE_AFTER_MS = 90_000;
 const MAX_MACHINES_PER_OWNER = 20;
 
-export interface MachineView {
+interface MachineView {
   id: string;
   machineId: string;
   name: string;
@@ -126,7 +126,7 @@ export async function noteMachineAnswered(
   }
 }
 
-export interface MachineListView {
+interface MachineListView {
   machines: MachineView[];
   offlineAfterMs: number;
 }
@@ -388,7 +388,7 @@ module.exports = {
 };
 Object.assign(module.exports, exports);
 
-export interface MachinePlatformStats {
+interface MachinePlatformStats {
   total: number;
   // null is "not reported": a machine an older CLI registered and that has not
   // checked in from a newer one since.

@@ -724,7 +724,7 @@ export const deliverChatReply = async ({
   attachThreshold = 800,
   uploadName = 'reply.md',
   log = () => {},
-  // D245 item 4: how this reply was made (lib/reply-receipt.js). It rides
+  // How this reply was made (lib/reply-receipt.js). It rides
   // the first message that actually reaches the pod and no later one.
   receipt = null,
   // Keeps a reply that fits in up to maxChunks messages in that thread. The

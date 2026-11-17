@@ -1,6 +1,6 @@
 // The walks' ack recorder (cli/scripts/windows-byo-ack-recorder.mjs) notes the
 // class of each ack the CLI sends, so the verdict can tell a model refusal the
-// CLI acked from a reply it posted (D250). It records labels only: never the
+// CLI acked from a reply it posted. It records labels only: never the
 // result's free-text detail, the delivery id, a header or message content.
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';

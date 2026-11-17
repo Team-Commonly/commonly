@@ -28,7 +28,8 @@ sandbox:
   mode: bwrap
 
   network:
-    # `restricted` = only the hosts below resolve / connect.
+    # `restricted` = no outside network under bwrap (--unshare-net). No adapter
+    # reads allow-hosts yet, so the list below documents intent only.
     # `unrestricted` = anywhere (use only when sandbox.mode is `none`).
     policy: restricted
     # `localhost` / `127.0.0.1` are for the local demo via

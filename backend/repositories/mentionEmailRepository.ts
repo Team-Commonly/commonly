@@ -12,7 +12,7 @@ interface PgPool {
 
 const loadPool = (): PgPool | null => (require('../config/db-pg') as { pool: PgPool | null }).pool;
 
-export interface PodVisit { readAt: Date | null; openedAt: Date | null; closedAt: Date | null }
+interface PodVisit { readAt: Date | null; openedAt: Date | null; closedAt: Date | null }
 
 const toDate = (value: unknown): Date | null => (value ? new Date(value as string) : null);
 

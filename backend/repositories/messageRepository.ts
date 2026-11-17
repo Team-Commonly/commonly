@@ -50,7 +50,7 @@ export interface PodMessage {
   [key: string]: unknown;
 }
 
-export interface ListPodMessagesOptions {
+interface ListPodMessagesOptions {
   limit?: number;
   /** ISO timestamp; only messages created strictly before it. */
   before?: string | null;

@@ -1,7 +1,7 @@
 /**
- * `commonly doctor` — the checks (TASK-660, D213).
+ * `commonly doctor` — the checks (TASK-660).
  *
- * D213 keeps the Node daemon and hardens install by making breakage visible.
+ * The plan keeps the Node daemon and hardens install by making breakage visible.
  * Each check here answers one question a broken seat used to leave to a log
  * autopsy, prints one line (pass, fail or skip) and, when it fails, the command
  * that fixes it. Every outside fact (PATH, the saved login, the server, the

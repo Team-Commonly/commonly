@@ -18,7 +18,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { tokenMatches } from './agentComputerWaker';
 
-export type SteelGateConfig = {
+type SteelGateConfig = {
   token: string;
   upstreamHost: string;
   upstreamPort: number;

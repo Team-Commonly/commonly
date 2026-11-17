@@ -27,7 +27,7 @@ export const MESSAGE_STORE_UNAVAILABLE = {
 // optimistic copy and tell the person.
 export const MESSAGE_SEND_FAILED_EVENT = 'messageSendFailed';
 
-export interface MessageSendFailure {
+interface MessageSendFailure {
   podId: string;
   content: string;
   messageType: string;
@@ -56,7 +56,7 @@ export function refuseSocketMessageType(
   };
 }
 
-export interface SocketMessageWriteInput {
+interface SocketMessageWriteInput {
   pgReady: boolean;
   podId: string;
   userId: string;
@@ -65,7 +65,7 @@ export interface SocketMessageWriteInput {
   replyToMessageId?: string | null;
 }
 
-export type SocketMessageWriteResult =
+type SocketMessageWriteResult =
   | { ok: true; message: Record<string, unknown> }
   | { ok: false; error: MessageSendFailure };
 

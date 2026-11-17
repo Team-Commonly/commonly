@@ -365,7 +365,7 @@ export const resolveAdapterForRuntime = async (runtime, registry = { getAdapter 
 
 /**
  * The daemon's first poll and heartbeat, with the Windows launcher watch armed
- * BEFORE them (D245). Arming first puts the EPIPE guard on stdout and stderr
+ * BEFORE them. Arming first puts the EPIPE guard on stdout and stderr
  * before any supervision log line, and a launcher that is already gone stops
  * the daemon here instead of after a tick logged into a dead pipe. Returns
  * false when the daemon should not go on to its timers.
@@ -604,7 +604,7 @@ Examples:
         }
         // A service without a credential just crash-loops at boot.
         requireDaemonRecord();
-        // D245: this command is the only writer of the opt-in, and installing
+        // This command is the only writer of the opt-in, and installing
         // without the flag is how it is turned off. Written before the task
         // starts, so the first seats it spawns already read the answer.
         // N3: the marker's state before this install, so a failed install can
@@ -824,7 +824,7 @@ Examples:
           supervisor.stop();
           process.exit(0);
         };
-        // D245: under the Windows launcher, the launcher's exit is the stop
+        // Under the Windows launcher, the launcher's exit is the stop
         // signal. Armed before the first tick, so the EPIPE guard covers its
         // log lines and a launcher already gone stops the daemon at once.
         const started = await firstSupervisionPass({

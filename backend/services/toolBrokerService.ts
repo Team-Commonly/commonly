@@ -34,7 +34,7 @@ const GitHubAppService: typeof import('./githubAppService').default = require('.
 import { githubAppOfConfig, isGithubAppConfigured, type GitHubAppName } from './githubAppNames';
 import { assertConnectStillProven } from './githubConnectReproof';
 
-export interface ToolDefinitionBase {
+interface ToolDefinitionBase {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
@@ -149,7 +149,7 @@ export interface BrokerCallInput {
   runPodId?: string;
 }
 
-export interface BrokerCallResult {
+interface BrokerCallResult {
   callId: string;
   result: unknown;
   outcome: 'ok' | 'failed';
@@ -164,7 +164,7 @@ export interface BrokerCallResult {
 }
 
 /** What a trail row holds that only the broker knows. Carries no secret. */
-export interface UnwrittenTrailRow {
+interface UnwrittenTrailRow {
   podId?: string;
   installationId?: string;
   credentialOwnerId?: string;
@@ -2070,7 +2070,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   }
 };
 
-export interface ApprovedToolCallInput {
+interface ApprovedToolCallInput {
   grantId: string;
   agentUserId: string;
   tool: string;

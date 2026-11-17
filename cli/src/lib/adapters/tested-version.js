@@ -8,7 +8,7 @@ import { resolveOnPath } from '../resolve-on-path.js';
 // Public seats run only on a harness version smoke-tested in its sandbox, with
 // one tolerance: a stable patch release after the newest tested one, on that
 // same major.minor line. Harnesses ship patches every few days, and refusing
-// them refused every new BYO user on the current npm release (D245, 11-04).
+// them refused every new BYO user on the current npm release (11-04).
 // A newer minor or major, an older patch, an older line, or a prerelease still
 // refuses until it is smoke-tested and added to the adapter's list.
 const STABLE = /^(\d+)\.(\d+)\.(\d+)$/;

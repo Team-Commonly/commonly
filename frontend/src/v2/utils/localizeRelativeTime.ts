@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 /** How far a past event may sit ahead of the browser clock and still read as past. */
 const PAST_EVENT_SKEW_MS = 2 * 60_000;
 
-export interface RelativeTimeOptions {
+interface RelativeTimeOptions {
   /** Keep future timestamps as "from now"; past-only surfaces clamp to now. */
   includeFuture?: boolean;
   /**
@@ -20,7 +20,7 @@ export interface RelativeTimeOptions {
   now?: number;
 }
 
-export type RelativeParts =
+type RelativeParts =
   | { kind: 'missing' }
   | { kind: 'now'; future: boolean }
   | { kind: 'rel'; unit: 'minute' | 'hour' | 'day'; count: number; future: boolean };

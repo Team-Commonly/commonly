@@ -5,24 +5,24 @@ import {
   GITHUB_APP_NAMES, githubAppCredentials, githubAppOfConfig, type GitHubAppName,
 } from './githubAppNames';
 
-export interface GitHubToken {
+interface GitHubToken {
   token: string;
   expiresAt: string | null;
 }
 
-export interface PatLiveness {
+interface PatLiveness {
   live: boolean | null;
   status: 'absent' | 'accepted' | 'rejected' | 'unreachable';
   upstreamStatus?: number;
   detail?: string;
 }
 
-export interface GitHubIssueLabel {
+interface GitHubIssueLabel {
   name: string;
   color?: string;
 }
 
-export interface GitHubIssue {
+interface GitHubIssue {
   number: number;
   title: string;
   body: string;
@@ -38,7 +38,7 @@ export interface GitHubIssue {
  * required wherever an installation is: tsc refuses a call that names an
  * installation and drops its App.
  */
-export interface InstallationSigner {
+interface InstallationSigner {
   installationId: string;
   app: GitHubAppName;
   /** GitHub's repository id. A Connect token is minted for this repository only. */

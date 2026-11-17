@@ -160,7 +160,7 @@ const muteMinutesOf = (arg?: string): number | null => {
   return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
 };
 
-export interface RelayCommandAuthority {
+interface RelayCommandAuthority {
   /**
    * Whether the platform proved the caller may change this connector's relay
    * settings. Omitted means the platform's surface already proves it (a
@@ -515,7 +515,7 @@ export const claimInboundMessage = async (
   return claimDelivery(provider, `inbound:${String(integrationId)}:${externalMessageId}`, INBOUND_CLAIM_TTL_MS);
 };
 
-export interface InboundAuthor {
+interface InboundAuthor {
   pod: { type?: string; members?: unknown[] };
   linkedUser: { username?: string; profilePicture?: string };
 }

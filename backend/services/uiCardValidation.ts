@@ -341,7 +341,7 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
   }
 }
 
-export interface UICardEnvelope {
+interface UICardEnvelope {
   kind: 'ui';
   v: 1;
   lang: 'openui@1';

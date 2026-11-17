@@ -185,7 +185,7 @@ const publicOnlyReason = (environment, rule, platform) => {
   const sandbox = environment?.sandbox;
   if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return PUBLIC_ONLY_REASON;
   if (sandbox.mode === 'none' || effectiveSandboxTrust(sandbox.trust) !== 'public') return PUBLIC_ONLY_REASON;
-  // D245: a public declaration on native Windows reads the same for every adapter.
+  // A public declaration on native Windows reads the same for every adapter.
   if (platform === 'win32') return 'sandbox_mode_unenforceable';
   const modes = Object.hasOwn(rule, platform) ? rule[platform] : null;
   if (!modes) return PUBLIC_ONLY_REASON;
@@ -208,7 +208,7 @@ export const confinementReason = (environment, adapter, platform = process.platf
   const declared = sandbox;
   if (declared.mode === 'none') return 'sandbox_mode_none';
   if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
-  // D245: native Windows has no OS jail for any adapter. Claude there runs
+  // Native Windows has no OS jail for any adapter. Claude there runs
   // only by the user's --unsandboxed (policy without a jail), and a public
   // Codex seat is refused there outright (host-check.js), so neither carries a
   // grant.

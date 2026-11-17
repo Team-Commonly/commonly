@@ -1,5 +1,5 @@
 /**
- * TASK-784 (D164): the daemon tells the server what its computer runs, as
+ * TASK-784: the daemon tells the server what its computer runs, as
  * metadata only: the platform, the OS release major, the arch and this CLI's
  * version. Never a hostname, a path or a user name.
  */

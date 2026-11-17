@@ -54,7 +54,7 @@ const byoConnectionAttemptMarked = new Set<string>();
 const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
-export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
+type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
 const SURFACE_MARKS: readonly SurfaceMark[] = [
   'inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt',
 ];
@@ -149,7 +149,7 @@ function recordFirstStart(id: string, startId: string): void {
 }
 
 const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
-export type ByoOpenedOs = typeof BYO_OPENED_OS[number];
+type ByoOpenedOs = typeof BYO_OPENED_OS[number];
 
 const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
   typeof value === 'string' && (BYO_OPENED_OS as readonly string[]).includes(value)

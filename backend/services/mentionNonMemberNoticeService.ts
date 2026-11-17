@@ -12,7 +12,7 @@ const AgentProfile = require('../models/AgentProfile');
 // eslint-disable-next-line global-require
 const { buildMentionMap } = require('./agentMentionService');
 
-export interface MentionNotice {
+interface MentionNotice {
   code: 'MENTION_NOT_IN_POD';
   handle: string;
   message: string;

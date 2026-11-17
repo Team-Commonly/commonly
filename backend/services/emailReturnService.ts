@@ -17,7 +17,7 @@ const store = require('../repositories/emailReturnRepository');
  */
 
 const EMAIL_KINDS = ['digest', 'needs-you', 'mention', 'waiting'] as const;
-export type EmailKind = typeof EMAIL_KINDS[number];
+type EmailKind = typeof EMAIL_KINDS[number];
 
 const TAG = /^(digest|needs-you|mention|waiting)\.([a-f0-9]{24})$/;
 

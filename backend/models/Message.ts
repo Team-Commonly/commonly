@@ -4,7 +4,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 // regex-sniffed out of `content`. The union and the schema enum below are
 // declared independently — change BOTH.
 export type MessageType = 'text' | 'image' | 'system' | 'card';
-export type MessageAuthorKind = 'kernel' | null;
+type MessageAuthorKind = 'kernel' | null;
 
 export interface IMessage extends Document {
   podId: Types.ObjectId;

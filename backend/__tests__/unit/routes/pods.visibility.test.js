@@ -262,9 +262,9 @@ describe('POST /api/pods/:id/visibility', () => {
     });
   });
 
-  // Listing to Community is a paid capability (Pro). The asymmetry below is
-  // the important part: promotion is gated, demotion never is.
-  describe('Community listing is gated on the Pro entitlement', () => {
+  // Listing to Community is for admins and existing Pro accounts. The asymmetry
+  // below is the important part: promotion is gated, demotion never is.
+  describe('Community listing is gated to admins and existing Pro accounts', () => {
     const asFreeUser = () => {
       const User = require('../../../models/User');
       User.findById.mockReturnValue({
@@ -274,11 +274,12 @@ describe('POST /api/pods/:id/visibility', () => {
       });
     };
 
-    test('a free owner gets 402 and the pod is not written', async () => {
+    test('a free owner gets 403 with no upsell, and the pod is not written', async () => {
       asFreeUser();
       const res = await setVisibility('community');
-      expect(res.status).toBe(402);
-      expect(res.body.error).toBe('pro_required');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('community_listing_admin_only');
+      expect(res.body.message).not.toMatch(/paid|plan|upgrade|pro\b/i);
       expect(podSave).not.toHaveBeenCalled();
       expect(mockPod.value.communityListed).toBe(false);
     });
@@ -289,7 +290,7 @@ describe('POST /api/pods/:id/visibility', () => {
         select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve({ role: 'user' })) })),
       });
       const res = await setVisibility('community');
-      expect(res.status).toBe(402);
+      expect(res.status).toBe(403);
     });
 
     // Paywalling the exit would turn a lapsed subscription into an unwanted

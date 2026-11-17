@@ -190,7 +190,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     expect(fs.existsSync(path.join(statePath, '.claude', '.credentials.json'))).toBe(false);
   });
 
-  // The Cofounder, 11-04 (#2784): no walk of an invite-only Linux Claude seat
+  // Decided 11-04 (#2784): no walk of an invite-only Linux Claude seat
   // was ever recorded. This is one: a real turn on the workspace jail, with the
   // login carried access-only, the transcript kept out of the project, and the
   // host's login unchanged.
@@ -384,7 +384,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     });
   });
 
-  // Cofounder's condition 2: a spawn near the login's expiry must not sign the
+  // Condition 2: a spawn near the login's expiry must not sign the
   // host out. The jail holds no refresh token, so it cannot rotate one; a turn
   // that would outlive the token is refused before anything is copied.
   test('near expiry, the jail cannot rotate the host login, and a turn that would outlive it is refused', async () => {

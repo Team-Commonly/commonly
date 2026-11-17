@@ -406,6 +406,21 @@ export const markExternalSignal = (error, { code = null, signal = null } = {}) =
   return error;
 };
 
+// F491: EX_TEMPFAIL (sysexits.h 75). A host-side gate in front of the CLI exits
+// 75 to say "not now, try again later" without running the turn: the seat's
+// memory gate during a host memory hold, or a full slot pool. The provider was
+// never asked, so the run loop defers the event instead of counting a failure.
+export const HOST_DEFERRAL_EXIT_CODE = 75;
+
+/**
+ * Mark `error` as a host-side deferral (F491). Like markExternalSignal, call it
+ * only on a bare non-zero exit, never over a cause the failure named.
+ */
+export const markHostDeferral = (error, { code = null } = {}) => {
+  if (code === HOST_DEFERRAL_EXIT_CODE) error.hostDeferred = true;
+  return error;
+};
+
 /**
  * Whether the failure text names a cause: an upstream status or a provider
  * code. Such a failure keeps its own class and is never marked as an outside
@@ -429,6 +444,7 @@ export const adapterFailure = (label, text, {
   // cause (a stream's error, the adapter's own kill) never gets the mark, and
   // never over a status or provider code the text named: that is a cause too.
   if (signal === undefined || status !== null || providerCode !== null) return error;
+  markHostDeferral(error, { code: exitCode });
   return markExternalSignal(error, { code: exitCode, signal });
 };
 

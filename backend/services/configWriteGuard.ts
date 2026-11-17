@@ -42,7 +42,7 @@ const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [
   'maxWallClockMs',
 ];
 
-export interface ConfigWriteRefusal {
+interface ConfigWriteRefusal {
   code: 'invalid_config' | 'kernel_owned_field' | 'runtime_type_change' | 'kernel_run_field' | 'runtime_adapter_clear';
   /** HTTP status: 400 for a malformed body, 403 for a write this caller may not make. */
   status: 400 | 403;

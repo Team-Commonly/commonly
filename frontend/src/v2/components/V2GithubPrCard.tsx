@@ -181,7 +181,7 @@ const V2GithubPrCard: React.FC<V2GithubPrCardProps> = ({ owner, repo, number }) 
 // inside other tokens.
 const GITHUB_PR_URL_RE = /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g;
 
-export interface ParsedGithubPr {
+interface ParsedGithubPr {
   owner: string;
   repo: string;
   number: number;

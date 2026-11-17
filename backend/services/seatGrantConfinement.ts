@@ -38,9 +38,9 @@ import {
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
 /** `unbound` is the same word the grant read uses: nothing projected this seat. */
-export type SeatConfinementScope = 'seat' | 'unbound';
+type SeatConfinementScope = 'seat' | 'unbound';
 
-export interface SeatConfinementJudgement {
+interface SeatConfinementJudgement {
   refusal: GrantBrokerRefusal | null;
   scope: SeatConfinementScope;
   /**
@@ -56,7 +56,7 @@ export interface SeatConfinementJudgement {
   hostUnreported?: true;
 }
 
-export interface SeatCallerIdentity {
+interface SeatCallerIdentity {
   agentName?: unknown;
   instanceId?: unknown;
   agentUserId?: unknown;

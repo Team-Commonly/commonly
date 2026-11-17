@@ -30,7 +30,7 @@ const LIST_MAX_INSTALLATIONS = 10;
 const LIST_MAX_PAGES = 3;
 const LIST_BUDGET_MS = 20_000;
 
-export type GithubConnectProofRefusalCode =
+type GithubConnectProofRefusalCode =
   | 'github_connect_required'
   | 'installation_not_visible'
   | 'installation_suspended'
@@ -45,7 +45,7 @@ export class GithubConnectProofError extends Error {
   }
 }
 
-export interface ProvenConnectRepository {
+interface ProvenConnectRepository {
   installationId: string;
   /** GitHub's own spelling, never the body's. */
   owner: string;

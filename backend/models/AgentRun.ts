@@ -13,14 +13,14 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * to explain "why did this run stop" in the UI we ship later.
  */
 
-export type AgentRunStatus =
+type AgentRunStatus =
   | 'queued'
   | 'running'
   | 'succeeded'
   | 'failed'
   | 'interrupted';
 
-export type AgentRunTrigger =
+type AgentRunTrigger =
   | 'mention'
   | 'heartbeat'
   | 'task.assigned'
@@ -29,7 +29,7 @@ export type AgentRunTrigger =
   | 'first_contact'
   | 'manual';
 
-export type AgentRunErrorKind =
+type AgentRunErrorKind =
   | 'turn_cap'
   | 'token_cap'
   | 'timeout'
@@ -74,7 +74,7 @@ export interface IAgentRunTurn {
   fallbacks?: number;
 }
 
-export interface IAgentRun extends Document {
+interface IAgentRun extends Document {
   podId: Types.ObjectId;
   agentName: string;
   instanceId: string;

@@ -14,7 +14,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export type AgentAskStatus = 'open' | 'responded' | 'expired';
 
-export interface IAgentAsk extends Document {
+interface IAgentAsk extends Document {
   requestId: string;
   podId: Types.ObjectId;
   fromAgent: string;

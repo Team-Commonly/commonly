@@ -5,7 +5,7 @@ import Pod from '../models/Pod';
 import User from '../models/User';
 import { runsInNarrowedProcess } from './hostedEngine';
 
-export type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
+type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
   | 'pod_joinable' | 'pod_bridged' | 'non_native_agent' | 'write_mode_unconfined';
 
 export const outsiderGrantRefusalMessage = (reason: OutsiderGrantRefusal): string => ({

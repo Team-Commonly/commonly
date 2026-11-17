@@ -28,7 +28,7 @@ const starterStepsFrom = (tasks: TaskRow[]): V2StarterSteps | null => {
   return { connect: !connect || connect.status === 'done', firstTask: !firstTask || firstTask.status === 'done' };
 };
 
-export interface V2PodHeaderMeta {
+interface V2PodHeaderMeta {
   boardOpen: number | null;
   channels: string[];
   starter: V2StarterSteps | null;

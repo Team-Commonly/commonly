@@ -76,7 +76,7 @@ interface DigestUser {
   getOrCreateDigestUnsubscribeToken: () => string;
 }
 
-export interface DigestEmailResult {
+interface DigestEmailResult {
   eligible: number;
   sent: number;
   skipped: number;
