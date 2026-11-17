@@ -8,9 +8,9 @@
 // Rows are built from the server-pinned arguments only, never from the
 // agent's prose.
 
-export type ToolCallRowKind = 'text' | 'mono' | 'block';
+type ToolCallRowKind = 'text' | 'mono' | 'block';
 
-export interface ToolCallRow {
+interface ToolCallRow {
   /** The canonical argument key(s) this row shows. */
   keys: string[];
   /** i18n key for the row label; absent for an argument with no known name. */
@@ -33,7 +33,7 @@ export interface ToolCallRow {
   fullLength?: number;
 }
 
-export interface ToolCallView {
+interface ToolCallView {
   verb: { key: string; vars: Record<string, string> } | null;
   rows: ToolCallRow[];
   /** What the owner should know that no row shows. */

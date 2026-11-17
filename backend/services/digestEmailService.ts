@@ -76,7 +76,7 @@ interface DigestUser {
   getOrCreateDigestUnsubscribeToken: () => string;
 }
 
-export interface DigestEmailResult {
+interface DigestEmailResult {
   eligible: number;
   sent: number;
   skipped: number;
@@ -155,7 +155,7 @@ const buildEmailBodies = (
   };
 };
 
-export class DigestEmailService {
+class DigestEmailService {
   async sendDigestEmails(currentRun: DigestRunResult[] = []): Promise<DigestEmailResult> {
     const result: DigestEmailResult = {
       eligible: 0,

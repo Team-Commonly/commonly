@@ -10,7 +10,7 @@ export interface HostedMcpClientIdBackfillRow {
   };
 }
 
-export interface HostedMcpClientIdBackfillDeps {
+interface HostedMcpClientIdBackfillDeps {
   findLegacyRows: () => Promise<HostedMcpClientIdBackfillRow[]>;
   /** Legacy rows hold a token pair, so only OAuth entries can be backfilled. */
   entryFor: (entryId: string) => HostedMcpOAuthEntry | undefined;
@@ -19,7 +19,7 @@ export interface HostedMcpClientIdBackfillDeps {
   updateIfMissing: (row: HostedMcpClientIdBackfillRow, clientId: string) => Promise<number>;
 }
 
-export interface HostedMcpClientIdBackfillResult {
+interface HostedMcpClientIdBackfillResult {
   scanned: number;
   candidates: number;
   updated: number;

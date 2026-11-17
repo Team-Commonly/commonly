@@ -1,4 +1,4 @@
-/* TASK-740 (D224): the d215 rail theme switch, lifted from
+/* TASK-740: the d215 rail theme switch, lifted from
    docs/design/artboards/d215/index.html (.seg, .seg--ic, .seg--rail, lines
    169-178). Scoped by .v2-theme-seg so the generic .seg names stay local; --sm is the 390 Pods top bar (.mtop). The
    artboard's short colour names map to --v2-* as in primitives.css; the on state

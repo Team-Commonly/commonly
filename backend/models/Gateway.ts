@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface IGateway extends Document {
+interface IGateway extends Document {
   name: string;
   slug: string;
   type: 'openclaw';

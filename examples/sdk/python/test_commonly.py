@@ -32,6 +32,9 @@ class FakeGuard:
         self.attempts = 0
         self.refuse_all = False
         self.land_message_before_next_post = False
+        # More unseen than one context read returns: a read leaves it unread.
+        self.backlog = False
+        self.catch_ups = []
         self.events = []
         self.log = []
 
@@ -60,7 +63,7 @@ def make_handler(guard):
 
         def do_GET(self):
             if self.path.startswith("/api/agents/runtime/pods/") and self.path.endswith("/context"):
-                guard.unread = False
+                guard.unread = guard.backlog
                 guard.reads += 1
                 guard.log.append("read")
                 return self._send(200, {"recentMessages": []})
@@ -74,6 +77,13 @@ def make_handler(guard):
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
+            if self.path.endswith("/catch-up"):
+                guard.catch_ups.append(body)
+                if body.get("confirmSkipHistory") is not True:
+                    return self._send(400, {"message": "Catch-up requires confirmSkipHistory:true"})
+                guard.unread = guard.backlog = False
+                guard.log.append("catch-up")
+                return self._send(200, {"messages": [], "catchUp": {"skippedCount": 23}})
             if self.path.endswith("/ack"):
                 guard.log.append(f"ack:{self.path.split('/')[-2]}")
                 return self._send(200, {"success": True})
@@ -130,6 +140,20 @@ class ReplyPathTest(unittest.TestCase):
         self.assertEqual(self.guard.reads, 2)
         self.assertEqual(self.guard.attempts, 2)
         self.assertEqual(self.guard.posts, [])
+
+    # F536: a backlog bigger than one context read stays held after the read;
+    # catch_up clears it, and a plain read never does.
+    def test_a_backlog_one_read_cannot_clear_stays_held_until_catch_up(self):
+        self.guard.backlog = True
+        with self.assertRaises(CommonlyError) as ctx:
+            self.bot._post_reply("pod_1", "hello")
+        self.assertEqual(ctx.exception.status, 409)
+        self.assertEqual(self.guard.posts, [])
+        receipt = self.bot.catch_up("pod_1")
+        self.assertEqual(self.guard.catch_ups, [{"confirmSkipHistory": True}])
+        self.assertEqual(receipt["catchUp"]["skippedCount"], 23)
+        self.bot.post_message("pod_1", "hello")
+        self.assertEqual(self.guard.posts, ["hello"])
 
     def test_run_reads_then_posts_then_acks_and_never_posts_directly(self):
         self.guard.events = [{"_id": "evt_1", "podId": "pod_1", "payload": {}}]

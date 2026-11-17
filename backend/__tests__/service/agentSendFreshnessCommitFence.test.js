@@ -105,4 +105,24 @@ d('agent freshness: in-flight PostgreSQL insert', () => {
       messages: [{ content: 'ordinary peer chat' }] });
   });
 
+  // F490: the CAP post route exempts exactly the message that woke the agent.
+  it('exempts exactly the listed ids: older unread and later messages still hold', async () => {
+    await pool.query('DELETE FROM messages WHERE pod_id = $1', [String(podId)]);
+    await Cursor.deleteOne({ _id: `${agentId}:${podId}` });
+    const insert = async (content) => (await pool.query(
+      'INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3) RETURNING id',
+      [String(podId), String(peerId), content],
+    )).rows[0].id;
+    await insert('older unread');
+    const trigger = await insert('@codex please check');
+    await insert('a later line');
+    const hold = await Freshness.unseenMessages(agentId, podId, { exemptMessageIds: [String(trigger)] });
+    expect(hold.unseenCount).toBe(2);
+    expect(hold.messages.map((m) => m.content).sort()).toEqual(['a later line', 'older unread']);
+    await pool.query('DELETE FROM messages WHERE pod_id = $1 AND id <> $2', [String(podId), trigger]);
+    expect(await Freshness.unseenMessages(agentId, podId, { exemptMessageIds: [String(trigger)] })).toBeNull();
+    expect(await Freshness.unseenMessages(agentId, podId, { exemptMessageIds: ['not-a-pg-id'] }))
+      .toMatchObject({ unseenCount: 1 });
+  });
+
 });

@@ -12,14 +12,14 @@ export const refusedOperatorKeyScopes = (scopes: readonly string[]): string[] =>
   scopes.filter((scope) => (OPERATOR_KEY_REFUSED_SCOPES as readonly string[]).includes(scope))
 );
 
-export type OperatorKeyIntakeRefusal =
+type OperatorKeyIntakeRefusal =
   | { ok: false; code: 'not_operator_key' | 'key_missing' | 'scope_refused' | 'vendor_rejected' | 'vendor_unreachable'; message: string };
 
-export type OperatorKeyIntakeResult =
+type OperatorKeyIntakeResult =
   | { ok: true; tools: HostedMcpUpstreamTool[]; scopeCheck: 'read' | 'self_report' }
   | OperatorKeyIntakeRefusal;
 
-export interface OperatorKeyIntakeInput {
+interface OperatorKeyIntakeInput {
   entry: HostedMcpEntry;
   /** The pasted key. It is used for the probe and never returned, logged or echoed. */
   key: string;

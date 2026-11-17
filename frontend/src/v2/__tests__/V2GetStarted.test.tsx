@@ -1,4 +1,4 @@
-// D288: the first-run bar. Only the current step acts and records a click;
+// The first-run bar. Only the current step acts and records a click;
 // a done step is struck and says so; the bar leaves when both are done.
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';

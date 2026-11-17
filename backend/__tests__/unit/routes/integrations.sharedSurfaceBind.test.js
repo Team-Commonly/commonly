@@ -1,4 +1,4 @@
-// F143 (Cofounder, 11-04): binding a pod to a chat surface people outside the
+// F143 (11-04): binding a pod to a chat surface people outside the
 // pod can read — a Slack channel, a Discord guild channel, a Telegram group —
 // takes authority over the POD: its creator or an instance admin. A Telegram
 // private chat with the bot stays member-level. POST /api/integrations and the

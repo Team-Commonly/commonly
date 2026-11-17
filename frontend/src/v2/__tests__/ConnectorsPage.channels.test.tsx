@@ -1244,7 +1244,7 @@ describe('Connectors page: channels', () => {
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
-    it('does not list a provider this instance does not offer (D215)', async () => {
+    it('does not list a provider this instance does not offer', async () => {
       // Usable keys, no builtin Installable row, and no install link of its own.
       // A stranger must not see it, not even behind "+N off". (Discord was this
       // example until it got a link install; see the Discord block below.)
@@ -1287,7 +1287,7 @@ describe('Connectors page: channels', () => {
     });
 
     it('keeps a no-longer-offered provider listed when the person has only an integration row', async () => {
-      // The third arm of the D215 filter: a channel connected before the roster row
+      // The third arm of the design filter: a channel connected before the roster row
       // went away can leave an integration with no installation. Dropping it from
       // the list would hide a live connection from its owner.
       mockCatalog([
@@ -1751,7 +1751,7 @@ const ConnectorsPageForRoutes = () => {
   return <Page />;
 };
 
-// F132 (D249): a Discord row relays agent lines out to a SHARED channel, so its
+// F132: a Discord row relays agent lines out to a SHARED channel, so its
 // relay switch is offered only on a row whose installer the bot-add proved —
 // the server stamps `discordUserId` on the creator's row and withholds it from
 // everyone else's view. The copy says who reads the channel.

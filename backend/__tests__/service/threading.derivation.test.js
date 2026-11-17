@@ -177,7 +177,7 @@ d('thread_root_id derivation, executed', () => {
     expect(ra.thread_root_id).not.toBe(rb.thread_root_id);
   });
 
-  // TASK-278, executed (Cofounder's HOLD on #2272): the INSERT's same-pod
+  // TASK-278, executed (the HOLD on #2272): the INSERT's same-pod
   // guard first shipped as `$1 IN (SELECT …)`, which pg-mem accepted and real
   // Postgres refused for EVERY write with 42P08 (inconsistent types deduced
   // for parameter $1). These cases are the ones that would have shown it, and

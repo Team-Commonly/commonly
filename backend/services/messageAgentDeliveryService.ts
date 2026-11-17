@@ -7,7 +7,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const { findNonMemberMentionNotices } = require('./mentionNonMemberNoticeService');
 
-export interface MessageForAgentDelivery {
+interface MessageForAgentDelivery {
   content?: string;
   userId?: { username?: string } | string;
   username?: string;

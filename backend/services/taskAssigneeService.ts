@@ -13,7 +13,7 @@ import mongoose from 'mongoose';
 import Pod from '../models/Pod';
 import User from '../models/User';
 
-export interface AssigneeAgent { agentName: string; instanceId: string; username: string }
+interface AssigneeAgent { agentName: string; instanceId: string; username: string }
 
 const lower = (value: unknown): string => String(value || '').toLowerCase();
 const typedName = (typed: string): string => lower(typed.trim().replace(/^@/, ''));

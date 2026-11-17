@@ -8,7 +8,7 @@ export const GROUPING_WINDOW_MS = 3 * 60 * 1000;
 
 // Structural subset of V2Message — only the fields the predicate reads.
 // Kept loose so both the live V2Message and test literals satisfy it.
-export interface GroupableMessage {
+interface GroupableMessage {
   user_id?: string | null;
   author_kind?: 'kernel' | null;
   user?: { username?: string | null } | null;

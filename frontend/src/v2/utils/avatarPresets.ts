@@ -1,6 +1,6 @@
 import { PAPER_AVATAR_LOOK_COUNT } from './avatars';
 
-export const PAPER_AVATAR_PREFIX = 'paper:';
+const PAPER_AVATAR_PREFIX = 'paper:';
 export { PAPER_AVATAR_LOOK_COUNT } from './avatars';
 
 const hashString = (input: string): number => {

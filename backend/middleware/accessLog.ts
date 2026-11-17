@@ -1,5 +1,5 @@
 /**
- * Access log: one JSON line per answered request (F57, Cofounder 2026-11-02).
+ * Access log: one JSON line per answered request (F57, 2026-11-02).
  *
  * WHY THIS EXISTS. On 11-02 the question "how often was this endpoint called,
  * and by whom" came up, and only its first half could be answered: the backend

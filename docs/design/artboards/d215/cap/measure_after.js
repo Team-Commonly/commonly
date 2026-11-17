@@ -1,4 +1,4 @@
-// D215 helper-word and scroll measurements.
+// Helper-word and scroll measurements.
 //
 //   node measure_after.js            measure the artboard (../index.html) and write ../targets.json
 //   node measure_after.js prod       measure the live routes and check them against ../targets.json

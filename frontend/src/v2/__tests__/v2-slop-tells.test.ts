@@ -129,7 +129,7 @@ describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
   });
 
   test('tell 4: no decorative gradients — keys use their own a/b pair, and the rest are named', () => {
-    // D215 (TASK-730) draws keys as a two-stop gradient of ONE token family
+    // The design (TASK-730) draws keys as a two-stop gradient of ONE token family
     // (--v2-fill-*, --v2-key-*, --v2-accent-fill-*). Anything else is a mask
     // fade, a range track or a hatch, and is listed by name.
     const keyPair = /linear-gradient\(\s*180deg\s*,\s*var\(--([\w-]*?)-a\b[^)]*\)\)?\s*,\s*var\(--\1-b\b/;
@@ -144,7 +144,7 @@ describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
     exact(found, [
       'cards/uiCard.css :: .v2-ui-card .bar span.r', // hatch on a "remaining" bar segment
       'chat/chat-message.css :: .v2-msg__prose--closed', // mask fade over a clamped message
-      'components/V2AgentHealthPage.css :: .v2-health .v2-health__seg--inFlight', // hatch on an in-flight bar segment (D115 frame)
+      'components/V2AgentHealthPage.css :: .v2-health .v2-health__seg--inFlight', // hatch on an in-flight bar segment (health frame)
       'components/V2SettingsPage.css :: .v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-runnable-track', // range fill
       'landing/v2-landing.css :: .v2-landing__trusted-marquee', // marquee edge mask (marketing)
     ]);

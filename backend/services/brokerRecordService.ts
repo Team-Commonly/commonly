@@ -26,7 +26,7 @@ const lazyRoomGrant = () => require('../models/RoomGrant').default;
 type GrantLike = { grantId?: unknown; target?: { kind?: unknown; id?: unknown } | null } | Record<string, unknown> | null | undefined;
 
 /** The pod a grant belongs to, or null for a seat grant (or no grant). */
-export const podOfGrant = (grant: GrantLike): string | null => {
+const podOfGrant = (grant: GrantLike): string | null => {
   const target = (grant as { target?: { kind?: unknown; id?: unknown } } | null)?.target;
   return target?.kind === 'pod' && target.id ? String(target.id) : null;
 };
@@ -46,7 +46,7 @@ const agentById = async (agentUserId: unknown): Promise<RecordActor | null> => {
   return agentActor((user as Parameters<typeof agentActor>[0]) || { _id: agentUserId });
 };
 
-export type BrokerTrailRow = {
+type BrokerTrailRow = {
   grant: GrantLike;
   callId: string;
   grantId: string;

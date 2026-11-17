@@ -47,6 +47,12 @@ jest.mock('../../../models/User', () => ({
 
 jest.mock('../../../models/AuditLog', () => ({ create: jest.fn(() => Promise.resolve()) }));
 
+const mockNoteUnsandboxed = jest.fn(() => Promise.resolve(0));
+jest.mock('../../../services/unsandboxedPodLineService', () => ({
+  ...jest.requireActual('../../../services/unsandboxedPodLineService'),
+  noteUnsandboxedPodSettingsChange: (...args) => mockNoteUnsandboxed(...args),
+}));
+
 // Route module pulls in a wide surface; stub the parts irrelevant here.
 jest.mock('../../../controllers/podController', () => ({
   updatePodParent: jest.fn(),
@@ -310,5 +316,52 @@ describe('POST /api/pods/:id/visibility', () => {
       expect(res.status).toBe(200);
       expect(mockPod.value.communityListed).toBe(true);
     });
+  });
+});
+
+// An agent started without a sandbox answers only in an invite-only pod that
+// isn't public or listed. The owner's change that ends that is said in the pod.
+describe('a change that takes the pod out of an unsandboxed agent\'s reach', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    podSave.mockResolvedValue(undefined);
+    // eslint-disable-next-line global-require
+    const User = require('../../../models/User');
+    User.findById.mockReturnValue({
+      select: jest.fn(() => ({
+        lean: jest.fn(() => Promise.resolve({ role: 'user', entitlements: { pro: true } })),
+      })),
+    });
+  });
+
+  test('opening an invite-only pod to join is noted', async () => {
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    expect((await setJoinPolicy('open')).status).toBe(200);
+    expect(mockNoteUnsandboxed).toHaveBeenCalledWith({ podId: 'pod-1' });
+  });
+
+  test('listing an invite-only pod in Community is noted', async () => {
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    expect((await setVisibility('community')).status).toBe(200);
+    expect(mockNoteUnsandboxed).toHaveBeenCalledWith({ podId: 'pod-1' });
+  });
+
+  test.each([
+    ['closing an open pod', () => setJoinPolicy('invite-only'), { joinPolicy: 'open' }],
+    ['listing a pod that was already open', () => setVisibility('community'), { joinPolicy: 'open' }],
+    ['unlisting a pod', () => setVisibility('private'), { joinPolicy: 'invite-only', publicRead: true, communityListed: true }],
+    ['saving the same policy', () => setJoinPolicy('invite-only'), { joinPolicy: 'invite-only' }],
+  ])('%s is not', async (_what, act, over) => {
+    mockPod.value = pod(over);
+    expect((await act()).status).toBe(200);
+    expect(mockNoteUnsandboxed).not.toHaveBeenCalled();
+  });
+
+  test('a failed notice never fails the save', async () => {
+    mockNoteUnsandboxed.mockRejectedValueOnce(new Error('pg down'));
+    mockPod.value = pod({ joinPolicy: 'invite-only' });
+    const res = await setJoinPolicy('open');
+    expect(res.status).toBe(200);
+    expect(podSave).toHaveBeenCalledTimes(1);
   });
 });

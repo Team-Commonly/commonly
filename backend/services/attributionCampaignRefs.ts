@@ -16,7 +16,7 @@ const ATTRIBUTION_REFS_KEY = 'attribution.refs';
 const DEFAULT_CAMPAIGN_REFS = ['x'];
 const CACHE_MS = 60 * 1000;
 // The whole list goes into the visit route's $nin, so it stays a list, not a
-// table (Cofounder on #2283). Entries past this are ignored.
+// table (review on #2283). Entries past this are ignored.
 const MAX_CAMPAIGN_REFS = 500;
 
 let cached: { at: number; refs: Set<string> } | null = null;

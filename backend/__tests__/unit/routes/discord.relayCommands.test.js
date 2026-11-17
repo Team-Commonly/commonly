@@ -1,4 +1,4 @@
-// F133 (D249): the Discord bridge commands /mode /status /mute /unmute /tldr
+// F133: the Discord bridge commands /mode /status /mute /unmute /tldr
 // /summary /help, through the signed HTTP interactions endpoint and the shared
 // chat-relay core. Every accepted request here is signed with a real Ed25519
 // key, the way Discord signs them.

@@ -311,7 +311,7 @@ export const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now
  * connections' grants on this entry only, so the copy speaks for this connection:
  * another GitHub, or another member's grant, is out of its sight.
  */
-export type AccessStatement = 'offerRead' | 'offerAsk' | 'grantedRead' | 'grantedAsk' | 'grantedMixed';
+type AccessStatement = 'offerRead' | 'offerAsk' | 'grantedRead' | 'grantedAsk' | 'grantedMixed';
 
 export const accessStatement = (modes: GrantWriteMode[], liveGrants: ToolGrant[]): AccessStatement => {
   if (liveGrants.length === 0) return modes.some((mode) => mode !== 'read') ? 'offerAsk' : 'offerRead';

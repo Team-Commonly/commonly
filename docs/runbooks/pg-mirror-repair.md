@@ -135,3 +135,35 @@ may still arrive late, since the wait does not cancel it. Stored keys are
 capped at 5,000 per run, but `created_by` keys are never cut, so a cap cannot
 make a standing mismatch look new. With no pod configured the log line
 stands alone.
+
+## Checking the mirror by hand
+
+An independent diff that reads Mongo through the raw driver
+(`db.collection(...)`) sees less than the job does, because the job reads
+through Mongoose:
+
+- **Schema defaults aren't stored.** A user created without a picture has no
+  `profilePicture` field. Mongoose fills in the schema default `'default'`
+  (`models/User.ts`), so the job, the app and PG all hold `'default'`, and a
+  raw read sees nothing there. Apply the schema default before you compare.
+  On 2026-11-16 this was the only difference a raw diff found, and it wasn't
+  drift.
+- **Match the job's comparisons.** A PG user's label is
+  `AgentIdentityService.chatUsernameFor(user)`, not `username`. A pod's
+  missing `type` is `chat`. A row named `Deleted user` with no picture is an
+  account-deletion tombstone.
+
+The run row has no single "repairable" field. Read it from `counts`:
+repairable is the sum of `pods_missing`, `pods_name`, `pods_description`,
+`pods_type`, `pods_created_by`, `members_missing`, `members_ghost`,
+`users_missing`, `users_username`, `users_profile_picture` and
+`users_is_bot`. Done for a night means:
+
+- that sum is 0;
+- `repairs_failed`, `repeats`, `unrepairable` and `members_unreadable` are 0;
+- the run finished with no `error`;
+- a hand diff of the same categories agrees.
+
+`unexplained` doesn't measure this. It includes the PG-only orphan pods and
+users, which are kept on purpose (see "The nightly job"), as are
+`users_tombstone` and `users_deleting`.

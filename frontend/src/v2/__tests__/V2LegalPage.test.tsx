@@ -11,8 +11,8 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/Draft for review/)).not.toBeInTheDocument();
   });
 
-  // F398/F399 (D286): the setup records, the product usage events with the
-  // Cofounder's EU/UK ruling, and how long each is kept.
+  // F398/F399: the setup records, the product usage events with the
+  // the maintainers' EU/UK ruling, and how long each is kept.
   it('says which setup steps and usage events are recorded, that typed text never is, and how they go', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByText(/^Setup steps: when you're signed in, we record which setup screens you open/)).toBeInTheDocument();
@@ -50,7 +50,7 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/unless their owner chose/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
-    // D81: the Workers AI route was removed; the page must not name it.
+    // The Workers AI route was removed; the page must not name it.
     expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
     // A provider our requests reach with user content is named, even one whose
     // key is rejected: a rejected request still carried the content. F85: with

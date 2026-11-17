@@ -38,9 +38,9 @@ const { isListedPodMember } = require('../utils/isPodMember');
  */
 
 const HOUR = 60 * 60 * 1000;
-export const WAITING_EMAIL_WINDOW_MS = 24 * HOUR;
+const WAITING_EMAIL_WINDOW_MS = 24 * HOUR;
 // Events older than this are not "waiting" any more for this purpose.
-export const WAITING_LOOKBACK_MS = 7 * 24 * HOUR;
+const WAITING_LOOKBACK_MS = 7 * 24 * HOUR;
 const MENTION_TYPES = ['chat.mention', 'thread.mention'];
 const EPISODE_LIMIT = 500;
 const EVENT_LIMIT = 200;
@@ -216,5 +216,5 @@ export const sweepWaitingOwnerEmails = async (
 export default { sweepWaitingOwnerEmails, waitingOn, whoIsWaiting };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  sweepWaitingOwnerEmails, waitingOn, whoIsWaiting, WAITING_EMAIL_WINDOW_MS, WAITING_LOOKBACK_MS,
+  sweepWaitingOwnerEmails, waitingOn, whoIsWaiting,
 };

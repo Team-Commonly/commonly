@@ -10,7 +10,7 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const User = require('../models/User');
 
-export type CloseRefusal = 'pod_not_found' | 'not_agent_room' | 'not_room_member';
+type CloseRefusal = 'pod_not_found' | 'not_agent_room' | 'not_room_member';
 
 type RoomDoc = { _id: unknown; type?: string; members?: unknown[]; closedAt?: Date | null };
 

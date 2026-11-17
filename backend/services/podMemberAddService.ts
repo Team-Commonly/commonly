@@ -25,7 +25,7 @@ const { DM_POD_TYPES_GUARD } = require('./agentIdentityService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { mirrorMemberAdded } = require('./pgMirrorWrite');
 
-export type AddMemberRefusal =
+type AddMemberRefusal =
   | 'pod_not_found'
   | 'agent_caller_refused'
   | 'not_pod_creator'
@@ -34,7 +34,7 @@ export type AddMemberRefusal =
   | 'agent_not_addable'
   | 'teammate_not_found';
 
-export type AddMemberResult =
+type AddMemberResult =
   | { refusal: AddMemberRefusal }
   | { refusal?: undefined; alreadyMember: boolean; member: { _id: string; username: string } };
 

@@ -18,7 +18,7 @@
  */
 const PodReadPoint = require('../models/pg/PodReadPoint');
 
-export interface SeedSignals {
+interface SeedSignals {
   threadReadAt?: unknown;
   lastMessageAt?: unknown;
   lastActive?: unknown;
@@ -55,7 +55,7 @@ export async function seedPodReadPoint({
   return PodReadPoint.seedIfAbsent(podId, userId, seed);
 }
 
-export interface SeedRunCounts {
+interface SeedRunCounts {
   members: number;
   existing: number;
   fromPod: number;

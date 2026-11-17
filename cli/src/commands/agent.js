@@ -136,11 +136,15 @@ import {
 } from '../lib/hooks-config.js';
 import {
   EXTERNAL_SIGNAL_GRACE,
+  HOST_DEFERRAL_MAX_MS,
+  SPAWN_RETRY_MAX_MS,
   formatRetryDelay,
   isExternalSignal,
+  isHostDeferral,
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
+import { explainNarrowing, narrowingConfirmBody } from '../lib/install-narrowing.js';
 import {
   CONTENT_REFUSED_REASON,
   composeRefusalHandoff,
@@ -178,6 +182,10 @@ import {
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
 import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 import { CLI } from '../lib/cli-hint.js';
+
+// F167: shared by attach, init and register.
+const NARROWING_FLAG_HELP = 'Install even when joining this pod would limit where the agent can write in its other pods '
+  + '(the install says which pods first)';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -1501,6 +1509,8 @@ export const performAttach = async ({
   wakeOnMessage = false,
   memoryFrom = null,
   memoryInstance = 'default',
+  // F167: confirm the install route's narrowing warning (F164).
+  confirmNarrowing = false,
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
@@ -1692,6 +1702,7 @@ export const performAttach = async ({
     ...(memoryFrom ? {
       resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
     } : {}),
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1709,7 +1720,7 @@ export const performAttach = async ({
       ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-  });
+  }).catch((error) => { throw explainNarrowing(error); });
 
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
@@ -2327,11 +2338,40 @@ export const performRun = ({
   // first EXTERNAL_SIGNAL_GRACE of them retry without counting as failures, so
   // a walk that kills three turns doesn't open the circuit on the fourth ask.
   let externalSignalStreak = 0;
+  // F491: host deferrals (a gate in front of the CLI exited 75) since the last
+  // good spawn, and when the first of them came. Inside HOST_DEFERRAL_MAX_MS
+  // they don't count, strike no event and keep the circuit shut, and the retry
+  // backs off by this streak. Past it, they count like any failure.
+  let hostDeferralStreak = 0;
+  let hostDeferralSince = null;
+  let lastHostDeferralAt = null;
+  // `graced`: this failure doesn't count, and the carried events take no strike.
   const countSpawnFailure = (err) => {
-    const graced = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
+    if (isHostDeferral(err)) {
+      // A run with no deferral for longer than the longest retry wait ended
+      // without a good spawn (claims lost, events released): a new hold starts
+      // a new run, so it isn't charged for the last one's time.
+      if (lastHostDeferralAt !== null && Date.now() - lastHostDeferralAt > 2 * SPAWN_RETRY_MAX_MS) {
+        hostDeferralStreak = 0;
+        hostDeferralSince = null;
+      }
+      lastHostDeferralAt = Date.now();
+      if (hostDeferralSince === null) hostDeferralSince = Date.now();
+      if (Date.now() - hostDeferralSince < HOST_DEFERRAL_MAX_MS) {
+        hostDeferralStreak += 1;
+        return { graced: true, externalSignal: false, hostDeferrals: hostDeferralStreak };
+      }
+    }
+    const externalSignal = isExternalSignal(err) && externalSignalStreak < EXTERNAL_SIGNAL_GRACE;
     if (isExternalSignal(err)) externalSignalStreak += 1;
-    if (!graced) consecutiveSpawnFailures += 1;
-    return graced;
+    if (!externalSignal) consecutiveSpawnFailures += 1;
+    return { graced: externalSignal, externalSignal, hostDeferrals: 0 };
+  };
+  const resetFailureStreaks = () => {
+    externalSignalStreak = 0;
+    hostDeferralStreak = 0;
+    hostDeferralSince = null;
+    lastHostDeferralAt = null;
   };
   let pollStalled = false;
   const pollLiveness = createPollLiveness({
@@ -3893,8 +3933,11 @@ export const performRun = ({
   const inboxQuery = ({ inOutage = false } = {}) => {
     const carried = [...heldRetry, ...heldGreeting];
     const carriedCount = carried.filter((event) => event.deliveryMode !== 'digest').length;
+    // A host hold (F491) counts as an outage here: with the carry full, a
+    // deferred retry claims nothing new, or each one would claim a row past
+    // the prompt cap and spend its attempts on hand-backs.
     const full = carriedCount >= batchLimit
-      && (inOutage || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
+      && (inOutage || hostDeferralStreak > 0 || consecutiveSpawnFailures >= FULL_CARRY_CLAIM_FAILURES);
     return {
       agentName,
       instanceId,
@@ -3913,7 +3956,9 @@ export const performRun = ({
   // inside its grace (F293) is no failure of the event's either: `strike: false`
   // carries it without one, or the third kill would release it to the server's
   // requeue and the answer would wait 10–20 minutes. The grace bounds this.
-  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true } = {}) => {
+  // `passOver: false` (F491): no turn ran at all (a host deferral), so the
+  // past-cap items weren't passed over by one and keep their carry budget.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = [], { strike = true, passOver = true } = {}) => {
     const released = [];
     let part = null;
     const carry = [];
@@ -3946,7 +3991,7 @@ export const performRun = ({
       const id = String(event._id);
       if (!seen.has(id)) {
         seen.add(id);
-        const carries = (pastCapCarries.get(id) || 0) + 1;
+        const carries = (pastCapCarries.get(id) || 0) + (passOver ? 1 : 0);
         // As above: a stop hands the item back rather than leave it to the sweep.
         if (running && carries >= PAST_CAP_MAX_CARRIES) passedOver.push(event);
         else {
@@ -4785,13 +4830,14 @@ export const performRun = ({
           // The unacked items are carried to the retry, not left to the
           // requeue sweep, so the delay below is when they run again.
           const scheduleBatchRetry = async (err, failedEvents) => {
-            const externalSignal = countSpawnFailure(err);
+            const { graced, externalSignal, hostDeferrals } = countSpawnFailure(err);
             const retry = spawnRetryPolicy({
               error: err,
               consecutiveFailures: consecutiveSpawnFailures,
               intervalMs,
               jitterRatio: spawnJitterRatio,
               externalSignal,
+              hostDeferrals,
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
@@ -4805,7 +4851,7 @@ export const performRun = ({
               attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
-              { strike: !externalSignal },
+              { strike: !graced, passOver: hostDeferrals === 0 },
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
@@ -4858,7 +4904,7 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
-            externalSignalStreak = 0;
+            resetFailureStreaks();
             // Notices arriving mid-turn get one bounded collection window.
             // Idle polls and batches with no model turn keep their cadence.
             completedModelTurn = true;
@@ -4928,16 +4974,24 @@ export const performRun = ({
               // at-least-once delivery. Stop this fetched batch immediately —
               // continuing could launch every one of the 10 returned events
               // into the same provider outage before the next poll (#782).
-              const externalSignal = countSpawnFailure(err);
+              const { graced, externalSignal, hostDeferrals } = countSpawnFailure(err);
               const retry = spawnRetryPolicy({
                 error: err,
                 consecutiveFailures: consecutiveSpawnFailures,
                 intervalMs,
                 jitterRatio: spawnJitterRatio,
                 externalSignal,
+                hostDeferrals,
               });
               nextPollDelayMs = retry.delayMs;
               retryScheduled = true;
+              // As in the batch path (F236): an open circuit's wait is walked in
+              // one-minute checks that tell newly waiting pods, never slept
+              // through whole. A stated quota reset can make it hours (F481,
+              // CodeRabbit on #4108).
+              circuitNotice = retry.circuitOpen && cantAnswerNotice(err) && !modelUnavailableFailure(err)
+                ? { error: err, remainingMs: retry.delayMs }
+                : null;
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
@@ -4946,7 +5000,7 @@ export const performRun = ({
               // eslint-disable-next-line no-await-in-loop
               if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
-              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !externalSignal });
+              const hold = await holdForRetry([event], untriedAfter(groupIndex), [], { strike: !graced });
               keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
@@ -5005,7 +5059,7 @@ export const performRun = ({
           const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
           if (eventWillSpawn && !stoodDown) {
             consecutiveSpawnFailures = 0;
-            externalSignalStreak = 0;
+            resetFailureStreaks();
           }
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
@@ -5195,6 +5249,7 @@ export const performInit = async ({
   podId,
   displayName,
   targetDir,
+  confirmNarrowing = false,
 }) => {
   const recipe = SDK_SOURCES[language];
   if (!recipe) {
@@ -5223,12 +5278,21 @@ export const performInit = async ({
   // Self-serve install (ADR-006). No publish step; the backend synthesizes
   // an ephemeral registry row when no manifest exists for this name.
   const installResult = await client.post('/api/registry/install', {
+    ...narrowingConfirmBody(confirmNarrowing),
     agentName,
     podId,
     displayName: displayName || agentName,
     version: '1.0.0',
     config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+  }).catch((error) => {
+    // The guard above proved neither file existed, so these two are this
+    // attempt's own. Remove them, or the re-run a refusal advises (F167:
+    // --confirm-narrowing) stops at that same guard before it installs.
+    for (const written of [sdkOutPath, botOutPath]) {
+      try { rmSync(written, { force: true }); } catch { /* the install error is the one to report */ }
+    }
+    throw explainNarrowing(error);
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
@@ -5406,6 +5470,7 @@ Docs:
     .requiredOption('--webhook <url>', 'Webhook URL (e.g. https://my-agent.example.com/cap)')
     .option('--secret <secret>', 'Webhook signing secret (HMAC-SHA256)')
     .option('--display <name>', 'Display name shown in the pod')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5429,6 +5494,7 @@ Docs:
         });
 
         const result = await client.post('/api/registry/install', {
+          ...narrowingConfirmBody(opts.confirmNarrowing === true),
           agentName: opts.name,
           podId: opts.pod,
           displayName: opts.display || opts.name,
@@ -5442,7 +5508,7 @@ Docs:
             },
           },
           scopes: ['context:read', 'messages:write', 'memory:read'],
-        });
+        }).catch((error) => { throw explainNarrowing(error); });
 
         const installation = result.installation || result;
         const instId = installation.instanceId || 'default';
@@ -5556,6 +5622,7 @@ Docs:
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
     .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -5579,6 +5646,7 @@ Docs:
           wakeOnMessage: Boolean(opts.wakeOnMessage),
           memoryFrom: opts.memoryFrom,
           memoryInstance: opts.memoryInstance,
+          confirmNarrowing: opts.confirmNarrowing === true,
           log: (line) => console.warn(`[attach] ${line}`),
         });
 
@@ -5986,6 +6054,11 @@ Docs:
         installedVersion: installedCliVersion(),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
+      // F262: a harness the seat's turns would refuse is named now, not on the
+      // first mention. Fired, not awaited, like the update notice above.
+      Promise.resolve(adapter.startNotice?.({ unconfined: hostUnconfined || codexUnconfined }))
+        .then((notice) => { if (notice) console.warn(`${stamp()} [${name}] ${notice}`); })
+        .catch(() => {});
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -6125,6 +6198,7 @@ Docs:
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--dir <path>', 'Target directory (default: current dir)')
+    .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -6141,6 +6215,7 @@ Docs:
           podId: opts.pod,
           displayName: opts.display,
           targetDir: pathResolve(opts.dir || process.cwd()),
+          confirmNarrowing: opts.confirmNarrowing === true,
         });
 
         console.log(`✓ Written: ${result.files.bot}`);

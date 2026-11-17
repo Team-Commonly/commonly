@@ -32,6 +32,13 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { noteUnsandboxedMention } = require('./unsandboxedPodLineService') as {
+  noteUnsandboxedMention: (args: {
+    podId: string; agentName: string; instanceId: string; senderId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const {
   approverFor, asksBeforeOthers, holdRunRequest, joinedByMention, noteRunRequestRefused, UNOWNED,
 } = require('./runRequestService') as typeof import('./runRequestService');
@@ -666,7 +673,7 @@ const formatPodContextFrame = (podId: string): string =>
   // structure in their reads (thread_root_id on every message,
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
-  // D278: an answer to a mention belongs in that mention's thread; the cue
+  // An answer to a mention belongs in that mention's thread; the cue
   // beside each mention names it (formatThreadAnswerCue, formatMentionThreadCue).
   `This pod has threads; three distinct verbs: a plain post goes to the channel, but an ` +
   `answer to a mention goes in its thread; ` +
@@ -1168,7 +1175,7 @@ const formatThreadAnswerCue = (threadRootId: number): string => (
   + 'Do not count on a plain post to land there: it does only when this thread is all your turn holds.]'
 );
 
-// D278: a top-level mention in a shared pod is answered in its own thread, so
+// A top-level mention in a shared pod is answered in its own thread, so
 // the conversation, and every agent that joins it, stays in one place. It
 // reverses F212's line ("post your answer top-level"); the shell now shows a
 // thread's latest reply on its parent, so the channel still sees the answer.
@@ -1184,7 +1191,7 @@ interface AuthorFrame {
   createdAt?: unknown;
   messageId?: string;
   threadRootId?: number | null;
-  /** D278: set for a top-level chat.mention in a shared pod, to its own message id. */
+  /** set for a top-level chat.mention in a shared pod, to its own message id. */
   answerThreadOf?: number;
   name?: string;
   handle?: string;
@@ -2338,7 +2345,7 @@ const enqueueMentions = async ({
     console.warn('[mention-context] pod lookup failed:', (error as Error).message);
   }
   const collaborativePod = isCollaborativePod(podType, installations);
-  // D278: a top-level mention in a shared pod is answered in its own thread.
+  // A top-level mention in a shared pod is answered in its own thread.
   // An unknown pod type (failed lookup) gets no cue rather than a guess.
   if (eventType === 'chat.mention' && !threadRootId && podType && !isPersonalPodType(podType)) {
     const ownId = Number(authorFrame.messageId);
@@ -2497,6 +2504,19 @@ const enqueueMentions = async ({
             // notice must never drop or block the delivery.
             console.warn('[not-connected] notice failed:', (error as Error).message);
           }
+          // An agent last started without a sandbox answers only in pods that
+          // are invite-only, not public and not listed; elsewhere its turns are
+          // refused while it keeps polling, so the pod says so once a day. Not
+          // awaited: the notice is a reply to the mention, and nothing it reads
+          // decides whether the mention queues.
+          noteUnsandboxedMention({
+            podId: String(podId),
+            agentName: directMatch.agentName,
+            instanceId: directMatch.instanceId || 'default',
+            senderId: String(userId),
+            messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+            threadRootId,
+          }).catch((error: Error) => console.warn('[unsandboxed-pod] notice failed:', error?.message));
         }
         try {
           if (directMatch.agentName === 'commonly-bot') {

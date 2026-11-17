@@ -51,7 +51,7 @@ describe('useV2PodHeaderMeta', () => {
     expect(result.current.channels).toEqual(['telegram']);
   });
 
-  test('reads the two seeded starter tasks as done flags; a pod without them has none (D288)', async () => {
+  test('reads the two seeded starter tasks as done flags; a pod without them has none', async () => {
     mockGet.mockImplementation((url: string) => (url.startsWith('/api/v1/tasks/')
       ? Promise.resolve({ tasks: [
         { status: 'done', sourceRef: 'onboarding:connect-agent' },

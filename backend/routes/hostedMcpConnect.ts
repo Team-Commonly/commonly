@@ -97,7 +97,7 @@ const callbackRedirect = (
     /** A catalogue entry the page may name in its notice; never vendor text. */
     entryId?: string;
     /**
-     * D248 `access`: the page sends the person on to the entry's access page.
+     * `access`: the page sends the person on to the entry's access page.
      * TASK-782 `reach`: the page says the connection can see nothing yet.
      */
     next?: 'access' | 'reach';
@@ -533,7 +533,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     }
     return callbackRedirect(res, 'error', vendorError === 'access_denied' ? 'consent_denied' : 'vendor_error');
   }
-  // D248 (a): a GitHub App's "Install & Authorize" comes back here with
+  // A GitHub App's "Install & Authorize" comes back here with
   // `installation_id` and `setup_action` and no state of ours. The install
   // worked, so it is not a failed connect, but with no state nothing ties the
   // code to the person, so the code is never redeemed. Only an entry that has
@@ -893,7 +893,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // update made the new grant visible.
   forgetHostedMcpDrift(String(consumed._id));
 
-  // D248: connected but reaching nothing yet (GitHub with no App installation).
+  // Connected but reaching nothing yet (GitHub with no App installation).
   // The page names the step and opens the entry's own access page; the link
   // comes from the catalogue there, never from this query.
   let accessNext = false;

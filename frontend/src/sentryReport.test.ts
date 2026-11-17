@@ -111,6 +111,17 @@ describe('reportBoundaryError', () => {
     expect(mockCapture).not.toHaveBeenCalled();
   });
 
+  it('leaves no session record when the chunk never loaded, so the next page load still reports it', async () => {
+    // A reload after a failed lazy chunk (F541) can abort the Sentry chunk mid-load.
+    mockChunkLoad.mockImplementation(() => { throw new Error('chunk load aborted'); });
+    await loadPage()(new Error('boom'), { boundary: 'app' });
+    expect(mockCapture).not.toHaveBeenCalled();
+
+    mockChunkLoad.mockReset();
+    await loadPage()(new Error('boom'), { boundary: 'app' });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+  });
+
   it('resolves when the capture itself throws', async () => {
     mockCapture.mockImplementation(() => { throw new Error('capture failed'); });
 

@@ -7,7 +7,7 @@
  * one. Per process: a second replica keeps its own clock, which at worst
  * doubles the rate, never removes the limit.
  */
-export const SUMMARY_COOLDOWN_MS = 60_000;
+const SUMMARY_COOLDOWN_MS = 60_000;
 
 export const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again shortly.';
 

@@ -36,7 +36,7 @@ const PERSONAL_POD_KINDS: Record<string, 'direct' | 'admin'> = {
 };
 
 // Message wake is one choice of three, shown together: the human-only
-// filter used to appear only after "Wake on messages" was ticked (D173).
+// filter used to appear only after "Wake on messages" was ticked.
 const MESSAGE_WAKE_CHOICES = ['mentions', 'human', 'all'] as const;
 type MessageWakeChoice = typeof MESSAGE_WAKE_CHOICES[number];
 const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings, 'wakeOnMessage' | 'humanOnly'>> = {
@@ -75,7 +75,7 @@ const V2AgentWakePods: React.FC<{
   const [turnCap, setTurnCap] = useState<number | null>(null);
   // F164: where runtime auth's outsider-grant narrowing leaves this agent able to write.
   const [runtimeNarrowing, setRuntimeNarrowing] = useState<RuntimeNarrowingStatus | null>(null);
-  // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
+  // An agent that runs on Commonly takes a heartbeat at most hourly, and
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
   // Other people's 1:1 rooms with this agent: a count, with no names or links.

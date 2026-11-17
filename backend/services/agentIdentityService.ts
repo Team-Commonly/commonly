@@ -129,7 +129,7 @@ export class AgentUsernameConflictError extends Error {
   }
 }
 
-export class AgentIdentityConflictError extends Error {
+class AgentIdentityConflictError extends Error {
   readonly code = AGENT_IDENTITY_CONFLICT_CODE;
 
   readonly status = 409;
@@ -140,7 +140,7 @@ export class AgentIdentityConflictError extends Error {
   }
 }
 
-export class AgentDisplayNameTakenError extends Error {
+class AgentDisplayNameTakenError extends Error {
   readonly code = AGENT_DISPLAY_NAME_TAKEN_CODE;
 
   readonly status = 409;

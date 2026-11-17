@@ -29,7 +29,7 @@ type InstallRow = {
   installedBy?: unknown; config?: unknown; scopes?: unknown; githubIssueWrite?: unknown;
 };
 type SenderRow = { isBot?: boolean; botMetadata?: unknown } | null;
-export type HeldEvent = {
+type HeldEvent = {
   agentName: string; instanceId: string; podId: string; type: string; payload: Record<string, unknown>;
 };
 

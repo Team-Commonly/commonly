@@ -295,11 +295,11 @@ interface PostMessageOptions {
   // (the card is posted as the seat) applies to it. The HTTP routes never
   // forward it; `metadata.source: 'approval-card'` alone exempts nothing.
   approvalCard?: boolean;
-  // D245: the optional message contract, as the agent sent it. Normalized by
+  // The optional message contract, as the agent sent it. Normalized by
   // services/messageContract.ts here, warn-only; never read for @mentions.
   summary?: unknown;
   kind?: unknown;
-  // D245 item 4: what the agent's computer reports about how this reply was
+  // What the agent's computer reports about how this reply was
   // made (services/byoReceipt.ts). Stored as self-reported, warn-only.
   receipt?: unknown;
 }
@@ -326,7 +326,7 @@ interface PostTargetOptions {
   threadIsDeliberate?: boolean;
   inferAnswerThread?: boolean;
   authorKind?: 'kernel' | null;
-  // D245: already normalized; stored beside the content.
+  // Already normalized; stored beside the content.
   contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
 }
 
@@ -404,7 +404,7 @@ interface DuplicateResult {
   dedupeWindowMinutes: number;
 }
 
-// F245 and D278: returned on the post, so a model that sent a plain post learns
+// F245: returned on the post, so a model that sent a plain post learns
 // where it went, and the way out of it. The post has already landed; this is
 // never a refusal.
 const threadRootFromWake = (root: number) => ({
@@ -1414,7 +1414,7 @@ class AgentMessageService {
       throw new Error('agentName and podId are required');
     }
     let sanitizedContent = AgentMessageService.sanitizeAgentContent(content, { agentName, instanceId, podId });
-    // D245: warn-only. A bad summary or kind is dropped or repaired and named
+    // Warn-only. A bad summary or kind is dropped or repaired and named
     // in `warnings`; it never stops the post.
     const contract = normalizeMessageContract(
       { summary: options.summary, kind: options.kind },
@@ -2171,7 +2171,7 @@ class AgentMessageService {
       }
     }
 
-    // F245 and D278: a plain CAP post that answers a thread goes in it, and so
+    // F245: a plain CAP post that answers a thread goes in it, and so
     // does one answering a lone top-level mention (in that message's thread).
     // A post naming a target files where it names; the root found here is
     // already validated.
@@ -2401,7 +2401,7 @@ class AgentMessageService {
         // arrives with the socket message; without it every agent reply
         // rendered flat until a reload re-fetched the joined row.
         thread_root_id: (message as MessageNormalized).thread_root_id ?? null,
-        // D245: the contract rides the broadcast to the same room as the
+        // The contract rides the broadcast to the same room as the
         // content, and only when the post carried it.
         ...(contract ? { summary: contract.summary, kind: contract.kind } : {}),
         ...(contract?.receipt ? { receipt: contract.receipt } : {}),
@@ -2793,7 +2793,7 @@ class AgentMessageService {
           thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
           author_kind: (msg.author_kind as 'kernel' | null) ?? null,
           replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
-          // D245: an agent reader sees the contract wherever it sees the content.
+          // An agent reader sees the contract wherever it sees the content.
           ...(msg.summary ? { summary: msg.summary as string } : {}),
           ...(msg.kind ? { kind: msg.kind as string } : {}),
         };
@@ -2837,7 +2837,7 @@ class AgentMessageService {
         // Same as the PG read: a user that didn't populate is unknown, not a person.
         ...(userId ? { isBot: userId.isBot === true } : {}),
         author_kind: msg.authorKind === 'kernel' || msg.author_kind === 'kernel' ? 'kernel' : null,
-        // D245: same as the PG read above.
+        // Same as the PG read above.
         ...(msg.summary ? { summary: msg.summary as string } : {}),
         ...(msg.kind ? { kind: msg.kind as string } : {}),
         ...withSelf(userId?._id, msg.messageType),

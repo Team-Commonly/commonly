@@ -38,7 +38,7 @@ export class DecisionRequestError extends Error {
   }
 }
 
-export type DecisionOptionInput = DecisionCardOption;
+type DecisionOptionInput = DecisionCardOption;
 
 export type DecisionClass = 'strategy' | 'implementation' | 'prioritization';
 const ADVISORY_DECISION_CLASSES: readonly DecisionClass[] = [
@@ -135,7 +135,7 @@ export const normalizeOptions = (value: unknown): DecisionOptionInput[] => {
   });
 };
 
-export const MAX_DECIDERS = 5;
+const MAX_DECIDERS = 5;
 
 type Decider = { userId: string; username: string };
 

@@ -129,7 +129,7 @@ function validatePresentation(root: ElementNode): void {
 }
 
 
-export class UICardValidationError extends Error {
+class UICardValidationError extends Error {
   readonly statusCode = 400;
 
   readonly code = 'invalid_ui_card';
@@ -140,7 +140,7 @@ function refuse(message: string): never {
 }
 
 /** A link to a host the renderer does not open. Agent cards fall back to text for this alone. */
-export class UnapprovedHostError extends UICardValidationError {}
+class UnapprovedHostError extends UICardValidationError {}
 
 function refuseHost(message: string): never {
   throw new UnapprovedHostError(message);
@@ -341,7 +341,7 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
   }
 }
 
-export interface UICardEnvelope {
+interface UICardEnvelope {
   kind: 'ui';
   v: 1;
   lang: 'openui@1';

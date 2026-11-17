@@ -30,7 +30,7 @@ const NUMERAL_PLACEHOLDERS = [
   'writes', 'connected',
   // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).
   'stars',
-  // harness.answeredIn: a reply's measured duration in seconds (D247).
+  // harness.answeredIn: a reply's measured duration in seconds.
   'seconds',
   // a formatted duration, closed because the ruling names this key explicitly:
   // tools.budgetWindow renders 「每1小时可调用5次」
@@ -57,7 +57,7 @@ const OPAQUE_PLACEHOLDERS = [
   'dep',
   // board.detail.agentFor names the person an agent holding a task belongs to (F402).
   'owner',
-  // agentHealth.status.offlineSince: a formatted time (13:05) or date (11月10日), not a count (D115).
+  // agentHealth.status.offlineSince: a formatted time (13:05) or date (11月10日), not a count.
   'when',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',

@@ -116,7 +116,7 @@ export interface IAgentMemorySections {
   cycles?: ICyclesSection;
 }
 
-export interface IAgentMemory extends Document {
+interface IAgentMemory extends Document {
   agentName: string;
   instanceId: string;
   content: string; // v1 blob; still written during Phase 1 for compatibility

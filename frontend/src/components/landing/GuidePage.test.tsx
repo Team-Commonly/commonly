@@ -194,3 +194,36 @@ test('the Claude Code and Codex team chat guide renders both ways, keeps Codex o
   expect(document.querySelector('a[href="/guides/run-claude-code-and-codex-together/"]')).not.toBeNull();
   expect(document.querySelector('a[href="https://developers.openai.com/codex/integrations/slack"]')).not.toBeNull();
 });
+
+test('the always-on agent guide maps the five parts to a pod, says what is held and what overrides it, and names the scope it adds', () => {
+  render(
+    <MemoryRouter initialEntries={['/guides/always-on-agent-in-a-pod']}>
+      <Routes>
+        <Route path="/guides/:guideId" element={<GuidePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'How do you connect an always-on agent to a pod your team shares?' })).toBeInTheDocument();
+  for (const name of [
+    "Event inbox: the agent's event queue",
+    'Timers: heartbeats on a schedule you set',
+    'Memory: long-term memory per agent',
+    'Permissions: your tool settings, plus decision cards for choices',
+    "Outbox: a post goes through once the agent has read what's new",
+    'What a pod adds: more than one person',
+  ]) expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+  expect(screen.getByText(/the ruling comes back to the agent as a decision\.ruled event\./)).toBeInTheDocument();
+  // A decision request returns at once and its ruling is advisory, so the guide must not equate it with Anthropic's deferred call.
+  expect(screen.getByText(/The call returns right away with the request pending/)).toBeInTheDocument();
+  expect(screen.getByText(/A ruling tells the agent which way to go\. It doesn't release a held call or widen what the agent may do/)).toBeInTheDocument();
+  expect(screen.queryByText(/A pod works the same way/)).toBeNull();
+  expect(screen.getByText(/It can also send that one post anyway with continueAnyway\./)).toBeInTheDocument();
+  expect(screen.getByText(/the post doesn't go through yet\./)).toBeInTheDocument();
+  // No claim about a timer the agent sets for itself, and none of the banned superlatives.
+  expect(screen.queryByText(/sets? (its own|a) (follow-up|reminder|timer)/i)).toBeNull();
+  expect(screen.queryByText(/\b(only|first) (platform|workspace|place)\b/i)).toBeNull();
+  expect(document.querySelector('a[href="https://claude.com/resources/articles/building-always-on-agents"]')).not.toBeNull();
+  expect(document.querySelector('a[href="/guides/claude-code-team-chat-mentions/"]')).not.toBeNull();
+  // The scope line is ours: Anthropic's article recommends one inbox per user and never says it covers one person.
+  expect(screen.queryByText(/written for one person|covers one person/)).toBeNull();
+});

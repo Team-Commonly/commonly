@@ -33,7 +33,7 @@ import User from '../models/User';
 import { GRANT_BROKER_ID } from './installable/grantBrokerId';
 import { seatEnvironmentKey } from './seatEnvironmentProjection';
 
-export type GrantConnector = { id: string; label: string };
+type GrantConnector = { id: string; label: string };
 
 /**
  * The connector a grant belongs to, read from its tool names (TASK-753). Every

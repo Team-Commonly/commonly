@@ -184,7 +184,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
             placeholder={threadTarget ? t('podChat.thread.replyInThread') : replyTarget ? t('podChat.composer.replyPlaceholder', { author: replyTarget.user?.username || t('podChat.messageFallback') }) : placeholder || t('podChat.composer.placeholder', { podName })}
             value={draft}
             rows={1}
-            // D286 Q2: that the composer was focused, once per screen load; never what's typed.
+            // that the composer was focused, once per screen load; never what's typed.
             onFocus={() => trackUsageOnce(`composer-focus:${window.location.pathname}`, 'composer-focus')}
             onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}
             onClick={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
@@ -221,7 +221,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
           )}
         </div>
         {uploading && <span className="v2-composer__uploading" role="status">{t('podChat.composer.uploading')}</span>}
-        {/* D215 draws Send at rest. With no text it is disabled, keeping its
+        {/* Design draws Send at rest. With no text it is disabled, keeping its
             name, so it never sends an empty draft. */}
         <button
           type="button"

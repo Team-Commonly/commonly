@@ -1,5 +1,5 @@
 /**
- * The agent computer waker (D244 pilot 2). The broker calls
+ * The agent computer waker. The broker calls
  * `POST /v1/users/{userId}/wake` with `Authorization: Bearer <token>` before it
  * opens a person's Steel browser (agentComputerBroker.ts `wakeSteel`). This
  * service makes sure that person's `steel-{userId}` Deployment has a replica
@@ -27,13 +27,13 @@ const DEFAULT_READY_TIMEOUT_MS = 14_000;
 const POLL_MS = 500;
 const SA_DIR = '/var/run/secrets/kubernetes.io/serviceaccount';
 
-export type KubeCall = (
+type KubeCall = (
   method: 'GET' | 'PATCH',
   path: string,
   body?: Record<string, unknown>,
 ) => Promise<{ status: number; json: any }>;
 
-export type WakerConfig = {
+type WakerConfig = {
   token: string;
   namespace: string;
   users: ReadonlySet<string>;
@@ -42,7 +42,7 @@ export type WakerConfig = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-export type WakeResult = { status: number; body: Record<string, unknown> };
+type WakeResult = { status: number; body: Record<string, unknown> };
 
 export const parseUsers = (raw: string | undefined): Set<string> => new Set(
   String(raw || '').split(',').map((id) => id.trim()).filter((id) => USER_ID.test(id)),
@@ -104,7 +104,7 @@ export const wakeUser = async (
 };
 
 /** Calls the API server with the pod's own service account. */
-export const inClusterKube = (): KubeCall => {
+const inClusterKube = (): KubeCall => {
   const host = process.env.KUBERNETES_SERVICE_HOST;
   const port = process.env.KUBERNETES_SERVICE_PORT || '443';
   if (!host) throw new Error('not running in a cluster');
