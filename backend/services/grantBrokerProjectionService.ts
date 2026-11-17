@@ -38,9 +38,9 @@ import RoomGrant from '../models/RoomGrant';
 import { assertGrantUsable, RoomGrantError } from './roomGrantService';
 import type { RoomGrantTaskBinding } from '../models/RoomGrant';
 
-export type GrantTarget = { kind?: unknown; id?: unknown };
+type GrantTarget = { kind?: unknown; id?: unknown };
 
-export interface LiveGrant {
+interface LiveGrant {
   grantId: string;
   binding?: RoomGrantTaskBinding;
   taskEpoch?: number;
@@ -90,7 +90,7 @@ export const grantBrokerServer = (
  */
 export const sanitizeGrantBrokerToolName = (tool: string): string => String(tool).replace(/[^a-zA-Z0-9_-]/g, '_');
 
-export interface LiveGrantQuery {
+interface LiveGrantQuery {
   /** The seats' bot User `_id`s — the same ids grants carry in `audience`. */
   identityIds: string[];
   /**
@@ -303,9 +303,9 @@ const parkedWrites = (grant: LiveGrant, definitions: ToolDefinition[]): ToolDefi
  */
 export const HOSTED_PR_WRITE_TOOLS: ReadonlyArray<string> = ['github.commit_files', 'github.create_pull_request'];
 
-export type HostedBrokerOutcome = 'ok' | 'refused' | 'failed' | 'pending_approval';
+type HostedBrokerOutcome = 'ok' | 'refused' | 'failed' | 'pending_approval';
 
-export interface HostedBrokerCall {
+interface HostedBrokerCall {
   /** The same payload `routes/mcpGrants.ts` sends as its tool text. */
   content: unknown;
   callId?: string;

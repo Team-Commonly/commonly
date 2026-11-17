@@ -35,7 +35,7 @@ const MongoMessage = require('../models/Message') as {
   countDocuments: (filter: Record<string, unknown>) => Promise<number>;
 };
 
-export interface LegacyMessageDoc {
+interface LegacyMessageDoc {
   _id: { toString(): string };
   podId: { toString(): string };
   userId: { toString(): string };

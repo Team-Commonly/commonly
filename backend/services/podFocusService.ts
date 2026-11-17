@@ -6,14 +6,14 @@ const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 
-export interface PodFocusInput {
+interface PodFocusInput {
   goal: string;
   scope: string;
   ownerUserId: string;
   nextTaskIds: string[];
 }
 
-export interface PodFocusTaskRead {
+interface PodFocusTaskRead {
   taskId: string;
   available: boolean;
   title: string | null;

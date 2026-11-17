@@ -23,14 +23,14 @@ const TEXT_LIMIT = 1500;
 const QUERY_LIMIT = 400;
 const TIMEOUT_MS = 15_000;
 
-export interface WebResult {
+interface WebResult {
   title: string;
   url: string;
   text: string;
   published?: string;
 }
 
-export interface WebSearchOutcome {
+interface WebSearchOutcome {
   provider: string;
   results: WebResult[];
 }

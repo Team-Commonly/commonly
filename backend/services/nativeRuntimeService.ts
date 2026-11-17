@@ -76,7 +76,7 @@ import { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } from './cloudRuntimeOwne
 
 // --- public surface --------------------------------------------------------
 
-export interface NativeRunTrigger {
+interface NativeRunTrigger {
   // The RAW event type, forwarded verbatim by agentEventService:994 — not a
   // mapped vocabulary. The previous union listed names the caller never sends
   // ('mention', 'chat.message', 'task.assigned', 'pod.join') and omitted the

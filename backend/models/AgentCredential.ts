@@ -90,7 +90,7 @@ AgentCredentialSchema.statics.revokeCascade = async function revokeCascade(
   return revoked;
 };
 
-export interface AgentCredentialModel extends mongoose.Model<IAgentCredential> {
+interface AgentCredentialModel extends mongoose.Model<IAgentCredential> {
   revokeCascade(credentialId: Types.ObjectId | string | (Types.ObjectId | string)[]): Promise<number>;
 }
 

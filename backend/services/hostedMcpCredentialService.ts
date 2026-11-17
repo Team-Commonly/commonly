@@ -84,7 +84,7 @@ const WINNER_POLL_MS = 100;
  */
 export const REFRESH_LEASE_MS = 30 * 1000;
 
-export interface HostedMcpCredential {
+interface HostedMcpCredential {
   token: string;
   expiresAt: string;
 }

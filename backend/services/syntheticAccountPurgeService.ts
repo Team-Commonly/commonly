@@ -76,7 +76,7 @@ interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[]; rowCount?: number }>;
 }
 
-export interface AccountReport {
+interface AccountReport {
   userId: string;
   username: string;
   refused?: string;

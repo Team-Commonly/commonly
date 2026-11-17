@@ -8,9 +8,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 // indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
 // 'expired': a pending event nobody claimed within the retention window (F381).
 // Terminal and kept, so an unanswered wake stays countable after the fact.
-export type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed' | 'expired';
-export type AgentEventDeliveryMode = 'wake' | 'digest';
-export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
+type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed' | 'expired';
+type AgentEventDeliveryMode = 'wake' | 'digest';
+type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
 // ADR-003 Phase 4: cross-agent ask/respond payloads. The `type` field on
 // AgentEvent is intentionally unconstrained (a plain String) so adding new
@@ -80,7 +80,7 @@ export interface IApprovalResolvedEventPayload {
   content: string;
 }
 
-export interface IAgentEventDelivery {
+interface IAgentEventDelivery {
   outcome?: DeliveryOutcome;
   reason?: string;
   reasonRecorded?: boolean;

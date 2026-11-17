@@ -161,7 +161,7 @@ const ensureIndexes = (): Promise<unknown> => {
 
 const utcDayStart = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-export type UiEventCaller = { _id: unknown; username?: string; role?: string };
+type UiEventCaller = { _id: unknown; username?: string; role?: string };
 type PodRow = { _id: unknown; type?: string; members?: unknown[] };
 type PodLoader = (podId: string) => Promise<PodRow | null>;
 type CanView = (userId: unknown, pod: PodRow) => Promise<boolean>;
@@ -262,7 +262,7 @@ export async function countPublicHit(input: Record<string, unknown>): Promise<bo
 // never counted, since each promises that nothing is recorded.
 const USAGE_DROP = 'usage-drop';
 const USAGE_STATES = ['settings-get-failed'] as const;
-export type UsageState = typeof USAGE_STATES[number];
+type UsageState = typeof USAGE_STATES[number];
 
 export async function countUsageState(state: UsageState): Promise<void> {
   if (!USAGE_STATES.includes(state)) return;

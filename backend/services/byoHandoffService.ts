@@ -8,7 +8,7 @@
  */
 
 export type ByoHandoffAdapter = 'claude' | 'codex' | 'opencode' | 'dsh';
-export type ByoHandoffOs = 'mac' | 'linux' | 'windows';
+type ByoHandoffOs = 'mac' | 'linux' | 'windows';
 
 const BYO_HANDOFF_ADAPTERS: readonly ByoHandoffAdapter[] = [
   'claude', 'codex', 'opencode', 'dsh',
@@ -93,7 +93,7 @@ export const buildByoHandoffCommand = ({
   return [installCommand(adapter), login, withEnvironment, `commonly agent run ${agentName}`].join('\n');
 };
 
-export interface ByoHandoffPayload {
+interface ByoHandoffPayload {
   kind: 'byo-handoff';
   adapter: ByoHandoffAdapter;
   agentName: string;

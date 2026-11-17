@@ -17,7 +17,7 @@ interface ConnectedAgent {
   podId: string;
 }
 
-export interface AgentConnectionStatus {
+interface AgentConnectionStatus {
   issued: boolean;
   connected: boolean;
   /** Latest listener check-in (the events poll or WebSocket), not any token use. */

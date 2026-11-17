@@ -40,7 +40,7 @@ export interface RoomGrantCreateInput {
   issuer?: RecordActor | null;
 }
 
-export interface RoomGrantAttenuationInput {
+interface RoomGrantAttenuationInput {
   binding?: RoomGrantTaskBinding | null;
   parentGrantId: string;
   tools?: string[];
@@ -56,7 +56,7 @@ export interface RoomGrantAttenuationInput {
   issuer?: RecordActor | null;
 }
 
-export interface GrantUsabilityOptions {
+interface GrantUsabilityOptions {
   grant?: IRoomGrant | Record<string, unknown>;
   grantId?: string;
   agentUserId?: string;
@@ -660,7 +660,7 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
  */
 export const SYSTEM_REVOKER = SERVER_ACTOR.id;
 
-export interface RevokeGrantOptions {
+interface RevokeGrantOptions {
   /**
    * F181: false when the owner is reconnecting (an OAuth account change, a
    * re-pasted key), so the agents are not told the owner removed the connector.

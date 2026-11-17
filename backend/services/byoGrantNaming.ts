@@ -39,7 +39,7 @@ export const grantHarnessNames = (): string => {
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
 };
 
-export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
+type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
   | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_unreported_host' | 'byo_adapter_unsupported'
   | 'byo_public_only' | 'byo_consent_required';
 
@@ -164,7 +164,7 @@ export const sandboxStateFor = (
   return judgement.scope === 'seat' && daemonSpawned ? 'confined' : 'unknown';
 };
 
-export type ByoNamingResult =
+type ByoNamingResult =
   | { refusal: ByoNamingRefusal; consent?: undefined }
   | { refusal: null; consent: IRoomGrantByoConsent };
 

@@ -61,7 +61,7 @@ export const grantHarnessNames = (t: Translate, catalog: HarnessCatalogEntry[] =
 // harness added to that list stops showing its line by itself.
 const NO_SANDBOX_HARNESSES = new Set(['dsh', 'hermes']);
 
-export type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly' | 'publicOnly';
+type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly' | 'publicOnly';
 
 /**
  * Why `id` can't use connectors, or null. `os` is the computer's platform where

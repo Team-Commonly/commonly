@@ -48,7 +48,7 @@ interface E2BSandbox {
   kill(): Promise<boolean>;
 }
 
-export interface RunCodeResult {
+interface RunCodeResult {
   ok: boolean;
   stdout: string;
   stderr: string;

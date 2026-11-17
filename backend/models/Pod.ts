@@ -13,15 +13,15 @@ export type PodType =
 // Per-pod alias → agent binding (e.g. "codex" → local-codex). Empty by
 // default; lookups fall through to the agent's own contact list per the
 // agent collaboration plan §3.2.
-export interface PodContactBinding {
+interface PodContactBinding {
   agentName: string;
   instanceId: string;
 }
 export type PodJoinPolicy = 'open' | 'invite-only';
 export type EnsembleParticipantRole = 'starter' | 'responder' | 'synthesizer' | 'observer';
-export type HumanParticipation = 'none' | 'read-only' | 'participate';
+type HumanParticipation = 'none' | 'read-only' | 'participate';
 
-export interface IPodFocus {
+interface IPodFocus {
   goal: string;
   scope: string;
   ownerUserId: Types.ObjectId;

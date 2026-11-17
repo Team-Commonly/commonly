@@ -33,7 +33,7 @@ export const MERGE_EVIDENCE_TEXT = 'Completed automatically — linked pull requ
 
 const DEFAULT_WINDOW_HOURS = 24;
 
-export type InitiativeLinkKind = 'task' | 'pr' | 'pod' | 'decision';
+type InitiativeLinkKind = 'task' | 'pr' | 'pod' | 'decision';
 
 export interface InitiativeLink {
   kind: InitiativeLinkKind;
@@ -60,28 +60,28 @@ export interface InitiativeInput {
   closed?: InitiativeClose | null;
 }
 
-export interface TaskRecord {
+interface TaskRecord {
   _id: unknown;
   status: string;
   prUrl?: string | null;
   updates?: Array<{ text?: string; author?: string; authorId?: unknown; createdAt?: Date | string }>;
 }
 
-export interface DecisionRecord {
+interface DecisionRecord {
   _id: unknown;
   title: string;
   status: 'pending' | 'ruled' | string;
   ruling?: { at?: Date | string } | null;
 }
 
-export interface AttentionRecord {
+interface AttentionRecord {
   kind: string;
   status: string;
   recipientUserId: unknown;
   source: { type: string; id: string };
 }
 
-export interface InitiativeRecords {
+interface InitiativeRecords {
   /** Tasks named by `task` links, plus tasks whose `prUrl` matches a `pr` link. */
   tasks: TaskRecord[];
   /** DecisionRequests named by `decision` links. */
@@ -99,7 +99,7 @@ export type InitiativeStatus =
   | 'moving'
   | 'stalled';
 
-export type PartState = 'moving' | 'stalled' | 'merged' | 'ruled' | 'pending';
+type PartState = 'moving' | 'stalled' | 'merged' | 'ruled' | 'pending';
 
 export interface Evidence {
   kind: 'merge' | 'decision';

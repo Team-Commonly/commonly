@@ -9,7 +9,7 @@ const G: React.FC<{ children: React.ReactNode; size?: number }> = ({ children, s
   </svg>
 );
 
-export type AskKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked' | 'press';
+type AskKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked' | 'press';
 
 /** The four ask kinds (plus press) as marks. */
 export const KindGlyph: React.FC<{ kind: AskKind | string; size?: number }> = ({ kind, size }) => {
@@ -31,7 +31,7 @@ export const KindGlyph: React.FC<{ kind: AskKind | string; size?: number }> = ({
   }
 };
 
-export type ActName = 'handled' | 'deny' | 'open' | 'manage';
+type ActName = 'handled' | 'deny' | 'open' | 'manage';
 
 /** Secondary acts: the word lives in aria-label and title; the button shows the glyph. */
 export const ActGlyph: React.FC<{ name: ActName; size?: number }> = ({ name, size }) => {

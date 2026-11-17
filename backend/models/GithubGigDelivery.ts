@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 /** Permanent replay receipt: manual GitHub redelivery has no 24-hour limit. */
-export interface IGithubGigDelivery extends Document {
+interface IGithubGigDelivery extends Document {
   deliveryId: string;
   bodyHash: string;
   createdAt: Date;

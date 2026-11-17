@@ -2,9 +2,9 @@
 // @sentry/react and is the lazy chunk, so this file must never import it
 // statically (sentry.test.ts guards that). Components import this file only.
 
-export type ErrorBoundaryName = 'app' | 'v2';
+type ErrorBoundaryName = 'app' | 'v2';
 
-export interface BoundaryReport {
+interface BoundaryReport {
   boundary: ErrorBoundaryName;
   componentStack?: string | null;
 }

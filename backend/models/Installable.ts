@@ -73,7 +73,7 @@ export type ComponentType =
   | 'skill'
   | 'mcp-server';
 
-export type AddressMode =
+type AddressMode =
   | '@mention'
   | '/command'
   | 'event'
@@ -89,9 +89,9 @@ export type ComponentRuntime =
   | 'internal'
   | 'remote';
 
-export type ComponentMemoryStrategy = 'persistent' | 'scratch' | 'none';
+type ComponentMemoryStrategy = 'persistent' | 'scratch' | 'none';
 
-export type SlashCommandParameterType =
+type SlashCommandParameterType =
   | 'string'
   | 'number'
   | 'boolean'

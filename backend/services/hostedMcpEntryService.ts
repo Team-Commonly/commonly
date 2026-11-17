@@ -165,7 +165,7 @@ export interface HostedMcpUpstreamTool {
  * it belongs to the intake slice, which is the first slice that has a row whose
  * credential it can decrypt.
  */
-export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
+type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
 
 /**
  * `not_granted` (F102): a write pin this row's list omits because the row's
@@ -176,7 +176,7 @@ export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'asses
 export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift' | 'not_granted';
 
 /** What the row consented to, as recorded at connect and narrowed on refresh. */
-export interface HostedMcpRowConsent {
+interface HostedMcpRowConsent {
   grantedScope?: string | null;
 }
 
@@ -620,7 +620,7 @@ export interface HostedMcpUpstreamListing extends HostedMcpRowConsent {
   tools: HostedMcpUpstreamTool[];
 }
 
-export interface HostedMcpDriftCacheOptions {
+interface HostedMcpDriftCacheOptions {
   /**
    * Takes the list with THIS row's credential. Throwing means the vendor could
    * not be reached; the caller must not read that as a clean comparison. A

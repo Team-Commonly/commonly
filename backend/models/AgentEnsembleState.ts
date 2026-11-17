@@ -1,8 +1,8 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type EnsembleStatus = 'pending' | 'active' | 'paused' | 'completed' | 'failed';
+type EnsembleStatus = 'pending' | 'active' | 'paused' | 'completed' | 'failed';
 export type EnsembleParticipantRole = 'starter' | 'responder' | 'synthesizer' | 'observer';
-export type EnsembleCompletionReason =
+type EnsembleCompletionReason =
   | 'max_messages'
   | 'max_rounds'
   | 'max_duration'
@@ -19,14 +19,14 @@ export interface IEnsembleParticipant {
   role: EnsembleParticipantRole;
 }
 
-export interface IKeyPoint {
+interface IKeyPoint {
   content?: string;
   agentType?: string;
   turnNumber?: number;
   extractedAt?: Date;
 }
 
-export interface IAgentEnsembleState extends Document {
+interface IAgentEnsembleState extends Document {
   podId: Types.ObjectId;
   lastProcessedMessageId?: string | null;
   status: EnsembleStatus;
@@ -89,7 +89,7 @@ export interface IAgentEnsembleState extends Document {
   complete(reason: EnsembleCompletionReason, summaryContent?: string): IAgentEnsembleState;
 }
 
-export interface IAgentEnsembleStateModel extends Model<IAgentEnsembleState> {
+interface IAgentEnsembleStateModel extends Model<IAgentEnsembleState> {
   findActiveForPod(podId: Types.ObjectId): mongoose.Query<IAgentEnsembleState | null, IAgentEnsembleState>;
   findPausedForResume(): mongoose.Query<IAgentEnsembleState[], IAgentEnsembleState>;
   findScheduledDue(): mongoose.Query<IAgentEnsembleState[], IAgentEnsembleState>;

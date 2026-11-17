@@ -18,7 +18,7 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentRun = require('../models/AgentRun');
 
-export interface ModelPrice {
+interface ModelPrice {
   /** USD per million input tokens. */
   input: number;
   /** USD per million output tokens. */
@@ -75,7 +75,7 @@ const spendThresholdUsd = (): number => {
   return Number.isFinite(raw) && raw > 0 ? raw : 2;
 };
 
-export interface UserSpend {
+interface UserSpend {
   userId: string;
   usd: number;
   runs: number;

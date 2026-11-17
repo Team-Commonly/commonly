@@ -77,7 +77,7 @@ export interface IAgentEventSnapshot {
   runsStarted: number;
 }
 
-export interface IOnboardingSilenceEpisode extends Document {
+interface IOnboardingSilenceEpisode extends Document {
   userId: Types.ObjectId;
   username?: string;
   podId: string;

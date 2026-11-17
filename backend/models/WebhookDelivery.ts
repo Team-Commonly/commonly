@@ -21,7 +21,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 // account namespace their deliveryId with the account identity (for example,
 // Slack `team:event` and Discord `webhook:event`). Telegram serves one bot and
 // retains its sequential update_id as-is.
-export interface IWebhookDelivery extends Document {
+interface IWebhookDelivery extends Document {
   provider: string;
   deliveryId: string;
   expiresAt: Date;

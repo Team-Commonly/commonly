@@ -25,7 +25,7 @@ const PAGE_SIZE = 100;
 // A bound on pages, so a malformed total_pages cannot loop the sweep.
 const MAX_PAGES = 20;
 
-export interface LiteLLMKeyRow {
+interface LiteLLMKeyRow {
   token?: string;
   key_alias?: string | null;
   spend?: number | null;
@@ -34,7 +34,7 @@ export interface LiteLLMKeyRow {
   budget_reset_at?: string | null;
 }
 
-export interface BudgetAlarm {
+interface BudgetAlarm {
   keyAlias: string;
   spendUsd: number;
   maxBudgetUsd: number;

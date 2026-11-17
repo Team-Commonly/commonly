@@ -5,7 +5,7 @@
 // `agent run --adapter` never writes runtime.adapter, so the CLI also reports
 // its name (runtime.reportedCli, display only; TASK-317), and a BYO seat on an
 // older CLI that reports nothing reads "CLI" rather than "webhook".
-export interface RuntimeChipSource {
+interface RuntimeChipSource {
   adapter?: string | null;
   wrappedCli?: string | null;
   runtimeType?: string | null;

@@ -96,7 +96,7 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
  * endpoint. Presence is the whole decision, so no URL is ever read to infer a
  * kind, and both URLs are checked because both are handed to a person.
  */
-export interface HostedMcpRevokeTarget {
+interface HostedMcpRevokeTarget {
   page: string;
   endpoint?: string;
 }

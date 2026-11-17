@@ -15,7 +15,7 @@ export type UsageEventName =
   | 'get-started-click'
   | 'teammate-card-shown' | 'teammate-card-click' | 'teammate-card-dismiss';
 
-export type PublicEventName =
+type PublicEventName =
   | 'page-view' | 'cta-click' | 'register-view' | 'auth-choice' | 'register-error' | 'invite-page-view';
 
 // The V2App route table, without the /v2 mount, most specific first.

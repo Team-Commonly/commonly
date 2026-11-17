@@ -9,7 +9,7 @@ const VISIT_RETENTION_DAYS = 180;
 // The overflow row. '~' cannot appear in a ref (utils/signupRef.ts), so no real
 // code, not even one named "other", ever shares it.
 export const OTHER_REF = '~other';
-export interface IAttributionVisit extends Document {
+interface IAttributionVisit extends Document {
   day: string;
   ref: string;
   count: number;

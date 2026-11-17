@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 
-export interface V2SegmentedOption<T extends string> {
+interface V2SegmentedOption<T extends string> {
   value: T;
   label: React.ReactNode;
   // A count rendered after the label in the muted mono face ("All 64").

@@ -35,7 +35,7 @@ export interface FaceTraits {
 
 export type PaperNeckline = 'crew' | 'vee' | 'scoop';
 
-export interface PaperTraits {
+interface PaperTraits {
   /** Hex without '#', from the human avatar background family. */
   background: string;
   /** Hex without '#', one of the two Paper shirt greys. */

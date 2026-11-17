@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export interface IFile extends Document {
+interface IFile extends Document {
   fileName: string;
   originalName: string;
   contentType: string;
@@ -23,7 +23,7 @@ export interface IFile extends Document {
   createdAt: Date;
 }
 
-export interface IFileModel extends Model<IFile> {
+interface IFileModel extends Model<IFile> {
   findByFileName(fileName: string): mongoose.Query<IFile | null, IFile>;
 }
 

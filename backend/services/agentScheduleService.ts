@@ -37,7 +37,7 @@ export const CATCH_UP_MINUTES = 60;
 const MINUTES_PER_DAY = 24 * 60;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-export interface AgentSchedule {
+interface AgentSchedule {
   enabled: boolean;
   time: string;
   timezone: string;

@@ -8,25 +8,25 @@
 // summary cannot address anyone a second time.
 
 export const MESSAGE_KINDS = ['answer', 'result', 'progress', 'ask', 'fyi', 'error'] as const;
-export type MessageKind = (typeof MESSAGE_KINDS)[number];
+type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 // Counted in code points, not UTF-16 units, so a cut never splits an emoji
 // or a surrogate pair.
 export const SUMMARY_MAX_CHARS = 120;
 
-export type ContractWarningCode =
+type ContractWarningCode =
   | 'summary_not_string'
   | 'summary_newline'
   | 'summary_empty'
   | 'summary_truncated'
   | 'kind_unknown';
 
-export interface ContractWarning {
+interface ContractWarning {
   code: ContractWarningCode;
   message: string;
 }
 
-export interface MessageContract {
+interface MessageContract {
   summary: string | null;
   kind: MessageKind | null;
   warnings: ContractWarning[];

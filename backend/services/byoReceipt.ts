@@ -22,7 +22,7 @@ export const RECEIPT_LIMITS = Object.freeze({
   durationMs: 24 * 60 * 60 * 1000,
 });
 
-export type ReceiptWarningCode =
+type ReceiptWarningCode =
   | 'receipt_not_object'
   | 'receipt_unknown_field'
   | 'receipt_invalid_adapter'
@@ -35,7 +35,7 @@ export type ReceiptWarningCode =
   | 'receipt_tools_truncated'
   | 'receipt_empty';
 
-export interface ReceiptWarning {
+interface ReceiptWarning {
   code: ReceiptWarningCode;
   message: string;
 }

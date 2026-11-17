@@ -93,7 +93,7 @@ export const podsWithOutsiderWritableGrants = async (
 
 /** Human roster projection of the same identity-wide boundary enforced by
  * agentRuntimeAuth. Return only a boolean; other pod ids remain private. */
-export type OutsiderGrantPodCount = { pods: number; grantPods: number };
+type OutsiderGrantPodCount = { pods: number; grantPods: number };
 
 // Per seat (`agentName:instanceId`): how many pods it is installed in, and in
 // how many of those an outsider-writable grant is in scope. Runtime auth narrows
