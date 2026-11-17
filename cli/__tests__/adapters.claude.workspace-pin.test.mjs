@@ -452,7 +452,7 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const turn = (impl, dir = cwd) => claude.spawn('hi', {
+  const turn = (impl, dir = cwd, extra = {}) => claude.spawn('hi', {
     agentName: 'f200-bwrap-seat',
     sessionId: null,
     cwd: dir,
@@ -462,7 +462,10 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     _publicClaudeState: state,
     _detectBwrap: () => ({ available: true, path: 'bwrap' }),
     _spawnImpl: impl,
+    ...extra,
   });
+  const bindTriples = (args) => args.flatMap((arg, i) => (
+    ['--bind', '--ro-bind', '--bind-fd', '--ro-bind-fd'].includes(arg) ? [[arg, args[i + 1], args[i + 2]]] : []));
 
   // bwrap resolves a bind source when the jail starts, after the check. The
   // checked realpath is the source, mounted at the path the seat was given,
@@ -480,6 +483,99 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     expect(triples).toContainEqual(['--ro-bind', path.join(cwd, '.git'), path.join(link, '.git')]);
     expect(triples.filter(([, src]) => src === link)).toEqual([]);
     expect(args[args.indexOf('--chdir') + 1]).toBe(link);
+  });
+
+  // F200: the fresh-session retry is the same turn in the same held folder.
+  test('a fresh-session retry binds the checked realpath too', async () => {
+    const link = path.join(root, 'project-link');
+    fs.symlinkSync(cwd, link);
+    const calls = [];
+    const impl = (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      if (calls.length > 1) return fakeChild();
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = jest.fn();
+      setTimeout(() => {
+        proc.stderr.emit('data', Buffer.from('Error: Session ID abc-123 is already in use.'));
+        proc.emit('close', 1);
+      }, 0);
+      return proc;
+    };
+    await turn(impl, link, { sessionId: 'abc-123' });
+    expect(calls).toHaveLength(2);
+    expect(bindTriples(calls[1].args)).toContainEqual(['--bind', cwd, link]);
+    expect(bindTriples(calls[1].args).filter(([, src]) => src === link)).toEqual([]);
+  });
+
+  // F211: where bwrap takes descriptors, the checked folder and its .git are
+  // opened, checked, and mounted from the open descriptors, so a swap in the
+  // startup window cannot move either mount.
+  describe('with a bwrap that binds descriptors', () => {
+    // What /proc/self/fd/N reads on Linux, found here by inode.
+    const fdPathOf = (fd) => {
+      const { ino, dev } = fs.fstatSync(fd);
+      const known = [cwd, path.join(cwd, '.git')]
+        .find((p) => { const st = fs.statSync(p); return st.ino === ino && st.dev === dev; });
+      return known || '/somewhere/else';
+    };
+    const fdTurn = (impl, dir = cwd, extra = {}) => turn(impl, dir, {
+      _detectBwrap: () => ({ available: true, path: 'bwrap', bindFd: true }),
+      _fdPath: fdPathOf,
+      ...extra,
+    });
+
+    test('mounts the workspace and its .git from descriptors 3 and 4, and closes them after the spawn', async () => {
+      const link = path.join(root, 'project-link');
+      fs.symlinkSync(cwd, link);
+      const { impl, calls } = recorder();
+      await fdTurn(impl, link);
+      expect(calls).toHaveLength(1);
+      const { args, opts } = calls[0];
+      const triples = bindTriples(args);
+      expect(triples).toContainEqual(['--bind-fd', '3', link]);
+      expect(triples).toContainEqual(['--ro-bind-fd', '4', path.join(link, '.git')]);
+      expect(triples.filter(([, src]) => [cwd, link, path.join(cwd, '.git')].includes(src))).toEqual([]);
+      expect(opts.stdio).toHaveLength(5);
+      const [workspaceFd, gitFd] = opts.stdio.slice(3);
+      expect(Number.isInteger(workspaceFd) && Number.isInteger(gitFd)).toBe(true);
+      expect(() => fs.fstatSync(workspaceFd)).toThrow(/EBADF/);
+      expect(() => fs.fstatSync(gitFd)).toThrow(/EBADF/);
+    });
+
+    test('a folder that is not the checked realpath once opened refuses the turn, with nothing spawned or left open', async () => {
+      const { impl, calls } = recorder();
+      const opened = [];
+      await expect(fdTurn(impl, cwd, {
+        _fdPath: (fd) => { opened.push(fd); return decoy; },
+      })).rejects.toThrow(/moved while it was being opened/);
+      expect(calls).toHaveLength(0);
+      expect(opened).toHaveLength(1);
+      expect(() => fs.fstatSync(opened[0])).toThrow(/EBADF/);
+    });
+
+    test('a read-only workspace without a .git holds only the workspace, and keeps -try for the entry', async () => {
+      fs.rmSync(path.join(cwd, '.git'), { recursive: true });
+      const { impl, calls } = recorder();
+      await fdTurn(impl, cwd, {
+        environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust: 'workspace', allow: [] } },
+      });
+      expect(calls).toHaveLength(1);
+      const { args, opts } = calls[0];
+      expect(bindTriples(args)).toContainEqual(['--ro-bind-fd', '3', cwd]);
+      expect(args.flatMap((arg, i) => (arg === '--ro-bind-try' ? [[args[i + 1], args[i + 2]]] : [])))
+        .toContainEqual([path.join(cwd, '.git'), path.join(cwd, '.git')]);
+      expect(opts.stdio).toHaveLength(4);
+      expect(() => fs.fstatSync(opts.stdio[3])).toThrow(/EBADF/);
+    });
+
+    test('a bwrap without descriptor binds keeps the path binds', async () => {
+      const { impl, calls } = recorder();
+      await turn(impl);
+      expect(bindTriples(calls[0].args)).toContainEqual(['--bind', cwd, cwd]);
+      expect(calls[0].opts.stdio).toHaveLength(3);
+    });
   });
 
   test('records on the first turn, runs while unchanged, and refuses a folder replaced by a link', async () => {
