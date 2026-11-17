@@ -374,6 +374,10 @@ describe('F490: the waking mention on the CAP post route', () => {
     AgentSendFreshness.deliveredTriggerIds.mockResolvedValueOnce([]);
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce(hold);
     const res = await send({ content: 'done', threadRootId: '999' });
+    expect(AgentSendFreshness.deliveredTriggerIds).toHaveBeenCalledWith({
+      agentName: 'codex', instanceId: 'sre-ops', podId: 'pod-1', candidateIds: ['999'],
+    });
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1', { exemptMessageIds: [] });
     expect(res.status).toHaveBeenCalledWith(409);
     expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
   });
