@@ -218,6 +218,18 @@ test('reports a non-zero cold-home probe status without suggesting a reinstall',
   });
 });
 
+test('the workspace-trust refusal recommends only what Hermes can run', async () => {
+  const refusal = await hermes.validateEnvironment({ sandbox: { trust: 'workspace' } }).catch((err) => err.message);
+
+  expect(refusal).toMatch(/^hermes adapter: sandbox\.trust=workspace is claude-only for now\./);
+  expect(refusal).toContain('claude adapter');
+  expect(refusal).not.toMatch(/sandbox\.trust 'public'/);
+  // Removing trust alone leaves an invalid file when sandbox.allow is set, and a
+  // non-'none' sandbox.mode is refused next, so the guidance names both.
+  expect(refusal).toContain('sandbox.allow');
+  expect(refusal).toMatch(/sandbox\.mode other than 'none'/);
+});
+
 test('refuses a public seat before probing or spawning Hermes', async () => {
   const probe = jest.fn();
   const child = jest.fn();
@@ -225,6 +237,22 @@ test('refuses a public seat before probing or spawning Hermes', async () => {
     environment: { model: 'test-model', sandbox: { trust: 'public' } },
     _spawnSyncImpl: probe, _spawnImpl: child,
   })).rejects.toThrow('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat');
+  expect(probe).not.toHaveBeenCalled();
+  expect(child).not.toHaveBeenCalled();
+});
+
+// F535: the unconfined-seat guard reads workspace trust as confined, because
+// every adapter but claude refuses it. Hermes ran it bare.
+test.each([
+  ['workspace trust', { trust: 'workspace' }],
+  ['workspace trust with mode none', { trust: 'workspace', mode: 'none' }],
+])('refuses %s before probing or spawning Hermes', async (_label, sandbox) => {
+  const probe = jest.fn();
+  const child = jest.fn();
+  await expect(hermes.spawn('hello', {
+    environment: { model: 'test-model', sandbox },
+    _spawnSyncImpl: probe, _spawnImpl: child,
+  })).rejects.toThrow('hermes adapter: sandbox.trust=workspace');
   expect(probe).not.toHaveBeenCalled();
   expect(child).not.toHaveBeenCalled();
 });

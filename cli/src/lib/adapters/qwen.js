@@ -332,6 +332,10 @@ export default {
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(mode)) {
       throw new Error('public Qwen seats require an enforced sandbox');
     }
+    // F535: a public seat reads only its workspace (sandbox-option-refusal.js).
+    if (isPublic && sandbox.filesystem?.['read-outside']?.length) {
+      throw new Error('qwen adapter: public seats do not allow sandbox.filesystem.read-outside');
+    }
     const provider = ctx.environment?.provider;
     if (!provider || !ctx.environment?.model) {
       throw new Error('Qwen seats require environment.provider and environment.model');

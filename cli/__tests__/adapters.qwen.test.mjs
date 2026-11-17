@@ -487,6 +487,24 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
   });
 });
 
+// F535: a public seat reads only its workspace.
+test('a public bwrap seat asking to read ~/.commonly is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx) => {
+    const calls = [];
+    const error = await qwen.spawn('hello', {
+      ...ctx,
+      environment: {
+        ...ctx.environment,
+        sandbox: { ...ctx.environment.sandbox, trust: 'public', mode: 'bwrap', filesystem: { 'read-outside': ['~/.commonly'] } },
+      },
+      _spawnImpl: (...args) => { calls.push(args); return fakeChild(); },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('qwen adapter: public seats do not allow sandbox.filesystem.read-outside');
+    expect(calls).toHaveLength(0);
+  });
+});
+
 // F197: a public seat's writable workspace is the scratch folder the CLI made,
 // so the profile pins it. A link at that path refuses the turn before spawn.
 test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {

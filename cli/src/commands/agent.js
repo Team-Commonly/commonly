@@ -102,6 +102,7 @@ import {
 import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import { withPublicSeatMcpFlag } from '../lib/public-seat-mcp-flag.js';
 import { UNCONFINED_TURN_REFUSAL, seatRunsUnconfined, unconfinedPodRefusalReason } from '../lib/unconfined-seat-guard.js';
+import { sandboxOptionRefusal } from '../lib/sandbox-option-refusal.js';
 import {
   OUTSIDER_GRANT_MCP_UNCONFINED, outsiderGrantMcpRefusal, seatIsConfined, unshippedMcpEntries,
 } from '../lib/outsider-grant-mcp.js';
@@ -1372,8 +1373,9 @@ export const updateAgentConfiguration = async ({
     environment = { ...environmentRuntime };
   }
   {
-    const refusal = providerRefusal(environment,
-      adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()));
+    const configAdapter = String(runtime.adapter || record.adapter || '').trim().toLowerCase();
+    const refusal = providerRefusal(environment, adapterRegistry.getAdapter(configAdapter))
+      || sandboxOptionRefusal(environment, configAdapter);
     if (refusal) throw new Error(refusal);
   }
   if (environment) config.environment = environmentForServer(environment);
@@ -1544,7 +1546,7 @@ export const performAttach = async ({
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
     {
-      const refusal = providerRefusal(environment, adapter);
+      const refusal = providerRefusal(environment, adapter) || sandboxOptionRefusal(environment, adapterName, platform);
       if (refusal) throw new Error(refusal);
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
@@ -2215,7 +2217,7 @@ export const performRun = ({
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   {
-    const refusal = providerRefusal(environment, adapter);
+    const refusal = providerRefusal(environment, adapter) || sandboxOptionRefusal(environment, adapter?.name);
     if (refusal) throw new Error(refusal);
   }
   const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);

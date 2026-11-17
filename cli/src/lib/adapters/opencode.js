@@ -1471,6 +1471,10 @@ export default {
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(sandboxMode)) {
       throw new Error(`public OpenCode agents require an enforced sandbox mode, got ${sandboxMode || 'unset'}`);
     }
+    // F535: a public seat reads only its workspace (sandbox-option-refusal.js).
+    if (isPublic && sandbox.filesystem?.['read-outside']?.length) {
+      throw new Error('opencode adapter: public seats do not allow sandbox.filesystem.read-outside');
+    }
 
     const provider = ctx.environment?.provider;
     // Attach and config refuse these first; a turn refuses them too, for a

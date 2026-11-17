@@ -228,6 +228,14 @@ export const createHermesAdapter = ({
       throw new Error('Commonly can\'t give Hermes extra MCP servers yet, so this environment file can\'t '
         + 'list any. Remove the mcp block to run Hermes.');
     }
+    // Workspace trust is claude's tier. Any other adapter that ran it would
+    // run bare while the unconfined-seat guard reads it as confined.
+    if (environment?.sandbox?.trust === 'workspace') {
+      throw new Error('hermes adapter: sandbox.trust=workspace is claude-only for now. '
+        + "Attach this agent with the claude adapter, or remove sandbox.trust 'workspace' from its environment file, "
+        + "along with sandbox.allow (it applies only to trust 'workspace') and any sandbox.mode other than 'none'. "
+        + 'Hermes has no sandbox yet, so it runs with no sandbox settings at all.');
+    }
     if (effectiveTrust(environment?.sandbox?.trust) === 'public') {
       throw new Error('Commonly has no sandbox for Hermes yet, so Hermes can\'t run as a public seat. '
         + 'Pick another harness for a public seat.');
