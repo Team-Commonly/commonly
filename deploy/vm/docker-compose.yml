@@ -1,0 +1,238 @@
+# Commonly on one VM: production compose.
+#
+# Runs the same backend and frontend images the Helm chart runs, plus Postgres,
+# LiteLLM, a Cloudflare Tunnel and a nightly backup loop. MongoDB stays external.
+# Runbook: docs/deployment/single-vm.md.
+#
+#   cd deploy/vm
+#   docker compose pull
+#   docker compose up -d --wait
+#
+# Four env files, all 0600 and git-ignored (examples beside each):
+#   .env          stack settings, used only for interpolation in this file
+#   backend.env   the backend's env, rendered from the cluster by
+#                 render-env-from-k8s.sh (or filled by hand on a fresh install)
+#   litellm.env   LiteLLM's env, rendered the same way
+#   backup.env    the Mongo URI the backup service dumps
+# A service sees only the files and names given to it below, so the tunnel
+# token and the bucket keys never reach backend or litellm.
+#
+# No service publishes a host port. The tunnel is the only way in: it reaches
+# frontend, backend and litellm by service name on the compose network.
+# Images are pulled by tag; nothing here builds.
+#
+# One backend container serves web AND runs the worker (scheduler, Discord
+# gateway, native turns): RUN_WORKER and NATIVE_TURNS_ON_WORKER stay unset.
+# Never run a second backend against this stack.
+#
+# Checked against the chart by
+# backend/__tests__/unit/deployment/singleVmCompose.test.js.
+
+name: commonly
+
+# Every service logs through json-file with a size cap. Without it, a service that
+# auto-restarts and reconnect-loops against a gone dependency grows its log without
+# bound: on 2026-09-27 one leftover container wrote 197 GB and filled the host disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # Chat messages, the PG mirror and LiteLLM's own schema. Pinned to the major
+  # the chart's pg_dump image tracks (16), so dumps from the current server load.
+  postgres:
+    logging: *default-logging
+    image: postgres:16.15-alpine3.24
+    restart: unless-stopped
+    environment:
+      # The admin role: owns the database, used only by backups and restores.
+      - POSTGRES_USER=${PG_ADMIN_USER:?set PG_ADMIN_USER in .env}
+      - POSTGRES_PASSWORD=${PG_ADMIN_PASSWORD:?set PG_ADMIN_PASSWORD in .env}
+      - POSTGRES_DB=${PG_DATABASE:?set PG_DATABASE in .env}
+      # Read by postgres-init/10-roles.sh, once, on an empty data volume.
+      - PG_USER=${PG_USER:?set PG_USER in .env}
+      - PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD in .env}
+      - LITELLM_PG_USER=${LITELLM_PG_USER:?set LITELLM_PG_USER in .env}
+      - LITELLM_PG_PASSWORD=${LITELLM_PG_PASSWORD:?set LITELLM_PG_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    logging: *default-logging
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-backend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    restart: unless-stopped
+    # Matches the chart's terminationGracePeriodSeconds: in-flight turns finish.
+    stop_grace_period: 180s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+    env_file:
+      - ./backend.env
+    # VM-specific overrides. These win over backend.env; the test pins each one
+    # to the chart's value or to a stated reason for differing.
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      # The Postgres on the compose network, as the app role from .env. No TLS.
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DATABASE=${PG_DATABASE:?set PG_DATABASE in .env}
+      - PG_USER=${PG_USER:?set PG_USER in .env}
+      - PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD in .env}
+      - PG_SSL_ENABLED=false
+      - LITELLM_BASE_URL=http://litellm:4000
+      - COMMONLY_API_URL=http://backend:5000
+      # No Kubernetes: no agent pods, no agent computer, no Redis adapter.
+      - AGENT_PROVISIONER_K8S=0
+      - AGENT_PROVISIONER_DOCKER=0
+      - AGENT_COMPUTER_ENABLED=false
+      - LLMSERVICE_GUARDRAILS=injection-guard
+      - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
+      # Mounted below from the chart's own copy.
+      - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
+      - SENTRY_RELEASE=${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    volumes:
+      - ../../k8s/helm/commonly/configs/marketplace.json:/app/packages/commonly-marketplace/marketplace.json:ro
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # The prod nginx image: static files only, no proxy. The API origin it calls
+  # was baked in at build time (api.<domain>).
+  frontend:
+    logging: *default-logging
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-frontend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    restart: unless-stopped
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # The chart's LiteLLM, minus the ChatGPT account rotator and the Codex CLI
+  # sidecar. config.yaml is rendered from the chart (see the runbook); the
+  # callback and guard files are the chart's own.
+  litellm:
+    logging: *default-logging
+    image: ghcr.io/berriai/litellm:v1.106.2
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # The rendered config names rate_limit_signal, which only feeds the
+        # ChatGPT account rotator. The rotator does not run here: load a no-op.
+        printf '%s\n' \
+          'from litellm.integrations.custom_logger import CustomLogger' \
+          'proxy_handler_instance = CustomLogger()' > /app/rate_limit_signal.py
+        exec litellm --config /app/config.yaml --port 4000
+    env_file:
+      - ./litellm.env
+    environment:
+      # The guard's jailbreak file is mounted outside LiteLLM's package, and
+      # prompt text stays out of SpendLogs: both as the chart sets them.
+      - LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true
+      - STORE_PROMPTS_IN_SPEND_LOGS=false
+      # LiteLLM's own role, which owns only the litellm schema.
+      - DATABASE_URL=postgresql://${LITELLM_PG_USER:?set LITELLM_PG_USER in .env}:${LITELLM_PG_PASSWORD:?set LITELLM_PG_PASSWORD in .env}@postgres:5432/${PG_DATABASE:?set PG_DATABASE in .env}?schema=litellm
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+      - ../../k8s/helm/commonly/files/litellm/deepseek_tool_shim.py:/app/deepseek_tool_shim.py:ro
+      - ../../k8s/helm/commonly/files/litellm/deepseek_tool_shim_core.py:/app/deepseek_tool_shim_core.py:ro
+      - ../../k8s/helm/commonly/files/litellm/model_fallback_signal.py:/app/model_fallback_signal.py:ro
+      - ../../k8s/helm/commonly/files/litellm/prompt_injection_jailbreak.yaml:/app/prompt_injection_jailbreak.yaml:ro
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # First boot runs LiteLLM's schema migrations.
+      start_period: 180s
+
+  # A remotely managed tunnel: its public hostnames and their service URLs
+  # (http://frontend:80, http://backend:5000, http://litellm:4000) are set on
+  # the Cloudflare side. The token is the only credential it needs.
+  cloudflared:
+    logging: *default-logging
+    image: cloudflare/cloudflared:2026.1.2
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - commonly
+
+  # Nightly pg_dump -Fc and mongodump to an S3-compatible bucket, pruned after
+  # BACKUP_RETENTION_DAYS. Same image as postgres, so pg_dump matches the server.
+  pg-backup:
+    logging: *default-logging
+    image: postgres:16.15-alpine3.24
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/usr/local/bin/commonly-backup"]
+    command: ["loop"]
+    # MONGO_URI only.
+    env_file:
+      - ./backup.env
+    environment:
+      - PGHOST=postgres
+      - PG_ADMIN_USER=${PG_ADMIN_USER:?set PG_ADMIN_USER in .env}
+      - PG_ADMIN_PASSWORD=${PG_ADMIN_PASSWORD:?set PG_ADMIN_PASSWORD in .env}
+      - PG_DATABASE=${PG_DATABASE:?set PG_DATABASE in .env}
+      - BACKUP_S3_ENDPOINT=${BACKUP_S3_ENDPOINT:?set BACKUP_S3_ENDPOINT in .env}
+      - BACKUP_S3_BUCKET=${BACKUP_S3_BUCKET:?set BACKUP_S3_BUCKET in .env}
+      - BACKUP_S3_ACCESS_KEY_ID=${BACKUP_S3_ACCESS_KEY_ID:?set BACKUP_S3_ACCESS_KEY_ID in .env}
+      - BACKUP_S3_SECRET_ACCESS_KEY=${BACKUP_S3_SECRET_ACCESS_KEY:?set BACKUP_S3_SECRET_ACCESS_KEY in .env}
+      - BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX:-commonly}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
+      - BACKUP_HOUR_UTC=${BACKUP_HOUR_UTC:-2}
+      - BACKUP_MONGO_MIN_BYTES=${BACKUP_MONGO_MIN_BYTES:-65536}
+    volumes:
+      - ./backup.sh:/usr/local/bin/commonly-backup:ro
+      # The last-success stamp, shared with one-off `run --rm pg-backup once`.
+      - backup-state:/var/lib/commonly-backup
+    networks:
+      - commonly
+    healthcheck:
+      # Healthy while the last success, or this container's start, is under
+      # 26 hours old. A first run is always due within 24 hours of a start.
+      test: ["CMD", "/bin/sh", "/usr/local/bin/commonly-backup", "check"]
+      interval: 1m
+      timeout: 10s
+      retries: 2
+
+networks:
+  commonly:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  backup-state:
