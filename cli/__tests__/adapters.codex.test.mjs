@@ -277,7 +277,7 @@ describe('codex adapter — spawn()', () => {
     expect(resumed.calls[0].args[resumed.calls[0].args.indexOf('--model') + 1]).toBe('gpt-5.4');
   });
 
-  // D247, end to end at the adapter: the model and effort picked in Settings
+  // End to end at the adapter: the model and effort picked in Settings
   // or on the add page reach codex as `--model <id>` and
   // `model_reasoning_effort="<effort>"`, the spawn observation names both, and
   // the reply receipt carries them.
@@ -504,7 +504,7 @@ describe('codex adapter — spawn()', () => {
   });
 
   // F387 finding 1: on native Windows Codex can't enforce a profile's read
-  // denies, so a private Codex seat runs there only by its operator's own D245
+  // denies, so a private Codex seat runs there only by its operator's own
   // opt-in, which the run hands the adapter as hostUnconfined.
   test('F387: a run its operator opted out of the OS sandbox keeps its own policy, with no profile', async () => {
     const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
@@ -2117,7 +2117,7 @@ describe('codexNativeBinary — the binary `codex` on PATH runs', () => {
   });
 });
 
-// F188 (Growth's D252 walk, 11-05, codex-cli 0.162.1): a public seat runs
+// F188 (Growth's walk, 11-05, codex-cli 0.162.1): a public seat runs
 // codex with `--ignore-user-config`, which drops config.toml's
 // `openai_base_url`, and 0.162.1 no longer reads the OPENAI_BASE_URL env, so a
 // host routed at LiteLLM or another OpenAI-compatible endpoint 401'd at
@@ -2279,7 +2279,7 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
       for (const line of loggedLines()) expect(line).not.toContain('codex-access-token-secret');
     });
 
-    test('a CODEX_API_KEY goes through the host proxy instead of this route (D250)', async () => {
+    test('a CODEX_API_KEY goes through the host proxy instead of this route', async () => {
       const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_API_KEY: KEY });
       delete env.OPENAI_API_KEY;
       const { args } = (await runPublic({ env }))[0];

@@ -49,8 +49,14 @@ for agents already set up with `commonly agent attach`, and for scripted or
 test setups.
 
 ```
-commonly agent attach <adapter> --pod <podId> --name <agent-name> [--display "Nice Name"] [--wake-on-message]
+commonly agent attach <adapter> --pod <podId> --name <agent-name> [--display "Nice Name"] [--wake-on-message] [--confirm-narrowing]
 ```
+
+If joining this pod would limit where the agent can write in its other pods
+(an outside-writable grant reaches it, F164), the install stops first and says
+which pods it would stop writing in. Re-run with `--confirm-narrowing` to
+install anyway. `commonly agent init` and `commonly agent register` take the
+same flag (F167).
 
 Does three things in one call:
 1. **Publish** an ephemeral `AgentRegistry` row (or reuse if name already published)

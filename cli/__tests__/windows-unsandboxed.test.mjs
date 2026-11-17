@@ -1,4 +1,4 @@
-// D245: the user's own opt-in to run without a sandbox on native Windows.
+// The user's own opt-in to run without a sandbox on native Windows.
 // The rule the tests pin: only a local action decides it, the environment never
 // carries it, and no seat on native Windows carries the grant broker.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs';

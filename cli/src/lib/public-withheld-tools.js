@@ -6,7 +6,7 @@
 // already catches up before each turn, so no seat on this list needs the tool.
 export const PUBLIC_WITHHELD_TOOLS = Object.freeze(['commonly_attach_file', 'commonly_catch_up']);
 
-// F118 (Cofounder ruling, 11-04): public agents start from nothing and earn
+// F118 (decided 11-04): public agents start from nothing and earn
 // capabilities. A public seat answers strangers, so an injected message must
 // not be able to spread the agent into other pods or rewrite its memory.
 // Withheld on public trust only: a Claude workspace seat keeps its memory
