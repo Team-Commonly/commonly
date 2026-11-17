@@ -97,7 +97,7 @@ const isWorkingTask = (task: TaskItem): boolean => (
 // (TASK-691): the panel folds. Each group is one 44px row at rest and
 // opens on demand, except Needs you, which starts open. What a person opens or
 // closes stays that way for the session.
-export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
+type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
 export const INSPECTOR_OPEN_KEY = 'v2:inspector.openGroups';
 const DEFAULT_OPEN_GROUPS: InspectorGroup[] = ['needs-you'];
 const readOpenGroups = (): Set<InspectorGroup> => {

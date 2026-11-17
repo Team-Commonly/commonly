@@ -19,7 +19,7 @@ export type ChannelVerdictEventKind = typeof CHANNEL_VERDICT_EVENT_KINDS[number]
 export const CHANNEL_VERDICT_RULED_VIA = ['telegram', 'slack', 'workspace'] as const;
 export type ChannelVerdictRuledVia = typeof CHANNEL_VERDICT_RULED_VIA[number];
 
-export interface IChannelVerdict extends Document {
+interface IChannelVerdict extends Document {
   integrationId: Types.ObjectId;
   installationId?: Types.ObjectId;
   podId: Types.ObjectId;

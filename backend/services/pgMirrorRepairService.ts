@@ -66,13 +66,13 @@ interface PgPool {
   connect: () => Promise<PgClient>;
 }
 
-export interface RepairLogger {
+interface RepairLogger {
   info: (line: string) => void;
   warn: (line: string) => void;
   error: (line: string) => void;
 }
 
-export interface RepairOptions {
+interface RepairOptions {
   logger?: RepairLogger;
   /** Delivers an alert to SRE. Defaults to spendAlarmService.pageSre. */
   page?: (content: string) => Promise<void>;

@@ -53,5 +53,10 @@ Leave `backend/vendor/seats/**` out of the count. It is a vendored copy of `pack
 | 1 | #3731 | 378 → 344 (config not recorded) | 40 symbols |
 | 2 | #3907 | 440 → 400 | 40 un-exports |
 | 3 | #4183 | 393 → 259, on main d88b2da37 | 134 un-exports, including their `export { }` and `module.exports = { }` entries |
+| 4 (types) | this PR | unused types 512 → 69, on main ef090e909 (backend 469 → 66, frontend 43 → 3; `vendor/seats/**` ignored) | 443 `type`/`interface` un-exports in 219 files; no enum, so no runtime change |
 
-After batch 3, the name-clean exports left are 30 in auth, grant, credential, secret, session and webhook-verification modules (a Tier 2 batch) and 5 that need a deletion, not an un-export: `setActiveClaimProvider`, `resetActiveClaimProvider` and `_test` in `agentHookService.ts`, `removeAsset` in `vectorSearchService.ts`, and `openGrant` in `frontend/src/v2/__testkit__/connectorsKit.tsx`. Types (512) are untouched.
+After batch 3, the name-clean exports left are 30 in auth, grant, credential, secret, session and webhook-verification modules (a Tier 2 batch) and 5 that need a deletion, not an un-export: `setActiveClaimProvider`, `resetActiveClaimProvider` and `_test` in `agentHookService.ts`, `removeAsset` in `vectorSearchService.ts`, and `openGrant` in `frontend/src/v2/__testkit__/connectorsKit.tsx`.
+
+After batch 4, 69 unused types are left. 56 have a word-match hit outside their own file (the inventory), 9 are exported from a list or a re-export (`export type { X } from`, `export { type X }`), a shape the batch's script didn't edit, and 4 are kept on purpose: `IAgentAskEventPayload`, `IAgentAskResponseEventPayload`, `IDecisionRuledEventPayload` and `IApprovalResolvedEventPayload` in `backend/models/AgentEvent.ts` are used nowhere, but they document the event payloads agents receive, so they stay exported rather than deleted.
+
+**Un-exporting a type can turn a file into a script.** A `.ts` file with no `import` or `export` left is a global script: its types join the global scope, and the frontend's `isolatedModules` refuses it. Batch 4's script refused any file that would end with no `import`, `export`, `require(` or `module.exports`; none did.

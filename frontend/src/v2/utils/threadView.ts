@@ -44,7 +44,7 @@ export interface ThreadLatestReply {
 }
 
 /** What buildThreadView needs to know about the person reading. */
-export interface ThreadViewer {
+interface ThreadViewer {
   viewerId?: string | null;
   /** The viewer's read point per root id (useV2ThreadState.readPoints). */
   readPoints?: ReadonlyMap<string, string>;

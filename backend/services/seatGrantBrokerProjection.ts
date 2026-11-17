@@ -46,10 +46,10 @@ import {
 } from './seatEnvironmentProjection';
 
 export type GrantProjectionIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
-export type GrantProjectionEntry = Pick<SeatEnvironmentEntry, 'podIds' | 'environment' | 'runtime'>;
-export type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
+type GrantProjectionEntry = Pick<SeatEnvironmentEntry, 'podIds' | 'environment' | 'runtime'>;
+type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
 
-export interface GrantProjectionOptions {
+interface GrantProjectionOptions {
   /**
    * The adapter the CALLER says it runs. The daemon path has none: the row's
    * own runtime names it. A run-path seat declares it, and it is judged IN

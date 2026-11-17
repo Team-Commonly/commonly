@@ -35,7 +35,7 @@
  * locale signal and a server-side catalogue exist, this is where they attach,
  * and the call sites already thread it through.
  */
-export type NudgeLocale = 'en' | 'zh-CN';
+type NudgeLocale = 'en' | 'zh-CN';
 
 export type StalledConnectCopyEvidence = {
   /** First setup-command copy for this signup. */

@@ -129,7 +129,7 @@ export type SeatEnvironmentEntry = {
   environment: Record<string, unknown> | null;
 };
 
-export type SeatEnvironmentQuery = {
+type SeatEnvironmentQuery = {
   /**
    * Daemon-projection scope: one owner's active installations. The only scope
    * either caller uses — `/assigned` resolves through the machine's owner, and

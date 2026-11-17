@@ -79,7 +79,7 @@
 import type { NextFunction, Request, Response } from 'express';
 
 /** Entry emitted once a key's counter reaches the watermark. */
-export type RateLimitObservation = {
+type RateLimitObservation = {
   event: 'agent_rate_limit_watermark';
   /** `<prefix>:<first 12 chars>` — a correlation handle, never the credential. */
   key: string;
@@ -169,7 +169,7 @@ const defaultSink: Sink = (entry) => {
   console.log('[rate-limit-observe]', entry);
 };
 
-export type RateLimitObserverOptions = {
+type RateLimitObserverOptions = {
   env?: Env;
   sink?: Sink;
   /** Injected in tests; defaults to the pod name Kubernetes sets in HOSTNAME. */

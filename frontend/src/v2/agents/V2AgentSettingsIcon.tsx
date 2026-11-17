@@ -29,7 +29,7 @@ const PATHS = {
   id: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="12" r="2.4" /><path d="M14 10h4M14 14h3" /></>,
 };
 
-export type SettingsIconName = keyof typeof PATHS;
+type SettingsIconName = keyof typeof PATHS;
 
 const V2AgentSettingsIcon: React.FC<{ name: SettingsIconName; className?: string }> = ({ name, className }) => (
   <svg className={className ? `i ${className}` : 'i'} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"

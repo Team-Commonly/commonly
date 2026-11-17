@@ -7,7 +7,7 @@ const { stampSectionsForWrite, decorateSectionsWithProvenance } = require('./age
 
 // `code` lets a page say why in the person's language; `message` stays the
 // CLI's text. One code per thing the person can do about it.
-export type HandoffRefusalCode =
+type HandoffRefusalCode =
   | 'memory_handoff_invalid' | 'memory_handoff_not_owner'
   | 'memory_handoff_target_has_memory' | 'memory_handoff_retry';
 

@@ -33,7 +33,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * signed up on 2026-08-15, installed a seat 77 seconds later, never ran it,
  * never spoke, and left.
  */
-export interface IStalledConnectEpisode extends Document {
+interface IStalledConnectEpisode extends Document {
   installationId: Types.ObjectId;
   podId: string;
   /** The human who installed it — the nudge is addressed to them by name. */

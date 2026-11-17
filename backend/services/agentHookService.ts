@@ -10,9 +10,9 @@
 const HookLedgerEvent = require('../models/HookLedgerEvent');
 
 export const HOOK_EVENT_TYPES = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const;
-export type HookEventType = typeof HOOK_EVENT_TYPES[number];
+type HookEventType = typeof HOOK_EVENT_TYPES[number];
 
-export interface ActiveWorkClaim {
+interface ActiveWorkClaim {
   claimId?: string;
   agentId?: string;
   agentUserId?: string;
@@ -24,7 +24,7 @@ export interface ActiveWorkClaim {
   expiresAt?: Date | string | number;
 }
 
-export interface HookDecision {
+interface HookDecision {
   permissionDecision: 'allow' | 'deny';
   eventId: string;
   event: HookEventType;

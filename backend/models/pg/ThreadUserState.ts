@@ -35,7 +35,7 @@ interface PgPool {
   query: (text: string, values?: unknown[]) => Promise<{ rows: any[]; rowCount: number }>;
 }
 
-export interface ThreadUserStateRow {
+interface ThreadUserStateRow {
   id: number;
   thread_root_id: number;
   user_id: string;

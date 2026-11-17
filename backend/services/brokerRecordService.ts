@@ -46,7 +46,7 @@ const agentById = async (agentUserId: unknown): Promise<RecordActor | null> => {
   return agentActor((user as Parameters<typeof agentActor>[0]) || { _id: agentUserId });
 };
 
-export type BrokerTrailRow = {
+type BrokerTrailRow = {
   grant: GrantLike;
   callId: string;
   grantId: string;

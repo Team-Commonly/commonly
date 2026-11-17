@@ -38,7 +38,7 @@ export class DecisionRequestError extends Error {
   }
 }
 
-export type DecisionOptionInput = DecisionCardOption;
+type DecisionOptionInput = DecisionCardOption;
 
 export type DecisionClass = 'strategy' | 'implementation' | 'prioritization';
 const ADVISORY_DECISION_CLASSES: readonly DecisionClass[] = [

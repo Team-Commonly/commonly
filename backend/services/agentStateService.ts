@@ -56,7 +56,7 @@ interface WebhookDeliveryRow {
 export const webhookUrlHash = (url: string): string => crypto.createHash('sha256')
   .update(String(url)).digest('hex').slice(0, 32);
 
-export interface WebhookDeliveryError {
+interface WebhookDeliveryError {
   at: string;
   kind: 'http' | 'timeout' | 'network' | 'refused';
   status?: number;
@@ -278,7 +278,7 @@ export function deriveAgentState(
 const ACTIVE_WINDOW_MS = BYO_STALE_MS;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
-export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
+type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
 
 interface ActivityInstallationLike {
   agentName: string;

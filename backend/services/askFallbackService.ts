@@ -29,7 +29,7 @@ const AgentIdentityService = require('./agentIdentityService');
 /** The agent that hosts a pod a person was given: the guide every signup gets. */
 export const HOST_AGENT_NAME = 'scout';
 
-export type CannotRunReason = 'never-connected' | 'offline' | 'stopped' | 'out-of-turns';
+type CannotRunReason = 'never-connected' | 'offline' | 'stopped' | 'out-of-turns';
 
 const REASON_TEXT: Record<CannotRunReason, string> = {
   'never-connected': 'it has never connected',

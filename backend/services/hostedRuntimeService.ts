@@ -143,7 +143,7 @@ export const countHostedAgentsForUser = async (userId: any): Promise<number> => 
     .map((row: any) => hostedIdentityKey(row.agentName, row.instanceId))).size;
 };
 
-export interface HostedInstallationSummary {
+interface HostedInstallationSummary {
   agentName: string;
   instanceId: string;
   podId: string;
@@ -237,7 +237,7 @@ const identityRows = (agentName: string, instanceId: string, extra: Record<strin
   }).collation(IDENTITY_COLLATION)
 );
 
-export interface HostedOwner {
+interface HostedOwner {
   // Null when people host the agent but none of them can carry this requester's
   // turns. The row is refused then, and never guessed at.
   ownerId: unknown;
@@ -367,7 +367,7 @@ export const nativeTurnsToday = async (agentName: string, instanceId: string, ow
   });
 };
 
-export interface MeterResult {
+interface MeterResult {
   allowed: boolean;
   used: number;
   cap: number;

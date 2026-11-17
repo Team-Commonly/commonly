@@ -1,18 +1,18 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type PodLinkScopeType =
+type PodLinkScopeType =
   | 'summaries:read'
   | 'skills:read'
   | 'assets:read'
   | 'memory:read'
   | 'context:read';
 
-export type PodLinkStatus = 'pending' | 'active' | 'revoked' | 'expired';
-export type AuditActorType = 'human' | 'agent' | 'system';
-export type AuditAction = 'created' | 'approved' | 'revoked' | 'query' | 'scope_changed';
-export type PodLinkDirection = 'incoming' | 'outgoing' | 'both';
+type PodLinkStatus = 'pending' | 'active' | 'revoked' | 'expired';
+type AuditActorType = 'human' | 'agent' | 'system';
+type AuditAction = 'created' | 'approved' | 'revoked' | 'query' | 'scope_changed';
+type PodLinkDirection = 'incoming' | 'outgoing' | 'both';
 
-export interface IPodLinkScope {
+interface IPodLinkScope {
   type: PodLinkScopeType;
   filters: {
     tags?: string[];
@@ -21,7 +21,7 @@ export interface IPodLinkScope {
   };
 }
 
-export interface IAuditLogEntry {
+interface IAuditLogEntry {
   action: AuditAction;
   actorId?: Types.ObjectId;
   actorType: AuditActorType;
@@ -29,7 +29,7 @@ export interface IAuditLogEntry {
   details?: unknown;
 }
 
-export interface IPodLink extends Document {
+interface IPodLink extends Document {
   sourcePodId: Types.ObjectId;
   targetPodId: Types.ObjectId;
   scopes: IPodLinkScope[];
@@ -52,7 +52,7 @@ export interface IPodLink extends Document {
   hasScope(scopeType: PodLinkScopeType, filters?: { tags?: string[]; type?: string; createdAt?: Date }): boolean;
 }
 
-export interface IPodLinkModel extends Model<IPodLink> {
+interface IPodLinkModel extends Model<IPodLink> {
   findActiveLink(sourcePodId: Types.ObjectId, targetPodId: Types.ObjectId): mongoose.Query<IPodLink | null, IPodLink>;
   getLinksForPod(podId: Types.ObjectId, direction?: PodLinkDirection): mongoose.Query<IPodLink[], IPodLink>;
   getPendingRequests(podId: Types.ObjectId): mongoose.Query<IPodLink[], IPodLink>;

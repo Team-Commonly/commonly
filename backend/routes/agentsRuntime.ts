@@ -2907,7 +2907,7 @@ type SectionsValidationError =
 
 // Shape of an append-mode cycles payload, after validateSectionsPayload has
 // confirmed it. Route handlers split this out and call appendCycle directly.
-export interface CyclesAppendPayload {
+interface CyclesAppendPayload {
   content: string;
   ts?: Date;
   podId?: string;

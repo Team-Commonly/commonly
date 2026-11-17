@@ -13,7 +13,7 @@ import landingFaq from '../../content/landing-faq.json';
  * generator (scripts/generate-seo-pages.mjs) writes the same FAQ and FAQPage
  * JSON-LD into the static `/` HTML, which crawlers that run no JS read.
  */
-export interface LandingFaqItem {
+interface LandingFaqItem {
   question: string;
   answer: string;
 }

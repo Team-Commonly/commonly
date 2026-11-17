@@ -48,7 +48,7 @@ export interface InstallNarrowingPreview {
   targetWritable: boolean;
 }
 
-export type InstallNarrowingResult =
+type InstallNarrowingResult =
   | { status: 'clear' }
   | { status: 'warn'; preview: InstallNarrowingPreview }
   // The census could not be read. The guard fails closed on the same failure,

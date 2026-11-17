@@ -61,7 +61,7 @@ export const HOSTED_MCP_MAX_REPLY_BYTES = 4 * 1024 * 1024;
  */
 export const HOSTED_MCP_MAX_RESULT_CHARS = 24_000;
 
-export interface HostedMcpToolDeps {
+interface HostedMcpToolDeps {
   /** The row the connection id names. Absent means the grant outlived its row. */
   loadRow: (connectionId: string) => Promise<HostedMcpRow | null>;
   /** The live credential for a row: a stored token, or a refresh behind §10.3's fence. */

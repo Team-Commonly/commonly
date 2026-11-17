@@ -1,6 +1,6 @@
 import Cursor from '../models/AgentPodReadCursor';
 
-export type ReadWatermark = { readAt: Date; readRevision?: number };
+type ReadWatermark = { readAt: Date; readRevision?: number };
 
 const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 

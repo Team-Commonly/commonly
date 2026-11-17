@@ -27,7 +27,7 @@ export interface V2ThreadParticipant {
   isBot?: boolean;
 }
 
-export interface V2ThreadCardLatestReply extends V2ThreadParticipant {
+interface V2ThreadCardLatestReply extends V2ThreadParticipant {
   /** One line of plain text; empty for a card with no summary. */
   text: string;
   isCard?: boolean;

@@ -236,13 +236,13 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
 const HOSTED_NATIVE_RECENT_MESSAGES = 8;
 
 /** The opt-in tools this instance can actually offer a hosted turn. */
-export interface HostedNativeAbilities {
+interface HostedNativeAbilities {
   webSearch: boolean;
   runCode: boolean;
 }
 
 /** The lookups one hosted reply may make, as the native runtime enforces them. */
-export interface HostedTurnLookups {
+interface HostedTurnLookups {
   searches: number;
   pages: number;
 }

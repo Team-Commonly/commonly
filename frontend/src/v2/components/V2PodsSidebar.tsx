@@ -38,7 +38,7 @@ const ROOM_POD_TYPES = new Set([
   'team',
 ]);
 
-export type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin' | 'direct';
+type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin' | 'direct';
 
 // Kinds only appear inside the All view (walk-1 miss 3). Order is the
 // order a person scans them: work first, direct last.
@@ -60,7 +60,7 @@ export const ROOM_POD_TYPE_LABELS: Record<string, Exclude<PodKind, 'community' |
 // (TASK-691): one segmented switch picks the list. It replaced the
 // Pinned / Recent headings and the "Everything 64 ▸" fold, whose tiny caret
 // did not read as a switch.
-export type PodListView = 'recent' | 'all' | 'pinned';
+type PodListView = 'recent' | 'all' | 'pinned';
 const POD_LIST_VIEWS: PodListView[] = ['recent', 'all', 'pinned'];
 const POD_LIST_VIEW_KEY = 'v2:pods.view';
 const KIND_OPEN_KEY = 'v2:pods.kindsOpen';

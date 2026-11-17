@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 /** Explicit opt-in for one App installation/repository to post in one pod. */
-export interface IGithubGigBinding extends Document {
+interface IGithubGigBinding extends Document {
   installationId: string;
   owner: string;
   repo: string;

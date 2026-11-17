@@ -22,11 +22,11 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { isListedPodMember } = require('../../utils/isPodMember');
 
-export type SurfaceAudience = 'private-1to1' | 'shared-surface';
+type SurfaceAudience = 'private-1to1' | 'shared-surface';
 
 type SurfaceConfig = Record<string, unknown>;
 
-export interface SurfaceBindDeclaration {
+interface SurfaceBindDeclaration {
   /** Who can read the chat this config names. */
   audience: (config: SurfaceConfig) => SurfaceAudience;
   /**

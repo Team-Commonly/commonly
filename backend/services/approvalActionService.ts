@@ -964,7 +964,7 @@ interface ResolveOptions {
   narrowedTo?: string | null;
 }
 
-export interface ResolveResult {
+interface ResolveResult {
   status: number;
   body: Record<string, unknown>;
 }

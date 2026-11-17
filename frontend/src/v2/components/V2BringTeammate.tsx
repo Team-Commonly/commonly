@@ -9,7 +9,7 @@ import './V2BringTeammate.css';
 export type TeammateInviteSource = 'first-agent-post' | 'scout-first-session' | 'solo-pod' | 'workspace-own-agent';
 
 /** In the person's own workspace the card invites into a new pod with this agent. */
-export interface TeammateNewPod {
+interface TeammateNewPod {
   agentName: string;
   instanceId: string;
 }

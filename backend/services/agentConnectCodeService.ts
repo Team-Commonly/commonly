@@ -59,7 +59,7 @@ export const mintConnectCode = async (
   return { code, expiresAt };
 };
 
-export type RedeemOutcome = 'redeemed' | 'unknown' | 'used' | 'revoked' | 'rate_limited' | 'unavailable';
+type RedeemOutcome = 'redeemed' | 'unknown' | 'used' | 'revoked' | 'rate_limited' | 'unavailable';
 // The route's answer for each refusal, kept beside the outcomes so a new one
 // can't silently fall through to a 404.
 export const CONNECT_CODE_REFUSALS: Record<Exclude<RedeemOutcome, 'redeemed'>, [number, string]> = {

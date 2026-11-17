@@ -115,7 +115,7 @@ export interface InstallResponse {
   boundPodId?: string;
 }
 
-export interface InstallErrorResponse {
+interface InstallErrorResponse {
   code?: string;
   error?: string;
   boundPodId?: string;

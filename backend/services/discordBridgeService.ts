@@ -40,7 +40,7 @@ const AUTHOR_LOAD_ATTEMPTS = 3;
 // else (joins, pins, boosts, thread starters, …) is the system talking.
 const PERSON_MESSAGE_TYPES = new Set([0, 19]);
 
-export interface DiscordIntegrationDoc {
+interface DiscordIntegrationDoc {
   _id: unknown;
   podId?: unknown;
   type?: string;
@@ -63,7 +63,7 @@ export interface DiscordIntegrationDoc {
   };
 }
 
-export interface DiscordInboundMessage {
+interface DiscordInboundMessage {
   id?: string;
   type?: number;
   system?: boolean;

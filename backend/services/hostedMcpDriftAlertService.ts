@@ -35,18 +35,18 @@ const AttentionItemService = require('./attentionItemService');
 
 const DRIFT_ALERT_SETTING_KEY = 'hostedMcp.driftAlert';
 
-export interface HostedMcpDriftAlertConfig {
+interface HostedMcpDriftAlertConfig {
   recipientUserId: string;
   podId: string;
 }
 
-export interface HostedMcpDriftCard extends HostedMcpDriftAlertConfig {
+interface HostedMcpDriftCard extends HostedMcpDriftAlertConfig {
   sourceId: string;
   title: string;
   detail: string;
 }
 
-export interface HostedMcpDriftAlertDeps {
+interface HostedMcpDriftAlertDeps {
   readConfig: () => Promise<unknown>;
   record: (card: HostedMcpDriftCard) => Promise<{ recorded: boolean; reason?: string }>;
   now?: () => number;

@@ -106,7 +106,7 @@ export const gateWelcomeHostedActions = async <T extends MessageLike>(
   });
 };
 
-export type WelcomeHostedStartResult =
+type WelcomeHostedStartResult =
   | { error: { status: number; body: { code: string; message: string } } }
   | {
     podId: string;

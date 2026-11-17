@@ -59,7 +59,7 @@ const CONNECT_PATIENCE_MINUTES = Number(
 /** Cap on installs examined per pass; the candidate set is normally ~45. */
 const CANDIDATE_LIMIT = 500;
 
-export interface StalledScanResult {
+interface StalledScanResult {
   candidates: number;
   nudged: Array<{ episodeId: string; agentName: string; podId: string; installer: string }>;
   resolved: Array<{ episodeId: string; agentName: string; podId: string }>;
@@ -71,7 +71,7 @@ export interface StalledScanResult {
   skippedNoListener: number;
 }
 
-export interface TokenEpisodeKey {
+interface TokenEpisodeKey {
   /** max(createdAt) across BOTH stores — the episode identity. */
   issuedAt: Date | null;
   /** Which store minted it. Matters; see the expiry asymmetry below. */

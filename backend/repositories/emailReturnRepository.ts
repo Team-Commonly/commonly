@@ -41,7 +41,7 @@ export const recordReturn = async (
   return rows.length > 0;
 };
 
-export interface KindCounts { kind: string; sent: number; returned: number; posted24h: number }
+interface KindCounts { kind: string; sent: number; returned: number; posted24h: number }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -47,7 +47,7 @@ export const discordApplicationCommands = (): Array<{ name: string }> => DISCORD
 
 export const isDiscordRelayCommand = (name: unknown): boolean => RELAY_COMMANDS.has(String(name || ''));
 
-export interface DiscordInteraction {
+interface DiscordInteraction {
   type?: number;
   id?: string;
   token?: string;
@@ -59,7 +59,7 @@ export interface DiscordInteraction {
   data?: { name?: string; options?: Array<{ name?: string; value?: unknown }> };
 }
 
-export interface DiscordCommandRow {
+interface DiscordCommandRow {
   _id: unknown;
   podId?: unknown;
   createdBy?: unknown;
@@ -79,12 +79,12 @@ export interface DiscordCommandRow {
   };
 }
 
-export interface InteractionReply {
+interface InteractionReply {
   type: number;
   data?: { content?: string; flags?: number; allowed_mentions?: { parse: string[] } };
 }
 
-export interface DiscordCommandHandled {
+interface DiscordCommandHandled {
   /** The HTTP body for Discord's 3-second window. */
   response: InteractionReply;
   /** Work that runs after the response is sent (a deferred reply's edit). */

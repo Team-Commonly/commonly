@@ -28,7 +28,7 @@ type SourceRow = {
   scopes?: string[];
   config?: ({ autoJoinSource?: unknown; runtime?: { runtimeType?: unknown } } & Record<string, unknown>) | null;
 };
-export type AdditionSource =
+type AdditionSource =
   | { source: SourceRow; fromProjection: boolean; refusal?: undefined }
   | { refusal: { status: number; body: Record<string, unknown> }; source?: undefined };
 

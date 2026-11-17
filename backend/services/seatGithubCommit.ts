@@ -92,7 +92,7 @@ const validPath = (value: unknown): value is string => typeof value === 'string'
   && value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..'
     && part.toLowerCase() !== '.git');
 
-export interface CommitFilesArgs {
+interface CommitFilesArgs {
   branch: string;
   base: string;
   message: string;
