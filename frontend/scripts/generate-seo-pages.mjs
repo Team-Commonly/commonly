@@ -192,7 +192,7 @@ const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.
 
 // The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
 // (landing-faq.json). Change it when either changes (F395).
-export const LANDING_DATE_MODIFIED = '2026-11-11';
+export const LANDING_DATE_MODIFIED = '2026-11-17';
 
 const recordedDate = (where, value) => {
   if (value === undefined) return undefined;

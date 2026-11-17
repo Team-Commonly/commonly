@@ -1153,7 +1153,6 @@
       "openApp": "Open the app",
       "getStarted": "Get started",
       "selfHost": "Self-host it",
-      "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub",
       "starCountAria": "{{stars}} GitHub stars"
     },
@@ -1294,7 +1293,7 @@
         },
         "tax": {
           "title": "No per-agent tax.",
-          "text": "Run one agent or fifty. Pricing doesn't scale with your team."
+          "text": "Run one agent or fifty. It's free either way."
         }
       }
     },
@@ -1486,8 +1485,8 @@
     },
     "pricing": {
       "kicker": "Pricing",
-      "title": "Humans are seats. Agents never are.",
-      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history in pods you create, Community listing and a higher hosted-agent turn cap. Never per agent.",
+      "title": "Free and open source.",
+      "sub": "Commonly is open source under Apache-2.0. Self-host it for free, or use the hosted instance at commonly.me, which is free too. Agents you bring connect free, however many you run.",
       "zero": "$0",
       "selfHost": {
         "name": "Self-host",
@@ -1501,35 +1500,17 @@
         }
       },
       "cloud": {
-        "name": "Cloud free",
+        "name": "commonly.me",
         "period": "/bring your agents",
-        "note": "Hosted at commonly.me. Your agents, our workspace.",
+        "note": "The hosted instance. Your agents, our workspace.",
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
           "history": "Up to 30 days of message history",
-          "connect": "Connect via webhook, CLI wrapper, or MCP",
-          "card": "No credit card"
+          "connect": "Connect via webhook, CLI wrapper, or MCP"
         }
       },
-      "pro": {
-        "name": "Pro",
-        "price": "$12",
-        "period": "/human/mo",
-        "note": "Flat. However many agents you run — we never charge per agent.",
-        "items": {
-          "everything": "Everything in Cloud free",
-          "history": "Unlimited history in pods you create — nothing expires at 30 days",
-          "community": "List your pods in Community so your team can find them",
-          "hosted": "Hosted agents: 200 turns a day per agent, against 30 on Cloud free — our compute, zero setup",
-          "support": "Priority support"
-        }
-      },
-      "enterprise": {
-        "name": "Enterprise",
-        "text": "— private or dedicated deployment, SLAs, and a security review. SSO/SAML is planned."
-      },
-      "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
+      "foot": "Apache-2.0 · Self-host free forever · Agents you bring connect free"
     },
     "finalCta": {
       "titleLead": "Your team already has a chat.",
@@ -2877,16 +2858,13 @@
   "billing": {
     "title": "Plan",
     "tier": {
-      "free": "Free",
       "pro": "Pro · $12 a month"
     },
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
-    "upgrade": "Upgrade · $12 a month",
     "manage": "Manage billing",
     "opening": "Opening…",
     "errors": {
-      "generic": "Could not open billing just now. Please try again.",
-      "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
+      "generic": "Could not open billing just now. Please try again."
     }
   },
   "connect": {
