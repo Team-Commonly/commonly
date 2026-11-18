@@ -63,6 +63,12 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/private/var/db"))
 (allow file-read* file-test-existence
   (subpath "/System/Volumes/Preboot/Cryptexes/OS"))
+; The active developer tools, read-only. /usr/bin/git and the other /usr/bin
+; developer commands are xcrun shims: they read the xcode-select link, then run
+; the tool from the Command Line Tools, and git reads its own defaults there.
+(allow file-read* file-test-existence
+  (literal "/private/var/select/developer_dir")
+  (subpath "/Library/Developer/CommandLineTools"))
 
 (allow file-map-executable
   (subpath "/Library/Apple/System/Library/Frameworks")
@@ -346,10 +352,24 @@ export const parseSeatbeltReadRoots = (profile) => {
     literals: Object.freeze([...literals]),
   });
 };
-let systemReadRoots = null;
-export const seatbeltSystemReadRoots = () => {
-  if (!systemReadRoots) systemReadRoots = parseSeatbeltReadRoots(PLATFORM_BASELINE);
-  return systemReadRoots;
+// Only the static baseline is cached. The developer folder is resolved on
+// every call, as each profile resolves it, so a key-file check never trusts a
+// selection the next profile no longer has (CodeRabbit on #4205). The same
+// selection returns the same object.
+let baselineReadRoots = null;
+const rootsByDeveloperRules = new Map();
+export const seatbeltSystemReadRoots = ({ developerDirs = resolveDeveloperDirs() } = {}) => {
+  if (!baselineReadRoots) baselineReadRoots = parseSeatbeltReadRoots(PLATFORM_BASELINE);
+  const rules = developerDirsRules(developerDirs);
+  if (!rules) return baselineReadRoots;
+  if (!rootsByDeveloperRules.has(rules)) {
+    const extra = parseSeatbeltReadRoots(rules);
+    rootsByDeveloperRules.set(rules, Object.freeze({
+      subpaths: Object.freeze([...new Set([...baselineReadRoots.subpaths, ...extra.subpaths])]),
+      literals: Object.freeze([...new Set([...baselineReadRoots.literals, ...extra.literals])]),
+    }));
+  }
+  return rootsByDeveloperRules.get(rules);
 };
 
 // Both network modes. On macOS, c-ares (node's dns.Resolver and dns.resolve*)
@@ -410,6 +430,36 @@ const isSymlink = (path) => {
     return false;
   }
 };
+
+// The two xcode-select links. The xcrun shim reads developer_dir; both name
+// the same folder on a normal install, and a turn admits each target.
+const XCODE_SELECT_LINKS = Object.freeze(['/private/var/select/developer_dir', '/private/var/db/xcode_select_link']);
+const COMMAND_LINE_TOOLS = '/Library/Developer/CommandLineTools';
+
+/**
+ * The read-only rule for a developer folder xcode-select points at, when that
+ * isn't the Command Line Tools the baseline already admits. /usr/bin/git is an
+ * xcrun shim that runs git from that folder. Only a developer folder's shape
+ * is admitted: an Xcode bundle's Contents/Developer, or a folder under
+ * /Library/Developer. Anything else (/, a home folder, a link that did not
+ * resolve, a path holding a quote, backslash, `;` or line break) gets no
+ * rule, and git there fails closed. A `;` starts a comment to
+ * parseSeatbeltReadRoots, so such a path would drop out of the key-file roots.
+ */
+export function developerDirRules(activeDeveloperDir) {
+  const dir = String(activeDeveloperDir || '');
+  if (!isAbsolute(dir) || XCODE_SELECT_LINKS.includes(dir) || /["\\;\r\n]/.test(dir)) return '';
+  if (dir === COMMAND_LINE_TOOLS || dir.startsWith(`${COMMAND_LINE_TOOLS}/`)) return '';
+  if (!dir.endsWith('.app/Contents/Developer') && !dir.startsWith('/Library/Developer/')) return '';
+  return [
+    `(allow file-read* file-test-existence ${subpath(dir)})`,
+    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(dir)}"))`,
+  ].join('\n');
+}
+
+// What the links point at now; read once per profile and once per root check.
+const resolveDeveloperDirs = () => [...new Set(XCODE_SELECT_LINKS.map(realpathOrSelf))];
+const developerDirsRules = (dirs) => dirs.map(developerDirRules).filter(Boolean).join('\n');
 
 // A folder this profile lets the jail write is one the jail can also replace:
 // a write rule on a folder covers the folder's own name, so a process from an
@@ -623,6 +673,9 @@ export const buildSeatbeltProfile = ({
   // a seat credential in memory, as a public pi does. Signals are not narrowed:
   // a parent must still stop the children it started.
   processInfo = 'same-sandbox',
+  // The developer folders xcode-select points at. Resolved on each profile by
+  // default; tests pass their own.
+  developerDirs = resolveDeveloperDirs(),
   // Pin a writable workspace to its own name (see pinnedRealpath). Set it for
   // a public seat. Its workspace is usually the scratch folder the CLI made;
   // when it is an `environment.workspace.path` the operator gave and that path
@@ -776,6 +829,7 @@ export const buildSeatbeltProfile = ({
 
   return [
     `${PLATFORM_BASELINE}${RESOLVER_CONFIG}${network === 'open' ? OPEN_NETWORK : ''}`.trim(),
+    developerDirsRules(developerDirs),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,

@@ -79,3 +79,22 @@ resolver refuses.
 turn into a root (`path`, `prefix`, `home-*`, or a regex not anchored at
 `^/dev/`), it throws. A new kind of read grant then breaks the build instead of
 silently opening a path the check never sees.
+
+**The developer tools are readable, so they count as roots.** `/usr/bin/git`
+and the other `/usr/bin` developer commands are xcrun shims. A shim reads the
+xcode-select link (`/private/var/select/developer_dir`), then runs the tool
+from the developer folder, and git reads its own defaults there. With those
+denied, git failed inside a confined seat on Command Line Tools 26.5. So:
+- The baseline admits `/Library/Developer/CommandLineTools` and the link,
+  read-only.
+- When xcode-select points somewhere else, `developerDirRules` admits that
+  folder on each turn, also read-only. Both links are resolved, and a target
+  is admitted only when it is shaped like a developer folder: an Xcode
+  bundle's `.app/Contents/Developer`, or a folder under `/Library/Developer`.
+  Any other target, such as `/` or a home folder, gets no rule, and git there
+  fails closed.
+- `seatbeltSystemReadRoots` counts both, so a key file in either one is
+  refused. It caches only the static baseline and resolves the developer
+  folder on every call, as each profile does, so the check and the next
+  profile agree even after xcode-select changes. A target holding a `;` is
+  refused too, since the roots parser reads `;` as the start of a comment.
