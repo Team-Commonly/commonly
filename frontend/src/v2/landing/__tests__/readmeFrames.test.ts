@@ -1,23 +1,21 @@
 /**
- * TASK-155. README frames are 2x captures of real surfaces, placed per
- * ux-lead's artboard (docs/design/landing-demo/Readme.dc.html): a centered
- * block, 880 wide, an italic caption under it. The README is the front door
- * and GitHub is its only renderer, so nothing here renders anything — jsdom
- * has no layout engine and GitHub's sanitizer decides what survives. What is
- * pinned is the shape a frame must keep, and it is pinned for EVERY frame the
- * README references rather than for the hero alone: frames 2-5 (Activity, Your
- * team, Connectors, Bring your own agent) land on this row later, and a frame
- * that is placed without its asset, at 1x, uncentered, uncaptioned, or with an
- * empty alt has to fail here rather than ship.
+ * README frames (TASK-155, later widened to GIFs). The README is the front door and
+ * GitHub is its only renderer, so nothing here renders anything: jsdom has no
+ * layout engine and GitHub's sanitizer decides what survives. What is pinned is
+ * the shape every frame must keep (a centered block, 880 wide, alt text, an
+ * italic caption under it) and the order of the page's top: one line, the
+ * quick-start command, then the first GIF, all before the first section.
  *
- * The 2x rule is the one that cannot be seen by reading the README: the asset
- * carries at least two pixels per rendered pixel, which is what makes an 880
- * wide frame legible on a retina display. The PNG's own IHDR is the instrument
- * — no restated dimension is compared against another restated dimension.
+ * Frames are PNG screenshots or GIF recordings in docs/assets/readme/. The 2x
+ * rule is the one that cannot be seen by reading the README: the asset carries
+ * at least two pixels per rendered pixel, which is what keeps an 880 wide frame
+ * legible on a retina display. The file's own header is the instrument (a PNG's
+ * IHDR, a GIF's logical screen descriptor), so no restated dimension is
+ * compared against another restated dimension.
  *
- * The caption's `<sub>` is pinned for the same reason: the only renderer that
- * matters strips `style`, so a caption that keeps its shape but loses its tag
- * silently returns to 16px body text. Frames 2-5 copy this caption shape.
+ * The caption's `<sub>` is pinned for the same reason: GitHub strips `style`,
+ * so a caption that keeps its shape but loses its tag silently returns to 16px
+ * body text.
  */
 import fs from 'fs';
 import path from 'path';
@@ -25,7 +23,9 @@ import path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 const README = fs.readFileSync(path.join(REPO_ROOT, 'README.md'), 'utf8');
 const FRAME_DIR = 'docs/assets/readme/';
-const HERO = 'docs/assets/readme/pod-two-people-2x.png';
+const HERO = 'docs/assets/readme/invite-and-mention.gif';
+const QUICK_START = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
+const isFrameAsset = (name: string) => /\.(png|gif)$/.test(name);
 
 /** Every <img> in the README, with its raw attributes. */
 const images = [...README.matchAll(/<img\s+([^>]*?)\/>/g)].map((m) => {
@@ -52,20 +52,22 @@ const proseLength = (html) => {
   return count;
 };
 
-/** Width and height straight out of the PNG's IHDR chunk. */
-const pngSize = (file) => {
+/** Pixel width straight out of the file's own header: PNG IHDR, or a GIF's logical screen descriptor. */
+const assetWidth = (file) => {
   const buf = fs.readFileSync(file);
-  expect(buf.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  expect(buf.subarray(12, 16).toString('ascii')).toBe('IHDR');
-  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  if (file.endsWith('.png')) {
+    expect(buf.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(buf.subarray(12, 16).toString('ascii')).toBe('IHDR');
+    return buf.readUInt32BE(16);
+  }
+  expect(buf.subarray(0, 6).toString('ascii')).toMatch(/^GIF8[79]a$/);
+  return buf.readUInt16LE(6);
 };
 
 describe('README frames', () => {
   it('references at least the hero, and no asset in the frame directory goes unreferenced', () => {
     expect(frames.length).toBeGreaterThan(0);
-    const onDisk = fs
-      .readdirSync(path.join(REPO_ROOT, FRAME_DIR))
-      .filter((name) => name.endsWith('.png'));
+    const onDisk = fs.readdirSync(path.join(REPO_ROOT, FRAME_DIR)).filter(isFrameAsset);
     expect(onDisk.length).toBe(frames.length);
     for (const name of onDisk) {
       expect(README).toContain(`${FRAME_DIR}${name}`);
@@ -82,14 +84,9 @@ describe('README frames', () => {
     expect(openAt).toBeGreaterThanOrEqual(0);
     expect(README.slice(openAt, frame.at)).not.toContain('</div>');
 
-    // Captioned: a <sub><em> under it, still inside that same block. The <sub>
-    // is load-bearing rather than decoration. GitHub strips `style`, so the
-    // artboard's 14px muted caption arrives as 16px body text in full
-    // foreground unless a tag GitHub keeps does the sizing: at 16px the hero
-    // caption is 866px in the front page's 838px column and breaks so that
-    // line 2 holds only "card." (ux-lead, #1870, measured on github.com at
-    // 1280-1920). <sub> is on GitHub's supported formatting list and renders
-    // at 75%, 12px, which puts the same caption on one 680px line.
+    // Captioned: a <sub><em> under it, still inside that same block. <sub> is on
+    // GitHub's supported formatting list and renders at 75%, which keeps a
+    // caption on one line under an 880 wide frame (ux-lead, #1870).
     const closeAt = README.indexOf('</div>', frame.at);
     const emAt = README.indexOf('<sub><em>', frame.at);
     expect(closeAt).toBeGreaterThan(frame.at);
@@ -108,36 +105,32 @@ describe('README frames', () => {
   });
 
   it.each(frames.map((f) => [f.src, f]))('%s carries at least two pixels per rendered pixel', (_src, frame) => {
-    const { width } = pngSize(path.join(REPO_ROOT, frame.src));
+    const width = assetWidth(path.join(REPO_ROOT, frame.src));
     expect(Number(frame.width)).toBeGreaterThan(0);
     expect(width).toBeGreaterThanOrEqual(2 * Number(frame.width));
   });
 
-  it('leads with the hero, after the header block and before "What is Commonly?"', () => {
+  it('opens with the logo, then the quick-start command, then the hero, all before the first section', () => {
     const logoAt = README.indexOf('<img src="docs/assets/brand/commonly-mark-ink.svg"');
+    const quickStartAt = README.indexOf(QUICK_START);
     const heroAt = README.indexOf(`<img src="${HERO}"`);
-    const headingAt = README.indexOf('## What is Commonly?');
+    const firstSectionAt = README.search(/^## /m);
 
     // Placement is an ORDER, so it is asserted as one. Every index is checked
     // for presence first: indexOf returns -1, and -1 < -1 compares equal.
     expect(logoAt).toBeGreaterThanOrEqual(0);
-    expect(heroAt).toBeGreaterThanOrEqual(0);
-    expect(headingAt).toBeGreaterThan(0);
+    expect(quickStartAt).toBeGreaterThan(0);
+    expect(heroAt).toBeGreaterThan(0);
+    expect(firstSectionAt).toBeGreaterThan(0);
 
     expect(frames[0].src).toBe(HERO);
-    expect(heroAt).toBeGreaterThan(logoAt);
-    expect(heroAt).toBeLessThan(headingAt);
+    expect(quickStartAt).toBeGreaterThan(logoAt);
+    expect(heroAt).toBeGreaterThan(quickStartAt);
+    expect(heroAt).toBeLessThan(firstSectionAt);
   });
 
-  it('links commonly.me from the hero caption', () => {
-    const closeAt = README.indexOf('</div>', README.indexOf(`<img src="${HERO}"`));
-    const caption = README.slice(README.indexOf('<em>', README.indexOf(`<img src="${HERO}"`)), closeAt);
-    expect(caption).toContain('<a href="https://commonly.me">commonly.me</a>');
-    // The caption's WORDS are deliberately not pinned here (TASK-161, folding
-    // in the defect sprint-review found on #1870: this test, named for the
-    // link, also held the literal phrase "pick an option on the card", so a
-    // caption reword red a test named for something else). Length is owned by
-    // the per-frame prose floor above; the link is owned here. Adding a phrase
-    // assertion back to this test re-creates the coupling.
+  it('links commonly.me above the hero', () => {
+    const top = README.slice(0, README.indexOf(`<img src="${HERO}"`));
+    expect(top).toContain('href="https://commonly.me"');
   });
 });
