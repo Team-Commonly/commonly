@@ -349,6 +349,47 @@ To roll back:
    VM's accounts file. Run `reprovision-all` on the cluster so its bot gets
    them.
 
+## Logs and alerts
+
+Container logs reach Cloud Logging through the Google Cloud Ops Agent (2.73) on
+the VM host, not through a Docker logging driver: if a driver such as `gcplogs`
+fails to start, the container does not start either, so a logging outage would
+become a site outage. Containers keep the `json-file` driver; the agent tails
+those files. Install it once per VM:
+
+```sh
+curl -sSfO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+```
+
+Then write `/etc/google-cloud-ops-agent/config.yaml` and `sudo systemctl restart google-cloud-ops-agent`:
+
+```yaml
+logging:
+  receivers:
+    docker_containers:
+      type: files
+      include_paths: [/var/lib/docker/containers/*/*-json.log]
+      record_log_file_path: true
+  processors:
+    docker_wrapper: { type: parse_json }          # Docker's {"log","stream","time"} envelope
+    app_json: { type: parse_json, field: log }    # the app's own JSON line inside it
+  service:
+    pipelines:
+      default_pipeline: { receivers: [] }          # syslog off
+      docker: { receivers: [docker_containers], processors: [docker_wrapper, app_json] }
+metrics:
+  service:
+    pipelines:
+      default_pipeline: { receivers: [] }          # host metrics off
+```
+
+Entries land as `resource.type="gce_instance"`, log `docker_containers`. The
+second parse is what lets the log-based alert metrics match on
+`jsonPayload.alarm`; a line that is not JSON keeps its text in
+`jsonPayload.log`. The VM's service account needs `roles/logging.logWriter`.
+Volume is about 0.05 GiB a day, well inside the free logging allowance.
+
 ## Rollback
 
 Set `COMMONLY_IMAGE_TAG` back to the previous SHA, check out that SHA, then run

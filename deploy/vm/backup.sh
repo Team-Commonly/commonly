@@ -172,9 +172,19 @@ case "${1:-loop}" in
   list) rclone lsl "$REMOTE" ;;
   fetch) rclone cat "$REMOTE/${2:?usage: commonly-backup fetch <path under the prefix>}" ;;
   loop)
+    nightly_due=0
     while :; do
       now=$(date -u +%s)
+      # A Postgres-only run that overran the nightly slot must not skip that
+      # night: run the full backup now, whether or not the Postgres run passed.
+      if [ "$nightly_due" -gt 0 ] && [ "$now" -ge "$nightly_due" ]; then
+        nightly_due=0
+        echo "nightly slot passed during a postgres-only run; backing up now"
+        backup_once || echo "backup run failed; next attempt tomorrow"
+        continue
+      fi
       wait=$(seconds_until_next_run "$now")
+      nightly_due=$(( now + wait ))
       # A Postgres-only slot that falls before the nightly run goes first. When
       # both fall at the same moment the nightly run wins, since it dumps Postgres too.
       pg_wait=0
@@ -188,6 +198,7 @@ case "${1:-loop}" in
       fi
       echo "next backup in ${wait}s (${HOUR}:00 UTC)"
       sleep "$wait"
+      nightly_due=0
       backup_once || echo "backup run failed; next attempt tomorrow"
     done
     ;;
