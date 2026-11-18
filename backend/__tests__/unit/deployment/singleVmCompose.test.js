@@ -435,6 +435,8 @@ describe('backup.sh Postgres-only runs', () => {
     stub(dir, 'rclone', `echo "rclone $*" >> "${log}"`);
     stub(dir, 'mongodump', `echo mongodump >> "${log}"`);
     stub(dir, 'apk', `echo apk >> "${log}"; exit 1`);
+    // A regressed bare call would fall into the loop's sleep; fail fast instead of hanging.
+    stub(dir, 'sleep', `echo sleep >> "${log}"; exit 1`);
     const env = {
       PATH: `${dir}:/usr/bin:/bin`,
       PG_ADMIN_USER: 'admin', PG_ADMIN_PASSWORD: 'x', PG_DATABASE: 'commonly',
@@ -443,7 +445,7 @@ describe('backup.sh Postgres-only runs', () => {
       BACKUP_S3_PREFIX: 'nightly', MONGO_URI: 'mongodb://u:p@h/db',
       ...extraEnv,
     };
-    const r = spawnSync('sh', [path.join(VM_DIR, 'backup.sh'), ...args], { env, encoding: 'utf8' });
+    const r = spawnSync('sh', [path.join(VM_DIR, 'backup.sh'), ...args], { env, encoding: 'utf8', timeout: 20000 });
     const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
     fs.rmSync(dir, { recursive: true, force: true });
     return { ...r, calls };
@@ -461,6 +463,17 @@ describe('backup.sh Postgres-only runs', () => {
     expect(r.calls).not.toMatch(/^apk$/m);
     // The success stamp's directory is never created by a Postgres-only run.
     expect(r.stdout).not.toMatch(/backup complete/);
+  });
+
+  it('a bare or unknown call prints usage and runs nothing, so it can never start a second loop', () => {
+    for (const args of [[], ['bogus']]) {
+      // An empty PG_ADMIN_USER proves the command is checked before any configuration is read.
+      const r = run(args, { PG_ADMIN_USER: '' });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toMatch(/usage: commonly-backup loop\|once/);
+      // apk (tool install), sleep (the loop) and every backup tool log here.
+      expect(r.calls).toBe('');
+    }
   });
 
   it('rejects a Postgres cadence outside 0 to 24 hours before doing anything', () => {
