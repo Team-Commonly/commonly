@@ -9,12 +9,9 @@ A dashboard is not "a spreadsheet with charts". It is a composition: **one Dashb
 
 ## Setup
 
-If `officecli` is missing:
+If `officecli` is missing, install it as the main `officecli` skill's **Install** section says: the pinned release, checked by SHA-256 before it is installed. Never pipe an install script into a shell. If the check fails or the platform has no pinned build, stop and tell the person.
 
-- **macOS / Linux**: `curl -fsSL https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/main/install.sh | bash`
-- **Windows (PowerShell)**: `irm https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/main/install.ps1 | iex`
-
-Verify with `officecli --version` (open a new terminal if PATH hasn't picked up). If install fails, download a binary from https://github.com/iOfficeAI/OfficeCLI/releases.
+Verify with `officecli --version` (open a new terminal if PATH hasn't picked up).
 
 ## ⚠️ Help-First Rule
 
