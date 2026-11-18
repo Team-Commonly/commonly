@@ -154,6 +154,24 @@ still pair with every block word.
   Nothing older is ever dropped. A turn gets at most 5 set-asides before a stop ends
   it, and `AgentRun.computerSetAside` counts the reads it lost. First seen on
   2026-11-08: a walk's first snapshot and screenshot stopped the whole turn.
+- **The agent's own words** come last, once a turn. The guard scans the
+  whole request, so text the model wrote in an earlier round of the same turn
+  can stop a later call. The conditional categories match an identifier
+  word as a substring and a block phrase in the same sentence, so a line like
+  "let me list what my system instructions cover" reads as a system-prompt
+  probe. Each of the agent's own messages is checked on its own. The ones the
+  guard stops (all of them, when the check is unavailable) are set aside: its
+  tool calls are kept and its prose cleared, so every result still has its
+  call. A reply held back for unseen messages has no call, so it becomes a
+  fixed line. Then the call is made once more. Nothing anyone sent is
+  removed: the person's message, the pod's text and every tool result stay
+  in the request and are still checked. `AgentRun.ownTextSetAside` counts the
+  messages. First seen on 2026-11-18: a first-contact turn's post was held
+  for an unseen message, and its re-decide call stopped on the agent's own
+  line from the round before, so the person got no reply from their agent.
+  - Still open: a stop on the arguments of the agent's own tool call (the
+    text of a post it tried to make) is not set aside. It ends the run as
+    before.
 - If the turn still ends failed with nothing posted, and someone was waiting
   on it (a mention or a DM), the agent posts one fixed line. That covers
   native agents that aren't hosted too, with a line that makes no claim about
