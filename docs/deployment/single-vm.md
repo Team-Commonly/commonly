@@ -158,13 +158,24 @@ Configure the tunnel's public hostnames on the Cloudflare side:
 
 ## Deploy a SHA
 
-The Deploy Dev workflow tags the backend, frontend and commonly-bot images with
-the same short SHA.
+The VM pulls the backend, frontend and commonly-bot images by one tag, the
+commit's short SHA. Build them first: dispatch the **Build VM Images** workflow
+(`.github/workflows/build-vm-images.yml`) on `main`, with `ref` set to the full
+SHA (empty means main HEAD). It holds the commit to the same gates as Deploy
+Dev, a green `staging-smoke` and green post-merge Service Tests, and builds the
+same three images with the same build args. It runs no helm and no kubectl.
+
+Keep **Deploy Dev disabled while the VM serves.** Its helm upgrade scales the
+cluster's backend, worker and bot back up, which puts a second scheduler and
+Discord gateway on the same database. Deploy Staging is no substitute: it pushes
+only a staging frontend (`<sha8>-staging`, with the staging API built in), so
+the VM's frontend pull fails on a tag only staging built.
 
 ```bash
 cd /opt/commonly && git fetch && git checkout <sha>
 cd deploy/vm
-sed -i 's/^COMMONLY_IMAGE_TAG=.*/COMMONLY_IMAGE_TAG=<short-sha>/' .env
+# <tag> is exactly 8 characters: the one the build's notice names, or git rev-parse --short=8 <sha>.
+sed -i 's/^COMMONLY_IMAGE_TAG=.*/COMMONLY_IMAGE_TAG=<tag>/' .env
 # Re-render litellm/config.yaml (First setup, step 5) if the chart changed.
 docker compose pull
 docker compose up -d --wait

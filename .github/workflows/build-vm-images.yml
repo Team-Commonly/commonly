@@ -1,0 +1,216 @@
+name: Build VM Images
+
+# The single VM (docs/deployment/single-vm.md) pulls commonly-backend,
+# commonly-frontend and commonly-bot by one tag, the commit's short SHA. This
+# workflow builds and pushes those three images for a commit, behind the same
+# gates as Deploy Dev, and does nothing else: no helm, no kubectl, no cluster
+# credentials. Rolling the VM onto the tag is the runbook's "Deploy a SHA".
+#
+# Deploy Dev stays disabled while the VM serves. Its helm upgrade would scale
+# the cluster's backend, worker and bot back up beside the VM, a second
+# scheduler and Discord gateway on the same database. Deploy Staging pushes only
+# a staging frontend, so this is the one producer of the prod frontend image.
+#
+# backend/__tests__/unit/deployment/vmImageBuild.test.js pins all of this: the
+# gate and image steps must match Deploy Dev's exactly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Full 40-character commit SHA to deploy (defaults to main HEAD). It needs a green staging-smoke.'
+        required: false
+        default: ''
+      allow_without_staging_smoke:
+        description: 'EMERGENCY: deploy prod even without a green staging-smoke on this SHA'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  id-token: write     # mint the OIDC token for google-github-actions/auth
+  contents: read
+  statuses: read      # read the staging-smoke commit status
+  actions: read       # read the post-merge Service Tests result on this SHA
+
+# Deploy Dev's group, so the two never push the prod frontend tag at once.
+# Deploy Staging also pushes backend:<sha8> and bot:<sha8>, from the same inputs.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  REGION: us-central1
+  AR_REPO: docker
+
+jobs:
+  # No image for a commit without a green staging-smoke and green post-merge
+  # Service Tests, as for Deploy Dev; allow_without_staging_smoke is the same
+  # emergency override.
+  require_staging_smoke:
+    name: Require green staging-smoke on this SHA
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve the commit to deploy
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REF" ]; then
+            echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            echo "Deploying main HEAD $HEAD_SHA"
+            exit 0
+          fi
+          if ! printf '%s' "$REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error title=ref::ref must be a full 40-character lowercase commit SHA (got: $REF)"
+            exit 1
+          fi
+          FOUND=$(gh api "repos/$REPO/commits/$REF" --jq .sha 2>/dev/null || echo "")
+          if [ "$FOUND" != "$REF" ]; then
+            echo "::error title=ref::commit $REF is not in $REPO"
+            exit 1
+          fi
+          echo "sha=$REF" >> "$GITHUB_OUTPUT"
+          echo "::notice title=ref::Deploying $REF instead of main HEAD $HEAD_SHA"
+
+      - name: Gate on the staging-smoke commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          REPO: ${{ github.repository }}
+          ALLOW: ${{ inputs.allow_without_staging_smoke }}
+        run: |
+          set -uo pipefail
+          if [ "$ALLOW" = "true" ]; then
+            echo "::warning title=staging-smoke gate::bypassed via allow_without_staging_smoke=true"
+            exit 0
+          fi
+          # Latest staging-smoke by created_at, tiebreak id; if a failure and a success share the
+          # newest created_at (same-second race) prefer failure, so the gate fails closed.
+          STATE=$(gh api "repos/$REPO/commits/$SHA/statuses" \
+            --jq '[.[]|select(.context=="staging-smoke")] | if length==0 then "" else ((max_by(.created_at).created_at) as $m | [.[]|select(.created_at==$m)] | (if any(.[]; .state=="failure") then "failure" else (sort_by(.id)|last|.state) end)) end' 2>/dev/null || echo "")
+          echo "staging-smoke on $SHA = ${STATE:-<none>}"
+          if [ "$STATE" != "success" ]; then
+            echo "::error title=staging-smoke gate::no green staging-smoke on $SHA (got: ${STATE:-none}). Deploy Staging on this SHA first (it runs the Tier-1 smoke and posts the status), or re-dispatch with allow_without_staging_smoke=true for an emergency."
+            exit 1
+          fi
+
+      - name: Gate on post-merge Service Tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          REPO: ${{ github.repository }}
+          ALLOW: ${{ inputs.allow_without_staging_smoke }}
+        run: |
+          set -uo pipefail
+          if [ "$ALLOW" = "true" ]; then
+            echo "::warning title=service-tests gate::bypassed via allow_without_staging_smoke=true"
+            exit 0
+          fi
+          if ! RUN=$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?head_sha=$SHA&event=push&per_page=20" \
+            --jq '.workflow_runs | sort_by(.created_at) | last | .id // empty'); then
+            echo "::error title=service-tests gate::could not read Tests runs for $SHA (GitHub API call failed); not rolling unchecked. Re-dispatch, or use allow_without_staging_smoke=true for an emergency."
+            exit 1
+          fi
+          if [ -z "$RUN" ]; then
+            echo "::warning title=service-tests gate::no push-event Tests run on $SHA (not a main commit?); nothing to gate on"
+            exit 0
+          fi
+          # One line per Service Tests shard: "<status> <conclusion>".
+          if ! JOBS=$(gh api "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("Service Tests")) | "\(.status) \(.conclusion)"'); then
+            echo "::error title=service-tests gate::could not read Tests run $RUN's jobs (GitHub API call failed); not rolling unchecked."
+            exit 1
+          fi
+          echo "Service Tests on $SHA (run $RUN):"; printf '%s\n' "${JOBS:-<none>}"
+          if [ -z "$JOBS" ]; then
+            echo "::error title=service-tests gate::run $RUN on $SHA has no Service Tests jobs; push:main must run them (tests.yml)"
+            exit 1
+          fi
+          if printf '%s\n' "$JOBS" | grep -qv '^completed '; then
+            echo "::error title=service-tests gate::Service Tests on $SHA are still running (run $RUN). Re-dispatch when they finish."
+            exit 1
+          fi
+          if printf '%s\n' "$JOBS" | grep -qv '^completed success$'; then
+            echo "::error title=service-tests gate::Service Tests on $SHA did not pass (run $RUN). Fix main, or re-run the job if it was a flake, before rolling."
+            exit 1
+          fi
+
+  build:
+    name: Build + push the VM images
+    needs: require_staging_smoke
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.require_staging_smoke.outputs.sha }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Export PROJECT_ID from secret
+        env:
+          DEV_GCP_PROJECT_ID: ${{ secrets.DEV_GCP_PROJECT_ID }}
+        run: echo "PROJECT_ID=${DEV_GCP_PROJECT_ID}" >> "$GITHUB_ENV"
+
+      - name: Authenticate to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build + push backend image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-backend
+          docker build backend -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push frontend image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          REACT_APP_SENTRY_DSN: ${{ secrets.DEV_SENTRY_FRONTEND_DSN }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
+          docker build frontend \
+            --build-arg REACT_APP_API_URL=https://api.commonly.me \
+            --build-arg REACT_APP_SHOWCASE_POD_ID=6a507c9b792f1ed2cbfec648 \
+            --build-arg REACT_APP_COMMUNITY_POD_ID=6a5fe677306155f677c26abf \
+            --build-arg REACT_APP_COMMUNITY_INVITE_TOKEN=7b91255f18ae3c0ae3721707a6613731 \
+            --build-arg REACT_APP_TELEGRAM_BOT_HANDLE=Commonly240Bot \
+            --build-arg "REACT_APP_VERSION=$TAG" \
+            --build-arg "REACT_APP_SENTRY_DSN=$REACT_APP_SENTRY_DSN" \
+            -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push commonly-bot image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-bot
+          docker build external/commonly-agent-services -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Name the tag for the VM
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          echo "::notice title=VM images::pushed backend, frontend and bot at $TAG. Roll the VM with COMMONLY_IMAGE_TAG=$TAG (single-vm.md, Deploy a SHA)."
