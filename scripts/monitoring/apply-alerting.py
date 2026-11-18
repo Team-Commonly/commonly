@@ -28,6 +28,8 @@ LOGGING = "https://logging.googleapis.com/v2"
 POLICY_PREFIX = "commonly-dev: "
 UPTIME_REF = re.compile(r"\{\{uptime:([a-z0-9-]+)\}\}")
 LOG_METRIC_REF = re.compile(r"logging\.googleapis\.com/user/([a-z0-9_]+)")
+# The same metric as PromQL names it, e.g. logging_googleapis_com:user_<name>.
+PROMQL_LOG_METRIC_REF = re.compile(r"logging_googleapis_com:user_([a-z0-9_]+)")
 # Shapes that would put an infrastructure identifier into this public repo.
 IDENTIFIER_SHAPES = re.compile(r"projects/|\.iam\.gserviceaccount\.com|\.svc\.id\.goog|@")
 
@@ -74,7 +76,7 @@ def check():
         for ref in UPTIME_REF.findall(body):
             if ref not in uptime_keys:
                 errors.append(f"{title!r}: references unknown uptime check {ref!r}")
-        for ref in LOG_METRIC_REF.findall(body):
+        for ref in LOG_METRIC_REF.findall(body) + PROMQL_LOG_METRIC_REF.findall(body):
             if ref not in metric_names:
                 errors.append(f"{title!r}: references undefined log metric {ref!r}")
 
@@ -161,7 +163,10 @@ def apply(project, email, dry_run):
     existing_policies = {p["displayName"]: p for p in api.list(f"{base}/alertPolicies", "alertPolicies")}
     for p in load("alert-policies.json"):
         body = json.loads(UPTIME_REF.sub(lambda m: check_ids[m.group(1)], json.dumps(p)))
-        body.update({"enabled": True, "notificationChannels": [channel_name],
+        # A policy is enabled unless the file says "enabled": false. The cluster-only
+        # policies stay in the file, disabled, until the GKE teardown deletes them;
+        # forcing True here re-armed them on every apply.
+        body.update({"enabled": p.get("enabled", True), "notificationChannels": [channel_name],
                      "alertStrategy": {"autoClose": "1800s"}})
         current = existing_policies.get(body["displayName"])
         if current:

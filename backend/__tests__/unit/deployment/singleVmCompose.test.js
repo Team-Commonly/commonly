@@ -295,8 +295,17 @@ describe('single-VM env files', () => {
 
 describe('single-VM compose: safety properties', () => {
   it('runs the expected services, with no Mongo service', () => {
-    expect([...services].sort())
+    const alwaysOn = services.filter((s) => !compose.services[s].profiles);
+    expect([...alwaysOn].sort())
       .toEqual(['backend', 'cloudflared', 'commonly-bot', 'frontend', 'litellm', 'pg-backup', 'postgres']);
+  });
+
+  // Profiled services are one-shot jobs a host cron runs with `run --rm`;
+  // `up -d` never starts them. Only the jobs profile is allowed.
+  it('keeps one-shot jobs behind the jobs profile, and only the known ones', () => {
+    const jobs = services.filter((s) => compose.services[s].profiles);
+    expect(jobs).toEqual(['stranger-journey']);
+    jobs.forEach((s) => expect(compose.services[s].profiles).toEqual(['jobs']));
   });
 
   // A full `docker compose up` starts LiteLLM beside its callers, and a model
@@ -364,7 +373,9 @@ describe('single-VM compose: safety properties', () => {
     expect(svc).not.toHaveProperty('ports');
     expect(svc).not.toHaveProperty('build');
     expect(svc.network_mode).toBeUndefined();
-    expect(svc.restart).toBe('unless-stopped');
+    // A long-running service restarts; a one-shot job must not, or a failed
+    // journey would loop against prod.
+    expect(svc.restart).toBe(svc.profiles ? 'no' : 'unless-stopped');
     expect(svc.logging).toEqual(compose['x-logging']);
   });
 
@@ -529,5 +540,42 @@ describe('backup.sh Postgres-only runs', () => {
   it('passes the cadence through to pg-backup, off unless set', () => {
     expect(compose.services['pg-backup'].environment)
       .toContain('BACKUP_PG_EVERY_HOURS=${BACKUP_PG_EVERY_HOURS:-0}');
+  });
+});
+
+// The synthetic stranger journey moved off the GKE CronJob (2026-11-18, when prod moved to the single VM).
+// It must stay a one-shot job: `up -d` never starts it, it never restarts, and
+// it runs the chart's own script so the two copies cannot drift.
+describe('stranger-journey is a one-shot job, not a service', () => {
+  const svc = compose.services['stranger-journey'];
+
+  it('sits behind the jobs profile so up -d leaves it alone, and never restarts', () => {
+    expect(svc.profiles).toEqual(['jobs']);
+    expect(svc.restart).toBe('no');
+    expect(svc.healthcheck).toBeUndefined();
+  });
+
+  it('runs the chart script read-only under a hard timeout, against the public API', () => {
+    expect(svc.volumes).toContain('../../k8s/helm/commonly/files/stranger-journey.py:/journey/stranger-journey.py:ro');
+    expect(fs.existsSync(path.join(REPO_ROOT, 'k8s/helm/commonly/files/stranger-journey.py'))).toBe(true);
+    expect(svc.command.slice(0, 2)).toEqual(['timeout', '900']);
+    expect(svc.environment).toContain('JOURNEY_API=https://api.commonly.me');
+  });
+
+  it('runs as nobody, read-only, with no capabilities, as the CronJob did', () => {
+    expect(svc.user).toBe('65534:65534');
+    expect(svc.read_only).toBe(true);
+    expect(svc.cap_drop).toEqual(['ALL']);
+    expect(svc.security_opt).toContain('no-new-privileges:true');
+  });
+
+  it('carries no secret and no database: it is a stranger', () => {
+    expect(svc.env_file).toBeUndefined();
+    expect(svc.depends_on).toBeUndefined();
+    expect(JSON.stringify(svc.environment)).not.toMatch(/MONGO|PG_|TOKEN|SECRET|PASSWORD|INVITE/);
+  });
+
+  it('logs through the shared anchor, so its lines carry the compose service', () => {
+    expect(svc.logging).toEqual(compose['x-logging']);
   });
 });
