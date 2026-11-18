@@ -314,6 +314,47 @@ describe('single-VM compose: safety properties', () => {
     expect(startPeriod).toBeDefined();
   });
 
+  // The chart's LiteLLM checks at boot that the injection-guard loaded and
+  // still blocks a known jailbreak line, and logs injection_guard_degraded when
+  // it doesn't. That line is the alert's only producer, so the VM runs the same
+  // check, word for word, and starts LiteLLM either way.
+  const GUARD_CHECK = `-I - <<'PYEOF' || echo '{"alarm":"injection_guard_degraded"`;
+  const guardCheck = (script) => {
+    const lines = script.split('\n');
+    const start = lines.findIndex((line) => line.includes(GUARD_CHECK));
+    if (start < 0) return null;
+    const end = lines.findIndex((line, i) => i > start && line.trim() === 'PYEOF');
+    if (end < 0) return null;
+    const indent = lines[start].match(/^ */)[0].length;
+    return lines.slice(start, end + 1).map((line) => line.slice(indent)).join('\n');
+  };
+
+  it("runs the chart's injection-guard boot check before LiteLLM starts, as an alarm, never a stop", () => {
+    const chartCheck = guardCheck(readChart('templates/agents/litellm-deployment.yaml'));
+    expect(chartCheck).not.toBeNull();
+    const [script] = compose.services.litellm.command;
+    // Compose reads `$$` as a literal `$`, so every `$` in the chart's copy must
+    // be `$$` here. Comparing that way, a bare `$` compose would blank fails too.
+    // (A function, because a replacement string reads `$$` as one `$`.)
+    expect(guardCheck(script)).toBe(chartCheck.replaceAll('$', () => '$$'));
+    expect(script).toContain('PYBIN=/app/.venv/bin/python3');
+    expect(script.indexOf('PYBIN=')).toBeLessThan(script.indexOf(GUARD_CHECK));
+    expect(script.indexOf(GUARD_CHECK)).toBeLessThan(script.indexOf('exec litellm --config /app/config.yaml'));
+    expect(script).not.toMatch(/set -e|exit 1/);
+  });
+
+  it("runs the LiteLLM image the chart's guard check is proven against in CI", () => {
+    const values = readChart('values.yaml');
+    const [, repository, tag] = values.match(/^litellm:\n[\s\S]*?\n {4}repository: (\S+)[\s\S]*?\n {4}tag: (\S+)/m);
+    expect(compose.services.litellm.image).toBe(`${repository}:${tag}`);
+  });
+
+  // Alert filters on the VM read the service off each log line, not its text.
+  it('stamps every log line with its compose service', () => {
+    expect(compose['x-logging'].driver).toBe('json-file');
+    expect(compose['x-logging'].options.labels).toBe('com.docker.compose.service');
+  });
+
   it.each(services)('%s mounts no docker socket', (service) => {
     (compose.services[service].volumes || []).forEach((volume) => expect(volume).not.toMatch(/docker\.sock/));
   });

@@ -108,12 +108,18 @@ describe('LiteLLM jailbreak category override', () => {
     expect(body).toContain("sys.exit('the jailbreak probe passed the guard')");
     expect(body).not.toMatch(/exit 1/);
     const metrics = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'k8s/monitoring/log-metrics.json'), 'utf8'));
-    expect(metrics.find((m) => m.name === 'injection_guard_degraded').filter)
-      .toContain('jsonPayload.alarm="injection_guard_degraded"');
+    const metricFilter = metrics.find((m) => m.name === 'injection_guard_degraded').filter;
+    expect(metricFilter).toContain('jsonPayload.alarm="injection_guard_degraded"');
+    // The single VM runs the same check (deploy/vm/docker-compose.yml). Its logging agent ships
+    // container lines to the docker_containers log on a gce_instance, which a cluster-only filter misses.
+    expect(metricFilter).toContain('resource.type="k8s_container"');
+    expect(metricFilter).toContain('resource.type="gce_instance" AND log_id("docker_containers")');
     // An alarm nobody is paged for is the silent failure this replaces.
     const policies = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'k8s/monitoring/alert-policies.json'), 'utf8'));
-    expect(policies.some((p) => p.conditions.some((c) => (c.conditionThreshold?.filter || '')
-      .includes('logging.googleapis.com/user/injection_guard_degraded')))).toBe(true);
+    const conditions = policies.flatMap((p) => p.conditions.map((c) => c.conditionThreshold?.filter || ''))
+      .filter((f) => f.includes('logging.googleapis.com/user/injection_guard_degraded'));
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toContain('resource.type=one_of("k8s_container","gce_instance")');
   });
 
   test('the required check runs the same check as a hard stop, against the pinned LiteLLM', () => {

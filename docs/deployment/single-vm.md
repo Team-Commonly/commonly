@@ -31,7 +31,7 @@ the files at mode 0600.
 | `backend` | `commonly-backend:<tag>` | One container, web and worker together (`RUN_WORKER` unset). Health is `/api/health`. |
 | `frontend` | `commonly-frontend:<tag>` | The prod nginx image, serving static files only. |
 | `postgres` | `postgres:16.15-alpine3.24` | Chat, the PG mirror, and LiteLLM's `litellm` schema, in the `postgres-data` volume. |
-| `litellm` | `ghcr.io/berriai/litellm:v1.106.2` | The chart's config, rendered on each deploy. |
+| `litellm` | `ghcr.io/berriai/litellm:v1.106.2` | The chart's config, rendered on each deploy. At boot it runs the chart's injection-guard check, word for word, before LiteLLM starts. The image must match the chart's `litellm.image`, which CI's check runs against. |
 | `commonly-bot` | `commonly-bot:<tag>` | The summarizer agent. It polls the backend with the tokens in `commonly-bot-state/runtime.json`. |
 | `cloudflared` | `cloudflare/cloudflared:2026.1.2` | The only way in: a remotely managed tunnel, run from `TUNNEL_TOKEN`. |
 | `pg-backup` | the postgres image | Nightly `pg_dump -Fc` and `mongodump` to an R2 bucket, keeping 14 days, plus optional Postgres-only dumps every `BACKUP_PG_EVERY_HOURS`. |

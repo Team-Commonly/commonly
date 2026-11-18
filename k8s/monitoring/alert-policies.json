@@ -276,7 +276,7 @@
       {
         "displayName": "the boot check raised injection_guard_degraded",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/injection_guard_degraded\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/injection_guard_degraded\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "300s",
