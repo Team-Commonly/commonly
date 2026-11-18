@@ -15,7 +15,7 @@ If `officecli` is not installed, install the pinned release below. It downloads 
 ```bash
 # macOS / Linux: OfficeCLI v1.0.160, checked by SHA-256 before it is installed.
 V=1.0.160
-case "$(uname -s)-$(uname -m)$([ -f /etc/alpine-release ] && echo -musl)" in
+case "$(uname -s)-$(uname -m)$( (ldd --version 2>&1 || true) | grep -qi musl && echo -musl)" in
   Darwin-arm64)       A=officecli-mac-arm64;          SHA=fe2b31c6c27534dfbbf155386b6b9105420f9315bbb606335ec61490d171386d ;;
   Darwin-x86_64)      A=officecli-mac-x64;            SHA=55b27f6d422f9e0bcd2aa40abb262606110ff957a4a5253db7a8ba0460cd81c7 ;;
   Linux-x86_64)       A=officecli-linux-x64;          SHA=baa084b64ec634bd9d41a0592db3ed85f11658b358bab898679537ea7f3e73a9 ;;
@@ -27,13 +27,17 @@ esac
 if [ -z "$A" ]; then
   echo "officecli: no pinned build for this platform; not installing"
 else
-  TMP=$(mktemp) && curl -fsSL -o "$TMP" "https://github.com/iOfficeAI/OfficeCLI/releases/download/v$V/$A"
-  GOT=$( (sha256sum "$TMP" 2>/dev/null || shasum -a 256 "$TMP") | cut -d' ' -f1 )
-  if [ "$GOT" = "$SHA" ]; then
-    mkdir -p "$HOME/.local/bin" && chmod +x "$TMP" && mv "$TMP" "$HOME/.local/bin/officecli" \
-      && echo "installed ~/.local/bin/officecli (put ~/.local/bin on PATH if it isn't)"
+  TMP=$(mktemp)
+  if ! curl -fsSL -o "$TMP" "https://github.com/iOfficeAI/OfficeCLI/releases/download/v$V/$A"; then
+    rm -f "$TMP"; echo "officecli: download failed; not installing"
   else
-    rm -f "$TMP"; echo "officecli: checksum mismatch; not installing"
+    GOT=$( (sha256sum "$TMP" 2>/dev/null || shasum -a 256 "$TMP") | cut -d' ' -f1 )
+    if [ "$GOT" = "$SHA" ]; then
+      mkdir -p "$HOME/.local/bin" && chmod +x "$TMP" && mv "$TMP" "$HOME/.local/bin/officecli" \
+        && echo "installed ~/.local/bin/officecli (put ~/.local/bin on PATH if it isn't)"
+    else
+      rm -f "$TMP"; echo "officecli: checksum mismatch; not installing"
+    fi
   fi
 fi
 ```
@@ -47,12 +51,17 @@ $A, $SHA = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
   'officecli-win-x64.exe', 'c590ca9d464f2b03362825b0f2615efcae33ce3fc0edaeeef29f7ddacb4c5424'
 }
 $Tmp = New-TemporaryFile
-Invoke-WebRequest -UseBasicParsing "https://github.com/iOfficeAI/OfficeCLI/releases/download/v$V/$A" -OutFile $Tmp
-if ((Get-FileHash $Tmp -Algorithm SHA256).Hash -eq $SHA) {
+try {
+  Invoke-WebRequest -UseBasicParsing -ErrorAction Stop "https://github.com/iOfficeAI/OfficeCLI/releases/download/v$V/$A" -OutFile $Tmp
+  $Got = (Get-FileHash $Tmp -Algorithm SHA256).Hash
+} catch {
+  $Got = $null; 'officecli: download failed; not installing'
+}
+if ($Got -and $Got -eq $SHA) {
   $Dir = "$env:LOCALAPPDATA\officecli"; New-Item -ItemType Directory -Force $Dir | Out-Null
   Move-Item -Force $Tmp "$Dir\officecli.exe"; "installed $Dir\officecli.exe (put $Dir on PATH if it isn't)"
 } else {
-  Remove-Item $Tmp; 'officecli: checksum mismatch; not installing'
+  Remove-Item $Tmp; if ($Got) { 'officecli: checksum mismatch; not installing' }
 }
 ```
 
