@@ -197,6 +197,13 @@ to see which upstream and path. Backend 504s on
 `/api/agents/runtime/events` are long-polls; a burst of them means the
 backend is wedged rather than slow.
 
+On the single VM there is no ingress controller, so this metric counts the
+backend's own access lines with a 5xx status (`jsonPayload.log="access"`).
+Read them with `docker compose logs backend | grep '"status":5'`. It stays
+quiet when the backend is down altogether, since Cloudflare's 502s leave no
+access line. That case pages through the `/api/health` uptime check
+([Site down](#site-down)) instead.
+
 ### Secret sync
 
 ESO failed to reconcile more than 3 times in an hour. Existing Secrets keep

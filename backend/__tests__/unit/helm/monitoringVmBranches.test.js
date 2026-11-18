@@ -22,6 +22,7 @@ describe('alerting reads the single-VM deploy too', () => {
     ['model_fallback', 'jsonPayload.alarm="model_fallback"'],
     ['user_spend_over_threshold', 'jsonPayload.alarm="user_spend"'],
     ['litellm_key_budget_near_limit', 'jsonPayload.alarm="litellm_budget"'],
+    ['litellm_guardrail_blocks', 'Content blocked'],
   ])('%s keeps its cluster branch and adds a VM branch', (name, marker) => {
     const { filter } = metrics.find((m) => m.name === name);
     expect(filter).toContain('resource.type="k8s_container"');
