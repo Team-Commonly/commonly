@@ -226,7 +226,12 @@ failure with `kubectl logs -n commonly-dev job/<name> --all-containers`.
 
 More than 5 platform LLM calls failed in an hour *after* LiteLLM's own
 fallbacks: a summary, digest, native-app reply or commonly-bot call got no
-answer. Find the model and the provider error:
+answer. A content-guard block counts here too, since it answers its caller
+with a 400 on the same line. So first compare the hour's
+`litellm_guardrail_blocks` count. If blocks account for the failures, someone
+is probing the guard or a stopped message is in a pod's recent history
+(`docs/runbooks/litellm-guardrails.md`), not a provider failing. Otherwise,
+find the model and the provider error:
 
 ```bash
 kubectl logs -n commonly-dev deploy/litellm -c litellm --since=1h \
