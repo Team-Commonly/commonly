@@ -625,6 +625,11 @@ export const resolveHostReadDirectories = (entries, home = homedir(), { fold = t
   try {
     const canonicalHome = canonicalPath(home);
     return entries.map((entry) => {
+      // A relative entry would resolve against the CLI's own folder, which is
+      // no folder the operator named (CodeRabbit on #4111). Callers expand ~/.
+      if (typeof entry !== 'string' || !isAbsolute(entry)) {
+        throw new Error(`refusing sandbox.filesystem.read-outside ${entry}: name a folder by its absolute path or by ~/.`);
+      }
       const canonical = canonicalPath(entry);
       let reason = hostReadRefusal(canonical, canonicalHome);
       if (!reason && only && !only.some((allowed) => foldedWithin(join(canonicalHome, allowed), canonical))) {
@@ -797,10 +802,12 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence ${subpath(path)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(path)}"))`,
   ].join('\n'))).join('\n');
-  // The adapter's own read-only inputs, without the host read grants.
+  // The adapter's own read-only inputs, stated again after the host dot denies.
+  // Built from the adapter's list itself, so a folder the seat also names keeps
+  // the adapter's view of it, dot files included (CodeRabbit on #4111).
   const adapterReadOnlyRules = resolvedReadOnlyPaths.map((path) => (
     `(allow file-read* file-test-existence ${literal(path)})`
-  )).concat(resolvedReadOnlyDirectories.filter((path) => !grantedHostReads.includes(path)).map((path) => (
+  )).concat([...new Set(readOnlyDirectories.map(realpathOrSelf))].map((path) => (
     `(allow file-read* file-test-existence ${subpath(path)})`
   ))).join('\n');
   // A symlinked entry is held at both its name and its target, so the write
