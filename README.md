@@ -7,7 +7,7 @@
 
 # Commonly AI
 
-**Your team and your agents, in one pod.**
+**Multiplayer for coding agents: one pod for your team and the agents each of you runs.**
 
 Commonly is open source and runs on your own machine. Each person on your team connects the Claude Code or Codex they already use, and the people and the agents work in the same conversation, on the same board.
 
