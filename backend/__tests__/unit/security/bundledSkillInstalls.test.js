@@ -2,10 +2,13 @@
  * Bundled skills are text an agent follows with the person's own privileges. One
  * that pipes a downloaded script into a shell runs whatever that URL serves on
  * the day it runs: the officecli skill did, from the upstream repository's
- * mutable `main` branch (#3870). These pin the replacement: no bundled skill
- * pipes network content into a shell, and the officecli install names one
- * release and checks each platform's binary against a written SHA-256 before
- * installing it.
+ * mutable `main` branch (#3870). These pin the replacement:
+ *  - no bundled skill runs downloaded content as code (a fetch piped into an
+ *    interpreter, or handed to one as its script)
+ *  - no bundled skill tells the agent to install a package, pinned or not
+ *    (F559), except a reviewed line in ALLOWED_PACKAGE_INSTALLS
+ *  - the officecli install names one release and checks each platform's binary
+ *    against a written SHA-256 before installing it
  */
 const fs = require('fs');
 const path = require('path');
@@ -67,6 +70,82 @@ describe('bundled skill installs', () => {
       'curl -s "https://api.example.test/v3/search?q=x" | python3 -c "import sys,json; print(json.load(sys.stdin))"',
       'Verify with `officecli --version`.',
     ].forEach((line) => expect([line, runsDownloadedCode(line)]).toEqual([line, false]));
+  });
+
+  // Skill text an agent follows must not install packages. An unpinned install
+  // runs whatever the registry serves that day (F559: markdown-converter told
+  // agents `pip3 install markitdown`), and parsing every tool's pin syntax
+  // leaks, so the rule refuses the install itself, pinned or not. A skill that
+  // truly needs one pins it (version and hash) and is added to
+  // ALLOWED_PACKAGE_INSTALLS in the same reviewed change. No bundled skill
+  // needs one today.
+  const PACKAGE_MANAGER = [
+    '(?:python[\\d.]*\\s+-m\\s+)?pip[\\d.]*', 'pipx', 'uv(?:\\s+(?:pip|tool))?', 'poetry', 'pdm',
+    'conda', 'mamba', 'micromamba', 'npm', 'pnpm', 'yarn(?:\\s+global)?', 'bun', 'deno', 'gem',
+    'cargo', 'dotnet\\s+tool', 'brew', 'apt', 'apt-get', 'dnf', 'yum', 'apk', 'pacman', 'zypper',
+    'choco', 'winget', 'scoop', 'Install-Module', 'Install-Package',
+  ].join('|');
+  const PACKAGE_INSTALL = [
+    // `<tool> install|add|i …` (Install-Module stands alone).
+    new RegExp(`(?:^|[\\s\`'"(;&|>$])(?:${PACKAGE_MANAGER})(?:\\s+(?:-\\S+\\s+)*(?:install|add|i|-S|-Sy)\\b|(?<=Install-(?:Module|Package))\\s+\\S)`, 'i'),
+    // go install/get/run of a module path (a bare "go install" in a sentence is prose).
+    /(?:^|[\s`'"(;&|>$])go\s+(?:install|get|run)\s+(?:-\S+\s+)*\S*[./@]\S*/i,
+    // Fetch-and-run launchers: npx, npm exec/x, pnpm/yarn dlx, bunx, uvx, uv run --with, pipx run.
+    /(?:^|[\s`'"(;&|>$])(?:npx|bunx|uvx|npm\s+(?:exec|x)|(?:pnpm|yarn)\s+dlx|pipx\s+run|uv\s+run\s+--with)\s+\S/i,
+  ];
+  const ALLOWED_PACKAGE_INSTALLS = [];
+  const installsPackage = (line) => PACKAGE_INSTALL.some((re) => re.test(line));
+
+  test('no bundled skill tells the agent to install a package', () => {
+    const hits = files.flatMap((file) => logicalLines(fs.readFileSync(file, 'utf8'))
+      .filter(installsPackage)
+      .map((line) => `${path.relative(root, file)}: ${line.trim()}`))
+      .filter((hit) => !ALLOWED_PACKAGE_INSTALLS.includes(hit));
+    expect(hits).toEqual([]);
+  });
+
+  test('the package-install patterns catch what F559 found and its neighbours, and leave prose alone', () => {
+    [
+      '`markitdown` is installed via `pip3 install markitdown` and is on PATH.',
+      'python3 -m pip install requests',
+      'pip install a==1 b',
+      'pip install -r requirements.txt',
+      'npm install --save-dev some-cli',
+      'npm i -D some-cli',
+      'npm install -g @scope/pkg@1.2.3',
+      'npx some-cli init',
+      'npx -y @scope/pkg@1.2.3',
+      'pnpm dlx some-cli',
+      'yarn global add some-cli',
+      'bunx some-cli',
+      'uvx some-tool',
+      'uv tool install some-tool',
+      'pipx install some-tool',
+      'cargo install ripgrep --version 14.0.0',
+      'go install example.test/cmd/tool@latest',
+      'go run example.test/cmd/tool@v1.2.3',
+      'pip3.11 install x',
+      'npm exec some-cli',
+      'uv run --with some-pkg script.py',
+      'poetry add some-pkg',
+      '$ pip install x',
+      'brew install pandoc',
+      'sudo apt-get install -y poppler-utils',
+      'dotnet tool install -g some-tool',
+      'winget install Some.Tool',
+      'Install-Module PSSomething',
+    ].forEach((line) => expect([line, installsPackage(line)]).toEqual([line, true]));
+    [
+      "If it is missing, say so and stop; don't install it yourself.",
+      'Homebrew installs it under /opt/homebrew.',
+      'You need to go install the app first.',
+      'Make sure to go add the file, then we can go i guess.',
+      'If the port add fails, retry.',
+      'npm installs land in node_modules.',
+      'pip installs it for you.',
+      'The Install section above pins the release.',
+      'Verify with `officecli --version`.',
+    ].forEach((line) => expect([line, installsPackage(line)]).toEqual([line, false]));
   });
 
   describe('officecli', () => {
