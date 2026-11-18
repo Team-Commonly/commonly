@@ -34,7 +34,7 @@ the files at mode 0600.
 | `litellm` | `ghcr.io/berriai/litellm:v1.106.2` | The chart's config, rendered on each deploy. |
 | `commonly-bot` | `commonly-bot:<tag>` | The summarizer agent. It polls the backend with the tokens in `commonly-bot-state/runtime.json`. |
 | `cloudflared` | `cloudflare/cloudflared:2026.1.2` | The only way in: a remotely managed tunnel, run from `TUNNEL_TOKEN`. |
-| `pg-backup` | the postgres image | Nightly `pg_dump -Fc` and `mongodump` to an R2 bucket, keeping 14 days. |
+| `pg-backup` | the postgres image | Nightly `pg_dump -Fc` and `mongodump` to an R2 bucket, keeping 14 days, plus optional Postgres-only dumps every `BACKUP_PG_EVERY_HOURS`. |
 
 MongoDB is not on the VM. The backend and the backups reach it by its URI.
 
@@ -227,6 +227,15 @@ both dumps passed and uploaded. The Mongo URI reaches `mongodump` through a 0600
 config file, not its command line. Give the R2 token object read and write on
 that one bucket.
 
+Postgres lives on the VM's disk, so a nightly dump alone can lose up to a day
+of messages with that disk. Set `BACKUP_PG_EVERY_HOURS` (for example `6`) to add
+Postgres-only dumps at each multiple of that many hours UTC. They land in the
+same `postgres/` folder with the same checks, the nightly prune ages them out on
+the same retention, and they never write the success stamp, so health still
+means a full backup in the last 26 hours. A slot that falls at the nightly hour
+is skipped, since the nightly run dumps Postgres too. One run takes seconds and
+about the size of the nightly Postgres dump.
+
 The Mongo archive is taken while the app keeps writing, without `--oplog`, so
 it is not one point in time: a restore can mix collections from before and
 after a related write. Adding `--oplog`, and restoring with `--oplogReplay`,
@@ -242,6 +251,8 @@ point-in-time copy, and treat this archive as a second copy.
 - **Run one now:** `docker compose run --rm --no-deps pg-backup once`. The
   success stamp lives in the `backup-state` volume, so a manual run clears the
   service's health too.
+- **Run a Postgres-only one now:** `docker compose run --rm --no-deps pg-backup pg-once`.
+  It does not clear the service's health; only a full run does.
 - **List what's stored:** `docker compose run --rm --no-deps -T pg-backup list`
 
 ### Restore test (monthly)
@@ -346,6 +357,47 @@ To roll back:
 6. **If agents were installed while the VM ran:** their tokens are only in the
    VM's accounts file. Run `reprovision-all` on the cluster so its bot gets
    them.
+
+## Logs and alerts
+
+Container logs reach Cloud Logging through the Google Cloud Ops Agent (2.73) on
+the VM host, not through a Docker logging driver: if a driver such as `gcplogs`
+fails to start, the container does not start either, so a logging outage would
+become a site outage. Containers keep the `json-file` driver; the agent tails
+those files. Install it once per VM:
+
+```sh
+curl -sSfO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+```
+
+Then write `/etc/google-cloud-ops-agent/config.yaml` and `sudo systemctl restart google-cloud-ops-agent`:
+
+```yaml
+logging:
+  receivers:
+    docker_containers:
+      type: files
+      include_paths: [/var/lib/docker/containers/*/*-json.log]
+      record_log_file_path: true
+  processors:
+    docker_wrapper: { type: parse_json }          # Docker's {"log","stream","time"} envelope
+    app_json: { type: parse_json, field: log }    # the app's own JSON line inside it
+  service:
+    pipelines:
+      default_pipeline: { receivers: [] }          # syslog off
+      docker: { receivers: [docker_containers], processors: [docker_wrapper, app_json] }
+metrics:
+  service:
+    pipelines:
+      default_pipeline: { receivers: [] }          # host metrics off
+```
+
+Entries land as `resource.type="gce_instance"`, log `docker_containers`. The
+second parse is what lets the log-based alert metrics match on
+`jsonPayload.alarm`; a line that is not JSON keeps its text in
+`jsonPayload.log`. The VM's service account needs `roles/logging.logWriter`.
+Volume is about 0.05 GiB a day, well inside the free logging allowance.
 
 ## Rollback
 

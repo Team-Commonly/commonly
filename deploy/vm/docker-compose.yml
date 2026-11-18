@@ -256,6 +256,7 @@ services:
       - BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX:-commonly}
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
       - BACKUP_HOUR_UTC=${BACKUP_HOUR_UTC:-2}
+      - BACKUP_PG_EVERY_HOURS=${BACKUP_PG_EVERY_HOURS:-0}
       - BACKUP_MONGO_MIN_BYTES=${BACKUP_MONGO_MIN_BYTES:-65536}
     volumes:
       - ./backup.sh:/usr/local/bin/commonly-backup:ro

@@ -377,3 +377,103 @@ describe('single-VM compose: safety properties', () => {
     expect(script.indexOf('pg_restore -l')).toBeLessThan(script.indexOf('rclone delete'));
   });
 });
+
+// Runs the real backup.sh with stub tools on PATH, so the Postgres-only mode is
+// proven by behaviour: it must upload one Postgres dump and must not dump
+// MongoDB, prune, or write the success stamp the health check reads.
+describe('backup.sh Postgres-only runs', () => {
+  const stub = (dir, name, body) => {
+    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const run = (args, extraEnv = {}) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-backup-'));
+    const log = path.join(dir, 'calls.log');
+    // pg_dump writes the file named after -f; pg_restore -l lists table data.
+    stub(dir, 'pg_dump', `while [ $# -gt 0 ]; do [ "$1" = -f ] && echo dump > "$2"; shift; done; echo pg_dump >> "${log}"`);
+    stub(dir, 'pg_restore', 'echo "1; 0 0 TABLE DATA public messages owner"');
+    stub(dir, 'rclone', `echo "rclone $*" >> "${log}"`);
+    stub(dir, 'mongodump', `echo mongodump >> "${log}"`);
+    stub(dir, 'apk', `echo apk >> "${log}"; exit 1`);
+    const env = {
+      PATH: `${dir}:/usr/bin:/bin`,
+      PG_ADMIN_USER: 'admin', PG_ADMIN_PASSWORD: 'x', PG_DATABASE: 'commonly',
+      BACKUP_S3_ENDPOINT: 'https://r2.invalid', BACKUP_S3_BUCKET: 'b',
+      BACKUP_S3_ACCESS_KEY_ID: 'k', BACKUP_S3_SECRET_ACCESS_KEY: 's',
+      BACKUP_S3_PREFIX: 'nightly', MONGO_URI: 'mongodb://u:p@h/db',
+      ...extraEnv,
+    };
+    const r = spawnSync('sh', [path.join(VM_DIR, 'backup.sh'), ...args], { env, encoding: 'utf8' });
+    const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { ...r, calls };
+  };
+
+  it('pg-once uploads one Postgres dump and nothing else', () => {
+    const r = run(['pg-once']);
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/postgres backup uploaded: nightly\/postgres\/postgres-\d{8}-\d{6}\.dump/);
+    expect(r.calls).toMatch(/^pg_dump$/m);
+    expect(r.calls).toMatch(/^rclone copyto \S+ bucket:b\/nightly\/postgres\/postgres-\d{8}-\d{6}\.dump$/m);
+    expect(r.calls).not.toMatch(/mongodump/);
+    expect(r.calls).not.toMatch(/rclone delete/);
+    expect(r.calls).not.toMatch(/^apk$/m);
+    // The success stamp's directory is never created by a Postgres-only run.
+    expect(r.stdout).not.toMatch(/backup complete/);
+  });
+
+  it('rejects a Postgres cadence outside 0 to 24 hours before doing anything', () => {
+    const r = run(['pg-once'], { BACKUP_PG_EVERY_HOURS: '25' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/BACKUP_PG_EVERY_HOURS must be 0 to 24/);
+    expect(r.calls).toBe('');
+  });
+
+  // A fake clock: date +%s reads it, sleep and pg_dump advance it, and the
+  // third sleep ends the loop by signalling the script.
+  const runLoop = (startSecs, pgDumpSecs) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-backup-loop-'));
+    const log = path.join(dir, 'calls.log');
+    const clock = path.join(dir, 'clock');
+    const sleeps = path.join(dir, 'sleeps');
+    fs.writeFileSync(clock, String(startSecs));
+    fs.writeFileSync(sleeps, '0');
+    const tick = (n) => `c=$(cat "${clock}"); echo $((c + ${n})) > "${clock}"`;
+    stub(dir, 'date', `case "$*" in *+%s*) cat "${clock}" ;; *) exec /bin/date "$@" ;; esac`);
+    stub(dir, 'sleep', `n=$(($(cat "${sleeps}") + 1)); echo $n > "${sleeps}"; echo "sleep $1" >> "${log}"; [ $n -ge 3 ] && kill -TERM $PPID; ${tick('$1')}`);
+    stub(dir, 'pg_dump', `while [ $# -gt 0 ]; do [ "$1" = -f ] && echo dump > "$2"; shift; done; echo pg_dump >> "${log}"; ${tick(pgDumpSecs)}`);
+    stub(dir, 'pg_restore', 'echo "1; 0 0 TABLE DATA public messages owner"');
+    stub(dir, 'rclone', 'true');
+    stub(dir, 'mongodump', `echo mongodump >> "${log}"`);
+    stub(dir, 'apk', 'exit 1');
+    const env = {
+      PATH: `${dir}:/usr/bin:/bin`,
+      PG_ADMIN_USER: 'admin', PG_ADMIN_PASSWORD: 'x', PG_DATABASE: 'commonly',
+      BACKUP_S3_ENDPOINT: 'https://r2.invalid', BACKUP_S3_BUCKET: 'b',
+      BACKUP_S3_ACCESS_KEY_ID: 'k', BACKUP_S3_SECRET_ACCESS_KEY: 's',
+      BACKUP_S3_PREFIX: 'nightly', MONGO_URI: 'mongodb://u:p@h/db',
+      BACKUP_HOUR_UTC: '1', BACKUP_PG_EVERY_HOURS: '6',
+    };
+    spawnSync('sh', [path.join(VM_DIR, 'backup.sh'), 'loop'], { env, encoding: 'utf8', timeout: 20000 });
+    const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [];
+    fs.rmSync(dir, { recursive: true, force: true });
+    return calls;
+  };
+
+  it('runs the nightly backup at once when a Postgres-only run overran its slot', () => {
+    // 23:00 UTC: the 00:00 Postgres slot comes first and its dump takes 65 minutes,
+    // finishing at 01:05, past the 01:00 nightly slot.
+    const calls = runLoop(82800, 3900);
+    expect(calls.slice(0, 4)).toEqual(['sleep 3600', 'pg_dump', 'pg_dump', 'mongodump']);
+  });
+
+  it('keeps the normal wait when a Postgres-only run finishes before the nightly slot', () => {
+    const calls = runLoop(82800, 60);
+    expect(calls.slice(0, 5)).toEqual(['sleep 3600', 'pg_dump', 'sleep 3540', 'pg_dump', 'mongodump']);
+  });
+
+  it('passes the cadence through to pg-backup, off unless set', () => {
+    expect(compose.services['pg-backup'].environment)
+      .toContain('BACKUP_PG_EVERY_HOURS=${BACKUP_PG_EVERY_HOURS:-0}');
+  });
+});
