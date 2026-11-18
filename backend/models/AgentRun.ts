@@ -112,6 +112,11 @@ interface IAgentRun extends Document {
    * turn in the pod (F557). Absent when none were.
    */
   historySetAside?: number;
+  /**
+   * F561: the agent's own earlier messages in the turn set aside after the
+   * guard stopped a later call on them. Absent when none were.
+   */
+  ownTextSetAside?: number;
   /** F56: the model ended the turn with no text and no post. */
   emptyCompletion?: boolean;
   /**
@@ -187,6 +192,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     webSetAside: { type: Number },
     computerSetAside: { type: Number },
     historySetAside: { type: Number },
+    ownTextSetAside: { type: Number },
     emptyCompletion: { type: Boolean },
     metered: { type: Boolean },
     startedAt: { type: Date, default: Date.now },

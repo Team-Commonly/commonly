@@ -223,6 +223,32 @@ const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stoppe
 // recent messages, so one message can't fail every later turn in its pod.
 // Neither line names the author or repeats anything from the message.
 export const HISTORY_WITHHELD_TEXT = '(a message withheld: a content filter stopped it)';
+// F561: the guard scans the whole request, so the agent's OWN words from an
+// earlier round can stop a later call. On 11-18 an outside user's first-contact
+// turn failed this way: the agent wrote a line that read as a system-prompt
+// probe beside a tool call, and the next call, which carried it, was stopped.
+// Its prose is not an input anyone sent, and every text someone did send stays
+// in the request and is still checked. So once a turn, the own text the guard
+// stops on its own (all of it, when the check is unavailable) is set aside and
+// the call is made again. Prose beside a tool call is cleared and the call kept,
+// so every result still has its call. A reply held back for unseen messages
+// (F530) has no call, so it becomes this fixed line, which names no rule and
+// repeats nothing.
+export const OWN_TEXT_SET_ASIDE_TEXT = '(an earlier draft of mine, set aside: a content filter stopped it)';
+export function setAsideOwnText(messages: any[], stops: boolean[] | null): number {
+  const own = messages
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => message?.role === 'assistant' && typeof message.content === 'string' && message.content);
+  let setAside = 0;
+  own.forEach(({ message, index }, i) => {
+    if (stops && !stops[i]) return;
+    messages[index] = Array.isArray(message.tool_calls) && message.tool_calls.length > 0
+      ? { ...message, content: null }
+      : { ...message, content: OWN_TEXT_SET_ASIDE_TEXT };
+    setAside += 1;
+  });
+  return setAside;
+}
 export const HISTORY_WITHHELD_LINE = `- ${HISTORY_WITHHELD_TEXT}`;
 export const HISTORY_LEFT_OUT_NOTICE = "This pod's recent messages were left out of this turn: a content filter "
   + 'stopped them. If the message below needs earlier context, say you could not see it.';
@@ -3205,6 +3231,19 @@ export async function runAgent(
   // Set when the recovery round asked only for tools it was not offered and
   // was given one more call to read the refusal (F33).
   let recoveryRetried = false;
+  // F561: set once the agent's own earlier text was set aside this turn.
+  let ownTextSetAside = false;
+  // Returns how many of the agent's own messages were set aside: the ones the
+  // guard stops on their own, or all of them when the check is unavailable.
+  // None when the guard passes every one: it stopped on something else.
+  const setAsideStoppedOwnText = async (): Promise<number> => {
+    const own = messages.filter((message) => (
+      message?.role === 'assistant' && typeof message.content === 'string' && message.content));
+    if (own.length === 0) return 0;
+    const stops = await textsTheGuardStops(litellm, own.map((message) => String(message.content)), runGuardrails);
+    if (stops && !stops.includes(true)) return 0;
+    return setAsideOwnText(messages, stops);
+  };
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
@@ -3487,6 +3526,18 @@ export async function runAgent(
               if (setAside > 0) {
                 computerSetAsides += 1;
                 run.computerSetAside = Number(run.computerSetAside || 0) + setAside;
+                continue;
+              }
+            }
+            // F561: last, the agent's own earlier words, once a turn. Text it
+            // read from a page or a computer read went through the steps
+            // above first, so own text that only quotes such a result is
+            // already cleared with it.
+            if (!ownTextSetAside) {
+              const setAside = await setAsideStoppedOwnText();
+              if (setAside > 0) {
+                ownTextSetAside = true;
+                run.ownTextSetAside = setAside;
                 continue;
               }
             }

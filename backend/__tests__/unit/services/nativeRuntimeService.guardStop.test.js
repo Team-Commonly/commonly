@@ -647,6 +647,72 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
+  // F561 (11-18): an outside user's first-contact turn failed because the
+  // guard stopped the agent's OWN words. Its first call passed, it wrote a
+  // line that read as a system-prompt probe ("list" + "system instructions")
+  // beside a tool call, and the next call, which carries that line, was
+  // stopped. The agent's prose is not an input anyone sent, so it is set
+  // aside, its tool calls kept, and the call is made once more.
+  test('the agent\'s own earlier text the guard stops is set aside, its tool calls kept, and the turn answers', async () => {
+    const narrating = toolCalls(fetchCall('c1', CLEAN_URL));
+    narrating.data.choices[0].message.content = `Let me check that page first. ${STOPPED_TEXT}`;
+    chatReplies = [narrating, guardStop, reply('Here is the changelog.')];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(chatBodies).toHaveLength(3);
+    const retried = chatBodies[2].messages;
+    expect(JSON.stringify(retried)).not.toContain(STOPPED_TEXT);
+    // The page it read is still there: only its own words went.
+    expect(JSON.stringify(retried)).toContain(CLEAN_TEXT);
+    const calls = retried.filter((m) => m.role === 'assistant').flatMap((m) => (m.tool_calls || []).map((c) => c.id));
+    expect(calls).toEqual(['c1']);
+    retried.filter((m) => m.role === 'tool').forEach((m) => expect(calls).toContain(m.tool_call_id));
+    expect(savedRun.ownTextSetAside).toBe(1);
+    expect(savedRun.webSetAside).toBeUndefined();
+    expect(posted()).toEqual(['Here is the changelog.']);
+  });
+
+  test('own text the guard passes is kept, and a stop it does not explain still ends the run', async () => {
+    const narrating = toolCalls(fetchCall('c1', CLEAN_URL));
+    narrating.data.choices[0].message.content = 'Let me check that page first.';
+    chatReplies = [narrating, guardStop];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    expect(chatBodies).toHaveLength(2);
+    expect(savedRun.ownTextSetAside).toBeUndefined();
+    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  test('own text is set aside once a turn: a second stop ends the run with the fixed line', async () => {
+    const narrating = toolCalls(fetchCall('c1', CLEAN_URL));
+    narrating.data.choices[0].message.content = `Noting ${STOPPED_TEXT}`;
+    chatReplies = [narrating, guardStop, guardStop, reply('Never asked.')];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    expect(chatBodies).toHaveLength(3);
+    expect(savedRun.ownTextSetAside).toBe(1);
+    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  test('when the check cannot be made, all of the agent\'s own earlier text is set aside for one retry', async () => {
+    checkUnavailable = true;
+    const narrating = toolCalls(call('c1', 'commonly_read_context', {}));
+    narrating.data.choices[0].message.content = 'Reading the pod first.';
+    chatReplies = [narrating, guardStop, reply('Answered.')];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(JSON.stringify(chatBodies[2].messages)).not.toContain('Reading the pod first.');
+    expect(savedRun.ownTextSetAside).toBe(1);
+  });
+
   // F234: a stop before the turn ran used to end in silence.
   test('a person who addresses an agent past its daily cap is told, in plain words', async () => {
     AgentRun.countDocuments.mockResolvedValueOnce(100000);
@@ -1761,5 +1827,45 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(planLine).not.toHaveProperty('podId');
     expect(ceiling).toBeDefined();
     expect(ceiling).not.toHaveProperty('metered');
+  });
+});
+
+// F561: which of the agent's own messages a guard stop sets aside, and how.
+describe('setAsideOwnText', () => {
+  const { setAsideOwnText, OWN_TEXT_SET_ASIDE_TEXT } = require('../../../services/nativeRuntimeService');
+  const base = () => [
+    { role: 'system', content: 'system prompt' },
+    { role: 'user', content: 'the person' },
+    { role: 'assistant', content: 'narration one', tool_calls: [{ id: 'a', type: 'function', function: { name: 'x', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'a', content: 'result' },
+    { role: 'assistant', content: 'a held reply' },
+    { role: 'user', content: 'what it missed' },
+  ];
+
+  test('clears prose beside tool calls, replaces a held reply with the fixed notice, and leaves every other role alone', () => {
+    const messages = base();
+    expect(setAsideOwnText(messages, null)).toBe(2);
+    expect(messages[2]).toEqual(expect.objectContaining({ content: null, tool_calls: base()[2].tool_calls }));
+    expect(messages[4]).toEqual({ role: 'assistant', content: OWN_TEXT_SET_ASIDE_TEXT });
+    [0, 1, 3, 5].forEach((i) => expect(messages[i]).toEqual(base()[i]));
+  });
+
+  test('with check results, only the own texts the guard stops are set aside', () => {
+    const messages = base();
+    expect(setAsideOwnText(messages, [false, true])).toBe(1);
+    expect(messages[2].content).toBe('narration one');
+    expect(messages[4].content).toBe(OWN_TEXT_SET_ASIDE_TEXT);
+  });
+
+  test('nothing to set aside when the agent wrote no text, or the guard passes all of it', () => {
+    const silent = base().map((m) => (m.role === 'assistant' && m.tool_calls ? { ...m, content: null } : m)).filter((m, i) => i !== 4);
+    expect(setAsideOwnText(silent, null)).toBe(0);
+    const messages = base();
+    expect(setAsideOwnText(messages, [false, false])).toBe(0);
+    expect(messages).toEqual(base());
+  });
+
+  test('the notice names no rule and repeats nothing', () => {
+    expect(OWN_TEXT_SET_ASIDE_TEXT).not.toMatch(/system|instruction|list|guard/i);
   });
 });
