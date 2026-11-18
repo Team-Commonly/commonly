@@ -3235,13 +3235,15 @@ export async function runAgent(
   let ownTextSetAside = false;
   // Returns how many of the agent's own messages were set aside: the ones the
   // guard stops on their own, or all of them when the check is unavailable.
-  // None when the guard passes every one: it stopped on something else.
+  // None when the guard passes every one: it stopped on something else. None,
+  // too, when the turn has no time left for the retry, before or after the
+  // check: a retry the time cap ends would read as a timeout, not a guard stop.
   const setAsideStoppedOwnText = async (): Promise<number> => {
     const own = messages.filter((message) => (
       message?.role === 'assistant' && typeof message.content === 'string' && message.content));
-    if (own.length === 0) return 0;
+    if (own.length === 0 || !roomForAnotherCall(0)) return 0;
     const stops = await textsTheGuardStops(litellm, own.map((message) => String(message.content)), runGuardrails);
-    if (stops && !stops.includes(true)) return 0;
+    if ((stops && !stops.includes(true)) || !roomForAnotherCall(0)) return 0;
     return setAsideOwnText(messages, stops);
   };
   // Returns how many results were set aside, and how many web results the
