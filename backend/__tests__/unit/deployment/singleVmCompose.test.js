@@ -299,6 +299,21 @@ describe('single-VM compose: safety properties', () => {
       .toEqual(['backend', 'cloudflared', 'commonly-bot', 'frontend', 'litellm', 'pg-backup', 'postgres']);
   });
 
+  // A full `docker compose up` starts LiteLLM beside its callers, and a model
+  // call before LiteLLM listens fails with ECONNREFUSED. So they wait for its
+  // readiness, but optionally: a LiteLLM that never gets healthy costs a compose
+  // warning, never a backend that does not start or a roll that fails.
+  it.each(['backend', 'commonly-bot'])('%s waits for LiteLLM to be ready, without needing it', (service) => {
+    expect(compose.services[service].depends_on.litellm).toEqual({ condition: 'service_healthy', required: false });
+  });
+
+  it("checks LiteLLM's readiness with the image's own Python", () => {
+    const { test, start_period: startPeriod } = compose.services.litellm.healthcheck;
+    expect(test.slice(0, 2)).toEqual(['CMD', 'python3']);
+    expect(test.join(' ')).toContain('http://127.0.0.1:4000/health/readiness');
+    expect(startPeriod).toBeDefined();
+  });
+
   it.each(services)('%s mounts no docker socket', (service) => {
     (compose.services[service].volumes || []).forEach((volume) => expect(volume).not.toMatch(/docker\.sock/));
   });

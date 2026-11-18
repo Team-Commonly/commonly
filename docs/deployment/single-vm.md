@@ -38,6 +38,13 @@ the files at mode 0600.
 
 MongoDB is not on the VM. The backend and the backups reach it by its URI.
 
+### Start order
+
+- `postgres` must be healthy before `backend` and `litellm` start.
+- `backend` and `commonly-bot` wait for LiteLLM's readiness (`/health/readiness`), so a model call never meets a LiteLLM that isn't listening yet. That wait is optional (`required: false`). If LiteLLM never gets healthy, compose prints `optional dependency "litellm" failed to start` and starts them anyway. A broken LiteLLM costs model calls, but the backend still starts. `up -d --wait` still exits non-zero, because LiteLLM is a service in the project.
+- A LiteLLM that crash-loops releases the wait too. Its health resets to `starting` on each restart, but between restarts the engine reports it `restarting` with health `unhealthy`, and compose reads that as unhealthy. Measured on Docker Engine 29.4.3 with Compose v5.1.4: a dependency that exits after one second released its dependent in about 5 seconds.
+- This order holds only for `docker compose up`. After a VM reboot, the Docker daemon restarts the containers by their restart policy and knows nothing of `depends_on`, so the backend can come up first. Until LiteLLM is listening, a model call fails with `ECONNREFUSED litellm:4000`.
+
 ### commonly-bot's accounts file
 
 `commonly-bot-state/runtime.json` lists the bot's accounts, one per installed
@@ -94,7 +101,9 @@ Configure the tunnel's public hostnames on the Cloudflare side:
    ports, because the tunnel dials out.
 2. **Install Docker Engine and the compose plugin** from Docker's apt
    repository for Debian (docs.docker.com/engine/install/debian). Add the deploy
-   user to the `docker` group.
+   user to the `docker` group. `docker compose version` must print v2.20.2 or
+   later. v2.20.0 and v2.20.1 read `required` in `depends_on`, but still fail an
+   optional dependency that is unhealthy.
 3. **Check out the repo** at the SHA you will deploy. The compose file mounts the
    chart's LiteLLM files and marketplace manifest from the checkout.
 
