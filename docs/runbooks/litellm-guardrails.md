@@ -124,7 +124,14 @@ still pair with every block word.
   - A withheld message gives no address that `commonly_fetch_url` may open,
     and a later `commonly_read_context` in that turn shows it as withheld,
     so its text and links don't come back through the tool.
-  - `AgentRun.historySetAside` counts the lines withheld.
+  - A line that stopped on its own is remembered for an hour, per pod, so
+    later turns withhold it before their first call and don't pay a stopped
+    call, a check per line and a retry each time. The key includes the
+    message's text, so an edit is checked again. A line left out only
+    because the lines stopped together, or the check failed, is not
+    remembered. The memory lives in each backend process, so a restart or
+    another replica just takes the path above once more.
+  - `AgentRun.historySetAside` counts the lines withheld, either way.
 - If the turn has read the web and posted nothing yet, each web result is
   checked on its own through LiteLLM's `/guardrails/apply_guardrail`, which
   calls no model. The result the guard stops is replaced with a fixed

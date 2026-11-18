@@ -34,6 +34,7 @@ import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
+import { createHash } from 'crypto';
 import {
   dispatchHostedBrokerTool,
   hostedBrokerToolsForRun,
@@ -225,6 +226,37 @@ export const HISTORY_WITHHELD_TEXT = '(a message withheld: a content filter stop
 export const HISTORY_WITHHELD_LINE = `- ${HISTORY_WITHHELD_TEXT}`;
 export const HISTORY_LEFT_OUT_NOTICE = "This pod's recent messages were left out of this turn: a content filter "
   + 'stopped them. If the message below needs earlier context, say you could not see it.';
+// F557: a pod message the guard stopped on its own is remembered for an hour, so
+// later turns in that pod withhold it before their first call. Without this,
+// every turn until the message scrolled out paid a stopped call, one guard
+// check per history line and a retry. The key holds the pod, the message id
+// and a hash of its text, so an edited message is checked afresh. Not the
+// guardrails: they are fixed for the process, which is as long as this lasts,
+// and a turn offered a Limited-Use tool checks a subset of them, so at worst it
+// withholds a line it could have kept. Best effort: a miss costs only the F555
+// path again, and withholding a line drops context but never lets text through.
+export const STOPPED_HISTORY_TTL_MS = 60 * 60 * 1000;
+const STOPPED_HISTORY_MAX = 2000;
+const stoppedHistory = new Map<string, number>();
+const stoppedHistoryKey = (podId: string, id: string, content: string): string => [
+  podId, id, createHash('sha256').update(content).digest('hex'),
+].join('\u0000');
+function rememberStoppedHistory(key: string): void {
+  stoppedHistory.delete(key);
+  stoppedHistory.set(key, Date.now() + STOPPED_HISTORY_TTL_MS);
+  // Oldest first: a Map keeps insertion order.
+  while (stoppedHistory.size > STOPPED_HISTORY_MAX) stoppedHistory.delete(stoppedHistory.keys().next().value as string);
+}
+function stoppedHistoryKnown(key: string): boolean {
+  const until = stoppedHistory.get(key);
+  if (until === undefined) return false;
+  if (until > Date.now()) return true;
+  stoppedHistory.delete(key);
+  return false;
+}
+export function resetStoppedHistoryForTests(): void {
+  stoppedHistory.clear();
+}
 // A computer read the guard stops is set aside and the turn carries on.
 // Reading pages is a walk's whole job, so one stopped page must not end it, and
 // the turn keeps every tool. The notice names the read's place in the turn and
@@ -2444,8 +2476,8 @@ export async function fetchRecentPodMessages(
 export const RECENT_MESSAGES_MAX = 20;
 export const RECENT_MESSAGE_CHARS = 600;
 
-// One prior message as the turn shows it, with the text it came from.
-type RecentLine = { content: string; line: string };
+// One prior message as the turn shows it, with its id and the text it came from.
+type RecentLine = { id: string; content: string; line: string };
 
 function recentMessageLines(
   messages: Array<{ id: string; author: string; content: string }>,
@@ -2458,7 +2490,7 @@ function recentMessageLines(
     .map((m) => {
       const text = m.content.replace(/\s+/g, ' ').trim();
       const clipped = text.length > RECENT_MESSAGE_CHARS ? `${text.slice(0, RECENT_MESSAGE_CHARS)}…` : text;
-      return { content: m.content, line: `- ${m.author}: ${clipped}` };
+      return { id: String(m.id || ''), content: m.content, line: `- ${m.author}: ${clipped}` };
     });
 }
 
@@ -2466,6 +2498,14 @@ function formatRecentMessagesBlock(lines: string[]): string {
   if (!lines.length) return '';
   return 'Recent messages in this pod, oldest first (context only; the message you '
     + `are answering follows):\n${lines.join('\n')}`;
+}
+
+// The turn's user message with its history in front, each withheld line shown
+// only as withheld (F555); with every line withheld, the history is left out.
+function withRecentHistory(lines: RecentLine[], withhold: boolean[], rest: string): string {
+  if (withhold.every(Boolean)) return `${HISTORY_LEFT_OUT_NOTICE}\n\n${rest}`;
+  const shown = lines.map(({ line }, i) => (withhold[i] ? HISTORY_WITHHELD_LINE : line));
+  return `${formatRecentMessagesBlock(shown)}\n\n${rest}`;
 }
 
 /**
@@ -3015,7 +3055,8 @@ export async function runAgent(
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   // F555: what a guard stop on the first call needs to withhold a line.
-  let history: { lines: RecentLine[]; rest: string; gives: string[] } | null = null;
+  // preWithheld marks the lines withheld up front, as stopped earlier (F557).
+  let history: { lines: RecentLine[]; rest: string; gives: string[]; preWithheld: boolean[] } | null = null;
   if (recentCount > 0) {
     try {
       const triggerPayload = (trigger.payload && typeof trigger.payload === 'object'
@@ -3026,10 +3067,21 @@ export async function runAgent(
       // own words, and an address it wrote must not become one it may open.
       const gives = byOtherAuthors(recent, dispatchCtx.ownUserId);
       if (lines.length) {
-        history = { lines, rest: userMessage, gives };
-        userMessage = `${formatRecentMessagesBlock(lines.map(({ line }) => line))}\n\n${userMessage}`;
+        // F557: a message the guard stopped on its own in an earlier turn here
+        // is withheld before the first call, exactly as F555 would withhold it.
+        const preWithheld = lines.map(({ id, content }) => stoppedHistoryKnown(
+          stoppedHistoryKey(String(installation.podId), id, content),
+        ));
+        history = { lines, rest: userMessage, gives, preWithheld };
+        userMessage = withRecentHistory(lines, preWithheld, userMessage);
+        if (preWithheld.some(Boolean)) {
+          dispatchCtx.withheldTexts = new Set(lines.filter((_, i) => preWithheld[i]).map(({ content }) => content));
+          run.historySetAside = preWithheld.filter(Boolean).length;
+        }
       }
-      gives.forEach((text) => dispatchCtx.givenAddresses.add(text));
+      // A withheld message gives no address commonly_fetch_url may open.
+      gives.filter((text) => !dispatchCtx.withheldTexts?.has(text))
+        .forEach((text) => dispatchCtx.givenAddresses.add(text));
     } catch (error) {
       console.warn(
         '[native-runtime] recent pod messages unavailable; turn continues without them:',
@@ -3102,24 +3154,30 @@ export async function runAgent(
   // or that retry is stopped too, the history is left out. When the person's
   // own message stops on its own no retry can pass, so the turn ends as before.
   let historyChecks = 0;
-  let historyWithheld = 0;
+  let historyWithheld = history ? history.preWithheld.filter(Boolean).length : 0;
   const setAsideStoppedHistory = async (): Promise<boolean> => {
     if (!history || historyChecks >= 2 || historyWithheld === history.lines.length) return false;
     historyChecks += 1;
-    const { lines, rest, gives } = history;
+    const { lines, rest, gives, preWithheld } = history;
     let withhold = lines.map(() => true);
     if (historyChecks === 1) {
-      const stops = await textsTheGuardStops(litellm, [rest, ...lines.map(({ line }) => line)], runGuardrails);
+      // Lines withheld up front (F557) are not in the request, so only the rest are checked.
+      const open = lines.map((_, i) => i).filter((i) => !preWithheld[i]);
+      const stops = await textsTheGuardStops(litellm, [rest, ...open.map((i) => lines[i].line)], runGuardrails);
       if (stops?.[0]) return false;
-      if (stops && stops.slice(1).some(Boolean)) withhold = stops.slice(1);
+      if (stops && stops.slice(1).some(Boolean)) {
+        withhold = lines.map((_, i) => preWithheld[i] || stops[1 + open.indexOf(i)]);
+        // Only a line that stopped on its own is remembered (F557), never one
+        // left out because the lines stopped only together or the check failed.
+        open.forEach((i, k) => {
+          if (stops[1 + k]) {
+            rememberStoppedHistory(stoppedHistoryKey(String(installation.podId), lines[i].id, lines[i].content));
+          }
+        });
+      }
     }
     const userIndex = messages.findIndex((message) => message.role === 'user');
-    messages[userIndex] = {
-      ...messages[userIndex],
-      content: withhold.every(Boolean)
-        ? `${HISTORY_LEFT_OUT_NOTICE}\n\n${rest}`
-        : `${formatRecentMessagesBlock(lines.map(({ line }, i) => (withhold[i] ? HISTORY_WITHHELD_LINE : line)))}\n\n${rest}`,
-    };
+    messages[userIndex] = { ...messages[userIndex], content: withRecentHistory(lines, withhold, rest) };
     // A withheld message gives no address commonly_fetch_url may open. Nothing
     // ran yet, so these sources are every address the turn holds.
     const withheldTexts = new Set(lines.filter((_, i) => withhold[i]).map(({ content }) => content));
