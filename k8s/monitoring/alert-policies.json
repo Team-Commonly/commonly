@@ -341,7 +341,7 @@
       {
         "displayName": "no result=pass for 25 h",
         "conditionPrometheusQueryLanguage": {
-          "query": "(sum(increase(logging_googleapis_com:user_stranger_journey_passes[25h])) or on() vector(0)) < 1",
+          "query": "(sum(increase(logging_googleapis_com:user_stranger_journey_passes{monitored_resource=\"gce_instance\"}[25h])) or on() vector(0)) < 1",
           "duration": "0s",
           "evaluationInterval": "300s"
         }

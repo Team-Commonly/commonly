@@ -347,7 +347,7 @@ Two policies, so a single model wobble cannot wake anyone at CRITICAL:
 - **"a stranger journey run failed"** (WARNING): one run printed
   `result: fail`. Its filter takes both `k8s_container` and `gce_instance`.
 - **"the stranger journey has not passed in 25 h"** (CRITICAL): a PromQL
-  count, `increase(...stranger_journey_passes[25h]) < 1` (with `or on()
+  count, `increase(...stranger_journey_passes{monitored_resource="gce_instance"}[25h]) < 1` (with `or on()
   vector(0)` so no data at all still counts as zero). With one run a day,
   one failed, killed or skipped run fires it. It also catches the run that
   never prints a verdict: the compose job's `timeout 900` kills it first.

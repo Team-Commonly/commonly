@@ -46,12 +46,13 @@ describe('alerting reads the single-VM deploy too', () => {
   // One run a day since prod moved to the single VM. A metric-absence condition caps at 23h30m, so the
   // 'not passed' alert is a PromQL count over 25 h, the longest lookback a
   // log-based metric allows: one day plus an hour of slack for the run itself.
-  test('the not-passed alert counts passes over 25 h, across both resources', () => {
+  test('the not-passed alert counts the VM\'s passes over 25 h', () => {
     const p = policies.find((x) => x.displayName === 'commonly-dev: the stranger journey has not passed in 25 h');
     const q = p.conditions[0].conditionPrometheusQueryLanguage.query;
-    expect(q).toContain('logging_googleapis_com:user_stranger_journey_passes[25h]');
+    // A metric on two resource types needs a monitored_resource matcher in
+    // PromQL. The GKE CronJob is suspended, so only the VM's runs count.
+    expect(q).toContain('logging_googleapis_com:user_stranger_journey_passes{monitored_resource="gce_instance"}[25h]');
     expect(q).toContain('or on() vector(0)');
-    expect(q).not.toMatch(/monitored_resource|k8s_container/);
   });
 
   // GKE serves nothing since the cutover; these read only Kubernetes state and
