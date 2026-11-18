@@ -5,6 +5,7 @@
 #
 #   commonly-backup loop    wait for BACKUP_HOUR_UTC, back up, repeat (the service)
 #   commonly-backup once    one backup now, then exit
+#   commonly-backup pg-once one Postgres-only backup now, then exit
 #   commonly-backup check   healthy while the last success, or the service's
 #                           start, is under 26 hours old
 #   commonly-backup list    list stored backups
@@ -14,6 +15,11 @@
 # and <bucket>/<prefix>/mongodb/mongodb-<UTC stamp>.archive.gz (mongodump --archive
 # --gzip). Old objects are pruned only after a night where both dumps passed
 # their content checks and uploaded. Nothing here prints a credential.
+#
+# BACKUP_PG_EVERY_HOURS (0 = off) adds Postgres-only dumps between the nightly
+# runs, at each multiple of that many hours UTC. They land beside the nightly
+# dumps, the nightly prune ages them out on the same retention, and they never
+# touch the success stamp: health still means "a full backup in 26 hours".
 set -eu
 
 STATE_DIR=/var/lib/commonly-backup
@@ -59,6 +65,11 @@ case "$HOUR" in ''|*[!0-9]*) fail "BACKUP_HOUR_UTC must be an hour, 0 to 23" ;; 
 HOUR=$(printf '%s' "$HOUR" | sed 's/^0*//')
 HOUR=${HOUR:-0}
 [ "$HOUR" -le 23 ] || fail "BACKUP_HOUR_UTC must be an hour, 0 to 23"
+PG_EVERY="${BACKUP_PG_EVERY_HOURS:-0}"
+case "$PG_EVERY" in ''|*[!0-9]*) fail "BACKUP_PG_EVERY_HOURS must be a whole number of hours, 0 for off" ;; esac
+PG_EVERY=$(printf '%s' "$PG_EVERY" | sed 's/^0*//')
+PG_EVERY=${PG_EVERY:-0}
+[ "$PG_EVERY" -le 24 ] || fail "BACKUP_PG_EVERY_HOURS must be 0 to 24"
 
 # rclone reads its remote from the environment; nothing is written to disk.
 export RCLONE_CONFIG=/dev/null
@@ -77,6 +88,31 @@ install_tools() {
   fi
 }
 
+# Dump, check and upload one Postgres backup. Returns 1 on any failure.
+# Every step is checked by hand: callers run on the left of `||`, where
+# `set -e` does not apply.
+backup_postgres() {
+  if ! PGPASSWORD="$PG_ADMIN_PASSWORD" pg_dump -h "${PGHOST:-postgres}" -U "$PG_ADMIN_USER" \
+      -d "$PG_DATABASE" -Fc -f "$1"; then
+    echo "postgres dump FAILED"; return 1
+  elif ! pg_restore -l "$1" | grep -q ' TABLE DATA '; then
+    echo "postgres dump has no table data; not uploaded"; return 1
+  elif ! rclone copyto "$1" "$REMOTE/postgres/postgres-$2.dump"; then
+    echo "postgres upload FAILED"; return 1
+  fi
+  echo "postgres backup uploaded: $PREFIX/postgres/postgres-$2.dump"
+}
+
+# A Postgres-only run: no MongoDB dump, no prune, no success stamp.
+backup_pg_only() {
+  stamp=$(date -u +%Y%m%d-%H%M%S)
+  work=$(mktemp -d)
+  rc=0
+  backup_postgres "$work/postgres-$stamp.dump" "$stamp" || rc=1
+  rm -rf "$work"
+  return "$rc"
+}
+
 # Every step is checked by hand: this runs on the left of `||` in the loop,
 # where `set -e` does not apply.
 backup_once() {
@@ -86,16 +122,7 @@ backup_once() {
   mongo_file="$work/mongodb-$stamp.archive.gz"
   ok=1
 
-  if ! PGPASSWORD="$PG_ADMIN_PASSWORD" pg_dump -h "${PGHOST:-postgres}" -U "$PG_ADMIN_USER" \
-      -d "$PG_DATABASE" -Fc -f "$pg_file"; then
-    echo "postgres dump FAILED"; ok=0
-  elif ! pg_restore -l "$pg_file" | grep -q ' TABLE DATA '; then
-    echo "postgres dump has no table data; not uploaded"; ok=0
-  elif ! rclone copyto "$pg_file" "$REMOTE/postgres/postgres-$stamp.dump"; then
-    echo "postgres upload FAILED"; ok=0
-  else
-    echo "postgres backup uploaded: $PREFIX/postgres/postgres-$stamp.dump"
-  fi
+  backup_postgres "$pg_file" "$stamp" || ok=0
 
   # The URI goes in a 0600 config file, not argv, where ps would show it.
   mongo_conf="$work/mongodump.yaml"
@@ -120,10 +147,18 @@ backup_once() {
   echo "backup complete; pruned objects older than ${RETENTION_DAYS} days"
 }
 
+# Both waits take one clock reading from the caller, so a tie stays a tie.
 seconds_until_next_run() {
-  now=$(date -u +%s)
+  now=$1
   wait=$(( (HOUR * 3600 - now % 86400 + 86400) % 86400 ))
   [ "$wait" -eq 0 ] && wait=86400
+  echo "$wait"
+}
+
+# Seconds to the next multiple of PG_EVERY hours UTC; only called when PG_EVERY > 0.
+seconds_until_next_pg() {
+  period=$(( PG_EVERY * 3600 ))
+  wait=$(( period - $1 % period ))
   echo "$wait"
 }
 
@@ -133,15 +168,28 @@ if [ "${1:-loop}" = loop ]; then date -u +%s > "$START_STAMP"; fi
 install_tools
 case "${1:-loop}" in
   once) backup_once ;;
+  pg-once) backup_pg_only ;;
   list) rclone lsl "$REMOTE" ;;
   fetch) rclone cat "$REMOTE/${2:?usage: commonly-backup fetch <path under the prefix>}" ;;
   loop)
     while :; do
-      wait=$(seconds_until_next_run)
+      now=$(date -u +%s)
+      wait=$(seconds_until_next_run "$now")
+      # A Postgres-only slot that falls before the nightly run goes first. When
+      # both fall at the same moment the nightly run wins, since it dumps Postgres too.
+      pg_wait=0
+      [ "$PG_EVERY" -gt 0 ] && pg_wait=$(seconds_until_next_pg "$now")
+      if [ "$pg_wait" -gt 0 ] && [ "$pg_wait" -lt "$wait" ]; then
+        wait=$pg_wait
+        echo "next postgres-only backup in ${wait}s"
+        sleep "$wait"
+        backup_pg_only || echo "postgres-only backup failed; next attempt at the next slot"
+        continue
+      fi
       echo "next backup in ${wait}s (${HOUR}:00 UTC)"
       sleep "$wait"
       backup_once || echo "backup run failed; next attempt tomorrow"
     done
     ;;
-  *) echo "usage: commonly-backup loop|once|check|list|fetch <path>"; exit 2 ;;
+  *) echo "usage: commonly-backup loop|once|pg-once|check|list|fetch <path>"; exit 2 ;;
 esac
