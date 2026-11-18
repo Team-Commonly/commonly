@@ -23,6 +23,8 @@ describe('alerting reads the single-VM deploy too', () => {
     ['user_spend_over_threshold', 'jsonPayload.alarm="user_spend"'],
     ['litellm_key_budget_near_limit', 'jsonPayload.alarm="litellm_budget"'],
     ['litellm_guardrail_blocks', 'jsonPayload.log=~"WARNING: content_filter.py:[0-9]+ - Content blocked"'],
+    ['stranger_journey_passes', 'jsonPayload.attrs."com.docker.compose.service"="stranger-journey"'],
+    ['stranger_journey_failures', 'jsonPayload.attrs."com.docker.compose.service"="stranger-journey"'],
   ])('%s keeps its cluster branch and adds a VM branch', (name, marker) => {
     const { filter } = metrics.find((m) => m.name === name);
     expect(filter).toContain('resource.type="k8s_container"');
@@ -33,10 +35,35 @@ describe('alerting reads the single-VM deploy too', () => {
 
   test.each([
     'ingress_5xx', 'litellm_platform_call_failures', 'user_spend_over_threshold', 'litellm_key_budget_near_limit',
+    'stranger_journey_failures',
   ])('the %s policy accepts the VM resource', (name) => {
     const filters = policies.flatMap((p) => p.conditions.map((c) => c.conditionThreshold?.filter || ''))
       .filter((f) => f.includes(`logging.googleapis.com/user/${name}"`));
     expect(filters).toHaveLength(1);
     expect(filters[0]).toContain('resource.type=one_of("k8s_container","gce_instance")');
   });
+
+  // One run a day (D323). A metric-absence condition caps at 23h30m, so the
+  // 'not passed' alert is a PromQL count over 25 h, the longest lookback a
+  // log-based metric allows: one day plus an hour of slack for the run itself.
+  test('the not-passed alert counts passes over 25 h, across both resources', () => {
+    const p = policies.find((x) => x.displayName === 'commonly-dev: the stranger journey has not passed in 25 h');
+    const q = p.conditions[0].conditionPrometheusQueryLanguage.query;
+    expect(q).toContain('logging_googleapis_com:user_stranger_journey_passes[25h]');
+    expect(q).toContain('or on() vector(0)');
+    expect(q).not.toMatch(/monitored_resource|k8s_container/);
+  });
+
+  // GKE serves nothing since the cutover; these read only Kubernetes state and
+  // paged on deliberately scaled-to-zero deployments. Disabled, not deleted,
+  // until the teardown. apply-alerting must keep them off.
+  test.each([
+    'a deployment has no available replicas', 'container crash-looping or failing to start',
+    'node memory above 85%', 'container restarting repeatedly', 'pod pending for 10 minutes',
+    'a Job or CronJob failed', 'secret sync failing',
+  ])('cluster-only policy "%s" stays disabled', (title) => {
+    const p = policies.find((x) => x.displayName === `commonly-dev: ${title}`);
+    expect(p.enabled).toBe(false);
+  });
 });
+

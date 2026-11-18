@@ -59,6 +59,7 @@
   },
   {
     "displayName": "commonly-dev: a deployment has no available replicas",
+    "enabled": false,
     "severity": "CRITICAL",
     "documentation": {
       "mimeType": "text/markdown",
@@ -78,6 +79,7 @@
   },
   {
     "displayName": "commonly-dev: container crash-looping or failing to start",
+    "enabled": false,
     "severity": "CRITICAL",
     "documentation": {
       "mimeType": "text/markdown",
@@ -97,6 +99,7 @@
   },
   {
     "displayName": "commonly-dev: pod pending for 10 minutes",
+    "enabled": false,
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
@@ -116,6 +119,7 @@
   },
   {
     "displayName": "commonly-dev: container restarting repeatedly",
+    "enabled": false,
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
@@ -135,6 +139,7 @@
   },
   {
     "displayName": "commonly-dev: node memory above 85%",
+    "enabled": false,
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
@@ -182,6 +187,7 @@
   },
   {
     "displayName": "commonly-dev: secret sync failing",
+    "enabled": false,
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
@@ -210,6 +216,7 @@
   },
   {
     "displayName": "commonly-dev: a Job or CronJob failed",
+    "enabled": false,
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
@@ -299,14 +306,14 @@
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
-      "content": "One synthetic stranger run could not get from signup to an approved connect card, or a step blew its budget. One miss can be a model wobble; two in a row trip the CRITICAL 'has not passed in 23 h' policy. The failed step is in the run's last log line. Runbook: docs/runbooks/alerting.md#stranger-journey"
+      "content": "One synthetic stranger run could not get from signup to an approved connect card, or a step blew its budget. One miss can be a model wobble; with one run a day, a miss not followed by a passing re-run trips the CRITICAL 'has not passed in 25 h' policy. The failed step is in the run's last log line. Runbook: docs/runbooks/alerting.md#stranger-journey"
     },
     "combiner": "OR",
     "conditions": [
       {
         "displayName": "a journey run failed",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_failures\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_failures\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "300s",
@@ -323,27 +330,20 @@
     ]
   },
   {
-    "displayName": "commonly-dev: the stranger journey has not passed in 23 h",
+    "displayName": "commonly-dev: the stranger journey has not passed in 25 h",
     "severity": "CRITICAL",
     "documentation": {
       "mimeType": "text/markdown",
-      "content": "No synthetic stranger run has passed in 23 hours. Runs happen every 12 h and after each deploy, so at least two in a row failed or were killed. Treat the signup-to-connect path as broken for strangers until a run passes. Runbook: docs/runbooks/alerting.md#stranger-journey"
+      "content": "No synthetic stranger run has passed in 25 hours. The journey runs once a day from the VM host cron (14:17 UTC), so the last daily run failed, was killed, or never started. Treat the signup-to-connect path as broken for strangers until a run passes. Runbook: docs/runbooks/alerting.md#stranger-journey"
     },
     "combiner": "OR",
     "conditions": [
       {
-        "displayName": "no result=pass for 23 h",
-        "conditionAbsent": {
-          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_passes\" AND resource.type=\"k8s_container\"",
-          "aggregations": [
-            {
-              "alignmentPeriod": "3600s",
-              "perSeriesAligner": "ALIGN_SUM",
-              "crossSeriesReducer": "REDUCE_SUM"
-            }
-          ],
-          "duration": "82800s",
-          "trigger": { "count": 1 }
+        "displayName": "no result=pass for 25 h",
+        "conditionPrometheusQueryLanguage": {
+          "query": "(sum(increase(logging_googleapis_com:user_stranger_journey_passes[25h])) or on() vector(0)) < 1",
+          "duration": "0s",
+          "evaluationInterval": "300s"
         }
       }
     ]

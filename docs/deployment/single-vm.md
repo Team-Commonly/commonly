@@ -358,6 +358,24 @@ To roll back:
    VM's accounts file. Run `reprovision-all` on the cluster so its bot gets
    them.
 
+## Stranger journey
+
+The synthetic stranger journey (`k8s/helm/commonly/files/stranger-journey.py`,
+runbook: [alerting.md#stranger-journey](../runbooks/alerting.md#stranger-journey))
+is the `stranger-journey` compose service. It sits behind the `jobs` profile, so
+`up -d` never starts it, and it has `restart: "no"`. A host cron runs it once a
+day as a one-shot container that exits:
+
+```sh
+# /etc/cron.d/commonly-stranger-journey
+17 14 * * * root cd /opt/commonly/deploy/vm && docker compose run --rm -T stranger-journey >> /var/log/commonly-stranger-journey.log 2>&1
+```
+
+It reads the script from the checkout, so a deploy's `git checkout` updates it.
+It talks only to `https://api.commonly.me` and carries no secret. Each run costs
+about 87k model tokens on Scout's model (about $0.01, measured 2026-11-18 from
+eight GKE runs).
+
 ## Logs and alerts
 
 Container logs reach Cloud Logging through the Google Cloud Ops Agent (2.73) on

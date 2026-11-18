@@ -301,8 +301,8 @@ roll LiteLLM. If it can't be fixed quickly, the env off-switches in
 
 ### Stranger journey
 
-`stranger-journey` (CronJob at 02:17 and 14:17 UTC, plus one run after
-every Deploy Dev) signs up a throwaway `eng-smoke-journey-*@ops.commonly.invalid`
+`stranger-journey` (on the single VM since 2026-11-18: a one-shot compose job the
+host cron runs once a day at 14:17 UTC; the GKE CronJob is suspended) signs up a throwaway `eng-smoke-journey-*@ops.commonly.invalid`
 account and walks the first ten minutes against the public API. Every Growth
 funnel script drops `*.invalid`. The steps:
 
@@ -331,25 +331,29 @@ A `cleanup` failure (the account survived `DELETE /api/users/me`) also fails the
 alert can fire for a broken self-delete, not only for a broken signup-to-connect path. The failed
 step in the verdict line says which.
 
-Read the run:
+Read the run (on the VM, from `/opt/commonly/deploy/vm`):
 
 ```bash
-kubectl get jobs -n commonly-dev -l component=stranger-journey --sort-by=.metadata.creationTimestamp | tail -3
-kubectl logs -n commonly-dev job/<name>        # one JSON line per step; the last is the verdict
-kubectl create job --from=cronjob/stranger-journey stranger-journey-manual-$(date +%s) -n commonly-dev   # re-run
+tail -20 /var/log/commonly-stranger-journey.log      # one JSON line per step; the last is the verdict
+docker compose run --rm -T -e JOURNEY_TRIGGER=manual stranger-journey   # re-run now
 ```
+
+The same lines reach Cloud Logging through the Ops Agent (`jsonPayload.attrs."com.docker.compose.service"="stranger-journey"`).
+Staging still runs the chart's CronJob; read it with
+`kubectl logs -n commonly-staging job/<name>`.
 
 Two policies, so a single model wobble cannot wake anyone at CRITICAL:
 
 - **"a stranger journey run failed"** (WARNING): one run printed
-  `result: fail`. The generic Job alert warns too, via `BackoffLimitExceeded`.
-- **"the stranger journey has not passed in 23 h"** (CRITICAL): a
-  metric-absence condition on `stranger_journey_passes`. Runs happen every
-  12 h and after each deploy, so this means at least two in a row failed or
-  died. It also catches the run that never prints a verdict: a spot reclaim
-  or the 900 s deadline kills the pod first. Cloud Monitoring caps absence
-  windows at 23.5 h, which is why the schedule is twice a day. The condition
-  only arms after the first pass following an install or edit.
+  `result: fail`. Its filter takes both `k8s_container` and `gce_instance`.
+- **"the stranger journey has not passed in 25 h"** (CRITICAL): a PromQL
+  count, `increase(...stranger_journey_passes[25h]) < 1` (with `or on()
+  vector(0)` so no data at all still counts as zero). With one run a day,
+  one failed, killed or skipped run fires it. It also catches the run that
+  never prints a verdict: the compose job's `timeout 900` kills it first.
+  A metric-absence condition cannot do this: Cloud Monitoring caps absence
+  windows at 23.5 h, shorter than a daily schedule. 25 h is the longest
+  lookback a log-based metric allows in a PromQL alert (1 d 1 h).
 
 Soft checks are logged and never fail a run, so one LLM wording change cannot
 page. They are whether Scout's answer points at the connect path, whether it
