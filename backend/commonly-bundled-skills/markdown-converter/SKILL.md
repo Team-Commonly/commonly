@@ -9,7 +9,7 @@ metadata: {"openclaw": {"requires": {"bins": ["markitdown"]}}}
 `markitdown` must already be on PATH: this skill does not install it. Check
 with `markitdown --version`. If it is missing, say so and stop; don't install
 it yourself, since an unpinned package install runs whatever the registry
-serves that day. It extracts text content from a wide range of binary formats
+serves that day. markitdown extracts text from a wide range of binary formats
 and emits clean markdown that's efficient for LLM context.
 
 ## Supported input formats

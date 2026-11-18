@@ -69,40 +69,69 @@ describe('bundled skill installs', () => {
     ].forEach((line) => expect([line, runsDownloadedCode(line)]).toEqual([line, false]));
   });
 
-  // A package install with no version runs whatever the registry serves that day
-  // (F559: markdown-converter told agents `pip3 install markitdown`).
-  const UNPINNED_INSTALL = [
-    /\bpip3?\s+install\b(?![^\n]*(==|--require-hashes))/i,
-    /\bnpm\s+(i|install)\s+(-g\s+)?(?!-)(?![^\s@]*@\d)\S/i,
-    /\bnpx\s+(-y|--yes)\s+(?![^\s@]*@\d)\S/i,
-    /\bgo\s+install\s+(?![^\s@]*@v\d)\S/i,
-    /\b(brew|apt|apt-get|cargo|gem)\s+install\b/i,
+  // Skill text an agent follows must not install packages. An unpinned install
+  // runs whatever the registry serves that day (F559: markdown-converter told
+  // agents `pip3 install markitdown`), and parsing every tool's pin syntax
+  // leaks, so the rule refuses the install itself, pinned or not. A skill that
+  // truly needs one pins it (version and hash) and is added to
+  // ALLOWED_PACKAGE_INSTALLS in the same reviewed change. No bundled skill
+  // needs one today.
+  const PACKAGE_MANAGER = [
+    '(?:python3?\\s+-m\\s+)?pip3?', 'pipx', 'uv(?:\\s+(?:pip|tool))?', 'conda', 'mamba',
+    'npm', 'pnpm', 'yarn(?:\\s+global)?', 'bun', 'deno', 'gem', 'cargo', 'go', 'dotnet\\s+tool',
+    'brew', 'port', 'apt', 'apt-get', 'dnf', 'yum', 'apk', 'pacman', 'zypper', 'snap',
+    'choco', 'winget', 'scoop', 'Install-Module', 'Install-Package',
+  ].join('|');
+  const PACKAGE_INSTALL = [
+    // `<tool> install|add|i …` (Install-Module stands alone).
+    new RegExp(`(?:^|[\\s\`'"(;&|])(?:${PACKAGE_MANAGER})(?:\\s+(?:-\\S+\\s+)*(?:install|add|i|-S|-Sy)\\b|(?<=Install-(?:Module|Package))\\s+\\S)`, 'i'),
+    // Fetch-and-run launchers: npx, pnpm dlx, yarn dlx, bunx, uvx, pipx run.
+    /(?:^|[\s`'"(;&|])(?:npx|bunx|uvx|(?:pnpm|yarn)\s+dlx|pipx\s+run)\s+\S/i,
   ];
-  const installsUnpinned = (line) => UNPINNED_INSTALL.some((re) => re.test(line));
+  const ALLOWED_PACKAGE_INSTALLS = [];
+  const installsPackage = (line) => PACKAGE_INSTALL.some((re) => re.test(line));
 
-  test('no bundled skill tells the agent to install a package without a pinned version', () => {
+  test('no bundled skill tells the agent to install a package', () => {
     const hits = files.flatMap((file) => logicalLines(fs.readFileSync(file, 'utf8'))
-      .filter(installsUnpinned)
-      .map((line) => `${path.relative(root, file)}: ${line.trim()}`));
+      .filter(installsPackage)
+      .map((line) => `${path.relative(root, file)}: ${line.trim()}`))
+      .filter((hit) => !ALLOWED_PACKAGE_INSTALLS.includes(hit));
     expect(hits).toEqual([]);
   });
 
-  test('the unpinned-install patterns catch what F559 found, and pass pinned forms', () => {
+  test('the package-install patterns catch what F559 found and its neighbours, and leave prose alone', () => {
     [
       '`markitdown` is installed via `pip3 install markitdown` and is on PATH.',
-      'pip install requests',
-      'npm install -g some-cli',
-      'npx -y some-cli init',
+      'python3 -m pip install requests',
+      'pip install a==1 b',
+      'pip install -r requirements.txt',
+      'npm install --save-dev some-cli',
+      'npm i -D some-cli',
+      'npm install -g @scope/pkg@1.2.3',
+      'npx some-cli init',
+      'npx -y @scope/pkg@1.2.3',
+      'pnpm dlx some-cli',
+      'yarn global add some-cli',
+      'bunx some-cli',
+      'uvx some-tool',
+      'uv tool install some-tool',
+      'pipx install some-tool',
+      'cargo install ripgrep --version 14.0.0',
       'go install example.test/cmd/tool@latest',
       'brew install pandoc',
-    ].forEach((line) => expect([line, installsUnpinned(line)]).toEqual([line, true]));
+      'sudo apt-get install -y poppler-utils',
+      'dotnet tool install -g some-tool',
+      'winget install Some.Tool',
+      'Install-Module PSSomething',
+    ].forEach((line) => expect([line, installsPackage(line)]).toEqual([line, true]));
     [
-      'pip install markitdown==0.1.2 --require-hashes -r requirements.txt',
-      'npm install -g some-cli@1.4.2',
-      'npx -y some-cli@1.4.2 init',
-      'go install example.test/cmd/tool@v1.2.3',
       "If it is missing, say so and stop; don't install it yourself.",
-    ].forEach((line) => expect([line, installsUnpinned(line)]).toEqual([line, false]));
+      'Homebrew installs it under /opt/homebrew.',
+      'npm installs land in node_modules.',
+      'pip installs it for you.',
+      'The Install section above pins the release.',
+      'Verify with `officecli --version`.',
+    ].forEach((line) => expect([line, installsPackage(line)]).toEqual([line, false]));
   });
 
   describe('officecli', () => {
