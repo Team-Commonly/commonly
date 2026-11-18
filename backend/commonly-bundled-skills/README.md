@@ -33,6 +33,15 @@ declarations resolve through the catalog instead.
   (Apache-2.0). Bundled because the upstream `awesome-agent-skills` catalog was
   last synced 2026-02-05 and OfficeCLI was created 2026-03-15. Pull request to
   upstream catalog tracked separately.
+  Its install steps differ from upstream on purpose (#3870). Upstream pipes
+  `install.sh` from its `main` branch into a shell. Ours names one release and
+  checks each binary against a written SHA-256 before installing it, and every
+  sub-skill points to that one Install section. Keep this on any re-sync. To
+  move to a newer release, change the version and every checksum together,
+  taking them from the release's asset digests
+  (`gh api repos/iOfficeAI/OfficeCLI/releases/tags/v<version>`).
+  `__tests__/unit/security/bundledSkillInstalls.test.js` refuses a
+  pipe-to-shell install in any bundled skill.
 
 ## Adding a new bundled skill
 
