@@ -80,8 +80,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # A full `up` waits for LiteLLM's readiness, so no model call meets a
+      # LiteLLM that is not listening yet. Optional: a LiteLLM that never gets
+      # healthy costs a warning, never a backend that does not start.
       litellm:
-        condition: service_started
+        condition: service_healthy
+        required: false
     env_file:
       - ./backend.env
     # VM-specific overrides. These win over backend.env; the test pins each one
@@ -134,8 +138,10 @@ services:
     depends_on:
       backend:
         condition: service_started
+      # As the backend: waits for LiteLLM's readiness, without needing it.
       litellm:
-        condition: service_started
+        condition: service_healthy
+        required: false
     env_file:
       - ./commonly-bot.env
     environment:
