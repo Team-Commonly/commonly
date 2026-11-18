@@ -108,7 +108,8 @@ interface IAgentRun extends Document {
   computerSetAside?: number;
   /**
    * F555: recent pod messages withheld from the turn after the guard stopped
-   * its first call. Absent when none were.
+   * its first call, or before it when the guard stopped them in an earlier
+   * turn in the pod (F557). Absent when none were.
    */
   historySetAside?: number;
   /** F56: the model ended the turn with no text and no post. */
