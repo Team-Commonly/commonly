@@ -148,7 +148,8 @@ const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE];
 const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 // A workspace seat's sandbox.filesystem.read-outside, with `~` expanded the way
-// bwrap.js expands it. Anything still relative is refused by the profile.
+// bwrap.js expands it. resolveHostReadDirectories refuses anything still
+// relative, naming the entry, before the turn spawns.
 const workspaceReadOutside = (env) => {
   const declared = env?.sandbox?.filesystem?.['read-outside'];
   if (!Array.isArray(declared)) return [];

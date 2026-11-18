@@ -135,6 +135,38 @@ describe('a workspace seat reading a host folder, under Seatbelt', () => {
     expect(run(read(join(logs, 'repo', '.ssh', 'id_rsa')))).toBe('DENIED EPERM');
   });
 
+  // CodeRabbit on #4111: a folder the adapter prepared that the seat also names
+  // keeps the adapter's view of it, dot files included. A dot file under a
+  // folder only the seat named stays denied.
+  macTest('an adapter folder the seat also names keeps its own dot files', () => {
+    const adapterDir = join(root, 'host', 'adapter-input');
+    mkdirSync(adapterDir, { recursive: true });
+    writeFileSync(join(adapterDir, '.settings.json'), '{}\n');
+    const argv = wrapArgvWithSeatbelt([
+      process.execPath, '-e',
+      `for (const p of ${JSON.stringify([join(adapterDir, '.settings.json'), join(logs, 'repo', '.ssh', 'id_rsa')])}) {
+        try { require('fs').readFileSync(p); console.log('ALLOWED') } catch (e) { console.log('DENIED ' + e.code) } }`,
+    ], {
+      workspacePath: workspace,
+      workspaceAccess: 'read',
+      executablePath: process.execPath,
+      statePath: state,
+      readOnlyDirectories: [adapterDir],
+      hostReadDirectories: [logs, adapterDir],
+      hostReadHome: join(root, 'host'),
+    });
+    const out = (spawnSync(argv[0], argv.slice(1), { cwd: workspace, encoding: 'utf8', timeout: 20_000 }).stdout || '')
+      .trim().split('\n');
+    expect(out).toEqual(['ALLOWED', 'DENIED EPERM']);
+  });
+
+  // CodeRabbit on #4111: a relative entry used to resolve against the CLI's own
+  // folder. It is refused before any spawn, naming the entry.
+  test.each(['logs', './logs', '../logs', '~logs'])('a relative read-outside entry (%s) is refused by name', (entry) => {
+    expect(() => resolveHostReadDirectories([entry], homedir()))
+      .toThrow(`refusing sandbox.filesystem.read-outside ${entry}: name a folder by its absolute path or by ~/`);
+  });
+
   // The Opus review's case bypass, against a home that has a .ssh: on a
   // case-insensitive volume `.SSH` is the same folder, and is refused as one.
   test('a case change does not get past the check', () => {

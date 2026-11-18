@@ -252,7 +252,10 @@ An earlier version listed the places that hold credentials and refused only thos
 
 **On Linux (F493),** bubblewrap binds whole folders. It can't hide the `.env` and `.commonly` files beneath a folder the way Seatbelt's pattern denies do. So the rules there are narrower:
 - **A workspace seat** can name only `~/.commonly/logs` in `read-outside`. Names are compared with their case as it is. The resolved path is what gets bound, and the seat's tool policy gets a Read allow for it. Its `write-outside` is refused, which matches macOS: a writable folder outside the project would let a seat plant a git hook that the host later runs.
-- **A public seat** refuses both lists, whichever adapter it runs (Claude Code, OpenCode, Qwen Code, Goose). An adapter binds its own home through `homeWritablePaths`, never through the spec. That bind comes before the adapter's read-only inputs, so an input inside the home stays read-only, because bwrap stacks later binds on top of earlier ones.
+- **A public seat** refuses both lists, whichever adapter it runs (Claude Code, OpenCode, Qwen Code, Goose, Pi). No adapter binds its own folders through the spec. On Linux, bwrap stacks later binds on top of earlier ones, so the order of an adapter's binds decides what stays read-only:
+  - **Goose, OpenCode and Qwen Code** bind their home through `homeWritablePaths`, before their read-only inputs. An input inside the home stays read-only.
+  - **Claude Code** binds its state folders through `writablePaths`, which bwrap mounts after the read-only inputs. A read-only input inside one of those folders would become writable. None is today: Claude's read-only inputs (its per-turn MCP config, the warm MCP build, the CLI's own git server, its commit hooks) all sit outside its state folder. Keep them there.
+- **A relative `read-outside` entry is refused** before the turn spawns, on both platforms, with a message naming the entry. Name a folder by its absolute path or by `~/`.
 - **A seat of your own, with no trust tier,** keeps its binds exactly as declared, because it isn't confined; it names folders such as `~/.local/bin` on purpose.
 
 Before F493, Linux bound both lists for every seat without any check, so a spec the server wrote could bind `~/.ssh`.

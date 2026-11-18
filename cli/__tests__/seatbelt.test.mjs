@@ -140,6 +140,31 @@ describe('macOS Seatbelt profile', () => {
     expect(seatbeltSystemReadRoots({ developerDirs: [beta] })).toBe(withBeta);
   });
 
+  // An adapter folder the seat also names is stated again after the host dot
+  // denies, and before the workspace's credential denies, so those still win.
+  test('restates an adapter folder the seat also names between the dot denies and the credential denies', () => {
+    const home = realpathSync(root);
+    const adapterDir = join(home, 'adapter-input');
+    mkdirSync(adapterDir);
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'read',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyDirectories: [adapterDir],
+      hostReadDirectories: [adapterDir],
+      hostReadHome: home,
+    });
+    const restore = `(allow file-read* file-test-existence (subpath "${adapterDir}"))`;
+    const lines = profile.split('\n');
+    const lastRestore = lines.lastIndexOf(restore);
+    const firstDotDeny = lines.findIndex((line) => line.startsWith('(deny file-read* file-write* (regex'));
+    const credentialDeny = lines.indexOf(`(deny file-read* file-write* (subpath "${join(realpathSync(workspace), '.commonly')}"))`);
+    expect(firstDotDeny).toBeGreaterThan(-1);
+    expect(lastRestore).toBeGreaterThan(firstDotDeny);
+    expect(credentialDeny).toBeGreaterThan(lastRestore);
+  });
+
   test('read-only mode never grants workspace writes', () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
