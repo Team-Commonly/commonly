@@ -69,6 +69,42 @@ describe('bundled skill installs', () => {
     ].forEach((line) => expect([line, runsDownloadedCode(line)]).toEqual([line, false]));
   });
 
+  // A package install with no version runs whatever the registry serves that day
+  // (F559: markdown-converter told agents `pip3 install markitdown`).
+  const UNPINNED_INSTALL = [
+    /\bpip3?\s+install\b(?![^\n]*(==|--require-hashes))/i,
+    /\bnpm\s+(i|install)\s+(-g\s+)?(?!-)(?![^\s@]*@\d)\S/i,
+    /\bnpx\s+(-y|--yes)\s+(?![^\s@]*@\d)\S/i,
+    /\bgo\s+install\s+(?![^\s@]*@v\d)\S/i,
+    /\b(brew|apt|apt-get|cargo|gem)\s+install\b/i,
+  ];
+  const installsUnpinned = (line) => UNPINNED_INSTALL.some((re) => re.test(line));
+
+  test('no bundled skill tells the agent to install a package without a pinned version', () => {
+    const hits = files.flatMap((file) => logicalLines(fs.readFileSync(file, 'utf8'))
+      .filter(installsUnpinned)
+      .map((line) => `${path.relative(root, file)}: ${line.trim()}`));
+    expect(hits).toEqual([]);
+  });
+
+  test('the unpinned-install patterns catch what F559 found, and pass pinned forms', () => {
+    [
+      '`markitdown` is installed via `pip3 install markitdown` and is on PATH.',
+      'pip install requests',
+      'npm install -g some-cli',
+      'npx -y some-cli init',
+      'go install example.test/cmd/tool@latest',
+      'brew install pandoc',
+    ].forEach((line) => expect([line, installsUnpinned(line)]).toEqual([line, true]));
+    [
+      'pip install markitdown==0.1.2 --require-hashes -r requirements.txt',
+      'npm install -g some-cli@1.4.2',
+      'npx -y some-cli@1.4.2 init',
+      'go install example.test/cmd/tool@v1.2.3',
+      "If it is missing, say so and stop; don't install it yourself.",
+    ].forEach((line) => expect([line, installsUnpinned(line)]).toEqual([line, false]));
+  });
+
   describe('officecli', () => {
     const skill = fs.readFileSync(path.join(root, 'officecli', 'SKILL.md'), 'utf8');
     const install = skill.slice(skill.indexOf('## Install'), skill.indexOf('\n---', skill.indexOf('## Install')));
