@@ -43,7 +43,7 @@ check() {
   echo "ok: newest stamp ${newest}s old"
 }
 
-if [ "${1:-loop}" = "check" ]; then check; exit 0; fi
+if [ "${1:-}" = "check" ]; then check; exit 0; fi
 
 : "${PG_ADMIN_USER:?}" "${PG_ADMIN_PASSWORD:?}" "${PG_DATABASE:?}" "${MONGO_URI:?}"
 : "${BACKUP_S3_ENDPOINT:?}" "${BACKUP_S3_BUCKET:?}"
