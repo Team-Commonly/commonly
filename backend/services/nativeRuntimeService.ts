@@ -218,6 +218,13 @@ const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
 const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
   + 'in this conversation. No more lookups are possible in this turn: answer with what you have, and tell the '
   + 'person which page or search you could not use.';
+// F555: a pod message the guard stops on its own is withheld from a turn's
+// recent messages, so one message can't fail every later turn in its pod.
+// Neither line names the author or repeats anything from the message.
+export const HISTORY_WITHHELD_TEXT = '(a message withheld: a content filter stopped it)';
+export const HISTORY_WITHHELD_LINE = `- ${HISTORY_WITHHELD_TEXT}`;
+export const HISTORY_LEFT_OUT_NOTICE = "This pod's recent messages were left out of this turn: a content filter "
+  + 'stopped them. If the message below needs earlier context, say you could not see it.';
 // A computer read the guard stops is set aside and the turn carries on.
 // Reading pages is a walk's whole job, so one stopped page must not end it, and
 // the turn keeps every tool. The notice names the read's place in the turn and
@@ -392,7 +399,7 @@ async function textsTheGuardStops(
     }));
   } catch (error) {
     console.warn(
-      '[native-runtime] guardrail check unavailable; setting aside every web result:',
+      '[native-runtime] guardrail check unavailable; setting aside every candidate:',
       (error as Error).message,
     );
     return null;
@@ -947,6 +954,11 @@ interface DispatchContext {
    */
   givenAddresses: GivenAddresses;
   /**
+   * F555: the pod messages a guard stop withheld from this turn. A later
+   * commonly_read_context shows each as withheld and takes no address from it.
+   */
+  withheldTexts?: Set<string>;
+  /**
    * The agent's own bot User id, the author id its pod posts carry. Null until
    * resolved, and null when it cannot be: then no pod message gives an address.
    */
@@ -1294,9 +1306,14 @@ export async function dispatchTool(
       case 'commonly_read_context': {
         const limit = Math.min(Number(args.messageCount) || 20, 50);
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
-        const messages = recent.map(({ id, author, content, createdAt }) => ({ id, author, content, createdAt }));
+        // A message the guard stopped earlier in this turn stays withheld (F555).
+        const withheld = (content: string) => Boolean(ctx.withheldTexts?.has(content));
+        const messages = recent.map(({ id, author, content, createdAt }) => (withheld(content)
+          ? { id, author: 'Commonly', content: HISTORY_WITHHELD_TEXT, createdAt }
+          : { id, author, content, createdAt }));
         // Other authors' messages may give commonly_fetch_url an address.
-        byOtherAuthors(recent, ctx.ownUserId).forEach((text) => ctx.givenAddresses.add(text));
+        byOtherAuthors(recent.filter(({ content }) => !withheld(content)), ctx.ownUserId)
+          .forEach((text) => ctx.givenAddresses.add(text));
         return { content: { messages } };
       }
 
@@ -2427,20 +2444,26 @@ export async function fetchRecentPodMessages(
 export const RECENT_MESSAGES_MAX = 20;
 export const RECENT_MESSAGE_CHARS = 600;
 
-function formatRecentMessagesBlock(
+// One prior message as the turn shows it, with the text it came from.
+type RecentLine = { content: string; line: string };
+
+function recentMessageLines(
   messages: Array<{ id: string; author: string; content: string }>,
   answeringMessageId: string,
   count: number,
-): string {
-  const prior = messages
+): RecentLine[] {
+  return messages
     .filter((m) => !answeringMessageId || m.id !== answeringMessageId)
-    .slice(-count);
-  if (!prior.length) return '';
-  const lines = prior.map((m) => {
-    const text = m.content.replace(/\s+/g, ' ').trim();
-    const clipped = text.length > RECENT_MESSAGE_CHARS ? `${text.slice(0, RECENT_MESSAGE_CHARS)}…` : text;
-    return `- ${m.author}: ${clipped}`;
-  });
+    .slice(-count)
+    .map((m) => {
+      const text = m.content.replace(/\s+/g, ' ').trim();
+      const clipped = text.length > RECENT_MESSAGE_CHARS ? `${text.slice(0, RECENT_MESSAGE_CHARS)}…` : text;
+      return { content: m.content, line: `- ${m.author}: ${clipped}` };
+    });
+}
+
+function formatRecentMessagesBlock(lines: string[]): string {
+  if (!lines.length) return '';
   return 'Recent messages in this pod, oldest first (context only; the message you '
     + `are answering follows):\n${lines.join('\n')}`;
 }
@@ -2964,8 +2987,10 @@ export async function runAgent(
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.
-  dispatchCtx.givenAddresses.add(systemPrompt);
-  if (mayFetch && await triggerTextIsHumanWritten(trigger)) dispatchCtx.givenAddresses.add(userMessage);
+  // Kept so a history set-aside (F555) can rebuild the set without a withheld message.
+  const addressSources: string[] = [systemPrompt];
+  if (mayFetch && await triggerTextIsHumanWritten(trigger)) addressSources.push(userMessage);
+  addressSources.forEach((text) => dispatchCtx.givenAddresses.add(text));
   // After the line above: the notice is our text, not the person's, so it
   // must not give an address.
   if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
@@ -2989,16 +3014,22 @@ export async function runAgent(
   }
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
+  // F555: what a guard stop on the first call needs to withhold a line.
+  let history: { lines: RecentLine[]; rest: string; gives: string[] } | null = null;
   if (recentCount > 0) {
     try {
       const triggerPayload = (trigger.payload && typeof trigger.payload === 'object'
         ? trigger.payload as Record<string, unknown> : {}) as Record<string, unknown>;
       const recent = await fetchRecentPodMessages(String(installation.podId), recentCount + 1);
-      const block = formatRecentMessagesBlock(recent, String(triggerPayload.messageId || ''), recentCount);
-      if (block) userMessage = `${block}\n\n${userMessage}`;
+      const lines = recentMessageLines(recent, String(triggerPayload.messageId || ''), recentCount);
       // Other authors' messages only: the agent's own earlier posts are its
       // own words, and an address it wrote must not become one it may open.
-      byOtherAuthors(recent, dispatchCtx.ownUserId).forEach((text) => dispatchCtx.givenAddresses.add(text));
+      const gives = byOtherAuthors(recent, dispatchCtx.ownUserId);
+      if (lines.length) {
+        history = { lines, rest: userMessage, gives };
+        userMessage = `${formatRecentMessagesBlock(lines.map(({ line }) => line))}\n\n${userMessage}`;
+      }
+      gives.forEach((text) => dispatchCtx.givenAddresses.add(text));
     } catch (error) {
       console.warn(
         '[native-runtime] recent pod messages unavailable; turn continues without them:',
@@ -3062,6 +3093,44 @@ export async function runAgent(
   // runGuardrails is what both the chat request and the web-result check send.
   let limitedUseOffered = false;
   let runGuardrails = NATIVE_RUNTIME_GUARDRAILS;
+
+  // F555: the guard scans the whole request on every call, history included,
+  // so one pod message it stops would fail every later turn in the pod (a
+  // system-prompt probe did, 11-11). On a stop at the first call, before
+  // anything ran, the lines the guard stops on their own are withheld and the
+  // call is made once more. When no line stops alone, the check can't be made,
+  // or that retry is stopped too, the history is left out. When the person's
+  // own message stops on its own no retry can pass, so the turn ends as before.
+  let historyChecks = 0;
+  let historyWithheld = 0;
+  const setAsideStoppedHistory = async (): Promise<boolean> => {
+    if (!history || historyChecks >= 2 || historyWithheld === history.lines.length) return false;
+    historyChecks += 1;
+    const { lines, rest, gives } = history;
+    let withhold = lines.map(() => true);
+    if (historyChecks === 1) {
+      const stops = await textsTheGuardStops(litellm, [rest, ...lines.map(({ line }) => line)], runGuardrails);
+      if (stops?.[0]) return false;
+      if (stops && stops.slice(1).some(Boolean)) withhold = stops.slice(1);
+    }
+    const userIndex = messages.findIndex((message) => message.role === 'user');
+    messages[userIndex] = {
+      ...messages[userIndex],
+      content: withhold.every(Boolean)
+        ? `${HISTORY_LEFT_OUT_NOTICE}\n\n${rest}`
+        : `${formatRecentMessagesBlock(lines.map(({ line }, i) => (withhold[i] ? HISTORY_WITHHELD_LINE : line)))}\n\n${rest}`,
+    };
+    // A withheld message gives no address commonly_fetch_url may open. Nothing
+    // ran yet, so these sources are every address the turn holds.
+    const withheldTexts = new Set(lines.filter((_, i) => withhold[i]).map(({ content }) => content));
+    const given = new GivenAddresses();
+    [...addressSources, ...gives.filter((text) => !withheldTexts.has(text))].forEach((text) => given.add(text));
+    dispatchCtx.givenAddresses = given;
+    dispatchCtx.withheldTexts = withheldTexts;
+    historyWithheld = withhold.filter(Boolean).length;
+    run.historySetAside = historyWithheld;
+    return true;
+  };
 
   // A guard stop after the turn read the web is most often a page, not the
   // person. So the turn keeps where each web result sits (its tool-call round
@@ -3320,6 +3389,11 @@ export async function runAgent(
           // AgentRun metrics (told apart from genuine LLM failures) and never
           // surfaces the raw proxy payload back to a possibly-malicious user.
           if (GUARDRAIL_REJECTION.test(bodyText)) {
+            // F555: only at the first call, when nothing has run or posted.
+            if (turnIndex === 0 && !postedViaTool && webResults.length === 0 && computerResults.length === 0
+              && await setAsideStoppedHistory()) {
+              continue;
+            }
             // Once a turn, and never after a post: the person already has that answer.
             if (!webSetAside && !postedViaTool && webResults.length > 0) {
               const { setAside, removed } = await setAsideStoppedWebResult();

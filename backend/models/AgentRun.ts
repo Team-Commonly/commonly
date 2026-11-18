@@ -106,6 +106,11 @@ interface IAgentRun extends Document {
    * carrying on. Absent when none were.
    */
   computerSetAside?: number;
+  /**
+   * F555: recent pod messages withheld from the turn after the guard stopped
+   * its first call. Absent when none were.
+   */
+  historySetAside?: number;
   /** F56: the model ended the turn with no text and no post. */
   emptyCompletion?: boolean;
   /**
@@ -180,6 +185,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     webFetches: { type: Number },
     webSetAside: { type: Number },
     computerSetAside: { type: Number },
+    historySetAside: { type: Number },
     emptyCompletion: { type: Boolean },
     metered: { type: Boolean },
     startedAt: { type: Date, default: Date.now },

@@ -107,6 +107,24 @@ still pair with every block word.
 
 **When the guard stops a hosted turn** (`nativeRuntimeService.runAgent`):
 
+- **The pod's recent messages.** A native turn carries them inline
+  (`recentMessages`), and the guard scans the whole request on every call. So
+  one message it stops would fail every later turn in that pod, for everyone.
+  First seen 2026-11-11, when a system-prompt probe in a hosted pod did exactly
+  that. When the guard stops a turn's first call, before any tool has run, the
+  person's message and each history line are checked on their own:
+  - If the person's own message stops on its own, no retry can pass, and the
+    turn ends `guardrail_blocked` as before.
+  - Otherwise each line that stops on its own is replaced with a fixed
+    withheld line that names no author, and the call is made once more.
+  - The whole history is left out, with a fixed notice in its place, when:
+    - no line stops alone (the lines only stop together);
+    - the check cannot be made;
+    - that retry is stopped too.
+  - A withheld message gives no address that `commonly_fetch_url` may open,
+    and a later `commonly_read_context` in that turn shows it as withheld,
+    so its text and links don't come back through the tool.
+  - `AgentRun.historySetAside` counts the lines withheld.
 - If the turn has read the web and posted nothing yet, each web result is
   checked on its own through LiteLLM's `/guardrails/apply_guardrail`, which
   calls no model. The result the guard stops is replaced with a fixed
