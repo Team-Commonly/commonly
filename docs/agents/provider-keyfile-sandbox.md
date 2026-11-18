@@ -94,4 +94,7 @@ denied, git failed inside a confined seat on Command Line Tools 26.5. So:
   Any other target, such as `/` or a home folder, gets no rule, and git there
   fails closed.
 - `seatbeltSystemReadRoots` counts both, so a key file in either one is
-  refused.
+  refused. It caches only the static baseline and resolves the developer
+  folder on every call, as each profile does, so the check and the next
+  profile agree even after xcode-select changes. A target holding a `;` is
+  refused too, since the roots parser reads `;` as the start of a comment.

@@ -103,6 +103,7 @@ describe('macOS Seatbelt profile', () => {
     ['a home folder', homedir()],
     ['a folder that is not a developer folder', '/opt/tools'],
     ['a path with a quote', '/Applications/X".app/Contents/Developer'],
+    ['a path with a semicolon', '/Applications/Dev;Tools/Xcode.app/Contents/Developer'],
   ])('adds no developer-folder rule for %s', (_label, dir) => {
     expect(developerDirRules(dir)).toBe('');
   });
@@ -116,6 +117,27 @@ describe('macOS Seatbelt profile', () => {
       `(allow file-read* file-test-existence (subpath "${dir}"))`,
       `(allow file-read-metadata file-test-existence (path-ancestors "${dir}"))`,
     ]);
+  });
+
+  // A key-file check and the next profile must agree on the developer folder,
+  // even when the selection changes between turns (CodeRabbit on #4205).
+  test('the key-file roots follow the developer folder each profile admits', () => {
+    const beta = '/Applications/Xcode-beta.app/Contents/Developer';
+    const withBeta = seatbeltSystemReadRoots({ developerDirs: [beta] });
+    expect(withBeta.subpaths).toContain(beta);
+    expect(buildSeatbeltProfile({
+      workspacePath: workspace, workspaceAccess: 'write', executablePath: '/usr/bin/true', statePath: state, developerDirs: [beta],
+    })).toContain(`(subpath "${beta}")`);
+
+    // The selection moves back: neither the roots nor the profile keep the old folder.
+    const without = seatbeltSystemReadRoots({ developerDirs: [] });
+    expect(without.subpaths).not.toContain(beta);
+    expect(without.subpaths).toContain('/Library/Developer/CommandLineTools');
+    expect(buildSeatbeltProfile({
+      workspacePath: workspace, workspaceAccess: 'write', executablePath: '/usr/bin/true', statePath: state, developerDirs: [],
+    })).not.toContain(beta);
+    // The same selection gives the same object, so callers can compare roots.
+    expect(seatbeltSystemReadRoots({ developerDirs: [beta] })).toBe(withBeta);
   });
 
   test('read-only mode never grants workspace writes', () => {
