@@ -46,10 +46,22 @@ describe('build-vm-images.yml builds the VM images and never reaches a cluster',
     expect(Object.keys(triggersOf(build))).toEqual(['workflow_dispatch']);
   });
 
-  test('no step uses helm, kubectl or cluster credentials', () => {
+  // The dev identity this workflow authenticates as can also administer the
+  // cluster, so the guard is an allowlist of actions, not a list of bad ones:
+  // a local composite action or a new third-party one could reach the cluster
+  // without naming helm or kubectl.
+  test('it uses only checkout, GCP auth and gcloud setup', () => {
+    const actions = allSteps(build).filter((step) => step.uses).map((step) => step.uses.split('@')[0]);
+    expect([...new Set(actions)].sort()).toEqual([
+      'actions/checkout', 'google-github-actions/auth', 'google-github-actions/setup-gcloud',
+    ]);
+  });
+
+  test('no step runs helm, kubectl or a cluster call', () => {
     allSteps(build).forEach((step) => {
-      expect(step.uses || '').not.toMatch(/get-gke-credentials|setup-helm|setup-kubectl/);
-      expect(step.run || '').not.toMatch(/\bhelm\b|\bkubectl\b/);
+      expect(step.run || '').not.toMatch(
+        /\bhelm\b|\bkubectl\b|gcloud\s+container|get-credentials|container\.googleapis|\bgke\b/i,
+      );
     });
     expect(JSON.stringify(build.env || {})).not.toMatch(/CLUSTER|NAMESPACE/);
   });
@@ -104,7 +116,9 @@ describe('build-vm-images.yml builds what Deploy Dev built, behind its gates', (
     expect(run.trim()).toBe('echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"');
   });
 
-  test('it shares Deploy Dev\'s concurrency group, so the two never write one tag at once', () => {
+  // Deploy Staging also pushes backend:<sha8> and bot:<sha8>, under its own
+  // group, from the same inputs; only Deploy Dev builds the same frontend tag.
+  test('it shares Deploy Dev\'s concurrency group, so those two never push the frontend tag at once', () => {
     expect(build.concurrency.group).toBe(deployDev.concurrency.group);
   });
 });

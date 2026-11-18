@@ -33,7 +33,8 @@ permissions:
   statuses: read      # read the staging-smoke commit status
   actions: read       # read the post-merge Service Tests result on this SHA
 
-# Deploy Dev's group: the two never push one tag at the same time.
+# Deploy Dev's group, so the two never push the prod frontend tag at once.
+# Deploy Staging also pushes backend:<sha8> and bot:<sha8>, from the same inputs.
 concurrency:
   group: deploy-dev
   cancel-in-progress: false

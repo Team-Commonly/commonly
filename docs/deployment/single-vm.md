@@ -174,7 +174,8 @@ the VM's frontend pull fails on a tag only staging built.
 ```bash
 cd /opt/commonly && git fetch && git checkout <sha>
 cd deploy/vm
-sed -i 's/^COMMONLY_IMAGE_TAG=.*/COMMONLY_IMAGE_TAG=<short-sha>/' .env
+# <tag> is exactly 8 characters: the one the build's notice names, or git rev-parse --short=8 <sha>.
+sed -i 's/^COMMONLY_IMAGE_TAG=.*/COMMONLY_IMAGE_TAG=<tag>/' .env
 # Re-render litellm/config.yaml (First setup, step 5) if the chart changed.
 docker compose pull
 docker compose up -d --wait
