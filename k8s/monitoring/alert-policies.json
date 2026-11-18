@@ -164,7 +164,7 @@
       {
         "displayName": "5xx count > 9 per 10m",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/ingress_5xx\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/ingress_5xx\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "600s",
@@ -248,7 +248,7 @@
       {
         "displayName": "failed platform calls > 5 per hour",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/litellm_platform_call_failures\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/litellm_platform_call_failures\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "3600s",
@@ -418,7 +418,7 @@
       {
         "displayName": "a user crossed the daily spend line",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/user_spend_over_threshold\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/user_spend_over_threshold\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "300s",
@@ -446,7 +446,7 @@
       {
         "displayName": "a LiteLLM key crossed 80% of its budget",
         "conditionThreshold": {
-          "filter": "metric.type=\"logging.googleapis.com/user/litellm_key_budget_near_limit\" AND resource.type=\"k8s_container\"",
+          "filter": "metric.type=\"logging.googleapis.com/user/litellm_key_budget_near_limit\" AND resource.type=one_of(\"k8s_container\",\"gce_instance\")",
           "aggregations": [
             {
               "alignmentPeriod": "300s",
