@@ -682,22 +682,69 @@ describe('a hosted turn the guard stops, or that fails', () => {
     const result = await runAgent(hostedInstall(), mention);
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    // The step ran: the agent's text was checked on its own, and passed.
+    expect(guardChecks().map(([, body]) => body.text)).toContain('Let me check that page first.');
     expect(chatBodies).toHaveLength(2);
     expect(savedRun.ownTextSetAside).toBeUndefined();
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
+  // The second round's text passes its one check. Without the once-a-turn
+  // latch, the retry's stop would check it again, the check would be
+  // unavailable, and it would be set aside for another call.
   test('own text is set aside once a turn: a second stop ends the run with the fixed line', async () => {
-    const narrating = toolCalls(fetchCall('c1', CLEAN_URL));
-    narrating.data.choices[0].message.content = `Noting ${STOPPED_TEXT}`;
-    chatReplies = [narrating, guardStop, guardStop, reply('Never asked.')];
+    const LATER_LINE = 'Reading the pod first.';
+    const first = toolCalls(call('c1', 'commonly_read_context', {}));
+    first.data.choices[0].message.content = `Noting ${STOPPED_TEXT}`;
+    const second = toolCalls(call('c2', 'commonly_read_context', {}));
+    second.data.choices[0].message.content = LATER_LINE;
+    chatReplies = [first, second, guardStop, guardStop, reply('Never asked.')];
+    const base = axios.post.getMockImplementation();
+    let laterChecks = 0;
+    axios.post.mockImplementation(async (url, body) => {
+      if (url.endsWith('/guardrails/apply_guardrail') && body.text === LATER_LINE) {
+        laterChecks += 1;
+        return chatBodies.length >= 4 ? { status: 503, data: {} } : { status: 200, data: {} };
+      }
+      return base(url, body);
+    });
 
     const result = await runAgent(hostedInstall(), mention);
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
-    expect(chatBodies).toHaveLength(3);
+    expect(chatBodies).toHaveLength(4);
+    expect(laterChecks).toBeGreaterThan(0);
+    expect(chatBodies[3].messages.map((m) => m.content)).toContain(LATER_LINE);
     expect(savedRun.ownTextSetAside).toBe(1);
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  // A stop near the time cap: the check can use up what is left, and a retry
+  // with no time to run ends the turn as a timeout, with the wrong line.
+  test('with no time left for another call after the check, nothing is set aside and the run ends as a guard stop', async () => {
+    const realNow = Date.now();
+    let clock = realNow;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const narrating = toolCalls(call('c1', 'commonly_read_context', {}));
+      narrating.data.choices[0].message.content = `Noting ${STOPPED_TEXT}`;
+      chatReplies = [narrating, guardStop, reply('Never asked.')];
+      const base = axios.post.getMockImplementation();
+      axios.post.mockImplementation(async (url, body) => {
+        // The standalone check takes most of the turn's minute.
+        if (url.endsWith('/guardrails/apply_guardrail')) clock = realNow + 50000;
+        return base(url, body);
+      });
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+      expect(chatBodies).toHaveLength(2);
+      expect(savedRun.ownTextSetAside).toBeUndefined();
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   test('when the check cannot be made, all of the agent\'s own earlier text is set aside for one retry', async () => {

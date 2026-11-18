@@ -169,9 +169,17 @@ still pair with every block word.
   messages. First seen on 2026-11-18: a first-contact turn's post was held
   for an unseen message, and its re-decide call stopped on the agent's own
   line from the round before, so the person got no reply from their agent.
+  - The step is skipped when the turn has no time left for another call,
+    before or after the check, so a stop near the time cap ends as a guard
+    stop with its own line, not as a timeout.
+  - A stop on the retry ends the run, unless a page or computer read the
+    guard stops sets it aside: a walk carries on after the retry, and a later
+    page still gets its own set-aside.
   - Still open: a stop on the arguments of the agent's own tool call (the
-    text of a post it tried to make) is not set aside. It ends the run as
-    before.
+    text of a post it tried to make) is not set aside. When the check runs,
+    the prose passes and the run ends as before. When the check is
+    unavailable, the prose is set aside anyway, and the one retry, which
+    still carries those arguments, is stopped again and ends the run.
 - If the turn still ends failed with nothing posted, and someone was waiting
   on it (a mention or a DM), the agent posts one fixed line. That covers
   native agents that aren't hosted too, with a line that makes no claim about
