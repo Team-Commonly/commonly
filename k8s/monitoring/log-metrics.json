@@ -58,5 +58,11 @@
     "description": "A LiteLLM virtual key passed 80% of its max_budget (TASK-555). One line per key per budget period from backend/services/litellmBudgetAlarmService.ts; the key alias, spend, budget and reset time are in the same log line. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
     "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"litellm_budget\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.alarm=\"litellm_budget\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "litellm_guardrail_blocks",
+    "description": "LiteLLM content-filter guardrail blocks (prompt-injection and the like). No policy reads it; it is a dashboard counter. A block also answers its caller with a 400 on POST /chat/completions, so litellm_platform_call_failures counts it too, and enough of them page as LiteLLM failing; this counter tells those apart from provider failures. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.log=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\")",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]

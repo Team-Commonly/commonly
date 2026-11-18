@@ -197,6 +197,13 @@ to see which upstream and path. Backend 504s on
 `/api/agents/runtime/events` are long-polls; a burst of them means the
 backend is wedged rather than slow.
 
+On the single VM there is no ingress controller, so this metric counts the
+backend's own access lines with a 5xx status (`jsonPayload.log="access"`).
+Read them with `docker compose logs backend | grep '"status":5'`. It stays
+quiet when the backend is down altogether, since Cloudflare's 502s leave no
+access line. That case pages through the `/api/health` uptime check
+([Site down](#site-down)) instead.
+
 ### Secret sync
 
 ESO failed to reconcile more than 3 times in an hour. Existing Secrets keep
@@ -219,7 +226,12 @@ failure with `kubectl logs -n commonly-dev job/<name> --all-containers`.
 
 More than 5 platform LLM calls failed in an hour *after* LiteLLM's own
 fallbacks: a summary, digest, native-app reply or commonly-bot call got no
-answer. Find the model and the provider error:
+answer. A content-guard block counts here too, since it answers its caller
+with a 400 on the same line. So first compare the hour's
+`litellm_guardrail_blocks` count. If blocks account for the failures, someone
+is probing the guard or a stopped message is in a pod's recent history
+(`docs/runbooks/litellm-guardrails.md`), not a provider failing. Otherwise,
+find the model and the provider error:
 
 ```bash
 kubectl logs -n commonly-dev deploy/litellm -c litellm --since=1h \
