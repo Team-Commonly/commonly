@@ -269,7 +269,16 @@ check.
 
 ```bash
 kubectl logs -n commonly-dev deploy/litellm -c litellm | grep -B3 injection_guard_degraded
+# On the single VM (docs/deployment/single-vm.md), same check, same line:
+docker compose logs litellm | grep -B3 -E 'injection_guard_degraded|injection-guard check'
 ```
+
+A healthy boot logs `injection-guard check: <n> categories loaded, jailbreak probe blocked`.
+
+The alert covers both deploys. On the single VM, the host's logging agent
+ships each container line to the `docker_containers` log on a `gce_instance`
+resource, and the metric's second branch matches the alarm there. Without that
+agent the VM's alarm stays in `docker compose logs`, and nothing pages.
 
 CI runs the same check against the pinned image before merge (chart-lint,
 `scripts/litellm-guard-check.py`), so a count here means the running pod
