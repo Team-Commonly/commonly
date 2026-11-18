@@ -200,7 +200,9 @@ then run `docker compose up -d` again.
 
 Once the smoke passes, record the tag, so the nightly live-image CVE scan
 (`.github/workflows/cve-scan.yml`) scans what prod now runs. Without it the scan
-keeps scanning the previous release, or fails when no tag is recorded:
+keeps scanning the previous release, or fails when no tag is recorded. Run it
+from an operator machine, not the VM, with `gh` signed in as an account that can
+manage the repository's Actions variables:
 
 ```bash
 gh variable set VM_LIVE_TAG --repo Team-Commonly/commonly --body <tag>
@@ -410,8 +412,8 @@ Volume is about 0.05 GiB a day, well inside the free logging allowance.
 ## Rollback
 
 Set `COMMONLY_IMAGE_TAG` back to the previous SHA, check out that SHA, then run
-`pull` and `up -d --wait` as in a deploy, and set `VM_LIVE_TAG` back to that
-tag too. Postgres data is not rolled back. If
+`pull` and `up -d --wait` as in a deploy. Then set `VM_LIVE_TAG` back to that
+tag too, from the operator machine as in a deploy. Postgres data is not rolled back. If
 the release added a Postgres migration, the old image refuses to start against
 the new `schema_migrations` row. Follow "Rolling back across a Postgres
 migration" in
