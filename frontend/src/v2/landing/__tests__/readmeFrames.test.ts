@@ -1,5 +1,5 @@
 /**
- * README frames (TASK-155, reshaped for D332). The README is the front door and
+ * README frames (TASK-155, later widened to GIFs). The README is the front door and
  * GitHub is its only renderer, so nothing here renders anything: jsdom has no
  * layout engine and GitHub's sanitizer decides what survives. What is pinned is
  * the shape every frame must keep (a centered block, 880 wide, alt text, an
