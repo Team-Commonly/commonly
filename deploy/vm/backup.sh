@@ -162,11 +162,17 @@ seconds_until_next_pg() {
   echo "$wait"
 }
 
+# A bare call prints usage and stops. It used to default to `loop`, so running
+# `commonly-backup` by hand inside the container to read its usage started a
+# second backup loop beside the entrypoint's (2026-11-18). Compose passes
+# `loop` explicitly.
+USAGE="usage: commonly-backup loop|once|pg-once|check|list|fetch <path>"
+[ $# -gt 0 ] || { echo "$USAGE" >&2; exit 2; }
 # Stamp the loop's start before installing tools, so a slow install can't fail
 # the first health checks.
-if [ "${1:-loop}" = loop ]; then date -u +%s > "$START_STAMP"; fi
+if [ "$1" = loop ]; then date -u +%s > "$START_STAMP"; fi
 install_tools
-case "${1:-loop}" in
+case "$1" in
   once) backup_once ;;
   pg-once) backup_pg_only ;;
   list) rclone lsl "$REMOTE" ;;
@@ -202,5 +208,5 @@ case "${1:-loop}" in
       backup_once || echo "backup run failed; next attempt tomorrow"
     done
     ;;
-  *) echo "usage: commonly-backup loop|once|pg-once|check|list|fetch <path>"; exit 2 ;;
+  *) echo "$USAGE" >&2; exit 2 ;;
 esac

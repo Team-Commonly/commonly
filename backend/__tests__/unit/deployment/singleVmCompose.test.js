@@ -463,6 +463,13 @@ describe('backup.sh Postgres-only runs', () => {
     expect(r.stdout).not.toMatch(/backup complete/);
   });
 
+  it('a bare call prints usage and runs nothing, so it can never start a second loop', () => {
+    const r = run([]);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/usage: commonly-backup loop\|once/);
+    expect(r.calls).toBe('');
+  });
+
   it('rejects a Postgres cadence outside 0 to 24 hours before doing anything', () => {
     const r = run(['pg-once'], { BACKUP_PG_EVERY_HOURS: '25' });
     expect(r.status).not.toBe(0);
