@@ -63,6 +63,12 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/private/var/db"))
 (allow file-read* file-test-existence
   (subpath "/System/Volumes/Preboot/Cryptexes/OS"))
+; The active developer tools, read-only. /usr/bin/git and the other /usr/bin
+; developer commands are xcrun shims: they read the xcode-select link, then run
+; the tool from the Command Line Tools, and git reads its own defaults there.
+(allow file-read* file-test-existence
+  (literal "/private/var/select/developer_dir")
+  (subpath "/Library/Developer/CommandLineTools"))
 
 (allow file-map-executable
   (subpath "/Library/Apple/System/Library/Frameworks")
@@ -348,7 +354,11 @@ export const parseSeatbeltReadRoots = (profile) => {
 };
 let systemReadRoots = null;
 export const seatbeltSystemReadRoots = () => {
-  if (!systemReadRoots) systemReadRoots = parseSeatbeltReadRoots(PLATFORM_BASELINE);
+  // The active developer folder is admitted on every turn too, so a key-file
+  // check counts it with the baseline.
+  if (!systemReadRoots) {
+    systemReadRoots = parseSeatbeltReadRoots(`${PLATFORM_BASELINE}\n${activeDeveloperDirRules()}`);
+  }
   return systemReadRoots;
 };
 
@@ -410,6 +420,35 @@ const isSymlink = (path) => {
     return false;
   }
 };
+
+// The two xcode-select links. The xcrun shim reads developer_dir; both name
+// the same folder on a normal install, and a turn admits each target.
+const XCODE_SELECT_LINKS = Object.freeze(['/private/var/select/developer_dir', '/private/var/db/xcode_select_link']);
+const COMMAND_LINE_TOOLS = '/Library/Developer/CommandLineTools';
+
+/**
+ * The read-only rule for a developer folder xcode-select points at, when that
+ * isn't the Command Line Tools the baseline already admits. /usr/bin/git is an
+ * xcrun shim that runs git from that folder. Only a developer folder's shape
+ * is admitted: an Xcode bundle's Contents/Developer, or a folder under
+ * /Library/Developer. Anything else (/, a home folder, a link that did not
+ * resolve) gets no rule, and git there fails closed.
+ */
+export function developerDirRules(activeDeveloperDir) {
+  const dir = String(activeDeveloperDir || '');
+  if (!isAbsolute(dir) || XCODE_SELECT_LINKS.includes(dir) || /["\\\n]/.test(dir)) return '';
+  if (dir === COMMAND_LINE_TOOLS || dir.startsWith(`${COMMAND_LINE_TOOLS}/`)) return '';
+  if (!dir.endsWith('.app/Contents/Developer') && !dir.startsWith('/Library/Developer/')) return '';
+  return [
+    `(allow file-read* file-test-existence ${subpath(dir)})`,
+    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(dir)}"))`,
+  ].join('\n');
+}
+
+const activeDeveloperDirRules = () => [...new Set(XCODE_SELECT_LINKS.map(realpathOrSelf))]
+  .map(developerDirRules)
+  .filter(Boolean)
+  .join('\n');
 
 // A folder this profile lets the jail write is one the jail can also replace:
 // a write rule on a folder covers the folder's own name, so a process from an
@@ -776,6 +815,7 @@ export const buildSeatbeltProfile = ({
 
   return [
     `${PLATFORM_BASELINE}${RESOLVER_CONFIG}${network === 'open' ? OPEN_NETWORK : ''}`.trim(),
+    activeDeveloperDirRules(),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
