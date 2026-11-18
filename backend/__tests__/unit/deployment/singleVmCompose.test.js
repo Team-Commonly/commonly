@@ -543,7 +543,7 @@ describe('backup.sh Postgres-only runs', () => {
   });
 });
 
-// The synthetic stranger journey moved off the GKE CronJob (2026-11-18, D323).
+// The synthetic stranger journey moved off the GKE CronJob (2026-11-18, when prod moved to the single VM).
 // It must stay a one-shot job: `up -d` never starts it, it never restarts, and
 // it runs the chart's own script so the two copies cannot drift.
 describe('stranger-journey is a one-shot job, not a service', () => {

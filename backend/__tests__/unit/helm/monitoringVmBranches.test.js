@@ -43,7 +43,7 @@ describe('alerting reads the single-VM deploy too', () => {
     expect(filters[0]).toContain('resource.type=one_of("k8s_container","gce_instance")');
   });
 
-  // One run a day (D323). A metric-absence condition caps at 23h30m, so the
+  // One run a day since prod moved to the single VM. A metric-absence condition caps at 23h30m, so the
   // 'not passed' alert is a PromQL count over 25 h, the longest lookback a
   // log-based metric allows: one day plus an hour of slack for the run itself.
   test('the not-passed alert counts passes over 25 h, across both resources', () => {
