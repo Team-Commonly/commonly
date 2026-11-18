@@ -330,6 +330,35 @@
     ]
   },
   {
+    "displayName": "commonly-dev: the stranger journey has not passed in 23 h",
+    "enabled": false,
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "Superseded by \"the stranger journey has not passed in 25 h\". This one watched the GKE CronJob, which is suspended since prod moved to the single VM, so it stays disabled until the GKE teardown deletes it. Runbook: docs/runbooks/alerting.md#stranger-journey"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "no result=pass for 23 h",
+        "conditionAbsent": {
+          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_passes\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "3600s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "duration": "82800s",
+          "trigger": {
+            "count": 1
+          }
+        }
+      }
+    ]
+  },
+  {
     "displayName": "commonly-dev: the stranger journey has not passed in 25 h",
     "severity": "CRITICAL",
     "documentation": {

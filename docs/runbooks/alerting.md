@@ -335,7 +335,7 @@ Read the run (on the VM, from `/opt/commonly/deploy/vm`):
 
 ```bash
 tail -20 /var/log/commonly-stranger-journey.log      # one JSON line per step; the last is the verdict
-docker compose run --rm -T -e JOURNEY_TRIGGER=manual stranger-journey   # re-run now
+docker compose run -T -e JOURNEY_TRIGGER=manual stranger-journey   # re-run now
 ```
 
 The same lines reach Cloud Logging through the Ops Agent (`jsonPayload.attrs."com.docker.compose.service"="stranger-journey"`).

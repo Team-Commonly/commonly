@@ -308,7 +308,9 @@ services:
   # walks signup -> Scout -> connect card -> BYO, then deletes everything it made.
   # A one-shot job, never a service: the `jobs` profile keeps `up -d` from
   # starting it, and the host cron runs it once a day with
-  #   docker compose run --rm -T stranger-journey
+  #   docker compose run -T stranger-journey
+  # then prunes the stopped container a minute later (not --rm, which can
+  # delete the log file before the logging agent has read the verdict line)
   # (see docs/deployment/single-vm.md#stranger-journey). It talks only to
   # https://api.commonly.me, so it tests the same path a stranger takes,
   # Cloudflare included, and needs no secret on prod.
@@ -322,12 +324,17 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - JOURNEY_API=https://api.commonly.me
-      # A manual run overrides it: run --rm -T -e JOURNEY_TRIGGER=manual stranger-journey
+      # A manual run overrides it: run -T -e JOURNEY_TRIGGER=manual stranger-journey
       - JOURNEY_TRIGGER=schedule
     volumes:
       - ../../k8s/helm/commonly/files/stranger-journey.py:/journey/stranger-journey.py:ro
     mem_limit: 128m
     cpus: 0.2
+    # As locked down as the GKE CronJob was: nobody, read-only, no capabilities.
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
 networks:
   commonly:

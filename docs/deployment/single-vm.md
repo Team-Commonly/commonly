@@ -368,11 +368,19 @@ day as a one-shot container that exits:
 
 ```sh
 # /etc/cron.d/commonly-stranger-journey
-17 14 * * * root cd /opt/commonly/deploy/vm && docker compose run --rm -T stranger-journey >> /var/log/commonly-stranger-journey.log 2>&1
+17 14 * * * root cd /opt/commonly/deploy/vm && { docker compose run -T stranger-journey; sleep 60; docker container prune -f --filter label=com.docker.compose.service=stranger-journey; } >> /var/log/commonly-stranger-journey.log 2>&1
 ```
 
-It reads the script from the checkout, so a deploy's `git checkout` updates it.
-It talks only to `https://api.commonly.me` and carries no secret. Each run costs
+It is not `--rm`: the logging agent tails the container's log file, and
+removing the container right after the verdict line can lose that line, so the
+cron prunes it a minute later. It runs as `nobody` with a read-only root
+filesystem and no capabilities, as the GKE CronJob did. It reads the script
+from the checkout, so a deploy's `git checkout` updates it.
+It talks only to `https://api.commonly.me` and carries no secret. After the
+first apply of the 25 h alert, run it once by hand
+(`docker compose run -T -e JOURNEY_TRIGGER=manual stranger-journey`) and check
+the alert resolves, and that Metrics Explorer shows the pass on
+`stranger_journey_passes` for `gce_instance`. Each run costs
 about 87k model tokens on Scout's model (about $0.01, measured 2026-11-18 from
 eight GKE runs).
 

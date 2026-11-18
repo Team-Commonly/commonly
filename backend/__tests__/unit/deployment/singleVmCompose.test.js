@@ -562,6 +562,13 @@ describe('stranger-journey is a one-shot job, not a service', () => {
     expect(svc.environment).toContain('JOURNEY_API=https://api.commonly.me');
   });
 
+  it('runs as nobody, read-only, with no capabilities, as the CronJob did', () => {
+    expect(svc.user).toBe('65534:65534');
+    expect(svc.read_only).toBe(true);
+    expect(svc.cap_drop).toEqual(['ALL']);
+    expect(svc.security_opt).toContain('no-new-privileges:true');
+  });
+
   it('carries no secret and no database: it is a stranger', () => {
     expect(svc.env_file).toBeUndefined();
     expect(svc.depends_on).toBeUndefined();

@@ -62,6 +62,9 @@ describe('alerting reads the single-VM deploy too', () => {
     'a deployment has no available replicas', 'container crash-looping or failing to start',
     'node memory above 85%', 'container restarting repeatedly', 'pod pending for 10 minutes',
     'a Job or CronJob failed', 'secret sync failing',
+    // apply-alerting matches on displayName, so the renamed alert keeps its old
+    // entry, disabled, or the next apply leaves the GKE-only one paging.
+    'the stranger journey has not passed in 23 h',
   ])('cluster-only policy "%s" stays disabled', (title) => {
     const p = policies.find((x) => x.displayName === `commonly-dev: ${title}`);
     expect(p.enabled).toBe(false);
