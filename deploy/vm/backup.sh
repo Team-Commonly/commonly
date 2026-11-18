@@ -43,7 +43,17 @@ check() {
   echo "ok: newest stamp ${newest}s old"
 }
 
-if [ "${1:-}" = "check" ]; then check; exit 0; fi
+# Validate the command before reading any configuration or installing tools.
+# A bare call used to default to `loop`, so running `commonly-backup` by hand
+# inside the container to read its usage started a second backup loop beside
+# the entrypoint's (2026-11-18). Compose passes `loop` explicitly.
+USAGE="usage: commonly-backup loop|once|pg-once|check|list|fetch <path>"
+case "${1:-}" in
+  loop|once|pg-once|check|list|fetch) ;;
+  *) echo "$USAGE" >&2; exit 2 ;;
+esac
+
+if [ "$1" = "check" ]; then check; exit 0; fi
 
 : "${PG_ADMIN_USER:?}" "${PG_ADMIN_PASSWORD:?}" "${PG_DATABASE:?}" "${MONGO_URI:?}"
 : "${BACKUP_S3_ENDPOINT:?}" "${BACKUP_S3_BUCKET:?}"
@@ -162,12 +172,6 @@ seconds_until_next_pg() {
   echo "$wait"
 }
 
-# A bare call prints usage and stops. It used to default to `loop`, so running
-# `commonly-backup` by hand inside the container to read its usage started a
-# second backup loop beside the entrypoint's (2026-11-18). Compose passes
-# `loop` explicitly.
-USAGE="usage: commonly-backup loop|once|pg-once|check|list|fetch <path>"
-[ $# -gt 0 ] || { echo "$USAGE" >&2; exit 2; }
 # Stamp the loop's start before installing tools, so a slow install can't fail
 # the first health checks.
 if [ "$1" = loop ]; then date -u +%s > "$START_STAMP"; fi
