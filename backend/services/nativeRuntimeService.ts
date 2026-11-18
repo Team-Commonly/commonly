@@ -221,7 +221,8 @@ const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stoppe
 // F555: a pod message the guard stops on its own is withheld from a turn's
 // recent messages, so one message can't fail every later turn in its pod.
 // Neither line names the author or repeats anything from the message.
-export const HISTORY_WITHHELD_LINE = '- (a message withheld: a content filter stopped it)';
+export const HISTORY_WITHHELD_TEXT = '(a message withheld: a content filter stopped it)';
+export const HISTORY_WITHHELD_LINE = `- ${HISTORY_WITHHELD_TEXT}`;
 export const HISTORY_LEFT_OUT_NOTICE = "This pod's recent messages were left out of this turn: a content filter "
   + 'stopped them. If the message below needs earlier context, say you could not see it.';
 // A computer read the guard stops is set aside and the turn carries on.
@@ -953,6 +954,11 @@ interface DispatchContext {
    */
   givenAddresses: GivenAddresses;
   /**
+   * F555: the pod messages a guard stop withheld from this turn. A later
+   * commonly_read_context shows each as withheld and takes no address from it.
+   */
+  withheldTexts?: Set<string>;
+  /**
    * The agent's own bot User id, the author id its pod posts carry. Null until
    * resolved, and null when it cannot be: then no pod message gives an address.
    */
@@ -1300,9 +1306,14 @@ export async function dispatchTool(
       case 'commonly_read_context': {
         const limit = Math.min(Number(args.messageCount) || 20, 50);
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
-        const messages = recent.map(({ id, author, content, createdAt }) => ({ id, author, content, createdAt }));
+        // A message the guard stopped earlier in this turn stays withheld (F555).
+        const withheld = (content: string) => Boolean(ctx.withheldTexts?.has(content));
+        const messages = recent.map(({ id, author, content, createdAt }) => (withheld(content)
+          ? { id, author: 'Commonly', content: HISTORY_WITHHELD_TEXT, createdAt }
+          : { id, author, content, createdAt }));
         // Other authors' messages may give commonly_fetch_url an address.
-        byOtherAuthors(recent, ctx.ownUserId).forEach((text) => ctx.givenAddresses.add(text));
+        byOtherAuthors(recent.filter(({ content }) => !withheld(content)), ctx.ownUserId)
+          .forEach((text) => ctx.givenAddresses.add(text));
         return { content: { messages } };
       }
 
@@ -3115,6 +3126,7 @@ export async function runAgent(
     const given = new GivenAddresses();
     [...addressSources, ...gives.filter((text) => !withheldTexts.has(text))].forEach((text) => given.add(text));
     dispatchCtx.givenAddresses = given;
+    dispatchCtx.withheldTexts = withheldTexts;
     historyWithheld = withhold.filter(Boolean).length;
     run.historySetAside = historyWithheld;
     return true;

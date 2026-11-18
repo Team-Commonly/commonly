@@ -121,7 +121,9 @@ still pair with every block word.
     - no line stops alone (the lines only stop together);
     - the check cannot be made;
     - that retry is stopped too.
-  - A withheld message gives no address that `commonly_fetch_url` may open.
+  - A withheld message gives no address that `commonly_fetch_url` may open,
+    and a later `commonly_read_context` in that turn shows it as withheld,
+    so its text and links don't come back through the tool.
   - `AgentRun.historySetAside` counts the lines withheld.
 - If the turn has read the web and posted nothing yet, each web result is
   checked on its own through LiteLLM's `/guardrails/apply_guardrail`, which
