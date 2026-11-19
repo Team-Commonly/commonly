@@ -2,7 +2,7 @@
   {
     "name": "ingress_5xx",
     "description": "ingress-nginx access-log lines whose response status is 5xx. Anchored on the status after the request line; an unanchored \" 5xx \" also matches the request-length field. On the single VM there is no ingress controller; the second branch counts the backend's own access lines with a 5xx status, shipped by the host's logging agent to the docker_containers log as a gce_instance resource.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"ingress-nginx\" AND resource.labels.container_name=\"controller\" AND textPayload=~\"HTTP/[0-9.]+\\\" 5[0-9][0-9] \") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.log=\"access\" AND jsonPayload.status>=500)",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"ingress-nginx\" AND resource.labels.container_name=\"controller\" AND textPayload=~\"HTTP/[0-9.]+\\\" 5[0-9][0-9] \") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"backend\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.log=\"access\" AND jsonPayload.status>=500)",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
@@ -20,19 +20,19 @@
   {
     "name": "litellm_platform_call_failures",
     "description": "LiteLLM access-log lines where an in-cluster platform caller (backend, commonly-bot) got a 4xx/5xx on /chat/completions. In-cluster callers use http://litellm:4000/chat/completions; public traffic only reaches /v1/... through the ingress, so internet probes are excluded. Counted after LiteLLM's own fallbacks, so it fires when a feature actually got no answer. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.log=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"litellm\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.log=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
     "name": "model_fallback",
     "description": "LiteLLM answered (outcome=served) or tried to answer (outcome=failed) a request from a model group other than the one requested, via router_settings.fallbacks (TASK-003). One line per fallback hop from k8s/helm/commonly/files/litellm/model_fallback_signal.py; on a two-hop chain the hop that answered is served and the outer hop is passed. The requested group, the group that failed, the fallback group and the failure's class and status are in the same log line. Native hosted turns refuse fallbacks (D81), so every count comes from another caller: the moltbot gateway, commonly-bot, or platform features. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND jsonPayload.alarm=\"model_fallback\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.alarm=\"model_fallback\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND jsonPayload.alarm=\"model_fallback\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"litellm\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.alarm=\"model_fallback\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
     "name": "injection_guard_degraded",
     "description": "The litellm container's boot check found the injection-guard would not block: a configured content-filter category did not load (a category file LiteLLM could not find, read or was not allowed to read), or a known jailbreak line passed. LiteLLM starts anyway, because stopping would take every model call down, so this line is the alarm. One line per boot, from the check in k8s/helm/commonly/templates/agents/litellm-deployment.yaml; the reason is on the log line before it. CI (scripts/litellm-guard-check.py) runs the same check before merge, so a count here means something changed at runtime. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND jsonPayload.alarm=\"injection_guard_degraded\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.alarm=\"injection_guard_degraded\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND jsonPayload.alarm=\"injection_guard_degraded\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"litellm\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.alarm=\"injection_guard_degraded\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
@@ -50,19 +50,19 @@
   {
     "name": "user_spend_over_threshold",
     "description": "A user's priced model spend for the UTC day crossed SPEND_ALARM_USD_PER_DAY (default $2). One line per user per day from backend/services/spendAlarmService.ts; the userId, the amount and the token split are in the same log line. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"user_spend\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.alarm=\"user_spend\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"user_spend\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"backend\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.alarm=\"user_spend\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
     "name": "litellm_key_budget_near_limit",
     "description": "A LiteLLM virtual key passed 80% of its max_budget (TASK-555). One line per key per budget period from backend/services/litellmBudgetAlarmService.ts; the key alias, spend, budget and reset time are in the same log line. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"litellm_budget\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.alarm=\"litellm_budget\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"litellm_budget\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"backend\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.alarm=\"litellm_budget\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
     "name": "litellm_guardrail_blocks",
     "description": "LiteLLM content-filter guardrail blocks (prompt-injection and the like). No policy reads it; it is a dashboard counter. A block also answers its caller with a 400 on POST /chat/completions, so litellm_platform_call_failures counts it too, and enough of them page as LiteLLM failing; this counter tells those apart from provider failures. The second branch is the single-VM deploy: the host's logging agent ships container lines to the docker_containers log as a gce_instance resource, where a line that is not JSON keeps its text in jsonPayload.log.",
-    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND jsonPayload.log=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\")",
+    "filter": "(resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\") OR (resource.type=\"gce_instance\" AND log_id(\"docker_containers\") AND (jsonPayload.attrs.\"com.docker.compose.service\"=\"litellm\" OR NOT jsonPayload.attrs.\"com.docker.compose.service\":*) AND jsonPayload.log=~\"WARNING: content_filter.py:[0-9]+ - Content blocked\")",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]
