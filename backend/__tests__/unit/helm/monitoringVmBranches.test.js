@@ -33,6 +33,34 @@ describe('alerting reads the single-VM deploy too', () => {
     expect(vm).toContain(marker);
   });
 
+  // Every VM container writes to the same docker_containers log. Without a
+  // service match a branch counts any container whose line happens to fit:
+  // a guardrail block quoted in a backend log, or an access line from a
+  // one-off job. The compose logging anchor adds the service name to attrs.
+  test.each([
+    ['ingress_5xx', 'backend'],
+    ['litellm_platform_call_failures', 'litellm'],
+    ['model_fallback', 'litellm'],
+    ['injection_guard_degraded', 'litellm'],
+    ['user_spend_over_threshold', 'backend'],
+    ['litellm_key_budget_near_limit', 'backend'],
+    ['litellm_guardrail_blocks', 'litellm'],
+    ['stranger_journey_passes', 'stranger-journey'],
+    ['stranger_journey_failures', 'stranger-journey'],
+  ])('the %s VM branch reads only the %s service', (name, service) => {
+    const { filter } = metrics.find((m) => m.name === name);
+    const vm = filter.slice(filter.indexOf(VM));
+    expect(vm).toContain(`jsonPayload.attrs."com.docker.compose.service"="${service}"`);
+  });
+
+  test('every metric with a VM branch names its compose service', () => {
+    const unscoped = metrics
+      .filter((m) => m.filter.includes(VM))
+      .filter((m) => !m.filter.slice(m.filter.indexOf(VM)).includes('jsonPayload.attrs."com.docker.compose.service"='))
+      .map((m) => m.name);
+    expect(unscoped).toEqual([]);
+  });
+
   test.each([
     'ingress_5xx', 'litellm_platform_call_failures', 'user_spend_over_threshold', 'litellm_key_budget_near_limit',
     'stranger_journey_failures',
