@@ -2279,8 +2279,6 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
-          {mode === 'byo' && (listenAdapter === 'claude' || listenAdapter === 'codex')
-            && connectorLine(listenAdapter, setupOs)}
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
@@ -2291,6 +2289,10 @@ const V2AgentBYO: React.FC = () => {
               {t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry', { tool: listenToolLabel })}
             </p>
           )}
+          {/* F564: the connectors caveat follows the line that says how to run it.
+              Under the button, it was the first and only Windows line a visitor read. */}
+          {mode === 'byo' && (listenAdapter === 'claude' || listenAdapter === 'codex')
+            && connectorLine(listenAdapter, setupOs)}
           {/* F448: the form and its button lead, and the daemon line follows as
               the next step. When it led the page (F370), no outside opener copied
               it in 14 days, and 4 of 9 left before copying anything. It stays

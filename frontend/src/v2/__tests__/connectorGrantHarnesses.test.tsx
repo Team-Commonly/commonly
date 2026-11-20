@@ -83,7 +83,7 @@ describe('the harnesses a connector grant can reach', () => {
 
   test('English lines read plainly', () => {
     expect(t('harness.noConnectorsYet', { tool: 'Goose' })).toBe('Connectors don’t work with Goose yet.');
-    expect(t('harness.noConnectorsWindows')).toBe('Connectors don’t work on Windows yet.');
+    expect(t('harness.noConnectorsWindows')).toBe('Connectors are optional, and they don’t work on Windows yet.');
     expect(t('harness.noConnectors', { tool: 'pi' }))
       .toBe('Connectors need a sandboxed harness. pi runs without a sandbox, so it can’t use connectors.');
     expect(t('harness.connectorsMacPublicOnly', { tool: 'pi' }))
@@ -100,7 +100,7 @@ describe('the harnesses a connector grant can reach', () => {
     expect(t('harness.noConnectors', { tool: 'Hermes' }))
       .toBe('连接器需要带沙箱的运行器。Hermes 运行时没有沙箱，所以用不了连接器。');
     expect(t('harness.noConnectorsYet', { tool: 'Goose' })).toBe('Goose 暂时还用不了连接器。');
-    expect(t('harness.noConnectorsWindows')).toBe('Windows 上暂时还用不了连接器。');
+    expect(t('harness.noConnectorsWindows')).toBe('连接器是可选的，Windows 上暂时还用不了。');
     expect(t('harness.connectorsMacPublicOnly', { tool: 'pi' })).toBe('pi 只有作为 Mac 上的公开智能体时才能用连接器。');
     expect(t('harness.connectorsPublicOnly', { tool: 'Goose' })).toBe('Goose 只有作为公开智能体时才能用连接器。');
     expect(t('harness.connectorsPublicOnlyVersion', { tool: 'Qwen Code', version: '0.26.2' }))

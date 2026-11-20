@@ -307,10 +307,10 @@ describe('the connector line for a harness with no sandbox', () => {
     await renderPage();
     for (const runner of ['claude', 'codex']) {
       fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
-      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors are optional, and they don’t work on Windows yet.');
     }
     fireEvent.click(screen.getByTestId('byo-runner-goose'));
-    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors are optional, and they don’t work on Windows yet.');
     fireEvent.click(screen.getByTestId('byo-runner-hermes'));
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Hermes runs without a sandbox');
   });
