@@ -73,7 +73,11 @@ regular expression run against agent-supplied text is a denial-of-service risk.
 **D3. Validated when minted.** Otherwise minting fails with `invalid_grant` (400), so a typo can't
 create a limit that silently never applies. Each limit must name either:
 
-- an argument in the tool's `inputSchema`, with a kind that fits the argument's schema type; or
+- an argument the tool declares limitable, with a kind that fits the argument's schema type.
+  Limitable arguments are identifiers and choices, such as `pullNumber`, `issueNumber`, `base`,
+  `head`, `ref`, `mergeMethod` and `labels`. Free text never is: `title`, `body`, `message` and file
+  contents can't take a limit. Pinning free text to an exact value has no use, and a limit holding
+  free text could carry a credential into the record (D7); or
 - an argument the server derives itself, from a short per-tool list. Today the list has one entry,
   `github.merge_pull_request`'s `headSha`, which `prepareApproval` reads from GitHub.
 
@@ -145,8 +149,14 @@ agent learns the boundary from the tool list, not by being refused.
 **D7. Recorded in full when issued.** The `grant.issued` record line (ADR-033) gains
 `scope.argLimits`, holding the limits as minted. This amends ADR-033's record schema. The change is
 additive: readers ignore unknown fields, so `v` stays 1 under ADR-033's own rule. Limits are policy
-the granter wrote, not call arguments, so they are recorded as written. Call arguments stay
-`argsDigest` only, as ADR-033 already decides.
+the granter wrote, not call arguments, so they are recorded as written. D3 keeps them to
+identifiers and choices, and ADR-033's no-credential rule still binds: the writer applies the same
+known-value redaction to `argLimits` as to any other text it records.
+
+Call arguments stay out of the record. ADR-033 records at most an `argsDigest` of a call's
+arguments, and its launch rule (its §8 question 9) omits even that from every server record line
+and export, because a digest of a guessable argument can be reversed. Nothing here changes that
+rule.
 
 **D8. A grant may later be issued as a warrant.** Once agents hold their own keys (the #791 work),
 a grant could be issued to an agent's key as a warrant. Roughly:
