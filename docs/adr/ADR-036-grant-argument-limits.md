@@ -2,7 +2,8 @@
 
 **Status:** Proposed 2026-11-19, open for comment. Nothing is built yet. Building waits until the
 merge-queue support for the signed-review check (#791) lands, so the warrant shape is settled once
-and nobody builds this twice.
+and nobody builds this twice. Acknowledged unknowns: how each limit kind maps onto Tenuo's
+constraints, and whether limits should reach nested arguments; the full list is in §5.
 
 **Scope.** [ADR-025](ADR-025-connector-substrate.md) owns `RoomGrant` and the tool broker, and
 [ADR-033](ADR-033-grant-record.md) owns the grant record. This ADR adds one optional field to a
@@ -113,6 +114,9 @@ The rules at every point:
 - An argument named in a limit but missing from the call fails. Otherwise an optional argument with
   a provider default would slip past: a merge without `mergeMethod` gets GitHub's default method.
 - Values are compared strictly, with no type coercion: `4222` and `"4222"` are different.
+- The values checked are the values sent. Where a tool normalizes an argument (trimming a branch
+  name, for example), the check runs on the normalized value and the provider receives that same
+  value, so nothing changes between the check and the call.
 - It fails closed. This is an authorization limit, so an unreadable or unknown limit refuses the
   call.
 - A refusal returns 403 `arg_not_allowed` with `{ tool, argument }`. It writes a `refused`
