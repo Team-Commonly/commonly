@@ -2,7 +2,8 @@
 
 **Status:** Proposed 2026-11-19, open for comment. Nothing is built yet. Building waits until the
 merge-queue support for the signed-review check (#791) lands, so the warrant shape is settled once
-and nobody builds this twice. Acknowledged unknowns: how each limit kind maps onto Tenuo's
+and nobody builds this twice. It moves to Accepted once the comment round closes, before anything
+is built, so it never ships as an unratified decision. Acknowledged unknowns: how each limit kind maps onto Tenuo's
 constraints, and whether limits should reach nested arguments; the full list is in §5.
 
 **Scope.** [ADR-025](ADR-025-connector-substrate.md) owns `RoomGrant` and the tool broker, and
