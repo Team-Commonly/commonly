@@ -126,6 +126,30 @@ describe('V2AgentBYO on Windows', () => {
     expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/^Quick try: you’ll run a command in PowerShell\. It needs Node 22\+ with npm and Claude Code signed in, and it stops when that window closes\./);
   });
 
+  // F564: a Windows visitor who left within a minute saw "Connectors don’t work
+  // on Windows yet." straight under the button, before the line that says how
+  // to run it. What works leads; the caveat follows and says connectors are optional.
+  test('the PowerShell quick-try line comes before the connectors caveat, which says connectors are optional', async () => {
+    setUserAgent(WINDOWS);
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    const quickTry = await screen.findByTestId('byo-quick-try');
+    const caveat = screen.getByTestId('byo-no-connectors');
+    expect(quickTry.compareDocumentPosition(caveat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(caveat).toHaveTextContent(/^Connectors are optional, and they don’t work on Windows yet\.$/);
+  });
+
+  test('zh-CN: the connectors caveat follows the quick-try line and reads in Chinese', async () => {
+    setUserAgent(WINDOWS);
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    const quickTry = await screen.findByTestId('byo-quick-try');
+    const caveat = screen.getByTestId('byo-no-connectors');
+    expect(quickTry.compareDocumentPosition(caveat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(caveat).toHaveTextContent(/^连接器是可选的，Windows 上暂时还用不了。$/);
+  });
+
   test('zh-CN: the PowerShell heading, the needs line, the note and the scripts hint read in Chinese', async () => {
     setUserAgent(WINDOWS);
     await act(async () => { await i18n.changeLanguage('zh-CN'); });

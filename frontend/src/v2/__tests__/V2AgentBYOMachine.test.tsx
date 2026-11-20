@@ -387,7 +387,7 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
     for (const id of ['claude', 'codex', 'opencode']) {
       fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: id } });
-      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors are optional, and they don’t work on Windows yet.');
     }
     // A harness that can't be confined anywhere keeps its own reason.
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'dsh' } });
