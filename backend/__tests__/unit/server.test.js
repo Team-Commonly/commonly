@@ -266,6 +266,22 @@ describe('server route precedence', () => {
   });
 });
 
+describe('server keep-alive', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  // The tunnel reuses an idle backend socket for up to 90 s. The server users
+  // reach must keep it longer, or a reused socket is reset (F565).
+  it('the server the app listens on outlasts the tunnel’s 90 s idle', () => {
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { server } = require('../../server');
+    expect(server.keepAliveTimeout).toBeGreaterThan(90000);
+    expect(server.headersTimeout).toBeGreaterThan(server.keepAliveTimeout);
+  });
+});
+
 describe('server websocket authorization helpers', () => {
   afterEach(() => {
     jest.resetModules();

@@ -127,10 +127,12 @@ const app = express();
 // TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 const { buildAllowedOrigins, corsOptions } = require('./middleware/corsPolicy');
+const { applyKeepAliveTimeouts } = require('./config/httpKeepAlive');
 
 const allowedOrigins = buildAllowedOrigins();
 
-const server = http.createServer(app);
+// Outlast the tunnel's idle keep-alive, or a reused socket is reset (F565).
+const server = applyKeepAliveTimeouts(http.createServer(app));
 const io = socketIo(server, {
   cors: {
     origin: allowedOrigins,
