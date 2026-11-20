@@ -395,4 +395,22 @@ describe('firstContactService', () => {
       }),
     );
   });
+
+  // F562: the pod host stands down for a person's message while their own
+  // hosted agent is greeting them, so that greeting must answer the message.
+  describe('a hosted greeting answers what the person already wrote', () => {
+    const payloadOf = () => AgentEventService.enqueue.mock.calls[0][0].payload;
+
+    test('a hosted greeting is marked and told to answer the person first', async () => {
+      await expect(maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }))).resolves.toBe(true);
+      expect(payloadOf().hostedGreeting).toBe(true);
+      expect(payloadOf().content).toContain('If the person has already written to you in this pod');
+    });
+
+    test('a non-hosted greeting carries neither', async () => {
+      await expect(maybeFireFirstContact(baseOptions())).resolves.toBe(true);
+      expect(payloadOf().hostedGreeting).toBeUndefined();
+      expect(payloadOf().content).not.toContain('If the person has already written to you in this pod');
+    });
+  });
 });

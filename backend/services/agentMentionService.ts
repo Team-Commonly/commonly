@@ -1593,8 +1593,37 @@ const isWakeLoopDampened = async (
   return false;
 };
 
+// F562: a person who starts their own hosted agent and writes at once got two
+// answers: the pod host, woken by the unaddressed message, and their agent's
+// first-contact greeting. A hosted greeting always sees that message (hosted
+// native turns inline recent pod messages, and the unseen-messages hold catches
+// one that lands mid-turn), and its cue tells it to answer what the person
+// wrote. So while that greeting is in flight the host takes the message as a
+// digest, not a turn. Only the host stands down, and only for a greeting of the
+// sender's own that is marked hosted. A failed lookup wakes the host: delivery
+// is the safer error.
+const OWNER_GREETING_WINDOW_MS = 60_000;
+
+const ownerGreetingInFlight = async (podId: string, senderUserId: string): Promise<boolean> => {
+  try {
+    const found = await AgentEvent.exists({
+      podId,
+      type: 'first_contact',
+      'payload.userId': String(senderUserId),
+      'payload.hostedGreeting': true,
+      agentName: { $ne: HOST_AGENT_NAME },
+      status: { $in: ['pending', 'folding', 'delivered'] },
+      createdAt: { $gte: new Date(Date.now() - OWNER_GREETING_WINDOW_MS) },
+    });
+    return Boolean(found);
+  } catch (err) {
+    console.warn('[host-defers] greeting lookup failed (waking the host):', (err as Error).message);
+    return false;
+  }
+};
+
 /** `agentName:instanceId`, lowercased — the identity an install and a bot User row share. */
-const installKey = (inst: { agentName?: unknown; instanceId?: unknown }): string => `${
+const installKey =(inst: { agentName?: unknown; instanceId?: unknown }): string => `${
   String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default').toLowerCase()}`;
 
 /** A thread root arrives from PG as either its numeric column or JSON spelling. */
@@ -1929,6 +1958,8 @@ const enqueueWakeOnMessage = async ({
     cachedBotUserIds = await resolveBotUserIds(targets);
   }
   const parentBotUserIds = parentAuthorUserId ? (cachedBotUserIds ?? null) : null;
+  // F562: asked at most once per message, and only when the host would wake.
+  let hostDefers: Promise<boolean> | undefined;
 
   await Promise.all(targets.map(async (inst) => {
     const agentName = String(inst.agentName || '').toLowerCase();
@@ -1945,6 +1976,10 @@ const enqueueWakeOnMessage = async ({
     // available in the next digest for this seat.
     if (deliveryMode === 'wake' && senderKey
       && await isWakeLoopDampened({ agentName, instanceId }, podId)) deliveryMode = 'digest';
+    if (deliveryMode === 'wake' && !addressed && agentName === HOST_AGENT_NAME && sender?.isBot === false) {
+      hostDefers ??= ownerGreetingInFlight(podId, userId);
+      if (await hostDefers) deliveryMode = 'digest';
+    }
     const repliesToYou = !!(parentAuthorUserId
       && parentBotUserIds
       && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);
@@ -3229,4 +3264,5 @@ export {
   // which is exactly the kind of detail a second copy gets subtly wrong.
   wakeOnMessageEnabled,
   boardWakeEnabled,
+  OWNER_GREETING_WINDOW_MS,
 };

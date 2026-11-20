@@ -39,6 +39,13 @@ const FIRST_CONTACT_CUE =
 // Launch walk 2026-11-05: a seat attached hours after the person joined
 // threaded its greeting under their join post, and it read as a late
 // welcome. The greeting answers no message, so it says where it goes.
+// F562: the pod host stands down on a person's unaddressed message while their
+// own hosted agent is greeting them (agentMentionService), because this turn
+// sees that message (inline history, or the unseen-messages hold). Seeing it is
+// not answering it, so the greeting is told to answer it.
+const ANSWER_FIRST_CUE = 'If the person has already written to you in this pod, answer what they wrote in this '
+  + 'greeting, and let your one question follow from it. ';
+
 const TOP_LEVEL_CUE =
   ' Post it top-level in the pod: do not set threadRootId or replyToMessageId, and do not reply to any earlier message.';
 
@@ -237,7 +244,7 @@ export async function maybeFireFirstContact({
     }
     const greeting = !hostedAgentUserId && await hasAnotherPerson(teamPodMembers || [], safeUserId)
       ? `${TEAM_POD_CUE}${TOP_LEVEL_CUE}`
-      : `${opening}${FIRST_CONTACT_CUE}${TOP_LEVEL_CUE}${languageCue}${mentionCue}`;
+      : `${opening}${hostedAgentUserId ? ANSWER_FIRST_CUE : ''}${FIRST_CONTACT_CUE}${TOP_LEVEL_CUE}${languageCue}${mentionCue}`;
     await AgentEventService.enqueue({
       agentName: safeAgentName,
       instanceId: safeInstanceId,
@@ -247,6 +254,9 @@ export async function maybeFireFirstContact({
         content: greeting,
         userId: String(safeUserId),
         kind: 'first-contact',
+        // F562: the host's wake fan-out looks for this marker. Only a hosted
+        // greeting is sure to see the person's message, so only it is marked.
+        ...(hostedAgentUserId ? { hostedGreeting: true } : {}),
       },
     });
   } catch (error) {
