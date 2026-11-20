@@ -151,3 +151,13 @@ test('a policy that limits scripts names the inline public-hit script by hash (F
   assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self' data:" always;`, bases));
   assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "script-src-attr 'none'" always;`, bases));
 });
+
+// The tunnel reuses an idle connection to this container for up to 90 s.
+// NGINX's own default is 75 s, so it could close a socket the tunnel then
+// reused, and the request failed with "connection reset by peer" (F565).
+test('nginx keeps an idle connection open longer than the tunnel’s 90 s', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  const match = config.match(/^\s*keepalive_timeout\s+(\d+)s;/m);
+  assert.ok(match, 'nginx.conf sets keepalive_timeout in seconds');
+  assert.ok(Number(match[1]) > 90, `keepalive_timeout ${match[1]}s must exceed 90s`);
+});
