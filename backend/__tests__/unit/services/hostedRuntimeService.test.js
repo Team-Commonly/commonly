@@ -14,13 +14,16 @@ const mockRunCount = jest.fn();
 jest.mock('../../../models/AgentRun', () => ({
   countDocuments: (...args) => mockRunCount(...args),
 }));
+const mockUserFindById = jest.fn();
+jest.mock('../../../models/User', () => ({ findById: (...args) => mockUserFindById(...args) }));
 jest.mock('../../../models/AgentEvent', () => ({
   countDocuments: (...args) => mockEventCount(...args),
 }));
 
 const hosted = require('../../../services/hostedRuntimeService');
 
-const ENV_KEYS = ['HOSTED_RUNTIME_URL', 'HOSTED_RUNTIME_ADMIN_TOKEN', 'HOSTED_AGENTS_PER_USER', 'HOSTED_TURNS_PER_DAY'];
+const ENV_KEYS = ['HOSTED_RUNTIME_URL', 'HOSTED_RUNTIME_ADMIN_TOKEN', 'HOSTED_AGENTS_PER_USER', 'HOSTED_TURNS_PER_DAY',
+  'AGENT_USER_DAILY_RUN_CEILING', 'AGENT_USER_DAILY_RUN_CEILING_PRO'];
 
 describe('hostedRuntimeService', () => {
   const saved = {};
@@ -148,6 +151,59 @@ describe('hostedRuntimeService', () => {
 
       mockEventCount.mockResolvedValue(2);
       await expect(hosted.meterAllowsTurn('scout', 'default')).resolves.toMatchObject({ allowed: false, used: 2 });
+    });
+  });
+
+  describe('plan resolution (ownerIsPro)', () => {
+    // #2246: all three fail-closed branches of the plan lookup were invertible
+    // with the suite green, and `absent` is the default state of a non-paying
+    // account. Each arm reads the caps the production callers see, so a branch
+    // that started answering "pro" would hand the 200-turn line to the free tier.
+    const OWNER_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    const proChain = (value) => ({ select: () => ({ lean: async () => value }) });
+    const rejectedChain = (error) => ({ select: () => ({ lean: async () => { throw error; } }) });
+
+    beforeEach(() => {
+      mockUserFindById.mockReset();
+    });
+
+    it('reads a missing user as free', async () => {
+      mockUserFindById.mockReturnValue(proChain(null));
+      await expect(hosted.hostedCapsForOwner(OWNER_ID))
+        .resolves.toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+      expect(mockUserFindById).toHaveBeenCalledWith(OWNER_ID);
+    });
+
+    it('reads a failed lookup as free and still returns the caps', async () => {
+      mockUserFindById.mockReturnValue(rejectedChain(new Error('db wobble')));
+      await expect(hosted.hostedCapsForOwner(OWNER_ID))
+        .resolves.toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+    });
+
+    it('reads a user with no entitlements object as free', async () => {
+      mockUserFindById.mockReturnValue(proChain({ _id: OWNER_ID }));
+      await expect(hosted.hostedCapsForOwner(OWNER_ID))
+        .resolves.toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+    });
+
+    it('reads a non-object-id owner as free without a lookup', async () => {
+      await expect(hosted.hostedCapsForOwner('user-1'))
+        .resolves.toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+      expect(mockUserFindById).not.toHaveBeenCalled();
+    });
+
+    // The control: without it, a lookup that answered "free" for every input
+    // would pass all four arms above.
+    it('reads a literal entitlements.pro === true as pro', async () => {
+      mockUserFindById.mockReturnValue(proChain({ entitlements: { pro: true } }));
+      await expect(hosted.hostedCapsForOwner(OWNER_ID))
+        .resolves.toEqual({ agentsPerUser: 1, turnsPerDay: 200 });
+      await expect(hosted.userRunCeilingForOwner(OWNER_ID)).resolves.toBe(300);
+    });
+
+    it('reads a non-boolean pro value as free', async () => {
+      mockUserFindById.mockReturnValue(proChain({ entitlements: { pro: 'true' } }));
+      await expect(hosted.userRunCeilingForOwner(OWNER_ID)).resolves.toBe(120);
     });
   });
 
