@@ -608,7 +608,7 @@ io.on('connection', (socket: any) => {
     if (!pod) {
       return;
     }
-    console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
+    console.log(`User ${socket.userId} (socket ${socket.id}) joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });
 
@@ -619,7 +619,7 @@ io.on('connection', (socket: any) => {
       return;
     }
     socketPodVisits.leavePodRoom(socket, podId, mentionEmailVisits);
-    console.log(`User ${socket.userId} left pod room: pod_${podId}`);
+    console.log(`User ${socket.userId} (socket ${socket.id}) left pod room: pod_${podId}`);
     await emitPresence(podId);
   });
 
