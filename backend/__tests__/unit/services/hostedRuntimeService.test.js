@@ -23,7 +23,7 @@ jest.mock('../../../models/AgentEvent', () => ({
 const hosted = require('../../../services/hostedRuntimeService');
 
 const ENV_KEYS = ['HOSTED_RUNTIME_URL', 'HOSTED_RUNTIME_ADMIN_TOKEN', 'HOSTED_AGENTS_PER_USER', 'HOSTED_TURNS_PER_DAY',
-  'AGENT_USER_DAILY_RUN_CEILING', 'AGENT_USER_DAILY_RUN_CEILING_PRO'];
+  'HOSTED_TURNS_PER_DAY_PRO', 'AGENT_USER_DAILY_RUN_CEILING', 'AGENT_USER_DAILY_RUN_CEILING_PRO'];
 
 describe('hostedRuntimeService', () => {
   const saved = {};
@@ -38,6 +38,19 @@ describe('hostedRuntimeService', () => {
   afterEach(() => {
     ENV_KEYS.forEach((k) => { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; });
     delete global.fetch;
+  });
+
+  // A setting the service reads but ENV_KEYS misses leaks in from whatever
+  // machine runs the suite, so a cap assertion passes or fails by host.
+  it('lists every setting the service reads in ENV_KEYS', () => {
+    // eslint-disable-next-line global-require
+    const fs = require('fs');
+    // eslint-disable-next-line global-require
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '../../../services/hostedRuntimeService.ts'), 'utf8');
+    const read = [...src.matchAll(/(?:process\.env\.|intEnv\(')([A-Z][A-Z0-9_]+)/g)].map((m) => m[1]);
+    expect(read.length).toBeGreaterThan(0);
+    expect([...new Set(read)].filter((k) => !ENV_KEYS.includes(k))).toEqual([]);
   });
 
   describe('configuration', () => {
