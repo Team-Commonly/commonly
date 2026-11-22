@@ -3,8 +3,9 @@
 **Status:** Proposed 2026-11-19, open for comment. Nothing is built yet. Building waits until the
 merge-queue support for the signed-review check (#791) lands, so the warrant shape is settled once
 and nobody builds this twice. It moves to Accepted once the comment round closes, before anything
-is built, so it never ships as an unratified decision. Acknowledged unknowns: how each limit kind maps onto Tenuo's
-constraints, and whether limits should reach nested arguments; the full list is in §5.
+is built, so it never ships as an unratified decision. The Tenuo mapping is settled (D8). Acknowledged
+unknowns: whether a later `each` form should reach nested arguments, and which derived arguments join
+D3's list; see §5.
 
 **Scope.** [ADR-025](ADR-025-connector-substrate.md) owns `RoomGrant` and the tool broker, and
 [ADR-033](ADR-033-grant-record.md) owns the grant record. This ADR adds one optional field to a
@@ -69,6 +70,10 @@ its parent's?" is a direct comparison, with no search:
 
 An empty `subsetOf` means the array must be empty, for example an issue with no labels.
 
+`prefix` is for identifiers such as branch names, never file paths: `docs/` is a literal prefix of
+`docs/../.github/workflows/x.yml`. A limit on paths would be its own kind, one that resolves `..`
+before comparing (Tenuo's `Subpath`), and is not in this ADR.
+
 There is no regular expression or expression language. Neither has a cheap narrowing check, and a
 regular expression run against agent-supplied text is a denial-of-service risk.
 
@@ -88,9 +93,13 @@ GitHub tools' schemas don't let an agent name another.
 
 Minting also refuses:
 
-- a `range` with `min > max` or a bound that isn't a finite number;
+- a `range` with `min > max`, or a bound that isn't a finite number or is outside ±2^53, past which
+  an integer bound stops being exact in a warrant's floating-point range (D8);
 - an empty `oneOf` (remove the tool from `tools` instead);
-- an empty `prefix`, which would pass everything.
+- an empty `prefix`, which would pass everything;
+- a `prefix` containing `*`, `?`, `[`, `]`, `{`, `}` or `\`. The broker compares a prefix literally,
+  but a warrant carries it as a glob (D8), and glob syntax may read any of these differently. The
+  refusal costs little: Git refs can't contain `*`, `?`, `[` or `\` at all.
 
 **D4. Checked by the broker at all three points a call can reach a provider.** A new
 `assertGrantArgsAllowed(grant, tool, args)` sits beside `assertGrantToolAllowed`. It checks the
@@ -123,7 +132,8 @@ The rules at every point:
 - A refusal returns 403 `arg_not_allowed` with `{ tool, argument }`. It writes a `refused`
   `tool_calls` row with that reason, and the argument's value stays out of logs.
 - Limits name top-level arguments only. A nested value, such as each `files[].path` in
-  `github.commit_files`, can't be limited yet (open question 3).
+  `github.commit_files`, can't be limited (open question 3). That tool keeps its own broker rule,
+  as the seat-branch check does.
 
 **D5. A child may only narrow.** When `attenuateGrant` mints a child:
 
@@ -171,9 +181,23 @@ a grant could be issued to an agent's key as a warrant. Roughly:
 - the agent's key becomes the holder;
 - a child grant becomes a narrowed warrant.
 
-How each of the five kinds maps onto Tenuo's own constraints is open (question 1). We'd like the
-Tenuo maintainer to confirm it. The broker stays the enforcer for brokered calls. The warrant lets a
-verifier outside the instance, such as a required check, check the same limits.
+Each kind has a direct Tenuo constraint (confirmed by the Tenuo maintainer on this ADR's PR,
+2026-11-22):
+
+| Kind | Tenuo constraint | Note |
+|---|---|---|
+| `exact` | `Exact` | Types are strict, as D4 wants: `4222` is not `"4222"`. |
+| `oneOf` | `OneOf` | |
+| `prefix` | `Pattern("<s>*")` | A trailing glob, hence D3's refusal of glob syntax in `s`. |
+| `range` | `Range` | Inclusive, either end optional; bounds are floating-point (D3). |
+| `subsetOf` | `Subset` | An empty list allows only an empty array. |
+
+Every narrowing pair in D5 is one Tenuo already checks, so a warrant narrowed from a warrant answers
+as `attenuateGrant` does. A warrant refuses a missing constrained argument (as D4 does) and any
+argument a constrained tool doesn't name, so the conversion lists each argument without a limit as
+a wildcard, or allows unknown arguments for that tool. The broker stays the enforcer for brokered
+calls. The warrant lets a verifier outside the instance, such as a required check, check the same
+limits.
 
 ## 3. Examples
 
@@ -234,14 +258,15 @@ An agent that may file issues carrying only these labels:
 
 ## 5. Open questions
 
-1. How should each kind map onto Tenuo's constraints? In particular, should `prefix` map to a
-   trailing-wildcard pattern or to a path-style constraint, and does `subsetOf` have a counterpart?
+1. *Answered.* How each kind maps onto Tenuo's constraints is in D8. `prefix` maps to a trailing
+   glob and stays for identifiers (D2), and `subsetOf` maps to `Subset`.
 2. Should a limit be able to name a default for a missing argument? Proposed: no. A missing argument
    fails (D4), and the agent passes it explicitly.
 3. Should limits reach nested arguments? The case that matters is a path prefix on every
    `files[].path` in `github.commit_files`, which would keep an agent's commits inside one
-   directory. Proposed: top-level arguments only in the first build, with an `each` form
-   (`{ "files": { "each": { "path": { "prefix": "docs/" } } } }`) as a follow-up.
+   directory. Decided for the first build: top-level arguments only. Tenuo's constraints are
+   top-level too, so an `each` form would change the warrant format and is a separate decision.
+   A path limit inside it would need the path kind D2 describes, not `prefix`.
 4. Which other derived arguments belong on D3's list as more tools are added?
 
 ## 6. Build plan, once #791's merge-queue support lands
