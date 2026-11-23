@@ -30,7 +30,11 @@ describe('F566: a non-ObjectId pod id in a registry path answers 400', () => {
   beforeEach(() => { errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {}); });
   afterEach(() => errorSpy.mockRestore());
 
-  test.each(['=default', ':podId', '6a0000aa'])('DELETE /agents/scout/pods/%s (the 11-23 call)', async (id) => {
+  // The prod call, an unfilled template, too short, one hex digit too long,
+  // and a plain word.
+  test.each([
+    '=default', ':podId', '6a0000aa', '6a00000000000000000000a1f', 'nonsense',
+  ])('DELETE /agents/scout/pods/%s', async (id) => {
     const res = await request(app)
       .delete(`/api/registry/agents/scout/pods/${encodeURIComponent(id)}?instanceId=default`);
     expect(res.status).toBe(400);
@@ -49,6 +53,8 @@ describe('F566: a non-ObjectId pod id in a registry path answers 400', () => {
     ['get', '/pods/=default/agents/scout/plugins'],
     ['post', '/pods/=default/agents/scout/provision'],
     ['get', '/pods/=default/agents/scout/runtime-status'],
+    ['get', '/pods/6a00000000000000000000a1f/agents'],
+    ['get', '/pods/nonsense/agents/scout'],
     // Valid bodies, so these reach the cast and not the body check first.
     ['patch', '/agents/scout/manage-settings/pods/=default', {
       wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false,

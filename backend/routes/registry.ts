@@ -27,10 +27,14 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // runs ahead of the runtime routes' audit line, which is fine: a refused call
 // never reaches a pod.
 // Install (POST /agents/:name/pods/:podId) keeps its own pinned 404 for a
-// malformed id, so only the DELETE on that path is guarded here.
+// malformed id, so only the DELETE on that path is guarded here. All three are
+// middleware (`use`), not route registrations: the guard does no I/O, and the
+// routes it fronts keep their own limiters below.
 const podIdGuard = requireObjectIdParam('podId', INVALID_POD_ID);
 router.use(['/pods/:podId', '/agents/:name/manage-settings/pods/:podId'], podIdGuard);
-router.delete('/agents/:name/pods/:podId', podIdGuard);
+router.use('/agents/:name/pods/:podId', (req: any, res: any, next: any) => (
+  req.method === 'DELETE' ? podIdGuard(req, res, next) : next()
+));
 
 // eslint-disable-next-line global-require
 router.use(require('./registry/runtime'));
