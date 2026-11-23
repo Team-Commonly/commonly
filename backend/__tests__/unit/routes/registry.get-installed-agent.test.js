@@ -48,7 +48,7 @@ describe('registry get installed pod agent', () => {
   it('returns the latest persisted installation payload for an instance', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -98,7 +98,7 @@ describe('registry get installed pod agent', () => {
     });
 
     const res = await request(app)
-      .get('/api/registry/pods/pod-1/agents/openclaw?instanceId=x-curator');
+      .get('/api/registry/pods/6a00000000000000000000a1/agents/openclaw?instanceId=x-curator');
 
     expect(res.status).toBe(200);
     expect(res.body.agent).toMatchObject({

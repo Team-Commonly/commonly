@@ -37,7 +37,7 @@ describe('registry heartbeat file updates', () => {
   const arrange = () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -45,7 +45,7 @@ describe('registry heartbeat file updates', () => {
     AgentInstallation.findOne.mockResolvedValue({
       _id: 'install-1',
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
     });
@@ -60,7 +60,7 @@ describe('registry heartbeat file updates', () => {
     arrange();
 
     const res = await request(app)
-      .post('/api/registry/pods/pod-1/agents/openclaw/heartbeat-file')
+      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
       .send({ instanceId: 'default', content: '- Check updates' });
 
     expect(res.status).toBe(200);
@@ -75,7 +75,7 @@ describe('registry heartbeat file updates', () => {
     arrange();
 
     await request(app)
-      .post('/api/registry/pods/pod-1/agents/openclaw/heartbeat-file')
+      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
       .send({ instanceId: 'default', content: '- Check updates' });
 
     expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
@@ -88,7 +88,7 @@ describe('registry heartbeat file updates', () => {
     arrange();
 
     await request(app)
-      .post('/api/registry/pods/pod-1/agents/openclaw/heartbeat-file')
+      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
       .send({ instanceId: 'default', content: '- Check updates', reset: true });
 
     expect(AgentInstallation.updateOne).toHaveBeenCalledWith(

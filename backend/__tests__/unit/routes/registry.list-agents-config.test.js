@@ -115,7 +115,7 @@ describe('registry list pod agents config payload', () => {
     outsiderGrantPodCounts.mockResolvedValue(new Map([['openclaw:x-curator', { pods: 3, grantPods: 2 }]]));
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -167,7 +167,7 @@ describe('registry list pod agents config payload', () => {
       }),
     });
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents');
+    const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
 
     expect(res.status).toBe(200);
     expect(res.body.agents).toHaveLength(1);
@@ -180,14 +180,14 @@ describe('registry list pod agents config payload', () => {
 
     // One granted pod out of several: posting narrows to that pod.
     outsiderGrantPodCounts.mockResolvedValueOnce(new Map([['openclaw:x-curator', { pods: 2, grantPods: 1 }]]));
-    const onePod = await request(app).get('/api/registry/pods/pod-1/agents');
+    const onePod = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
     expect(onePod.body.agents[0]).toEqual(expect.objectContaining({
       runtimeNarrowedByMultipleGrantPods: false,
       runtimeNarrowedToOnePod: true,
     }));
     // A seat installed in one pod only loses nothing.
     outsiderGrantPodCounts.mockResolvedValueOnce(new Map([['openclaw:x-curator', { pods: 1, grantPods: 1 }]]));
-    const solePod = await request(app).get('/api/registry/pods/pod-1/agents');
+    const solePod = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
     expect(solePod.body.agents[0].runtimeNarrowedToOnePod).toBe(false);
     expect(res.body.agents[0].config).toEqual({
       presetId: null,
@@ -216,7 +216,7 @@ describe('registry list pod agents config payload', () => {
     outsiderGrantPodCounts.mockRejectedValueOnce(new Error('grant DB unavailable'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const unavailable = await request(app).get('/api/registry/pods/pod-1/agents');
+      const unavailable = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
       expect(unavailable.status).toBe(200);
       expect(unavailable.body.agents[0]).toEqual(expect.objectContaining({
         runtimeNarrowedByMultipleGrantPods: false,
@@ -233,7 +233,7 @@ describe('registry list pod agents config payload', () => {
     const SECRET_URL = 'https://agent.example.test/events?secret=s3cr3t';
     const seedWebhookAgent = (installedBy) => {
       Pod.findById.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: ['user-1', 'user-2'] }),
+        lean: jest.fn().mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: 'someone-else', members: ['user-1', 'user-2'] }),
       });
       AgentInstallation.getInstalledAgents.mockResolvedValue([{
         agentName: 'webhook-bot',
@@ -256,7 +256,7 @@ describe('registry list pod agents config payload', () => {
     it('another member sees the runtime but never the URL', async () => {
       seedWebhookAgent('user-2');
       viewerRole('user');
-      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
       expect(res.status).toBe(200);
       expect(res.body.agents[0].runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook' }));
       expect(res.body.agents[0].runtime).not.toHaveProperty('webhookUrl');
@@ -273,7 +273,7 @@ describe('registry list pod agents config payload', () => {
         const [installation] = await AgentInstallation.getInstalledAgents();
         const config = { runtime: { runtimeType: 'webhook', ...(url && { webhookUrl: url }) } };
         installation.config = shape === 'map' ? new Map(Object.entries(config)) : config;
-        const res = await request(app).get('/api/registry/pods/pod-1/agents');
+        const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
         expect(res.status).toBe(200);
         return res.body.agents[0];
       };
@@ -303,7 +303,7 @@ describe('registry list pod agents config payload', () => {
 
     it('the installer sees the URL', async () => {
       seedWebhookAgent('user-1');
-      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
       expect(res.body.agents[0].runtime.webhookUrl).toBe(SECRET_URL);
       expect(User.findById).not.toHaveBeenCalled();
     });
@@ -311,7 +311,7 @@ describe('registry list pod agents config payload', () => {
     it('an instance admin sees the URL', async () => {
       seedWebhookAgent('user-2');
       viewerRole('admin');
-      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
       expect(res.body.agents[0].runtime.webhookUrl).toBe(SECRET_URL);
     });
 
@@ -322,7 +322,7 @@ describe('registry list pod agents config payload', () => {
       AgentInstallation.findOne = jest.fn().mockResolvedValue(installation);
       AgentRegistry.findOne = jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }) });
       AgentProfile.findOne = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
-      const res = await request(app).get('/api/registry/pods/pod-1/agents/webhook-bot?instanceId=default');
+      const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents/webhook-bot?instanceId=default');
       if (res.status === 200) {
         expect(res.body.agent.runtime).not.toHaveProperty('webhookUrl');
         expect(JSON.stringify(res.body)).not.toContain('s3cr3t');
@@ -335,7 +335,7 @@ describe('registry list pod agents config payload', () => {
   it('uses the chat principal label when scoped labels differ', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -377,7 +377,7 @@ describe('registry list pod agents config payload', () => {
     });
     User.find.mockReturnValue({ select: selectUserFields });
 
-    const res = await request(app).get('/api/registry/pods/pod-1/agents');
+    const res = await request(app).get('/api/registry/pods/6a00000000000000000000a1/agents');
 
     expect(res.status).toBe(200);
     expect(res.body.agents[0].displayName).toBe('Strategist (Fable)');

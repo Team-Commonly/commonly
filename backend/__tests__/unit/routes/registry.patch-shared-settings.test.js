@@ -54,7 +54,7 @@ describe('registry shared agent settings', () => {
   it('propagates installation config/scopes to same instance across accessible pods', async () => {
     const primaryInstall = {
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'x-curator',
       status: 'active',
       installedBy: 'user-1',
@@ -81,7 +81,7 @@ describe('registry shared agent settings', () => {
 
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -89,7 +89,7 @@ describe('registry shared agent settings', () => {
     Pod.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([
-          { _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] },
+          { _id: '6a00000000000000000000a1', createdBy: 'user-1', members: ['user-1'] },
           { _id: 'pod-2', createdBy: 'user-1', members: ['user-1'] },
         ]),
       }),
@@ -98,7 +98,7 @@ describe('registry shared agent settings', () => {
     AgentInstallation.find.mockResolvedValue([primaryInstall, secondaryInstall]);
 
     const res = await request(app)
-      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .patch('/api/registry/pods/6a00000000000000000000a1/agents/openclaw')
       .send({
         instanceId: 'x-curator',
         scopes: ['integration:read', 'integration:messages:read'],
@@ -127,7 +127,7 @@ describe('registry shared agent settings', () => {
   it('applies profile updates across the same instance pods', async () => {
     const primaryInstall = {
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'x-curator',
       status: 'active',
       installedBy: 'user-1',
@@ -144,7 +144,7 @@ describe('registry shared agent settings', () => {
 
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
@@ -152,7 +152,7 @@ describe('registry shared agent settings', () => {
     Pod.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([
-          { _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] },
+          { _id: '6a00000000000000000000a1', createdBy: 'user-1', members: ['user-1'] },
           { _id: 'pod-2', createdBy: 'user-1', members: ['user-1'] },
         ]),
       }),
@@ -161,7 +161,7 @@ describe('registry shared agent settings', () => {
     AgentInstallation.find.mockResolvedValue([primaryInstall, secondaryInstall]);
 
     const res = await request(app)
-      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .patch('/api/registry/pods/6a00000000000000000000a1/agents/openclaw')
       .send({
         instanceId: 'x-curator',
         modelPreferences: { preferred: 'gemini-2.5-flash' },
@@ -172,7 +172,7 @@ describe('registry shared agent settings', () => {
     expect(AgentProfile.updateMany).toHaveBeenCalledWith(
       {
         agentId: 'openclaw:x-curator',
-        podId: { $in: ['pod-1', 'pod-2'] },
+        podId: { $in: ['6a00000000000000000000a1', 'pod-2'] },
       },
       { $set: expect.objectContaining({
         modelPreferences: { preferred: 'gemini-2.5-flash' },

@@ -16,6 +16,9 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+// These rows use a real-shaped pod id, so the outsider-grant join policy runs;
+// no pod here holds an outsider grant (F566).
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({ assertAgentRuntimeMayJoinPod: jest.fn(async () => undefined) }));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   identityHoldsRuntimeToken: () => Promise.resolve(false),
@@ -42,7 +45,7 @@ const ADMIN = 'admin-1';
 
 const installation = (config) => ({
   agentName: 'scout',
-  podId: 'pod-1',
+  podId: '6a00000000000000000000a1',
   instanceId: 'default',
   status: 'active',
   scopes: [],
@@ -58,14 +61,14 @@ const given = (row, role = 'user') => {
     select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: mockCaller, role }) }),
   });
   Pod.findById.mockReturnValue({
-    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: INSTALLER, members: [{ userId: INSTALLER }, { userId: ADMIN }] }),
+    lean: jest.fn().mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: INSTALLER, members: [{ userId: INSTALLER }, { userId: ADMIN }] }),
   });
   AgentInstallation.findOne.mockResolvedValue(row);
   AgentInstallation.find.mockResolvedValue([row]);
   AgentProfile.updateMany.mockResolvedValue({ acknowledged: true });
 };
 
-const patch = (config) => request(app).patch('/api/registry/pods/pod-1/agents/scout').send({ config });
+const patch = (config) => request(app).patch('/api/registry/pods/6a00000000000000000000a1/agents/scout').send({ config });
 
 describe('agent config PATCH — what an installer cannot write', () => {
   beforeEach(() => jest.clearAllMocks());
