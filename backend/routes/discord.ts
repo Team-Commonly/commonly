@@ -51,6 +51,13 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// A pod id that can't be an ObjectId answers 400 before any handler here
+// casts it, instead of a CastError the catch-all turns into a 500 (F568).
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+
+router.param('podId', requireObjectIdParam('podId', INVALID_POD_ID));
+
 const { DISCORD_PUBLIC_KEY } = process.env;
 
 function verifySignature(req: { headers: Record<string, string | undefined>; body: Buffer }): boolean {

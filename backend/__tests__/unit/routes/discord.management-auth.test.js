@@ -93,20 +93,20 @@ describe('discord management route auth', () => {
       }
       return { _id: id, role: 'member' };
     });
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'user-1' } });
+    Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: { toString: () => 'user-1' } });
   });
 
   it('requires auth for install-link', async () => {
-    const res = await request(app).get('/api/discord/install-link/pod-1');
+    const res = await request(app).get('/api/discord/install-link/6a00000000000000000000a1');
 
     expect(res.status).toBe(401);
   });
 
   it('blocks install-link for non-owners', async () => {
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'someone-else' } });
+    Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: { toString: () => 'someone-else' } });
 
     const res = await request(app)
-      .get('/api/discord/install-link/pod-1')
+      .get('/api/discord/install-link/6a00000000000000000000a1')
       .set('Authorization', 'Bearer user-token');
 
     expect(res.status).toBe(403);
@@ -119,22 +119,22 @@ describe('discord management route auth', () => {
   describe('install-link asks the shared-surface rule', () => {
     beforeEach(() => { process.env.DISCORD_CLIENT_ID = '1111111111'; });
     afterEach(() => { delete process.env.DISCORD_CLIENT_ID; });
-    const link = (token) => request(app).get('/api/discord/install-link/pod-1').set('Authorization', `Bearer ${token}`);
+    const link = (token) => request(app).get('/api/discord/install-link/6a00000000000000000000a1').set('Authorization', `Bearer ${token}`);
 
     it('serves the pod creator who is a member', async () => {
-      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] });
+      Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: 'user-1', members: ['user-1'] });
       expect((await link('user-token')).status).toBe(200);
     });
 
     it('refuses a creator who has left the pod, as the bind would', async () => {
-      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['someone-else'] });
+      Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: 'user-1', members: ['someone-else'] });
       const res = await link('user-token');
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Access denied' });
     });
 
     it('serves an instance admin on a pod they did not create', async () => {
-      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: ['someone-else'] });
+      Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: 'someone-else', members: ['someone-else'] });
       expect((await link('admin-token')).status).toBe(200);
     });
   });
@@ -143,11 +143,11 @@ describe('discord management route auth', () => {
     Integration.findById.mockResolvedValue({
       _id: 'integration-1',
       type: 'discord',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       createdBy: { toString: () => 'someone-else' },
       config: { serverId: 'guild-1' },
     });
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'someone-else' } });
+    Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: { toString: () => 'someone-else' } });
 
     const res = await request(app)
       .post('/api/discord/register-commands/integration-1')
@@ -161,7 +161,7 @@ describe('discord management route auth', () => {
     Integration.findById.mockResolvedValue({
       _id: 'integration-1',
       type: 'discord',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       createdBy: { toString: () => 'someone-else' },
       config: { serverId: 'guild-1' },
     });
@@ -196,10 +196,10 @@ describe('discord management route auth', () => {
     Integration.findOne.mockResolvedValue({
       _id: 'integration-1',
       installationId: 'install-1',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       createdBy: { toString: () => 'someone-else' },
     });
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'someone-else' } });
+    Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', createdBy: { toString: () => 'someone-else' } });
 
     const res = await request(app)
       .delete('/api/discord/uninstall/install-1')

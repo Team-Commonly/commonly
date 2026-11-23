@@ -342,14 +342,13 @@ describe('Summaries Routes Integration Tests', () => {
   });
 
   describe('Error handling', () => {
-    test('should handle server errors gracefully', async () => {
-      // Test with malformed pod ID
+    test('answers 400 for a malformed pod id, not a server error (F568)', async () => {
       const response = await request(app)
         .get('/api/summaries/pod/invalid-id')
         .set('Authorization', `Bearer ${authToken}`);
 
-      expect(response.status).toBe(500);
-      expect(response.body.error).toBe('Failed to fetch pod summary');
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('invalid_pod_id');
     });
   });
 });

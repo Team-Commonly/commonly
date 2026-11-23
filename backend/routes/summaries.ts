@@ -51,6 +51,13 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// A pod id that can't be an ObjectId answers 400 before any handler here
+// casts it, instead of a CastError the catch-all turns into a 500 (F568).
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+
+router.param('podId', requireObjectIdParam('podId', INVALID_POD_ID));
+
 // Same token/IP keying as the messages-router limiters (#614): key on the
 // hashed auth token when present so NATed users don't share a bucket, fall
 // back to the IPv6-safe IP key.
