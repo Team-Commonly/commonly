@@ -16,6 +16,26 @@ const BUILT_IN_ERROR_TYPES = new Set([
   'URIError', 'EvalError', 'AggregateError',
 ]);
 
+// DOMException names, from the WHATWG WebIDL list (deprecated ones included,
+// since old browsers still throw them). Each is a fixed identifier, never text
+// from data. The SDK reports a DOMException's name as its type, so keeping it
+// tells a page edited under React (NotFoundError from removeChild, the
+// translate-extension crash) from a React invariant, which stays Error (F567).
+const DOM_EXCEPTION_NAMES = new Set([
+  'IndexSizeError', 'DOMStringSizeError', 'HierarchyRequestError', 'WrongDocumentError',
+  'InvalidCharacterError', 'NoDataAllowedError', 'NoModificationAllowedError', 'NotFoundError',
+  'NotSupportedError', 'InUseAttributeError', 'InvalidStateError', 'InvalidModificationError',
+  'NamespaceError', 'InvalidAccessError', 'ValidationError', 'TypeMismatchError', 'SecurityError',
+  'NetworkError', 'AbortError', 'URLMismatchError', 'QuotaExceededError', 'TimeoutError',
+  'InvalidNodeTypeError', 'DataCloneError', 'EncodingError', 'NotReadableError', 'UnknownError',
+  'ConstraintError', 'DataError', 'TransactionInactiveError', 'ReadOnlyError', 'VersionError',
+  'OperationError', 'NotAllowedError', 'OptOutError',
+]);
+
+const keptErrorType = (type: unknown): string => (
+  typeof type === 'string' && (BUILT_IN_ERROR_TYPES.has(type) || DOM_EXCEPTION_NAMES.has(type)) ? type : 'Error'
+);
+
 // Path segments that name a person, a file, or a one-time link. Each rule
 // masks the segment that follows the listed ones.
 const shouldMaskSegment = (segments: string[], i: number): boolean => {
@@ -94,7 +114,7 @@ const scrubFrame = (frame: Sentry.StackFrame): Sentry.StackFrame => {
 
 const scrubException = (value: Sentry.Exception): Sentry.Exception => {
   const kept: Sentry.Exception = {
-    type: typeof value.type === 'string' && BUILT_IN_ERROR_TYPES.has(value.type) ? value.type : 'Error',
+    type: keptErrorType(value.type),
     value: ERROR_VALUE,
   };
   if (value.mechanism) kept.mechanism = pick(value.mechanism, MECHANISM_KEYS) as NonNullable<Sentry.Exception['mechanism']>;

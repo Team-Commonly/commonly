@@ -198,8 +198,13 @@ load. The boundary's on-screen fallback still shows the message locally.
 
 - the exception type when it is a built-in (`Error`, `TypeError`,
   `RangeError`, `ReferenceError`, `SyntaxError`, `URIError`, `EvalError`,
-  `AggregateError`), otherwise `Error`; one entry per error in a `cause` or
-  `AggregateError` chain;
+  `AggregateError`) or a DOMException name from the WebIDL list (such as
+  `NotFoundError` or `HierarchyRequestError`), otherwise `Error`; one entry per
+  error in a `cause` or `AggregateError` chain. A `NotFoundError` whose top
+  frame is React's `removeChild` means something outside React edited the page,
+  often a browser translate or other DOM-editing extension, not a bug in our
+  render (F567). A DOMException with no `stack` (some older Safari builds) still
+  arrives as `Error`, because the SDK puts its name only in the value;
 - a fixed exception value, `Error text is not sent`;
 - stack frames, reduced to file, function, module, line, column and `in_app`;
 - mechanism fields that describe how the error was caught (type, handled,
