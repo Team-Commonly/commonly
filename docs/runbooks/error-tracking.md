@@ -201,9 +201,11 @@ load. The boundary's on-screen fallback still shows the message locally.
   `AggregateError`) or a DOMException name from the WebIDL list (such as
   `NotFoundError` or `HierarchyRequestError`), otherwise `Error`; one entry per
   error in a `cause` or `AggregateError` chain. A `NotFoundError` whose top
-  frame is React's `removeChild` means something outside React edited the page,
-  often a browser translate or other DOM-editing extension, not a bug in our
-  render (F567). A DOMException with no `stack` (some older Safari builds) still
+  frame is React's `removeChild` means the node React removed was no longer
+  where React put it. A browser translate or other DOM-editing extension is a
+  common cause, but our own code can do it too: direct DOM writes, a third-party
+  widget, or a portal target that moved. So treat it as a lead, not a diagnosis
+  (F567). A DOMException with no `stack` (some older Safari builds) still
   arrives as `Error`, because the SDK puts its name only in the value;
 - a fixed exception value, `Error text is not sent`;
 - stack frames, reduced to file, function, module, line, column and `in_app`;
