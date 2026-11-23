@@ -156,8 +156,24 @@ describe('Sentry frontend instrumentation', () => {
       expect(scrubbed.exception.values[0].type).toBe(type);
     });
 
+    // A DOMException's name is one of a fixed set the WHATWG spec lists, never
+    // text from data. Keeping it tells a DOM-edit crash (NotFoundError from
+    // React's removeChild, as a translate extension causes) from a React
+    // invariant (Error) (F567).
+    it.each([
+      ['NotFoundError'], ['HierarchyRequestError'], ['InvalidStateError'], ['NotAllowedError'],
+      ['AbortError'], ['QuotaExceededError'], ['SecurityError'], ['DataCloneError'],
+    ])('keeps the DOMException name %s', (type) => {
+      const scrubbed = eventOptions().beforeSend({ exception: { values: [{ type, value: 'x' }] } });
+
+      expect(scrubbed.exception.values[0].type).toBe(type);
+      expect(scrubbed.exception.values[0].value).toBe('Error text is not sent');
+    });
+
     it.each([
       ['a custom name', 'MadeUpError'],
+      ['a name shaped like a DOMException one', 'NotFoundErrorFor someone'],
+      ['a lowercase DOMException name', 'notfounderror'],
       ['a name built from data', 'Failed for someone@example.com'],
       ['no name', undefined],
       ['a non-string name', { nested: 'x' }],
