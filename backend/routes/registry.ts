@@ -12,8 +12,29 @@ const express = require('express');
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// A pod id that can't be an ObjectId answers 400 before any router below casts
+// it (F566). Without this, Mongoose throws a CastError and each route's
+// catch-all answers 500. On 2026-11-23 UTC a PowerShell call arrived as
+// `/agents/<name>/pods/=default`, because PowerShell reads `$podId?instanceId`
+// as one variable. This runs ahead of each route's auth, unlike F330's guards.
+// That is safe because the answer depends only on the URL's shape: it says
+// nothing about any pod, and an existing route already answers 401. It also
+// runs ahead of the runtime routes' audit line, which is fine: a refused call
+// never reaches a pod.
+// Install (POST /agents/:name/pods/:podId) keeps its own pinned 404 for a
+// malformed id, so only the DELETE on that path is guarded here. All three are
+// middleware (`use`), not route registrations: the guard does no I/O, and the
+// routes it fronts keep their own limiters below.
+const podIdGuard = requireObjectIdParam('podId', INVALID_POD_ID);
+router.use(['/pods/:podId', '/agents/:name/manage-settings/pods/:podId'], podIdGuard);
+router.use('/agents/:name/pods/:podId', (req: any, res: any, next: any) => (
+  req.method === 'DELETE' ? podIdGuard(req, res, next) : next()
+));
 
 // eslint-disable-next-line global-require
 router.use(require('./registry/runtime'));

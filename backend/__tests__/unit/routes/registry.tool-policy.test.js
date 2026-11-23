@@ -52,14 +52,14 @@ describe('registry tool policy update', () => {
   it('updates tool policy on agent profile', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       status: 'active',
       // TASK-055: the PATCH is gated on the installation's installer, so the
@@ -71,7 +71,7 @@ describe('registry tool policy update', () => {
     AgentInstallation.find.mockResolvedValue([
       {
         agentName: 'openclaw',
-        podId: 'pod-1',
+        podId: '6a00000000000000000000a1',
         instanceId: 'default',
         status: 'active',
         installedBy: 'user-1',
@@ -80,7 +80,7 @@ describe('registry tool policy update', () => {
     ]);
 
     const res = await request(app)
-      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .patch('/api/registry/pods/6a00000000000000000000a1/agents/openclaw')
       .send({
         toolPolicy: {
           allowed: ['commonly', 'commonly_search'],
@@ -93,7 +93,7 @@ describe('registry tool policy update', () => {
     expect(AgentProfile.updateMany).toHaveBeenCalledWith(
       {
         agentId: 'openclaw:default',
-        podId: { $in: ['pod-1'] },
+        podId: { $in: ['6a00000000000000000000a1'] },
       },
       { $set: expect.objectContaining({
         toolPolicy: {

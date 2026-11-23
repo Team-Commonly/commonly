@@ -69,7 +69,7 @@ const STDIO_ENTRY = {
 
 const installation = (over = {}) => ({
   agentName: 'openclaw',
-  podId: 'pod-1',
+  podId: '6a00000000000000000000a1',
   instanceId: 'curator',
   status: 'active',
   scopes: ['integration:read'],
@@ -82,7 +82,7 @@ const installation = (over = {}) => ({
 const setPod = (over = {}) => {
   Pod.findById.mockReturnValue({
     lean: jest.fn().mockResolvedValue({
-      _id: 'pod-1',
+      _id: '6a00000000000000000000a1',
       createdBy: 'someone-else',
       members: [{ userId: ME }],
       ...over,
@@ -91,7 +91,7 @@ const setPod = (over = {}) => {
 };
 
 const patch = (config, extra = {}) => request(app)
-  .patch('/api/registry/pods/pod-1/agents/openclaw')
+  .patch('/api/registry/pods/6a00000000000000000000a1/agents/openclaw')
   .send({ instanceId: 'curator', config, ...extra });
 
 // The caller is the installer here, so the installer gate is not what any of

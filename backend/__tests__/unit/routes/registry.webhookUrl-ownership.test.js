@@ -54,6 +54,9 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+// These rows use a real-shaped pod id, so the outsider-grant join policy runs;
+// no pod here holds an outsider grant (F566).
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({ assertAgentRuntimeMayJoinPod: jest.fn(async () => undefined) }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentProfile', () => ({ updateMany: jest.fn(), findOneAndUpdate: jest.fn() }));
 jest.mock('../../../models/AgentTemplate', () => ({ find: jest.fn() }));
@@ -101,7 +104,7 @@ const setCallerRole = (role) => {
 const setPod = () => {
   Pod.findById.mockReturnValue({
     lean: () => Promise.resolve({
-      _id: 'pod-1',
+      _id: '6a00000000000000000000a1',
       createdBy: 'pod-owner',
       members: [{ userId: INSTALLER }, { userId: MEMBER }, { userId: ADMIN }],
     }),
@@ -121,7 +124,7 @@ beforeEach(() => {
 describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
   const row = () => ({
     agentName: 'relay',
-    podId: 'pod-1',
+    podId: '6a00000000000000000000a1',
     instanceId: 'default',
     status: 'active',
     installedBy: INSTALLER,
@@ -129,13 +132,13 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
     save: jest.fn().mockResolvedValue(true),
   });
   const patch = (config) => request(app)
-    .patch('/api/registry/pods/pod-1/agents/relay')
+    .patch('/api/registry/pods/6a00000000000000000000a1/agents/relay')
     .send({ instanceId: 'default', config });
   const storedUrlOf = (installation) => installation.config.get('runtime').webhookUrl;
 
   test('the sole installer can change it', async () => {
     mockPrimary = row();
-    mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+    mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -146,7 +149,7 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
 
   test('this row\'s installer is refused when another user also has the agent installed, and nothing is written', async () => {
     mockPrimary = row();
-    mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
+    mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1'), activeInstall(OTHER, 'pod-9')];
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -160,7 +163,7 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
   test('a pod member who did not install the agent is refused, and nothing is written', async () => {
     mockCaller = MEMBER;
     mockPrimary = row();
-    mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+    mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -175,7 +178,7 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
     mockCaller = ADMIN;
     setCallerRole('admin');
     mockPrimary = row();
-    mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
+    mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1'), activeInstall(OTHER, 'pod-9')];
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -185,7 +188,7 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
 
   test('resending the stored URL is not a change, so a shared agent\'s installer can still patch its config', async () => {
     mockPrimary = row();
-    mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
+    mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1'), activeInstall(OTHER, 'pod-9')];
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_URL }, note: 'renamed' });
 
@@ -198,7 +201,7 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
 describe('POST /install — supplying a webhook URL', () => {
   const install = (config) => request(app).post('/api/registry/install').send({
     agentName: 'relay',
-    podId: 'pod-1',
+    podId: '6a00000000000000000000a1',
     instanceId: 'default',
     version: '1.0.0',
     scopes: [],
@@ -313,7 +316,7 @@ describe('an http webhook URL at registration', () => {
     });
     const row = (storedUrl) => ({
       agentName: 'relay',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       status: 'active',
       installedBy: INSTALLER,
@@ -321,13 +324,13 @@ describe('an http webhook URL at registration', () => {
       save: jest.fn().mockResolvedValue(true),
     });
     const patch = (config) => request(app)
-      .patch('/api/registry/pods/pod-1/agents/relay')
+      .patch('/api/registry/pods/6a00000000000000000000a1/agents/relay')
       .send({ instanceId: 'default', config });
     const storedUrlOf = (installation) => installation.config.get('runtime').webhookUrl;
 
     test('changing to an http URL is refused, and nothing is written', async () => {
       mockPrimary = row(STORED_URL);
-      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+      mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
       const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
 
@@ -341,7 +344,7 @@ describe('an http webhook URL at registration', () => {
       mockCaller = ADMIN;
       setCallerRole('admin');
       mockPrimary = row(STORED_URL);
-      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+      mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
       const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
 
@@ -352,7 +355,7 @@ describe('an http webhook URL at registration', () => {
 
     test('resending a stored http URL still patches the row', async () => {
       mockPrimary = row(STORED_HTTP_URL);
-      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+      mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
       const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL }, note: 'renamed' });
 
@@ -372,10 +375,10 @@ describe('an http webhook URL at registration', () => {
           filter.status === 'active' ? queryResult(mockInstalls) : queryResult([mockPrimary, peer])
         ));
         Pod.find.mockReturnValue(queryResult([
-          { _id: 'pod-1', members: [{ userId: INSTALLER }] },
+          { _id: '6a00000000000000000000a1', members: [{ userId: INSTALLER }] },
           { _id: 'pod-2', members: [{ userId: INSTALLER }] },
         ]));
-        mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(INSTALLER, 'pod-2')];
+        mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1'), activeInstall(INSTALLER, 'pod-2')];
       };
 
       test('resending this row\'s http URL is refused when a peer row holds an https one, and nothing is written', async () => {
@@ -410,7 +413,7 @@ describe('an http webhook URL at registration', () => {
     test('the operator flag lets an http URL through', async () => {
       process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP = 'true';
       mockPrimary = row(STORED_URL);
-      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+      mockInstalls = [activeInstall(INSTALLER, '6a00000000000000000000a1')];
 
       const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
 
@@ -422,7 +425,7 @@ describe('an http webhook URL at registration', () => {
   describe('POST /install', () => {
     const install = (config) => request(app).post('/api/registry/install').send({
       agentName: 'relay',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       version: '1.0.0',
       scopes: [],

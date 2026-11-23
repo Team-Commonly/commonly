@@ -45,14 +45,14 @@ describe('registry persona generator', () => {
   it('returns generated persona data', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
     });
@@ -71,7 +71,7 @@ describe('registry persona generator', () => {
     }));
 
     const res = await request(app)
-      .post('/api/registry/pods/pod-1/agents/openclaw/persona/generate')
+      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/persona/generate')
       .send({ instanceId: 'default' });
 
     expect(res.status).toBe(200);
@@ -83,14 +83,14 @@ describe('registry persona generator', () => {
   it('returns a service error instead of inventing a persona when generation fails', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         createdBy: 'user-1',
         members: ['user-1'],
       }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',
-      podId: 'pod-1',
+      podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
     });
@@ -100,7 +100,7 @@ describe('registry persona generator', () => {
     generateText.mockRejectedValueOnce(new Error('LLM unavailable'));
 
     const res = await request(app)
-      .post('/api/registry/pods/pod-1/agents/openclaw/persona/generate')
+      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/persona/generate')
       .send({ instanceId: 'default' });
 
     expect(res.status).toBe(503);
