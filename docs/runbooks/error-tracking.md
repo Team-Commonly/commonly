@@ -207,8 +207,9 @@ load. The boundary's on-screen fallback still shows the message locally.
   widget, or a portal target that moved. So treat it as a lead, not a diagnosis
   (F567). A DOMException captured directly with no `stack` (some older Safari
   builds) still arrives as `Error`, because the SDK puts its name only in the
-  value. As a `cause` it keeps its name, since linked errors are built from the
-  name either way;
+  value. A linked `cause` entry keeps its name either way, but the SDK links a
+  cause only when it is an `Error` from the same page (not an iframe) and
+  stops after five;
 - a fixed exception value, `Error text is not sent`;
 - stack frames, reduced to file, function, module, line, column and `in_app`;
 - mechanism fields that describe how the error was caught (type, handled,
