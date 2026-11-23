@@ -205,8 +205,10 @@ load. The boundary's on-screen fallback still shows the message locally.
   where React put it. A browser translate or other DOM-editing extension is a
   common cause, but our own code can do it too: direct DOM writes, a third-party
   widget, or a portal target that moved. So treat it as a lead, not a diagnosis
-  (F567). A DOMException with no `stack` (some older Safari builds) still
-  arrives as `Error`, because the SDK puts its name only in the value;
+  (F567). A DOMException captured directly with no `stack` (some older Safari
+  builds) still arrives as `Error`, because the SDK puts its name only in the
+  value. As a `cause` it keeps its name, since linked errors are built from the
+  name either way;
 - a fixed exception value, `Error text is not sent`;
 - stack frames, reduced to file, function, module, line, column and `in_app`;
 - mechanism fields that describe how the error was caught (type, handled,
