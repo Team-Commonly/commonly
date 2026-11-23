@@ -126,7 +126,7 @@ app.use('/api/integrations', integrationRoutes);
 const discordRow = (overrides = {}) => ({
   _id: 'integration-1',
   type: 'discord',
-  podId: 'pod-1',
+  podId: '6a00000000000000000000a1',
   createdBy: { toString: () => MEMBER },
   config: { serverId: GUILD, channelId: CHANNEL },
   ...overrides,
@@ -173,8 +173,8 @@ describe('Discord binding containment (TASK-123 a)', () => {
     // secret ring is part of the deployment this route runs against.
     process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
     process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
-    podIdsQuery([{ _id: 'pod-1' }]);
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', members: [MEMBER], createdBy: MEMBER });
+    podIdsQuery([{ _id: '6a00000000000000000000a1' }]);
+    Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', members: [MEMBER], createdBy: MEMBER });
     User.findById.mockResolvedValue({ _id: MEMBER, role: 'member' });
     axios.get.mockResolvedValue({ data: [{ type: 0, id: CHANNEL, name: 'general' }] });
     axios.post.mockResolvedValue({ data: { id: 'wh-1', token: 'wh-token', name: 'Guild' } });
@@ -195,7 +195,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(handles[1]).toBe(authMiddleware);
     });
     it('asks for the caller’s pod ids only, without hydrating the documents', async () => {
-      const query = podIdsQuery([{ _id: 'pod-1' }]);
+      const query = podIdsQuery([{ _id: '6a00000000000000000000a1' }]);
       Integration.findOne.mockResolvedValue(discordRow());
 
       const res = await request(app)
@@ -244,7 +244,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(Integration.findOne).toHaveBeenCalledWith({
         type: 'discord',
         'config.serverId': OTHER_GUILD,
-        podId: { $in: ['pod-1'] },
+        podId: { $in: ['6a00000000000000000000a1'] },
       });
       expect(outboundCalls()).toBe(0);
     });
@@ -292,7 +292,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     };
 
     it('lists channels for a member of the pod the proof names', async () => {
-      const res = await firstInstall(mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER }));
+      const res = await firstInstall(mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER }));
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual([{ id: CHANNEL, name: 'general', topic: undefined }]);
@@ -306,11 +306,11 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     it.each([
-      ['a proof for another guild', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: OTHER_GUILD, userId: MEMBER })],
+      ['a proof for another guild', () => mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: OTHER_GUILD, userId: MEMBER })],
       ['a proof for a pod the caller is not in', () => mintDiscordInstallProof({ podId: 'pod-9', guildId: GUILD, userId: MEMBER })],
-      ['an expired proof', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER }, -60)],
+      ['an expired proof', () => mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER }, -60)],
       ['a token that is not a proof', () => require('jsonwebtoken').sign({ id: MEMBER }, process.env.JWT_SECRET)],
-      ['a forged proof', () => require('jsonwebtoken').sign({ pur: 'discord-install', pod: 'pod-1', gid: GUILD }, 'not-the-secret')],
+      ['a forged proof', () => require('jsonwebtoken').sign({ pur: 'discord-install', pod: '6a00000000000000000000a1', gid: GUILD }, 'not-the-secret')],
     ])('refuses %s, without an outbound call', async (_label, makeProof) => {
       const res = await firstInstall(makeProof());
 
@@ -319,16 +319,16 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     it('does not authenticate a request on its own', async () => {
-      const proof = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+      const proof = mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER });
       expect(require('jsonwebtoken').decode(proof)).not.toHaveProperty('id');
       expect(require('jsonwebtoken').decode(proof)).not.toHaveProperty('user');
     });
   });
 
   describe('GET /api/discord/callback', () => {
-    // install-link's signed state for MEMBER and pod-1 (a bare pod_<id> is refused).
+    // install-link's signed state for MEMBER and 6a00000000000000000000a1 (a bare pod_<id> is refused).
     const STATE = () => encodeURIComponent(require('../../../utils/discordInstallProof')
-      .mintDiscordInstallState({ podId: 'pod-1', userId: MEMBER }));
+      .mintDiscordInstallState({ podId: '6a00000000000000000000a1', userId: MEMBER }));
     it('refuses a malformed guild_id before the code exchange', async () => {
       const res = await request(app)
         .get(`/api/discord/callback?code=abc&state=${STATE()}&guild_id=guild-1`);
@@ -358,7 +358,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(res.status).toBe(302);
       const location = new URL(res.headers.location);
       expect(location.pathname).toBe('/discord/success');
-      expect(readDiscordInstallProof(location.searchParams.get('install'))).toEqual({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+      expect(readDiscordInstallProof(location.searchParams.get('install'))).toEqual({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER });
     });
 
     it('refuses a guild_id that differs from the guild in the token response', async () => {
@@ -421,7 +421,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     it('refuses a malformed serverId before the row or the webhook exists', async () => {
-      const res = await post({ podId: 'pod-1', type: 'discord', config: { serverId: 'guild-1', channelId: CHANNEL } });
+      const res = await post({ podId: '6a00000000000000000000a1', type: 'discord', config: { serverId: 'guild-1', channelId: CHANNEL } });
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: 'invalid_discord_id', field: 'serverId' });
@@ -430,7 +430,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     it('refuses a malformed channelId, the field the webhook URL is built from', async () => {
-      const res = await post({ podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: 'chan-1' } });
+      const res = await post({ podId: '6a00000000000000000000a1', type: 'discord', config: { serverId: GUILD, channelId: 'chan-1' } });
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: 'invalid_discord_id', field: 'channelId' });
@@ -440,7 +440,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
     it('refuses a body-supplied botToken instead of storing it', async () => {
       const res = await post({
-        podId: 'pod-1',
+        podId: '6a00000000000000000000a1',
         type: 'discord',
         config: { serverId: GUILD, channelId: CHANNEL, botToken: 'caller-token' },
       });
@@ -460,7 +460,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // fills the token from the environment for the manifest check, so the row
       // is created and nothing is lost by dropping it.
       const res = await post({
-        podId: 'pod-1',
+        podId: '6a00000000000000000000a1',
         type: 'discord',
         config: {
           serverId: GUILD,
@@ -492,7 +492,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // `isSupplied`, not `field in config`: the manifest's required-field check
       // owns "missing" and says so in its own body. A shape refusal here would
       // answer a different question and drop the `missing` list the UI reads.
-      const res = await post({ podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: '' } });
+      const res = await post({ podId: '6a00000000000000000000a1', type: 'discord', config: { serverId: GUILD, channelId: '' } });
 
       expect(res.status).toBe(400);
       expect(res.body.missing).toEqual(['channelId']);
@@ -528,7 +528,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
         // Snapshot, not `toBeNull()`: the accept-path test above legitimately
         // leaves an instance behind, so this asserts no NEW row was written.
         const before = Integration.__getLastInstance();
-        const res = await post({ podId: 'pod-1', type: 'discord', config });
+        const res = await post({ podId: '6a00000000000000000000a1', type: 'discord', config });
 
         expect(res.status).toBe(400);
         expect(res.body.code).toBe(code);
@@ -549,7 +549,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // previously asserted the opposite — that the caller's token was stored —
       // which is the state the strip removes.
       const res = await post({
-        podId: 'pod-1',
+        podId: '6a00000000000000000000a1',
         type: 'slack',
         config: { botToken: 'xoxb-caller', signingSecret: 'shh', channelId: 'C012345' },
       });
@@ -567,7 +567,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // another row's secret. A planted `config.webhookUrl` would also be picked
       // up as the resolver's legacy fallback.
       const res = await post({
-        podId: 'pod-1',
+        podId: '6a00000000000000000000a1',
         type: 'discord',
         config: {
           serverId: GUILD,
@@ -590,7 +590,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
     describe('authority over the guild and channel (F90)', () => {
       const { mintDiscordInstallProof } = require('../../../utils/discordInstallProof');
-      const BODY = { podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
+      const BODY = { podId: '6a00000000000000000000a1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
       const created = () => axios.post.mock.calls.length > 0;
 
       it('refuses a guild with no binding in the caller’s pods and no proof, before any row or outbound call', async () => {
@@ -610,13 +610,13 @@ describe('Discord binding containment (TASK-123 a)', () => {
         await post(BODY);
 
         expect(Integration.findOne).toHaveBeenCalledWith({
-          type: 'discord', 'config.serverId': GUILD, podId: { $in: ['pod-1'] }, createdBy: 'user-1',
+          type: 'discord', 'config.serverId': GUILD, podId: { $in: ['6a00000000000000000000a1'] }, createdBy: 'user-1',
         });
       });
 
       it('accepts a first install on the callback’s proof for this pod and guild, and does not store it', async () => {
         Integration.findOne.mockResolvedValue(null);
-        const install = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+        const install = mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER });
 
         const res = await post({ ...BODY, install });
 
@@ -626,8 +626,8 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       it.each([
         ['a proof for another pod', () => mintDiscordInstallProof({ podId: 'pod-2', guildId: GUILD, userId: MEMBER })],
-        ['a proof for another guild', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: OTHER_GUILD, userId: MEMBER })],
-        ['an expired proof', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER }, -10)],
+        ['a proof for another guild', () => mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: OTHER_GUILD, userId: MEMBER })],
+        ['an expired proof', () => mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER }, -10)],
         ['a session token in the proof field', () => 'user-token'],
       ])('refuses %s', async (_label, make) => {
         Integration.findOne.mockResolvedValue(null);
@@ -752,14 +752,14 @@ describe('Discord binding containment (TASK-123 a)', () => {
   describe('the installer’s Discord identity (F131)', () => {
     const { mintDiscordInstallProof, readDiscordInstallProof, mintDiscordInstallState } = require('../../../utils/discordInstallProof');
     const INSTALLER_DISCORD = '456789012345678901';
-    const STATE = () => encodeURIComponent(mintDiscordInstallState({ podId: 'pod-1', userId: MEMBER }));
+    const STATE = () => encodeURIComponent(mintDiscordInstallState({ podId: '6a00000000000000000000a1', userId: MEMBER }));
     const callback = () => request(app).get(`/api/discord/callback?code=abc&state=${STATE()}&guild_id=${GUILD}`);
     const proofIn = (res) => readDiscordInstallProof(new URL(res.headers.location).searchParams.get('install'));
     const meResponds = (impl) => axios.get.mockImplementation(async (url, ...rest) => (
       url === 'https://discord.com/api/users/@me' ? impl(url, ...rest) : { data: { name: 'Guild' } }));
 
     it('asks Discord for identify on the install link', async () => {
-      const res = await request(app).get('/api/discord/install-link/pod-1').set('Authorization', 'Bearer user-token');
+      const res = await request(app).get('/api/discord/install-link/6a00000000000000000000a1').set('Authorization', 'Bearer user-token');
 
       expect(res.status).toBe(200);
       expect(new URL(res.body.installUrl).searchParams.get('scope').split(' ')).toEqual(
@@ -779,7 +779,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       );
       expect(new URL(res.headers.location).pathname).toBe('/discord/success');
       expect(proofIn(res)).toEqual({
-        podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+        podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
       });
     });
 
@@ -791,7 +791,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
         const res = await callback();
 
         expect(new URL(res.headers.location).pathname).toBe('/discord/success');
-        expect(proofIn(res)).toEqual({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+        expect(proofIn(res)).toEqual({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER });
       } finally {
         warn.mockRestore();
       }
@@ -807,7 +807,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     describe('POST /api/integrations', () => {
-      const BODY = { podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
+      const BODY = { podId: '6a00000000000000000000a1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
       const post = (body) => request(app).post('/api/integrations').set('Authorization', 'Bearer user-token').send(body);
       const stored = () => Integration.__getLastInstance().config;
 
@@ -821,7 +821,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       it('stores the proof’s Discord id as config.discordUserId', async () => {
         const install = mintDiscordInstallProof({
-          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+          podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
         });
 
         const res = await post({ ...BODY, install });
@@ -831,13 +831,13 @@ describe('Discord binding containment (TASK-123 a)', () => {
       });
 
       it('strips a body-supplied discordUserId, with or without a proof', async () => {
-        const noId = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+        const noId = mintDiscordInstallProof({ podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER });
         const res = await post({ ...BODY, config: { ...BODY.config, discordUserId: '999999999999999999' }, install: noId });
         expect(res.status).toBe(201);
         expect(stored().discordUserId).toBeUndefined();
 
         const withId = mintDiscordInstallProof({
-          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+          podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
         });
         await post({ ...BODY, config: { ...BODY.config, discordUserId: '999999999999999999' }, install: withId });
         expect(stored().discordUserId).toBe(INSTALLER_DISCORD);
@@ -866,7 +866,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       it('allows live relay on create with the proof, stamping the installer as the linked user', async () => {
         const install = mintDiscordInstallProof({
-          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+          podId: '6a00000000000000000000a1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
         });
 
         const res = await post({ ...BODY, config: { ...BODY.config, liveRelay: true }, install });
@@ -921,7 +921,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       it('refuses an installer who has left the pod (review finding 1)', async () => {
         Integration.findById.mockResolvedValue(provenRow());
-        Pod.findById.mockResolvedValue({ _id: 'pod-1', members: ['user-3'], createdBy: 'user-3' });
+        Pod.findById.mockResolvedValue({ _id: '6a00000000000000000000a1', members: ['user-3'], createdBy: 'user-3' });
 
         const res = await patch({ config: { liveRelay: true } });
 

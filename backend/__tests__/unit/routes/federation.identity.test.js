@@ -9,7 +9,7 @@ const buildApp = () => {
 };
 
 const buildPod = (userId, role = 'member') => ({
-  _id: 'pod-1',
+  _id: '6a00000000000000000000a1',
   members: [{ userId, role }],
 });
 
@@ -38,10 +38,10 @@ describe('federation route identity handling', () => {
     const PodLink = require('../../../models/PodLink');
     const app = buildApp();
 
-    const res = await request(app).get('/api/federation/pods/pod-1/links').expect(200);
+    const res = await request(app).get('/api/federation/pods/6a00000000000000000000a1/links').expect(200);
 
     expect(res.body).toEqual({ links: [] });
-    expect(PodLink.getLinksForPod).toHaveBeenCalledWith('pod-1', 'both');
+    expect(PodLink.getLinksForPod).toHaveBeenCalledWith('6a00000000000000000000a1', 'both');
   });
 
   it('accepts legacy req.user._id', async () => {
@@ -62,8 +62,8 @@ describe('federation route identity handling', () => {
     const PodLink = require('../../../models/PodLink');
     const app = buildApp();
 
-    await request(app).get('/api/federation/pods/pod-1/links').expect(200);
+    await request(app).get('/api/federation/pods/6a00000000000000000000a1/links').expect(200);
 
-    expect(PodLink.getLinksForPod).toHaveBeenCalledWith('pod-1', 'both');
+    expect(PodLink.getLinksForPod).toHaveBeenCalledWith('6a00000000000000000000a1', 'both');
   });
 });

@@ -98,14 +98,14 @@ describe('summaries routes - pod visibility gates', () => {
   describe('POST /pod/:podId/refresh', () => {
     it('404s when the pod does not exist', async () => {
       Pod.findById.mockReturnValue(leanChain(null));
-      await request(app).post('/api/summaries/pod/p1/refresh').send({}).expect(404);
+      await request(app).post('/api/summaries/pod/6a00000000000000000000a1/refresh').send({}).expect(404);
     });
 
     it('403s non-members and never summarizes the pod', async () => {
       Pod.findById.mockReturnValue(leanChain({ _id: 'p1', members: ['other'], type: 'chat' }));
       mockCanViewPod.mockResolvedValue(false);
 
-      await request(app).post('/api/summaries/pod/p1/refresh').send({}).expect(403);
+      await request(app).post('/api/summaries/pod/6a00000000000000000000a1/refresh').send({}).expect(403);
       expect(mockSummarizePodMessages).not.toHaveBeenCalled();
     });
   });

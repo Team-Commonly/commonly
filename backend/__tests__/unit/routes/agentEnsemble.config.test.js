@@ -36,19 +36,19 @@ describe('agent ensemble config access', () => {
   it('allows global admin to update config', async () => {
     Pod.findById
       .mockResolvedValueOnce({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         type: 'agent-ensemble',
         createdBy: 'creator-1',
       })
       .mockResolvedValueOnce({
-        _id: 'pod-1',
+        _id: '6a00000000000000000000a1',
         agentEnsemble: { enabled: true },
       });
 
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'admin' }) });
 
     const res = await request(app)
-      .patch('/api/pods/pod-1/ensemble/config')
+      .patch('/api/pods/6a00000000000000000000a1/ensemble/config')
       .send({ enabled: true });
 
     expect(res.status).toBe(200);
@@ -57,7 +57,7 @@ describe('agent ensemble config access', () => {
 
   it('blocks non-admin non-creator', async () => {
     Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
+      _id: '6a00000000000000000000a1',
       type: 'agent-ensemble',
       createdBy: 'creator-1',
     });
@@ -65,7 +65,7 @@ describe('agent ensemble config access', () => {
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'member' }) });
 
     const res = await request(app)
-      .patch('/api/pods/pod-1/ensemble/config')
+      .patch('/api/pods/6a00000000000000000000a1/ensemble/config')
       .send({ enabled: true });
 
     expect(res.status).toBe(403);

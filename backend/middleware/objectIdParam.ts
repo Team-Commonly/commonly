@@ -18,8 +18,10 @@ export const isObjectIdHex = (value: unknown): boolean => (
 
 /**
  * Route middleware: answer `status` with `body` when `req.params[param]` is
- * not an ObjectId, before the handler casts it. Mount it after auth and rate
- * limits, so it tells a signed-out caller nothing the auth answer would not.
+ * not an ObjectId, before the handler casts it. On a single route, mount it
+ * after auth and rate limits. As a router-wide `router.param` or `router.use`
+ * (F566, F568) it runs before both, which is acceptable: the answer depends
+ * only on the URL's shape and tells a signed-out caller nothing about any pod.
  */
 export const requireObjectIdParam = (
   param: string,

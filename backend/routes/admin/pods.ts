@@ -18,6 +18,13 @@ const { NON_LISTABLE_POD_TYPES } = require('../../services/podListing');
 
 const router = express.Router();
 
+// A pod id that can't be an ObjectId answers 400 before any handler here
+// casts it, instead of a CastError the catch-all turns into a 500 (F568).
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../../middleware/objectIdParam');
+
+router.param('podId', requireObjectIdParam('podId', INVALID_POD_ID));
+
 // Inlined limiter so CodeQL's js/missing-rate-limiting recognises the guard on
 // this DB-touching admin route; skipped under NODE_ENV=test. Admin-gated, so
 // this is defense-in-depth, not the primary control.

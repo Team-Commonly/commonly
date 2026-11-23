@@ -30,7 +30,7 @@ describe('agent ensemble complete route', () => {
 
   it('completes active/paused discussions for pod', async () => {
     Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
+      _id: '6a00000000000000000000a1',
       type: 'agent-ensemble',
       createdBy: 'user-1',
       members: ['user-1'],
@@ -44,16 +44,16 @@ describe('agent ensemble complete route', () => {
     });
 
     const res = await request(app)
-      .post('/api/pods/pod-1/ensemble/complete')
+      .post('/api/pods/6a00000000000000000000a1/ensemble/complete')
       .send({});
 
     expect(res.status).toBe(200);
-    expect(AgentEnsembleService.completeActiveForPod).toHaveBeenCalledWith('pod-1', 'manual');
+    expect(AgentEnsembleService.completeActiveForPod).toHaveBeenCalledWith('6a00000000000000000000a1', 'manual');
   });
 
   it('returns error when no active discussion exists', async () => {
     Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
+      _id: '6a00000000000000000000a1',
       type: 'agent-ensemble',
       createdBy: 'user-1',
       members: ['user-1'],
@@ -62,7 +62,7 @@ describe('agent ensemble complete route', () => {
     AgentEnsembleService.completeActiveForPod.mockRejectedValue(new Error('No active discussion to complete'));
 
     const res = await request(app)
-      .post('/api/pods/pod-1/ensemble/complete')
+      .post('/api/pods/6a00000000000000000000a1/ensemble/complete')
       .send({});
 
     expect(res.status).toBe(400);
