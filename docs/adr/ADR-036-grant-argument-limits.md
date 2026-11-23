@@ -93,8 +93,8 @@ GitHub tools' schemas don't let an agent name another.
 
 Minting also refuses:
 
-- a `range` with `min > max`, or a bound that isn't a finite number or is outside ±2^53, past which
-  an integer bound stops being exact in a warrant's floating-point range (D8);
+- a `range` with `min > max`, or a bound that isn't a finite number or is outside ±(2^53 − 1), past
+  which an integer stops being exact in a warrant's floating-point range (D8);
 - an empty `oneOf` (remove the tool from `tools` instead);
 - an empty `prefix`, which would pass everything;
 - a `prefix` containing `*`, `?`, `[`, `]`, `{`, `}` or `\`. The broker compares a prefix literally,
@@ -124,6 +124,10 @@ The rules at every point:
 - An argument named in a limit but missing from the call fails. Otherwise an optional argument with
   a provider default would slip past: a merge without `mergeMethod` gets GitHub's default method.
 - Values are compared strictly, with no type coercion: `4222` and `"4222"` are different.
+- A value checked against a `range` must lie within ±(2^53 − 1), or the call fails. Past that a
+  number isn't exact: `2^53 + 1` arrives as `2^53`, in the broker's JSON parse and in a warrant's
+  floating-point `Range` alike, and could pass a limit it is outside. Refusing it means the broker
+  and an outside verifier (D8) reach the same answer.
 - The values checked are the values sent. Where a tool normalizes an argument (trimming a branch
   name, for example), the check runs on the normalized value and the provider receives that same
   value, so nothing changes between the check and the call.
@@ -189,13 +193,16 @@ Each kind has a direct Tenuo constraint (confirmed by the Tenuo maintainer on th
 | `exact` | `Exact` | Types are strict, as D4 wants: `4222` is not `"4222"`. |
 | `oneOf` | `OneOf` | |
 | `prefix` | `Pattern("<s>*")` | A trailing glob, hence D3's refusal of glob syntax in `s`. |
-| `range` | `Range` | Inclusive, either end optional; bounds are floating-point (D3). |
+| `range` | `Range` | Inclusive, either end optional; bounds are floating-point (D3), and so are values (D4). |
 | `subsetOf` | `Subset` | An empty list allows only an empty array. |
 
 Every narrowing pair in D5 is one Tenuo already checks, so a warrant narrowed from a warrant answers
 as `attenuateGrant` does. A warrant refuses a missing constrained argument (as D4 does) and any
 argument a constrained tool doesn't name, so the conversion lists each argument without a limit as
-a wildcard, or allows unknown arguments for that tool. The broker stays the enforcer for brokered
+an optional wildcard (`insert_optional` in Tenuo): a call may leave it out, and any value passes.
+It doesn't use `_allow_unknown` instead. A child can't add an argument its parent didn't list, so
+under that option a D5 narrowing that limits a previously unlimited argument couldn't become a
+warrant. The broker stays the enforcer for brokered
 calls. The warrant lets a verifier outside the instance, such as a required check, check the same
 limits.
 
