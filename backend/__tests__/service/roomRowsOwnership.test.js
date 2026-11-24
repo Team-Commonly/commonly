@@ -295,6 +295,26 @@ describe('an agent-room row and who owns the agent', () => {
       expect(stored.status).toBe('active');
     });
 
+    // The same runtime install resolves: with no stored runtime, the agent
+    // type's (AGENT_TYPES.openclaw is moltbot) decides.
+    it('a DM with an agent whose type defaults to moltbot, and no stored runtime, writes no room row', async () => {
+      NAME = 'openclaw';
+      await seedRow(owner._id, home._id, { config: {} });
+      await shareAgentWith(guest);
+      const roomId = await openDm(guest);
+      expect(await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean()).toBeNull();
+      expect(await AgentInstallation.findOne({ agentName: NAME, podId: home._id }).lean()).not.toBeNull();
+    });
+
+    it('a stored runtime still wins over the type default, as at install', async () => {
+      NAME = 'openclaw';
+      await seedRow(owner._id, home._id);
+      await shareAgentWith(guest);
+      const roomId = await openDm(guest);
+      const row = await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean();
+      expect(row.config.runtime.runtimeType).toBe('webhook');
+    });
+
     it('a room row with no recorded installer does not block the owner', async () => {
       await seedRow(owner._id, home._id);
       const room = await seedRoom(guest);
