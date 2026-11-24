@@ -154,7 +154,7 @@ describe('sweepRegistryDrift', () => {
     expect(await Installable.collection.find({}).toArray()).toEqual(before);
   });
 
-  test('browse never lists a backfilled unverified or ephemeral row', async () => {
+  test('browse never lists a backfilled row, and an unverified or ephemeral one is unpublished', async () => {
     await sweepRegistryDrift({ dryRun: false });
     const app = express();
     app.use(express.json());
@@ -162,7 +162,8 @@ describe('sweepRegistryDrift', () => {
     const res = await request(app).get('/api/marketplace/browse?limit=100');
     expect(res.status).toBe(200);
     const ids = res.body.items.map((i) => i.installableId).sort();
-    expect(ids).toEqual(['@alice/listed', 'good-agent']);
+    // Backfilled rows are never listings, verified or not.
+    expect(ids).toEqual(['@alice/listed']);
     const smoke = await Installable.findOne({ installableId: 'smoke-seat' }).lean();
     const byo = await Installable.findOne({ installableId: 'byo-x' }).lean();
     expect(smoke.marketplace.published).toBe(false);

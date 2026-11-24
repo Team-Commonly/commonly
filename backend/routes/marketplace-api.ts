@@ -1,7 +1,8 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
-const Installable = require('../models/Installable');
+const InstallableModel = require('../models/Installable');
+const { REGISTRY_BACKFILL_ORIGIN } = require('../services/installable/registryBackfillOrigin');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { validateMcpComponent } = require('../utils/pluginManifestParser');
 
@@ -10,6 +11,40 @@ const router = express.Router();
 const NAMESPACE_RE = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
 
 const resolveUsername = (req: any): string | null => req.user?.username || null;
+
+// Deny by default. A row the AgentRegistry bridge backfilled is not a
+// listing, so every route here reads and writes through `listings`, which
+// cannot see one. Only the two named functions after it touch the model, and
+// a test pins that (marketplace.backfill.test.js).
+const listingFilter = (filter: any = {}) => ({ ...filter, origin: { $ne: REGISTRY_BACKFILL_ORIGIN } });
+const listings = {
+  find: (filter: any) => InstallableModel.find(listingFilter(filter)),
+  findOne: (filter: any) => InstallableModel.findOne(listingFilter(filter)),
+  countDocuments: (filter: any) => InstallableModel.countDocuments(listingFilter(filter)),
+  updateOne: (filter: any, update: any) => InstallableModel.updateOne(listingFilter(filter), update),
+  deleteOne: (filter: any) => InstallableModel.deleteOne(listingFilter(filter)),
+  create: (doc: any) => InstallableModel.create(doc),
+};
+
+// The one deliberate exception: publish takes a backfilled row over. The
+// namespace check has already decided who may publish the id.
+const findBackfillForTakeover = (installableId: string) => InstallableModel.findOne({
+  installableId, origin: REGISTRY_BACKFILL_ORIGIN,
+});
+
+// A new id must be free of every row, marked ones included; answers only yes/no.
+const installableIdTaken = async (installableId: string): Promise<boolean> => (
+  Boolean(await InstallableModel.findOne({ installableId }))
+);
+
+// Replaces a backfilled row with the publish doc, clearing the mark. Only
+// Installable is written; identity tables are untouched.
+const takeOverBackfill = async (installableId: string, publishDoc: any, userId: any) => {
+  const doc = await findBackfillForTakeover(installableId);
+  if (!doc) return null;
+  doc.overwrite({ ...publishDoc, owner: userId, createdAt: doc.createdAt });
+  return doc.save();
+};
 
 const validateNamespace = (installableId: string, username: string) => {
   if (!NAMESPACE_RE.test(installableId)) {
@@ -271,7 +306,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
       return res.status(400).json({ error: 'scope "instance" is reserved for admin/builtin manifests' });
     }
 
-    const existing = await Installable.findOne({ installableId: installableId.toLowerCase() });
+    // A backfilled row is invisible here and is taken over on the create path.
+    const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
 
     if (existing) {
       if (existing.publisher?.userId?.toString() !== userId.toString()) {
@@ -403,9 +439,20 @@ router.post('/publish', auth, async (req: any, res: any) => {
     // Then Installable
     let created;
     try {
-      created = await Installable.create(installableDoc);
+      created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
+      if (!created) created = await listings.create(installableDoc);
     } catch (installableError) {
       console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
+      // The hourly backfill can insert between the read above and create.
+      if ((installableError as any)?.code === 11000) {
+        try {
+          created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
+        } catch (takeoverError) {
+          console.warn('[marketplace] backfill takeover failed:', (takeoverError as any).message);
+        }
+      }
+    }
+    if (!created) {
       return res.status(201).json({
         success: true,
         warnings: [
@@ -446,7 +493,7 @@ router.delete('/publish/:installableId(*)', auth, async (req: any, res: any) => 
     const userId = req.userId || req.user?.id;
     const { installableId } = req.params;
 
-    const doc = await Installable.findOne({ installableId: installableId.toLowerCase() });
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() });
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     if (doc.publisher?.userId?.toString() !== userId.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
@@ -477,7 +524,7 @@ router.delete('/manifests/:installableId(*)', auth, async (req: any, res: any) =
     const userId = req.userId || req.user?.id;
     const { installableId } = req.params;
 
-    const doc = await Installable.findOne({ installableId: installableId.toLowerCase() });
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() });
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     if (doc.publisher?.userId?.toString() !== userId.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
@@ -500,7 +547,7 @@ router.delete('/manifests/:installableId(*)', auth, async (req: any, res: any) =
     try { await AgentRegistry.deleteOne({ agentName: installableId.toLowerCase() }); } catch (e) {
       console.warn('[marketplace] AR delete failed:', (e as any).message);
     }
-    await Installable.deleteOne({ installableId: installableId.toLowerCase() });
+    await listings.deleteOne({ installableId: installableId.toLowerCase() });
 
     console.log(`[marketplace] action=delete user=${userId} manifest=${installableId}`);
     res.json({ success: true, deleted: true });
@@ -529,9 +576,14 @@ router.post('/fork', auth, async (req: any, res: any) => {
     const nsError = validateNamespace(newInstallableId.toLowerCase(), username);
     if (nsError) return res.status(400).json({ error: nsError });
 
-    const source = await Installable.findOne({
+    // Only a published listing or a builtin is forkable.
+    const source = await listings.findOne({
       installableId: sourceInstallableId.toLowerCase(),
       status: 'active',
+      $or: [
+        { source: 'marketplace', 'marketplace.published': true },
+        { source: 'builtin' },
+      ],
     });
     if (!source) return res.status(404).json({ error: 'Source manifest not found or not active' });
 
@@ -539,11 +591,9 @@ router.post('/fork', auth, async (req: any, res: any) => {
     // 'marketplace'`, `published: true` row, so it is a second writer into the
     // published catalog and needs the same gate as /publish.
     //
-    // It is NOT redundant with validating at publish. The lookup above filters
-    // on `status: 'active'` and nothing else — no `source` filter, no
-    // `marketplace.published` filter — so `builtin`, `user`, `template` and
-    // `remote` rows are all forkable, and none of them were written through
-    // /publish. Any row predating this validation is forkable too. Without
+    // It is NOT redundant with validating at publish: `builtin` rows are
+    // forkable and were never written through /publish, and any row
+    // predating this validation is forkable too. Without
     // this check, fork is the path that launders an unvalidated component into
     // the published catalog. (@sprint-review, 58602.)
     const sourceComponentsValidation = normalizeComponents(source.components);
@@ -553,8 +603,9 @@ router.post('/fork', auth, async (req: any, res: any) => {
       });
     }
 
-    const existing = await Installable.findOne({ installableId: newInstallableId.toLowerCase() });
-    if (existing) return res.status(409).json({ error: 'installableId already taken' });
+    if (await installableIdTaken(newInstallableId.toLowerCase())) {
+      return res.status(409).json({ error: 'installableId already taken' });
+    }
 
     const latestVersion = source.version || '1.0.0';
 
@@ -599,7 +650,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
 
     let created;
     try {
-      created = await Installable.create(forkDoc);
+      created = await listings.create(forkDoc);
     } catch (installableError) {
       // AR succeeded but the Installable row didn't land. Mirror the publish
       // path: return 201 with a drift warning so the caller knows to retry.
@@ -623,7 +674,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
     }
 
     // Increment fork count on source (atomic)
-    await Installable.updateOne(
+    await listings.updateOne(
       { installableId: source.installableId },
       { $inc: { 'stats.forkCount': 1 } },
     );
@@ -655,7 +706,7 @@ router.post('/publish/:installableId(*)/deprecate', auth, async (req: any, res: 
 
     if (!version) return res.status(400).json({ error: 'version is required' });
 
-    const doc = await Installable.findOne({ installableId: installableId.toLowerCase() });
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() });
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     if (doc.publisher?.userId?.toString() !== userId.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
@@ -721,13 +772,13 @@ router.get('/browse', marketplaceReadLimit, async (req: any, res: any) => {
     const sortObj = sortMap[sort] || sortMap.installs;
 
     const [items, total] = await Promise.all([
-      Installable.find(filter)
+      listings.find(filter)
         .select('-readme -components -versions')
         .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
         .lean(),
-      Installable.countDocuments(filter),
+      listings.countDocuments(filter),
     ]);
 
     res.json({ items, total, page: pageNum, limit: limitNum });
@@ -754,13 +805,13 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
     };
 
     const [items, total] = await Promise.all([
-      Installable.find(filter)
+      listings.find(filter)
         .select('-readme -components -versions')
         .sort({ 'stats.totalInstalls': -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Installable.countDocuments(filter),
+      listings.countDocuments(filter),
     ]);
 
     res.json({ items, total, page, limit });
@@ -776,7 +827,7 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
 router.get('/manifests/:installableId(*)', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const { installableId } = req.params;
-    const doc = await Installable.findOne({ installableId: installableId.toLowerCase() }).lean();
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() }).lean();
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     res.json(doc);
   } catch (error) {
@@ -793,7 +844,7 @@ router.get('/mine', auth, async (req: any, res: any) => {
     const userId = req.userId || req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const items = await Installable.find({ 'publisher.userId': userId })
+    const items = await listings.find({ 'publisher.userId': userId })
       .sort({ updatedAt: -1 })
       .lean();
 

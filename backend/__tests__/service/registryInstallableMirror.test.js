@@ -84,7 +84,7 @@ describe('registry write paths mirror an Installable', () => {
     }
   });
 
-  test('the avatar mirror changes only an existing agent component, guarded by its old value', async () => {
+  test('the avatar mirror changes only an existing backfilled row, guarded by its old value', async () => {
     const avatarOf = async (id) => {
       const row = await Installable.findOne({ installableId: id }).lean();
       return row.components[0].persona.avatar;
@@ -101,6 +101,7 @@ describe('registry write paths mirror an Installable', () => {
       source: 'builtin',
       scope: 'instance',
       components: [{ name: 'pixel', type: 'agent', persona: { avatar: 'bottts:a' } }],
+      origin: 'registry-backfill',
     });
     await mirrorRegistryAvatar('pixel', '', 'bottts:other');
     expect(await avatarOf('pixel')).toBe('bottts:a');

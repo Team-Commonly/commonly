@@ -69,7 +69,6 @@ const pickReadFields = (view) => ({
   runtimeType: view.manifest.runtime.runtimeType,
   runtimeShape: view.manifest.runtime.type,
   runtimeConnection: view.manifest.runtime.connection,
-  defaultInstructions: view.manifest.configSchema?.defaultInstructions,
   capabilities: view.manifest.capabilities,
 });
 
@@ -101,9 +100,15 @@ describe('agentRegistryBridge', () => {
       runtimeType: 'native',
       runtimeShape: 'standalone',
       runtimeConnection: 'rest',
-      defaultInstructions: 'Cite every source.',
       capabilities: [{ name: 'search', description: 'Search papers' }],
     });
+  });
+
+  test('marks the row as a backfill and never stores the default instructions', () => {
+    const doc = registryToInstallable(fullRow());
+    expect(doc.origin).toBe('registry-backfill');
+    expect(JSON.stringify(doc)).not.toContain('Cite every source.');
+    expect(viaSchema(fullRow()).origin).toBe('registry-backfill');
   });
 
   test('maps the field table: name, version, requires, category and tags', () => {
@@ -129,7 +134,6 @@ describe('agentRegistryBridge', () => {
       persona: { avatar: 'bottts:research', displayName: 'Research Helper' },
       metadata: {
         registryManifest: {
-          defaultInstructions: 'Cite every source.',
           runtimeType: 'native',
           contextOptional: ['memory:read'],
           capabilities: [{ name: 'search', description: 'Search papers' }],

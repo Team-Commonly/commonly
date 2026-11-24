@@ -597,9 +597,15 @@ class SchedulerService {
     // the same reason as above: every write is a $setOnInsert upsert, so two
     // replicas racing insert one row and the loser's E11000 is a no-op.
     // Hourly at :39, a minute no five-minute pass or hourly job uses.
+    // Off unless INSTALLABLE_REGISTRY_SWEEP=1: prod turns it on only after a
+    // fresh backup. The per-request mirrors run regardless.
     const registryDriftJob: CronJob = cron.schedule(
       '39 * * * *',
       async () => {
+        if (process.env.INSTALLABLE_REGISTRY_SWEEP !== '1') {
+          console.log('[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1');
+          return;
+        }
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
           const { sweepRegistryDrift } = require('./installable/registryReconciler');
@@ -851,7 +857,10 @@ class SchedulerService {
     );
     console.log('- Skills catalog refreshes every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
-    console.log('- AgentRegistry -> Installable backfill runs hourly at :39 (insert-only; no lease required)');
+    console.log(
+      '- AgentRegistry -> Installable backfill runs hourly at :39 (insert-only; no lease required)'
+      + `${process.env.INSTALLABLE_REGISTRY_SWEEP === '1' ? '' : ' (OFF: INSTALLABLE_REGISTRY_SWEEP unset)'}`,
+    );
 
     this.startupTimers.push(setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {

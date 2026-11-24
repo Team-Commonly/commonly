@@ -8,6 +8,7 @@
  * Field map and rules: docs/architecture/installable-registry-bridge.md.
  */
 
+import { REGISTRY_BACKFILL_ORIGIN } from './registryBackfillOrigin';
 import type { ComponentRuntime } from '../../models/Installable';
 
 type Obj = Record<string, any>;
@@ -91,12 +92,12 @@ export function registryToInstallable(input: Obj): Obj {
       metadata: {
         // Manifest fields Installable has no column for, kept so the view can
         // return them; registryRow keeps what source/tags cannot round-trip.
+        // defaultInstructions is left out: detail and fork expose metadata.
         registryManifest: compact({
           runtimeType,
           runtimeShape: compact({ type: runtime.type, connection: runtime.connection }),
           contextOptional: manifest.context?.optional,
           capabilities: manifest.capabilities,
-          defaultInstructions: manifest.configSchema?.defaultInstructions,
         }),
         registryRow: compact({
           registry: row.registry,
@@ -124,6 +125,7 @@ export function registryToInstallable(input: Obj): Obj {
       })
       : undefined,
     status: row.status || 'active',
+    origin: REGISTRY_BACKFILL_ORIGIN,
     versions: versions.length ? versions : undefined,
     readme: row.readme,
     stats: { totalInstalls: stats.installs || 0, activeInstalls: 0, forkCount: 0 },
@@ -173,8 +175,6 @@ export function installableToRegistryView(input: Obj): Obj {
         connection: runtimeShape.connection,
         runtimeType: rm.runtimeType || agent.runtime,
       }),
-      configSchema: rm.defaultInstructions !== undefined
-        ? { defaultInstructions: rm.defaultInstructions } : undefined,
     }),
     status: doc.status,
     registry: rr.registry || REGISTRY_BY_SOURCE[doc.source] || 'commonly-community',

@@ -28,8 +28,10 @@ second row for the same agent.
 
 Installable has no column for some manifest fields. Those go in
 `components[agent].metadata.registryManifest`: `runtimeType` (always, including
-values outside the enum, such as `wrapper`), `runtimeShape`, `contextOptional`,
-`capabilities` and `defaultInstructions`. `metadata.registryRow` keeps what
+values outside the enum, such as `wrapper`), `runtimeShape`, `contextOptional`
+and `capabilities`. `defaultInstructions` is not stored yet, because marketplace
+detail and fork return component metadata; the read switch adds it when install
+needs it. `metadata.registryRow` keeps what
 `source` and `tags` cannot round-trip: `registry`, `ephemeral`, the full
 `categories` list and `weeklyInstalls`.
 
@@ -37,16 +39,33 @@ values outside the enum, such as `wrapper`), `runtimeShape`, `contextOptional`,
 install route, the catalog, pod-agents, templates and persona hire read. A unit
 test checks that each of those fields survives a round trip.
 
+## Backfilled rows are not listings
+
+Every row the bridge inserts carries `origin: 'registry-backfill'`, a top-level
+schema field so routes can filter on it. It is **deny by default**:
+`marketplace-api.ts` reaches Installable only through its `listings` helper,
+which adds `origin: { $ne: 'registry-backfill' }` to every query. A route added
+later inherits the exclusion. So browse, detail (the owner included), `/mine`,
+forks, fork, unpublish, deprecate and delete all behave as if a marked row did
+not exist. Fork also takes only a published `marketplace` row or a `builtin`.
+
+Two named functions are the only exceptions. `installableIdTaken` answers yes
+or no for a fork's new id. `findBackfillForTakeover` lets
+`/api/marketplace/publish` take a marked row over. The namespace check has already
+  decided who may publish that id, so the publish doc replaces the row whole,
+  the mark is dropped, and the response is a normal create. That also covers a
+  backfill that lands between publish's read and its create (E11000).
+
+The avatar mirror changes marked rows only, so an installer's pick never
+restyles a listing another publisher owns.
+
 ## The published rule
 
 `marketplace.published` is true only for a row that is verified, active and
 not ephemeral. That's the same line the hire catalog draws (ADR-022): smoke
-seats, internal wrappers and self-serve rows are unverified or ephemeral, so a
-backfill can't put them into browse. Browse also requires
-`source: 'marketplace'`, which leaves builtins out.
-
-One consequence: an unverified agent published through marketplace publish
-whose Installable write failed is backfilled unpublished. Republishing fixes it.
+seats, internal wrappers and self-serve rows are unverified or ephemeral. Browse
+skips marked rows anyway; the flag is for the read switch, which reads
+`published` as "hireable".
 
 ## Sweep guarantees (`sweepRegistryDrift`)
 
@@ -59,8 +78,9 @@ whose Installable write failed is backfilled unpublished. Republishing fixes it.
   validation is counted in `errors` and skipped.
 - Status and install-count drift on existing rows is counted in `mismatches`,
   not fixed.
-- Runs hourly at :39 from `schedulerService` with no lease, because every write
-  is idempotent. Run it by hand with
+- **Off by default.** The hourly job (:39, no lease, because every write is
+  idempotent) sweeps only when `INSTALLABLE_REGISTRY_SWEEP=1`; unset, each tick
+  logs that it skipped. Turn it on only after a fresh backup. Run it by hand with
   `node dist/scripts/reconcile-installables-from-registry.js`, which is a dry
   run unless you pass `--apply`.
 
@@ -68,7 +88,7 @@ whose Installable write failed is backfilled unpublished. Republishing fixes it.
 
 These paths write only AgentRegistry, so each one calls
 `mirrorRegistryRow(row, site)`, the same insert-only upsert. A mirror never
-throws: a failure logs `[installable-mirror]`, and the hourly sweep backfills
+throws: a failure logs `[installable-mirror]`, and the sweep (once enabled) backfills
 the row later.
 
 - registry install, for the ephemeral self-serve row, except during a memory
@@ -79,5 +99,5 @@ the row later.
 - registry publish and seed
 
 The avatar edit is different. `mirrorRegistryAvatar` changes only
-`components.$.persona.avatar` on an Installable that already exists, and on
-reset only while the avatar still holds the pick being undone.
+`components.$.persona.avatar` on a marked Installable that already exists, and
+on reset only while the avatar still holds the pick being undone.

@@ -204,7 +204,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         const existing = await AgentRegistry.findOne({ agentName: agentData.agentName });
         if (existing) {
           await AgentRegistry.updateOne({ agentName: agentData.agentName }, agentData);
-          await mirrorRegistryRow(await AgentRegistry.findOne({ agentName: agentData.agentName }).lean(), 'registry.seed');
+          await mirrorRegistryRow(agentData, 'registry.seed');
           return 'updated';
         }
         const created = await AgentRegistry.create(agentData);

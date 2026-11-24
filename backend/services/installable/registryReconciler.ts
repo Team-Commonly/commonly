@@ -9,6 +9,7 @@
  */
 
 import { registryToInstallable } from './agentRegistryBridge';
+import { REGISTRY_BACKFILL_ORIGIN } from './registryBackfillOrigin';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Installable = require('../../models/Installable');
@@ -95,7 +96,7 @@ export async function sweepRegistryDrift(
 
 /**
  * Best-effort mirror for a write path that touches only AgentRegistry. Never
- * throws: a mirror failure must not fail the request, and the hourly sweep
+ * throws: a mirror failure must not fail the request, and the sweep
  * backfills whatever this misses.
  */
 export async function mirrorRegistryRow(row: Obj | null | undefined, site: string): Promise<void> {
@@ -108,8 +109,8 @@ export async function mirrorRegistryRow(row: Obj | null | undefined, site: strin
 }
 
 /**
- * Mirrors an AgentRegistry.iconUrl change onto an existing Installable's agent
- * persona. With `onlyIf`, it changes the avatar only while it still holds that
+ * Mirrors an AgentRegistry.iconUrl change onto an existing backfilled
+ * Installable's agent persona. With `onlyIf`, it changes the avatar only while it still holds that
  * value, matching the registry reset's guard. Never inserts, never throws.
  */
 export async function mirrorRegistryAvatar(
@@ -120,8 +121,14 @@ export async function mirrorRegistryAvatar(
   try {
     const elem: Obj = { type: 'agent' };
     if (onlyIf !== undefined) elem['persona.avatar'] = onlyIf;
+    // Backfilled rows only: an installer's pick must never restyle a listing
+    // another publisher owns.
     await Installable.updateOne(
-      { installableId: String(agentName).toLowerCase(), components: { $elemMatch: elem } },
+      {
+        installableId: String(agentName).toLowerCase(),
+        origin: REGISTRY_BACKFILL_ORIGIN,
+        components: { $elemMatch: elem },
+      },
       { $set: { 'components.$.persona.avatar': avatar } },
     );
   } catch (err) {
