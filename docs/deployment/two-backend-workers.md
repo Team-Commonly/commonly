@@ -67,6 +67,7 @@ in front of two stand-in backends and checks the last three behaviours live.
   | Channel | What it carries | Backstop |
   |---------|-----------------|----------|
   | `agent-ws-push` | A wake for an agent socket held by the other process | The agent's own poll; a push is only a wake, `list()` still claims |
+  | `agent-event-wake` | An event to claim (new, joined to a pending one, or put back) for an agent whose long-poll (F597) the other process holds | The hold's 2.5 s pending-wake recheck; a wake only ends the hold, the route still claims |
   | `cloud-runtime-cache-clear` | An entitlement or role change | The cache's 60 s TTL |
   | `hosted-mcp-drift-forget` | A removed or reconnected hosted-MCP credential | The drift cache's TTL |
   | `global-model-config-changed` | An admin's model-config save | The config cache's 15 s TTL |
@@ -154,6 +155,6 @@ off on the VM.
 - **During an outage, the adapter's publishes queue in memory** until Redis is
   back (node-redis's offline queue). With a local Redis that restarts by
   itself, that is seconds.
-- **The F597 long-poll waiter map** is per process. Its 2.5 s pending-wake
-  recheck keeps it correct across processes, just slower. An
-  `agent-event-wake` bus channel follows once that change lands.
+- **The F597 long-poll waiter map** is per process. An enqueue wakes holds on
+  both processes, the other one over `agent-event-wake`; while Redis is down
+  the 2.5 s pending-wake recheck still finds the event, just slower.
