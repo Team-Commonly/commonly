@@ -21,6 +21,7 @@
 .v2-settings__edit--closed { display: none; }
 .v2-settings__token-detail { padding: 0 16px 12px; }
 .v2-settings__actions-list { margin-top: 14px; }
+.v2-settings__delete-account { margin: 0; padding: 12px 16px; border-top: 1px solid var(--v2-border-soft); }
 
 /* disclosure rows: the frame's details.disc */
 .v2p-disc { border-top: 1px solid var(--v2-border-soft); }

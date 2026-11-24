@@ -1600,6 +1600,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('kind="human"');
     // Developer apps (the MUI AppsManagement) were retired unreleased.
     expect(settingsPage).not.toContain('AppsManagement');
+    // The Delete account fold keeps the padded, ruled body its rule gives it;
+    // that rule once lived under the developer-apps class and nearly went with it.
+    expect(read('../components/V2DeleteAccount.tsx')).toContain('className="v2-settings__delete-account"');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('padding: 12px 16px');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('border-top: 1px solid var(--v2-border-soft)');
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
