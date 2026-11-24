@@ -229,8 +229,8 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-stop    | Stop docker runtime |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-restart | Restart docker runtime |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-logs    | Tail docker logs |
-| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List gateway plugins (runtime-selected gateway; Docker or K8s) |
-| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install gateway plugin (runtime-selected gateway; Docker or K8s) |
+| GET    | /api/registry/pods/:podId/agents/:name/plugins         | Retired with the OpenClaw gateway: answers 410 `openclaw_plugins_retired` |
+| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Retired with the OpenClaw gateway: answers 410 `openclaw_plugins_retired` |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
 | POST   | /api/registry/generate-avatar                         | Generate agent avatar (Gemini image first, SVG fallback) |

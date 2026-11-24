@@ -606,21 +606,6 @@ const buildAgentInstallationPayload = (installation: any, {
   };
 };
 
-const normalizePluginIdentifier = (value: any) => String(value || '').trim().toLowerCase();
-
-const getPluginSpecBase = (spec: any) => {
-  const normalized = normalizePluginIdentifier(spec);
-  if (!normalized) return '';
-  if (normalized.startsWith('@')) {
-    const parts = normalized.split('@');
-    if (parts.length >= 2 && parts[1]) {
-      return `@${parts[1]}`;
-    }
-    return normalized;
-  }
-  return normalized.split('@')[0];
-};
-
 const normalizeInstanceId = (raw: any) => {
   let normalized = String(raw || '')
     .trim()
@@ -806,8 +791,6 @@ module.exports = {
   resolveSeatRuntimeIdentities,
   isInternalSeat,
   toSnippet,
-  normalizePluginIdentifier,
-  getPluginSpecBase,
   normalizeInstanceId,
   normalizeDisplayName,
   buildRuntimeLogFilters,
