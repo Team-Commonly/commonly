@@ -109,10 +109,10 @@ Section 'agents: Claude Code 2.1.331 and Codex 0.172.0 inside, proxy as the only
 # the fence: only DNS and the two proxy ports.
 & $msb volume create agents --kind disk --size 3G 2>&1 | Out-Host
 $t = Measure-Command {
-  & $msb run --cpus 2 --memory 2G --mount-named agents:/opt/agents node -- sh -c "npm i -g --prefix /opt/agents --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -5; ls /opt/agents/bin" | Out-Host
+  & $msb run --cpus 2 --memory 2G --mount-named agents:/opt/agents:kind=disk,size=3G node -- sh -c "npm i -g --prefix /opt/agents --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -5; ls /opt/agents/bin" | Out-Host
 }
 "install (unfenced): $([int]$t.TotalSeconds) s"
-$fence = @('--no-net', '--net-rule', 'allow@dns,allow@host:tcp:18100,allow@host:tcp:18101', '--mount-named', 'agents:/opt/agents')
+$fence = @('--no-net', '--net-rule', 'allow@dns,allow@host:tcp:18100,allow@host:tcp:18101', '--mount-named', 'agents:/opt/agents:kind=disk,size=3G')
 "fence: $($fence -join ' ')"
 $codexCfg = @"
 model = "spike-model"
