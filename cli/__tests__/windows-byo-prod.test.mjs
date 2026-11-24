@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 
 import { liftConnectSnippet } from '../scripts/linux-byo-prod.mjs';
 import {
-  walkInstallLines, windowsCodexConfigPath, windowsLineProblems, windowsProfileRoot, windowsWalkEnv,
+  walkCliLines, windowsCodexConfigPath, windowsLineProblems, windowsProfileRoot, windowsWalkEnv,
 } from '../scripts/windows-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,13 +25,17 @@ describe('the Windows prod walk', () => {
     expect(windowsLineProblems(claude, { agentName: 'win-walk', adapter: 'claude' })).toEqual([]);
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'codex' })).toEqual([]);
     // Both run unsandboxed on Windows, by the flag the page's line carries.
-    expect(codex[3]).toBe('commonly.cmd agent run win-walk --adapter codex --unsandboxed');
-    // The .cmd shims, so Windows 11's default script policy never applies (F342).
-    expect(claude[0]).toBe('npm.cmd i -g @commonlyai/cli@latest');
+    // The .cmd shim, so Windows 11's default script policy never applies (F342),
+    // and npx fetches the CLI on the same line that runs it.
+    expect(codex[2]).toBe('npx.cmd -y @commonlyai/cli@latest agent run win-walk --adapter codex --unsandboxed');
+    expect(claude).toHaveLength(3);
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'claude' }))
-      .toEqual([expect.stringMatching(/line 4/)]);
-    expect(windowsLineProblems(claude.slice(0, 3), { agentName: 'win-walk', adapter: 'claude' }))
-      .toEqual([expect.stringMatching(/3 lines, not 4/)]);
+      .toEqual([expect.stringMatching(/line 3/)]);
+    expect(windowsLineProblems(claude.slice(0, 2), { agentName: 'win-walk', adapter: 'claude' }))
+      .toEqual([expect.stringMatching(/2 lines, not 3/)]);
+    // A bare npx (the .ps1 shim a Restricted policy refuses) is not the page's line.
+    expect(windowsLineProblems([claude[0], claude[1], claude[2].replace(/^npx\.cmd /, 'npx ')],
+      { agentName: 'win-walk', adapter: 'claude' })).toEqual([expect.stringMatching(/line 3/)]);
   });
 
   test("puts Codex's gateway provider in the Windows system layer", () => {
@@ -45,13 +49,14 @@ describe('the Windows prod walk', () => {
     expect(windowsWalkEnv('claude', 'k')).toEqual({});
   });
 
-  test("installs the page's line, or with cli=tree this checkout's tarball in its place", () => {
-    const lines = ['npm i -g @commonlyai/cli@latest', 'a', 'b', 'commonly agent run x --adapter codex'];
-    expect(walkInstallLines(lines)).toBe(lines);
-    expect(walkInstallLines(lines, { cli: 'published', tarball: 'C:\\t\\cli.tgz' })).toBe(lines);
-    expect(walkInstallLines(lines, { cli: 'tree', tarball: 'C:\\t\\cli.tgz' }))
-      .toEqual(['npm i -g C:\\t\\cli.tgz', 'a', 'b', 'commonly agent run x --adapter codex']);
-    expect(() => walkInstallLines(lines, { cli: 'tree' })).toThrow(/packed/);
+  test("runs the page's package spec, or with cli=tree this checkout's tarball in its place", () => {
+    const lines = ['a', 'b', 'npx.cmd -y @commonlyai/cli@latest agent run x --adapter codex --unsandboxed'];
+    expect(walkCliLines(lines)).toBe(lines);
+    expect(walkCliLines(lines, { cli: 'published', tarball: 'C:\\t\\cli.tgz' })).toBe(lines);
+    // The shim and every flag stay as the page has them; only the spec moves.
+    expect(walkCliLines(lines, { cli: 'tree', tarball: 'C:\\t\\cli.tgz' }))
+      .toEqual(['a', 'b', 'npx.cmd -y C:\\t\\cli.tgz agent run x --adapter codex --unsandboxed']);
+    expect(() => walkCliLines(lines, { cli: 'tree' })).toThrow(/packed/);
   });
 
   test("names the key's one model in Codex's system config", () => {

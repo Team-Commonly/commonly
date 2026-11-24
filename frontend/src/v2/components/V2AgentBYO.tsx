@@ -50,10 +50,11 @@ const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // person's hosted agent): say that, not "has no runtime token".
 const IN_PROCESS_NAME_CODE = 'in_process_agent_no_token';
 const DEFAULT_POD_TYPE = 'chat';
-// @latest matters: `agent run` learned to bootstrap from these env vars in
-// 0.1.9 — a machine with an older global install must upgrade, not skip the
-// line because the binary already resolves.
-const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
+// The listen line runs the CLI through npx, as /connect's login does (F370),
+// so nothing is installed globally: `npm i -g` stops with EACCES on a
+// stock-Node Mac (nodejs.org's installer) before the key is ever used (F570).
+// @latest matters: npx would otherwise reuse whatever version it cached.
+const CLI_NPX_COMMAND = 'npx -y @commonlyai/cli@latest';
 const MEMORY_FILE_NAME = 'MEMORY.md';
 
 // A PowerShell double-quoted string treats ` as its escape and expands $, and
@@ -66,12 +67,13 @@ export const powerShellQuote = (value: string): string => '"' + value.replace(PO
 export type ConnectSnippetOs = 'unix' | 'windows';
 // The command that makes the agent LISTEN, for bash/zsh or for PowerShell.
 // PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
-// only in that window. Install line and run line are the same on both, except
-// that on native Windows `agent run` refuses without --unsandboxed: there is no
-// sandbox there, and the flag is the person choosing to run without one. On
-// Windows both lines name npm's .cmd shims (F342): PowerShell runs the .ps1 shim
-// for a bare `npm` or `commonly`, and Windows 11's default script policy refuses
-// it before the token is ever used; a .cmd is not a script to that policy. For
+// only in that window. The run line is the same on both, except that on native
+// Windows `agent run` refuses without --unsandboxed: there is no sandbox there,
+// and the flag is the person choosing to run without one. On Windows it names
+// npx's .cmd shim (F342): PowerShell runs the .ps1 shim for a bare `npx`, and
+// Windows 11's default script policy refuses it before the token is ever used;
+// a .cmd is not a script to that policy. The run line also fetches the CLI, so
+// there is no install step to wait on (F570). For
 // Codex the CLI also requires every pod to be invite-only, so the page offers
 // this line only in such a pod (listenerRunsOn).
 export const connectSnippet = ({
@@ -94,24 +96,20 @@ export const connectSnippet = ({
   const instanceFlag = instanceId && instanceId !== 'default' && /^[A-Za-z0-9._-]{1,64}$/.test(instanceId)
     ? ` --instance-id ${instanceId}` : '';
   const runArgs = `agent run ${agentName}${instanceFlag} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}`;
+  const cli = os === 'windows' ? CLI_NPX_COMMAND.replace(/^npx /, 'npx.cmd ') : CLI_NPX_COMMAND;
   // One line with a connect code in place of the key: the CLI trades the code
   // for the key itself, and the code stops working once the agent connects or
   // after 30 minutes, so the line holds nothing worth keeping in shell
-  // history. PowerShell 5.1 has no &&, hence `; if ($?) { … }`. A code in any
-  // other shape falls back to the four lines.
+  // history. A code in any other shape falls back to the three lines.
   if (connectCode && /^cmc_[A-Za-z0-9_-]{22}$/.test(connectCode)) {
     return os === 'windows'
-      ? `${CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ')}; if ($?) { commonly.cmd ${runArgs} --api-url ${powerShellQuote(apiUrl)} --connect ${powerShellQuote(connectCode)} --unsandboxed }`
-      : `${CLI_INSTALL_COMMAND} && commonly ${runArgs} --api-url ${apiUrl} --connect ${connectCode}`;
+      ? `${cli} ${runArgs} --api-url ${powerShellQuote(apiUrl)} --connect ${powerShellQuote(connectCode)} --unsandboxed`
+      : `${cli} ${runArgs} --api-url ${apiUrl} --connect ${connectCode}`;
   }
   const env = os === 'windows'
     ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
     : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
-  return [
-    os === 'windows' ? CLI_INSTALL_COMMAND.replace(/^npm /, 'npm.cmd ') : CLI_INSTALL_COMMAND,
-    ...env,
-    `${os === 'windows' ? 'commonly.cmd' : 'commonly'} ${runArgs}${os === 'windows' ? ' --unsandboxed' : ''}`,
-  ].join('\n');
+  return [...env, `${cli} ${runArgs}${os === 'windows' ? ' --unsandboxed' : ''}`].join('\n');
 };
 // The runtime-tokens answer when a connect code was asked for and issued
 // (connectCode plus when it stops working). Absent on an instance that
@@ -1702,7 +1700,7 @@ const V2AgentBYO: React.FC = () => {
   const oneLine = Boolean(listenSnippet) && !listenSnippet.includes('\n');
   const lineCopy = (key: string) => (oneLine ? `${key}OneLine` : key);
   // Pasted into PowerShell, each line ends with a newline and runs, so without a
-  // final one the fourth line, the one that starts the agent, sits at the prompt
+  // final one the last line, the one that starts the agent, sits at the prompt
   // until Enter. A windows-latest probe (Win11, PS 5.1, 11-13) showed exactly
   // that: lines 1-3 ran and the run line sat typed, token unused. The Copy button
   // adds one on Windows. connectSnippet stays as it is, since the Windows smoke
@@ -2632,18 +2630,27 @@ const V2AgentBYO: React.FC = () => {
                 {t(lineCopy('agentByo.listen.windowsPaste'))}
               </p>
             )}
-            {/* No Windows hint: the .cmd lines never meet PowerShell's script
-                policy, and we don't ask people to loosen it (F342). */}
-            {listenerAvailable && setupOs !== 'windows' && (
-              <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t(lineCopy('agentByo.listen.npmPermission'))}
-              </p>
-            )}
+            {/* No npm-permission hint any more: the line runs through npx, so
+                there is no global install to stop with EACCES (F570). */}
             {listenerAvailable && !machinesNeedUpdate && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
                 {t(setupOs === 'windows'
                   ? (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
                   : (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
+              </p>
+            )}
+            {/* Whose plan pays: a teammate's @mention runs on the owner's own
+                Claude Code sign-in. Said up front, because Anthropic's plan
+                limits assume one person's use. The API-key sentence shows on
+                a Mac only: there the CLI bills ANTHROPIC_API_KEY through its
+                per-turn proxy in every pod (adapters/claude.js), while an
+                --unsandboxed Windows seat drops the key from its environment
+                and a Linux invite-only pod's jail never sees it, so both still
+                use the sign-in. */}
+            {listenerAvailable && listenAdapter === 'claude' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-plan-note">
+                {t('agentByo.listen.planNote', { name: issued.agentName })}
+                {setupOs === 'mac' && <>{' '}{t('agentByo.listen.planNoteKey')}</>}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
@@ -2769,7 +2776,7 @@ const V2AgentBYO: React.FC = () => {
                           {' '}{t('agentByo.listen.repo.web')}
                         </label>
                         <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
-                        <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved')}</p>
+                        <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved', { cli: setupOs === 'windows' ? CLI_NPX_COMMAND.replace(/^npx /, 'npx.cmd ') : CLI_NPX_COMMAND })}</p>
                       </>
                     )}
                   </div>

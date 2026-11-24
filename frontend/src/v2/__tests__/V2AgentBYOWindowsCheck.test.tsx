@@ -137,14 +137,14 @@ describe('Windows check line before the paste', () => {
 });
 
 describe('Copy on the Windows tab', () => {
-  test('ends the copied lines with a newline, so the fourth line runs on paste', async () => {
+  test('ends the copied lines with a newline, so the last line runs on paste', async () => {
     setUserAgent(WINDOWS);
     await issue();
     await copyListen();
     const copied = navigator.clipboard.writeText.mock.calls[0][0];
     const shown = screen.getByTestId('byo-listen').querySelector('.v2-byo__pre').textContent;
     expect(copied).toBe(`${shown}\n`);
-    expect(copied.split('\n')[3]).toMatch(/^commonly\.cmd agent run .* --unsandboxed$/);
+    expect(copied.split('\n')[2]).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest agent run .* --unsandboxed$/);
     expect(copied.endsWith('\n\n')).toBe(false);
   });
 
@@ -205,7 +205,7 @@ describe('Why isn’t it answering?', () => {
 
   test.each([
     ['node-missing', 'Install Node 22+ from nodejs.org'],
-    ['not-run', 'Paste all four lines into one PowerShell window.'],
+    ['not-run', 'Paste all three lines into one PowerShell window.'],
     ['other', 'Send us what it printed with the Feedback button.'],
   ])('%s posts the fixed reason once and shows its help', async (reason, help) => {
     jest.useFakeTimers();

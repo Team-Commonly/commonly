@@ -57,7 +57,7 @@ import {
 } from '../lib/daemon-agent-states.js';
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 import { machineHostReport } from '../lib/machine-host.js';
-import { orchestrateDaemonSetup } from '../lib/stable-install.js';
+import { npxInstallRefusal, orchestrateDaemonSetup } from '../lib/stable-install.js';
 import { CLI } from '../lib/cli-hint.js';
 
 // Set on the steps `daemon setup` runs, so a step can leave a line to setup.
@@ -598,6 +598,9 @@ Examples:
     .option(REPLACE_FLAG, REPLACE_HELP)
     .action(async (opts) => {
       try {
+        // F570: never pin a service to npx's cache.
+        const npxRefusal = npxInstallRefusal();
+        if (npxRefusal) throw new Error(npxRefusal);
         if (opts.unsandboxed) {
           const flagRefusal = unsandboxedFlagRefusal();
           if (flagRefusal) throw new Error(flagRefusal);

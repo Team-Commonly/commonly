@@ -192,7 +192,7 @@ describe('a hand copy (select, then Ctrl+C)', () => {
     try {
       await issueSeatAndReadSetup();
       const text = listenBlock().querySelector('pre').textContent;
-      expect(text).toMatch(/commonly\.cmd agent run/);
+      expect(text).toMatch(/npx\.cmd -y @commonlyai\/cli@latest agent run/);
       const setData = handCopy(listenBlock(), text);
       expect(setData).toHaveBeenCalledWith('text/plain', `${text}\n`);
       expect(setData.kept).toBe(false);
@@ -225,7 +225,7 @@ describe('a hand copy (select, then Ctrl+C)', () => {
       });
       const text = listenBlock().querySelector('pre').textContent;
       expect(text).not.toMatch(/\n/);
-      expect(text).toMatch(/--connect .*--unsandboxed \}$/);
+      expect(text).toMatch(/--connect .*--unsandboxed$/);
       const whole = handCopy(listenBlock(), text);
       expect(whole).toHaveBeenCalledWith('text/plain', `${text}\n`);
       expect(whole.kept).toBe(false);

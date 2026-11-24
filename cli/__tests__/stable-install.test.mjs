@@ -12,6 +12,7 @@ import {
   ensureStableCliInstall,
   orchestrateDaemonSetup,
   runsFromStableInstall,
+  npxInstallRefusal,
 } from '../src/lib/stable-install.js';
 
 const HOME = '/home/tester';
@@ -235,5 +236,29 @@ describe('orchestrateDaemonSetup', () => {
     await expect(orchestrateDaemonSetup({
       version: '0.1.300', nodeVersion: 'v22.0.0', ensureStable, home: HOME,
     })).rejects.toThrow(/runCli/);
+  });
+});
+
+// F570: the Bring your own page's line runs the CLI through npx, so `daemon
+// install` can be reached from npx's cache; a service pinned there stops
+// starting once npm clears it, so install refuses and names the setup line.
+describe('npxInstallRefusal', () => {
+  test('refuses from npx\'s cache and names the setup line (npx.cmd and --unsandboxed on Windows)', () => {
+    const mac = npxInstallRefusal({ entry: '/Users/a/.npm/_npx/0a1b/node_modules/@commonlyai/cli/src/index.js', platform: 'darwin' });
+    expect(mac).toContain("running from npx's cache");
+    expect(mac).toContain('npx -y @commonlyai/cli@latest daemon setup --instance <your Commonly URL>, which installs a stable copy first');
+    const win = npxInstallRefusal({ entry: 'C:\\Users\\a\\AppData\\Local\\npm-cache\\_npx\\0a1b\\node_modules\\@commonlyai\\cli\\src\\index.js', platform: 'win32' });
+    expect(win).toContain('npx.cmd -y @commonlyai/cli@latest daemon setup --instance <your Commonly URL> --unsandboxed');
+  });
+
+  test('allows the stable copy daemon setup runs, a global install and a checkout', () => {
+    for (const entry of [
+      stableCliEntry('/Users/a'),
+      '/opt/homebrew/lib/node_modules/@commonlyai/cli/src/index.js',
+      '/Users/a/src/commonly/cli/src/index.js',
+      undefined,
+    ]) {
+      expect(npxInstallRefusal({ entry, platform: 'darwin' })).toBeNull();
+    }
   });
 });

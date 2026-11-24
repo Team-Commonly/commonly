@@ -21,23 +21,24 @@ const base = {
 };
 
 describe('connectSnippet', () => {
-  test('macOS / Linux: the install line, two exports, the run line', () => {
+  // F570: the run line fetches the CLI through npx, so nothing is installed
+  // globally: `npm i -g` stops with EACCES on a stock-Node Mac.
+  test('macOS / Linux: two exports, then the run line through npx', () => {
     expect(connectSnippet({ ...base, os: 'unix' }).split('\n')).toEqual([
-      'npm i -g @commonlyai/cli@latest',
       'export COMMONLY_API_URL=https://api.commonly.me',
       'export COMMONLY_AGENT_TOKEN=cm_agent_abc123',
-      'commonly agent run my-claude --adapter claude',
+      'npx -y @commonlyai/cli@latest agent run my-claude --adapter claude',
     ]);
+    expect(connectSnippet({ ...base, os: 'unix' })).not.toMatch(/npm i -g|^commonly /m);
   });
 
-  // npm.cmd and commonly.cmd, not the .ps1 shims a bare name resolves to:
-  // Windows 11's default script policy refuses those (F342).
-  test('Windows: the .cmd shims, $env: assignments in place of export, and --unsandboxed on the run line', () => {
+  // npx.cmd, not the .ps1 shim a bare name resolves to: Windows 11's default
+  // script policy refuses it (F342).
+  test('Windows: the .cmd shim, $env: assignments in place of export, and --unsandboxed on the run line', () => {
     expect(connectSnippet({ ...base, os: 'windows' }).split('\n')).toEqual([
-      'npm.cmd i -g @commonlyai/cli@latest',
       '$env:COMMONLY_API_URL="https://api.commonly.me"',
       '$env:COMMONLY_AGENT_TOKEN="cm_agent_abc123"',
-      'commonly.cmd agent run my-claude --adapter claude --unsandboxed',
+      'npx.cmd -y @commonlyai/cli@latest agent run my-claude --adapter claude --unsandboxed',
     ]);
     expect(connectSnippet({ ...base, os: 'windows' })).not.toMatch(/export /);
   });
@@ -45,15 +46,15 @@ describe('connectSnippet', () => {
   // Both Windows lines carry the flag. The page offers Codex's only in an
   // invite-only pod (V2AgentBYOListenSnippet), and the CLI refuses any other.
   test('--adapter and --allow ride on the run line; --unsandboxed comes last, on Windows only', () => {
-    expect(connectSnippet({ ...base, os: 'unix', allow: 'write,web' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter claude --allow write,web');
-    expect(connectSnippet({ ...base, os: 'unix', adapter: 'codex' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter codex');
+    expect(connectSnippet({ ...base, os: 'unix', allow: 'write,web' }).split('\n')[2])
+      .toBe('npx -y @commonlyai/cli@latest agent run my-claude --adapter claude --allow write,web');
+    expect(connectSnippet({ ...base, os: 'unix', adapter: 'codex' }).split('\n')[2])
+      .toBe('npx -y @commonlyai/cli@latest agent run my-claude --adapter codex');
     expect(connectSnippet({ ...base, os: 'unix' })).not.toContain('--unsandboxed');
-    expect(connectSnippet({ ...base, os: 'windows', allow: 'write' }).split('\n')[3])
-      .toBe('commonly.cmd agent run my-claude --adapter claude --allow write --unsandboxed');
-    expect(connectSnippet({ ...base, os: 'windows', adapter: 'codex' }).split('\n')[3])
-      .toBe('commonly.cmd agent run my-claude --adapter codex --unsandboxed');
+    expect(connectSnippet({ ...base, os: 'windows', allow: 'write' }).split('\n')[2])
+      .toBe('npx.cmd -y @commonlyai/cli@latest agent run my-claude --adapter claude --allow write --unsandboxed');
+    expect(connectSnippet({ ...base, os: 'windows', adapter: 'codex' }).split('\n')[2])
+      .toBe('npx.cmd -y @commonlyai/cli@latest agent run my-claude --adapter codex --unsandboxed');
   });
 });
 
@@ -77,7 +78,7 @@ describe('powerShellQuote', () => {
   });
 
   test('the escaped token lands in the Windows snippet', () => {
-    expect(connectSnippet({ ...base, os: 'windows', token: 'cm_$x`"y' }).split('\n')[2])
+    expect(connectSnippet({ ...base, os: 'windows', token: 'cm_$x`"y' }).split('\n')[1])
       .toBe('$env:COMMONLY_AGENT_TOKEN="cm_`$x```"y"');
   });
 });
@@ -85,41 +86,41 @@ describe('powerShellQuote', () => {
 describe('connectSnippet for a second instance (F306 part 2)', () => {
   test('the run line names the instance, on both systems', () => {
     expect(connectSnippet({ ...base, os: 'unix', instanceId: 'nova' }).split('\n').at(-1))
-      .toBe('commonly agent run my-claude --instance-id nova --adapter claude');
+      .toBe('npx -y @commonlyai/cli@latest agent run my-claude --instance-id nova --adapter claude');
     expect(connectSnippet({ ...base, os: 'windows', instanceId: 'nova' }).split('\n').at(-1))
-      .toBe('commonly.cmd agent run my-claude --instance-id nova --adapter claude --unsandboxed');
+      .toBe('npx.cmd -y @commonlyai/cli@latest agent run my-claude --instance-id nova --adapter claude --unsandboxed');
   });
 
   test('the default instance, no instance, or an id the CLI would refuse adds nothing', () => {
     for (const instanceId of [undefined, null, 'default', 'has space', 'a;rm -rf', 'x'.repeat(65)]) {
       expect(connectSnippet({ ...base, os: 'unix', instanceId }).split('\n').at(-1))
-        .toBe('commonly agent run my-claude --adapter claude');
+        .toBe('npx -y @commonlyai/cli@latest agent run my-claude --adapter claude');
     }
   });
 });
 
 describe('connectSnippet with a connect code: one line, no key', () => {
   const CODE = 'cmc_AbCdEfGhIjKlMnOpQr_-1z';
-  test('on a Mac or Linux it installs, then runs with the code, joined by &&', () => {
+  test('on a Mac or Linux it is one npx run with the code, with no install step', () => {
     const line = connectSnippet({ ...base, os: 'unix', connectCode: CODE.slice(0, 26) });
     expect(line).not.toContain('\n');
-    expect(line).toBe(`npm i -g @commonlyai/cli@latest && commonly agent run my-claude --adapter claude --api-url ${base.apiUrl} --connect ${CODE.slice(0, 26)}`);
+    expect(line).toBe(`npx -y @commonlyai/cli@latest agent run my-claude --adapter claude --api-url ${base.apiUrl} --connect ${CODE.slice(0, 26)}`);
   });
-  test('on Windows PowerShell 5.1, which has no &&, the run waits on the install with if ($?)', () => {
+  test('on Windows it is one npx.cmd run, so PowerShell 5.1 needs no && or if ($?)', () => {
     const code = CODE.slice(0, 26);
     expect(connectSnippet({ ...base, os: 'windows', connectCode: code, instanceId: 'nova', allow: 'write' }))
-      .toBe(`npm.cmd i -g @commonlyai/cli@latest; if ($?) { commonly.cmd agent run my-claude --instance-id nova --adapter claude --allow write --api-url "${base.apiUrl}" --connect "${code}" --unsandboxed }`);
+      .toBe(`npx.cmd -y @commonlyai/cli@latest agent run my-claude --instance-id nova --adapter claude --allow write --api-url "${base.apiUrl}" --connect "${code}" --unsandboxed`);
   });
   test('the line never carries the key', () => {
     for (const os of ['unix', 'windows'] as const) {
       expect(connectSnippet({ ...base, os, connectCode: CODE.slice(0, 26) })).not.toContain(base.token);
     }
   });
-  test('a code in any other shape falls back to the four lines with the key', () => {
+  test('a code in any other shape falls back to the three lines with the key', () => {
     for (const connectCode of [null, '', 'cmc_short', 'cm_' + 'a'.repeat(22), 'cmc_' + 'a'.repeat(21) + ';', 'cmc_' + 'a'.repeat(23)]) {
       const lines = connectSnippet({ ...base, os: 'unix', connectCode }).split('\n');
-      expect(lines).toHaveLength(4);
-      expect(lines[2]).toContain(base.token);
+      expect(lines).toHaveLength(3);
+      expect(lines[1]).toContain(base.token);
     }
   });
 });

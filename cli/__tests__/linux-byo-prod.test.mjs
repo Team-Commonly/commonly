@@ -1,11 +1,13 @@
-import { readFileSync } from 'fs';
+import {
+  mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
-import { dirname, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import {
-  installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, runsAtWorkspaceTrust,
-  walkAdapter, walkModelEnv, codexSystemConfig, walkHomeRoot,
+  commandExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, neverPolledProblem,
+  npxCliVersion, runsAtWorkspaceTrust, walkAdapter, walkModelEnv, codexSystemConfig, walkHomeRoot,
 } from '../scripts/linux-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -16,16 +18,23 @@ describe('the Linux prod walk', () => {
   test('reads the page\'s Linux lines for Claude Code in the shape it pastes', () => {
     const lines = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'claude' }).split('\n');
     expect(linuxLineProblems(lines, sample)).toEqual([]);
-    expect(lines[3]).toBe('commonly agent run linux-walk --adapter claude');
+    // One line fetches the CLI through npx and runs it: no global install.
+    expect(lines[2]).toBe('npx -y @commonlyai/cli@latest agent run linux-walk --adapter claude');
   });
 
   test('stops when the page\'s lines change shape', () => {
-    const lines = ['npm i -g @commonlyai/cli@latest', 'export COMMONLY_API_URL=https://api.commonly.me',
-      'export COMMONLY_AGENT_TOKEN=cm_agent_t', 'commonly agent run linux-walk --adapter claude --unsandboxed'];
-    expect(linuxLineProblems(lines, sample)).toEqual([expect.stringMatching(/line 4 is not a sandboxed Claude Code run/)]);
-    expect(linuxLineProblems(lines.slice(0, 3), sample)).toEqual([expect.stringMatching(/3 lines, not 4/)]);
+    const lines = ['export COMMONLY_API_URL=https://api.commonly.me',
+      'export COMMONLY_AGENT_TOKEN=cm_agent_t', 'npx -y @commonlyai/cli@latest agent run linux-walk --adapter claude --unsandboxed'];
+    expect(linuxLineProblems(lines, sample)).toEqual([expect.stringMatching(/line 3 is not a sandboxed Claude Code run/)]);
+    expect(linuxLineProblems(lines.slice(0, 2), sample)).toEqual([expect.stringMatching(/2 lines, not 3/)]);
+    // The old four lines (a global install first) are not the shape any more.
+    expect(linuxLineProblems(['npm i -g @commonlyai/cli@latest', ...lines], sample))
+      .toEqual([expect.stringMatching(/4 lines, not 3/)]);
+    // A bare `commonly` run with no npx is not the page's line.
+    expect(linuxLineProblems([lines[0], lines[1], 'commonly agent run linux-walk --adapter claude'], sample))
+      .toEqual([expect.stringMatching(/line 3/)]);
     // The token never appears in a problem the walk logs.
-    expect(linuxLineProblems([lines[0], lines[1], 'export COMMONLY_AGENT_TOKEN=other', lines[3]], sample).join(' '))
+    expect(linuxLineProblems([lines[0], 'export COMMONLY_AGENT_TOKEN=other', lines[2]], sample).join(' '))
       .not.toMatch(/other|cm_agent_t/);
   });
 
@@ -34,12 +43,52 @@ describe('the Linux prod walk', () => {
       .toThrow(/connectSnippet not found/);
   });
 
-  test('a failed install stops the paste and is reported as the install', () => {
-    const script = linuxPasteScript(['npm i -g x', 'a', 'b', 'c']);
-    expect(script).toHaveLength(5);
-    expect(script[1]).toMatch(/exit 97/);
-    expect(installExitFromBash('noise\nlinux-byo-walk: the install line exited 243\n')).toBe(243);
-    expect(installExitFromBash('polling')).toBeNull();
+  test('the guard follows the run line and reads back as the page\'s command exit', () => {
+    const lines = ['export A=1', 'export B=2', 'npx -y @commonlyai/cli@latest agent run x --adapter claude'];
+    const script = linuxPasteScript(lines);
+    expect(script).toHaveLength(4);
+    expect(script.slice(0, 3)).toEqual(lines);
+    expect(script[3]).toMatch(/exit 97/);
+    expect(commandExitFromBash('noise\nlinux-byo-walk: the page\'s command exited 243\n')).toBe(243);
+    expect(commandExitFromBash('polling')).toBeNull();
+  });
+
+  // npx fetching nothing, or the CLI quitting before its poll loop, is the
+  // page's command failing, not a CLI that silently never polled.
+  test('a failed npx run is reported as the page\'s command, not as "never polled"', () => {
+    const out = 'npm error code E404\nlinux-byo-walk: the page\'s command exited 1\n';
+    const failed = neverPolledProblem({
+      commandExit: commandExitFromBash(out), api: 'https://api.x', shell: 'bash', exited: 97, seconds: 4,
+    });
+    expect(failed).toBe('the page\'s command exited 1 before the CLI polled https://api.x');
+    expect(failed).not.toMatch(/never started polling/);
+    expect(neverPolledProblem({
+      commandExit: commandExitFromBash('still fetching'), api: 'https://api.x', shell: 'bash', exited: null, seconds: 480,
+    })).toBe('the CLI never started polling https://api.x (480 s)');
+    expect(neverPolledProblem({
+      commandExit: null, api: 'https://api.x', shell: 'bash', exited: 0, seconds: 3,
+    })).toBe('the CLI never started polling https://api.x (bash exited 0)');
+  });
+
+  // `npm ls -g` sees nothing npx fetched, so the version comes from npx's cache.
+  test('reads the CLI version from npx\'s cache, newest first, with no second fetch', () => {
+    const cache = mkdtempSync(join(tmpdir(), 'npx-cache-'));
+    try {
+      expect(npxCliVersion([cache])).toBe('unknown');
+      const put = (hash, version, secondsAgo) => {
+        const dir = join(cache, '_npx', hash, 'node_modules', '@commonlyai', 'cli');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@commonlyai/cli', version }));
+        const at = new Date(Date.now() - secondsAgo * 1000);
+        utimesSync(join(dir, 'package.json'), at, at);
+      };
+      put('aaa', '0.1.100', 600);
+      put('bbb', '0.1.200', 5);
+      mkdirSync(join(cache, '_npx', 'ccc', 'node_modules'), { recursive: true });
+      expect(npxCliVersion([undefined, join(cache, 'missing'), cache])).toBe('0.1.200');
+    } finally {
+      rmSync(cache, { recursive: true, force: true });
+    }
   });
 
   // A workspace-trust turn drops ANTHROPIC_API_KEY, so the walk needs a public turn.
@@ -59,9 +108,9 @@ describe('the Linux prod walk', () => {
   test('reads the page\'s Linux lines for Codex in the shape it pastes', () => {
     const lines = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'codex' }).split('\n');
     expect(linuxLineProblems(lines, { ...sample, adapter: 'codex' })).toEqual([]);
-    expect(lines[3]).toBe('commonly agent run linux-walk --adapter codex');
+    expect(lines[2]).toBe('npx -y @commonlyai/cli@latest agent run linux-walk --adapter codex');
     // The Claude check does not pass a Codex line, and the reverse.
-    expect(linuxLineProblems(lines, sample)).toEqual([expect.stringMatching(/line 4/)]);
+    expect(linuxLineProblems(lines, sample)).toEqual([expect.stringMatching(/line 3/)]);
   });
 
   test('takes the adapter from the dispatch, Claude Code unless it names Codex', () => {

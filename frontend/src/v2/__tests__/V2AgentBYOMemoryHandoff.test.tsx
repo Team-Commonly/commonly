@@ -123,7 +123,7 @@ describe('the OS a handoff card link names', () => {
   test('a Mac browser following a Windows link gets the PowerShell lines', async () => {
     renderAt('/v2/agents/byo?pod=aaa111&name=sam-claude&adapter=claude&os=windows&memoryFrom=scout');
     await installRequest();
-    expect(screen.getByTestId('byo-listen')).toHaveTextContent('npm.cmd i -g @commonlyai/cli@latest');
+    expect(screen.getByTestId('byo-listen')).toHaveTextContent('npx.cmd -y @commonlyai/cli@latest agent run');
     expect(screen.getByTestId('byo-listen')).toHaveTextContent('$env:COMMONLY_AGENT_TOKEN');
   });
 

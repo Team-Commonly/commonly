@@ -135,8 +135,8 @@ describe('BYO from an approved connect card', () => {
     fireEvent.click(act);
     await screen.findByTestId('byo-listen');
     const pre = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || ''));
-    expect((pre.textContent || '').split('\n')[3]).toBe('commonly agent run lee-codex --adapter codex');
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || ''));
+    expect((pre.textContent || '').split('\n')[2]).toBe('npx -y @commonlyai/cli@latest agent run lee-codex --adapter codex');
   });
 
   // sprint-review on #2293: ?adapter= is a URL parameter anyone can type or
@@ -151,19 +151,19 @@ describe('BYO from an approved connect card', () => {
     fireEvent.click(act);
     await screen.findByTestId('byo-listen');
     return Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || '')).textContent || '';
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || '')).textContent || '';
   };
 
   test('an unlisted ?adapter= is Claude Code', async () => {
     const command = await commandFor('cursor', () => {
       expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Claude Code');
     });
-    expect(command.split('\n')[3]).toBe('commonly agent run sam-claude --adapter claude');
+    expect(command.split('\n')[2]).toBe('npx -y @commonlyai/cli@latest agent run sam-claude --adapter claude');
   });
 
   test('an ?adapter= carrying shell syntax never reaches the command', async () => {
     const command = await commandFor('codex;id');
-    expect(command.split('\n')[3]).toBe('commonly agent run sam-claude --adapter claude');
+    expect(command.split('\n')[2]).toBe('npx -y @commonlyai/cli@latest agent run sam-claude --adapter claude');
     expect(command).not.toContain(';');
   });
 
@@ -242,10 +242,10 @@ describe('the compact page opens only where the command exists', () => {
 });
 
 describe('the command page puts only what the paste needs above the copy', () => {
-  // QA BYO walk 3: the line lost WHY all four run in one window. Someone who
+  // QA BYO walk 3: the line lost WHY all three run in one window. Someone who
   // pastes the exports, opens a new tab and runs the last line gets an auth
   // error, because an export lasts only in its own window.
-  test('the needs line says why all four lines run in one window', async () => {
+  test('the needs line says why all three lines run in one window', async () => {
     renderAt(CARD);
     const act = await screen.findByRole('button', { name: /get my connect command/i });
     await waitFor(() => expect(act).toBeEnabled());
@@ -307,8 +307,8 @@ describe('the command page puts only what the paste needs above the copy', () =>
     const installs = axios.post.mock.calls.filter(([url]) => url === '/api/registry/install');
     expect(installs[installs.length - 1][1].agentName).toBe('sam-codex');
     const command = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || '')).textContent || '';
-    expect(command.split('\n')[3]).toBe('commonly agent run sam-codex --adapter codex');
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || '')).textContent || '';
+    expect(command.split('\n')[2]).toBe('npx -y @commonlyai/cli@latest agent run sam-codex --adapter codex');
   });
 
   test('the key-once and keep-running warnings follow the command', async () => {
@@ -318,7 +318,7 @@ describe('the command page puts only what the paste needs above the copy', () =>
     fireEvent.click(act);
     await screen.findByTestId('byo-listen');
     const command = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || ''));
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || ''));
     const after = (el) => {
       // eslint-disable-next-line no-bitwise
       expect(command.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

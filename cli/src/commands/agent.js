@@ -6211,7 +6211,7 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord(), instanceUrl: record.instanceUrl })}`);
       // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
       // slow registry never delays the first poll.
       startUpdateNotice({
