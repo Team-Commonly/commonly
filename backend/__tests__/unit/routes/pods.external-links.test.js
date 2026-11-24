@@ -393,10 +393,13 @@ describe('pods routes - external link QR code type', () => {
 
   // A link id that can't be an ObjectId made findById throw a CastError,
   // caught as a 500. Nothing can be stored under such an id: it's a 404.
-  it.each([
-    ['get', '/api/pods/external-link/not-an-id/qrcode', 'QR code not found'],
-    ['delete', '/api/pods/external-link/not-an-id', 'External link not found'],
-  ])('answers 404 to %s with a link id that is not an ObjectId', async (method, url, message) => {
+  // Review checklist rule 65's shapes: a literal route parameter, a word, and
+  // a 25-character id one past ObjectId length.
+  const MALFORMED_LINK_IDS = [':id', 'not-an-id', '0123456789abcdef012345678'];
+  it.each(MALFORMED_LINK_IDS.flatMap((id) => [
+    ['get', id, `/api/pods/external-link/${encodeURIComponent(id)}/qrcode`, 'QR code not found'],
+    ['delete', id, `/api/pods/external-link/${encodeURIComponent(id)}`, 'External link not found'],
+  ]))('answers 404 to %s with the link id %s', async (method, _id, url, message) => {
     const res = await request(app)[method](url).expect(404);
     expect(res.body).toEqual({ message });
     expect(ExternalLink.findById).not.toHaveBeenCalled();
