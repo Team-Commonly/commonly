@@ -31,7 +31,7 @@
     "wait-on": "^9.0.4"
   },
   "lint-staged": {
-    "backend/**/*.ts": [
+    "backend/**/*.{js,ts}": [
       "./backend/node_modules/.bin/eslint --fix"
     ],
     "frontend/src/**/*.{js,jsx,ts,tsx}": [

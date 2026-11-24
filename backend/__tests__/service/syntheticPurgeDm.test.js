@@ -42,8 +42,8 @@ describe('Synthetic purge DM preservation', () => {
   afterEach(async () => { await clearMongoDb(); await pool.end();
     if (adminPool) { await adminPool.query(`DROP SCHEMA ${schema} CASCADE`); await adminPool.end(); adminPool = null; } });
 
-  it.each(['agent-room', 'agent-dm'].flatMap((type) => [false, true].map((owned) => [type, owned])))
-    ('retains both stores and independent agents in %s (created by synthetic=%s)', async (type, owned) => {
+  it.each(['agent-room', 'agent-dm'].flatMap((type) => [false, true].map((owned) => [type, owned])))(
+    'retains both stores and independent agents in %s (created by synthetic=%s)', async (type, owned) => {
       const human = await insertUser({ username: 'eng-smoke-journey-1015124709', email: 'journey@ops.commonly.invalid', isBot: false });
       const agent = await insertUser({ username: 'independent', isBot: true });
       const other = await insertUser({ username: 'other', isBot: false });

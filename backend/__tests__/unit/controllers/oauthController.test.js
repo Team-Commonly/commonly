@@ -313,7 +313,6 @@ describe('OAuth Controller', () => {
       protocol: 'https',
       headers: browserHeaders('111111111111111111111111111111111111111111111111'),
       query: { code: 'gh-code', state: '111111111111111111111111111111111111111111111111', ...query },
-      protocol: 'https',
       get: () => 'api.test.local',
     });
 
