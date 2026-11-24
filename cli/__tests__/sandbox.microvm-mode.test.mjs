@@ -198,7 +198,11 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-cwd-'));
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-home-'));
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-scratch-'));
-    fs.writeFileSync(path.join(scratch, 'server.mjs'), '');
+    // A stand-in for our own server: describeMcpCommand knows it by the
+    // package.json beside its src/.
+    fs.mkdirSync(path.join(scratch, 'src'));
+    fs.writeFileSync(path.join(scratch, 'src', 'index.js'), '');
+    fs.writeFileSync(path.join(scratch, 'package.json'), JSON.stringify({ name: '@commonlyai/mcp', version: '0.4.0' }));
     // Windows resolves the launch target before spawning, so it must exist.
     fs.writeFileSync(MSB, '');
     spawnSync.mockImplementation((cmd) => (cmd === 'which'
@@ -237,7 +241,10 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     return { calls, impl };
   };
 
-  const run = (impl, { env = { ANTHROPIC_API_KEY: HOST_KEY }, extra = {}, platform = 'win32' } = {}) => claude.spawn('hi', {
+  const ourServer = () => [{ name: 'commonly', transport: 'stdio', command: [process.execPath, path.join(scratch, 'src', 'index.js')] }];
+  const run = (impl, {
+    env = { ANTHROPIC_API_KEY: HOST_KEY }, extra = {}, platform = 'win32', mcp = ourServer(), withholds = () => true,
+  } = {}) => claude.spawn('hi', {
     agentName: 'mv-seat',
     sessionId: null,
     cwd,
@@ -246,9 +253,10 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     environment: {
       model: 'test-model',
       sandbox: { trust: 'public' },
-      mcp: [{ name: 'commonly', transport: 'stdio', command: [process.execPath, path.join(scratch, 'server.mjs')] }],
+      mcp,
     },
     _platform: platform,
+    _mcpWithholdsTools: withholds,
     _spawnImpl: impl,
     _probeWhp: () => ({ available: true }),
     _prepareMicrovmHost: async () => ({ msb: MSB }),
@@ -362,6 +370,33 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     expect(calls).toHaveLength(0);
     return proxy;
   };
+
+  test('another declared stdio server is refused: on the host it would run outside the VM', async () => {
+    fs.mkdirSync(path.join(scratch, 'files-mcp', 'src'), { recursive: true });
+    fs.writeFileSync(path.join(scratch, 'files-mcp', 'package.json'), JSON.stringify({ name: 'some-files-mcp' }));
+    fs.writeFileSync(path.join(scratch, 'files-mcp', 'src', 'index.js'), '');
+    const proxy = proxyStub();
+    const { calls, impl } = recorder();
+    await withFlag('1', async () => {
+      await expect(run(impl, {
+        mcp: [...ourServer(), { name: 'files', transport: 'stdio', command: [process.execPath, path.join(scratch, 'files-mcp', 'src', 'index.js')] }],
+        extra: { _startProviderProxy: proxy.start },
+      })).rejects.toThrow(/runs only the Commonly MCP server.*files is another server/);
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a Commonly MCP build that does not withhold tools itself is refused', async () => {
+    const proxy = proxyStub();
+    const { calls, impl } = recorder();
+    const withholds = jest.fn(() => false);
+    await withFlag('1', async () => {
+      await expect(run(impl, { withholds, extra: { _startProviderProxy: proxy.start } }))
+        .rejects.toThrow(/does not withhold.*update @commonlyai\/mcp/);
+    });
+    expect(withholds).toHaveBeenCalledWith([process.execPath, path.join(scratch, 'src', 'index.js')]);
+    expect(calls).toHaveLength(0);
+  });
 
   test('without WHP it refuses, and nothing spawns or starts', async () => {
     const proxy = await refuses(/Windows Hypervisor Platform/, {

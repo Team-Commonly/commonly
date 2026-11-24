@@ -54,8 +54,13 @@ Claude seat without an OS sandbox wins over the flag.
   that rule is untested.
 - Stopping a turn kills `msb.exe`. Whether the VM process always goes with it is
   untested; one left behind costs memory, not access.
-- Only stdio MCP servers can cross the bridge. An HTTP or SSE server is refused,
-  not silently cut off.
+- The bridge runs only the Commonly MCP server, and only a warm build whose
+  `package.json` declares `commonly.withheldTools`: it runs on the host, outside
+  Claude's deny list, so it must withhold the seat's tools itself. Any other
+  declared server is refused, since on the host it would run outside the VM
+  with the workspace writable. Builds published before that marker are refused
+  too, so the mode needs the first `@commonlyai/mcp` release after this change.
+  HTTP and SSE servers are refused, not silently cut off.
 - The guest installs Claude Code with the network open, once, with no secrets
   in the VM. Every turn after that runs fenced.
 - The context-token count read from the transcript is not wired up yet. The

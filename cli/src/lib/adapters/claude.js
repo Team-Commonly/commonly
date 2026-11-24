@@ -113,6 +113,7 @@ import { workspaceGitAttachment, workspaceGitEnabled } from '../workspace-git.js
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
+  selectedMcpWithholdsTools,
 } from '../mcp-home.js';
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
@@ -1320,6 +1321,21 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
       ctx.unavailableMcp?.push(server.name);
       continue;
     }
+    // The microVM bridge runs these servers on the host, outside the VM and
+    // outside Claude's deny list. Only our own server, from a verified warm
+    // build that withholds the seat's tools itself, may run there.
+    if (ctx.microvmBridge) {
+      const ours = Boolean(spawnCommand)
+        && (isShippedCommonlyMcpCommand(server.command) || Boolean(describeMcpCommand(spawnCommand)?.isCommonly));
+      if (!ours) {
+        throw new Error(`The microVM sandbox runs only the Commonly MCP server, on this computer, and ${server.name} `
+          + 'is another server: it would run outside the VM. Remove it to run this seat in the microVM.');
+      }
+      if (!(ctx._withholdsTools || selectedMcpWithholdsTools)(spawnCommand)) {
+        throw new Error(`The Commonly MCP build this seat would run for ${server.name} does not withhold a confined `
+          + "seat's tools itself, which the microVM sandbox needs; update @commonlyai/mcp.");
+      }
+    }
     const executed = spawnCommand ? { ...server, command: spawnCommand } : server;
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
@@ -2233,6 +2249,8 @@ export default {
           readyFileDir = ownReadyDir;
         }
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
+          microvmBridge: Boolean(microvm),
+          _withholdsTools: ctx._mcpWithholdsTools,
           readyFileDir,
           readyFiles,
           runtimeToken: ctx.runtimeToken,
