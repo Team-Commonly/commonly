@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import V2Avatar from '../components/V2Avatar';
+import * as avatars from '../utils/avatars';
 import { paperAvatarFor } from '../utils/avatars';
 
 const svgFromDataUri = (src: string | null): string => decodeURIComponent(
@@ -107,5 +108,41 @@ describe('V2Avatar', () => {
 
     const photo = render(<V2Avatar name="Ada" src="/api/uploads/avatar.png" />);
     expect(photo.container.querySelector('.v2-avatar')).not.toHaveClass('v2-avatar--character');
+  });
+
+  // F586: a character tile is an opaque 64x64 SVG, so nothing belongs under it.
+  // The seeded gradient used to sit there as a backing plate, and the rounded
+  // clip's anti-aliased edge let it bleed out as a dark rim that the ink
+  // shoulders ran into. Photos keep the plate (a transparent PNG needs one).
+  test('a character tile paints no backing plate under its art; a photo keeps one (F586)', () => {
+    // jsdom's CSSOM drops linear-gradient values, so the seeded plate would read
+    // as '' on every tier; a plain colour makes the plate observable.
+    const gradient = jest.spyOn(avatars, 'gradientFor').mockReturnValue('rgb(1, 2, 3)');
+    const plate = (r: ReturnType<typeof render>): string => (
+      (r.container.querySelector('.v2-avatar') as HTMLElement).style.background
+    );
+
+    const agent = render(<V2Avatar name="my-claude" kind="agent" seed="my-claude:default" tone="flat" />);
+    expect(plate(agent)).toBe('');
+    agent.unmount();
+
+    const paper = render(<V2Avatar name="Ada" kind="human" seed="ada" />);
+    expect(plate(paper)).toBe('');
+    paper.unmount();
+
+    const picked = render(<V2Avatar name="Ada" src="bigsmile:ada-v1" />);
+    expect(plate(picked)).toBe('');
+    picked.unmount();
+
+    // A saved Paper look is the same opaque tile an unpicked human gets, so it
+    // takes the character frame and no plate, like the unpicked one.
+    const savedPaper = render(<V2Avatar name="Ada" src="paper:paper-user-v17" kind="human" seed="paper-user" />);
+    expect(savedPaper.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
+    expect(plate(savedPaper)).toBe('');
+    savedPaper.unmount();
+
+    const photo = render(<V2Avatar name="Ada" src="/api/uploads/avatar.png" />);
+    expect(plate(photo)).toBe('rgb(1, 2, 3)');
+    gradient.mockRestore();
   });
 });
