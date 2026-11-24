@@ -51,6 +51,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
+const { settleIntroOnRequestCheckIn } = require('../services/installIntroOnListen');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -900,6 +901,10 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     // it" true, so it stamps `lastListenedAt` (any other authenticated call
     // does not). Best-effort and throttled; see agentListenerCheckIn.ts.
     recordListenerCheckIn(agentUser?._id, req.agentTokenHash);
+    // F576: on the token's first listen, rewrite the seat's "nothing is
+    // running me yet" intro before any event is claimed, so the first turn
+    // reads the true one. Bounded and never throws.
+    await settleIntroOnRequestCheckIn(req);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     // F237: a driver whose carry fills its prompt names the rows it carries,
     // and gets back only those the server requeued (agentEventService
@@ -1673,7 +1678,10 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
       const owned = renewedOne || await AgentEventService.holdsEvent(entry.eventId, agentName, instanceId);
       return { eventId: entry.eventId, renewedOne, owned };
     }));
-    if (results.some((r) => r.owned)) recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+    if (results.some((r) => r.owned)) {
+      recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+      await settleIntroOnRequestCheckIn(req); // F576, as on /events
+    }
     return res.json({ renewed: results.filter((r) => r.renewedOne).map((r) => r.eventId) });
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);

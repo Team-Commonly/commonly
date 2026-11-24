@@ -113,6 +113,24 @@ describe('the join note says when its agent is connected now (F509)', () => {
     expect(screen.getAllByTestId('intro-connected-now')).toHaveLength(1);
   });
 
+  // F576: the first listen rewrites the note itself and marks it, so the
+  // line would say the same thing twice.
+  test('a note already rewritten to its listening form gets no line', async () => {
+    mockStates([row('listening')]);
+    // An unmarked note beside it (an older row) still gets the line, which
+    // proves the listening state has landed before the marked one is judged.
+    renderChat(makeDetail({
+      messages: [{
+        ...intro,
+        content: "Hi all — I'm Sam Agent, just joined the pod. Mention me with @sam-agent when you need me.",
+        payload: { kind: 'install-intro', introState: 'listening' },
+      }, { ...intro, id: 'i2', created_at: '2026-11-14T16:17:00.000Z' }],
+    }));
+    const line = await screen.findByTestId('intro-connected-now');
+    expect(document.getElementById('message-i2')).toContainElement(line);
+    expect(screen.getAllByTestId('intro-connected-now')).toHaveLength(1);
+  });
+
   test('a never-connected agent: no line, the note stands as posted', async () => {
     mockStates([row('never-connected')]);
     renderChat(makeDetail({ messages: [intro] }));

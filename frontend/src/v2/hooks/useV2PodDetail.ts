@@ -102,6 +102,8 @@ export interface V2Message {
     actorName?: string;
     /** `agentName:instanceId` on a system line about one agent (agent-not-connected, -stopped, …). */
     agentKey?: string;
+    /** On an install intro the agent's first listen rewrote: 'listening' (F576). */
+    introState?: string;
     /** On a run-request-declined line: who asked, and the agent's label (F449). */
     requesterName?: string;
     agentLabel?: string;
@@ -749,13 +751,32 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
           : m
       )));
     };
+    // F576: a message the kernel rewrote in place (an install intro on its
+    // agent's first listen). Merges whichever of content and payload it carries.
+    const handleMessageUpdate = (update: {
+      messageId: string; podId?: string; content?: string; payload?: V2Message['payload'];
+    }) => {
+      if (!update || !update.messageId) return;
+      if (update.podId && update.podId !== podId) return;
+      setMessages((prev) => prev.map((m) => (
+        String(m.id) === String(update.messageId)
+          ? {
+            ...m,
+            ...(typeof update.content === 'string' ? { content: update.content } : {}),
+            ...(update.payload !== undefined ? { payload: update.payload } : {}),
+          }
+          : m
+      )));
+    };
     socket.on('newMessage', handleNewMessage);
     socket.on('messageReaction', handleReactionChange);
     socket.on('messageCardUpdated', handleCardUpdate);
+    socket.on('messageUpdated', handleMessageUpdate);
     return () => {
       socket.off('newMessage', handleNewMessage);
       socket.off('messageReaction', handleReactionChange);
       socket.off('messageCardUpdated', handleCardUpdate);
+      socket.off('messageUpdated', handleMessageUpdate);
       leavePod(podId);
     };
   }, [podId, socket, connected, joinPod, leavePod, currentUser?._id]);

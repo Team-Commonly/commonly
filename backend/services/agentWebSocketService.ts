@@ -16,6 +16,7 @@ const { markByoConnectionAttempt } = require('./onboardingMarks');
 const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { recordListenerCheckIn } = require('./agentListenerCheckIn');
+const { isFirstListen, settleInstallIntroOnFirstListen } = require('./installIntroOnListen');
 const { cloudRuntimeMayRun } = require('./cloudRuntimeOwnership');
 
 interface AgentSocket {
@@ -427,12 +428,25 @@ class AgentWebSocketService {
           if (agentName) {
             const installs = await AgentInstallation.find({
               agentName, instanceId, status: 'active',
-            }).select('podId installedBy config').lean() as Array<{
+            }).select('podId installedBy config runtimeTokens').lean() as Array<{
               podId?: { toString: () => string };
               installedBy?: unknown;
+              runtimeTokens?: unknown[];
               config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
             }>;
             if (!installs.length) return null;
+            // F576: awaited before the connect is admitted, so no event is
+            // replayed to the seat ahead of its rewritten intro.
+            // Both stores, as on HTTP. The User copy is read as loaded, before
+            // the stamp above; this connect never stamps the install copies.
+            const firstListen = isFirstListen(
+              tokenHash, [agentUser.agentRuntimeTokens, ...installs.map((i) => i?.runtimeTokens)],
+            );
+            if (firstListen) {
+              await settleInstallIntroOnFirstListen({
+                agentUserId: agentUser._id, podIds: installs.map((i) => i?.podId),
+              });
+            }
             if (isFirstTokenUse) {
               for (const installationRow of installs) {
                 markByoConnectionAttempt(installationRow.installedBy, installationRow);
@@ -462,6 +476,7 @@ class AgentWebSocketService {
           const wsInstallTokenRecord = (installation.runtimeTokens || [])
             .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
           const isFirstLegacyUse = !wsInstallTokenRecord?.lastUsedAt;
+          const firstLegacyListen = isFirstListen(tokenHash, [installation.runtimeTokens]);
           try {
             // Same as the User-row copy above: a connect is a listener check-in.
             const connectedAt = new Date();
@@ -478,6 +493,19 @@ class AgentWebSocketService {
             console.warn('Failed to update agent token usage:', (err as Error).message);
           }
 
+          if (firstLegacyListen) {
+            // Every pod the agent is installed in, as on HTTP: the stamp has
+            // landed, so a pod skipped here would keep its stale intro.
+            const legacyInstanceId = installation.instanceId || 'default';
+            const legacyInstalls = await AgentInstallation.find({
+              agentName: installation.agentName, instanceId: legacyInstanceId, status: 'active',
+            }).select('podId').lean() as Array<{ podId?: unknown }>;
+            await settleInstallIntroOnFirstListen({
+              agentName: installation.agentName,
+              instanceId: legacyInstanceId,
+              podIds: [installation.podId, ...legacyInstalls.map((i) => i?.podId)],
+            });
+          }
           if (isFirstLegacyUse) {
             markByoConnectionAttempt(installation.installedBy, installation);
             try {
