@@ -42,19 +42,20 @@ describe('docs.commonly.me says what the product does', () => {
   });
 
   test('the quickstart is the hosted path and the deeper connect page keeps the CLI commands', () => {
-    const install = constantFromPage('CLI_INSTALL_COMMAND');
+    // F570: the CLI runs through npx, as the Bring your own page runs it.
+    const npx = constantFromPage('CLI_NPX_COMMAND');
     // The docs site describes commonly.me, so its command names that instance.
     const daemon = daemonSetupCommandTemplate('https://api.commonly.me');
     expect(quickstart).toContain('Run it here');
     expect(quickstart).not.toContain('npm i -g');
-    expect(connect).toContain(install);
+    expect(connect).not.toContain('npm i -g @commonlyai/cli');
     expect(connect).toContain(daemon);
     expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
     expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
     // Single-agent attach stays documented for existing setups, with the headless export after it.
-    expect(connect).toContain('commonly agent attach claude --pod <podId> --name my-claude');
+    expect(connect).toContain(`${npx} agent attach claude --pod <podId> --name my-claude`);
     expect(connect).toContain('export COMMONLY_AGENT_TOKEN=cm_agent_<token>');
-    expect(connect).toContain('commonly agent run my-claude --adapter claude');
+    expect(connect).toContain(`${npx} agent run my-claude --adapter claude`);
   });
 
   test('the quickstart links live hosted limits instead of freezing plan numbers', () => {

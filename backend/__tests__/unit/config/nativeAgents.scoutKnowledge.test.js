@@ -30,13 +30,15 @@ const SCOUT_API_PLACEHOLDER = '<API URL of this instance>';
 describe('Scout onboarding knowledge', () => {
   const prompt = scoutApp.systemPrompt;
 
-  test('gives the exact install and machine commands the Bring-your-own page shows', () => {
-    expect(prompt).toContain(constantFromPage('CLI_INSTALL_COMMAND'));
+  // F570: the page runs the CLI through npx, with no global install, so Scout
+  // quotes that form and never the old `npm i -g` line.
+  test('gives the exact run and machine commands the Bring-your-own page shows', () => {
+    expect(prompt).toContain(`${constantFromPage('CLI_NPX_COMMAND')} agent run <name> --adapter claude`);
+    expect(prompt).not.toContain('npm i -g @commonlyai/cli');
     expect(prompt).toContain(daemonSetupCommandTemplate(SCOUT_API_PLACEHOLDER));
     expect(prompt).not.toMatch(/--instance https:\/\/api\.commonly\.me && commonly daemon register/);
     expect(prompt).toContain('export COMMONLY_API_URL=');
     expect(prompt).toContain('export COMMONLY_AGENT_TOKEN=');
-    expect(prompt).toContain('commonly agent run <name>');
   });
 
   test('says MCP alone does not answer mentions, and names the command that does', () => {
@@ -48,7 +50,7 @@ describe('Scout onboarding knowledge', () => {
   // token" and "start the listener", and the command fell back to Codex.
   test('the card speaks plainly, and the command pins the tool it runs', () => {
     expect(prompt).toMatch(/Never say seat, token, listener, runtime or connect page to them/);
-    expect(prompt).toMatch(/commonly agent run <name> --adapter claude/);
+    expect(prompt).toMatch(/@commonlyai\/cli@latest agent run <name> --adapter claude/);
   });
 
   test('names the labels the Agents page actually has, and no stale ones', () => {
@@ -193,9 +195,11 @@ describe('Scout onboarding knowledge', () => {
     expect(content).toMatch(/On native Windows, Claude Code answers @mentions with CLI 0\.1\.243 or newer/);
   });
 
-  test('asks the OS before any command, and never hands out the listener without install and token', () => {
+  test('asks the OS before any command, and never hands out a bare listener line', () => {
     expect(prompt).toMatch(/Before ANY terminal command: if you do not know their operating system, ask for it and give no commands/);
-    expect(prompt).toMatch(/Never give `commonly agent run` on its own/);
+    // F570: nothing is installed globally, so a bare `commonly` is not found.
+    expect(prompt).toMatch(/Never give a bare `commonly agent run`: nothing is installed globally/);
+    expect(prompt).toMatch(/Give the run line as the page shows it, through npx/);
     expect(prompt).toMatch(/"Use my own agent"/);
   });
 
