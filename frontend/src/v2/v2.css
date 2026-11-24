@@ -3031,15 +3031,13 @@ body.modern-ui.v2-canvas {
   border: 2px solid var(--v2-surface);
 }
 
-/* Reset top padding for embedded dev tools so the v2 feature header is the
-   only top-of-page chrome the user sees. The dev pages were authored to
-   stand alone and add their own 24px+ top padding. */
-.v2-feature__legacy .api-dev-root,
+/* Reset top padding for the embedded dev tool so the v2 feature header is
+   the only top-of-page chrome the user sees. The page was authored to stand
+   alone and adds its own 24px+ top padding. */
 .v2-feature__legacy .pod-context-dev-root {
   padding-top: 0 !important;
 }
 
-.v2-feature__legacy .api-dev-container,
 .v2-feature__legacy .pod-context-dev-container {
   padding-left: 0 !important;
   padding-right: 0 !important;

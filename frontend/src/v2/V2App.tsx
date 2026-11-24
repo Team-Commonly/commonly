@@ -65,7 +65,6 @@ const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
-const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
 const V2PodContextDev = React.lazy(() => import('./components/V2PodContextDev'));
 const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
@@ -444,14 +443,6 @@ const V2App: React.FC = () => {
                   element={feature(
                     'Usage Analytics',
                     <ProtectedRoute requireAdmin><V2AdminAnalytics /></ProtectedRoute>,
-                    false,
-                  )}
-                />
-                <Route
-                  path="dev/api"
-                  element={feature(
-                    'API Dev',
-                    <ProtectedRoute requireAdmin><ApiDevPage /></ProtectedRoute>,
                     false,
                   )}
                 />

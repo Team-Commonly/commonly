@@ -106,7 +106,7 @@ masquerade as a rendering failure. Rest of the local credential surface:
 The bootstrap creates that user with the schema's default `role` (`user`) and never writes `role` on
 refresh — it touches `username`/`password`/`verified` only, and returns the existing row otherwise
 (`backend/services/localDevLoginService.ts:56-68`) — so a capture of any `ProtectedRoute requireAdmin`
-route (`frontend/src/v2/V2App.tsx:324-360`: `/v2/dev/api`, `/v2/admin/*`, the global integrations
+route (`frontend/src/v2/V2App.tsx`: `/v2/dev/pod-context`, `/v2/admin/*`, the global integrations
 page) comes back as a faithful picture of the permission notice —
 **"Admin access required. You do not have permission to view this page."**
 (`frontend/src/components/ProtectedRoute.tsx:59`) — while the run line prints
@@ -240,20 +240,19 @@ makes an evidence capture worth less than no capture.
 
 **A subject with no `id` or test hook is selectable by its text — and `--click` can be the only
 thing between you and a passing run that photographed the wrong thing.** Same shape as the
-admin-gate trap in §2: nothing fails, and the evidence is still wrong. `/v2/dev/api`
-(`frontend/src/components/ApiDevPage.tsx`) renders every endpoint as an
-`<Accordion className="api-dev-accordion">` — the class is stable, the instance is not — and MUI
-5.17.1 keeps the collapsed details **mounted** inside `MuiCollapse-hidden` (`visibility: hidden`,
-`aria-expanded="false"`): the example JSON is in the DOM the whole time, 780 characters of
-`textContent` behind 0 characters of `innerText`. Without `--click` the run exits 0, prints no
-`non-2xx`, and captures the summary row alone — the catalog entry's selector dump is 94 characters
-collapsed against 881 opened (measured 2026-09-26). **If the `.txt` looks short, you photographed a
-collapsed card.** Both halves of the selector come from the same `:has-text` in one line:
+admin-gate trap in §2: nothing fails, and the evidence is still wrong. The case that taught
+it was the old `/v2/dev/api` page (removed 2026-11-24), which rendered each endpoint as a
+collapsed MUI accordion. MUI 5.17.1 keeps collapsed details **mounted** inside
+`MuiCollapse-hidden` (`visibility: hidden`, `aria-expanded="false"`), so the text was in the DOM
+the whole time: 780 characters of `textContent` behind 0 characters of `innerText`. Without
+`--click` the run exited 0, printed no `non-2xx`, and captured the summary row alone, 94
+characters collapsed against 881 opened (measured 2026-09-26). **If the `.txt` looks short, you
+photographed a collapsed card.** Take both halves of the selector from the same `:has-text`:
 
 ```bash
-SEL='.api-dev-accordion:has-text("/api/integrations/catalog")'
-node scripts/ui-evidence-shot.mjs --route /v2/dev/api --out /tmp/catalog.png \
-  --click "$SEL .api-dev-accordion-summary" --selector "$SEL" …
+SEL='.some-card:has-text("/api/integrations/catalog")'
+node scripts/ui-evidence-shot.mjs --route /v2/<route> --out /tmp/card.png \
+  --click "$SEL .some-card-summary" --selector "$SEL" …
 ```
 
 `:has-text` matches *ancestors containing* the text, so the endpoint's own path is the cheapest
