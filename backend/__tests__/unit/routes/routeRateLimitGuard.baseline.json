@@ -98,7 +98,6 @@
   "routes/registry/agent-config.ts PATCH /pods/:podId/agents/:name [unlimited]",
   "routes/registry/files.ts GET /pods/:podId/agents/:name/heartbeat-file [unlimited]",
   "routes/registry/files.ts GET /pods/:podId/agents/:name/identity-file [unlimited]",
-  "routes/registry/files.ts POST /pods/:podId/agents/:name/identity-file [unlimited]",
   "routes/registry/files.ts POST /pods/:podId/agents/:name/persona/generate [unlimited]",
   "routes/registry/plugins.ts GET /pods/:podId/agents/:name/plugins [unlimited]",
   "routes/registry/plugins.ts POST /pods/:podId/agents/:name/plugins/install [unlimited]",

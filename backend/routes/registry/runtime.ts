@@ -5,8 +5,6 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 const express = require('express');
 const auth = require('../../middleware/auth');
-const Pod = require('../../models/Pod');
-const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   startAgentRuntime,
@@ -20,11 +18,11 @@ const {
 const {
   getUserId,
   normalizeConfigMap,
-  isGlobalAdminUser,
   buildRuntimeLogFilters,
   resolveGatewayForRequest,
   resolveGatewayForInstallation,
-  userHasPodAccess,
+  getRequestedInstanceId,
+  resolveAuthorizedInstallation,
 } = require('./helpers');
 
 const runtimeRouter = express.Router({ mergeParams: true });
@@ -35,16 +33,6 @@ const runtimeRouteLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
-
-const getRequestedInstanceId = (req: any): string => {
-  const rawInstanceId = req.method === 'GET' ? req.query.instanceId : req.body?.instanceId;
-  if (rawInstanceId && (typeof rawInstanceId === 'object' || typeof rawInstanceId === 'function')) {
-    const error: any = new Error('Invalid instance ID');
-    error.status = 400;
-    throw error;
-  }
-  return String(rawInstanceId || 'default');
-};
 
 const getAuditInstanceId = (req: any): string => {
   try {
@@ -70,37 +58,6 @@ const auditRuntimeRoute = (req: any, res: any, next: any) => {
   next();
 };
 
-// Runtime routes share one authorization boundary before dispatching any
-// adapter action. Use exact installation identity rather than legacy aliases.
-const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, userId }: any) => {
-  const pod = await Pod.findById(podId).lean();
-  if (!pod) {
-    const error: any = new Error('Pod not found');
-    error.status = 404;
-    throw error;
-  }
-  const isAdmin = await isGlobalAdminUser(userId);
-  if (!isAdmin && !userHasPodAccess(pod, userId)) {
-    const error: any = new Error('Access denied');
-    error.status = 403;
-    throw error;
-  }
-  const installation = await AgentInstallation.findOne({
-    agentName: String(name).toLowerCase(), podId, instanceId, status: { $ne: 'uninstalled' },
-  });
-  if (!installation) {
-    const error: any = new Error('Agent installation not found');
-    error.status = 404;
-    throw error;
-  }
-  if (!isAdmin && installation.installedBy?.toString() !== userId.toString()) {
-    const error: any = new Error('Access denied');
-    error.status = 403;
-    throw error;
-  }
-  return installation;
-};
-
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
@@ -120,7 +77,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
     }
     const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: instanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;
@@ -169,7 +126,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
     }
     const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;
@@ -218,7 +175,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
     }
     const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;
@@ -267,7 +224,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
     }
     const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;
@@ -316,7 +273,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
     }
     const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;
@@ -392,7 +349,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const installation = await resolveAuthorizedRuntimeInstallation({
+    const installation = await resolveAuthorizedInstallation({
       podId, name, instanceId: instanceId, userId,
     });
     const effectiveInstanceId = installation.instanceId;

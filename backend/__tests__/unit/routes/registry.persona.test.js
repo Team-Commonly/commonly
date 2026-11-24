@@ -19,6 +19,12 @@ jest.mock('../../../models/AgentProfile', () => ({
   findOne: jest.fn(),
 }));
 
+// The caller installed the agent and is not an admin; the role lookup is the
+// one the installer check reads.
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ role: 'user' }) }) })),
+}));
+
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
@@ -55,6 +61,7 @@ describe('registry persona generator', () => {
       podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
+      installedBy: 'user-1',
     });
     AgentProfile.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
@@ -93,6 +100,7 @@ describe('registry persona generator', () => {
       podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
+      installedBy: 'user-1',
     });
     AgentProfile.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({ name: 'Cuz', purpose: 'Helpful teammate' }),
