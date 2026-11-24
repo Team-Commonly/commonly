@@ -68,7 +68,7 @@ const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
-const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
+const V2PodContextDev = React.lazy(() => import('./components/V2PodContextDev'));
 const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
 const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
@@ -468,7 +468,7 @@ const V2App: React.FC = () => {
                   path="dev/pod-context"
                   element={feature(
                     'Pod Context Dev',
-                    <ProtectedRoute requireAdmin><PodContextDevPage /></ProtectedRoute>,
+                    <ProtectedRoute requireAdmin><V2PodContextDev /></ProtectedRoute>,
                     false,
                   )}
                 />
