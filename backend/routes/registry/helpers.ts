@@ -10,6 +10,7 @@ const { PRESET_DEFINITIONS } = require('./presets');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const { PLACEHOLDER_AGENT_DESCRIPTION } = require('../../services/agentInstallationIdentity');
 const { listeningInvite, snapshotPointer } = require('../../services/installIntroCopy');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -568,6 +569,11 @@ const getRequestedInstanceId = (req: any): string => {
 // matched on its exact instanceId with no fallback to a sibling instance, and
 // an uninstalled row does not count. Errors carry `status` (and `code` for
 // the installer refusal, the same `installer_only` the config PATCH answers).
+//
+// An agent-room or agent-admin pod is private to its members, admins included,
+// the same line getPodById draws (callerMayReadPod): there the admin role
+// counts only for an admin who is a member. agent-dm keeps the admin reach
+// getPodById gives it.
 const resolveAuthorizedInstallation = async ({ podId, name, instanceId, userId }: any) => {
   const pod = await Pod.findById(podId).lean();
   if (!pod) {
@@ -575,7 +581,9 @@ const resolveAuthorizedInstallation = async ({ podId, name, instanceId, userId }
     error.status = 404;
     throw error;
   }
-  const isAdmin = await isGlobalAdminUser(userId);
+  const membersOnly = isPersonalPodType(pod.type) && pod.type !== 'agent-dm';
+  const isAdmin = await isGlobalAdminUser(userId)
+    && (!membersOnly || userHasPodAccess(pod, userId));
   if (!isAdmin && !userHasPodAccess(pod, userId)) {
     const error: any = new Error('Access denied');
     error.status = 403;
