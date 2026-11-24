@@ -33,7 +33,6 @@ const EXCLUDED = {
     RUN_WORKER: 'backend does web and worker (unset means both); backend-2 sets it to 0',
     NATIVE_TURNS_ON_WORKER: 'only meaningful with a separate worker',
     K8S_NAMESPACE: 'agent provisioning into Kubernetes pods',
-    AGENT_PROVISIONER_NODE_POOL: 'agent provisioning into Kubernetes pods',
     AGENT_RUNTIME_SERVICE_ACCOUNT: 'agent provisioning into Kubernetes pods',
     CODEX_BYPASS_LITELLM: 'read only by the Kubernetes agent provisioner',
     AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'the agent computer runs as cluster pods',

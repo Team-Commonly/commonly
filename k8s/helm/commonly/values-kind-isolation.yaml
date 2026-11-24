@@ -1,0 +1,57 @@
+# Isolation profile, layered on values-local.yaml: per-agent provisioning on,
+# a gVisor RuntimeClass, and every NetworkPolicy switch on. Used by
+# .github/workflows/kind-isolation.yml, which installs Calico (so the policies
+# are enforced; kind's default CNI is not the point of the test) and runsc on
+# the node, then proves the fences with scripts/kind-isolation/probe.sh.
+#
+# Nothing here is kind-specific: the RuntimeClass and the policies are standard
+# Kubernetes objects. On GKE, GKE Sandbox ships its own `gvisor` RuntimeClass,
+# so there runtimeClass.gvisor.create stays false.
+#
+#   helm upgrade --install commonly k8s/helm/commonly \
+#     -f k8s/helm/commonly/values.yaml -f k8s/helm/commonly/values-local.yaml \
+#     -f k8s/helm/commonly/values-kind-isolation.yaml -n commonly-local --create-namespace
+
+backend:
+  env:
+    # Kubernetes provisioning on: the backend provisions into this namespace
+    # and uses Redis for its socket adapter, so both paths run under the fences.
+    agentProvisionerK8s: "1"
+
+# The probes reach the backend and the stores directly; no UI is needed.
+frontend:
+  enabled: false
+
+runtimeClass:
+  gvisor:
+    create: true
+    name: gvisor
+    handler: runsc
+
+networkPolicy:
+  ingress:
+    # Stand-in for the ingress controller, so the edge policies have a peer.
+    edge:
+      - podSelector:
+          matchLabels:
+            app: edge-probe
+    backend:
+      enabled: true
+    redis:
+      enabled: true
+    mongodb:
+      enabled: true
+    postgres:
+      enabled: true
+    defaultDeny:
+      enabled: true
+  egress:
+    restrict:
+      enabled: true
+      # The workflow appends the canary address it starts beside the cluster,
+      # which stands in for a metadata server: reachable only from an exempt
+      # component.
+      exceptCidrs:
+        - 169.254.169.254/32
+      exemptComponents:
+        - backup

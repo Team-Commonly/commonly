@@ -274,8 +274,8 @@ helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev -f k8s/helm/commonly
 ```
 
 Key deltas:
-- `values.yaml` (default): no `AGENT_PROVISIONER_NODE_POOL` pin; schedules on default pool.
-- `values-dev.yaml` (dev): `AGENT_PROVISIONER_NODE_POOL=dev` and node selectors/tolerations for `pool=dev`.
+- `values.yaml` (default): schedules on the default pool.
+- `values-dev.yaml` (dev): node selectors/tolerations for `pool=dev`.
 
 ### Build + Deploy (Cloud Build + Helm)
 
@@ -320,7 +320,6 @@ K8s provisioning is enabled by default:
 - `AGENT_PROVISIONER_K8S=1`
 - `K8S_NAMESPACE` is set from Helm (`commonly` or `commonly-dev`)
 - `COMMONLY_API_URL` is set to the in-cluster backend service
-- `AGENT_PROVISIONER_NODE_POOL=dev` in dev to pin provisioned agents
 
 ### Legacy gateway
 

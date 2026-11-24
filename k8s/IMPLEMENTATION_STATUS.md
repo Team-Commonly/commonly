@@ -140,11 +140,7 @@
 - `provisionOpenClawAccount()`: Update moltbot.json in ConfigMap
 - `provisionCommonlyBotAccount()`: Update runtime.json in ConfigMap
 
-**Dynamic Deployment Creation**:
-- `buildAgentDeploymentManifest()`: Generate Deployment YAML
-- Support for `moltbot` (clawdbot-gateway) and `internal` (commonly-bot)
-- Labels, volume mounts, environment variables
-- Resource limits and health probes
+**Dynamic Deployment Creation**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
 
 **Updated**: `backend/services/agentProvisionerService.js`
 - Added `isK8sMode()` mode detection
@@ -176,21 +172,8 @@
   - Empty accounts object
 - Managed by `agentProvisionerServiceK8s.js`
 
-#### 13. ✅ Dynamic Agent Deployment Creation
-- **Implemented in**: `agentProvisionerServiceK8s.js`
-- **`buildAgentDeploymentManifest()`**:
-  - Generates complete Deployment YAML
-  - Moltbot (clawdbot-gateway):
-    - Image: `clawdbot:latest`
-    - Ports: 18789 (gateway), 18790 (bridge)
-    - Volumes: config (ConfigMap), workspace (PVC)
-    - Environment: gateway token, API URL
-  - Internal (commonly-bot):
-    - Image: `node:20-alpine`
-    - Command: `node index.js`
-    - Volumes: agent services, config
-    - Environment: API URL, runtime token
-  - Labels for filtering (agent-type, agent-name, agent-instance)
+#### 13. Dynamic Agent Deployment Creation (removed 2026-11)
+- `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
   - Resource limits (memory, CPU)
 
 ---

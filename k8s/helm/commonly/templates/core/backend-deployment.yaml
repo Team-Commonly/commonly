@@ -496,10 +496,6 @@ spec:
           value: {{ .Values.agentProvisioning.runtimeServiceAccount | default "agent-runtime" | quote }}
         - name: AGENT_PROVISIONER_DOCKER
           value: {{ .Values.backend.env.agentProvisionerDocker | quote }}
-        {{- if .Values.backend.env.agentProvisionerNodePool }}
-        - name: AGENT_PROVISIONER_NODE_POOL
-          value: {{ .Values.backend.env.agentProvisionerNodePool | quote }}
-        {{- end }}
         - name: K8S_NAMESPACE
           value: {{ include "commonly.namespace" . | quote }}
         - name: COMMONLY_API_URL
