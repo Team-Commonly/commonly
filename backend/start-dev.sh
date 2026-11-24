@@ -8,7 +8,8 @@ if [ ! -d "/app/node_modules" ] \
     || [ ! -d "/app/node_modules/@google/generative-ai" ] \
     || [ ! -f "/app/node_modules/.bin/ts-node" ]; then
     echo "Installing backend dependencies (dev)..."
-    npm install --include=dev
+    # @openuidev/lang-core's postinstall sends install telemetry unless this is set.
+    OPENUI_TELEMETRY_DISABLED=1 npm install --include=dev
 else
     echo "Dependencies already present, skipping install"
 fi

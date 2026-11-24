@@ -50,7 +50,7 @@ jobs:
       - uses: latchkey/setup-node@1.0.1
         with:
           node-version: '22'
-      - run: cd backend && npm ci --include=dev
+      - run: cd backend && OPENUI_TELEMETRY_DISABLED=1 npm ci --include=dev
       # Backend service suites exercise the real CLI in a subprocess.
       - run: cd cli && npm ci --include=dev
       - run: cd backend && npx jest --forceExit --shard=${{ matrix.shard }}/3
@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: '22'
       # Frontend typecheck follows shared imports into backend TypeScript.
-      - run: cd backend && npm ci --include=dev
+      - run: cd backend && OPENUI_TELEMETRY_DISABLED=1 npm ci --include=dev
       - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
       - run: cd frontend && npm run typecheck
       - run: cd frontend && npx jest --watchAll=false --forceExit
@@ -78,7 +78,7 @@ jobs:
       - uses: latchkey/setup-node@1.0.1
         with:
           node-version: '22'
-      - run: cd backend && npm ci --include=dev
+      - run: cd backend && OPENUI_TELEMETRY_DISABLED=1 npm ci --include=dev
       - run: cd backend && npm run tsc:check
       - run: cd packages/types && ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
       - run: cd backend && npm run lint:ts
