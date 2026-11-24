@@ -362,7 +362,19 @@ router.post('/external-link', externalLinkCreateRateLimit, auth, qrCodeUpload, r
 });
 
 const requireDeletableLinkId = requireLinkId('id', 'External link not found');
-router.delete('/external-link/:id', auth, requireDeletableLinkId, async (req: AuthReq, res: Res) => {
+// F596: the delete and the QR read were unlimited (baseline rows), and CodeQL
+// flagged both when their lines changed. The delete gets its own bucket at the
+// create budget; the QR read takes the pod by-id read budget.
+const externalLinkDeleteRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.delete('/external-link/:id', externalLinkDeleteRateLimit, auth, requireDeletableLinkId, async (
+  req: AuthReq, res: Res,
+) => {
   try {
     const linkId = req.params?.id;
     const externalLink = await ExternalLink.findById(linkId) as {
@@ -385,7 +397,7 @@ router.delete('/external-link/:id', auth, requireDeletableLinkId, async (req: Au
 });
 
 const requireQrLinkId = requireLinkId('linkId', 'QR code not found');
-router.get('/external-link/:linkId/qrcode', auth, requireQrLinkId, async (req: AuthReq, res: Res) => {
+router.get('/external-link/:linkId/qrcode', podReadRateLimit, auth, requireQrLinkId, async (req: AuthReq, res: Res) => {
   try {
     const { linkId } = req.params || {};
     const link = await ExternalLink.findById(linkId) as {
