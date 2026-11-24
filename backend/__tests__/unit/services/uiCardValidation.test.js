@@ -1,4 +1,5 @@
 const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
+const rev2 = require('../../../config/uiCardCatalogueRevision.rev2.json');
 const { validateAgentCardPayload, UI_CARD_MAX_BYTES } = require('../../../services/uiCardValidation');
 
 const card = (source = 'root = Text("hello")') => ({ ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source });
@@ -56,6 +57,45 @@ describe('untrusted UI card write validation', () => {
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();
     expect(() => validate(card('root = Text("hello")\nunused = Action(@OpenUrl("https://commonly.me"))'))).not.toThrow();
     expect(() => validate(card('root = Text("# hello 🌍")'))).not.toThrow();
+  });
+  // lang-core's parser lifts fenced code out before parsing; the token checks
+  // read the source as written. A fence must never reach the parser.
+  describe('a ``` fence anywhere in the source', () => {
+    const fence = '`'.repeat(3);
+    const hidden = 'root = Card("Login bug", [Text("Fix it"), Source("linear", "2026-11-24T00:00:00.000Z")])';
+    it.each([
+      ['single-quoted', `root = Text('decoy\n${fence}\n${hidden}\n${fence}\n')`],
+      ['double-quoted', `root = Text("decoy\n${fence}\n${hidden}\n${fence}\n")`],
+      ['same line', `root = Text('decoy ${fence} x ${fence}')`],
+      ['unclosed', `root = Text('decoy\n${fence}\n${hidden}')`],
+    ])('is refused under both revisions: %s', (_name, source) => {
+      [card(source), { ...card(source), ...rev2 }].forEach((payload) => {
+        expect(() => validate(payload)).toThrow(expect.objectContaining({ statusCode: 400, message: expect.stringMatching(/fence/) }));
+      });
+    });
+    it('leaves inline backticks in prose alone', () => {
+      expect(validate(card('root = Text("run `npm test`, then ``ship``")'))).toBe(false);
+    });
+  });
+  // The parser strips // comments; lang-core 1.0.1's lexer doesn't, so a quote
+  // inside one would open a string for the checks and nothing for the parser.
+  describe('a // comment outside quotes', () => {
+    const hidden = 'root = Card("Login bug", [Text("Fix it"), Source("linear", "2026-11-24T00:00:00.000Z")])';
+    it.each([
+      ['after a token', `a = Text("a") X // '\n${hidden}\nz = Text("c") // '`],
+      ['after a comma', `a = Text("a"), // '\n${hidden}\nz = Text("c") // '`],
+      ['double-quote variant', `a = Text("a") X // "\n${hidden.replace(/"/g, "'")}\nz = Text('c') // "`],
+      ['hiding an action', 'a = Text("a") X // \'\nroot = Text("hi")\nx = Action(@OpenUrl("https://evil.example/x"))\nz = Text("c") // \''],
+      ['trailing', 'root = Text("hello") // note'],
+    ])('is refused under both revisions: %s', (_name, source) => {
+      [card(source), { ...card(source), ...rev2 }].forEach((payload) => {
+        expect(() => validate(payload)).toThrow(expect.objectContaining({ statusCode: 400 }));
+      });
+    });
+    it('leaves // inside quoted prose and links alone', () => {
+      expect(validate(card('root = Text("a // b, and \'c // d\'")'))).toBe(false);
+      expect(validate(card('root = Link("Docs", "https://commonly.me/docs", "text")'))).toBe(false);
+    });
   });
   it.each(['#', '🌍', '`', '\\'])('rejects source characters omitted by tokenization: %s', (suffix) => {
     expect(() => validate(card('root = Text("hello")' + suffix))).toThrow('unsupported source characters');

@@ -46,16 +46,23 @@ export function cardRevision(payload: { catalogId?: unknown; catalogRev?: unknow
 export function parseCard(source: unknown, rev: CardRevision = CARD_REVISIONS[0]): ElementNode | null {
   const { names, parser, validate } = rev;
   if (typeof source !== 'string' || new TextEncoder().encode(source).length > 32 * 1024) return null;
+  // lang-core's parser lifts the code out of a ``` fence before it parses, so
+  // the program it renders could differ from the one checked below.
+  if (source.includes('```')) return null;
   try {
-    // The forgiving lexer drops characters such as # outside quoted prose.
-    let quote = ''; let escaped = false;
+    // The forgiving lexer drops characters such as # outside quoted prose. A
+    // // comment outside quotes is refused too: the parser strips it, and a
+    // lexer that doesn't would read a quote inside it as opening a string.
+    let quote = ''; let escaped = false; let previous = '';
     for (const c of source) {
       if (quote) {
         if (escaped) escaped = false;
         else if (c === '\\') escaped = true;
         else if (c === quote) quote = '';
       } else if (c === '"' || c === "'") quote = c;
+      else if (c === '/' && previous === '/') return null;
       else if (!/[a-zA-Z0-9_$@\s()[\]{},:=.?!+*/%<>|&-]/.test(c)) return null;
+      previous = quote ? '' : c;
     }
     const tokens = tokenize(source);
     const pairs = tokenize('()[]{}');
