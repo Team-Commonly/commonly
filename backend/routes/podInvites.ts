@@ -9,14 +9,14 @@ import express from 'express';
 import crypto, { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import User from '../models/User';
-import { assertInstalledAgentMayJoinPod } from '../services/outsiderGrantAgentJoinPolicy';
+import { redeemPodInvite } from '../services/podInviteRedemption';
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
 const { PodInvite, INVITE_SOURCES } = require('../models/PodInvite');
-const { HUMAN_FILTER, internalAccountExclusion } = require('../services/userClassification');
 
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
@@ -32,6 +32,7 @@ const inviteRateLimitKey = (req: any) => {
 };
 
 const inviteReadRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-invite-read' }),
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
@@ -41,6 +42,7 @@ const inviteReadRateLimit = rateLimit({
 });
 
 const inviteWriteRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-invite-write' }),
   windowMs: 60_000,
   max: 20,
   standardHeaders: true,
@@ -250,62 +252,10 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
-    const invite = await PodInvite.findOne({ token: req.params.token });
-    if (!invite || !invite.isUsable()) {
-      return res.status(404).json({ msg: 'Invite invalid or expired' });
-    }
-    const pod = await Pod.findById(invite.podId);
-    if (!pod) return res.status(404).json({ msg: 'Pod no longer exists' });
-    const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
-    if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
-      return res.status(403).json({
-        code: 'dm_membership_refused',
-        msg: 'DM pods are 1:1 — invite links cannot grant third-party access. Start a new DM instead.',
-      });
-    }
-    const alreadyMember = (pod.members || []).some(
-      (m: any) => String(m?._id || m) === String(userId),
-    );
-    if (!alreadyMember) {
-      const joiningUser = await User.findById(userId).select('isBot botType botMetadata').lean();
-      if (joiningUser?.isBot || joiningUser?.botType) {
-        try {
-          await assertInstalledAgentMayJoinPod(
-            pod._id, joiningUser.botMetadata?.agentName, joiningUser.botMetadata?.instanceId,
-          );
-        } catch (joinError: any) {
-          if (joinError?.code === 'outsider_grant_non_native_agent_join') {
-            return res.status(403).json({ code: joinError.code, message: joinError.message });
-          }
-          throw joinError;
-        }
-      }
-      pod.members.push(userId);
-      pod.updatedAt = new Date();
-      await pod.save();
-      // F183: best-effort PG mirror write; never fails the redemption.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      await require('../services/pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(userId));
-      // A token use by its author, an existing member, a bot or an internal
-      // account is not the outside team's second-person conversion.
-      if (String(invite.createdBy) !== String(userId)) {
-        try {
-          const outsidePerson = await User.exists({
-            _id: userId, ...HUMAN_FILTER, ...internalAccountExclusion(),
-          });
-          if (outsidePerson) await PodInvite.updateOne({
-            _id: invite._id, firstTeammateJoinedAt: { $exists: false },
-          }, { $set: { firstTeammateJoinedAt: new Date() } });
-        } catch (error) {
-          // Membership has already been committed. Telemetry cannot undo a
-          // successful join or turn it into a misleading client error.
-          console.warn('[invite-funnel] conversion write failed:', (error as Error).message);
-        }
-      }
-    }
-    invite.useCount += 1;
-    invite.lastUsedAt = new Date();
-    await invite.save();
+    // Shared with email verification (F577), so both apply the same checks.
+    const redeemed = await redeemPodInvite(req.params.token, userId);
+    if (!redeemed.ok) return res.status(redeemed.status).json(redeemed.body);
+    const { pod, alreadyMember } = redeemed;
     const updated = await Pod.findById(pod._id)
       .populate('createdBy', 'username profilePicture')
       .populate(podMemberPopulate('username profilePicture isBot'));

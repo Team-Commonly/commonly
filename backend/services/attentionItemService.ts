@@ -155,10 +155,12 @@ const peopleThisAgentIsAnswering = async (
   try {
     const author = await User.findById(authorId).select('isBot username botMetadata').lean();
     if (!author?.isBot) return new Set<string>();
-    return await humansAnsweredBy({
+    const agentName = String(author.botMetadata?.agentName || author.username || '');
+    const instanceId = String(author.botMetadata?.instanceId || 'default');
+    const answered = await humansAnsweredBy({
       podId,
-      agentName: String(author.botMetadata?.agentName || author.username || ''),
-      instanceId: String(author.botMetadata?.instanceId || 'default'),
+      agentName,
+      instanceId,
       replyToMessageId: message?.reply_to_message_id ?? message?.replyToMessageId,
       // Carried from the post, never stored on the row (agentAnswerService).
       // Only the PG write carries it: the Mongo fallback's post-save hook
@@ -166,6 +168,16 @@ const peopleThisAgentIsAnswering = async (
       // addressed answer still opens a row. That fails toward showing an ask.
       answeringMessageId: message?.answeringMessageId,
     });
+    // F578: a first-contact greeting @names the person it is for so their
+    // plain answer reaches the agent, and its one question invites them to
+    // talk; nothing waits on them. Only the first-contact run's own posts
+    // carry greetedUserId (from its event, never the model), handed through
+    // like answeringMessageId and never stored. Anyone else the greeting
+    // names, and every post from any other run, keeps its row. Not part of
+    // agentAnswerService: a greeting is not an answer, and must not complete
+    // the onboarding step.
+    if (message?.greetedUserId) answered.add(String(message.greetedUserId));
+    return answered;
   } catch (error) {
     console.warn('[attention] answer check failed; recording the mention:', (error as Error).message);
     return new Set<string>();

@@ -1,0 +1,46 @@
+# Overrides deploy/vm/docker-compose.yml for the two-worker proof (run.sh).
+# Never used on a serving VM: it adds a local MongoDB, swaps LiteLLM for a
+# stub model, gives each backend process one CPU (as on the 2-vCPU VM, where
+# one process pegs one core), and turns off the services the proof doesn't
+# exercise.
+services:
+  mongo:
+    image: mongo:7.0.48
+    restart: unless-stopped
+    networks: [commonly]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Answers every model call after about 3 s, as the D343 load test's stub did.
+  litellm:
+    image: python:3.12-alpine
+    entrypoint: ["python3", "-I", "/stub/llm-stub.py"]
+    command: []
+    volumes:
+      - ../../scripts/vm-two-workers/ci/llm-stub.py:/stub/llm-stub.py:ro
+    healthcheck:
+      start_period: 5s
+
+  backend:
+    cpus: 1
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  backend-2:
+    cpus: 1
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["never"]
+  commonly-bot:
+    profiles: ["never"]
+  cloudflared:
+    profiles: ["never"]
+  pg-backup:
+    profiles: ["never"]

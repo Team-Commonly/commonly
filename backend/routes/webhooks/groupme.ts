@@ -1,6 +1,7 @@
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 const Integration = require('../../models/Integration');
 const registry = require('../../integrations');
 const {
@@ -14,6 +15,7 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 const router = express.Router({ mergeParams: true });
 
 const groupMeWebhookIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-groupme-ip' }),
   windowMs: 60_000,
   max: 3_000,
   standardHeaders: true,
@@ -24,6 +26,7 @@ const groupMeWebhookIpRateLimit = rateLimit({
 });
 
 const groupMeWebhookRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-groupme' }),
   windowMs: 60_000,
   max: 600,
   standardHeaders: true,

@@ -125,6 +125,44 @@ describe('startMcpBridge', () => {
     for (const socket of sockets) socket.destroy();
   });
 
+  test('a server that fails to start frees its session slot', async () => {
+    // A spawn that fails emits 'error' and never 'exit'.
+    const spawnImpl = jest.fn(() => {
+      const child = new EventEmitter();
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.exitCode = null;
+      child.kill = () => {};
+      setImmediate(() => child.emit('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })));
+      return child;
+    });
+    bridge = await startMcpBridge({ servers: echoServers(), spawnImpl });
+    for (let i = 0; i < MAX_LIVE_SESSIONS + 2; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect(await talk(bridge.port, `${bridge.secret} commonly`, '')).toBe('');
+    }
+    expect(spawnImpl).toHaveBeenCalledTimes(MAX_LIVE_SESSIONS + 2);
+  });
+
+  test('a running server that errors keeps its slot until it exits', async () => {
+    const spawnImpl = jest.fn(() => {
+      const child = new EventEmitter();
+      child.pid = 4242;
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.exitCode = null;
+      child.kill = () => {};
+      setImmediate(() => child.emit('error', new Error('pipe broke')));
+      return child;
+    });
+    bridge = await startMcpBridge({ servers: echoServers(), spawnImpl });
+    for (let i = 0; i < MAX_LIVE_SESSIONS + 2; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect(await talk(bridge.port, `${bridge.secret} commonly`, '')).toBe('');
+    }
+    expect(spawnImpl).toHaveBeenCalledTimes(MAX_LIVE_SESSIONS);
+  });
+
   test('an unknown server name gets nothing', async () => {
     const spawnImpl = jest.fn(spawn);
     bridge = await startMcpBridge({ servers: echoServers(), spawnImpl });

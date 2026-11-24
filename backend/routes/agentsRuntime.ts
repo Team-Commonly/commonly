@@ -22,6 +22,7 @@ const MAX_UPSTREAM_STATUS = 599;
 // ESM import shape but has trouble tracing rate-limit middleware through
 // require() returns; using `import` here makes the recognition unambiguous.
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 
 const express = require('express');
@@ -51,6 +52,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
+const { settleIntroOnRequestCheckIn } = require('../services/installIntroOnListen');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -118,6 +120,7 @@ const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConf
 // (IP 3000/60s, then account). `phase4RateLimit` is the whole stack;
 // registering it registers both limiters, in that order.
 const phase4IpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-ip' }),
   windowMs: 60_000,
   max: 3000,
   standardHeaders: true,
@@ -130,6 +133,7 @@ const phase4IpRateLimit = rateLimit({
 });
 
 const phase4AgentRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-token' }),
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -160,6 +164,7 @@ const longPollIpLimit = platformIpRateLimit({
   windowMs: 60_000,
   limit: 3000,
   label: '3000 long-poll reads per 60s per IP',
+  store: new SharedRateLimitStore({ name: 'agents-runtime-long-poll' }),
 });
 
 // /room accepts human sessions and runtime credentials through shared dualAuth.
@@ -645,6 +650,7 @@ router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: an
 // code is the credential, so this route has its own tight per-IP limit, and
 // the service caps redeems per code (one live code per agent).
 const connectCodeIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-connect-code' }),
   windowMs: 10 * 60_000,
   max: 30,
   standardHeaders: true,
@@ -900,6 +906,10 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     // it" true, so it stamps `lastListenedAt` (any other authenticated call
     // does not). Best-effort and throttled; see agentListenerCheckIn.ts.
     recordListenerCheckIn(agentUser?._id, req.agentTokenHash);
+    // F576: on the token's first listen, rewrite the seat's "nothing is
+    // running me yet" intro before any event is claimed, so the first turn
+    // reads the true one. Bounded and never throws.
+    await settleIntroOnRequestCheckIn(req);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     // F237: a driver whose carry fills its prompt names the rows it carries,
     // and gets back only those the server requeued (agentEventService
@@ -1673,7 +1683,10 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
       const owned = renewedOne || await AgentEventService.holdsEvent(entry.eventId, agentName, instanceId);
       return { eventId: entry.eventId, renewedOne, owned };
     }));
-    if (results.some((r) => r.owned)) recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+    if (results.some((r) => r.owned)) {
+      recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+      await settleIntroOnRequestCheckIn(req); // F576, as on /events
+    }
     return res.json({ renewed: results.filter((r) => r.renewedOne).map((r) => r.eventId) });
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);

@@ -29,6 +29,8 @@ the files at mode 0600.
 | Service | Image | Notes |
 |---------|-------|-------|
 | `backend` | `commonly-backend:<tag>` | One container, web and worker together (`RUN_WORKER` unset). Health is `/api/health`. |
+| `redis` | `redis:7.4.12-alpine3.22` | Shared rate-limit counts, and between two backends the socket.io adapter and the process bus. Stores nothing, password from `.env`. |
+| `backend-2`, `api-lb` | the backend image; `nginx:1.28.3-alpine3.23` | A second, web-only backend and the proxy in front of both, under the `two-workers` profile, off until rolled: [two-backend-workers.md](./two-backend-workers.md). |
 | `frontend` | `commonly-frontend:<tag>` | The prod nginx image, serving static files only. |
 | `postgres` | `postgres:16.15-alpine3.24` | Chat, the PG mirror, and LiteLLM's `litellm` schema, in the `postgres-data` volume. |
 | `litellm` | `ghcr.io/berriai/litellm:v1.106.2` | The chart's config, rendered on each deploy. At boot it runs the chart's injection-guard check, word for word, before LiteLLM starts. The image must match the chart's `litellm.image`, which CI's check runs against. |
@@ -75,8 +77,9 @@ Configure the tunnel's public hostnames on the Cloudflare side:
 
 - **No staging, no HA.** There is one VM and one backend. A deploy restarts the
   backend, so expect a gap of about a minute.
-- **No Redis.** The backend uses Redis only when Kubernetes agent provisioning
-  is on. With one process, every socket lives in that process.
+- **Redis is small and empty.** It holds rate-limit windows and pub/sub only,
+  never stored. The backend serves through a Redis outage, counting limits in
+  memory.
 - **The Kubernetes-only features are off.** These are agent provisioning into
   pods (cloud-codex, gateway agents), the agent computer, the hosted sandbox,
   the ChatGPT account rotator and Codex CLI sidecar on LiteLLM, the ops-runner

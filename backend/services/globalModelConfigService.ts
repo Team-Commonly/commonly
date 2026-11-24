@@ -1,4 +1,5 @@
 import SystemSetting from '../models/SystemSetting';
+import { publish, subscribe } from './processBus';
 import { agentDefaultModel, defaultChatModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
@@ -74,6 +75,13 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
 const CACHE_TTL_MS = 15000;
 let cachedConfig: GlobalModelConfig | null = null;
 let cachedAt = 0;
+// A save drops every other process's copy (processBus); the TTL above bounds
+// one that missed the message.
+const CHANGED_CHANNEL = 'global-model-config-changed';
+subscribe(CHANGED_CHANNEL, () => {
+  cachedConfig = null;
+  cachedAt = 0;
+});
 const LLM_SERVICE_PROVIDERS = new Set(['auto', 'gemini', 'litellm', 'openrouter']);
 
 const normalizeProvider = (value: unknown): string => {
@@ -367,6 +375,7 @@ class GlobalModelConfigService {
 
     cachedConfig = sanitized;
     cachedAt = Date.now();
+    publish(CHANGED_CHANNEL);
     return GlobalModelConfigService.getConfig({ includeSecrets: false, forceRefresh: false });
   }
 }

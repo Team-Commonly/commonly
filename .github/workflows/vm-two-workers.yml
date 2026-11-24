@@ -1,0 +1,58 @@
+name: VM two backend workers
+
+# The single-VM compose's two-worker profile (docs/deployment/two-backend-workers.md),
+# proven on a free runner: api-lb's nginx config against stand-in backends, then
+# the real backend image built from this commit, one process against two, with
+# the limiter and Redis-loss checks. Nothing here touches a serving VM or holds
+# a real credential.
+on:
+  pull_request:
+    paths:
+      - 'deploy/vm/docker-compose.yml'
+      - 'deploy/vm/api-lb/**'
+      - 'scripts/vm-two-workers/**'
+      - 'backend/config/socket.ts'
+      - 'backend/config/sharedRedisRequired.ts'
+      - 'backend/services/processBus.ts'
+      - 'backend/middleware/sharedRateLimitStore.ts'
+      - 'backend/services/backgroundWorkerStart.ts'
+      - '.github/workflows/vm-two-workers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-two-workers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lb-smoke:
+    name: api-lb smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/vm-two-workers/lb-smoke.sh
+
+  stack:
+    name: one vs two backends (load, limits, Redis loss)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the backend image
+        run: docker build backend -t ci.local/commonly-backend:proof
+      - name: Run the proof
+        env:
+          IMAGE: ci.local/commonly-backend:proof
+          KEEP_LOGS: ${{ runner.temp }}/stack.log
+        run: bash scripts/vm-two-workers/ci/run.sh
+      - name: Keep the stack log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-two-workers-stack-log
+          path: ${{ runner.temp }}/stack.log
+          if-no-files-found: ignore
+          retention-days: 7

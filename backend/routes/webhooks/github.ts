@@ -1,7 +1,9 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import express from 'express';
+import type { Store } from 'express-rate-limit';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 import { boundPodForGithubEvent, githubLocation } from '../../services/githubGigService';
 import GithubGigDelivery from '../../models/GithubGigDelivery';
 import { eventHandlers } from '../../services/installable/eventHandlers';
@@ -23,7 +25,10 @@ export const verifyGithubGigSignature = (body: unknown, signature: unknown, secr
   return given.length === expected.length && timingSafeEqual(given, expected);
 };
 
-export const createGithubGigRateLimit = (max = 3_000) => rateLimit({
+// `store` is optional so a test can build its own small limiter in memory;
+// the one the route mounts counts in the shared store, once per process.
+export const createGithubGigRateLimit = (max = 3_000, store?: Store) => rateLimit({
+  ...(store ? { store } : {}),
   windowMs: 60_000,
   max,
   standardHeaders: false,
@@ -35,7 +40,7 @@ export const createGithubGigRateLimit = (max = 3_000) => rateLimit({
     res.status(signed ? 429 : 401).end();
   },
 });
-const githubGigRateLimit = createGithubGigRateLimit();
+const githubGigRateLimit = createGithubGigRateLimit(3_000, new SharedRateLimitStore({ name: 'webhook-github-gig' }));
 
 router.post('/', githubGigRateLimit, (req, res, next) => {
   // Verify on raw bytes before parsing, looking up a binding, or claiming a

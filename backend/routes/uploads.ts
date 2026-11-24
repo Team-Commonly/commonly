@@ -19,6 +19,7 @@
 // ADR-002 Phase 1b: ESM import (not require) so CodeQL's js/missing-rate-limiting
 // query recognises the middleware on the mint route.
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { createHash } from 'crypto';
 import path from 'path';
 import jwt from 'jsonwebtoken';
@@ -203,6 +204,7 @@ const uploadSingle = (field: string) => (req: AuthReq, res: Res, next: (err?: un
 // middleware on the route so CodeQL's `js/missing-rate-limiting` query sees it
 // (the query only recognises the limiter when it precedes other middleware).
 const mintRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'uploads-mint' }),
   windowMs: 60_000,
   max: 30,
   standardHeaders: true,
@@ -331,6 +333,7 @@ const handleUpload = async (
 };
 
 const uploadCredentialRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'uploads-credential' }),
   windowMs: 15 * 60_000,
   max: 6000,
   standardHeaders: true,
@@ -339,6 +342,7 @@ const uploadCredentialRateLimit = rateLimit({
 });
 
 const uploadRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'uploads-upload' }),
   windowMs: 15 * 60_000,
   max: 60,
   standardHeaders: true,

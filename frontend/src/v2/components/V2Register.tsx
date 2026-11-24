@@ -59,6 +59,11 @@ const V2Register: React.FC = () => {
   // //host through, and the post-signup navigate then threw instead of landing.
   const nextPath = safeNextPath(searchParams.get('next')) || undefined;
   const loginHref = nextPath ? `/v2/login?next=${encodeURIComponent(nextPath)}` : '/v2/login';
+  // F577: the pod invite this sign-up came from. A team-gated instance can't
+  // sign the person in until the mailbox is verified, often in another tab or
+  // later, so the server keeps it on the account and redeems it on verify.
+  // Matched on the path alone: safeNextPath keeps a query or fragment.
+  const podInvite = /^\/v2\/invite\/([a-f0-9]{32})\/?$/.exec((nextPath || '').split(/[?#]/)[0])?.[1];
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Which fields the error is about: an invitation error is about the code,
@@ -112,6 +117,7 @@ const V2Register: React.FC = () => {
         signupSource: readFirstTouchSource(),
         // The language they are reading, so Scout's welcome is stored in it (TASK-550).
         locale: i18n.language === 'zh-CN' ? 'zh-CN' : 'en',
+        ...(podInvite ? { podInvite } : {}),
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');

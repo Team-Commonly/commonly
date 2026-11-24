@@ -25,6 +25,7 @@ import express from 'express';
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query recognizes
 // the limiter (same pattern as routes/credentials.ts and routes/messages.ts).
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import { Types } from 'mongoose';
@@ -52,6 +53,7 @@ const router = express.Router();
 // per spawn, plus renewals — so the cap is looser than the human surface and
 // still far above any honest cadence.
 const spawnCredentialRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'spawn-credentials' }),
   windowMs: 60_000,
   max: 240,
   standardHeaders: true,

@@ -266,6 +266,10 @@ interface PostMessageOptions {
   // the native runtime's trigger. Read by the answer rule (agentAnswerService)
   // only. Never stored and never a reply edge, so an answer is not threaded.
   answeringMessageId?: string | null;
+  // Server-set, never model-set (F578): the person a first-contact run's
+  // greeting is for. Handed to the attention writer, never stored, so the
+  // greeting's @address opens no needs-you row for them.
+  greetedUserId?: string | null;
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
@@ -321,6 +325,7 @@ interface PostTargetOptions {
   skipSummaryPersistence?: boolean;
   noOutboundRelay?: boolean;
   answeringMessageId?: string | null;
+  greetedUserId?: string | null;
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
@@ -1391,6 +1396,7 @@ class AgentMessageService {
       installationConfig = null,
       noOutboundRelay = false,
       answeringMessageId,
+      greetedUserId = null,
       authorKind = null,
       failureNotice = false,
       personWaiting = false,
@@ -2032,6 +2038,7 @@ class AgentMessageService {
       threadRootId,
       noOutboundRelay,
       answeringMessageId,
+      greetedUserId,
       threadIsDeliberate,
       inferAnswerThread,
       authorKind,
@@ -2129,6 +2136,7 @@ class AgentMessageService {
       skipSummaryPersistence = false,
       noOutboundRelay = false,
       answeringMessageId,
+      greetedUserId = null,
       threadIsDeliberate = false,
       inferAnswerThread = false,
       authorKind = null,
@@ -2215,10 +2223,18 @@ class AgentMessageService {
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
             authorKind?: 'kernel' | null,
             contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null,
-            topLevelAnswer?: boolean,
+            topLevelAnswer?: boolean, greetedUserId?: string | null,
           ): Promise<Record<string, unknown>>;
         };
-        const newMessage = contract
+        // Only a greeting carries greetedUserId, so every other post keeps
+        // the shorter calls below.
+        const newMessage = greetedUserId
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
+            false, greetedUserId,
+          )
+          : contract
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,

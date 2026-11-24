@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 const router = express.Router();
 const DiscordService = require('../../services/discordService');
 const DiscordIntegration = require('../../models/DiscordIntegration');
@@ -14,6 +15,7 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 // webhook_id is supplied by the caller before signature verification, so keep
 // a coarse Cloudflare-aware IP ceiling ahead of the per-webhook bucket.
 const discordWebhookIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-discord-ip' }),
   windowMs: 60_000,
   max: 3_000,
   standardHeaders: true,
@@ -24,6 +26,7 @@ const discordWebhookIpRateLimit = rateLimit({
 });
 
 const discordWebhookRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-discord' }),
   windowMs: 60_000,
   max: 600,
   standardHeaders: true,
@@ -49,18 +52,24 @@ export const verifyDiscordWebhookRequest = (req: any): boolean => {
   });
 };
 
+// Before the per-webhook limiter: webhook_id is the caller's word, so only a
+// signed delivery may spend that webhook's budget. Verification is a local
+// Ed25519 check against one key, and the IP ceiling above already bounds it.
+const requireDiscordSignature = (req: any, res: any, next: () => void) => {
+  if (!verifyDiscordWebhookRequest(req)) {
+    return res.status(401).json({ error: 'Invalid Discord signature' });
+  }
+  return next();
+};
+
 // Discord webhook endpoint
-router.post('/', discordWebhookIpRateLimit, discordWebhookRateLimit, async (req: any, res: any) => {
+router.post('/', discordWebhookIpRateLimit, requireDiscordSignature, discordWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const event = req.body;
 
     if (!event || typeof event !== 'object') {
       return res.status(400).json({ error: 'Invalid Discord event' });
-    }
-
-    if (!verifyDiscordWebhookRequest(req)) {
-      return res.status(401).json({ error: 'Invalid Discord signature' });
     }
 
     // Handle Discord webhook verification

@@ -1032,6 +1032,13 @@ interface DispatchContext {
    */
   answeringMessageId?: string;
   /**
+   * F578: the person a first-contact run greets, from the event, never from
+   * the model. Set only on a first_contact run, and carried on that run's own
+   * posts, so the greeting's @address opens no needs-you row for them. Like
+   * answeringMessageId it reaches the attention writer and is never stored.
+   */
+  greetedUserId?: string;
+  /**
    * The thread this turn answers in. Every post the turn makes carries it, so
    * a mention inside a thread gets its answer in that thread (TASK-026), and a
    * top-level @mention in a shared pod gets its answer in that message's own
@@ -1442,6 +1449,7 @@ export async function dispatchTool(
           // bridge appears between this check and message storage.
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          greetedUserId: ctx.greetedUserId,
           threadRootId: postThreadRootId,
           runId: ctx.runId,
           personWaiting: Boolean(ctx.personWaiting),
@@ -2993,6 +3001,9 @@ export async function runAgent(
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
     answeringMessageId: claimMessageId || undefined,
+    greetedUserId: triggerType === 'first_contact'
+      ? String((trigger.payload as { userId?: unknown } | null)?.userId || '') || undefined
+      : undefined,
     answeringThreadRootId: await settleAnswerThread(trigger, podType, podId),
     triggerThreadRootId: threadRootOfTrigger(trigger.payload),
   };
@@ -3909,6 +3920,7 @@ export async function runAgent(
             metadata: { source: 'native-runtime', fallback: true },
             noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
             answeringMessageId: dispatchCtx.answeringMessageId,
+            greetedUserId: dispatchCtx.greetedUserId,
             threadRootId: dispatchCtx.answeringThreadRootId ?? null,
             runId,
             runPodId: String(podId),

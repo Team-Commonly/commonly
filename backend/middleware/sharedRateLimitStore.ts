@@ -112,7 +112,15 @@ export class SharedRateLimitStore implements Store {
 
   private windowMs = 60_000;
 
-  private readonly memory = new MemoryStore();
+  // Built in init(), which express-rate-limit always calls before counting, not
+  // at construction: a route test that mocks express-rate-limit (and so has no
+  // MemoryStore) can still load a route file that constructs this store.
+  private memoryStore: MemoryStore | null = null;
+
+  private get memory(): MemoryStore {
+    if (!this.memoryStore) this.memoryStore = new MemoryStore();
+    return this.memoryStore;
+  }
 
   private readonly getClient: () => RateLimitRedis | null;
 
@@ -200,7 +208,7 @@ export class SharedRateLimitStore implements Store {
   }
 
   shutdown(): void {
-    this.memory.shutdown();
+    this.memoryStore?.shutdown();
   }
 }
 

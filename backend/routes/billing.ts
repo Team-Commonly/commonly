@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { publicAppUrl } from '../utils/publicAppUrl';
 
@@ -14,6 +15,7 @@ const billingService = require('../services/billingService');
 const router = express.Router();
 
 const checkoutLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'billing-checkout' }),
   windowMs: 60 * 60 * 1000,
   limit: 20,
   standardHeaders: 'draft-7',

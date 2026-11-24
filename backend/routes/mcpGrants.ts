@@ -1,5 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { createHash } from 'crypto';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 import { agentFacingRefusal } from '../services/agentFacingRefusal';
@@ -32,6 +33,7 @@ const router = express.Router();
 // budget row, and writes an audit row. Bound that work before auth runs so an
 // unauthenticated caller cannot turn the grant endpoint into a database probe.
 const brokerRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'mcp-grants-broker' }),
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -43,6 +45,7 @@ const brokerRateLimit = rateLimit({
 // can vary Authorization headers, so this early budget keys on the edge IP,
 // not the token header. The route separately applies the token-aware limiter.
 export const pushBodyRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'mcp-grants-push-body' }),
   windowMs: 60_000,
   max: 20,
   standardHeaders: true,

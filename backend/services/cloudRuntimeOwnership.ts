@@ -12,7 +12,8 @@
  *
  * Read by agentRuntimeAuth, the agent socket, the bot event feed and native
  * turns. Cached briefly per identity; clearCloudRuntimeCache drops it when an
- * entitlement or role changes.
+ * entitlement or role changes, on every backend process (processBus); the
+ * 60 s TTL bounds a process that missed the message.
  */
 import { AgentInstallation } from '../models/AgentRegistry';
 import User from '../models/User';
@@ -20,6 +21,7 @@ import AgentIdentityService, { isCloudRuntime } from './agentIdentityService';
 import { installationIdentityFilter, IDENTITY_COLLATION } from './agentInstallationIdentity';
 import { createHash } from 'crypto';
 import { SIGNUP_INSTALLED_AGENT_NAMES } from '../config/native-agents/apps';
+import { publish, subscribe } from './processBus';
 
 export const CLOUD_RUN_REFUSED_REASON = 'cloud_agents_not_entitled';
 
@@ -105,6 +107,10 @@ export async function cloudRuntimeMayRun(agentName: string, instanceId = 'defaul
   return allowed;
 }
 
+const CLEAR_CHANNEL = 'cloud-runtime-cache-clear';
+subscribe(CLEAR_CHANNEL, () => cache.clear());
+
 export function clearCloudRuntimeCache(): void {
   cache.clear();
+  publish(CLEAR_CHANNEL);
 }

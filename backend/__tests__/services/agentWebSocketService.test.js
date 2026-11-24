@@ -246,6 +246,7 @@ describe('agentWebSocketService', () => {
   describe('ping/pong mechanism', () => {
     let mockIo;
     let mockNamespace;
+    let mockLocalRoom;
     let mockSocket;
     let connectionHandler;
 
@@ -261,6 +262,7 @@ describe('agentWebSocketService', () => {
         on: jest.fn(),
       };
 
+      mockLocalRoom = { disconnectSockets: jest.fn() };
       mockNamespace = {
         use: jest.fn((middleware) => {
           // Call middleware with mock socket and next function
@@ -277,7 +279,9 @@ describe('agentWebSocketService', () => {
           }
         }),
         to: jest.fn(() => mockNamespace),
+        in: jest.fn(() => mockNamespace),
         disconnectSockets: jest.fn(),
+        local: { in: jest.fn(() => mockLocalRoom) },
       };
 
       mockIo = {
@@ -305,11 +309,15 @@ describe('agentWebSocketService', () => {
       expect(agentWebSocketService.pingInterval.hasRef()).toBe(false);
     });
 
+    // On this process at once (a Redis outage never delays it), and through
+    // the adapter on the others.
     it('disconnects the identity room when its last installation is removed', () => {
       agentWebSocketService.init(mockIo);
       agentWebSocketService.disconnectIdentity('OpenClaw', 'Default');
 
-      expect(mockNamespace.to).toHaveBeenCalledWith('agent:openclaw:default');
+      expect(mockNamespace.local.in).toHaveBeenCalledWith('agent:openclaw:default');
+      expect(mockLocalRoom.disconnectSockets).toHaveBeenCalledWith(true);
+      expect(mockNamespace.in).toHaveBeenCalledWith('agent:openclaw:default');
       expect(mockNamespace.disconnectSockets).toHaveBeenCalledWith(true);
     });
 
