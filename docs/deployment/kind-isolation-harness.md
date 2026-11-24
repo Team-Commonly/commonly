@@ -63,7 +63,7 @@ allowed client, so a cluster that drops everything fails too.
 ## Running it on your own machine
 
 On an x86_64 Linux host with Docker (the gVisor tarball the workflow pins is x86_64), with kind, kubectl, helm,
-curl and python3 installed. The workflow's steps read three things a plain shell doesn't have: `RUNNER_TEMP`,
+curl, python3 and zstd installed (the workflow unpacks the gVisor tarball with `tar --zstd`). The workflow's steps read three things a plain shell doesn't have: `RUNNER_TEMP`,
 `GITHUB_OUTPUT` and the canary step's outputs. Set them first, then run each step's `run:` block in order, from
 the repo root, with the pins from the workflow's `env:` block exported:
 

@@ -140,7 +140,7 @@
 - `provisionOpenClawAccount()`: Update moltbot.json in ConfigMap
 - `provisionCommonlyBotAccount()`: Update runtime.json in ConfigMap
 
-**Dynamic Deployment Creation**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` account.
+**Dynamic Deployment Creation**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
 
 **Updated**: `backend/services/agentProvisionerService.js`
 - Added `isK8sMode()` mode detection
@@ -173,7 +173,7 @@
 - Managed by `agentProvisionerServiceK8s.js`
 
 #### 13. Dynamic Agent Deployment Creation (removed 2026-11)
-- `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` account.
+- `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
   - Resource limits (memory, CPU)
 
 ---
