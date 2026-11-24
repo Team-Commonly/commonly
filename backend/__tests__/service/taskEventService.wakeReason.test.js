@@ -110,6 +110,18 @@ it('unknown actors retain previous-owner wakes', async () => {
   expect(wake(rows, 'old').payload.wakeReason).toBe('prevAssignee');
 });
 
+// F594: the CLI gives an owned-row wake the addressed grace past its cascade
+// cap, so a later, weaker reason must not demote the wake it folds into.
+it('keeps an owned-row reason when a weaker change folds in', async () => {
+  const original = wake(await change({ assignee: 'old' }), 'old');
+  expect(original.payload.wakeReason).toBe('assignee');
+  const folded = (await change({ assignee: 'new' }, { assignee: 'old' }))
+    .filter((event) => event.instanceId === 'old');
+  expect(folded).toHaveLength(1);
+  expect(String(folded[0]._id)).toBe(String(original._id));
+  expect(folded[0].payload).toMatchObject({ wakeReason: 'assignee', boardChanges: 1 });
+});
+
 it('folds the latest reason into an undrained wake without creating a second wake', async () => {
   const first = await change({}, { assignee: 'old' });
   const original = wake(first, 'old');

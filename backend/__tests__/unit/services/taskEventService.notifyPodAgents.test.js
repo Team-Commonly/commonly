@@ -283,7 +283,8 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(...reassigned);
     const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
     expect(update.$inc).toEqual({ 'payload.boardChanges': 1 });
-    expect(update.$set?.['payload.wakeReason']).toBeUndefined();
+    // Nothing else to set on an agent edit to a non-hosted wake: $set is left out.
+    expect(update.$set).toBeUndefined();
   });
 
   it('never wakes the actor about their own edit', async () => {
