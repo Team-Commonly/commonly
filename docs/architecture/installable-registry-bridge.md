@@ -56,6 +56,18 @@ or no for a fork's new id. `findBackfillForTakeover` lets
   the mark is dropped, and the response is a normal create. That also covers a
   backfill that lands between publish's read and its create (E11000).
 
+Publish and fork also hold an exclusive claim on the id from their admission
+check through both writes (AgentRegistry, then Installable). Without it, two
+concurrent requests for one id both passed admission, the last AgentRegistry
+write won, and Installable kept the other request's doc, with nothing to
+reconcile them. The claim is a `SchedulerHeartbeatLease` document with
+`_id: 'installable-claim:<installableId>'`, acquired by a conditional upsert
+that only matches an expired claim, so a second live request gets E11000 and
+answers 409 `installable_id_busy` without writing. The holder deletes only its
+own claim document (`{ _id, ownerId }`) in a `finally`. A crashed holder's claim
+expires after 30 seconds and the next request takes it over; the TTL index
+removes it eventually. Tests: `__tests__/service/marketplace.idClaim.test.js`.
+
 The avatar mirror changes marked rows only, so an installer's pick never
 restyles a listing another publisher owns.
 
