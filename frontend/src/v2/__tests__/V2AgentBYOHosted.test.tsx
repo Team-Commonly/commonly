@@ -203,6 +203,28 @@ describe('V2AgentBYO — Run it here', () => {
     window.history.pushState({}, '', '/');
   });
 
+  // F575: the "Open Bring your own" button under a person's "Connect an agent
+  // I already use" links here with ?mode=own. They already said they bring
+  // their own, so the page must not ask "Where should it run?" again.
+  test('the connect start\'s button (?mode=own) opens on "Bring your own runtime" even when hosting is available', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    window.history.pushState({}, '', '/v2/agents/byo?pod=p1&mode=own');
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/byo?pod=p1&mode=own']}>
+          <V2AgentBYO />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/hosted/availability'))).toBe(true));
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /get my connect command/i })).toBeInTheDocument();
+    window.history.pushState({}, '', '/');
+  });
+
   // Scout's hosted offer links here with ?mode=hosted: the person asked
   // Commonly to host their agent, so the page opens on "Run it here" and its
   // act is the next click (QA 2026-10-16: the hand-off was text only).

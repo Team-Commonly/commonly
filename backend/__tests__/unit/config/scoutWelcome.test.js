@@ -49,7 +49,11 @@ describe('Scout welcome locale', () => {
     // eslint-disable-next-line global-require
     const { scoutApp } = require('../../../config/native-agents/scout');
     expect(scoutApp.systemPrompt).toContain('For "Show me what you can do", answer in two or three short sentences');
-    expect(scoutApp.systemPrompt).toContain('For "Connect an agent I already use", find out which tool they run');
+    // F575: the app links Bring your own under that message, and the page asks
+    // which tool and which computer, so Scout points there instead of asking.
+    expect(scoutApp.systemPrompt).toContain('For "Connect an agent I already use", the app has already put a button under their message');
+    expect(scoutApp.systemPrompt).toContain('so ask neither');
+    expect(scoutApp.systemPrompt).not.toContain('find out which tool they run');
     expect(scoutApp.systemPrompt).toContain('For "Start a pod for a project", if they have not named a project, do not ask what it is');
   });
 

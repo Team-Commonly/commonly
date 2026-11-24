@@ -329,6 +329,9 @@ const V2AgentBYO: React.FC = () => {
       // ?mode=hosted comes from Scout's "Run it here" button: the person
       // already asked Commonly to host their agent.
       hosted: params.get('mode') === 'hosted',
+      // ?mode=own comes from the button under a person's "Connect an agent I
+      // already use": they already chose their own agent (F575).
+      own: params.get('mode') === 'own',
       // ?from=card comes from an approved connect card: the person already
       // chose their own agent, its name and its pod. ?adapter= is the tool
       // they told the proposer they run.
@@ -497,7 +500,7 @@ const V2AgentBYO: React.FC = () => {
   const [chosenMode, setMode] = useState<'hosted' | 'byo' | 'machine' | null>(() => {
     if (prefill.hosted) return 'hosted';
     if (prefill.machine) return 'machine';
-    return prefill.name ? 'byo' : null;
+    return prefill.name || prefill.own ? 'byo' : null;
   });
   const [hosted, setHosted] = useState<{ agentName: string; podId: string; ready?: boolean } | null>(null);
   // Walk 4 (2026-10-16): a stranger who arrived from a "Run it here" button

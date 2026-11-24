@@ -209,7 +209,9 @@ describe('Scout onboarding knowledge', () => {
   // the card never came.
   test('proposes the connect card once the tool and a supported OS are known, however the person arrived', () => {
     expect(prompt).toMatch(/Once they have named Claude Code or Codex and an OS on that list, propose the card in that same reply/);
-    expect(prompt).toMatch(/then propose the connect card when the card rule below allows it/);
+    // F575: under the welcome button Scout points to Bring your own instead of
+    // asking, but a person who names both anyway still gets the card.
+    expect(prompt).toMatch(/If they name Claude Code or Codex and their OS anyway, the card rule below still applies/);
     expect(prompt).toMatch(/propose the card in that same reply, whether they came from the welcome button or asked in their own words/);
     expect(prompt).toMatch(/Do not type out the Terminal steps, and do not ask whether they want it set up, in its place/);
   });
