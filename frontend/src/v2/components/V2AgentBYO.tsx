@@ -888,8 +888,12 @@ const V2AgentBYO: React.FC = () => {
     let cancelled = false;
     void readYourAgents(podId).then((yours) => { if (!cancelled) setYourAgents(yours); });
     return () => { cancelled = true; };
+  // podId is a dep so a pod change cancels a refresh still in flight, whose
+  // answer would replace the new pod's list. A pod change alone reads nothing
+  // here: `cleared` needs a result that was open on the run before; the mount
+  // chain reads the new pod.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultOpen]);
+  }, [resultOpen, podId]);
   const yourAgentRows = yourAgents?.podId === podId ? yourAgents.rows : [];
 
   // F370 #8: while the chosen harness shows as missing on the chosen computer,

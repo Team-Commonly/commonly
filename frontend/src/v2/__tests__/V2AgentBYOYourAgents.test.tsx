@@ -319,4 +319,40 @@ describe('BYO page lists the agents you already connected here (F579)', () => {
       jest.useRealTimers();
     }
   });
+
+  test('a refresh still in flight when the pod changes does not overwrite the new pod\'s list', async () => {
+    const OTHER = 'bb02';
+    podList = [...pods, { _id: OTHER, name: 'Side', type: 'chat' }];
+    let reads = 0;
+    let answerLateA;
+    rosterReply = (podId) => {
+      if (podId === OTHER) {
+        return Promise.resolve({ data: { agents: [byo({ name: 'side-codex', connection: { state: 'never', lastSeenAt: null } })] } });
+      }
+      reads += 1;
+      // The first read of POD answers; the refresh after Install another hangs until released.
+      return reads === 1
+        ? Promise.resolve({ data: { agents: [byo({ name: 'sam-claude', connection: { state: 'connected', lastSeenAt: NOW } })] } })
+        : new Promise((resolve) => { answerLateA = resolve; });
+    };
+    axios.post.mockImplementation((url) => {
+      if (/runtime-tokens/.test(url)) return Promise.resolve({ data: { token: 'cm_agent_new' } });
+      return Promise.resolve({ data: { ok: true } });
+    });
+    renderAt();
+    await screen.findByTestId('byo-your-agents');
+    fireEvent.click(await formReady());
+    await screen.findByText(/your connect command for/i);
+    fireEvent.click(screen.getByRole('button', { name: /install another/i }));
+    await waitFor(() => expect(answerLateA).toBeDefined());
+    fireEvent.change(await screen.findByRole('combobox', { name: /pod it joins/i }), { target: { value: OTHER } });
+    await waitFor(() => expect(screen.getByTestId('byo-your-agent')).toHaveTextContent('side-codex'));
+    await act(async () => {
+      answerLateA({ data: { agents: [byo({ name: 'sam-claude', connection: { state: 'connected', lastSeenAt: NOW } })] } });
+    });
+    expect(screen.getByTestId('byo-your-agent')).toHaveTextContent('side-codex');
+    // The pod change alone is read once, by the mount chain; the refresh effect adds none.
+    expect(axios.get.mock.calls.filter(([url]) => url === `/api/registry/pods/${OTHER}/agents`)).toHaveLength(1);
+    expect(reads).toBe(2);
+  });
 });
