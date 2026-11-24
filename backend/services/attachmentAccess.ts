@@ -127,27 +127,61 @@ export async function canReadAttachment(
   // absolute `https://api-dev.commonly.me/api/uploads/<f>`, or older
   // `http://...` forms. A substring match on the URL fragment catches all of
   // them without needing a write-time normalization migration.
-  const profileUser = await User.findOne({
-    profilePicture: { $regex: urlRegex },
-  })
-    .select('_id')
-    .lean();
-  if (profileUser) return true;
+  //
+  // Any account can write any string into its own profilePicture, so a
+  // reference alone says nothing about whether the file may be shown. For a
+  // pod-scoped file (File.podId set) only the uploader's own profilePicture
+  // counts: they may publish their own upload as an avatar, but nobody else's
+  // reference opens a pod file to non-members. Un-scoped files (avatar
+  // uploads, File.podId null) and files with no File row are already served
+  // to anyone by the GET route, so any reference keeps granting there — that
+  // is what lets other people see an avatar, including an agent's avatar
+  // that its installer uploaded.
+  const profileQuery = fileDoc?.podId
+    ? (fileDoc.uploadedBy
+      ? { _id: fileDoc.uploadedBy, profilePicture: { $regex: urlRegex } }
+      : null)
+    : { profilePicture: { $regex: urlRegex } };
+  if (profileQuery) {
+    const profileUser = await User.findOne(profileQuery)
+      .select('_id')
+      .lean();
+    if (profileUser) return true;
+  }
 
   // Fan-out over referencing posts. `findOne` would arbitrarily pick one — if
   // it picked a pod-scoped post the viewer can't see, a separate public post
   // granting access would be missed. Fetching a bounded batch and checking
   // membership against every scoped podId is both correct and O(2 queries).
-  const posts = await Post.find({
+  //
+  // For a pod-scoped file, a reference counts only while its author could read
+  // the file themselves: the uploader, or a current member of File.podId. A
+  // member forwarding the file elsewhere keeps working; a reference written by
+  // someone outside the pod, or by a member who has since left, grants nothing.
+  const scopedFile = fileDoc?.podId ? fileDoc : null;
+  let posts: Array<{ podId?: unknown; userId?: unknown }> = await Post.find({
     $or: [
       { image: urlFragment },
       { image: fileName },
       { content: { $regex: urlRegex } },
     ],
   })
-    .select('_id podId')
+    .select(scopedFile ? '_id podId userId' : '_id podId')
     .limit(POST_SCAN_LIMIT)
     .lean();
+  let messageRefs = scopedFile
+    ? await findMessageRefsReferencingFile(urlFragment)
+    : (await findMessagePodsReferencingFile(urlFragment)).map((podId) => ({ podId, userId: null }));
+
+  if (scopedFile && (posts.length > 0 || messageRefs.length > 0)) {
+    const canAuthorRead = await fileReadersAmong(
+      scopedFile,
+      [...posts.map((p) => p.userId), ...messageRefs.map((m) => m.userId)],
+    );
+    posts = posts.filter((p) => canAuthorRead(p.userId));
+    messageRefs = messageRefs.filter((m) => canAuthorRead(m.userId));
+  }
+
   if (posts.length > 0) {
     if (posts.some((p: { podId?: unknown }) => !p.podId)) return true;
     const scopedPodIds = posts
@@ -161,7 +195,7 @@ export async function canReadAttachment(
     }
   }
 
-  const messagePodIds = await findMessagePodsReferencingFile(urlFragment);
+  const messagePodIds = [...new Set(messageRefs.map((m) => String(m.podId)))];
   if (messagePodIds.length > 0) {
     const member = await Pod.findOne({ _id: { $in: messagePodIds }, members: userId })
       .select('_id')
@@ -172,6 +206,60 @@ export async function canReadAttachment(
   return false;
 }
 
+const UPLOAD_REF_RE = /\/api\/uploads\/([A-Za-z0-9._-]{1,128})/g;
+const MAX_PROFILE_PICTURE_REFS = 5;
+
+/**
+ * Does this profilePicture value reference a pod-scoped upload that `userId`
+ * did not make? Profile writes refuse such a value: a person's avatar is
+ * their own upload (or a preset / external URL), never a file from a pod.
+ * Un-scoped uploads and files with no File row are left alone — they are
+ * already publicly served, and agent avatars legitimately point at a file
+ * their installer uploaded.
+ */
+export async function referencesOthersPodUpload(
+  profilePicture: unknown,
+  userId: string,
+): Promise<boolean> {
+  if (typeof profilePicture !== 'string' || !profilePicture.includes('/api/uploads/')) return false;
+  const names = [...profilePicture.matchAll(UPLOAD_REF_RE)]
+    .map((m) => m[1])
+    .slice(0, MAX_PROFILE_PICTURE_REFS);
+  for (const name of names) {
+    // eslint-disable-next-line no-await-in-loop
+    const fileDoc = await File.findByFileName(name);
+    if (fileDoc?.podId && String(fileDoc.uploadedBy) !== String(userId)) return true;
+  }
+  return false;
+}
+
+/**
+ * Which of `authorIds` can read a pod-scoped file themselves: its uploader, or
+ * a current member of its pod. One membership query for the whole batch.
+ * Returns a predicate over author ids.
+ */
+async function fileReadersAmong(
+  fileDoc: { podId: unknown; uploadedBy?: unknown },
+  authorIds: unknown[],
+): Promise<(authorId: unknown) => boolean> {
+  const uploader = fileDoc.uploadedBy ? String(fileDoc.uploadedBy) : '';
+  const candidates = [...new Set(authorIds.filter(Boolean).map(String))]
+    .filter((id) => id !== uploader && OBJECT_ID_RE.test(id));
+  let members = new Set<string>();
+  if (candidates.length > 0) {
+    const pod = await Pod.findOne({ _id: fileDoc.podId, members: { $in: candidates } })
+      .select('members')
+      .lean();
+    members = new Set((pod?.members || []).map(String));
+  }
+  return (authorId: unknown) => {
+    if (!authorId) return false;
+    const id = String(authorId);
+    return (uploader !== '' && id === uploader) || members.has(id);
+  };
+}
+
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
 const POST_SCAN_LIMIT = 20;
 const MESSAGE_SCAN_LIMIT = 20;
 
@@ -206,6 +294,35 @@ async function findMessagePodsReferencingFile(urlFragment: string): Promise<stri
       [needle, MESSAGE_SCAN_LIMIT],
     );
     return rows.map((r) => r.pod_id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Like findMessagePodsReferencingFile, but keeps each reference's author so a
+ * pod-scoped file can drop references whose author cannot read it. Distinct
+ * `(pod_id, user_id)` pairs, bounded.
+ */
+async function findMessageRefsReferencingFile(
+  urlFragment: string,
+): Promise<Array<{ podId: string; userId: string | null }>> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { pool } = require('../config/db-pg') as {
+      pool?: {
+        query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ pod_id: string; user_id?: string }> }>;
+      };
+    };
+    if (!pool?.query) return [];
+    const needle = `%${urlFragment}%`;
+    const { rows } = await pool.query(
+      'SELECT DISTINCT pod_id, user_id FROM messages WHERE content ILIKE $1 LIMIT $2',
+      [needle, MESSAGE_SCAN_LIMIT],
+    );
+    return rows
+      .filter((r) => r.pod_id)
+      .map((r) => ({ podId: r.pod_id, userId: r.user_id || null }));
   } catch {
     return [];
   }

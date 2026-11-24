@@ -3,7 +3,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   resolveAgentDisplayLabel: jest.fn((user, fallback) => user.botMetadata?.displayName || fallback),
 }));
 
+jest.mock('../../../models/File', () => ({ findByFileName: jest.fn().mockResolvedValue(null) }));
+
 const User = require('../../../models/User');
+const File = require('../../../models/File');
 const userController = require('../../../controllers/userController');
 const { resolveAgentDisplayLabel, syncUserToPostgreSQL } = require('../../../services/agentIdentityService');
 
@@ -82,6 +85,34 @@ describe('User Controller', () => {
         _id: 'u1',
         profilePicture: '/api/uploads/newpic.png',
       }));
+    });
+
+    it("refuses a profilePicture that points at someone else's pod upload", async () => {
+      File.findByFileName.mockResolvedValueOnce({ uploadedBy: 'someone-else', podId: 'pod-1' });
+      User.findByIdAndUpdate = jest.fn();
+      const req = { user: { id: 'u1' }, body: { profilePicture: '/api/uploads/user-x-1-pod.png' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(File.findByFileName).toHaveBeenCalledWith('user-x-1-pod.png');
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'avatar_not_own_upload' }));
+      expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('accepts a pod upload the caller made themselves', async () => {
+      File.findByFileName.mockResolvedValueOnce({ uploadedBy: 'u1', podId: 'pod-1' });
+      const updatedUser = mockUserDoc({ _id: 'u1', profilePicture: '/api/uploads/mine.png' });
+      User.findByIdAndUpdate = jest.fn()
+        .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
+      const req = { user: { id: 'u1' }, body: { profilePicture: '/api/uploads/mine.png' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(User.findByIdAndUpdate).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalledWith(400);
     });
 
     it('updates a human display name without changing the routable username', async () => {

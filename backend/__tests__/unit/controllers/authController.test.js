@@ -1179,6 +1179,31 @@ describe('Auth Controller Tests', () => {
       expect(initialUser.profilePicture).toBe('/api/uploads/new-profile-pic.png');
     });
 
+    it("refuses a profilePicture that points at someone else's pod upload", async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      // eslint-disable-next-line global-require
+      const File = require('../../../models/File');
+      await File.create({
+        fileName: 'user-x-1-pod.png',
+        originalName: 'pod.png',
+        contentType: 'image/png',
+        size: 1,
+        uploadedBy: new mongoose.Types.ObjectId(),
+        podId: new mongoose.Types.ObjectId(),
+      });
+      const initialUser = { _id: userId, profilePicture: 'default', save: jest.fn() };
+      User.findById = jest.fn().mockResolvedValueOnce(initialUser);
+      const req = { userId, body: { profilePicture: '/api/uploads/user-x-1-pod.png' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.updateProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'avatar_not_own_upload' }));
+      expect(initialUser.save).not.toHaveBeenCalled();
+      expect(initialUser.profilePicture).toBe('default');
+    });
+
     it('should return 404 if user not found', async () => {
       // Create a mock user ID
       const userId = new mongoose.Types.ObjectId().toString();
