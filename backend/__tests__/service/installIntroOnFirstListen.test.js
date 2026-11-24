@@ -223,6 +223,69 @@ describe('first listen rewrites a never-connected install intro (F576)', () => {
     expect(mockEmits.map((e) => e.room).sort()).toEqual([`pod_${pod._id}`, `pod_${podB._id}`].sort());
   });
 
+  it('a legacy WebSocket token still validates when the pod lookup fails, and settles its own pod', async () => {
+    const podB = await Pod.create({ name: 'Second', type: 'chat', createdBy: person._id, members: [person._id] });
+    await request(app).post('/api/registry/install').set('Authorization', `Bearer ${personToken}`)
+      .send({ agentName: 'rivet', podId: podB._id.toString(), scopes: ['context:read'] });
+    await Message.deleteMany({});
+    const raw = 'cm_agent_legacy_lookup_fails_test';
+    // eslint-disable-next-line global-require
+    const { hash } = require('../../utils/secret');
+    await User.updateOne({ _id: seat._id }, { $set: { agentRuntimeTokens: [] } });
+    await AgentInstallation.updateOne(
+      { agentName: 'rivet', podId: pod._id },
+      { $set: { runtimeTokens: [{ tokenHash: hash(raw), label: 'legacy', createdAt: new Date() }] } },
+    );
+    const introA = await seedIntro(NEVER);
+    const introB = await Message.create({
+      podId: podB._id, userId: seat._id, content: NEVER, messageType: 'text', authorKind: 'kernel',
+      payload: { kind: 'install-intro' },
+    });
+    const failing = () => ({
+      select: () => ({ lean: () => Promise.reject(new Error('install lookup down')) }),
+      lean: () => Promise.reject(new Error('install lookup down')),
+    });
+    const find = jest.spyOn(AgentInstallation, 'find').mockImplementation(failing);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // eslint-disable-next-line global-require
+      const ws = require('../../services/agentWebSocketService');
+      expect(await ws.validateAgentToken(raw)).toMatchObject({ agentName: 'rivet' });
+    } finally {
+      find.mockRestore();
+      warn.mockRestore();
+    }
+    expect((await Message.findById(introA._id).lean()).content).toBe(LISTENING);
+    expect((await Message.findById(introB._id).lean()).content).toBe(NEVER);
+  });
+
+  it('a second rewrite failing still announces the first', async () => {
+    const podB = await Pod.create({ name: 'Second', type: 'chat', createdBy: person._id, members: [person._id] });
+    await request(app).post('/api/registry/install').set('Authorization', `Bearer ${personToken}`)
+      .send({ agentName: 'rivet', podId: podB._id.toString(), scopes: ['context:read'] });
+    await Message.deleteMany({});
+    await seedIntro(NEVER);
+    await Message.create({
+      podId: podB._id, userId: seat._id, content: NEVER, messageType: 'text', authorKind: 'kernel',
+      payload: { kind: 'install-intro' },
+    });
+    const real = Message.updateOne.bind(Message);
+    let calls = 0;
+    const spy = jest.spyOn(Message, 'updateOne').mockImplementation((...args) => {
+      calls += 1;
+      return calls === 2 ? Promise.reject(new Error('db down')) : real(...args);
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await poll()).status).toBe(200);
+    } finally {
+      spy.mockRestore();
+      warn.mockRestore();
+    }
+    expect(await Message.countDocuments({ 'payload.introState': 'listening' })).toBe(1);
+    expect(mockEmits).toHaveLength(1);
+  });
+
   it('a WebSocket connect whose token already listened through an install copy is not a first listen', async () => {
     // eslint-disable-next-line global-require
     const { hash } = require('../../utils/secret');
