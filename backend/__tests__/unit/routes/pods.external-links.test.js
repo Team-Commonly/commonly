@@ -510,3 +510,28 @@ describe('pods routes - external link QR code in the object store', () => {
     expect(mockStore.delete).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
   });
 });
+
+// CodeRabbit on #4257: auth accepts a token with or without its `Bearer `
+// prefix, so the rate-limit key must hash the token auth reads. Hashing the
+// raw header gave one credential two buckets on every token-keyed limiter.
+describe('pods routes - token-keyed rate limit', () => {
+  const LINK = '/api/pods/external-link/0123456789abcdef01234567';
+  let app;
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use('/api/pods', routes);
+    jest.clearAllMocks();
+    ExternalLink.findById.mockResolvedValue(null);
+  });
+
+  it('counts a token with and without its Bearer prefix in one bucket', async () => {
+    for (let i = 0; i < 30; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await request(app).delete(LINK).set('Authorization', 'Bearer rl-shared-token').expect(404);
+    }
+    await request(app).delete(LINK).set('Authorization', 'rl-shared-token').expect(429);
+    await request(app).delete(LINK).set('x-auth-token', 'rl-shared-token').expect(429);
+    await request(app).delete(LINK).set('Authorization', 'Bearer rl-other-token').expect(404);
+  });
+});

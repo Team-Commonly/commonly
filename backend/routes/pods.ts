@@ -66,10 +66,13 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// Keyed on the token auth reads (middleware/auth.ts): the Authorization value
+// with `Bearer ` removed, else x-auth-token. Hashing the raw header gave one
+// credential a bucket per spelling (F596, CodeRabbit).
 const podJoinRateLimitKey = (req: any) => {
-  const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
-  if (authHeader) {
-    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  const token = req.get?.('authorization')?.replace('Bearer ', '') || req.get?.('x-auth-token');
+  if (token) {
+    return `tok:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
   }
   return cloudflareIpRateLimitKeyGenerator(req as never);
 };
