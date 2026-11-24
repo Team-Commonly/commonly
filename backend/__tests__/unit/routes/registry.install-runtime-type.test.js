@@ -396,7 +396,9 @@ describe('registry install runtimeType fallback', () => {
     expect(passed).toHaveLength(160);
   });
 
-  it('grants GitHub issue writes only to configured OpenClaw dev seats', async () => {
+  // ADR-021 Part B, Phase 1: nothing runs a moltbot, so even a configured dev
+  // seat is refused before any write (no agent User, no installation).
+  it('refuses a moltbot install as retired, even for a configured dev seat, writing nothing', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'openclaw',
       displayName: 'OpenClaw',
@@ -419,17 +421,19 @@ describe('registry install runtimeType fallback', () => {
       userId: 'user-1',
     }, res);
 
-    expect(AgentInstallation.install).toHaveBeenCalledWith(
-      'openclaw',
-      'a0000000000000000000000a',
-      expect.objectContaining({ githubIssueWrite: true }),
-    );
+    expect(res.status).toHaveBeenCalledWith(410);
+    expect(res.json).toHaveBeenCalledWith({
+      code: 'runtime_retired',
+      message: 'OpenClaw agents were retired. Use a native agent, or attach a local CLI.',
+    });
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+    expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
   });
 
-  it('keeps GitHub issue writes off for every non-dev seat, ignoring caller intent', async () => {
+  it('keeps GitHub issue writes off for a non-moltbot seat, ignoring caller intent', async () => {
     AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'openclaw',
-      displayName: 'OpenClaw',
+      agentName: 'codex',
+      displayName: 'Codex',
       description: 'Cloud runtime',
       latestVersion: '1.0.0',
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
@@ -438,11 +442,11 @@ describe('registry install runtimeType fallback', () => {
 
     await installHandler({
       body: {
-        agentName: 'openclaw',
+        agentName: 'codex',
         podId: 'a0000000000000000000000a',
         version: '1.0.0',
-        instanceId: 'community-seat',
-        config: { runtime: { runtimeType: 'moltbot' } },
+        instanceId: 'theo',
+        config: { runtime: { runtimeType: 'codex' } },
         scopes: [],
         githubIssueWrite: true,
       },
@@ -451,7 +455,7 @@ describe('registry install runtimeType fallback', () => {
     }, res);
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
-      'openclaw',
+      'codex',
       'a0000000000000000000000a',
       expect.objectContaining({ githubIssueWrite: false }),
     );

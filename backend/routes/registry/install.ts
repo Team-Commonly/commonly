@@ -72,6 +72,7 @@ const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { isObjectIdHex, INVALID_POD_ID } = require('../../middleware/objectIdParam');
 const { logInstallRefusal } = require('../../services/installRefusalLog');
+const { moltbotRuntimeRetired, RUNTIME_RETIRED_BODY } = require('../../services/retiredRuntime');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const {
   previewInstallNarrowing, installNarrowingMessage, NARROWING_CONFIRM_CODE,
@@ -650,6 +651,15 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
+    // ADR-021 Part B, Phase 1 (the freeze): nothing runs a moltbot any more,
+    // so a new install would be an agent that never starts. Refused before any
+    // write; historical rows still load.
+    if (moltbotRuntimeRetired(effectiveRuntimeType)) {
+      logInstallRefusal('registry.install', 'runtime_retired', {
+        userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId,
+      });
+      return res.status(410).json(RUNTIME_RETIRED_BODY);
+    }
     // The same agent in another room stays on the engine it runs on. One on the
     // Durable Object keeps its token, so a native row beside it would trip the
     // one-runtime check below; one on native has no worker to answer a new

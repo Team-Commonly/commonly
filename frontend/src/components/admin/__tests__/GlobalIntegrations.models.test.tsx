@@ -1,8 +1,8 @@
 // @ts-nocheck
-// F98 (decided 11-04): hosted agents are Claude-only. The gateway's
-// selects offer Claude Haiku 5.5 only, the backend LLM service no longer offers
-// Gemini, and a current value that is no longer offered still shows, disabled
-// and marked current.
+// F98 (decided 11-04): the backend LLM service no longer offers Gemini, and a
+// current value that is no longer offered still shows, disabled and marked
+// current. The OpenClaw section is gone (ADR-021 Part B): the page shows none
+// and a save sends none, so the stored one stays as it was.
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -72,26 +72,25 @@ beforeEach(() => {
   mockPost.mockResolvedValue({ data: { success: true } });
 });
 
-test('on an instance with no saved policy, the server defaults show as current, beside the Claude-only offer', async () => {
+test('on an instance with no saved policy, the backend LLM offer shows and no OpenClaw section does', async () => {
   mockGet.mockResolvedValue(response(serverDefaults()));
   renderPage();
-  expect(await optionsOf('Dev Agent Provider')).toEqual(['google (current) [disabled]', 'Anthropic']);
   expect(await optionsOf('Backend LLM Provider')).toEqual(['Auto (LiteLLM then Gemini)', 'LiteLLM', 'OpenRouter']);
   expect(screen.queryByText(/\(stored\)/)).toBeNull();
+  expect(screen.queryByText(/OpenClaw/)).toBeNull();
+  expect(screen.queryByRole('combobox', { name: /Dev Agent/ })).toBeNull();
 });
 
-test('choosing Anthropic offers Claude Haiku 5.5 only, and saving sends it', async () => {
+test('saving sends the backend LLM policy and no openclaw section', async () => {
   mockGet.mockResolvedValue(response(serverDefaults()));
   renderPage();
-  const providers = await openSelect('Dev Agent Provider');
-  fireEvent.click(within(providers).getByRole('option', { name: 'Anthropic', hidden: true }));
-  await waitFor(() => expect(screen.queryByRole('listbox', { hidden: true })).toBeNull());
-  expect(await optionsOf('Dev Agent Primary Model')).toEqual(['Claude Haiku 5.5']);
+  await screen.findByRole('combobox', { name: /Backend LLM Provider/ });
   fireEvent.click(screen.getByRole('button', { name: 'Save Model Policy' }));
   await waitFor(() => expect(mockPost).toHaveBeenCalled());
   const [url, body] = mockPost.mock.calls[0];
   expect(url).toBe('/api/admin/integrations/global/model-policy');
-  expect(body.openclaw).toMatchObject({ provider: 'anthropic', model: 'anthropic/claude-haiku-5-5' });
+  expect(body.llmService).toMatchObject({ provider: 'auto' });
+  expect(body).not.toHaveProperty('openclaw');
 });
 
 test('a saved Gemini llmService provider shows as current, and Gemini is not offered', async () => {
@@ -101,15 +100,4 @@ test('a saved Gemini llmService provider shows as current, and Gemini is not off
   renderPage();
   expect(await optionsOf('Backend LLM Provider'))
     .toEqual(['gemini (current) [disabled]', 'Auto (LiteLLM then Gemini)', 'LiteLLM', 'OpenRouter']);
-});
-
-test('a saved Claude model the gateway no longer offers shows as current in the model select', async () => {
-  const policy = serverDefaults();
-  policy.openclaw.provider = 'anthropic';
-  policy.openclaw.model = 'anthropic/claude-opus-4-6';
-  mockGet.mockResolvedValue(response(policy));
-  renderPage();
-  expect(await optionsOf('Dev Agent Provider')).toEqual(['Anthropic']);
-  expect(await optionsOf('Dev Agent Primary Model'))
-    .toEqual(['anthropic/claude-opus-4-6 (current) [disabled]', 'Claude Haiku 5.5']);
 });

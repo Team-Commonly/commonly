@@ -582,11 +582,27 @@ describe('adding an existing agent to another pod', () => {
     it('refuses a cloud runtime its owner is no longer entitled to', async () => {
       await installByo();
       await AgentInstallation.updateOne({ podId: home._id }, {
-        $set: { 'config.runtime': { runtimeType: 'moltbot' } },
+        $set: { 'config.runtime': { runtimeType: 'managed-agents' } },
       });
       const res = await add(owner, target._id);
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('cloud_agents_not_entitled');
+    });
+
+    // ADR-021 Part B: a stored moltbot row still loads, but it is not copied
+    // into another pod, where it would be one more agent that never starts.
+    it('refuses to add a stored moltbot agent to another pod, and leaves the stored row alone', async () => {
+      await installByo();
+      await AgentInstallation.updateOne({ podId: home._id }, {
+        $set: { 'config.runtime': { runtimeType: 'moltbot' } },
+      });
+      await User.updateOne({ _id: owner._id }, { $set: { entitlements: { cloudAgents: true } } });
+      const res = await add(owner, target._id);
+      expect(res.status).toBe(410);
+      expect(res.body.code).toBe('runtime_retired');
+      expect(await row(target._id)).toBeNull();
+      const stored = await AgentInstallation.findOne({ podId: home._id }).lean();
+      expect(stored.config.runtime.runtimeType).toBe('moltbot');
     });
   });
 

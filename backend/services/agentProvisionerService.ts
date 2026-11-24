@@ -1537,15 +1537,11 @@ const removeOpenClawAccount = async ({ agentName, instanceId, gateway }: any = {
 };
 
 
-// The moltbot runtime is retired (ADR-021 Part B): no gateway runs in Helm, in
-// compose or in Deploy Dev, so a provision can only mint tokens for an agent
-// nothing will start. The two callers of provisionAgentRuntime (the provision
-// route and reprovision) refuse it in every mode, before any token or gateway
-// write. The driver below stays until it is deleted, and the runtime type stays
-// known, because it still describes historical rows.
-const moltbotRuntimeRetired = (runtimeType: any) => (
-  String(runtimeType || '').trim().toLowerCase() === 'moltbot'
-);
+// The moltbot runtime is retired (ADR-021 Part B; services/retiredRuntime.ts).
+// The two callers of provisionAgentRuntime (the provision route and
+// reprovision) refuse it in every mode, before any token or gateway write. The
+// driver below stays until it is deleted.
+const { moltbotRuntimeRetired } = require('./retiredRuntime');
 
 const syncOpenClawSkills = async (options = {}) => {
   if (isK8sMode()) {

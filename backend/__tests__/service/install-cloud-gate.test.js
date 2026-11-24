@@ -167,10 +167,27 @@ describe('#529 hosted-agent entitlement gate', () => {
     const res = await installAs(entitledToken, {
       agentName: 'cloud-gate-bot',
       podId: pod._id.toString(),
-      config: { runtime: { runtimeType: 'moltbot' } },
+      config: { runtime: { runtimeType: 'managed-agents' } },
       scopes: [],
     });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+
+  // ADR-021 Part B: the moltbot runtime is retired. Entitlement does not
+  // reopen it; the install is refused before anything is written.
+  it('refuses a retired moltbot runtime even for an entitled user', async () => {
+    const before = await AgentInstallation.countDocuments({ agentName: 'cloud-gate-bot' });
+    const res = await installAs(entitledToken, {
+      agentName: 'cloud-gate-bot',
+      instanceId: 'retired-runtime',
+      podId: pod._id.toString(),
+      config: { runtime: { runtimeType: 'moltbot' } },
+      scopes: [],
+    });
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe('runtime_retired');
+    expect(await AgentInstallation.countDocuments({ agentName: 'cloud-gate-bot' })).toBe(before);
+    expect(await User.countDocuments({ 'botMetadata.instanceId': 'retired-runtime' })).toBe(0);
   });
 });

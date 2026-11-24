@@ -42,6 +42,7 @@ const {
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 const { logInstallRefusal } = require('../../services/installRefusalLog');
+const { RUNTIME_RETIRED_BODY } = require('../../services/retiredRuntime');
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter on this DB-touching handler. The previous version
@@ -210,10 +211,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       logInstallRefusal('registry.provision', 'runtime_retired', {
         userId, agentName: name, instanceId: normalizedInstanceId, podId,
       });
-      return res.status(410).json({
-        code: 'runtime_retired',
-        message: 'OpenClaw agents were retired. Use a native agent, or attach a local CLI.',
-      });
+      return res.status(410).json(RUNTIME_RETIRED_BODY);
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {
