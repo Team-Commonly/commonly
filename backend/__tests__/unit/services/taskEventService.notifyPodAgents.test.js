@@ -263,6 +263,30 @@ describe('notifyPodAgents', () => {
     expect(update.$set).toEqual({ 'payload.wakeReason': 'assignee' });
   });
 
+  // F594: the CLI gives an assignee/claimant board wake the addressed grace
+  // past its cascade cap. A later change about a row the seat USED to own (or
+  // a dependent row) must not overwrite that reason on the pending wake it
+  // folds into, or the folded wake drops back to a broadcast and can be
+  // refused at the cap. A weaker reason is only ever written on a fresh wake.
+  it('a weaker reason folded into a pending wake leaves its reason alone', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const reassigned = [POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
+      { userId: AGENT_ID, isAgent: true }, { assignee: 'scout' }];
+
+    // Fresh wake: scout lost the row, so the reason is prevAssignee.
+    await notifyPodAgents(...reassigned);
+    expect(AgentEventService.enqueue.mock.calls.at(-1)[0].payload.wakeReason).toBe('prevAssignee');
+
+    // Folded into a pending (possibly assignee) wake: the reason is kept.
+    AgentEvent.findOneAndUpdate.mockClear();
+    AgentEvent.findOneAndUpdate.mockResolvedValue({ _id: 'evt-1', payload: { boardChanges: 2 } });
+    await notifyPodAgents(...reassigned);
+    const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
+    expect(update.$inc).toEqual({ 'payload.boardChanges': 1 });
+    // Nothing else to set on an agent edit to a non-hosted wake: $set is left out.
+    expect(update.$set).toBeUndefined();
+  });
+
   it('never wakes the actor about their own edit', async () => {
     mockInstalls([install('scout', AGENT_ID), install('sprint-impl', HUMAN_ID)]);
 
