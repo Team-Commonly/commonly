@@ -884,6 +884,9 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
  * Original endpoint for agent runtime tokens (cm_agent_*)
  */
 router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  // F597: a held poll's in-flight count (shutdown waits on it). Released once
+  // the handler is done with the hold, never on the client's `close` alone.
+  let untrackHeldPoll: (() => void) | null = null;
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -951,11 +954,12 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     if (waitMs > 0 && events.length === 0 && !inboxCount) {
       const releaseSlot = acquireWaiterSlot(req.agentTokenHash || `${agentName}\u0000${instanceId}`);
       if (releaseSlot) {
-        // In flight until the response is done, so shutdown can wait for a
-        // hold that is claiming (hostedShutdownService).
-        const untrackHeldPoll = trackHeldPoll();
-        res.once('finish', untrackHeldPoll);
-        res.once('close', untrackHeldPoll);
+        // In flight until the handler is done with the hold: the answer is
+        // out, or a departed client's claim is put back. Not on `close`: a
+        // client can leave mid-claim, with the restore still to run, and
+        // shutdown (hostedShutdownService) must wait for that restore.
+        const untrack = trackHeldPoll();
+        untrackHeldPoll = untrack;
         // One listener for the whole hold, so a disconnect during the claim
         // below is seen too. `res` closes on a finished answer as well; only
         // an unfinished one is a client that went away.
@@ -1018,13 +1022,26 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
           res.off('close', closeListener);
           releaseSlot();
         }
-        if (refused) return undefined;
+        if (refused) {
+          // Refused before any claim: nothing to restore.
+          untrack();
+          return undefined;
+        }
         if (clientGone) {
           // Nobody is there to receive what the last claim took: put it back,
           // so a long-poll never leaves a row delivered that it did not return.
-          if (events.length > 0) await AgentEventService.unclaimUnsent(events);
+          try {
+            if (events.length > 0) await AgentEventService.unclaimUnsent(events);
+          } finally {
+            untrack();
+          }
           return undefined;
         }
+        // Answered below. A client leaving from here on leaves nothing to
+        // restore, so `close` may release too (an unfinished answer never
+        // emits `finish`).
+        res.once('finish', untrack);
+        res.once('close', untrack);
       }
     }
 
@@ -1044,6 +1061,8 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
 
     return res.json({ events, inboxCount });
   } catch (error: any) {
+    // The release is idempotent; this covers a throw anywhere in the hold.
+    untrackHeldPoll?.();
     console.error('Error listing agent events:', error);
     return res.status(500).json({ message: 'Failed to list agent events' });
   }

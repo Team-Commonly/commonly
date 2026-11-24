@@ -529,6 +529,17 @@ describe('after a wake the hold claims from the scope a fresh request would have
       }
       return page;
     });
+    // The in-flight count shutdown waits on must hold through the restore: the
+    // client's `close` came first, and the put-back is still to run.
+    const realUnclaim = AgentEventService.unclaimUnsent.bind(AgentEventService);
+    const countDuringRestore = [];
+    const unclaimSpy = jest.spyOn(AgentEventService, 'unclaimUnsent').mockImplementation(async (rows) => {
+      countDuringRestore.push(waiters.heldPollCount());
+      await sleep(50);
+      const restored = await realUnclaim(rows);
+      countDuringRestore.push(waiters.heldPollCount());
+      return restored;
+    });
     try {
       clientReq = http.get(`${baseUrl}/api/agents/runtime/events?waitMs=8000`, {
         headers: { Authorization: `Bearer ${seatToken}` },
@@ -537,15 +548,24 @@ describe('after a wake the hold claims from the scope a fresh request would have
       await untilHeld();
       held = true;
       const event = await enqueue('claimed, then nobody there');
-      for (let i = 0; i < 100 && waiters.heldPollCount() > 0; i += 1) {
+      // Reaches 0 only after the restore (the regression check).
+      for (let i = 0; i < 200 && waiters.heldPollCount() > 0; i += 1) {
         // eslint-disable-next-line no-await-in-loop
         await sleep(10);
       }
-      await sleep(100);
-      const row = await AgentEvent.findById(event._id).lean();
+      expect(countDuringRestore).toEqual([1, 1]);
+      let row;
+      for (let i = 0; i < 40; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        row = await AgentEvent.findById(event._id).lean();
+        if (row.status === 'pending') break;
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(50);
+      }
       expect(row).toMatchObject({ status: 'pending', attempts: 0 });
     } finally {
       spy.mockRestore();
+      unclaimSpy.mockRestore();
     }
   });
 });
