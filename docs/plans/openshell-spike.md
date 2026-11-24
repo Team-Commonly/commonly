@@ -18,6 +18,21 @@ Yes for both, on one Docker host, with two hazards and one gap:
 - **Hazard 2:** user namespaces are refused inside the sandbox. An agent's own sandbox (Codex's bubblewrap, our CLI's `bwrap` mode) cannot start, so OpenShell is the only boundary, and the agent must run with its own sandbox off.
 - **Gap:** this ran on Docker Desktop's Linux VM (kernel 6.12.76, arm64), not on our VM. Whether the VM's kernel meets OpenShell's Landlock ABI 3 (Linux 6.2+) is unchecked.
 
+## Must fix before enabling
+
+The flag stays off on every instance until both of these are fixed, each with a test, and the driver has been reviewed again.
+
+1. **`host.openshell.internal` reaches the gateway host's loopback.** A rule naming `host.openshell.internal:<port>` connected to a service bound only to `127.0.0.1` on the gateway host (finding 2). On a single VM, that puts Postgres, Mongo and the backend one policy line away from model-written code. Before any rule opens a way out:
+   - it must be an allowlist of exactly the provider proxy and grant broker ports, built in code and never taken from config as a free list;
+   - a test must show that a sandbox can't reach a loopback service the allowlist doesn't name;
+   - the gateway must run where its host's loopback holds nothing else, or in bridge mode once bridge mode is shown to close this.
+
+   Today's run-code driver writes no network rule, so it isn't exposed yet. The first change that adds a rule is.
+2. **No user namespaces inside, so no nested sandbox.** An agent's own sandbox (Codex's bubblewrap, our CLI's `bwrap` mode) can't start inside OpenShell, so OpenShell's policy is the only boundary (finding 3). Before a hosted agent runs inside:
+   - the driver must start the agent with its own sandbox off, on purpose and visibly (for example, Codex with `--sandbox danger-full-access`);
+   - ADR-008's refusal rule needs a decision: does `sandbox.mode: container` under OpenShell satisfy an install that asks for `bwrap`, or is that install refused?
+   - the OpenShell policy must be at least as tight as the seat sandbox it replaces: workdir only, no egress beyond the allowlist in item 1.
+
 ## What was run
 
 Everything ran on this Mac with no paid infrastructure. It ran inside one disposable Docker-in-Docker container (`docker:28-dind`, Docker 28.5.2), so OpenShell's sandboxes never touched the host's other containers.
