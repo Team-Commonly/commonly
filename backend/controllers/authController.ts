@@ -12,6 +12,7 @@ const { sendEmail } = require('../services/emailService');
 const { markEmailVerified } = require('../services/onboardingMarks');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
+const { referencesOthersPodUpload } = require('../services/attachmentAccess');
 const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
 const { deriveUsernameFromEmail, isValidUsername, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
@@ -1023,6 +1024,12 @@ exports.updateProfile = async (req: any, res: any) => {
 
     // Update profile picture if provided
     if (profilePicture !== undefined) {
+      if (await referencesOthersPodUpload(profilePicture, String(user._id))) {
+        return res.status(400).json({
+          error: 'A profile picture has to be your own upload.',
+          code: 'avatar_not_own_upload',
+        });
+      }
       user.profilePicture = normalizeAvatarUrl(profilePicture);
     }
 

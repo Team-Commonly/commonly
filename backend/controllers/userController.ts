@@ -4,6 +4,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
+const { referencesOthersPodUpload } = require('../services/attachmentAccess');
 const {
   isValidUsername,
   isFreeUsername,
@@ -178,6 +179,13 @@ exports.updateProfile = async (req: any, res: any) => {
       if (nameOwner) {
         return res.status(400).json({ error: 'That name belongs to someone else here' });
       }
+    }
+
+    if (profilePicture !== undefined && await referencesOthersPodUpload(profilePicture, req.user.id)) {
+      return res.status(400).json({
+        error: 'A profile picture has to be your own upload.',
+        code: 'avatar_not_own_upload',
+      });
     }
 
     // Build user object
