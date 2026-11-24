@@ -93,10 +93,27 @@ const withInstallableClaim = async (res: any, installableId: string, work: () =>
       code: 'installable_id_busy',
     });
   }
+  // Release before the answer goes out: a client that retries as soon as it
+  // reads it (the drift warning asks it to) must find the id free, not busy.
+  let releasing: Promise<void> | null = null;
+  const release = () => {
+    releasing ??= releaseInstallableClaim(installableId, ownerId);
+    return releasing;
+  };
+  const originalJson = res.json;
+  res.json = (body: any) => {
+    release()
+      .finally(() => originalJson.call(res, body))
+      // Nothing awaits this chain; a throwing send must not become an
+      // unhandled rejection that takes the process down.
+      .catch((error) => console.error('[marketplace] response send failed: %s', (error as Error)?.message));
+    return res;
+  };
   try {
     return await work();
   } finally {
-    await releaseInstallableClaim(installableId, ownerId);
+    await release();
+    res.json = originalJson;
   }
 };
 
