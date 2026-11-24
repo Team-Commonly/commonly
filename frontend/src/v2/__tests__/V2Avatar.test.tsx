@@ -134,6 +134,13 @@ describe('V2Avatar', () => {
     expect(plate(picked)).toBe('');
     picked.unmount();
 
+    // A saved Paper look is the same opaque tile an unpicked human gets, so it
+    // takes the character frame and no plate, like the unpicked one.
+    const savedPaper = render(<V2Avatar name="Ada" src="paper:paper-user-v17" kind="human" seed="paper-user" />);
+    expect(savedPaper.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
+    expect(plate(savedPaper)).toBe('');
+    savedPaper.unmount();
+
     const photo = render(<V2Avatar name="Ada" src="/api/uploads/avatar.png" />);
     expect(plate(photo)).toBe('rgb(1, 2, 3)');
     gradient.mockRestore();

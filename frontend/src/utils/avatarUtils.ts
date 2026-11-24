@@ -60,6 +60,15 @@ export const isFacePresetId = (value: string | undefined | null): boolean => (
   presetOf(value) !== null
 );
 
+// A saved Paper look: 'paper:<userId>-v<n>', n the exact 0-based look index.
+const PAPER_LOOK_RE = /^paper:(.+)-v(0|[1-9]\d*)$/;
+
+// True for a saved Paper look. Like a picked preset it renders as an opaque
+// generated tile, so V2Avatar gives it the character frame (F586).
+export const isPaperLookId = (value: string | undefined | null): boolean => (
+  typeof value === 'string' && PAPER_LOOK_RE.test(value)
+);
+
 /**
  * The archetype face grid — PICKER_CELL_COUNT curated cells spanning four
  * ethnic rows with female- and male-leaning looks each (traits derive from
@@ -94,7 +103,7 @@ const isLikelyImageUrl = (value: string | undefined | null): boolean => {
 export const getAvatarSrc = (avatarId: string | undefined | null): string | null | undefined => {
   if (!avatarId) return null;
   if (avatarOptions.some((option) => option.id === avatarId)) return null;
-  const paperPreset = /^paper:(.+)-v(0|[1-9]\d*)$/.exec(avatarId);
+  const paperPreset = PAPER_LOOK_RE.exec(avatarId);
   if (paperPreset) {
     return paperAvatarFor(paperPreset[1], Number(paperPreset[2]));
   }

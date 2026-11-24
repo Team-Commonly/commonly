@@ -1,5 +1,5 @@
 import React from 'react';
-import { getAvatarSrc, isFacePresetId } from '../../utils/avatarUtils';
+import { getAvatarSrc, isFacePresetId, isPaperLookId } from '../../utils/avatarUtils';
 import {
   characterAvatarFor, paperAvatarFor, gradientFor, initialsFor, AvatarKind,
 } from '../utils/avatars';
@@ -67,7 +67,8 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   const cleanSrc = getAvatarSrc(rawSrc) || null;
   // A picked face or robot is a generated character, so it takes the same frame
   // as the characterSrc tier (TASK-679). Photos and uploads stay unframed.
-  const pickedCharacter = isFacePresetId(rawSrc);
+  // A saved Paper look is the same opaque generated tile (F586).
+  const pickedCharacter = isFacePresetId(rawSrc) || isPaperLookId(rawSrc);
   const [imgFailed, setImgFailed] = React.useState(false);
   const flat = tone === 'flat';
   const classes = [
