@@ -13,7 +13,6 @@ This repo is public. A comment such as `// per D215` or "ruled by the Cofounder"
 
 - ADR decision numbers. They top out at D13 today, so anything below D20 passes, and so does "ADR-018 D12".
 - Hex colours (`#D215AA`), cell references (`A1:D40`, `D$54`), and ids inside a word (`AD215B`).
-- Vendored skills under `backend/commonly-bundled-skills/`.
 
 If ADR decisions ever reach D20, raise `FIRST_LEDGER_ID` in the script.
 

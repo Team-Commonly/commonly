@@ -49,9 +49,8 @@ test('an ADR-local decision number below D20 passes; D20 and up is refused', () 
   assert.deepEqual(tokens(diff('backend/services/a.ts', '// D20 says so')), ['D20']);
 });
 
-test('spreadsheet cell references and vendored skills pass', () => {
+test('spreadsheet cell references pass', () => {
   assert.deepEqual(tokens(diff(doc('x.md'), 'get "/Sheet1/A1:D40"', 'formula: (1+D$54)/C$55', 'ref=D25:H29')), []);
-  assert.deepEqual(tokens(diff('backend/commonly-bundled-skills/officecli/SKILL.md', 'Cell D214 is the anchor')), []);
 });
 
 test('only added lines are read, and paths outside the scope pass', () => {
