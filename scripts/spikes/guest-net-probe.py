@@ -7,10 +7,15 @@
 import json
 import socket
 import sys
+import urllib.error
 import urllib.request
 
 args = sys.argv[1:]
 proxy = None
+http = []
+while args and args[0] == '--http':
+    http.append(args[1])
+    args = args[2:]
 if args and args[0] == '--proxy':
     proxy = (args[1], args[2])
     args = args[3:]
@@ -36,6 +41,18 @@ for target in args:
         print(f'{target} [{addr}]: refused ({type(e).__name__}: {e})')
     finally:
         s.close()
+
+# HTTP-level reachability: status and size only, never the body. No metadata
+# header is sent, so a cloud metadata service answers 400 without instance data,
+# and a status code at all proves the request got through the fence.
+for url in http:
+    try:
+        r = urllib.request.urlopen(url, timeout=6)
+        print(f'GET {url}: status {r.status}, {len(r.read())} bytes, server={r.headers.get("server")}')
+    except urllib.error.HTTPError as e:
+        print(f'GET {url}: status {e.code}, server={e.headers.get("server")}')
+    except Exception as e:  # noqa: BLE001
+        print(f'GET {url}: no answer ({type(e).__name__}: {e})')
 
 if proxy:
     req = urllib.request.Request(
