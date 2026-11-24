@@ -5,6 +5,7 @@
 // trace the middleware; it cannot follow a limiter through a require() return
 // or a router.use wrapper. Same shape as routes/messages.ts.
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 
@@ -15,6 +16,7 @@ interface TokenRateRes { status: (code: number) => { json: (body: unknown) => vo
 // tighter than ordinary reads. Keyed on the hashed bearer token so one NAT'd
 // office doesn't share a bucket.
 const tokenRouteLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agent-tokens' }),
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,

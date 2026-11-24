@@ -9,6 +9,7 @@ import express from 'express';
 import crypto, { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import User from '../models/User';
 import { redeemPodInvite } from '../services/podInviteRedemption';
@@ -31,6 +32,7 @@ const inviteRateLimitKey = (req: any) => {
 };
 
 const inviteReadRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-invite-read' }),
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
@@ -40,6 +42,7 @@ const inviteReadRateLimit = rateLimit({
 });
 
 const inviteWriteRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-invite-write' }),
   windowMs: 60_000,
   max: 20,
   standardHeaders: true,

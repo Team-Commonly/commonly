@@ -151,6 +151,9 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
 // Socket.io Redis adapter initialization is async in K8s mode
 if (startServices) (async () => {
   try {
+    // Cross-process signals (cache invalidations, agent socket wakes); a
+    // no-op without REDIS_HOST. Only a serving process connects it.
+    require('./services/processBus').startProcessBus();
     await socketConfig.init(io);
     agentWebSocketService.init(io);
     bindAgentTypingSocketIO(io);

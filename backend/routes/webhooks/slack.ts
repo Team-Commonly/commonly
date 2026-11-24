@@ -2,6 +2,7 @@
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -27,6 +28,7 @@ const PROVIDER = 'slack';
 // request body is sender-controlled until HMAC verification, so it cannot be
 // the only abuse key.
 const slackWebhookIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-slack-ip' }),
   windowMs: 60_000,
   max: 3_000,
   standardHeaders: true,
@@ -39,6 +41,7 @@ const slackWebhookIpRateLimit = rateLimit({
 // Slack retries delivery aggressively, so this account budget leaves room for
 // a busy workspace while still bounding verified-account bursts.
 const slackWebhookRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-slack' }),
   windowMs: 60_000,
   max: 600,
   standardHeaders: true,

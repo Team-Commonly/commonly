@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 const router = express.Router();
 const DiscordService = require('../../services/discordService');
 const DiscordIntegration = require('../../models/DiscordIntegration');
@@ -14,6 +15,7 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 // webhook_id is supplied by the caller before signature verification, so keep
 // a coarse Cloudflare-aware IP ceiling ahead of the per-webhook bucket.
 const discordWebhookIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-discord-ip' }),
   windowMs: 60_000,
   max: 3_000,
   standardHeaders: true,
@@ -24,6 +26,7 @@ const discordWebhookIpRateLimit = rateLimit({
 });
 
 const discordWebhookRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-discord' }),
   windowMs: 60_000,
   max: 600,
   standardHeaders: true,

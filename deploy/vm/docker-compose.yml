@@ -22,12 +22,16 @@
 # token and the bucket keys never reach backend or litellm.
 #
 # No service publishes a host port. The tunnel is the only way in: it reaches
-# frontend, backend and litellm by service name on the compose network.
+# frontend, backend (or api-lb, under two-workers) and litellm by service name
+# on the compose network.
 # Images are pulled by tag; nothing here builds.
 #
 # One backend container serves web AND runs the worker (scheduler, Discord
-# gateway, native turns): RUN_WORKER and NATIVE_TURNS_ON_WORKER stay unset.
-# Never run a second backend against this stack.
+# gateway, native turns): RUN_WORKER and NATIVE_TURNS_ON_WORKER stay unset on it.
+# A second, web-only backend runs only under the `two-workers` profile, behind
+# api-lb, sharing state through the redis service (backend-2 below; runbook
+# docs/deployment/two-backend-workers.md). Never start another backend any
+# other way: a second one without RUN_WORKER=0 runs every cron twice.
 #
 # Checked against the chart by
 # backend/__tests__/unit/deployment/singleVmCompose.test.js.
@@ -91,6 +95,11 @@ services:
       litellm:
         condition: service_healthy
         required: false
+      # As LiteLLM: waited for, never needed. Without Redis this backend counts
+      # rate limits in memory and, alone, needs no adapter.
+      redis:
+        condition: service_healthy
+        required: false
     env_file:
       - ./backend.env
     # VM-specific overrides. These win over backend.env; the test pins each one
@@ -107,7 +116,7 @@ services:
       - PG_SSL_ENABLED=false
       - LITELLM_BASE_URL=http://litellm:4000
       - COMMONLY_API_URL=http://backend:5000
-      # No Kubernetes: no agent pods, no agent computer, no Redis adapter.
+      # No Kubernetes: no agent pods, no agent computer.
       - AGENT_PROVISIONER_K8S=0
       - AGENT_PROVISIONER_DOCKER=0
       - AGENT_COMPUTER_ENABLED=false
@@ -119,6 +128,11 @@ services:
       # Where the non-Kubernetes provisioner writes commonly-bot's accounts
       # (the image's default path, stated so the mount below can't drift).
       - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+      # The redis service below: shared rate-limit counts, and with two
+      # backends, the socket.io adapter and the process bus between them.
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
     volumes:
       - ../../k8s/helm/commonly/configs/marketplace.json:/app/packages/commonly-marketplace/marketplace.json:ro
       # The one writable mount: commonly-bot's accounts file, shared with the bot.
@@ -131,6 +145,134 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+
+  # Shared state between backend processes, never stored: no snapshot, no
+  # append-only file, so a restart starts empty. What lives here is rebuilt
+  # within a minute: rate-limit windows, pub/sub, the socket.io adapter.
+  # `noeviction` refuses a write past the cap rather than dropping a live
+  # count; the rate-limit store then counts in memory until it frees.
+  # The password goes into a generated conf, never the process args.
+  redis:
+    logging: *default-logging
+    image: redis:7.4.12-alpine3.22
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        umask 077
+        printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis.conf
+        # The image entrypoint drops root to the redis user, who must read it.
+        chown redis:redis /tmp/redis.conf
+        exec docker-entrypoint.sh redis-server /tmp/redis.conf --save '' --appendonly no --maxmemory 64mb --maxmemory-policy noeviction
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      # Lets the healthcheck's redis-cli authenticate without an argument.
+      - REDISCLI_AUTH=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    mem_limit: 128m
+    tmpfs:
+      - /data
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # A second, web-only backend (F598): the profile stays off until SRE rolls it
+  # (docs/deployment/two-backend-workers.md). The same image and env as backend,
+  # plus RUN_WORKER=0 and REQUIRE_SHARED_REDIS=1.
+  backend-2:
+    logging: *default-logging
+    profiles: ["two-workers"]
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-backend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    restart: unless-stopped
+    stop_grace_period: 180s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+        required: false
+      # Needed: it would stop again at once without Redis.
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend.env
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      # The Postgres on the compose network, as the app role from .env. No TLS.
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DATABASE=${PG_DATABASE:?set PG_DATABASE in .env}
+      - PG_USER=${PG_USER:?set PG_USER in .env}
+      - PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD in .env}
+      - PG_SSL_ENABLED=false
+      - LITELLM_BASE_URL=http://litellm:4000
+      - COMMONLY_API_URL=http://backend:5000
+      # No Kubernetes: no agent pods, no agent computer.
+      - AGENT_PROVISIONER_K8S=0
+      - AGENT_PROVISIONER_DOCKER=0
+      - AGENT_COMPUTER_ENABLED=false
+      - LLMSERVICE_GUARDRAILS=injection-guard
+      - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
+      # Mounted below from the chart's own copy.
+      - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
+      - SENTRY_RELEASE=${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+      # Where the non-Kubernetes provisioner writes commonly-bot's accounts
+      # (the image's default path, stated so the mount below can't drift).
+      - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+      # The redis service below: shared rate-limit counts, and with two
+      # backends, the socket.io adapter and the process bus between them.
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      # Web only: the scheduler, the Discord gateway and the other singleton
+      # jobs run on backend alone (native turns run on both, under a lease).
+      - RUN_WORKER=0
+      # Serves only while it shares Redis with backend: it drops its sockets
+      # and stops on a lost connection, and api-lb sends everything to backend.
+      - REQUIRE_SHARED_REDIS=1
+    volumes:
+      - ../../k8s/helm/commonly/configs/marketplace.json:/app/packages/commonly-marketplace/marketplace.json:ro
+      # As backend: an install request it serves writes commonly-bot's accounts.
+      - ./commonly-bot-state:/app/external/commonly-bot-state
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # Spreads the API across backend and backend-2, sticky by the end user's
+  # address, and fails over to backend when backend-2 is gone (api-lb/nginx.conf).
+  api-lb:
+    logging: *default-logging
+    profiles: ["two-workers"]
+    image: nginx:1.28.3-alpine3.23
+    restart: unless-stopped
+    depends_on:
+      - backend
+    volumes:
+      - ./api-lb/nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/lb-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   # The summarizer agent. It polls the backend for events with the runtime
   # tokens in commonly-bot-state/runtime.json, re-read on every poll, so a newly

@@ -7,6 +7,7 @@ import fs from 'fs';
 import { createHash, randomBytes } from 'crypto';
 import { getObjectStore } from '../services/objectStore';
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -78,6 +79,7 @@ const podJoinRateLimitKey = (req: any) => {
 };
 
 const podFocusRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-focus' }),
   windowMs: 60 * 1000,
   limit: 30,
   standardHeaders: 'draft-7',
@@ -89,6 +91,7 @@ const podFocusRateLimit = rateLimit({
 // task invalidation. Keep reads bounded without sharing the stricter write
 // budget; authorization remains the source of truth after this ingress guard.
 const podFocusReadRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-focus-read' }),
   windowMs: 60 * 1000,
   limit: 120,
   standardHeaders: 'draft-7',
@@ -170,6 +173,7 @@ const requireLinkId = (param: string, message: string) => requireObjectIdParam(p
 // the token like the focus readers above, so one client cannot exhaust another
 // client's budget; authorization remains the source of truth behind this.
 const podListingRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-listing' }),
   windowMs: 60 * 1000,
   limit: 120,
   standardHeaders: 'draft-7',
@@ -180,6 +184,7 @@ const podListingRateLimit = rateLimit({
 // populate-heavy queries as the sidebar listing. Their own bucket at the same
 // budget, so opening pods does not spend the sidebar's refresh allowance.
 const podReadRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-read' }),
   windowMs: 60 * 1000,
   limit: 120,
   standardHeaders: 'draft-7',
@@ -622,6 +627,7 @@ router.patch('/:id/conventions', podFocusRateLimit, auth, requireObjectIdParam('
 });
 
 router.post('/:id/join', rateLimit({
+  store: new SharedRateLimitStore({ name: 'pod-join' }),
   windowMs: 60_000,
   max: 20,
   standardHeaders: true,

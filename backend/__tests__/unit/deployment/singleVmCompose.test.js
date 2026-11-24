@@ -6,8 +6,9 @@
 // excluded below with a reason; otherwise it would silently go missing on the
 // VM. Each fixed override must equal what the chart sets (values.yaml merged
 // with values-dev.yaml) or carry a reason for differing. The rest pins the
-// file's safety properties: no host ports, no docker.sock, no worker split, no
-// floating image tags, and the tunnel and bucket keys reach only their service.
+// file's safety properties: no host ports, no docker.sock, exactly one process
+// running the singleton jobs, no floating image tags, the tunnel and bucket keys
+// reaching only their service, and the two-worker profile's Redis and proxy.
 //
 // Reads the raw chart templates, as opsRunnerEnvMirror.test.js does: the
 // backend jest job has no helm binary.
@@ -29,7 +30,7 @@ const services = Object.keys(compose.services);
 // Chart env names that do not reach the VM, each with why.
 const EXCLUDED = {
   backend: {
-    RUN_WORKER: 'one container does web and worker; unset means both',
+    RUN_WORKER: 'backend does web and worker (unset means both); backend-2 sets it to 0',
     NATIVE_TURNS_ON_WORKER: 'only meaningful with a separate worker',
     K8S_NAMESPACE: 'agent provisioning into Kubernetes pods',
     AGENT_PROVISIONER_NODE_POOL: 'agent provisioning into Kubernetes pods',
@@ -42,9 +43,6 @@ const EXCLUDED = {
     AGENT_COMPUTER_WAKER_TOKEN: 'the agent computer runs as cluster pods',
     AGENT_COMPUTER_STEEL_TOKEN: 'the agent computer runs as cluster pods',
     E2B_API_KEY: 'hosted sandbox, off on the VM',
-    REDIS_HOST: 'Redis is used only with Kubernetes provisioning on; none runs here',
-    REDIS_PORT: 'Redis is used only with Kubernetes provisioning on; none runs here',
-    REDIS_PASSWORD: 'Redis is used only with Kubernetes provisioning on; none runs here',
     PG_CA_CERT_PATH: 'no TLS to the Postgres on the compose network',
     PG_SSL_CA_PATH: 'no TLS to the Postgres on the compose network',
     GOOGLE_APPLICATION_CREDENTIALS: "the cluster's secret-store wiring",
@@ -73,6 +71,8 @@ const INTENTIONAL_DIFFERENCES = {
     AGENT_COMPUTER_ENABLED: 'the agent computer runs as cluster pods',
     SENTRY_RELEASE: "the VM's image tag",
     COMMONLY_BOT_CONFIG_PATH: "not set by the chart (Kubernetes writes a ConfigMap); the image's default path, stated",
+    REDIS_HOST: 'the redis service on the compose network',
+    REDIS_PASSWORD: "the VM's redis password, from .env",
   },
   litellm: {
     DATABASE_URL: "LiteLLM's role on the VM's Postgres, from .env",
@@ -248,11 +248,12 @@ describe('single-VM env files', () => {
     });
   });
 
-  it('the tunnel token and bucket keys reach only their own service', () => {
+  it('the tunnel token, bucket keys and Redis password reach only their own services', () => {
     services.forEach((service) => {
       const text = JSON.stringify(compose.services[service].environment || []);
       if (service !== 'cloudflared') expect(text).not.toContain('TUNNEL_TOKEN');
       if (service !== 'pg-backup') expect(text).not.toMatch(/BACKUP_S3_/);
+      if (!['redis', 'backend', 'backend-2'].includes(service)) expect(text).not.toContain('REDIS_PASSWORD');
       (compose.services[service].env_file || []).forEach((file) => expect(file).not.toMatch(/(^|\/)\.env$/));
     });
   });
@@ -298,15 +299,20 @@ describe('single-VM compose: safety properties', () => {
   it('runs the expected services, with no Mongo service', () => {
     const alwaysOn = services.filter((s) => !compose.services[s].profiles);
     expect([...alwaysOn].sort())
-      .toEqual(['backend', 'cloudflared', 'commonly-bot', 'frontend', 'litellm', 'pg-backup', 'postgres']);
+      .toEqual(['backend', 'cloudflared', 'commonly-bot', 'frontend', 'litellm', 'pg-backup', 'postgres', 'redis']);
   });
 
-  // Profiled services are one-shot jobs a host cron runs with `run --rm`;
-  // `up -d` never starts them. Only the jobs profile is allowed.
-  it('keeps one-shot jobs behind the jobs profile, and only the known ones', () => {
-    const jobs = services.filter((s) => compose.services[s].profiles);
-    expect(jobs).toEqual(['stranger-journey']);
-    jobs.forEach((s) => expect(compose.services[s].profiles).toEqual(['jobs']));
+  // `up -d` starts no profiled service. The jobs profile holds one-shot jobs a
+  // host cron runs; two-workers holds the second backend and its proxy, off
+  // until SRE sets COMPOSE_PROFILES. No other profile exists.
+  it('keeps one-shot jobs and the second backend behind their profiles, and only the known ones', () => {
+    const profiled = Object.fromEntries(services.filter((s) => compose.services[s].profiles)
+      .map((s) => [s, compose.services[s].profiles]));
+    expect(profiled).toEqual({
+      'stranger-journey': ['jobs'],
+      'backend-2': ['two-workers'],
+      'api-lb': ['two-workers'],
+    });
   });
 
   // A full `docker compose up` starts LiteLLM beside its callers, and a model
@@ -376,7 +382,7 @@ describe('single-VM compose: safety properties', () => {
     expect(svc.network_mode).toBeUndefined();
     // A long-running service restarts; a one-shot job must not, or a failed
     // journey would loop against prod.
-    expect(svc.restart).toBe(svc.profiles ? 'no' : 'unless-stopped');
+    expect(svc.restart).toBe((svc.profiles || []).includes('jobs') ? 'no' : 'unless-stopped');
     expect(svc.logging).toEqual(compose['x-logging']);
   });
 
@@ -434,6 +440,138 @@ describe('single-VM compose: safety properties', () => {
 // Runs the real backup.sh with stub tools on PATH, so the Postgres-only mode is
 // proven by behaviour: it must upload one Postgres dump and must not dump
 // MongoDB, prune, or write the success stamp the health check reads.
+// The `two-workers` profile (runbook docs/deployment/two-backend-workers.md):
+// backend-2 is backend's twin, web only, and stops when it loses Redis; api-lb
+// spreads the API across both and keeps the end user's address.
+describe('single-VM compose: two backend workers', () => {
+  const BACKEND_IMAGE = /\/commonly-backend:/;
+  const backendImageServices = services.filter((s) => BACKEND_IMAGE.test(compose.services[s].image));
+
+  it('runs the backend image only as backend and backend-2', () => {
+    expect(backendImageServices.sort()).toEqual(['backend', 'backend-2']);
+  });
+
+  it("backend-2 is backend's twin: same image, files, mounts and checks, env plus two lines", () => {
+    const { backend } = compose.services;
+    const twin = compose.services['backend-2'];
+    ['image', 'env_file', 'volumes', 'healthcheck', 'stop_grace_period', 'networks']
+      .forEach((key) => expect({ key, value: twin[key] }).toEqual({ key, value: backend[key] }));
+    expect(twin.environment).toEqual([...backend.environment, 'RUN_WORKER=0', 'REQUIRE_SHARED_REDIS=1']);
+  });
+
+  // An env file can't turn the worker back on: RUN_WORKER is excluded from
+  // backend.env, so only the compose lines above decide it.
+  it.each([
+    ['scheduler', 1],
+    ['discordGateway', 1],
+    // Native turns run in every process, under the runner lease.
+    ['nativeQueue', 2],
+  ])('exactly %s runs %i time(s) across the backend processes', (job, times) => {
+    jest.isolateModules(() => {
+      // eslint-disable-next-line global-require
+      const { startBackgroundServices } = require('../../../services/backgroundWorkerStart');
+      const started = { scheduler: 0, discordGateway: 0, nativeQueue: 0 };
+      const fakes = Object.fromEntries(Object.keys(started)
+        .map((name) => [name, { start: () => { started[name] += 1; } }]));
+      jest.spyOn(console, 'log').mockImplementation(() => {});
+      backendImageServices.forEach((service) => {
+        const env = { ...serviceEnv(service), DISCORD_BOT_TOKEN: 'set-in-backend.env' };
+        startBackgroundServices(env, fakes);
+      });
+      console.log.mockRestore();
+      expect(started[job]).toBe(times);
+    });
+    expect(exampleNames('backend.env.example')).not.toContain('RUN_WORKER');
+  });
+
+  it('only backend-2 requires shared Redis; backend serves through a Redis outage', () => {
+    expect(serviceEnv('backend')).not.toHaveProperty('REQUIRE_SHARED_REDIS');
+    expect(serviceEnv('backend-2').REQUIRE_SHARED_REDIS).toBe('1');
+    expect(compose.services.backend.depends_on.redis).toEqual({ condition: 'service_healthy', required: false });
+    expect(compose.services['backend-2'].depends_on.redis).toEqual({ condition: 'service_healthy' });
+  });
+
+  describe('redis', () => {
+    const { redis } = compose.services;
+    const script = redis.command.join('\n');
+
+    it('stores nothing: no snapshot, no append-only file, data on tmpfs', () => {
+      expect(script).toMatch(/--save '' /);
+      expect(script).toMatch(/--appendonly no\b/);
+      expect(redis.tmpfs).toEqual(['/data']);
+      expect(redis).not.toHaveProperty('volumes');
+    });
+
+    it('caps its memory and refuses writes past the cap rather than evicting live counts', () => {
+      expect(script).toMatch(/--maxmemory \d+mb\b/);
+      expect(script).toMatch(/--maxmemory-policy noeviction\b/);
+      expect(redis.mem_limit).toBeDefined();
+    });
+
+    it('requires a password, kept out of the process args', () => {
+      expect(script).toContain("printf 'requirepass %s\\n' \"$$REDIS_PASSWORD\" > /tmp/redis.conf");
+      expect(script).toMatch(/exec docker-entrypoint\.sh redis-server \/tmp\/redis\.conf /);
+      expect(script).not.toMatch(/--requirepass/);
+      // The compose file's own interpolation, as a literal.
+      // eslint-disable-next-line no-template-curly-in-string
+      expect(redis.environment).toContain('REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}');
+      expect(redis.healthcheck.test).toEqual(['CMD', 'redis-cli', 'ping']);
+    });
+  });
+
+  describe('api-lb', () => {
+    const conf = readVm('api-lb/nginx.conf');
+    // Directives only, comments stripped, so prose can't satisfy or trip a check.
+    const directives = conf.split('\n').map((line) => line.replace(/#.*/, '').trim()).filter(Boolean);
+    const has = (re) => directives.some((line) => re.test(line));
+
+    it('mounts this config read-only and runs locked down', () => {
+      const lb = compose.services['api-lb'];
+      expect(lb.volumes).toEqual(['./api-lb/nginx.conf:/etc/nginx/nginx.conf:ro']);
+      expect(lb.read_only).toBe(true);
+      expect(lb.cap_drop).toEqual(['ALL']);
+      expect(lb.security_opt).toEqual(['no-new-privileges:true']);
+    });
+
+    // Every internet-facing limiter keys on CF-Connecting-IP first: a rewritten
+    // one buckets every user together (a self-DoS) or lets a caller pick its
+    // own (a bypass). X-Forwarded-For is appended to, so req.ip still resolves
+    // to the end user.
+    it("passes the end user's address through untouched", () => {
+      expect(has(/proxy_set_header\s+cf-connecting-ip/i)).toBe(false);
+      expect(has(/proxy_set_header\s+x-real-ip/i)).toBe(false);
+      expect(directives).toContain('proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;');
+      expect(has(/proxy_pass_request_headers\s+off/)).toBe(false);
+      expect(has(/underscores_in_headers|ignore_invalid_headers\s+off/)).toBe(false);
+    });
+
+    it('sticks each end user to one backend by that address, consistently', () => {
+      expect(directives).toContain('hash $sticky_key consistent;');
+      expect(conf).toMatch(/map \$http_cf_connecting_ip \$sticky_key \{\s*""\s+\$remote_addr;\s*default\s+\$http_cf_connecting_ip;\s*\}/);
+    });
+
+    it('fails over to the other backend, never replaying a request body', () => {
+      expect(directives).toContain('proxy_next_upstream error timeout http_502 http_503;');
+      expect(has(/non_idempotent/)).toBe(false);
+      expect(directives).toEqual(expect.arrayContaining([
+        'server backend:5000 resolve max_fails=1 fail_timeout=10s;',
+        'server backend-2:5000 resolve max_fails=1 fail_timeout=10s;',
+      ]));
+      expect(directives).toContain('resolver 127.0.0.11 valid=5s ipv6=off;');
+    });
+
+    it('carries WebSocket upgrades and long reads, with no body cap of its own', () => {
+      expect(directives).toEqual(expect.arrayContaining([
+        'proxy_http_version 1.1;',
+        'proxy_set_header Upgrade $http_upgrade;',
+        'proxy_set_header Connection $connection_upgrade;',
+        'client_max_body_size 0;',
+        'proxy_buffering off;',
+      ]));
+    });
+  });
+});
+
 describe('backup.sh Postgres-only runs', () => {
   const stub = (dir, name, body) => {
     fs.writeFileSync(path.join(dir, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });

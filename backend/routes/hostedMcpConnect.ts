@@ -18,6 +18,8 @@ import type { Request, Response } from 'express';
 import type { HostedMcpAuthorizationServer } from '../services/hostedMcpIntakeService';
 import type { HostedMcpOAuthEntry } from '../services/hostedMcpEntryService';
 import rateLimit from 'express-rate-limit';
+import type { Store } from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
@@ -205,7 +207,9 @@ const publicGetRateLimit = (
   max: number,
   label: string,
   refuse: (res: Response, detail: { max: number, label: string }) => void,
+  store?: Store,
 ) => rateLimit({
+  ...(store ? { store } : {}),
   windowMs: PUBLIC_GET_WINDOW_MS,
   max,
   standardHeaders: true,
@@ -239,7 +243,13 @@ const clientMetadataRateLimit = publicGetRateLimit(600, 'client-metadata', jsonR
 // A browser, once per connect. 60 a minute is far above a human retry pattern
 // and still bounds the route that validates `state` and the browser nonce and
 // then performs a token exchange.
-const callbackRateLimit = publicGetRateLimit(60, 'callback', browserRefusal);
+// Counted in the shared store so the bound holds across backend processes.
+const callbackRateLimit = publicGetRateLimit(
+  60,
+  'callback',
+  browserRefusal,
+  new SharedRateLimitStore({ name: 'hosted-mcp-callback' }),
+);
 
 router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, res: Response) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);

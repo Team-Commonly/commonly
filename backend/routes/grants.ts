@@ -3,6 +3,7 @@ import { agentRuntimeCredential } from '../middleware/agentRuntimeCredential';
 import { githubAppOfConfig, isGithubAppConfigured } from '../services/githubAppNames';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import { Types } from 'mongoose';
@@ -86,6 +87,7 @@ const dualGrantCredential = bindGrantLimiterCredential((req) => resolveDualAuthC
 const agentGrantCredential = bindGrantLimiterCredential((req) => agentRuntimeCredential({ header: (name: string) => req.get(name) }));
 
 const grantRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'grants' }),
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
