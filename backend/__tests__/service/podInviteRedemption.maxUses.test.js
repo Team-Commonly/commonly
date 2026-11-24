@@ -30,16 +30,36 @@ const members = async () => (await Pod.findById(pod._id).lean()).members.map(Str
 const uses = async (invite) => (await PodInvite.findById(invite._id).lean()).useCount;
 
 // Holds every redemption at its pod lookup, which comes after the isUsable()
-// read and before the claim, until `count` of them have arrived.
+// read and before the claim, until `count` of them have read the pod. No
+// redemption goes on until every one has its pod, so none can join before
+// another reads the members.
 const holdAtPodLookup = (count, onRelease = async () => {}) => {
   const findById = Pod.findById.bind(Pod);
   let arrived = 0;
   let release;
   const allArrived = new Promise((resolve) => { release = resolve; });
-  return jest.spyOn(Pod, 'findById').mockImplementation((...args) => {
+  return jest.spyOn(Pod, 'findById').mockImplementation(async (...args) => {
+    const doc = await findById(...args);
     arrived += 1;
     if (arrived === count) onRelease().then(release);
-    return allArrived.then(() => findById(...args));
+    await allArrived;
+    return doc;
+  });
+};
+// Holds every member add (the Pod.updateOne whose filter names `members`)
+// until `count` of them have arrived, so all of them race the add itself.
+const holdAtMemberAdd = (count) => {
+  const updateOne = Pod.updateOne.bind(Pod);
+  let arrived = 0;
+  let release;
+  const allArrived = new Promise((resolve) => { release = resolve; });
+  return jest.spyOn(Pod, 'updateOne').mockImplementation(async (filter, ...rest) => {
+    if (filter && 'members' in filter) {
+      arrived += 1;
+      if (arrived === count) release();
+      await allArrived;
+    }
+    return updateOne(filter, ...rest);
   });
 };
 // A give-back is the update that takes a use away again.
@@ -213,21 +233,26 @@ describe('redeemPodInvite joins one user once (F604)', () => {
   });
   afterEach(clearMongoDb);
 
-  const redeemTwiceAtOnce = async (invite, user) => {
+  // Both redemptions read the pod before either goes on; with `bothAdd`, both
+  // also reach the member add before either writes (only when the invite has
+  // room for both claims).
+  const redeemTwiceAtOnce = async (invite, user, { bothAdd = false } = {}) => {
     const hold = holdAtPodLookup(2);
+    const add = bothAdd ? holdAtMemberAdd(2) : null;
     try {
       return await Promise.all([
         redeemPodInvite(invite.token, user._id), redeemPodInvite(invite.token, user._id),
       ]);
     } finally {
       hold.mockRestore();
+      add?.mockRestore();
     }
   };
 
   test('the same person redeeming twice at once joins once and spends one use', async () => {
     const invite = await makeInvite({ maxUses: 5 });
     const a = await person();
-    const results = await redeemTwiceAtOnce(invite, a);
+    const results = await redeemTwiceAtOnce(invite, a, { bothAdd: true });
 
     expect(results.every((r) => r.ok)).toBe(true);
     expect(results.map((r) => r.alreadyMember).sort()).toEqual([false, true]);
