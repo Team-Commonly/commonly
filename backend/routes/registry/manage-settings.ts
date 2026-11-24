@@ -21,7 +21,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const {
-  adminMayActOnPod, getUserId, normalizeConfigMap, normalizeInstanceId,
+  adminMayActOnPod, adminRoleReachesPod, getUserId, normalizeConfigMap, normalizeInstanceId,
 } = require('./helpers');
 
 const router = express.Router();
@@ -134,14 +134,23 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const agentOwner = installations.some(joinedByMention)
       ? await botOwnerOf(req.params.name, normalizeInstanceId(req.query.instanceId)).catch(() => null) : null;
     const ownsAgent = !!agentOwner && agentOwner === String(userId);
-    const candidates = installations.filter((entry: any) => canManage(entry, userId, isAdmin)
-      || (ownsAgent && joinedByMention(entry)));
-    const pods = await Pod.find({ _id: { $in: candidates.map((entry: any) => entry.podId) } })
+    const pods = await Pod.find({ _id: { $in: installations.map((entry: any) => entry.podId) } })
       .select('name type members').lean();
+    const podById = new Map<string, any>(pods.map((pod: any) => [String(pod._id), pod]));
+    // F617: on someone else's agent-room or agent-admin pod the admin role
+    // counts only for a member (adminRoleReachesPod), so a non-member admin
+    // sees those pods as a non-admin would.
+    // A row whose pod is gone never takes the admin path.
+    const adminOn = (entry: any) => {
+      const pod = podById.get(String(entry.podId));
+      return isAdmin && !!pod && adminRoleReachesPod(pod, userId);
+    };
+    const candidates = installations.filter((entry: any) => canManage(entry, userId, adminOn(entry))
+      || (ownsAgent && joinedByMention(entry)));
     const memberOf = new Set<string>(pods
       .filter((pod: any) => (pod.members || []).some((member: unknown) => String(member) === String(userId)))
       .map((pod: any) => String(pod._id)));
-    const manageable = candidates.filter((entry: any) => canManage(entry, userId, isAdmin)
+    const manageable = candidates.filter((entry: any) => canManage(entry, userId, adminOn(entry))
       || memberOf.has(String(entry.podId)));
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const types = new Map<string, string | undefined>(pods.map((pod: any) => [String(pod._id), pod.type]));
@@ -157,7 +166,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const otherDirectRoomCount = visible.length - listed.length;
     // The agent-level controls (quota, seat, machine) read the row's installer,
     // so a mention row, whose installer is someone else, never supplies them.
-    const ownRows = (rows: any[]) => rows.filter((entry: any) => canManage(entry, userId, isAdmin));
+    const ownRows = (rows: any[]) => rows.filter((entry: any) => canManage(entry, userId, adminOn(entry)));
     const fallback = ownRows(listed).find((entry: any) => entry.status === 'active') || ownRows(listed)[0]
       || ownRows(visible).find((entry: any) => entry.status === 'active') || ownRows(visible)[0];
     const quotaOwner = fallback?.installedBy || userId;
@@ -258,7 +267,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       otherDirectRoomCount,
       installations: await Promise.all(listed.map(async (entry: any) => settings(
         entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)),
-        isAdmin || (await ownerOfInstall(entry).catch(() => null)) === String(userId),
+        adminOn(entry) || (await ownerOfInstall(entry).catch(() => null)) === String(userId),
       ))) });
   } catch (error) {
     console.error('Error loading agent settings:', error);

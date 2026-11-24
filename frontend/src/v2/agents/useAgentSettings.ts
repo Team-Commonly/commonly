@@ -142,8 +142,9 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    // Rooms counted but not listed still mean the agent has pods; only an admin
-    // can read another person's room, so everyone else gets the refused state.
+    // Rooms counted but not listed still mean the agent has pods; an admin can
+    // read another person's agent-room only as a member of it, so everyone else
+    // gets the refused state.
     throw new Error(rows.length || settingsResponse.data.otherDirectRoomCount ? PODS_REFUSED : NOTHING_MANAGEABLE);
   }, [agentName, instanceId, installationUrl]);
 
