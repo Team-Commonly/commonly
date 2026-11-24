@@ -2,6 +2,17 @@
 // has put the agent in the pod. ensureAgentInPod answers null rather than
 // throwing when it adds nobody (a DM that holds two others, a pod gone since it
 // was read), so the route refuses on null before the row is written.
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantAgentJoinPolicy'),
+  assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
@@ -106,7 +117,7 @@ const installAs = async ({
   const req = {
     body: {
       agentName,
-      podId: 'pod-1',
+      podId: 'a0000000000000000000000a',
       version: '1.0.0',
       config: runtimeType ? { runtime: { runtimeType } } : {},
       scopes: [],
@@ -133,7 +144,7 @@ describe('registry install refuses when the agent is not added to the pod', () =
   beforeEach(() => {
     jest.clearAllMocks();
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat', 
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1'], type: 'chat', 
     }));
     AgentInstallation.findOne.mockResolvedValue(null);
     AgentInstallation.find.mockReturnValue(buildLeanChain([]));
@@ -158,7 +169,7 @@ describe('registry install refuses when the agent is not added to the pod', () =
     User.findOne.mockImplementation(() => buildSelectLeanChain(null));
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
     Activity.create.mockResolvedValue(true);
-    AgentIdentityService.ensureAgentInPod.mockResolvedValue({ _id: 'pod-1' });
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue({ _id: 'a0000000000000000000000a' });
   });
 
   test('the agent joins, so the installation is written', async () => {
@@ -178,7 +189,7 @@ describe('registry install refuses when the agent is not added to the pod', () =
     // Past the personal-pod gate (the bot reads as a member), so only the
     // null answer stands between this install and an orphan row.
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-admin',
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-admin',
     }));
     User.findOne.mockImplementation(() => buildSelectLeanChain({ _id: 'bot-1' }));
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(null);

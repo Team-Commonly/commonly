@@ -7,6 +7,13 @@ const mockListHosted = jest.fn();
 const mockHeldHosted = jest.fn();
 const mockPodHasOutsiderWritableGrant = jest.fn();
 
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: (...args) => mockPodHasOutsiderWritableGrant(...args),
 }));
@@ -82,7 +89,7 @@ const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 const makeReq = (runtimeType, overrides = {}) => ({
   body: {
     agentName: 'my-agent',
-    podId: 'pod-1',
+    podId: 'a0000000000000000000000a',
     displayName: 'My agent',
     config: { runtime: { runtimeType } },
     scopes: [],
@@ -102,7 +109,7 @@ describe('registry install — hosted runtime cap gate', () => {
     mockHeldHosted.mockResolvedValue(null);
     mockCountHosted.mockResolvedValue(0);
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat',
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1'], type: 'chat',
     }));
     AgentRegistry.getByName.mockResolvedValue(null); // no manifest → self-serve synth path
     AgentRegistry.create.mockImplementation(async (doc) => ({
@@ -136,7 +143,7 @@ describe('registry install — hosted runtime cap gate', () => {
     expect(res.status).not.toHaveBeenCalledWith(404);
     expect(AgentRegistry.create).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'my-agent', ephemeral: true }));
     expect(mockCountHosted).toHaveBeenCalledWith('user-1');
-    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.objectContaining({
+    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'a0000000000000000000000a', expect.objectContaining({
       config: expect.objectContaining({ runtime: expect.objectContaining({ runtimeType: 'hosted' }) }),
     }));
   });
@@ -147,7 +154,7 @@ describe('registry install — hosted runtime cap gate', () => {
     await installHandler(makeReq('Hosted'), res);
     expect(res.status).not.toHaveBeenCalledWith(403);
     expect(mockCountHosted).toHaveBeenCalledWith('user-1');
-    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.objectContaining({
+    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'a0000000000000000000000a', expect.objectContaining({
       config: expect.objectContaining({ runtime: expect.objectContaining({ runtimeType: 'hosted' }) }),
     }));
   });
@@ -155,7 +162,7 @@ describe('registry install — hosted runtime cap gate', () => {
   it('403s hosted_cap_reached at the cap, before any row is written', async () => {
     mockCountHosted.mockResolvedValue(1);
     mockListHosted.mockResolvedValue([
-      { agentName: 'existing-agent', instanceId: 'default', podId: 'pod-2' },
+      { agentName: 'existing-agent', instanceId: 'default', podId: 'b0000000000000000000000b' },
     ]);
     const res = makeRes();
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -167,7 +174,7 @@ describe('registry install — hosted runtime cap gate', () => {
       code: 'hosted_cap_reached',
       used: 1,
       cap: 1,
-      holders: [{ agentName: 'existing-agent', instanceId: 'default', podId: 'pod-2' }],
+      holders: [{ agentName: 'existing-agent', instanceId: 'default', podId: 'b0000000000000000000000b' }],
     }));
     expect(mockListHosted).toHaveBeenCalledWith('user-1');
     expect(AgentInstallation.install).not.toHaveBeenCalled();
@@ -222,16 +229,16 @@ describe('registry install — hosted runtime cap gate', () => {
 
   it('at the cap, passes the agent the person holds and writes it to the new pod', async () => {
     mockCountHosted.mockResolvedValue(1);
-    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'pod-2' });
+    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'b0000000000000000000000b' });
     const res = makeRes();
     await installHandler(makeReq('hosted'), res);
     expect(res.status).not.toHaveBeenCalledWith(403);
-    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.anything());
+    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'a0000000000000000000000a', expect.anything());
   });
 
   it('a held agent does not pass a cap the person is over', async () => {
     mockCountHosted.mockResolvedValue(2);
-    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'pod-2' });
+    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'b0000000000000000000000b' });
     const res = makeRes();
     await installHandler(makeReq('hosted'), res);
     expect(res.status).toHaveBeenCalledWith(403);
@@ -297,11 +304,11 @@ describe('registry install — hosted runtime cap gate', () => {
       const res = makeRes();
       await installHandler(req, res);
       expect(res.status).not.toHaveBeenCalledWith(403);
-      expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.objectContaining({
+      expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'a0000000000000000000000a', expect.objectContaining({
         config: expect.objectContaining({ hosted: expect.objectContaining({ engine: 'native' }) }),
       }));
       expect(require('../../../services/agentIdentityService').ensureAgentInPod)
-        .toHaveBeenCalledWith(expect.anything(), 'pod-1', 'hosted', 'native');
+        .toHaveBeenCalledWith(expect.anything(), 'a0000000000000000000000a', 'hosted', 'native');
     });
 
     it('asks about the engine the held agent runs on, not the instance default', async () => {
@@ -313,7 +320,7 @@ describe('registry install — hosted runtime cap gate', () => {
         manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
       });
       mockHeldHosted.mockResolvedValue({
-        agentName: 'my-agent', instanceId: 'default', podId: 'pod-2', config: { runtime: { runtimeType: 'hosted' } },
+        agentName: 'my-agent', instanceId: 'default', podId: 'b0000000000000000000000b', config: { runtime: { runtimeType: 'hosted' } },
       });
       const res = makeRes();
       await installHandler(makeReq('hosted'), res);

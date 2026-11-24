@@ -70,6 +70,7 @@ const {
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
+const { isObjectIdHex, INVALID_POD_ID } = require('../../middleware/objectIdParam');
 const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const {
@@ -221,6 +222,12 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // every one of them.
     if (podId !== undefined && podId !== null && typeof podId !== 'string') {
       return res.status(400).json({ error: 'podId must be a string' });
+    }
+    // F584: a string that cannot be an id ("POD=<id>" pasted from a shell,
+    // ":podId") is the caller's error. Unchecked, Pod.findById threw a
+    // CastError into the catch-all below and answered 500.
+    if (typeof podId === 'string' && !isObjectIdHex(podId)) {
+      return res.status(400).json({ code: INVALID_POD_ID.code, error: INVALID_POD_ID.message });
     }
 
     // Fetched once and reused for the #609 owner-scoping decision below and

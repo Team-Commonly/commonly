@@ -15,6 +15,13 @@ const mockCountHosted = jest.fn();
 const mockListHosted = jest.fn();
 const mockPodHasOutsiderWritableGrant = jest.fn();
 
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: (...args) => mockPodHasOutsiderWritableGrant(...args),
 }));
@@ -92,7 +99,7 @@ const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 const makeReq = (runtimeType, overrides = {}) => ({
   body: {
     agentName: 'my-agent',
-    podId: 'pod-1',
+    podId: 'a0000000000000000000000a',
     displayName: 'My agent',
     config: { runtime: { runtimeType } },
     scopes: [],
@@ -118,7 +125,7 @@ describe('registry install — a hosted agent joins with one post', () => {
     mockFireFirstContact.mockResolvedValue(true);
     // Two members: a room where the template intro would otherwise post.
     Pod.findById.mockImplementation(() => {
-      const doc = { _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'chat' };
+      const doc = { _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'chat' };
       return { ...buildLeanChain(doc), select: () => buildLeanChain(doc) };
     });
     AgentRegistry.getByName.mockResolvedValue(null);
@@ -190,7 +197,7 @@ describe('registry install — a hosted agent joins with one post', () => {
 
   it('in a personal room, the greeting gets no handle, since plain replies are auto-routed there', async () => {
     Pod.findById.mockImplementation(() => {
-      const doc = { _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-room' };
+      const doc = { _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-room' };
       return { ...buildLeanChain(doc), select: () => buildLeanChain(doc) };
     });
     User.findOne.mockImplementationOnce(() => buildSelectLeanChain({ _id: 'bot-1' }));

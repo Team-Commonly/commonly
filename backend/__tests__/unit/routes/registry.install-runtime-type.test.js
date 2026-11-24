@@ -1,3 +1,10 @@
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   identityHoldsRuntimeToken: () => Promise.resolve(false),
@@ -127,7 +134,7 @@ describe('registry install runtimeType fallback', () => {
     podHasOutsiderWritableGrant.mockResolvedValue(false);
 
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1',
+      _id: 'a0000000000000000000000a',
       createdBy: 'user-1',
       members: ['user-1'],
       type: 'chat',
@@ -187,7 +194,7 @@ describe('registry install runtimeType fallback', () => {
     const req = {
       body: {
         agentName: 'sample-agent',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: {},
         scopes: [],
@@ -204,7 +211,7 @@ describe('registry install runtimeType fallback', () => {
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
       'sample-agent',
-      'pod-1',
+      'a0000000000000000000000a',
       expect.objectContaining({
         config: expect.objectContaining({
           runtime: expect.objectContaining({
@@ -229,7 +236,7 @@ describe('registry install runtimeType fallback', () => {
       });
       const req = {
         body: {
-          agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: { runtime: { runtimeType: 'webhook' }, ...extraConfig }, scopes: [],
+          agentName: 'sample-agent', podId: 'a0000000000000000000000a', version: '1.0.0', config: { runtime: { runtimeType: 'webhook' }, ...extraConfig }, scopes: [],
         },
         user: { id: 'user-1', username: 'installer' },
         userId: 'user-1',
@@ -273,7 +280,7 @@ describe('registry install runtimeType fallback', () => {
     const req = {
       body: {
         agentName: 'sample-agent',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: {},
         scopes: [],
@@ -290,7 +297,7 @@ describe('registry install runtimeType fallback', () => {
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
       'sample-agent',
-      'pod-1',
+      'a0000000000000000000000a',
       expect.objectContaining({
         config: expect.objectContaining({
           runtime: expect.objectContaining({
@@ -312,7 +319,7 @@ describe('registry install runtimeType fallback', () => {
       }),
     });
     const req = {
-      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [] },
+      body: { agentName: 'sample-agent', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [] },
       user: { id: 'user-1', username: 'installer' }, userId: 'user-1',
     };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -343,7 +350,7 @@ describe('registry install runtimeType fallback', () => {
     const req = {
       body: {
         agentName: 'sample-agent',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: {},
         scopes: [],
@@ -360,7 +367,7 @@ describe('registry install runtimeType fallback', () => {
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
       'sample-agent',
-      'pod-1',
+      'a0000000000000000000000a',
       expect.objectContaining({
         config: {},
       }),
@@ -379,7 +386,7 @@ describe('registry install runtimeType fallback', () => {
       }),
     });
     const req = {
-      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: `  Your first teammate.   Answers how things work here. ${'x'.repeat(200)}` },
+      body: { agentName: 'sample-agent', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: `  Your first teammate.   Answers how things work here. ${'x'.repeat(200)}` },
       user: { id: 'user-1', username: 'installer' }, userId: 'user-1',
     };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -402,7 +409,7 @@ describe('registry install runtimeType fallback', () => {
     await installHandler({
       body: {
         agentName: 'openclaw',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         instanceId: 'theo',
         config: { runtime: { runtimeType: 'moltbot' } },
@@ -414,7 +421,7 @@ describe('registry install runtimeType fallback', () => {
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
       'openclaw',
-      'pod-1',
+      'a0000000000000000000000a',
       expect.objectContaining({ githubIssueWrite: true }),
     );
   });
@@ -432,7 +439,7 @@ describe('registry install runtimeType fallback', () => {
     await installHandler({
       body: {
         agentName: 'openclaw',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         instanceId: 'community-seat',
         config: { runtime: { runtimeType: 'moltbot' } },
@@ -445,7 +452,7 @@ describe('registry install runtimeType fallback', () => {
 
     expect(AgentInstallation.install).toHaveBeenCalledWith(
       'openclaw',
-      'pod-1',
+      'a0000000000000000000000a',
       expect.objectContaining({ githubIssueWrite: false }),
     );
   });
@@ -466,7 +473,7 @@ describe('registry install runtimeType fallback', () => {
     const req = {
       body: {
         agentName: 'sample-agent',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: {},
         scopes: [],
@@ -485,7 +492,7 @@ describe('registry install runtimeType fallback', () => {
     expect(FirstContactService.maybeFireFirstContact).toHaveBeenCalledWith({
       agentName: 'sample-agent',
       instanceId: 'default',
-      podId: 'pod-1',
+      podId: 'a0000000000000000000000a',
       installedByUserId: 'user-1',
       installerIsAgent: false,
       teamPodMembers: expect.any(Array),
@@ -503,11 +510,11 @@ describe('registry install runtimeType fallback', () => {
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'user-2'], type: 'chat',
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'user-2'], type: 'chat',
     }));
     const req = {
       body: {
-        agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'sample-agent', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -543,7 +550,7 @@ describe('registry install runtimeType fallback', () => {
     const req = {
       body: {
         agentName: 'sample-agent',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         displayName: 'Aria',
         config: {},
@@ -572,7 +579,7 @@ describe('registry install runtimeType fallback', () => {
     // The handler reads the pod twice: `.lean()` for the access check and
     // `.select(...).lean()` for the intro. The fixture must answer both.
     const SoloPod = (name) => {
-      const doc = { _id: 'pod-1', name, createdBy: 'user-1', members: ['user-1'], type: 'chat' };
+      const doc = { _id: 'a0000000000000000000000a', name, createdBy: 'user-1', members: ['user-1'], type: 'chat' };
       Pod.findById.mockReturnValue({
         lean: jest.fn().mockResolvedValue(doc),
         select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(doc) }),
@@ -587,7 +594,7 @@ describe('registry install runtimeType fallback', () => {
         manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
       });
       const req = {
-        body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [] },
+        body: { agentName: 'sample-agent', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [] },
         user: { id: 'user-1', username: 'installer' },
         userId: 'user-1',
       };
@@ -601,7 +608,7 @@ describe('registry install runtimeType fallback', () => {
       await runInstall();
 
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ podId: 'pod-1' }),
+        expect.objectContaining({ podId: 'a0000000000000000000000a' }),
       );
     });
 

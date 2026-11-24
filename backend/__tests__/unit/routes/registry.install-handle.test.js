@@ -5,6 +5,17 @@
  * Mention routing is the real agentMentionService over the pod's rows.
  */
 
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantAgentJoinPolicy'),
+  assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
@@ -62,7 +73,7 @@ const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 const AGENT = 'acme-bot';
 const makeReq = (instanceId, displayName, runtime = { runtimeType: 'webhook', adapter: 'claude' }) => ({
   body: {
-    agentName: AGENT, podId: 'pod-1', instanceId, displayName, config: { runtime }, scopes: [],
+    agentName: AGENT, podId: 'a0000000000000000000000a', instanceId, displayName, config: { runtime }, scopes: [],
   },
   user: { id: 'user-1', username: 'installer' },
   userId: 'user-1',
@@ -84,7 +95,7 @@ describe('registry install: the intro names the handle that routes in this pod',
     jest.clearAllMocks();
     podInstalls = [];
     Pod.findById.mockImplementation(() => {
-      const doc = { _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'chat' };
+      const doc = { _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'chat' };
       return { ...buildLeanChain(doc), select: () => buildLeanChain(doc) };
     });
     AgentRegistry.getByName.mockResolvedValue(null);
@@ -94,7 +105,7 @@ describe('registry install: the intro names the handle that routes in this pod',
     AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
     AgentInstallation.findOne.mockResolvedValue(null);
     AgentInstallation.find.mockImplementation((filter = {}) => buildLeanChain(
-      (filter.podId?.$eq ?? filter.podId) === 'pod-1' && filter.status === 'active' ? podInstalls : [],
+      (filter.podId?.$eq ?? filter.podId) === 'a0000000000000000000000a' && filter.status === 'active' ? podInstalls : [],
     ));
     AgentInstallation.install.mockImplementation(async (agentName, podId, options) => {
       const installation = {
@@ -151,7 +162,7 @@ describe('registry install: the intro names the handle that routes in this pod',
   // while it is the pod's one install of that agent.
   it('names a default install beside a sibling by its agent-instance key, since its bare name routes nowhere', async () => {
     podInstalls.push({
-      agentName: AGENT, podId: 'pod-1', instanceId: 'swe-dogfood', displayName: 'Rivet', status: 'active',
+      agentName: AGENT, podId: 'a0000000000000000000000a', instanceId: 'swe-dogfood', displayName: 'Rivet', status: 'active',
     });
     const res = makeRes();
     await installHandler(makeReq('default', 'Default bot'), res);
