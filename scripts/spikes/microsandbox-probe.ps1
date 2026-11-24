@@ -17,8 +17,8 @@ function Section($t) { "`n==== $t" }
 # keep the CR in every value and file name.
 function B64($s) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($s -replace "`r", ''))) }
 # Runs a shell script inside a sandbox without Windows quoting getting in the way.
-function GuestSh($name, $script, $extra = @()) {
-  & $msb exec @extra $name -- sh -c "echo $(B64 $script) | base64 -d | sh"
+function GuestSh($name, $script) {
+  & $msb exec $name -- sh -c "echo $(B64 $script) | base64 -d | sh"
   "exit: $LASTEXITCODE"
 }
 $probePy = Get-Content -Raw (Join-Path $here 'guest-net-probe.py')
@@ -26,6 +26,12 @@ function NetProbe($label, $netFlags, $targets) {
   Section "net: $label  [$($netFlags -join ' ')]"
   & $msb run @netFlags python -- python3 -c "import base64;exec(base64.b64decode('$(B64 $probePy)'))" @targets
   "exit: $LASTEXITCODE"
+}
+
+Section 'msb run cost, warm (the boot step already pulled the python image)'
+foreach ($i in 1..3) {
+  $t = Measure-Command { & $msb run python -- python3 -c "print(6*7)" | Out-Host }
+  "msb run python $i : $([int]$t.TotalMilliseconds) ms"
 }
 
 Section 'front: stub model, provider proxies, and a loopback-only stand-in for Postgres'
@@ -109,7 +115,7 @@ Section 'agents: Claude Code 2.1.331 and Codex 0.172.0 inside, proxy as the only
 # the fence: only DNS and the two proxy ports.
 & $msb volume create agents --kind disk --size 3G 2>&1 | Out-Host
 $t = Measure-Command {
-  & $msb run --cpus 2 --memory 2G --mount-named agents:/opt/agents:kind=disk,size=3G node -- sh -c "npm i -g --prefix /opt/agents --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -5; ls /opt/agents/bin" | Out-Host
+  & $msb run --cpus 2 --memory 2G --mount-named agents:/opt/agents:kind=disk,size=3G node -- sh -c "npm i -g --prefix /opt/agents --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -5; ls /opt/agents/bin; cd /tmp && apt-get update -qq >/dev/null 2>&1 && apt-get download -qq bubblewrap && dpkg -x bubblewrap_*.deb /opt/agents/bubblewrap && ls -l /opt/agents/bubblewrap/usr/bin/bwrap" | Out-Host
 }
 "install (unfenced): $([int]$t.TotalSeconds) s"
 $fence = @('--no-net', '--net-rule', 'allow@dns,allow@host:tcp:18100,allow@host:tcp:18101', '--mount-named', 'agents:/opt/agents:kind=disk,size=3G')
@@ -126,6 +132,14 @@ wire_api = "responses"
 $agentScript = @"
 export PATH=/opt/agents/bin:`$PATH
 claude --version; codex --version
+echo '== nesting: a bwrap sandbox shaped like the CLI bwrap mode, inside the microVM'
+B=/opt/agents/bubblewrap/usr/bin/bwrap
+mkdir -p /tmp/ws
+`$B --ro-bind / / --bind /tmp/ws /tmp/ws --dev /dev --proc /proc --unshare-all --die-with-parent sh -c 'echo inside bwrap: uid `$(id -u); touch /tmp/ws/ok && echo workspace write ok; touch /etc/nested 2>/dev/null && echo "etc write ALLOWED" || echo "etc write refused"; node -e "require(\"net\").connect(53,\"1.1.1.1\").on(\"connect\",()=>{console.log(\"net ALLOWED\");process.exit()}).on(\"error\",e=>console.log(\"net refused:\",e.code))"'
+echo "bwrap exit `$?"
+echo '== nesting: Codex running a command under its own sandbox'
+codex sandbox linux -- sh -c 'touch /etc/codex-nested 2>/dev/null && echo "etc write ALLOWED" || echo "etc write refused"; echo codex-sandbox ran' 2>&1 | tail -5
+echo "codex sandbox exit `$?"
 export HOME=/root ANTHROPIC_BASE_URL=http://${H}:18100 ANTHROPIC_API_KEY=$($cfg.anthropicProxyToken)
 export CODEX_HOME=/root/.codex COMMONLY_PROXY_TOKEN=$($cfg.openaiProxyToken)
 echo '== vendor hosts (should be refused)'
@@ -133,7 +147,6 @@ node -e 'fetch("https://api.anthropic.com/v1/models").then(r=>console.log("anthr
 node -e 'fetch("https://api.openai.com/v1/models").then(r=>console.log("openai status",r.status)).catch(e=>console.log("openai refused:",e.cause?.code||e.message))'
 node -e 'fetch("http://host.microsandbox.internal:18090/v1/models").then(r=>console.log("raw upstream status",r.status)).catch(e=>console.log("raw upstream refused:",e.cause?.code||e.message))'
 echo '== claude -p through the proxy'
-timeout 120 claude --version
 timeout 120 claude -p 'reply with OK' --model spike-model; echo "claude exit `$?"
 echo '== codex exec through the proxy'
 mkdir -p /root/.codex && echo $(B64 $codexCfg) | base64 -d > /root/.codex/config.toml

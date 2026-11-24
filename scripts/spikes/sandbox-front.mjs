@@ -20,7 +20,8 @@ const FAKE_ANTHROPIC_KEY = 'fake-anthropic-upstream-key-0001';
 const FAKE_OPENAI_KEY = 'fake-openai-upstream-key-0002';
 const FAKE_AGENT_TOKEN = 'fake-agent-token-0003';
 const DIR = process.env.FRONT_DIR || '/run/front';
-const BIND = process.env.FRONT_BIND || '0.0.0.0';
+// Loopback by default; the OpenShell harness sets 0.0.0.0 for its Docker host.
+const BIND = process.env.FRONT_BIND || '127.0.0.1';
 const LOG = `${DIR}/requests.log`;
 mkdirSync(DIR, { recursive: true });
 const log = (line) => appendFileSync(LOG, `${new Date().toISOString()} ${line}\n`);
@@ -108,7 +109,7 @@ const openai = await startProviderProxy({
   wire: 'openai-responses', adapterLabel: 'Codex-spike',
 });
 
-// 3. Forwarders the sandbox can reach as host.openshell.internal.
+// 3. Forwarders the sandbox reaches through its host alias.
 const forward = (listenPort, targetPort, label) => net.createServer((client) => {
   log(`forward ${label} connection from ${client.remoteAddress}`);
   const upstreamSock = net.connect(targetPort, '127.0.0.1');
