@@ -18,6 +18,44 @@ const { HUMAN_FILTER, internalAccountExclusion } = require('./userClassification
 // Pod invite tokens are 16 random bytes in hex (routes/podInvites.ts).
 export const POD_INVITE_TOKEN = /^[a-f0-9]{32}$/;
 
+// The query form of PodInvite.isUsable(): not revoked, not expired, and a use
+// left (maxUses null means unlimited; 0 means none, as isUsable() reads it).
+const usableInviteFilter = (now: Date) => ({
+  revokedAt: null,
+  $and: [
+    { $or: [{ expiresAt: null }, { expiresAt: { $gte: now } }] },
+    { $or: [{ maxUses: null }, { $expr: { $lt: ['$useCount', '$maxUses'] } }] },
+  ],
+});
+
+// Waits between give-back tries: three tries, about a second in all.
+const GIVE_BACK_RETRY_DELAYS_MS = [250, 750];
+
+// Hands a counted use back after a join that failed. A lost give-back leaves
+// the use counted with no member behind it, and a one-use invite would then
+// refuse forever, so it retries; if every try fails, one line names the ids an
+// operator needs to restore the count.
+const giveBackUse = async (inviteId: unknown, podId: unknown): Promise<void> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await PodInvite.updateOne({ _id: inviteId, useCount: { $gt: 0 } }, { $inc: { useCount: -1 } });
+      return;
+    } catch (error) {
+      const delay = GIVE_BACK_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        console.error(
+          `[pod-invite] give-back failed after ${attempt + 1} tries; invite ${String(inviteId)}`
+          + ` (pod ${String(podId)}) has one use too many counted: ${(error as Error)?.name}`,
+        );
+        return;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, delay); });
+    }
+  }
+};
+
 export type PodInviteRedemption =
   | { ok: true; pod: any; alreadyMember: boolean }
   | { ok: false; status: number; body: Record<string, unknown> };
@@ -58,9 +96,29 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
         throw joinError;
       }
     }
-    pod.members.push(userId);
-    pod.updatedAt = new Date();
-    await pod.save();
+  }
+  // F603: count the use before granting membership, as one conditional update
+  // on a still-usable invite. Two redemptions at once can both pass the
+  // isUsable() read above; only as many as maxUses has room for match here,
+  // and the rest refuse exactly as a used-up invite does. Counting first means
+  // a refused claim never leaves an uncounted member behind; a failed join
+  // gives its use back.
+  const claimed = await PodInvite.updateOne(
+    { _id: invite._id, ...usableInviteFilter(new Date()) },
+    { $inc: { useCount: 1 }, $set: { lastUsedAt: new Date() } },
+  );
+  if (!claimed.modifiedCount) {
+    return { ok: false, status: 404, body: { msg: 'Invite invalid or expired' } };
+  }
+  if (!alreadyMember) {
+    try {
+      pod.members.push(userId);
+      pod.updatedAt = new Date();
+      await pod.save();
+    } catch (joinError) {
+      await giveBackUse(invite._id, pod._id);
+      throw joinError;
+    }
     // F183: best-effort PG mirror write; never fails the redemption.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     await require('./pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(userId));
@@ -81,9 +139,6 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
       }
     }
   }
-  invite.useCount += 1;
-  invite.lastUsedAt = new Date();
-  await invite.save();
   return { ok: true, pod, alreadyMember };
 };
 
