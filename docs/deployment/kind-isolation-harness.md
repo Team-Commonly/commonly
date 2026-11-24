@@ -38,7 +38,7 @@ Every probe runs from a throwaway `agnhost` pod with no service-account token.
   networking works. A `Sandbox` whose pod runs under gVisor is then dropped at every store, the backend and the
   canary.
 - **gVisor.** The RuntimeClass uses the `runsc` handler. A pod under it, and the Sandbox's pod, report gVisor's
-  own kernel (`Linux version 4.4.0`), not the node's.
+  own kernel string (`Linux version 4.19.0-gvisor` in the pinned release), not the node's.
 
 A probe expected to be closed passes only on a connect **timeout**, which is what a dropped packet looks like. A
 DNS failure or a refused port can't pass as enforcement. Every closed path is paired with an open one from an

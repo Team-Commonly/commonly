@@ -126,8 +126,9 @@ host_kernel=$(kubectl exec -n "$NS" runc-kernel -- cat /proc/version)
 for pod in gvisor-kernel "$SANDBOX"; do
   kernel=$(kubectl exec -n "$NS" "$pod" -- cat /proc/version)
   rc=$(kubectl get pod -n "$NS" "$pod" -o jsonpath='{.spec.runtimeClassName}')
-  # gVisor's Sentry reports its own fixed kernel version, never the host's.
-  if [ "$rc" = gvisor ] && [ "$kernel" != "$host_kernel" ] && grep -q 'Linux version 4.4.0' <<<"$kernel"; then
+  # gVisor's Sentry reports its own kernel string (e.g. "Linux version
+  # 4.19.0-gvisor"), never the host's; the version number moves between releases.
+  if [ "$rc" = gvisor ] && [ "$kernel" != "$host_kernel" ] && grep -Eq '^Linux version [0-9.]+-gvisor ' <<<"$kernel"; then
     ok "$pod runs under gVisor ($kernel)"
   else
     bad "$pod is not under gVisor (runtimeClassName '$rc')" "guest: $kernel / host: $host_kernel"
