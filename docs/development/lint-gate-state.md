@@ -96,7 +96,11 @@ Now gated:
 
 - The `Backend typecheck and lint` job runs `npm run lint -- --quiet`, so any
   new backend `.js` error fails CI. Warnings (about 2,800) are not gated.
-- The `lint-staged` backend glob is `backend/**/*.{js,ts}`.
+- The `lint-staged` backend glob is `backend/**/*.{js,ts}`. lint-staged runs
+  from the repo root, where ESLint 8 never reads `backend/.eslintignore`, so
+  that list moved into `ignorePatterns` in `backend/.eslintrc.js`. Otherwise a
+  commit would `--fix` the vendored `vendor/seats` copies, which must stay
+  byte-identical to `packages/seats`.
 - Root `npm run lint` exits 0, so its frontend leg runs again.
 
 Re-enabling a parked rule: delete its line, run `npx eslint . --ext .js --fix`

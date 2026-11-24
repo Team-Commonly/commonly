@@ -5,6 +5,22 @@ module.exports = {
     jest: true,
   },
   extends: ['airbnb-base'],
+  // Here, not in .eslintignore: ESLint 8 reads that file only from the cwd,
+  // and lint-staged runs from the repo root. These patterns resolve against
+  // this file's directory from anywhere.
+  ignorePatterns: [
+    'node_modules/',
+    'coverage/',
+    'build/',
+    'dist/',
+    'test-discord-*.js',
+    'scripts/deploy-discord-commands.js',
+    'scripts/register-discord-commands.js',
+    'services/discordService.js',
+    'services/discordCommandService.js',
+    // Byte-identical copies of packages/seats (see vendor/seats/README.md).
+    'vendor/',
+  ],
   parserOptions: {
     ecmaVersion: 2022,
   },
@@ -199,7 +215,7 @@ module.exports = {
         'no-const-assign': 'off', // For test mocks
         'no-trailing-spaces': 'off', // Disable trailing spaces in test files
 
-        // Test idioms, off for good. Tests require modules after setting up
+        // Test idioms, off for good (counts as in the burn-down note below). Tests require modules after setting up
         // mocks or inside jest.isolateModules, step through fixtures in
         // order, wait with `new Promise((r) => setTimeout(r, ms))`, and feed
         // `${...}` strings and javascript: URLs to code that must refuse them.
@@ -218,6 +234,8 @@ module.exports = {
         // green today. Measured 2026-11-24 at main 8f39b8885 across the
         // backend `.js` tests: 41 rules, 9,081 errors in 533 files, 98.6%
         // auto-fixable with `--fix`, almost all line-break formatting.
+        // Counts are what fires with the other overrides in place (the
+        // utils override below already turns some off for __tests__/utils).
         // Re-enabling them is the follow-up; the counts size it. Every rule
         // not listed stays on, so a test that adds a new kind of violation
         // fails CI.
