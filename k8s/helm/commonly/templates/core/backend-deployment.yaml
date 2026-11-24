@@ -256,6 +256,12 @@ spec:
         - name: HOSTED_ENGINE
           value: {{ .Values.backend.env.hostedEngine | quote }}
         {{- end }}
+        {{- if .Values.backend.env.byoConnectCode }}
+        # BYO connect: "1" issues a one-line connect code beside the agent key
+        # (routes/registry/agent-tokens.ts). Unset keeps the four-line key form.
+        - name: BYO_CONNECT_CODE
+          value: {{ .Values.backend.env.byoConnectCode | quote }}
+        {{- end }}
         {{- if .Values.backend.env.hostedTurnsPerDay }}
         - name: HOSTED_TURNS_PER_DAY
           value: {{ .Values.backend.env.hostedTurnsPerDay | quote }}

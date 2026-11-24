@@ -160,6 +160,11 @@ backend:
     # staging has no HOSTED_RUNTIME_URL, so every hosted provision returned 503.
     # Guard test: stagingHostedEngine.test.js.
     hostedEngine: "native"
+    # Match prod: the VM sets BYO_CONNECT_CODE=1 in deploy/vm/backend.env, so prod
+    # hands out the one-line connect code. Unset, a staging walk gets the old
+    # four-line command and tests a connect step prod no longer serves.
+    # Guard test: stagingByoConnectCode.test.js.
+    byoConnectCode: "1"
     agentComputerEnabled: "true"
     # TASK-284: on here only, for the supervised seat-push walk (PR #2546/#3244).
     seatGithubPushEnabled: "true"
