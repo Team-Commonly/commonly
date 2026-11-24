@@ -215,6 +215,80 @@ describe('an admin acts on an agent in a personal pod only as a member, on every
     });
   });
 
+  // F617: the Settings listing names the pods it lists, so a non-member admin
+  // sees another person's agent-room and agent-admin pods as a non-admin who
+  // didn't install the agent there would: not at all.
+  describe('the agent settings listing', () => {
+    const list = (user) => call('get', `/api/registry/agents/${AGENT}/manage-settings?instanceId=${INSTANCE}`,
+      user, {});
+    const ids = (keys) => keys.map((key) => String(f.pods[key]._id));
+    const listedIds = (res) => res.body.installations.map((row) => row.podId);
+    const removeInstalls = (keys) => AgentInstallation.deleteMany({ podId: { $in: keys.map((k) => f.pods[k]._id) } });
+
+    it('does not name another person\'s agent-admin or agent-room pod to a non-member admin', async () => {
+      const res = await list(f.admin);
+      expect(res.status).toBe(200);
+      expect(listedIds(res)).toEqual(ids(['team', 'chat']));
+      expect(JSON.stringify(res.body)).not.toContain('Routes agent-admin');
+      expect(JSON.stringify(res.body)).not.toContain(String(f.pods.agentAdmin._id));
+      expect(res.body.otherDirectRoomCount).toBe(0);
+    });
+
+    it('answers a non-member admin exactly as a non-admin who did not install it there', async () => {
+      await removeInstalls(['team', 'chat']);
+      const [asAdmin, asOutsider] = await Promise.all([list(f.admin), list(f.member)]);
+      expect(asAdmin.status).toBe(200);
+      expect(asAdmin.body.installations).toEqual([]);
+      expect(asAdmin.body.otherDirectRoomCount).toBe(asOutsider.body.otherDirectRoomCount);
+      expect(asAdmin.body.writablePodId).toBeNull();
+      expect(asAdmin.body.runtimeSourcePodId).toBeNull();
+      expect(JSON.stringify(asAdmin.body)).not.toContain(String(f.pods.agentAdmin._id));
+      expect(JSON.stringify(asAdmin.body)).not.toContain(String(f.pods.agentRoom._id));
+    });
+
+    it('never points writablePodId at a personal pod the admin is not in', async () => {
+      const res = await list(f.admin);
+      expect(res.body.writablePodId).toBe(String(f.pods.team._id));
+      await removeInstalls(['team']);
+      expect((await list(f.admin)).body.writablePodId).toBe(String(f.pods.chat._id));
+    });
+
+    it('lists the personal pod a member admin is in, and team and chat pods as before', async () => {
+      await Pod.updateOne({ _id: f.pods.agentAdmin._id }, { $addToSet: { members: f.admin._id } });
+      const res = await list(f.admin);
+      expect(listedIds(res)).toEqual(ids(['agentAdmin', 'team', 'chat']));
+      expect(res.body.writablePodId).toBe(String(f.pods.agentAdmin._id));
+      expect(res.body.otherDirectRoomCount).toBe(0);
+      const admin = res.body.installations.find((row) => row.podId === String(f.pods.agentAdmin._id));
+      expect(admin.podName).toBe('Routes agent-admin');
+      expect(admin.canChangeAskFirst).toBe(true);
+    });
+
+    it('never lists or picks an installation whose pod is gone, for an admin', async () => {
+      await removeInstalls(['team', 'chat']);
+      const gone = await Pod.create({ name: 'Routes gone', type: 'team', createdBy: f.installer._id,
+        members: [f.installer._id] });
+      await AgentInstallation.create({
+        agentName: AGENT, instanceId: INSTANCE, podId: gone._id, version: '1', installedBy: f.installer._id,
+        status: 'active', config: new Map([['runtime', { runtimeType: 'local-cli', host: 'byo' }]]),
+      });
+      await Pod.deleteOne({ _id: gone._id });
+      const res = await list(f.admin);
+      expect(res.status).toBe(200);
+      expect(res.body.installations).toEqual([]);
+      expect(res.body.writablePodId).toBeNull();
+      expect(JSON.stringify(res.body)).not.toContain(String(gone._id));
+    });
+
+    it('leaves the installer\'s own view unchanged', async () => {
+      const res = await list(f.installer);
+      expect(res.status).toBe(200);
+      expect(listedIds(res)).toEqual(ids(['agentRoom', 'agentAdmin', 'team', 'chat']));
+      expect(res.body.writablePodId).toBe(String(f.pods.agentRoom._id));
+      expect(res.body.otherDirectRoomCount).toBe(0);
+    });
+  });
+
   describe('the user-token metadata read', () => {
     const read = (user, key) => call('get', `/api/registry/pods/${f.pods[key]._id}/agents/${AGENT}/user-token`,
       user, { instanceId: INSTANCE });
