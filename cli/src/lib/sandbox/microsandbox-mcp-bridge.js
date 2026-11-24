@@ -155,10 +155,17 @@ export const startMcpBridge = async ({
   return {
     port,
     secret,
+    // Stops every server it started and waits for them to exit (up to 3 s), so
+    // nothing of the turn outlives it, or holds its folder open on Windows.
     close: async () => {
-      for (const child of children) child.kill();
+      const exits = [...children].map((child) => new Promise((resolve) => {
+        if (child.exitCode !== null && child.exitCode !== undefined) { resolve(); return; }
+        const timer = setTimeout(resolve, 3000);
+        child.once('exit', () => { clearTimeout(timer); resolve(); });
+        child.kill();
+      }));
       for (const socket of sockets) socket.destroy();
-      await new Promise((resolve) => server.close(() => resolve()));
+      await Promise.all([...exits, new Promise((resolve) => { server.close(() => resolve()); })]);
     },
   };
 };

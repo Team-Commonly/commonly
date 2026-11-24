@@ -111,6 +111,7 @@ const main = async () => {
   const turn = await startMicrovmTurn({
     proxyPort: proxy.address().port,
     hostMcpConfig: { mcpServers: { echo: { command: process.execPath, args: [echo] } } },
+    cwd: workspace,
   });
   try {
     await writeMicrovmTurn(turn.turnDir, {

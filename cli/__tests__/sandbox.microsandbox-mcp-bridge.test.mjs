@@ -92,6 +92,10 @@ describe('startMcpBridge', () => {
       expect(await talk(bridge.port, `${bridge.secret} commonly`, 'ping\n')).toBe('echo[host-side]:ping\n');
       expect(spawnImpl.mock.calls[0][2].cwd).toBe(cwd);
     } finally {
+      // The server runs in that folder: stop it first (Windows refuses to
+      // remove a folder a process is in).
+      await bridge?.close();
+      bridge = null;
       rmSync(cwd, { recursive: true, force: true });
     }
   });
