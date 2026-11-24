@@ -101,8 +101,10 @@ module.exports = {
           // the value and kind are keys.
           'object-properties': { exclude: ['[A-Z_-]+', 'value', 'kind'] },
           // The plugin's defaults, which an override replaces rather than
-          // extends, plus the inspector's group renderer (its first two
-          // arguments are a group id and an icon name) and Set.has.
+          // extends, plus Set.has and the inspector's group renderer. Its
+          // first two arguments are a group id and an icon name, but the
+          // exclude covers the whole call, so its third (the header label)
+          // goes unchecked too: pass that through t().
           callees: {
             exclude: [
               'i18n(ext)?', 't', 'require', 'addEventListener',
