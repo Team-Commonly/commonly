@@ -175,15 +175,67 @@ test('searches pod memory and opens an excerpt', async () => {
 test('switching pods drops the previous pod\'s search results and excerpt', async () => {
   axios.get
     .mockResolvedValueOnce({ data: [{ _id: 'pod-1', name: 'Incident Pod' }, { _id: 'pod-2', name: 'Release Pod' }] })
-    .mockResolvedValueOnce({ data: { results: [{ assetId: 'asset-9', title: 'Incident Notes' }] } });
+    .mockResolvedValueOnce({ data: { results: [{ assetId: 'asset-9', title: 'Incident Notes' }] } })
+    .mockResolvedValueOnce({ data: { assetId: 'asset-9', title: 'Incident Notes', text: 'Excerpt body', startLine: 1, endLine: 1 } });
   await renderPage();
   await act(async () => { fireEvent.change(screen.getByPlaceholderText('Search pod memory…'), { target: { value: 'incident' } }); });
   await click('Search memory');
-  expect(screen.getByText('Incident Notes')).toBeInTheDocument();
+  await click('Open excerpt');
+  // Populated first, so the clear below cannot pass vacuously.
+  expect(screen.getByText('Selected asset: asset-9')).toBeInTheDocument();
+  expect(screen.getByText(/Excerpt body/)).toBeInTheDocument();
 
   await act(async () => { fireEvent.change(screen.getByLabelText('Pod'), { target: { value: 'pod-2' } }); });
   expect(screen.queryByText('Incident Notes')).toBeNull();
+  expect(screen.queryByText('Selected asset: asset-9')).toBeNull();
+  expect(screen.queryByText(/Excerpt body/)).toBeNull();
   expect(screen.getByText('Select a search result to load an excerpt.')).toBeInTheDocument();
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+};
+
+test('an older excerpt response that lands last does not replace the newer one', async () => {
+  const first = deferred();
+  const second = deferred();
+  axios.get
+    .mockResolvedValueOnce({ data: [{ _id: 'pod-1', name: 'Incident Pod' }] })
+    .mockResolvedValueOnce({ data: { results: [{ assetId: 'asset-a', title: 'Alpha' }, { assetId: 'asset-b', title: 'Beta' }] } })
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  await renderPage();
+  await act(async () => { fireEvent.change(screen.getByPlaceholderText('Search pod memory…'), { target: { value: 'notes' } }); });
+  await click('Search memory');
+  const [openA, openB] = screen.getAllByRole('button', { name: 'Open excerpt' });
+  await act(async () => { fireEvent.click(openA); });
+  await act(async () => { fireEvent.click(openB); });
+
+  await act(async () => { second.resolve({ data: { assetId: 'asset-b', text: 'Beta text', startLine: 1, endLine: 1 } }); });
+  await act(async () => { first.resolve({ data: { assetId: 'asset-a', text: 'Alpha text', startLine: 1, endLine: 1 } }); });
+
+  expect(screen.getByText('Selected asset: asset-b')).toBeInTheDocument();
+  expect(screen.getByText(/Beta text/)).toBeInTheDocument();
+  expect(screen.queryByText(/Alpha text/)).toBeNull();
+});
+
+test('a search that resolves after the pod changed is dropped', async () => {
+  const pending = deferred();
+  axios.get
+    .mockResolvedValueOnce({ data: [{ _id: 'pod-1', name: 'Incident Pod' }, { _id: 'pod-2', name: 'Release Pod' }] })
+    .mockReturnValueOnce(pending.promise);
+  await renderPage();
+  await act(async () => { fireEvent.change(screen.getByPlaceholderText('Search pod memory…'), { target: { value: 'incident' } }); });
+  await click('Search memory');
+  expect(screen.getByRole('button', { name: 'Searching…' })).toBeInTheDocument();
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Pod'), { target: { value: 'pod-2' } }); });
+  await act(async () => { pending.resolve({ data: { results: [{ assetId: 'asset-9', title: 'Incident Notes' }] } }); });
+
+  expect(screen.queryByText('Incident Notes')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Search memory' })).toBeEnabled();
 });
 
 test('the inspector card radius is a token v2.css defines', () => {

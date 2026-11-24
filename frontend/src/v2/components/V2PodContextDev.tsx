@@ -5,7 +5,7 @@
 // memory search with a line excerpt. The route wraps it in <ProtectedRoute
 // requireAdmin> and the V2FeaturePage chrome, so this renders the page body.
 // An operator tool, kept in English like the page it replaces.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
@@ -249,6 +249,13 @@ const V2PodContextDev: React.FC = () => {
 
   const headers = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
 
+  // Every request below belongs to the pod that started it. A response that
+  // lands after the pod changed is dropped, and so is an excerpt response a
+  // later selection has replaced.
+  const currentPod = useRef(podId);
+  currentPod.current = podId;
+  const excerptRequest = useRef(0);
+
   useEffect(() => {
     if (!token) {
       setPods([]);
@@ -274,13 +281,19 @@ const V2PodContextDev: React.FC = () => {
   // Index, search and excerpt state belong to one pod: an excerpt request for
   // the old pod's asset id under the new pod's path would miss.
   useEffect(() => {
+    excerptRequest.current += 1;
+    setContext(null);
+    setLoadingContext(false);
     setIndexStats(null);
+    setIndexBusy('');
     setIndexError(null);
     setIndexDone(null);
     setResults([]);
+    setSearching(false);
     setSearchError(null);
     setExcerptAssetId('');
     setExcerpt(null);
+    setExcerptLoading(false);
     setExcerptError(null);
   }, [podId]);
 
@@ -290,9 +303,10 @@ const V2PodContextDev: React.FC = () => {
 
   const fetchContext = async () => {
     if (!podId || !token) return;
+    const forPod = podId;
     setLoadingContext(true);
     try {
-      const res = await axios.get(`/api/pods/${podId}/context`, {
+      const res = await axios.get(`/api/pods/${forPod}/context`, {
         headers,
         params: {
           task: task || undefined,
@@ -304,42 +318,50 @@ const V2PodContextDev: React.FC = () => {
           skillRefreshHours: skillRefreshHours || undefined,
         },
       });
+      if (currentPod.current !== forPod) return;
       setContext(res.data);
       setError(null);
     } catch (err) {
+      if (currentPod.current !== forPod) return;
       setError(errorText(err, 'message', 'Failed to fetch pod context.'));
     } finally {
-      setLoadingContext(false);
+      if (currentPod.current === forPod) setLoadingContext(false);
     }
   };
 
   const fetchIndexStats = async () => {
     if (!podId || !token) return;
+    const forPod = podId;
     setIndexBusy('stats');
     try {
-      const res = await axios.get(`/api/v1/pods/${podId}/index/stats`, { headers });
+      const res = await axios.get(`/api/v1/pods/${forPod}/index/stats`, { headers });
+      if (currentPod.current !== forPod) return;
       setIndexStats(res.data);
       setIndexError(null);
     } catch (err) {
+      if (currentPod.current !== forPod) return;
       setIndexError(errorText(err, 'error', 'Failed to fetch index stats.'));
     } finally {
-      setIndexBusy('');
+      if (currentPod.current === forPod) setIndexBusy('');
     }
   };
 
   const rebuildIndex = async (reset: boolean) => {
     if (!podId || !token) return;
+    const forPod = podId;
     setIndexBusy('pod');
     setIndexDone(null);
     try {
-      const res = await axios.post(`/api/v1/pods/${podId}/index/rebuild`, { reset }, { headers });
+      const res = await axios.post(`/api/v1/pods/${forPod}/index/rebuild`, { reset }, { headers });
+      if (currentPod.current !== forPod) return;
       setIndexDone(`Rebuilt index: ${res.data?.indexed} indexed, ${res.data?.errors} errors.`);
       setIndexError(null);
       await fetchIndexStats();
     } catch (err) {
+      if (currentPod.current !== forPod) return;
       setIndexError(errorText(err, 'error', 'Failed to rebuild index.'));
     } finally {
-      setIndexBusy('');
+      if (currentPod.current === forPod) setIndexBusy('');
     }
   };
 
@@ -361,6 +383,9 @@ const V2PodContextDev: React.FC = () => {
 
   const fetchExcerpt = async (assetId: string) => {
     if (!podId || !token || !assetId) return;
+    excerptRequest.current += 1;
+    const request = excerptRequest.current;
+    const isCurrent = () => excerptRequest.current === request;
     setExcerptLoading(true);
     setExcerptAssetId(assetId);
     try {
@@ -368,20 +393,23 @@ const V2PodContextDev: React.FC = () => {
         headers,
         params: { from: excerptFrom || undefined, lines: excerptLines || undefined },
       });
+      if (!isCurrent()) return;
       setExcerpt(res.data);
       setExcerptError(null);
     } catch (err) {
+      if (!isCurrent()) return;
       setExcerptError(errorText(err, 'message', 'Failed to fetch asset excerpt.'));
     } finally {
-      setExcerptLoading(false);
+      if (isCurrent()) setExcerptLoading(false);
     }
   };
 
   const searchMemory = async () => {
     if (!podId || !token || !memoryQuery.trim()) return;
+    const forPod = podId;
     setSearching(true);
     try {
-      const res = await axios.get(`/api/pods/${podId}/context/search`, {
+      const res = await axios.get(`/api/pods/${forPod}/context/search`, {
         headers,
         params: {
           query: memoryQuery,
@@ -390,18 +418,26 @@ const V2PodContextDev: React.FC = () => {
           types: memoryTypes.length ? memoryTypes.join(',') : undefined,
         },
       });
+      if (currentPod.current !== forPod) return;
       setResults(res.data?.results || []);
       setSearchError(null);
     } catch (err) {
+      if (currentPod.current !== forPod) return;
       setSearchError(errorText(err, 'message', 'Failed to search pod memory.'));
     } finally {
-      setSearching(false);
+      if (currentPod.current === forPod) setSearching(false);
     }
   };
 
   const selectResult = (assetId: string) => {
+    if (autoLoadExcerpt) {
+      fetchExcerpt(assetId);
+      return;
+    }
+    // Without auto-load, a newer selection still supersedes an excerpt in flight.
+    excerptRequest.current += 1;
+    setExcerptLoading(false);
     setExcerptAssetId(assetId);
-    if (autoLoadExcerpt) fetchExcerpt(assetId);
   };
 
   const toggleType = (value: string) => setMemoryTypes((prev) => (
