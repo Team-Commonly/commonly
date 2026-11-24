@@ -16,7 +16,7 @@
 // can explicitly replace the old key without changing the agent identity.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
@@ -35,7 +35,7 @@ import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
 import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
-import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel, isRunCommand } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
   type StoredIssue, forgetIssue, forgetStoredIssues, readStoredIssue, saveIssue, sameKeyCreatedAt, storedIssueKey,
@@ -334,6 +334,29 @@ export const seatHarness = (runtime?: SeatRuntime): string | null => {
   return KNOWN_HARNESS_IDS.includes(id) ? id : null;
 };
 
+// F579: how long the page waits for the agents list before it shows the plain form.
+export const YOUR_AGENTS_READ_LIMIT_MS = 2500;
+
+// F579: a pod roster row, as /api/registry/pods/:podId/agents sends it.
+export type ByoRosterRow = {
+  name: string; instanceId?: string; displayName?: string; installedBy?: string | null;
+  runtime?: { runtimeType?: string; host?: string | null } | null;
+  connection?: AgentConnection; fixCommand?: string;
+};
+
+// The viewer's own agents in a pod that run outside Commonly: the rows this
+// page made. The roster gives a runtime connection only to an agent that polls
+// in from somewhere else (a byo host, a webhook, a computer's daemon); a seat
+// Commonly runs reads `available` or `stopped`, and a cloud host is never one.
+export const ownByoAgents = (rows: ByoRosterRow[] | undefined, viewerId: string | null): ByoRosterRow[] => (
+  viewerId ? (rows || []).filter((row) => (
+    String(row.installedBy || '') === viewerId
+    && Boolean(row.connection)
+    && !['available', 'stopped'].includes(row.connection!.state)
+    && (row.runtime?.host || '').toLowerCase() !== 'cloud'
+  )).map((row) => ({ ...row, instanceId: row.instanceId || 'default' })) : []
+);
+
 const V2AgentBYO: React.FC = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
@@ -573,6 +596,27 @@ const V2AgentBYO: React.FC = () => {
   // True once both the availability and the machines requests have answered,
   // successfully or not. Until then, whether there is a choice is unknown.
   const [choicesKnown, setChoicesKnown] = useState(false);
+  // F579: the person's own agents already in this pod, listed above the form
+  // so coming back after a connect doesn't read as "it didn't work". Not on a
+  // link for one named agent: that page is about that agent.
+  const [yourAgents, setYourAgents] = useState<{ podId: string; rows: ByoRosterRow[] } | null>(null);
+  const viewerId = currentUser?._id ? String(currentUser._id) : null;
+  // Never throws: the list is a reminder, and without it the page is the plain form.
+  // The choices wait on this read, so it is bounded: a roster that hangs reads
+  // as no list, and the plain form shows. An answer after the bound is
+  // dropped, never laid in above a form already painted.
+  const readYourAgents = async (forPod: string): Promise<{ podId: string; rows: ByoRosterRow[] } | null> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), YOUR_AGENTS_READ_LIMIT_MS); });
+    const read = api.get<{ agents?: ByoRosterRow[] }>(`/api/registry/pods/${encodeURIComponent(forPod)}/agents`)
+      .then((result) => ({ podId: forPod, rows: ownByoAgents(result?.agents, viewerId) }))
+      .catch(() => null);
+    try {
+      return await Promise.race([read, expired]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const [machineId, setMachineId] = useState<string>('');
   // With no choice cards on screen (no hosting, no computer), bringing your
   // own runtime is the only path, so it is the mode. With cards, it is the
@@ -832,6 +876,26 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; clearInterval(timer); };
   }, [api, podId, reconnectRequest]);
 
+
+  // F579: clearing a result (Install another, Back to start) reads the list
+  // again, so the agent just made is listed above the new form.
+  const resultOpen = Boolean(issued || hosted || placed || reconnectRequest);
+  const resultWasOpen = useRef(false);
+  useEffect(() => {
+    const cleared = resultWasOpen.current && !resultOpen;
+    resultWasOpen.current = resultOpen;
+    if (!cleared || !podId || prefill.name) return undefined;
+    let cancelled = false;
+    void readYourAgents(podId).then((yours) => { if (!cancelled) setYourAgents(yours); });
+    return () => { cancelled = true; };
+  // podId is a dep so a pod change cancels a refresh still in flight, whose
+  // answer would replace the new pod's list. A pod change alone reads nothing
+  // here: `cleared` needs a result that was open on the run before; the mount
+  // chain reads the new pod.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultOpen, podId]);
+  const yourAgentRows = yourAgents?.podId === podId ? yourAgents.rows : [];
+
   // F370 #8: while the chosen harness shows as missing on the chosen computer,
   // re-read the computer's report, so an install made now shows up here
   // without a reload. The daemon probes a missing harness again within a
@@ -1028,9 +1092,20 @@ const V2AgentBYO: React.FC = () => {
           catalogRequested.current = false;
         }
       }
+      // Fifth, after the reads whose order the tests pin (F579). The choices
+      // turn known only once it answers, so the list and the form's act land
+      // in the same paint: a list read after the act painted dropped in above
+      // the form and pushed its button down.
+      if (podId && !prefill.name) {
+        const yours = await readYourAgents(podId);
+        if (cancelled) return;
+        setYourAgents(yours);
+      }
       if (!cancelled) setChoicesKnown(true);
     })();
     return () => { cancelled = true; };
+  // readYourAgents and prefill read only what the deps already name.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, podId, currentUser?._id]);
 
   // Live preview rail — you see the agent you are about to create. The
@@ -2052,6 +2127,9 @@ const V2AgentBYO: React.FC = () => {
   );
   // On the form the person is connecting something else, so the reason Run it
   // here is missing waits behind the (i), and the line is the way to their agent.
+  // Shown with the full form only, once the pod list names the pod.
+  const showYourAgents = yourAgentRows.length > 0 && !showCompactHosted && !showCompactByo && !personaCard
+    && !issued && !hosted && !placed && !reconnectRequest && pods.some((p) => p._id === podId);
   const hostedHeldLine = hostedHeld && (
     <p className="v2-byo__held" data-testid="byo-hosted-held">
       <button type="button" className="v2-byo__link" onClick={openHeld}>
@@ -2209,8 +2287,50 @@ const V2AgentBYO: React.FC = () => {
           </button>
         </div>
       )}
+      {showYourAgents && (
+        <section className="v2-byo__yours" data-testid="byo-your-agents" aria-labelledby="byo-yours-title">
+          <h2 className="v2-byo__label v2-byo__yours-heading" id="byo-yours-title">
+            {t('agentByo.yours.title', { pod: pods.find((p) => p._id === podId)?.name || '' })}
+          </h2>
+          <ul className="v2-byo__yours-list">
+            {yourAgentRows.map((row) => {
+              const instanceId = String(row.instanceId);
+              const connection = row.connection!;
+              const connectLink = `/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(row.name)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1`;
+              const isWrapper = row.runtime?.runtimeType === 'wrapper';
+              return (
+                <li key={`${row.name}:${instanceId}`} className="v2-byo__yours-row" data-testid="byo-your-agent">
+                  <span className="v2-byo__yours-name">{row.displayName || row.name}</span>
+                  <span className={`v2-byo__preview-status${connection.state === 'connected' ? ' v2-byo__preview-status--live' : ''}`}>
+                    <span className="v2-byo__preview-dot" aria-hidden="true" />
+                    {connectionLabel(connection, t)}
+                  </span>
+                  <span className="v2-byo__yours-actions">
+                    {/* The same links Your Team's card opens: the page then shows the
+                        command again (F572) or gives a new one for an unused key (F516). */}
+                    {connection.state === 'never' && isRunCommand(row.fixCommand) && !isWrapper && (
+                      <button type="button" className="v2-byo__link" onClick={() => navigate(connectLink)}>
+                        {t('agentConnection.connect')}
+                      </button>
+                    )}
+                    {['revoked', 'stale'].includes(connection.state) && (
+                      <button type="button" className="v2-byo__link" onClick={() => navigate(`${connectLink}${isWrapper ? '&mode=machine' : ''}`)}>
+                        {t('agentConnection.reconnect')}
+                      </button>
+                    )}
+                    <button type="button" className="v2-byo__link" onClick={() => navigate(`/v2/pods/${podId}`)}>
+                      {t('agentByo.actions.goToPod')}
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
+          {showYourAgents && <h2 className="v2-byo__label v2-byo__yours-heading">{t('agentByo.yours.addAnother')}</h2>}
           {hostedHeldLine}
           {(hostedOffered || machineOffered) && (
             <>
@@ -3159,7 +3279,7 @@ const V2AgentBYO: React.FC = () => {
       )}
       </div>
       <aside className="v2-byo__preview" data-testid="byo-preview">
-        <div className="v2-byo__preview-label">{t('agentByo.preview.title')}</div>
+        <div className="v2-byo__preview-label">{t(showYourAgents ? 'agentByo.preview.titleNew' : 'agentByo.preview.title')}</div>
         <div className="v2-byo__preview-card">
           <V2Avatar
             name={previewDisplayName}
@@ -3192,4 +3312,11 @@ const V2AgentBYO: React.FC = () => {
   );
 };
 
-export default V2AgentBYO;
+// F579: a listed agent's Connect opens this same route for that agent. The
+// page reads its link once, into state, so a new link is a new page.
+const V2AgentBYORoute: React.FC = () => {
+  const { search } = useLocation();
+  return <V2AgentBYO key={search} />;
+};
+
+export default V2AgentBYORoute;

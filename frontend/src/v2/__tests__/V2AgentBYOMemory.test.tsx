@@ -151,7 +151,9 @@ describe('V2AgentBYO memory import', () => {
     await waitFor(() => expect(screen.getByText('Workspace 1 (chat)')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByPlaceholderText('my-mcp-agent')).toHaveValue('sam-claude-3'));
     expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toHaveLength(1);
-    expect(axios.get.mock.calls.filter(([url]) => /\/api\/registry\/pods\/.*\/agents$/.test(url))).toHaveLength(0);
+    // The suggested name is never probed against the roster; the one roster
+    // read is the pod's list of the person's own agents (F579), once per pod.
+    expect(axios.get.mock.calls.filter(([url]) => /\/api\/registry\/pods\/.*\/agents$/.test(url))).toHaveLength(1);
   });
 
   test('picking the pod that holds the unkeyed install takes back the suggested suffix', async () => {

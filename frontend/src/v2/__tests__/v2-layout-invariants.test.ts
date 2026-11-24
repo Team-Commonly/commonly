@@ -511,6 +511,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(byoCss, '.v2-byo__hint')).toContain('margin: 0');
   });
 
+  // F579: a long agent name and its actions wrap inside the row at 390px
+  // instead of pushing the page wider.
+  test('BYO "your agents" rows wrap a long name and their actions', () => {
+    const name = ruleBody(byoCss, '.v2-feature--byo .v2-byo__yours-name');
+    expect(name).toContain('min-width: 0');
+    expect(name).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__yours-row')).toContain('flex-wrap: wrap');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__yours-actions')).toContain('flex-wrap: wrap');
+  });
+
   test('BYO field hints take no space until focused or in error', () => {
     expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__field > .v2-byo__hint')).toContain('display: none');
     expect(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint'))
