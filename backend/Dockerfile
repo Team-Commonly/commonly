@@ -7,6 +7,10 @@ WORKDIR /app
 
 COPY package*.json ./
 
+# @openuidev/lang-core's postinstall sends install telemetry unless this is
+# set, and this stage installs before the runtime stage's ENV below applies.
+ENV OPENUI_TELEMETRY_DISABLED=1
+
 # Install all dependencies including dev dependencies
 RUN npm install --include=dev
 
