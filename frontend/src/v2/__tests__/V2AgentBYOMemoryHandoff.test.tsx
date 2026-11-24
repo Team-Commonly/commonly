@@ -4,13 +4,14 @@
 // carries that source (?memoryFrom=&memoryInstance=), and the install the page
 // makes copies the hosted agent's long-term memory, as the attach line would.
 // The server checks the person owns both agents; the page only passes it on.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn(), recordByoStepOnce: jest.fn() }));
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import i18n, { i18nReady } from '../../i18n';
+
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn(), recordByoStepOnce: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {

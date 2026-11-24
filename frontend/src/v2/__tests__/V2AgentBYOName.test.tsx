@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The default agent name follows where it runs (C14 rehearsal, 2026-10-20).
 // "Run it here" takes `<user>-agent`. When "Use my own agent" defaulted to the
 // same name, a person who had just started a hosted agent was refused at the
@@ -12,6 +10,9 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {

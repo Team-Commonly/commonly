@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // ADR-026 Phase 2 slice 3: the "on my computer" path. Pinned: the mode card
 // appears only when the user has daemon machines; submit installs with
 // runtimeType 'wrapper' and files a placement request (never a binding); the
@@ -10,6 +8,9 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('axios', () => {
   const mock = {

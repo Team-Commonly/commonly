@@ -34,7 +34,7 @@
     "backend/**/*.ts": [
       "./backend/node_modules/.bin/eslint --fix"
     ],
-    "frontend/src/**/*.{js,jsx}": [
+    "frontend/src/**/*.{js,jsx,ts,tsx}": [
       "./frontend/node_modules/.bin/eslint --fix"
     ],
     "cli/src/**/*.js": [

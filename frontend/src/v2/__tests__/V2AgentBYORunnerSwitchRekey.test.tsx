@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // TASK-645 item 5, Vera's HOLD on #3019: the runner is the one choice that
 // names the install, so a runner switch must not leave a key-replacement prompt
 // for the other runner's name, and the picker must not move while an issue is in flight.
@@ -9,6 +7,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../hooks/useV2PodAttention', () => ({

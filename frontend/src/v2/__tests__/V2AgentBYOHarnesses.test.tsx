@@ -3,13 +3,14 @@
 // accepts, lets the person pick model and effort, and says plainly what works
 // for each one. Claude Code and Codex keep their listener command; OpenCode
 // gets its own Mac lines; the rest say what can answer instead.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 import React from 'react';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n, { i18nReady } from '../../i18n';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO, { opencodeKeySnippet, opencodeSnippet } from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {

@@ -1063,6 +1063,7 @@ const V2LandingPage: React.FC = () => {
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
           {/* Served from here: this site's image policy refuses a third-party host. */}
           <a className="v2-landing__footer-badge" href="https://www.opensourcealternatives.to" target="_blank" rel="noreferrer">
+            {/* eslint-disable-next-line i18next/no-literal-string -- the alt repeats the badge's own English text */}
             <img src="/badge-osa.svg" alt="As seen on Open Source Alternatives" width="270" height="20" loading="lazy" />
           </a>
         </div>

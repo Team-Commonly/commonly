@@ -1,11 +1,12 @@
 import uiCardRevision from '../cards/uiCardCatalogueRevision.json';
 import React from 'react';
 import { TextEncoder } from 'util';
-Object.assign(global, { TextEncoder });
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '../../i18n';
 import V2MessageRow from '../components/V2MessageRow';
+
+Object.assign(global, { TextEncoder });
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer' } }),
