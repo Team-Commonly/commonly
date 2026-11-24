@@ -25,6 +25,7 @@ import {
   getLastAgentMemoryWrite,
   coarsenAgentMemoryWrite,
 } from '../services/agentMemoryService';
+import { referencesOthersPodUpload } from '../services/attachmentAccess';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -329,6 +330,16 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
     }
     if (!(await canEditAgentAvatar(req, agentName, instanceId))) {
       res.status(403).json({ error: "Only the agent's installer or an admin can edit its avatar" });
+      return;
+    }
+    // Same rule as the person-profile writers, checked as the caller: a pick
+    // that points at a pod-scoped upload has to be one the caller made.
+    const callerId = String(req.userId || req.user?._id || req.user?.id);
+    if (!reset && await referencesOthersPodUpload(avatar, callerId)) {
+      res.status(400).json({
+        error: 'A profile picture has to be your own upload.',
+        code: 'avatar_not_own_upload',
+      });
       return;
     }
 

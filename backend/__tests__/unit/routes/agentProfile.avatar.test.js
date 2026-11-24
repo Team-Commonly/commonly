@@ -18,6 +18,8 @@ jest.mock('../../../models/AgentProfile', () => ({}));
 jest.mock('../../../models/AgentRun', () => ({}));
 jest.mock('../../../models/PodAsset', () => ({}));
 jest.mock('../../../models/pg/Message', () => ({}));
+// An upload pick is checked against its File row (F609); no row = no pod scope.
+jest.mock('../../../models/File', () => ({ findByFileName: jest.fn().mockResolvedValue(null) }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOne: jest.fn() },
   AgentRegistry: { updateOne: jest.fn() },
