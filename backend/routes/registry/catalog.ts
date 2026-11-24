@@ -87,6 +87,23 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
 };
 
 /**
+ * Pair each installation with its pod, keeping only pods the caller can see.
+ * Same rule as /agents/:name/installations: member or creator. Admins see the
+ * same list, since these are listing surfaces (admins have /admin/installations).
+ */
+const filterToVisibleInstallations = async (installations: any[], userId: any) => {
+  const podIds = installations.map((i: any) => i.podId).filter(Boolean);
+  if (!podIds.length) return [];
+  const pods = await Pod.find({ _id: { $in: podIds } })
+    .select('name members createdBy')
+    .lean();
+  const podMap = new Map(pods.map((pod: any) => [pod._id.toString(), pod]));
+  return installations
+    .map((install: any) => ({ install, pod: podMap.get(install.podId?.toString?.()) as any }))
+    .filter(({ pod }: any) => pod && userHasPodAccess(pod, userId));
+};
+
+/**
  * GET /api/registry/agents
  * List available agents in the registry
  */
@@ -193,7 +210,7 @@ catalogRouter.get('/agents/:name', catalogRateLimit, auth, async (req: any, res:
 
 /**
  * GET /api/registry/agents/:name/instances/:instanceId
- * Check if an agent instance exists globally (across all pods).
+ * Check if an agent instance exists, listing the pods the caller can see.
  */
 catalogRouter.get('/agents/:name/instances/:instanceId', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
@@ -210,22 +227,26 @@ catalogRouter.get('/agents/:name/instances/:instanceId', catalogRateLimit, auth,
       return res.json({ exists: false });
     }
 
-    const podIds = globalAgent.installations.map((i: any) => i.podId);
-    const pods = await Pod.find({ _id: { $in: podIds } }).select('name').lean();
-    const podMap = new Map(pods.map((p: any) => [p._id.toString(), p.name]));
-
-    return res.json({
+    // Only installations in pods the caller can see, the same rule as
+    // /agents/:name/installations below. `exists` stays global so a caller
+    // never reads a taken name as free; the runtime details go out only to a
+    // caller who shares at least one pod with the instance.
+    const visible = await filterToVisibleInstallations(globalAgent.installations, userId);
+    const body: any = {
       exists: true,
-      installations: globalAgent.installations.map((i: any) => ({
+      installations: visible.map(({ install: i, pod }: any) => ({
         podId: i.podId.toString(),
-        podName: podMap.get(i.podId.toString()) || 'Unknown Pod',
+        podName: pod.name,
         displayName: i.displayName,
         instanceId: i.instanceId,
         provisionedAt: i.config?.runtime?.provisionedAt || null,
       })),
-      hasRuntimeToken: (globalAgent.agentUser?.agentRuntimeTokens?.length || 0) > 0,
-      agentUsername: globalAgent.agentUser?.username || null,
-    });
+    };
+    if (visible.length > 0) {
+      body.hasRuntimeToken = (globalAgent.agentUser?.agentRuntimeTokens?.length || 0) > 0;
+      body.agentUsername = globalAgent.agentUser?.username || null;
+    }
+    return res.json(body);
   } catch (error) {
     console.error('Error checking agent instance:', error);
     return res.status(500).json({ error: 'Failed to check agent instance' });
@@ -234,7 +255,7 @@ catalogRouter.get('/agents/:name/instances/:instanceId', catalogRateLimit, auth,
 
 /**
  * GET /api/registry/agents/:name/instances
- * List all instances of an agent type (for discovery).
+ * List the instances of an agent type in pods the caller can see.
  */
 catalogRouter.get('/agents/:name/instances', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
@@ -249,8 +270,10 @@ catalogRouter.get('/agents/:name/instances', catalogRateLimit, auth, async (req:
       status: 'active',
     }).lean();
 
+    // Only pods the caller can see; an instance with none is left out.
+    const visible = await filterToVisibleInstallations(installations, userId);
     const instanceMap = new Map();
-    installations.forEach((i: any) => {
+    visible.forEach(({ install: i, pod }: any) => {
       const key = i.instanceId || 'default';
       if (!instanceMap.has(key)) {
         instanceMap.set(key, {
@@ -259,20 +282,10 @@ catalogRouter.get('/agents/:name/instances', catalogRateLimit, auth, async (req:
           pods: [],
         });
       }
-      instanceMap.get(key).pods.push(i.podId.toString());
+      instanceMap.get(key).pods.push({ podId: i.podId.toString(), podName: pod.name });
     });
 
-    const allPodIds = installations.map((i: any) => i.podId);
-    const pods = await Pod.find({ _id: { $in: allPodIds } }).select('name').lean();
-    const podMap = new Map(pods.map((p: any) => [p._id.toString(), p.name]));
-
-    const instances = Array.from(instanceMap.values()).map((inst: any) => ({
-      ...inst,
-      pods: inst.pods.map((podId: any) => ({
-        podId,
-        podName: podMap.get(podId) || 'Unknown Pod',
-      })),
-    }));
+    const instances = Array.from(instanceMap.values());
 
     return res.json({ instances });
   } catch (error) {
