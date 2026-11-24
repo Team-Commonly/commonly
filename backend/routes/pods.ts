@@ -137,20 +137,22 @@ const upload = multer({
 // F596: a refused upload is the client's mistake, so it answers in the route's
 // own shape. Left to the app's error handler, the filter's refusal answered 500
 // and reached Sentry as an unhandled error (staging, 2026-11-24).
-const qrCodeUpload = (req: unknown, res: Res, next: (err?: unknown) => void) => {
+const qrCodeUpload = (req: unknown, res: Res, next: () => void) => {
   upload.single('qrCode')(req, res, (err: unknown) => {
     if (!err) return next();
     const e = err as { code?: string; message?: string };
     if (e.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ message: 'The QR image must be 2 MB or smaller', code: 'qr_code_too_large' });
     }
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ message: e.message || 'The QR image could not be read', code: 'qr_code_upload' });
-    }
     if (err instanceof QrCodeTypeError) {
       return res.status(400).json({ message: QR_CODE_TYPE_REFUSAL, code: 'qr_code_type' });
     }
-    return next(err);
+    // Memory storage does no I/O, so anything else the parser raises is the
+    // request's: a multer limit, or a malformed multipart body from busboy.
+    return res.status(400).json({
+      message: err instanceof multer.MulterError && e.message ? e.message : 'The upload could not be read',
+      code: 'qr_code_upload',
+    });
   });
 };
 // A link id that can't be an ObjectId makes findById throw (a 500); no link

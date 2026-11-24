@@ -394,11 +394,33 @@ describe('pods routes - external link QR code type', () => {
   // A link id that can't be an ObjectId made findById throw a CastError,
   // caught as a 500. Nothing can be stored under such an id: it's a 404.
   it.each([
-    ['get', '/api/pods/external-link/not-an-id/qrcode'],
-    ['delete', '/api/pods/external-link/not-an-id'],
-  ])('answers 404 to %s with a link id that is not an ObjectId', async (method, url) => {
-    await request(app)[method](url).expect(404);
+    ['get', '/api/pods/external-link/not-an-id/qrcode', 'QR code not found'],
+    ['delete', '/api/pods/external-link/not-an-id', 'External link not found'],
+  ])('answers 404 to %s with a link id that is not an ObjectId', async (method, url, message) => {
+    const res = await request(app)[method](url).expect(404);
+    expect(res.body).toEqual({ message });
     expect(ExternalLink.findById).not.toHaveBeenCalled();
+  });
+
+  it('refuses a file under another field name with a 400', async () => {
+    const res = await request(app)
+      .post('/api/pods/external-link')
+      .field('podId', 'p1')
+      .field('type', 'wechat')
+      .attach('avatar', Buffer.from('png-bytes'), { filename: 'qr.png', contentType: 'image/png' });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 'qr_code_upload' });
+    expect(ExternalLink).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed multipart body with a 400', async () => {
+    const res = await request(app)
+      .post('/api/pods/external-link')
+      .set('Content-Type', 'multipart/form-data; boundary=xyz')
+      .send('--xyz\r\nContent-Disposition: form-data; name="podId"\r\n\r\np1');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 'qr_code_upload' });
+    expect(ExternalLink).not.toHaveBeenCalled();
   });
 });
 
@@ -483,7 +505,7 @@ describe('pods routes - external link QR code in the object store', () => {
 
   it('deletes the stored image with the link', async () => {
     ExternalLink.findById.mockResolvedValue({ podId: POD, qrCodeKey: `qr/${POD}/abc.png` });
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: ['l1'], save: jest.fn() });
+    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: ['0123456789abcdef01234567'], save: jest.fn() });
     await request(app).delete('/api/pods/external-link/0123456789abcdef01234567').expect(200);
     expect(mockStore.delete).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
   });
