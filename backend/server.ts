@@ -46,7 +46,6 @@ const marketplaceApiRoutes = require('./routes/marketplace-api');
 const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const { accessLog } = require('./middleware/accessLog');
 const { serverErrorReport } = require('./services/serverErrorReport');
-const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
@@ -56,7 +55,6 @@ const emailRoutes = require('./routes/email');
 const showcaseRoutes = require('./routes/showcase');
 const adminPodsRoutes = require('./routes/admin/pods');
 const adminAgentAuthRoutes = require('./routes/admin/agentAuthRefusals');
-const agentEnsembleRoutes = require('./routes/agentEnsemble');
 const globalIntegrationsRoutes = require('./routes/admin/globalIntegrations');
 const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
 const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
@@ -297,7 +295,6 @@ app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/activity', activityRoutes); // Activity feed
 app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
 app.use('/api/marketplace', marketplaceApiRoutes); // Publish, fork, browse APIs
-app.use('/api/gateways', gatewayRoutes); // Gateway registry (admin)
 app.use('/api/skills', skillsRoutes); // Skill catalogs + imports
 app.use('/api/admin/integrations/global', globalIntegrationsRoutes); // Admin global integrations
 app.use('/api/admin/agents/autonomy', agentAutonomyAdminRoutes); // Admin manual autonomy triggers
@@ -322,7 +319,6 @@ app.use('/api/personas', require('./routes/personas'));
 app.use('/api/agent-memory', require('./routes/agentMemoryView'));
 app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase toggle)
 app.use('/api/admin/agent-auth', adminAgentAuthRoutes); // Agent auth refusal counts (TASK-712)
-app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
 // Dev tooling and test routes: opt-in only (config/devRoutes), never NODE_ENV,
 // which a deployed instance can set to `development`.

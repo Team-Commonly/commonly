@@ -32,20 +32,11 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
-const Gateway = require('../models/Gateway');
-// eslint-disable-next-line global-require
 const AgentIdentityService = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
-// eslint-disable-next-line global-require
-const {
-  getAgentSessionSizes,
-  clearAgentRuntimeSessions,
-  restartAgentRuntime,
-  resolveOpenClawAccountId,
-} = require('./agentProvisionerService');
 // eslint-disable-next-line global-require
 const AgentMemory = require('../models/AgentMemory');
 // eslint-disable-next-line global-require
@@ -216,12 +207,6 @@ interface InstallationDoc {
   config?: Record<string, unknown> | Map<string, unknown>;
 }
 
-interface GatewayDoc {
-  _id?: unknown;
-  status?: string;
-  baseUrl?: string;
-}
-
 interface DeliveryMeta {
   reasonRecorded?: boolean;
   outcome?: string;
@@ -266,35 +251,6 @@ interface GarbageCollectResult {
   // closed with a reason once past the ceiling.
   rescuedPendingInProcess?: number;
   closedPendingInProcess?: number;
-}
-
-interface SessionSizeEntry {
-  accountId: string;
-  bytes: number;
-}
-
-interface ClearSessionsOptions {
-  source?: string;
-  restart?: boolean;
-}
-
-interface ClearSessionsResult {
-  source: string;
-  scannedInstallations: number;
-  targetedInstances: number;
-  clearedCount: number;
-  failedCount: number;
-  processed: unknown[];
-}
-
-interface ClearOversizedResult {
-  source: string;
-  checked: number;
-  thresholdKb?: number;
-  oversized?: Array<{ accountId: string; kb: number }>;
-  cleared: number;
-  failed: number;
-  skipped: number;
 }
 
 interface EnqueueOptions {
@@ -623,7 +579,6 @@ const TYPING_EVENT_TYPES = new Set<string>([
   'summary.request',
   'discord.summary',
   'integration.summary',
-  'ensemble.turn',
 ]);
 
 const signalAgentTyping = async (event: EventDoc): Promise<void> => {
@@ -859,239 +814,6 @@ class AgentEventService {
       if (failed?.status === 'rejected') throw failed.reason;
       return { timedOut: true, requeued: this.inProcessRequeued };
     })();
-  }
-
-  static getContextOverflowRetryLimit(): number {
-    const parsed = Number.parseInt(process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT || '', 10);
-    if (!Number.isFinite(parsed) || parsed < 0) return 1;
-    return parsed;
-  }
-
-  static shouldRestartAfterSessionClear(): boolean {
-    const raw = String(process.env.AGENT_CONTEXT_OVERFLOW_RESTART_AFTER_CLEAR || '1').trim().toLowerCase();
-    return raw !== '0' && raw !== 'false' && raw !== 'no';
-  }
-
-  static getSessionResetIntervalHours(): number {
-    const parsed = Number.parseInt(process.env.AGENT_RUNTIME_SESSION_RESET_HOURS || '', 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) return 24;
-    return Math.max(1, Math.min(168, Math.trunc(parsed)));
-  }
-
-  static isSessionResetDue(now = new Date()): boolean {
-    const intervalHours = this.getSessionResetIntervalHours();
-    const hourBucket = Math.floor(now.getTime() / (60 * 60 * 1000));
-    return hourBucket % intervalHours === 0;
-  }
-
-  static parseOverflowRetryCount(payload: Record<string, unknown> = {}): number {
-    const parsed = Number.parseInt(String(payload?._contextOverflowRetryCount ?? ''), 10);
-    if (!Number.isFinite(parsed) || parsed < 0) return 0;
-    return parsed;
-  }
-
-  static detectContextOverflowText(value: unknown): boolean {
-    const text = String(value || '').trim();
-    if (!text) return false;
-    return /context overflow|prompt too large|context length|max(imum)? context|token limit|too many tokens/i
-      .test(text);
-  }
-
-  static shouldAttemptContextOverflowRecovery(delivery: DeliveryMeta = {}): boolean {
-    if (!delivery || delivery.outcome !== 'error') return false;
-    if (this.detectContextOverflowText(delivery.reason)) return true;
-    return this.detectContextOverflowText(delivery?.details?.message)
-      || this.detectContextOverflowText(delivery?.details?.error)
-      || this.detectContextOverflowText(delivery?.details?.description);
-  }
-
-  static buildContextOverflowRetryPayload(
-    payload: Record<string, unknown> = {},
-    delivery: DeliveryMeta = {},
-  ): Record<string, unknown> {
-    const retryCount = this.parseOverflowRetryCount(payload) + 1;
-    return {
-      ...payload,
-      _contextOverflowRetryCount: retryCount,
-      _contextOverflowRecoveredAt: new Date().toISOString(),
-      _contextOverflowReason: delivery.reason || delivery?.details?.message || 'context overflow',
-      trigger: payload?.trigger ? `${payload.trigger}:context-overflow-retry` : 'context-overflow-retry',
-    };
-  }
-
-  static async resolveGatewayFromInstallation(installation: InstallationDoc): Promise<GatewayDoc | null> {
-    const runtimeConfig = (normalizeConfig(installation?.config)?.runtime || {}) as Record<string, unknown>;
-    const gatewayId = runtimeConfig?.gatewayId;
-    if (!gatewayId) return null;
-    const gateway = await Gateway.findById(gatewayId).lean() as GatewayDoc | null;
-    if (!gateway) return null;
-    if (gateway.status && gateway.status !== 'active') return null;
-    return gateway;
-  }
-
-  static async recoverContextOverflow(event: EventDoc, delivery: DeliveryMeta): Promise<Record<string, unknown>> {
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(event?.agentName) as { runtime?: string } | null;
-    if (typeConfig?.runtime !== 'moltbot') {
-      return { recovered: false, reason: 'runtime_not_openclaw' };
-    }
-
-    const retryLimit = this.getContextOverflowRetryLimit();
-    const retryCount = this.parseOverflowRetryCount(event?.payload);
-    if (retryCount >= retryLimit) {
-      return { recovered: false, reason: 'retry_limit_reached', retryCount, retryLimit };
-    }
-
-    const installation = await AgentInstallation.findOne({
-      agentName: event.agentName,
-      instanceId: event.instanceId || 'default',
-      podId: event.podId,
-      status: 'active',
-    }).select('config.runtime.gatewayId').lean() as InstallationDoc | null;
-
-    const gateway = await this.resolveGatewayFromInstallation(installation || {});
-    const accountId = resolveOpenClawAccountId({
-      agentName: event.agentName,
-      instanceId: event.instanceId || 'default',
-    }) as string;
-
-    const cleared = await clearAgentRuntimeSessions('moltbot', event.instanceId || 'default', {
-      gateway,
-      accountId,
-    });
-    let restarted = null;
-    if (this.shouldRestartAfterSessionClear()) {
-      restarted = await restartAgentRuntime('moltbot', event.instanceId || 'default', { gateway });
-    }
-
-    const retryEvent = await this.enqueue({
-      agentName: event.agentName!,
-      instanceId: event.instanceId || 'default',
-      podId: event.podId,
-      type: event.type!,
-      payload: this.buildContextOverflowRetryPayload(event.payload || {}, delivery),
-    });
-
-    return {
-      recovered: true,
-      retryEventId: (retryEvent as EventDoc)?._id?.toString?.() || null,
-      retryCount: retryCount + 1,
-      retryLimit,
-      cleared,
-      restarted,
-    };
-  }
-
-  static async clearOpenClawSessionsForActiveInstallations({
-    source = 'scheduled',
-    restart = true,
-  }: ClearSessionsOptions = {}): Promise<ClearSessionsResult> {
-    const installations = await AgentInstallation.find({
-      status: 'active',
-    }).select('agentName instanceId config.runtime.gatewayId').lean() as InstallationDoc[];
-
-    const byInstance = new Map<string, { agentName: string; instanceId: string; gatewayId: string | null }>();
-    installations.forEach((installation) => {
-      const typeConfig = AgentIdentityService.getAgentTypeConfig(installation?.agentName) as { runtime?: string } | null;
-      if (typeConfig?.runtime !== 'moltbot') return;
-      const agentName = String(installation.agentName || '').toLowerCase();
-      const instanceId = String(installation.instanceId || 'default');
-      const runtimeConfig = (normalizeConfig(installation?.config)?.runtime || {}) as Record<string, unknown>;
-      const gatewayId = runtimeConfig?.gatewayId ? String(runtimeConfig.gatewayId) : '';
-      const key = `${agentName}:${instanceId}:${gatewayId}`;
-      if (!byInstance.has(key)) {
-        byInstance.set(key, { agentName, instanceId, gatewayId: gatewayId || null });
-      }
-    });
-
-    const targets = Array.from(byInstance.values());
-    const processed = await Promise.all(targets.map(async (target) => {
-      const accountId = resolveOpenClawAccountId({
-        agentName: target.agentName,
-        instanceId: target.instanceId,
-      }) as string;
-
-      try {
-        const gateway = target.gatewayId
-          ? await Gateway.findById(target.gatewayId).lean() as GatewayDoc | null
-          : null;
-        const cleared = await clearAgentRuntimeSessions('moltbot', target.instanceId, {
-          gateway: gateway && (!gateway.status || gateway.status === 'active') ? gateway : null,
-          accountId,
-        });
-        let restarted = null;
-        if (restart) {
-          restarted = await restartAgentRuntime('moltbot', target.instanceId, {
-            gateway: gateway && (!gateway.status || gateway.status === 'active') ? gateway : null,
-          });
-        }
-        return { ...target, accountId, source, status: 'cleared', cleared, restarted };
-      } catch (error) {
-        return { ...target, accountId, source, status: 'failed', error: (error as Error).message };
-      }
-    }));
-
-    const clearedCount = processed.filter((item) => item.status === 'cleared').length;
-    const failedCount = processed.filter((item) => item.status === 'failed').length;
-
-    return {
-      source,
-      scannedInstallations: installations.length,
-      targetedInstances: targets.length,
-      clearedCount,
-      failedCount,
-      processed,
-    };
-  }
-
-  static async clearOversizedAgentSessions({
-    source = 'size-check',
-    restart = false,
-  }: ClearSessionsOptions = {}): Promise<ClearOversizedResult> {
-    const thresholdKb = Math.max(
-      64,
-      Number.parseInt(process.env.AGENT_SESSION_MAX_SIZE_KB || '', 10) || 400,
-    );
-    const thresholdBytes = thresholdKb * 1024;
-
-    let sizes: SessionSizeEntry[];
-    try {
-      sizes = await getAgentSessionSizes() as SessionSizeEntry[];
-    } catch (error) {
-      console.error('[session-size-check] Failed to get session sizes:', (error as Error).message);
-      return { source, checked: 0, cleared: 0, failed: 0, skipped: 0 };
-    }
-
-    const oversized = sizes.filter((s) => s.bytes >= thresholdBytes);
-    let cleared = 0;
-    let failed = 0;
-    const skipped = sizes.length - oversized.length;
-
-    await Promise.all(oversized.map(async (entry) => {
-      try {
-        await clearAgentRuntimeSessions('moltbot', entry.accountId, { accountId: entry.accountId });
-        console.log(
-          `[session-size-check] Cleared sessions for ${entry.accountId} `
-          + `(${Math.round(entry.bytes / 1024)} KB > ${thresholdKb} KB threshold)`,
-        );
-        if (restart) {
-          await restartAgentRuntime('moltbot', entry.accountId, {}).catch(() => null);
-        }
-        cleared += 1;
-      } catch (error) {
-        console.error(`[session-size-check] Failed to clear ${entry.accountId}:`, (error as Error).message);
-        failed += 1;
-      }
-    }));
-
-    return {
-      source,
-      checked: sizes.length,
-      thresholdKb,
-      oversized: oversized.map((s) => ({ accountId: s.accountId, kb: Math.round(s.bytes / 1024) })),
-      cleared,
-      failed,
-      skipped,
-    };
   }
 
   // Test seam: unit tests drive the real webhook delivery, not a copy of it.
@@ -3459,33 +3181,6 @@ class AgentEventService {
         ? result.delivery.reason
         : undefined,
     });
-
-    if (result && normalizedDelivery && this.shouldAttemptContextOverflowRecovery(normalizedDelivery)) {
-      try {
-        const recovery = await this.recoverContextOverflow(result, normalizedDelivery);
-        this.logEventLifecycle('context_overflow_recovery', {
-          eventId: String((eventId as { toString?: () => string })?.toString?.() || eventId),
-          agentName: agentName.toLowerCase(),
-          instanceId,
-          podId: String((result?.podId as { toString?: () => string })?.toString?.() || ''),
-          type: result?.type || '',
-          trigger: result?.payload?.trigger,
-          status: recovery?.recovered ? 'recovered' : 'skipped',
-          error: recovery?.recovered ? undefined : recovery?.reason,
-        });
-      } catch (recoveryError) {
-        this.logEventLifecycle('context_overflow_recovery_failed', {
-          eventId: String((eventId as { toString?: () => string })?.toString?.() || eventId),
-          agentName: agentName.toLowerCase(),
-          instanceId,
-          podId: String((result?.podId as { toString?: () => string })?.toString?.() || ''),
-          type: result?.type || '',
-          trigger: result?.payload?.trigger,
-          status: 'failed',
-          error: (recoveryError as Error).message,
-        });
-      }
-    }
 
     return result;
   }

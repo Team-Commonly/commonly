@@ -2,14 +2,11 @@ import { escapeRegExp } from '../../utils/escape';
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
-const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { RUNTIME_IDENTITY_KEYS, declaredRuntimeIdentity } = require('../../utils/runtimeIdentity');
-const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
 const { PRESET_DEFINITIONS } = require('./presets');
-const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const { PLACEHOLDER_AGENT_DESCRIPTION } = require('../../services/agentInstallationIdentity');
 const { listeningInvite, snapshotPointer } = require('../../services/installIntroCopy');
@@ -25,32 +22,6 @@ const PRESET_CATEGORY_BY_ID: Record<string, string> = (PRESET_DEFINITIONS as any
     if (p?.id && p?.category) acc[String(p.id)] = String(p.category);
     return acc;
   }, {});
-
-const buildIdentityContent = (name: any, persona: any) => {
-  const toneMap = {
-    friendly: 'Warm, approachable, supportive.',
-    professional: 'Precise, measured, focused.',
-    sarcastic: 'Dry, sardonic, irreverent.',
-    educational: 'Patient, explanatory, thorough.',
-    humorous: 'Playful, witty, light.',
-  };
-  const vibe = (toneMap as any)[persona?.tone] || persona?.tone || '';
-  const specialties = Array.isArray(persona?.specialties)
-    ? persona.specialties.join(', ')
-    : String(persona?.specialties || '');
-  const lines = [
-    '# IDENTITY.md',
-    '',
-    `- **Name:** ${name || ''}`,
-    `- **Vibe:** ${vibe}`,
-  ];
-  if (specialties) lines.push(`- **Domain:** ${specialties}`);
-  if (persona?.customInstructions) {
-    lines.push('', '## Notes', '', persona.customInstructions);
-  }
-  lines.push('');
-  return lines.join('\n');
-};
 
 const parseVerifiedFilter = (value: any) => {
   if (value === 'true') return true;
@@ -224,62 +195,6 @@ const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
     hasCustomSkillEnv: skillKeys.length > 0,
     skillEnvKeys: skillKeys,
   };
-};
-
-const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
-  const channels: any = {
-    discord: [],
-    slack: [],
-    telegram: [],
-  };
-  integrations.forEach((integration: any) => {
-    if (!integration || typeof integration !== 'object') return;
-    const id = String(integration._id || '').trim();
-    const type = String(integration.type || '').trim().toLowerCase();
-    const config = integration.config && typeof integration.config === 'object' ? integration.config : {};
-    const name = String(
-      config.channelName
-      || config.groupName
-      || config.chatTitle
-      || integration.name
-      || `${type}-${id}`,
-    ).trim();
-    if (type === 'discord') {
-      const token = String(resolveDiscordBotToken(config.botToken) || '').trim();
-      if (!id || !token) return;
-      channels.discord.push({
-        accountId: id,
-        name,
-        token,
-      });
-      return;
-    }
-    // Slack is deliberately absent (TASK-151): the instance-wide
-    // `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` fallback is retired, and the only
-    // Slack token a runtime is handed now comes from the per-workspace OAuth
-    // bind (`botTokenRef` -> `connectorSecrets`). `channels.slack` stays an
-    // empty array so a consumer that iterates it keeps working.
-    if (type === 'telegram') {
-      // Same rule as Slack above, and measured: every live Telegram path reads
-      // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,
-      // `services/telegramBridgeService.ts`, `decisionCardReconcileService.ts`,
-      // both provisioners). This was the only reader that preferred a per-row
-      // copy (TASK-140).
-      const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-      // The instance's, not the row's (TASK-141): `secretToken` is stripped from
-      // a body like the two Slack keys above.
-      const webhookSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
-      if (!id || !botToken) return;
-      channels.telegram.push({
-        accountId: id,
-        name,
-        botToken,
-        ...(webhookSecret ? { webhookSecret } : {}),
-        ...(config.chatId ? { chatId: String(config.chatId) } : {}),
-      });
-    }
-  });
-  return channels;
 };
 
 /**
@@ -621,69 +536,9 @@ const normalizeInstanceId = (raw: any) => {
 
 const normalizeDisplayName = (value: any) => String(value || '').trim().toLowerCase();
 
-const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }: { runtimeType: any; agentName: any; instanceId: any }) => {
-  if (runtimeType !== 'moltbot') return [];
-  const normalizedInstance = normalizeInstanceId(instanceId);
-  const normalizedAgent = String(agentName || '').trim().toLowerCase();
-  const accountId = normalizedAgent === 'openclaw'
-    ? normalizedInstance
-    : `${normalizedAgent}-${normalizedInstance}`;
-  return [accountId];
-};
-
-const resolveGatewayForRequest = async ({ gatewayId, userId }: { gatewayId: any; userId: any }) => {
-  if (!gatewayId) return null;
-  const user = await User.findById(userId).select('role').lean();
-  if (!user || user.role !== 'admin') {
-    const error: any = new Error('Global admin required to select a gateway');
-    error.status = 403;
-    throw error;
-  }
-  const gateway = await Gateway.findById(gatewayId).lean();
-  if (!gateway) {
-    const error: any = new Error('Gateway not found');
-    error.status = 404;
-    throw error;
-  }
-  const gw = gateway as any;
-  if (gw.status && gw.status !== 'active') {
-    const error: any = new Error('Gateway is not active');
-    error.status = 400;
-    throw error;
-  }
-  if (isK8sMode() && gw.mode !== 'k8s') {
-    const error: any = new Error('Gateway must be K8s mode in this environment');
-    error.status = 400;
-    throw error;
-  }
-  return gateway;
-};
-
 const isGlobalAdminUser = async (userId: any) => {
   const user = await User.findById(userId).select('role').lean();
   return Boolean(user && user.role === 'admin');
-};
-
-const resolveGatewayForInstallation = async ({ gatewayId }: { gatewayId: any }) => {
-  if (!gatewayId) return null;
-  const gateway = await Gateway.findById(gatewayId).lean();
-  if (!gateway) {
-    const error: any = new Error('Gateway not found');
-    error.status = 404;
-    throw error;
-  }
-  const gw2 = gateway as any;
-  if (gw2.status && gw2.status !== 'active') {
-    const error: any = new Error('Gateway is not active');
-    error.status = 400;
-    throw error;
-  }
-  if (isK8sMode() && gw2.mode !== 'k8s') {
-    const error: any = new Error('Gateway must be K8s mode in this environment');
-    error.status = 400;
-    throw error;
-  }
-  return gateway;
 };
 
 const userHasPodAccess = (pod: any, userId: any) => {
@@ -829,7 +684,6 @@ const resolveInstallation = async ({ agentName, podId, instanceId }: { agentName
 };
 
 module.exports = {
-  buildIdentityContent,
   parseVerifiedFilter,
   escapeRegExp,
   getUserId,
@@ -838,17 +692,13 @@ module.exports = {
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
   sanitizeRuntimeConfig,
-  buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
   resolveSeatRuntimeIdentities,
   isInternalSeat,
   toSnippet,
   normalizeInstanceId,
   normalizeDisplayName,
-  buildRuntimeLogFilters,
-  resolveGatewayForRequest,
   isGlobalAdminUser,
-  resolveGatewayForInstallation,
   userHasPodAccess,
   getRequestedInstanceId,
   resolveAuthorizedInstallation,

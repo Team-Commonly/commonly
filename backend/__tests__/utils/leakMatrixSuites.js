@@ -30,7 +30,6 @@ const model = {
   RoomGrant: () => require('../../models/RoomGrant'),
   AgentInstallation: () => require('../../models/AgentRegistry').AgentInstallation,
   Machine: () => require('../../models/Machine'),
-  Gateway: () => require('../../models/Gateway'),
 };
 /* eslint-enable global-require */
 
@@ -578,14 +577,13 @@ const registry = {
 };
 
 // ---------------------------------------------------------------------------
-// 8. Machines + gateways (routes/machines.ts, routes/gateways.ts)
+// 8. Machines (routes/machines.ts)
 // ---------------------------------------------------------------------------
 const machines = {
   name: 'machines',
   mount(app) {
     /* eslint-disable global-require */
     app.use('/api/machines', require('../../routes/machines'));
-    app.use('/api/gateways', require('../../routes/gateways'));
     /* eslint-enable global-require */
   },
   async seed() {
@@ -613,14 +611,6 @@ const machines = {
     await Machine.create({ ownerUserId: stranger, machineId: 'machine-stranger-1', name: 'stranger-laptop' });
     const ownerBearer = await daemonBearer('MACHINE_OWNER', owner, 'machine-owner-1');
     await daemonBearer('MACHINE_STRANGER', stranger, 'machine-stranger-1');
-    const Gateway = model.Gateway();
-    await Gateway.create({ name: 'Local Gateway', slug: 'default', mode: 'local', createdBy: admin });
-    // Rows written before the route stopped storing it can still carry
-    // metadata.gatewayToken; no read may return it.
-    await Gateway.create({
-      name: 'Leak Gateway', slug: 'leak-gw', mode: 'k8s', baseUrl: 'http://gw.example.test', createdBy: admin,
-      metadata: { namespace: 'ns', gatewayToken: s('GATEWAY_METADATA_GATEWAYTOKEN') },
-    });
     return {
       sentinels: s.all,
       boundarySentinels: ['MACHINE_OWNER_DAEMON_BEARER', 'MACHINE_STRANGER_DAEMON_BEARER'],
@@ -633,7 +623,6 @@ const machines = {
     ...matrix('GET', '/api/machines', () => '/api/machines', { owner: 200, stranger: 200, admin: 200 }),
     // daemonAuth('machine:read') is REAL here: the machine role sends its cm_daemon_ bearer.
     ...matrix('GET', '/api/machines/me', () => '/api/machines/me', { owner: 401, stranger: 401, admin: 401, machine: 200 }),
-    ...matrix('GET', '/api/gateways', () => '/api/gateways', { owner: 403, stranger: 403, admin: 200 }),
   ],
 };
 

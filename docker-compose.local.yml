@@ -104,9 +104,6 @@ services:
       - SMTP2GO_FROM_EMAIL=${SMTP2GO_FROM_EMAIL:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
-
-      # Agent runtime — set a shared secret for CAP connections
-      - OPENCLAW_RUNTIME_TOKEN=${OPENCLAW_RUNTIME_TOKEN:-}
     networks:
       - commonly
 

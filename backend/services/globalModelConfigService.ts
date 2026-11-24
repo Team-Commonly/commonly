@@ -1,6 +1,6 @@
 import SystemSetting from '../models/SystemSetting';
 import { publish, subscribe } from './processBus';
-import { agentDefaultModel, defaultChatModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
+import { defaultChatModel, GEMINI_DIRECT_MODEL } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
@@ -16,22 +16,15 @@ interface LlmServiceConfig {
   openrouter: OpenRouterServiceConfig;
 }
 
-interface CommunityAgentModel {
-  primary: string;
-  fallbacks: string[];
-}
-
-interface OpenClawConfig {
-  provider: string;
-  model: string;
-  fallbackModels: string[];
-  devAgentIds: string[];
-  communityAgentModel: CommunityAgentModel;
-}
-
 export interface GlobalModelConfig {
   llmService: LlmServiceConfig;
-  openclaw: OpenClawConfig;
+}
+
+// The stored row can still carry the retired OpenClaw gateway's model section
+// (ADR-021). Nothing reads it; setConfig writes it back unchanged so an admin
+// save never deletes it.
+interface StoredModelConfig extends Partial<GlobalModelConfig> {
+  openclaw?: unknown;
 }
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
@@ -47,27 +40,6 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
       model: '',
-    },
-  },
-  openclaw: {
-    provider: 'openrouter', // google | openrouter | openai | anthropic | custom
-    // The configured default (F105), as the community model below names it:
-    // the `openrouter` provider reaches LiteLLM, which serves it under its own
-    // name. It was `google/gemini-2.5-flash` with two more Gemini names as
-    // fallbacks, which LiteLLM served with DeepSeek wherever Gemini was off.
-    get model(): string {
-      return `openrouter/${agentDefaultModel()}`;
-    },
-    fallbackModels: [],
-    // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
-    devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
-    // Model used by non-dev agents. It names the configured default
-    // (config/agentDefaultModel, F103), read when asked, so it follows the
-    // chart's `litellm.agentDefaultModel`; before F103 it was the nemotron slug
-    // LiteLLM served with DeepSeek. Never an openai-codex model (see the
-    // assertion in applyOpenClawModelDefaults).
-    get communityAgentModel(): CommunityAgentModel {
-      return { primary: `openrouter/${agentDefaultModel()}`, fallbacks: [] };
     },
   },
 };
@@ -95,82 +67,9 @@ const normalizeProvider = (value: unknown): string => {
   return DEFAULT_CONFIG.llmService.provider;
 };
 
-const normalizeOpenClawProvider = (value: unknown): string => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (['google', 'openrouter', 'openai', 'anthropic', 'openai-codex', 'custom'].includes(normalized)) {
-    return normalized;
-  }
-  return DEFAULT_CONFIG.openclaw.provider;
-};
-
 const normalizeModel = (value: unknown, fallback = ''): string => {
   const normalized = String(value || '').trim();
   return normalized || fallback;
-};
-
-const normalizeOpenClawModel = ({ provider, model, fallback }: { provider: string; model: unknown; fallback: string }): string => {
-  const resolved = normalizeModel(model, fallback);
-  if (!resolved) return fallback;
-  if (provider === 'custom') return resolved;
-  if (provider === 'openrouter') {
-    if (resolved.startsWith('openrouter/')) return resolved;
-    if (resolved.startsWith('openrouter:')) {
-      return `openrouter/${resolved.slice('openrouter:'.length)}`;
-    }
-    return `openrouter/${resolved}`;
-  }
-  if (provider === 'openai-codex') {
-    if (resolved.startsWith('openai-codex/')) return resolved;
-    return `openai-codex/${resolved}`;
-  }
-  if (resolved.includes('/')) return resolved;
-  return `${provider}/${resolved}`;
-};
-
-const normalizeDevAgentIds = (value: unknown): string[] => {
-  let list: unknown[] = [];
-  if (Array.isArray(value)) {
-    list = value;
-  } else if (typeof value === 'string') {
-    list = value.split(',');
-  }
-  return Array.from(
-    new Set(list.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)),
-  );
-};
-
-const normalizeFallbackModels = (value: unknown, fallback: string[] = DEFAULT_CONFIG.openclaw.fallbackModels): string[] => {
-  let list: unknown[] = [];
-  if (Array.isArray(value)) {
-    list = value;
-  } else if (typeof value === 'string') {
-    list = value.split(',');
-  }
-  const normalized = Array.from(
-    new Set(
-      list
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean),
-    ),
-  );
-  if (normalized.length) return normalized;
-  return [...fallback];
-};
-
-// This slug was the community default until F103, so a stored one is the old
-// default saved back, not an admin's choice: it reads as today's. Any other
-// model an admin picked, nemotron or not, is kept.
-const RETIRED_COMMUNITY_PRIMARY = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
-
-const normalizeCommunityAgentModel = (value: unknown): CommunityAgentModel => {
-  const defaultVal = DEFAULT_CONFIG.openclaw.communityAgentModel;
-  if (!value || typeof value !== 'object') return { ...defaultVal };
-  const v = value as Partial<CommunityAgentModel>;
-  const primary = String(v.primary || '').trim() === RETIRED_COMMUNITY_PRIMARY
-    ? defaultVal.primary
-    : normalizeModel(v.primary, defaultVal.primary);
-  const fallbacks = normalizeFallbackModels(v.fallbacks, defaultVal.fallbacks);
-  return { primary, fallbacks };
 };
 
 const normalizeContextLimit = (value: unknown): number => {
@@ -194,21 +93,8 @@ const defaultLlmServiceModel = (provider: string): string => {
   return DEFAULT_CONFIG.llmService.model;
 };
 
-// The OpenClaw `google` provider calls Google directly with the gateway's own
-// key, so with no model named it gets a real Gemini name, as before F105.
-// Every other provider gets the configured default.
-const GOOGLE_OPENCLAW_MODEL = 'google/gemini-2.5-flash';
-const defaultOpenClawModel = (provider: string): string => (
-  provider === 'google' ? GOOGLE_OPENCLAW_MODEL : DEFAULT_CONFIG.openclaw.model
-);
-const savedOpenClawModel = (oc: unknown): string => {
-  const saved = (oc || {}) as { model?: unknown; defaultModel?: unknown };
-  return String(saved.model || saved.defaultModel || '').trim();
-};
-
 const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig => {
   const llm = candidate?.llmService || ({} as Partial<LlmServiceConfig>);
-  const oc = candidate?.openclaw || ({} as Partial<OpenClawConfig>);
   const next: GlobalModelConfig = {
     llmService: {
       provider: normalizeProvider(llm?.provider),
@@ -224,19 +110,6 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
         ),
         model: normalizeModel(llm?.openrouter?.model),
       },
-    },
-    openclaw: {
-      provider: normalizeOpenClawProvider(oc?.provider),
-      model: normalizeOpenClawModel({
-        provider: normalizeOpenClawProvider(oc?.provider),
-        model: (oc as Record<string, unknown>)?.model || (oc as Record<string, unknown>)?.defaultModel,
-        fallback: defaultOpenClawModel(normalizeOpenClawProvider(oc?.provider)),
-      }),
-      fallbackModels: normalizeFallbackModels(oc?.fallbackModels),
-      devAgentIds: normalizeDevAgentIds(
-        oc?.devAgentIds ?? DEFAULT_CONFIG.openclaw.devAgentIds,
-      ),
-      communityAgentModel: normalizeCommunityAgentModel(oc?.communityAgentModel),
     },
   };
   return next;
@@ -275,18 +148,16 @@ class GlobalModelConfigService {
   }
 
   // The saved row as written, before defaults are merged in.
-  private static async readStored(): Promise<Partial<GlobalModelConfig>> {
+  private static async readStored(): Promise<StoredModelConfig> {
     const setting = await SystemSetting.findOne({ key: MODEL_CONFIG_KEY }).lean() as Record<string, unknown> | null;
-    return setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
+    return setting?.value && typeof setting.value === 'object' ? setting.value as StoredModelConfig : {};
   }
 
-  private static resolve(stored: Partial<GlobalModelConfig>): GlobalModelConfig {
+  private static resolve(stored: StoredModelConfig): GlobalModelConfig {
     const defaults = GlobalModelConfigService.defaults();
     const storedLlm = (stored.llmService || {}) as Partial<LlmServiceConfig> & { defaultModel?: string };
     const merged = sanitize(
       {
-        ...defaults,
-        ...stored,
         llmService: {
           ...defaults.llmService,
           ...storedLlm,
@@ -296,12 +167,6 @@ class GlobalModelConfigService {
             ...defaults.llmService.openrouter,
             ...(stored.llmService?.openrouter || {}),
           },
-        },
-        openclaw: {
-          ...defaults.openclaw,
-          ...(stored.openclaw || {}),
-          // An unsaved model is the default for the saved provider (sanitize).
-          model: savedOpenClawModel(stored.openclaw),
         },
       },
     );
@@ -317,8 +182,6 @@ class GlobalModelConfigService {
     const storedBefore = await GlobalModelConfigService.readStored();
     const current = GlobalModelConfigService.resolve(storedBefore);
     const mergedCandidate: GlobalModelConfig = {
-      ...current,
-      ...(patch || {}),
       llmService: {
         ...current.llmService,
         ...((patch && patch.llmService) || {}),
@@ -327,37 +190,11 @@ class GlobalModelConfigService {
           ...((patch && patch.llmService && patch.llmService.openrouter) || {}),
         },
       },
-      openclaw: {
-        ...current.openclaw,
-        ...((patch && patch.openclaw) || {}),
-        // A model the save names, else the one the row held; neither, and it is
-        // the default for the provider, so a provider change carries its own.
-        model: patch?.openclaw && 'model' in patch.openclaw
-          ? String(patch.openclaw.model || '')
-          : savedOpenClawModel(storedBefore.openclaw),
-      },
     };
 
     const sanitized = sanitize(mergedCandidate);
-    // The community model follows AGENT_DEFAULT_MODEL until an admin picks
-    // one (F103). The merge above carries the resolved default into every
-    // save, so a value equal to it is stored only when the row already held
-    // an admin's pick (the retired default slug is not one); otherwise it is
-    // the inherited default and stays unstored.
-    const stored = JSON.parse(JSON.stringify(sanitized));
-    const communityDefault = DEFAULT_CONFIG.openclaw.communityAgentModel;
-    const community = sanitized.openclaw.communityAgentModel;
-    const savedPrimary = String(storedBefore.openclaw?.communityAgentModel?.primary || '').trim();
-    const rowHeldAPick = Boolean(savedPrimary) && savedPrimary !== RETIRED_COMMUNITY_PRIMARY;
-    if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
-      delete stored.openclaw.communityAgentModel;
-    }
-    // The OpenClaw model follows the provider's default the same way (F105): a
-    // value equal to it is stored only over a model the row already held.
-    if (!savedOpenClawModel(storedBefore.openclaw)
-      && sanitized.openclaw.model === defaultOpenClawModel(sanitized.openclaw.provider)) {
-      delete stored.openclaw.model;
-    }
+    const stored: StoredModelConfig = JSON.parse(JSON.stringify(sanitized));
+    if (storedBefore.openclaw !== undefined) stored.openclaw = storedBefore.openclaw;
 
     await SystemSetting.findOneAndUpdate(
       { key: MODEL_CONFIG_KEY },

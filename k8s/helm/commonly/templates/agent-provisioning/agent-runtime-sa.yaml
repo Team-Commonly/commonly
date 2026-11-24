@@ -1,6 +1,7 @@
 {{- /*
-The account for pods that run agent turns (the backend's provisioned gateways,
-gatewayProvisionerServiceK8s.ts). The chart grants it no Role and it mounts no
+The account for pods that run agent turns (once the backend's provisioned
+OpenClaw gateways, whose provisioner was removed with the driver, ADR-021). The
+chart grants it no Role and it mounts no
 token. Always rendered, whatever the RBAC switches: the backend and ops-runner
 are always told its name (AGENT_RUNTIME_SERVICE_ACCOUNT), and an account that
 holds nothing costs nothing. Checked by

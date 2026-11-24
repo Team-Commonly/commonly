@@ -16,13 +16,13 @@ const NOT_MONGO_MODELS = ['ToolCall.ts', 'integrationPublicConfig.ts'];
 
 const MONGO_MODELS = [
   'AccountDeletion', 'Activity', 'AdminUserMutationLock', 'AgentAsk', 'AgentComputerTakeover',
-  'AgentCredential', 'AgentDigestState', 'AgentEnsembleState', 'AgentEvent', 'AgentFirstContact',
+  'AgentCredential', 'AgentDigestState', 'AgentEvent', 'AgentFirstContact',
   'AgentInstallation', 'AgentMemory', 'AgentPodReadCursor', 'AgentProfile', 'AgentProviderKey',
   'AgentRegistry', 'AgentRun', 'AgentRuntimeObservation', 'AgentTaskRowWakeState', 'AgentTaskWakeState',
   'AgentTemplate', 'Announcement', 'App', 'AppInstallation', 'ApprovalAction',
   'AttentionItem', 'AttributionVisit', 'AuditLog', 'BillingEvent', 'ChannelVerdict',
   'ConnectorSecret', 'DecisionRequest', 'DeviceAuthorization', 'DiscordIntegration', 'DiscordSummaryHistory',
-  'ExternalLink', 'File', 'Gateway', 'GithubGigBinding', 'GithubGigDelivery',
+  'ExternalLink', 'File', 'GithubGigBinding', 'GithubGigDelivery',
   'HookLedgerEvent', 'HostedMcpDcrRegistration', 'Installable', 'InstallableInstallation', 'Integration',
   'InvitationCode', 'Machine', 'MediaObject', 'Message', 'NeedsYouEmail',
   'NeedsYouEmailQuota', 'OAuthLoginState', 'OAuthState', 'OnboardingSilenceEpisode', 'Pod',

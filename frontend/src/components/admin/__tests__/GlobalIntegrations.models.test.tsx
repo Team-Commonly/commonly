@@ -26,9 +26,10 @@ jest.mock('axios', () => ({
   },
 }));
 
-// What GET /api/admin/integrations/global returns as modelPolicy on an instance
-// that never saved one: getConfig() merges DEFAULT_CONFIG
-// (backend/services/globalModelConfigService.ts), which still names Gemini.
+// What GET /api/admin/integrations/global returned as modelPolicy on an instance
+// that never saved one, before the OpenClaw section left the backend (ADR-021).
+// The openclaw block stays in the fixture so the page is shown to ignore it
+// from a backend that still sends one.
 const serverDefaults = () => ({
   llmService: {
     provider: 'auto',
@@ -91,6 +92,18 @@ test('saving sends the backend LLM policy and no openclaw section', async () => 
   expect(url).toBe('/api/admin/integrations/global/model-policy');
   expect(body.llmService).toMatchObject({ provider: 'auto' });
   expect(body).not.toHaveProperty('openclaw');
+});
+
+// The button also fired reprovision-all, which only rewrote the retired
+// OpenClaw gateway's config; the model policy reaches no agent that way now.
+test('there is no Save + Apply To All Agents button, and a save starts no reprovision', async () => {
+  mockGet.mockResolvedValue(response(serverDefaults()));
+  renderPage();
+  await screen.findByRole('combobox', { name: /Backend LLM Provider/ });
+  expect(screen.queryByRole('button', { name: /Apply To All Agents/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Model Policy' }));
+  await waitFor(() => expect(mockPost).toHaveBeenCalled());
+  expect(mockPost.mock.calls.map(([url]) => url)).not.toContain('/api/registry/admin/installations/reprovision-all');
 });
 
 test('a saved Gemini llmService provider shows as current, and Gemini is not offered', async () => {

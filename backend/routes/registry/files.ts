@@ -1,5 +1,7 @@
 // Agent file routes — extracted from registry.js (GH#112)
-// Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
+// Handles: persona/generate, heartbeat-file (read), a2a-dms. The heartbeat-file
+// write and identity-file routes served the retired OpenClaw gateway; plugins.ts
+// answers them 410.
 // ESM import for express-rate-limit, keyed per caller so limits stay isolated.
 //
 // PLACEMENT IS LOAD-BEARING: the limiter must come BEFORE `auth` in the
@@ -14,8 +16,8 @@
 // flagged; of the 9 with it placed after, 6 are flagged — including the
 // a2a-dms route below (#1658, open since 2026-05-11 with `inspectorRateLimit`
 // applied the whole time) and the heartbeat POST (#1720, which I created by
-// copying that same shape). The 3 after-auth routes that escaped are
-// unexplained; I did not chase them.
+// copying that same shape; that route is now a 410 stub in plugins.ts). The 3
+// after-auth routes that escaped are unexplained; I did not chase them.
 //
 // So the scanner was reporting something true. The cost of reordering is that
 // `req.userId` is not set yet, which is why the key generators below hash the
@@ -40,19 +42,11 @@ const preAuthCallerKey = (req: any) => {
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
-const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const DMService = require('../../services/dmService').default;
 const User = require('../../models/User');
 const { generateText } = require('../../services/llmService');
-const {
-  writeOpenClawHeartbeatFile,
-  readOpenClawHeartbeatFile,
-  readOpenClawIdentityFile,
-  writeWorkspaceIdentityFile,
-  ensureWorkspaceIdentityFile,
-} = require('../../services/agentProvisionerService');
 const {
   getUserId,
   normalizeInstanceId,
@@ -60,7 +54,6 @@ const {
   resolveAuthorizedInstallation,
   getRequestedInstanceId,
   buildAgentProfileId,
-  buildIdentityContent,
   userHasPodAccess,
   parseJsonFromText,
 } = require('./helpers');
@@ -81,32 +74,7 @@ const inspectorRateLimit = rateLimit({
   }),
 });
 
-// Workspace-file writes (HEARTBEAT.md, IDENTITY.md) touch the gateway PVC via an exec into
-// the pod AND write two Mongo documents, so they are more expensive than the
-// read surface above.
-//
-// 120/min, matching inspectorRateLimit, and NOT a tighter cap — 30 was the
-// first number here and it was a guess. Measured (@sprint-review): the UI has
-// five call sites, all single-agent from an open dialog, so no human reaches
-// 30 by clicking. The path that can is a scripted fleet-wide heartbeat repair
-// — the operation this endpoint exists to make correct — which is one POST
-// per agent under one operator token. The fleet is 27 agents today. 27 of 30
-// is not headroom, it is a coincidence that expires when the fleet passes 30,
-// and it fails by killing a repair script partway and leaving a split
-// population. Behind `auth` and keyed per caller, 120 is as un-DoS-able as 30.
-const workspaceWriteRateLimit = rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: preAuthCallerKey,
-  handler: (_req: any, res: any) => res.status(429).json({
-    message: 'rate limit exceeded: 120 requests per 60s',
-    code: 'rate_limited',
-  }),
-});
-
-// Persona generation and the heartbeat and identity files act on one installed
+// Persona generation and the heartbeat file act on one installed
 // agent, so they share the runtime routes' boundary: the installer of that
 // exact instance, or an instance admin. A pod member who did not install the
 // agent gets 403 `installer_only`, the code the config PATCH answers with.
@@ -195,7 +163,8 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req:
 
 /**
  * GET /pods/:podId/agents/:name/heartbeat-file
- * Read the agent's current HEARTBEAT.md from workspace (or AgentProfile cache)
+ * Read the agent's heartbeat content from its AgentProfile. (An OpenClaw
+ * workspace copy was read first until that runtime was retired.)
  */
 filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: any, res: any) => {
   try {
@@ -205,143 +174,17 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
 
     const accountId = normalizeInstanceId(installation.instanceId);
 
-    // Try reading live from PVC first; fall back to AgentProfile cached copy
-    let content = '';
-    let readFromWorkspace = false;
-    try {
-      content = await readOpenClawHeartbeatFile(accountId);
-      readFromWorkspace = Boolean(String(content || '').trim());
-    } catch (_) { /* fall through */ }
-
-    if (!content) {
-      const profile = await AgentProfile.findOne({
-        podId,
-        agentName: name.toLowerCase(),
-        instanceId: installation.instanceId,
-      }).select('heartbeatContent').lean();
-      content = profile?.heartbeatContent || '';
-    } else if (readFromWorkspace) {
-      AgentProfile.updateMany(
-        { podId, agentName: name.toLowerCase(), instanceId: installation.instanceId },
-        { $set: { heartbeatContent: content } },
-      ).catch((profileErr: any) => {
-        console.warn('[heartbeat-file] Failed to sync AgentProfile cache from workspace:', profileErr.message);
-      });
-    }
+    const profile = await AgentProfile.findOne({
+      podId,
+      agentName: name.toLowerCase(),
+      instanceId: installation.instanceId,
+    }).select('heartbeatContent').lean();
+    const content = profile?.heartbeatContent || '';
 
     return res.json({ content, accountId });
   } catch (error) {
     console.error('Error reading heartbeat file:', error);
     return res.status(500).json({ error: 'Failed to read heartbeat file' });
-  }
-});
-
-filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateLimit, auth, async (req: any, res: any) => {
-  try {
-    const { podId, name } = req.params;
-    const { content, reset } = req.body;
-    if (!getUserId(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    if (name.toLowerCase() !== 'openclaw') {
-      return res.status(400).json({ error: 'Heartbeat file updates are only supported for OpenClaw agents.' });
-    }
-
-    const installation = await authorizeInstallerOrRespond(req, res);
-    if (!installation) return undefined;
-
-    const accountId = normalizeInstanceId(installation.instanceId);
-    const trimmed = String(content || '').trim();
-    const normalized = trimmed
-      ? (trimmed.startsWith('#') ? `${trimmed}\n` : `# HEARTBEAT.md\n\n${trimmed}\n`)
-      : '# HEARTBEAT.md\n\n';
-
-    const filePath = await writeOpenClawHeartbeatFile(accountId, normalized, { allowEmpty: true });
-
-    // Persist to AgentProfile so config card can read it without PVC access
-    try {
-      await AgentProfile.updateMany(
-        { podId, agentName: name.toLowerCase(), instanceId: installation.instanceId },
-        { $set: { heartbeatContent: normalized } },
-      );
-    } catch (profileErr: unknown) {
-      console.warn('[heartbeat-file] Failed to persist to AgentProfile:', (profileErr as Error).message);
-    }
-
-    // Record the file as user-owned. `customizations.heartbeat` is the flag the
-    // provisioner checks before overwriting HEARTBEAT.md (`skipHeartbeat` in
-    // agentProvisionerServiceK8s), and until now NOTHING set it — this endpoint
-    // wrote the file and left the installation looking un-customized, so the
-    // next reprovision was free to clobber a hand-authored template. The flag
-    // belongs here because this is where the customization actually happens;
-    // setting it only at install time protected the one case that never needed
-    // protecting. A `reset` clears it: the user is asking for the default back,
-    // which is precisely the state in which the provisioner should own the file.
-    try {
-      await AgentInstallation.updateOne(
-        { _id: installation._id },
-        { $set: { 'config.customizations.heartbeat': !reset } },
-      );
-    } catch (flagErr: unknown) {
-      console.warn('[heartbeat-file] Failed to record heartbeat customization flag:', (flagErr as Error).message);
-    }
-
-    return res.json({ success: true, path: filePath, reset: Boolean(reset) });
-  } catch (error) {
-    console.error('Error updating heartbeat file:', error);
-    return res.status(500).json({ error: 'Failed to update heartbeat file' });
-  }
-});
-
-/**
- * GET /api/registry/pods/:podId/agents/:name/identity-file
- * Read IDENTITY.md from agent workspace
- */
-filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req: any, res: any) => {
-  try {
-    const installation = await authorizeInstallerOrRespond(req, res);
-    if (!installation) return undefined;
-
-    const accountId = normalizeInstanceId(installation.instanceId);
-
-    let content = '';
-    try {
-      content = await readOpenClawIdentityFile(accountId);
-    } catch (_) { /* fall through */ }
-
-    return res.json({ content, accountId });
-  } catch (error) {
-    console.error('Error reading identity file:', error);
-    return res.status(500).json({ error: 'Failed to read identity file' });
-  }
-});
-
-/**
- * POST /api/registry/pods/:podId/agents/:name/identity-file
- * Write IDENTITY.md to agent workspace
- */
-filesRouter.post('/pods/:podId/agents/:name/identity-file', workspaceWriteRateLimit, auth, async (req: any, res: any) => {
-  try {
-    const { name } = req.params;
-    const { content } = req.body;
-    if (!getUserId(req)) return res.status(401).json({ error: 'Unauthorized' });
-
-    if (name.toLowerCase() !== 'openclaw') {
-      return res.status(400).json({ error: 'Identity file updates are only supported for OpenClaw agents.' });
-    }
-
-    const installation = await authorizeInstallerOrRespond(req, res);
-    if (!installation) return undefined;
-
-    const accountId = normalizeInstanceId(installation.instanceId);
-    const normalized = String(content || '').trim();
-    const filePath = await writeWorkspaceIdentityFile(accountId, normalized);
-
-    return res.json({ success: true, path: filePath });
-  } catch (error) {
-    console.error('Error updating identity file:', error);
-    return res.status(500).json({ error: 'Failed to update identity file' });
   }
 });
 

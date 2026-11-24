@@ -233,9 +233,7 @@ module.exports = {
 ## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated into `backend/docs/skills/awesome-agent-skills-index.json`.
-Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
-Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
-OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+The gateway registry (`/api/gateways`), its skill credentials (`/api/skills/gateway-credentials`) and the OpenClaw workspace skill sync and `HEARTBEAT.md` writes were removed with the OpenClaw driver (ADR-021).
 Social/activity route coverage now includes:
 - `backend/__tests__/unit/routes/users.social.test.js` (user follow/unfollow routes)
 - `backend/__tests__/unit/routes/activity.read.test.js` (unread count + mark-read routes)

@@ -41,7 +41,6 @@ const mount = (prefix, name) => {
 
 const ROUTERS = {
   'admin/pods': mount('/api/admin/pods', 'admin/pods'),
-  agentEnsemble: mount('/api/pods', 'agentEnsemble'),
   apps: mount('/api/apps', 'apps'),
   contextApi: mount('/api/v1', 'contextApi'),
   discord: mount('/api/discord', 'discord'),
@@ -56,14 +55,6 @@ const ID = '6a00000000000000000000a1';
 const ROUTES = [
   ['admin/pods', 'post', '/api/admin/pods/:podId/showcase', { publicRead: true }],
   ['admin/pods', 'post', '/api/admin/pods/:podId/listing', { listed: true }],
-  ['agentEnsemble', 'post', '/api/pods/:podId/ensemble/start'],
-  ['agentEnsemble', 'post', '/api/pods/:podId/ensemble/pause'],
-  ['agentEnsemble', 'post', '/api/pods/:podId/ensemble/resume'],
-  ['agentEnsemble', 'post', '/api/pods/:podId/ensemble/complete'],
-  ['agentEnsemble', 'get', '/api/pods/:podId/ensemble/state'],
-  ['agentEnsemble', 'patch', '/api/pods/:podId/ensemble/config'],
-  ['agentEnsemble', 'get', '/api/pods/:podId/ensemble/history'],
-  ['agentEnsemble', 'post', '/api/pods/:podId/ensemble/response'],
   ['apps', 'get', '/api/apps/pods/:podId/apps'],
   ['apps', 'post', '/api/apps/pods/:podId/apps'],
   ['apps', 'delete', `/api/apps/pods/:podId/apps/${ID}`],

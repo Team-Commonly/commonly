@@ -65,10 +65,6 @@ jest.mock('../../../services/agentIdentityService', () => ({
   isCloudRuntime: jest.requireActual('../../../services/agentIdentityService').isCloudRuntime,
 }));
 
-jest.mock('../../../services/globalModelConfigService', () => ({
-  getConfig: jest.fn(),
-}));
-
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue(true),
 }));
@@ -85,7 +81,6 @@ const AgentTemplate = require('../../../models/AgentTemplate');
 const Activity = require('../../../models/Activity');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
-const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 const FirstContactService = require('../../../services/firstContactService');
 const AgentMessageService = require('../../../services/agentMessageService');
 const installRouter = require('../../../routes/registry/install');
@@ -163,7 +158,6 @@ describe('registry install runtimeType fallback', () => {
     // tests install a 'native' runtime (a cloud runtime) and assert the
     // runtimeType fallback, not the gate.
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'admin' }));
-    GlobalModelConfigService.getConfig.mockResolvedValue({ openclaw: { devAgentIds: ['theo'] } });
 
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
     AgentTemplate.find.mockReturnValue({
@@ -396,9 +390,9 @@ describe('registry install runtimeType fallback', () => {
     expect(passed).toHaveLength(160);
   });
 
-  // ADR-021 Part B, Phase 1: nothing runs a moltbot, so even a configured dev
-  // seat is refused before any write (no agent User, no installation).
-  it('refuses a moltbot install as retired, even for a configured dev seat, writing nothing', async () => {
+  // ADR-021 Part B, Phase 1: nothing runs a moltbot, so an install is refused
+  // before any write (no agent User, no installation).
+  it('refuses a moltbot install as retired, writing nothing', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'openclaw',
       displayName: 'OpenClaw',
@@ -430,7 +424,9 @@ describe('registry install runtimeType fallback', () => {
     expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
   });
 
-  it('keeps GitHub issue writes off for a non-moltbot seat, ignoring caller intent', async () => {
+  // The grant's only source was the retired OpenClaw dev seats, so no install
+  // receives it, whatever the caller sends.
+  it('keeps GitHub issue writes off, ignoring caller intent', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'codex',
       displayName: 'Codex',

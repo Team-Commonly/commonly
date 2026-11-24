@@ -149,27 +149,6 @@ class BridgeBase {
   }
 
   /**
-   * Report ensemble response (for AEP turn completion)
-   */
-  async reportEnsembleResponse(podId, ensembleId, content, messageId) {
-    const res = await fetch(`${this.baseUrl}/api/pods/${podId}/ensemble/response`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({
-        ensembleId,
-        agentType: this.agentType,
-        instanceId: this.instanceId,
-        content,
-        messageId,
-      }),
-    });
-    if (!res.ok) {
-      console.warn(`Failed to report ensemble response: ${res.status}`);
-    }
-    return res.json();
-  }
-
-  /**
    * Check if an event was already processed
    */
   wasProcessed(eventId) {

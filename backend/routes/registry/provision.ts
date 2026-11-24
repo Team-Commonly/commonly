@@ -9,28 +9,21 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
-const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const DMService = require('../../services/dmService');
 const {
-  moltbotRuntimeRetired,
   provisionAgentRuntime,
   startAgentRuntime,
   restartAgentRuntime,
-  syncOpenClawSkills,
 } = require('../../services/agentProvisionerService');
 const {
   getUserId,
   normalizeConfigMap,
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
-  buildOpenClawIntegrationChannels,
-  userHasPodAccess,
   isGlobalAdminUser,
-  resolveGatewayForRequest,
-  resolveGatewayForInstallation,
   resolveInstallation,
   resolveRuntimeInstanceId,
 } = require('./helpers');
@@ -40,9 +33,8 @@ const {
   issueUserTokenForInstallation,
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
-const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 const { logInstallRefusal } = require('../../services/installRefusalLog');
-const { RUNTIME_RETIRED_BODY } = require('../../services/retiredRuntime');
+const { moltbotRuntimeRetired, RUNTIME_RETIRED_BODY } = require('../../services/retiredRuntime');
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter on this DB-touching handler. The previous version
@@ -84,7 +76,6 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       label,
       scopes,
       force,
-      gatewayId,
     } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
@@ -236,7 +227,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     );
 
     let userIssued = null;
-    if (includeUserToken || runtimeType === 'moltbot') {
+    if (includeUserToken) {
       userIssued = await issueUserTokenForInstallation({
         agentName: name,
         instanceId: normalizedInstanceId,
@@ -265,7 +256,6 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     const configPayload = normalizeConfigMap(installation.config) || {};
     const runtimeAuthProfiles = normalizeRuntimeAuthProfiles(configPayload?.runtime?.authProfiles) || null;
     const runtimeSkillEnv = normalizeSkillEnvEntries(configPayload?.runtime?.skillEnv) || null;
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
 
     if (eagerDmPod && configPayload?.heartbeat?.global === true && configPayload?.heartbeat?.enabled !== false) {
       try {
@@ -305,29 +295,8 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       }
     }
 
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
     let provisioned = { accountId: null, configPath: null, restartRequired: false };
-    let integrationChannels = null;
-    if (runtimeType === 'moltbot') {
-      const integrations = await Integration.find({
-        podId,
-        status: 'connected',
-        isActive: { $ne: false },
-        type: { $in: ['discord', 'slack', 'telegram'] },
-      })
-        .select('_id type config channelName groupName chatTitle name')
-        .lean();
-      integrationChannels = buildOpenClawIntegrationChannels(integrations);
-    }
-
-    const shouldProvision = runtimeType === 'moltbot'
-      || Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
+    const shouldProvision = Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
     if (shouldProvision) {
       const explicitPresetId = configPayload?.presetId || null;
       const matchedPreset: any = PRESET_DEFINITIONS.find((p: any) => p.id === (explicitPresetId || normalizedInstanceId));
@@ -353,10 +322,6 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
         baseUrl,
         displayName: installation.displayName,
         heartbeat: Object.keys(heartbeatForProvision).length ? heartbeatForProvision : null,
-        gateway,
-        authProfiles: runtimeAuthProfiles,
-        skillEnv: runtimeSkillEnv,
-        integrationChannels,
       });
     }
 
@@ -372,36 +337,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       }
     }
 
-    // ADR-013 Phase 1: auto-import the preset's defaultSkills as PodAssets so
-    // syncOpenClawSkills (called below) picks them up and writes their
-    // SKILL.md files to the agent's workspace on the gateway PVC. Resolution
-    // order: local bundle (commonly-bundled-skills/<id>/SKILL.md) → upstream
-    // catalog. Reuses the same upsertImportedSkillAsset path the manual
-    // /api/skills/import route uses; idempotent across reprovisions.
-    const explicitPresetIdForSkills = (configPayload as any)?.presetId || null;
-    const matchedPresetForSkills: any = PRESET_DEFINITIONS.find(
-      (p: any) => p.id === (explicitPresetIdForSkills || normalizedInstanceId),
-    );
-    let presetSkillsApplied = null;
-    if (matchedPresetForSkills?.defaultSkills?.length && podId) {
-      try {
-        presetSkillsApplied = await applyPresetDefaultSkills({
-          podId: String(podId),
-          preset: matchedPresetForSkills,
-          userId,
-        });
-      } catch (skillErr: unknown) {
-        console.warn(
-          '[provision] applyPresetDefaultSkills failed:',
-          (skillErr as Error).message,
-        );
-        presetSkillsApplied = { error: (skillErr as Error).message };
-      }
-    }
-
     let runtimeStart = null;
     try {
-      runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+      runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId);
     } catch (startError: unknown) {
       console.warn('Runtime start failed:', (startError as Error).message);
       runtimeStart = { started: false, reason: (startError as Error).message };
@@ -410,54 +348,10 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     let runtimeRestart = null;
     if (provisioned.restartRequired) {
       try {
-        runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+        runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId);
       } catch (restartError: unknown) {
         console.warn('Runtime restart failed:', (restartError as Error).message);
         runtimeRestart = { restarted: false, reason: (restartError as Error).message };
-      }
-    }
-
-    let skillsSynced = null;
-    if (name.toLowerCase() === 'openclaw') {
-      const skillSync = configPayload?.skillSync || null;
-      const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
-      const requestedPodIds = Array.isArray(skillSync?.podIds)
-        ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
-        : [String(podId)];
-      let podIdsToSync = requestedPodIds;
-
-      if (skillSync?.allPods) {
-        const allInstallations = await AgentInstallation.find({
-          agentName: name.toLowerCase(),
-          instanceId: normalizedInstanceId,
-          status: 'active',
-        }).lean();
-        podIdsToSync = (allInstallations as any[])
-          .map((i: any) => i.podId?.toString?.())
-          .filter(Boolean);
-      }
-
-      if (podIdsToSync.length) {
-        const pods = await Pod.find({ _id: { $in: podIdsToSync } })
-          .select('members createdBy')
-          .lean();
-        podIdsToSync = (pods as any[])
-          .filter((p: any) => userHasPodAccess(p, userId))
-          .map((p: any) => p._id.toString());
-      }
-
-      try {
-        const skillsPath = await syncOpenClawSkills({
-          accountId: normalizedInstanceId,
-          podIds: podIdsToSync,
-          mode,
-          skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [],
-          gateway,
-        });
-        skillsSynced = { success: true, path: skillsPath, podIds: podIdsToSync };
-      } catch (syncError: unknown) {
-        console.warn('OpenClaw skill sync failed during provision:', (syncError as Error).message);
-        skillsSynced = { success: false, error: (syncError as Error).message };
       }
     }
 
@@ -478,9 +372,6 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       restartRequired: provisioned.restartRequired,
       runtimeStarted: runtimeStart?.started || false,
       runtimeStartCommand: runtimeStart?.command || null,
-      gatewayId: gateway?._id || existingRuntimeConfig.gatewayId || null,
-      gatewaySlug: gateway?.slug || existingRuntimeConfig.gatewaySlug || null,
-      sharedGateway: runtimeStart?.sharedGateway || false,
       provisionedAt: new Date(),
     };
     await installation.save();
@@ -497,13 +388,8 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       runtimeStarted: runtimeStart?.started || false,
       runtimeStartCommand: runtimeStart?.command || null,
       runtimeStartError: runtimeStart?.reason || null,
-      gatewayId: gateway?._id || null,
-      gatewaySlug: gateway?.slug || null,
-      sharedGateway: runtimeStart?.sharedGateway || false,
       runtimeRestarted: runtimeRestart?.restarted || false,
       runtimeRestartError: runtimeRestart?.reason || null,
-      skillsSynced,
-      presetSkillsApplied,
       sharedIdentity: true,
       agentUsername: agentUser.username,
     });

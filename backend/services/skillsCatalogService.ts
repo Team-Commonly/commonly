@@ -329,8 +329,8 @@ export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: Fetch
 //   GET /api/v1/download?slug=<slug>&ownerHandle=<owner>&version=<v>
 //                                                   → ZIP bundle (SKILL.md + sub-files)
 //
-// We use this both to recover dead catalog entries (presetSkillsAutoImport
-// rewrites openclaw/skills URLs to ClawHub fetches) and for any future
+// We use this both to recover dead catalog entries (openclaw/skills URLs are
+// rewritten to ClawHub fetches) and for any future
 // "import skill by clawhub:<owner>/<slug>" CLI flow.
 const CLAWHUB_BASE = 'https://clawhub.ai';
 const DEAD_GITHUB_OPENCLAW_RE = /^https?:\/\/github\.com\/openclaw\/skills\/(?:tree|blob)\/[^/]+\/skills\/([^/]+)\/([^/]+)\/SKILL\.md\b/;

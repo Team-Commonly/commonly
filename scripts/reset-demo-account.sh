@@ -11,12 +11,13 @@
 #      `uninstalled` (cluster Nova / Liz / whoever else got installed mid-
 #      session). The nova-demo concierge stays — it's the demo's
 #      responsive identity per Sprint C0.
-#   3. Clear stale agent sessions for the demo's openclaw runtime so the
-#      next heartbeat re-reads HEARTBEAT.md cleanly.
-#   4. Hard-delete chat residue from PG: install-intro messages from
+#   3. Hard-delete chat residue from PG: install-intro messages from
 #      byo-* users, smoke @-mention prompts, nova-demo acks of those
 #      prompts. Keeps the storyboard scrollback (May 3-4) intact.
-#   5. Smoke-test the result. The script exits non-zero if smoke goes red.
+#   4. Smoke-test the result. The script exits non-zero if smoke goes red.
+#
+# The step that cleared nova-demo's sessions in the OpenClaw gateway is gone:
+# that gateway was retired (ADR-021), so there is no session to clear.
 #
 # What it does NOT do:
 #   - Reseed scrollback. The 17 storyboard messages (May 3–4) are intact
@@ -78,17 +79,7 @@ m.connect(process.env.MONGO_URI).then(async ()=>{
 echo "[reset]     demoted $demoted openclaw row(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 3. Clear nova-demo's session so the next chat.mention re-reads HEARTBEAT.md
-#    cleanly. Sessions accumulate context across heartbeat ticks; a fresh
-#    one ensures the concierge instructions are applied verbatim.
-# ──────────────────────────────────────────────────────────────────────────
-echo "[reset] (3/4) clearing nova-demo gateway sessions…"
-kubectl exec -n "$NAMESPACE" deployment/clawdbot-gateway -- bash -c \
-  "rm -f /state/agents/nova-demo/sessions/*.jsonl /state/agents/nova-demo/sessions/sessions.json 2>/dev/null; ls /state/agents/nova-demo/sessions/ 2>/dev/null | wc -l" 2>&1 | tail -1 | \
-  xargs -I{} echo "[reset]     {} session file(s) remaining"
-
-# ──────────────────────────────────────────────────────────────────────────
-# 4. Hard-delete every demo-pod message created after the storyboard
+# 3. Hard-delete every demo-pod message created after the storyboard
 #    cutoff (2026-05-05 00:00 UTC). The storyboard is May 3–4, 2026 —
 #    16 messages, hand-curated. Anything later is sprint test residue:
 #    byo-* install intros, @nova smoke prompts, model-failure replies,
@@ -103,7 +94,7 @@ CUTOFF_UTC="${CUTOFF_UTC:-2026-05-05 00:00:00+00}"
 # been relaxed to tolerate non-empty rooms; beat 9 still asserts chips
 # on a freshly-installed agent-room (deterministic by construction).
 
-echo "[reset] (4a/5) hard-deleting post-storyboard chat (>$CUTOFF_UTC)…"
+echo "[reset] (3a/4) hard-deleting post-storyboard chat (>$CUTOFF_UTC)…"
 deleted=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const { Client } = require('pg');
 (async () => {
@@ -124,7 +115,7 @@ echo "[reset]     deleted $deleted post-cutoff message(s)"
 # in the sam-demo Today/Yesterday list. Delete agent-rooms created
 # after the cutoff EXCEPT the canonical Nova/Pixel/Cody storyboard
 # rooms (those are pre-seeded baseline).
-echo "[reset] (4b/5) deleting test-residue agent-room + agent-dm pods…"
+echo "[reset] (3b/4) deleting test-residue agent-room + agent-dm pods…"
 deleted_rooms=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const m=require('mongoose');
 m.connect(process.env.MONGO_URI).then(async ()=>{
@@ -164,7 +155,7 @@ echo "[reset]     deleted $deleted_rooms test pod(s)"
 # "installer is admin" platform pattern). For the demo's
 # scrollback hygiene we don't want those pods cluttering the
 # sidebar — yank sam-demo out.
-echo "[reset] (4b.1) pulling sam-demo from agent-admin pods…"
+echo "[reset] (3b.1) pulling sam-demo from agent-admin pods…"
 pulled=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const m=require('mongoose');
 m.connect(process.env.MONGO_URI).then(async ()=>{
@@ -184,7 +175,7 @@ echo "[reset]     pulled sam-demo from $pulled agent-admin pod(s)"
 # A2A DM involving nova-demo to render. Talk-to-cli smoke creates
 # byo-smoke-* ↔ codex DMs but those aren't surfaced under the
 # instanceId=nova-demo query the inspector uses.
-echo "[reset] (4c/5) reseeding Nova-Demo↔Cody A2A DM if absent…"
+echo "[reset] (3c/4) reseeding Nova-Demo↔Cody A2A DM if absent…"
 seeded=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const m=require('mongoose');
 m.connect(process.env.MONGO_URI).then(async ()=>{
@@ -224,7 +215,7 @@ echo "[reset]     seeded $seeded Nova-Demo↔Cody pod(s)"
 #     the (message_id, user_id, emoji) unique index. UIDs hardcoded to
 #     the canonical storyboard authors.
 # ──────────────────────────────────────────────────────────────────────────
-echo "[reset] (4d/5) seeding storyboard reactions…"
+echo "[reset] (3d/4) seeding storyboard reactions…"
 seeded_reactions=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const { Client } = require('pg');
 (async () => {
@@ -275,7 +266,7 @@ echo "[reset]     seeded $seeded_reactions storyboard reaction(s)"
 #     messages — if a reviewer wrote into it (read-only on the demo
 #     account so unlikely, but defensive), don't clobber.
 # ──────────────────────────────────────────────────────────────────────────
-echo "[reset] (4e/5) seeding Nova-Demo↔Cody DM content if empty…"
+echo "[reset] (3e/4) seeding Nova-Demo↔Cody DM content if empty…"
 A2A_DM_POD_ID='6a01a1ffcf199a9aed01d9d1'
 seeded_a2a=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const { Client } = require('pg');
@@ -310,9 +301,9 @@ const { Client } = require('pg');
 echo "[reset]     seeded $seeded_a2a Nova-Demo↔Cody message(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 5. Re-run smoke to verify the reset didn't break anything.
+# 4. Re-run smoke to verify the reset didn't break anything.
 # ──────────────────────────────────────────────────────────────────────────
-echo "[reset] (5/5) running smoke-test-demo.sh…"
+echo "[reset] (4/4) running smoke-test-demo.sh…"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if bash "$SCRIPT_DIR/smoke-test-demo.sh"; then
   echo "[reset] ✅ reset complete, smoke green"

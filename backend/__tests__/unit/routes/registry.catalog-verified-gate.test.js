@@ -28,16 +28,12 @@ jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn(() => 'bot-x'),
   default: { getAgentTypeConfig: jest.fn() },
 }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  listOpenClawBundledSkills: jest.fn().mockResolvedValue([]),
-}));
 jest.mock('../../../routes/registry/helpers', () => ({
   parseVerifiedFilter: jest.fn((v) => {
     if (v === 'true' || v === true) return true;
     if (v === 'false' || v === false) return false;
     return null;
   }),
-  resolveGatewayForRequest: jest.fn(),
   userHasPodAccess: jest.fn(),
 }));
 

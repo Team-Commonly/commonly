@@ -2,30 +2,22 @@
 // Shared by the provision route and the reprovision-all admin route.
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
-const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const { installationIdentityFilter, IDENTITY_COLLATION } = require('../../services/agentInstallationIdentity');
 const {
   provisionAgentRuntime,
-  removeOpenClawAccount,
-  moltbotRuntimeRetired,
   runtimeReceivesToken,
   startAgentRuntime,
   restartAgentRuntime,
-  syncOpenClawSkills,
-  ensureWorkspaceIdentityFile,
 } = require('../../services/agentProvisionerService');
+const { moltbotRuntimeRetired } = require('../../services/retiredRuntime');
 const {
   normalizeInstanceId,
   normalizeConfigMap,
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
-  buildOpenClawIntegrationChannels,
-  resolveGatewayForInstallation,
-  buildIdentityContent,
-  buildAgentProfileId,
 } = require('./helpers');
 const {
   revokeRuntimeTokensForAgent,
@@ -33,8 +25,6 @@ const {
   issueUserTokenForInstallation,
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
-const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
-const { cloudRuntimeMayRun } = require('../../services/cloudRuntimeOwnership');
 
 // A token issued here reaches a seat only through the provisioner. A seat outside
 // it has no way to learn the new one, so revoking its token takes it offline.
@@ -95,47 +85,10 @@ const reprovisionInstallation = async ({
     return skipped('shares_identity_with_external_seat');
   }
 
-  // An identity the kernel refuses to run gets no tokens and no gateway entry.
-  // Its runtime calls are already refused; leaving it in moltbot.json would
-  // keep the gateway's own heartbeat calling the model for nothing. Removing
-  // it is undone by the next reprovision once the owner is entitled again.
-  if (runtimeType === 'moltbot' && !(await cloudRuntimeMayRun(name, normalizedInstanceId))) {
-    const configuredGatewayIdEarly = normalizeConfigMap(installation.config)?.runtime?.gatewayId || null;
-    const gatewayEarly = configuredGatewayIdEarly
-      ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayIdEarly })
-      : null;
-    const { removed, stateError, deploymentMissing } = await removeOpenClawAccount({
-      agentName: name, instanceId: normalizedInstanceId, gateway: gatewayEarly,
-    });
-    // The gateway runs a removed account until it restarts. With no
-    // Deployment there is nothing to restart, and the removal says so.
-    const restartNeeded = removed.length > 0 && !deploymentMissing;
-    // A bulk run restarts the gateway once at the end; a single one restarts here.
-    let restartError: string | null = null;
-    if (restartNeeded && !skipRuntimeRestart) {
-      // restartAgentRuntime reports a failure as restarted: false, not a throw.
-      const restart: any = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway: gatewayEarly })
-        .catch((error: Error) => ({ restarted: false, reason: error.message }));
-      if (restart?.restarted === false) {
-        console.warn('[reprovision] gateway restart after removal failed:', restart.reason);
-        restartError = `The account was removed from the gateway config, but the gateway restart failed (${restart.reason}), so it may still be running. Restart the gateway.`;
-      }
-    }
-    const removalError = [stateError, restartError].filter(Boolean).join(' ');
-    // The gateway's id goes back to a bulk run so it restarts the right one.
-    // Only the id: the record carries the gateway's address and owner.
-    return {
-      ...skipped('cloud_agents_not_entitled'),
-      removedFromRuntime: removed.length > 0,
-      runtimeRestartNeeded: restartNeeded,
-      runtimeGatewayId: gatewayEarly?._id ? String(gatewayEarly._id) : null,
-      ...(removalError ? { runtimeRemovalError: removalError } : {}),
-    };
-  }
-
   // The runtime is retired (ADR-021 Part B): nothing would start it, so no token
-  // is issued and no gateway entry written. The removal above still runs, since
-  // it only takes an account out. Skipped, so a bulk run carries on.
+  // is issued. Skipped, so a bulk run carries on. This check stays after the
+  // token-ownership skips above, which a stored moltbot row passes because
+  // runtimeReceivesToken still lists 'moltbot'.
   if (moltbotRuntimeRetired(runtimeType)) return skipped('runtime_retired');
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {
@@ -168,20 +121,18 @@ const reprovisionInstallation = async ({
   }
 
   let userToken = userTokenCache.get(identityKey) || null;
-  if (!userToken || runtimeType === 'moltbot') {
-    if (!userToken) {
-      const userIssued = await issueUserTokenForInstallation({
-        agentName: name,
-        instanceId: normalizedInstanceId,
-        displayName: installation.displayName,
-        podId,
-        scopes: installation.scopes || [],
-        force,
-      });
-      userToken = userIssued?.token || null;
-      if (userToken) {
-        userTokenCache.set(identityKey, userToken);
-      }
+  if (!userToken) {
+    const userIssued = await issueUserTokenForInstallation({
+      agentName: name,
+      instanceId: normalizedInstanceId,
+      displayName: installation.displayName,
+      podId,
+      scopes: installation.scopes || [],
+      force,
+    });
+    userToken = userIssued?.token || null;
+    if (userToken) {
+      userTokenCache.set(identityKey, userToken);
     }
   }
 
@@ -191,31 +142,11 @@ const reprovisionInstallation = async ({
   const configPayload = normalizeConfigMap(installation.config) || {};
   const runtimeAuthProfiles = normalizeRuntimeAuthProfiles(configPayload?.runtime?.authProfiles) || null;
   const runtimeSkillEnv = normalizeSkillEnvEntries(configPayload?.runtime?.skillEnv) || null;
-  const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-  const gateway = configuredGatewayId
-    ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayId })
-    : null;
-
-  let integrationChannels = null;
-  if (runtimeType === 'moltbot') {
-    const integrations = await Integration.find({
-      podId,
-      status: 'connected',
-      isActive: { $ne: false },
-      type: { $in: ['discord', 'slack', 'telegram'] },
-    })
-      .select('_id type config channelName groupName chatTitle name')
-      .lean();
-    integrationChannels = buildOpenClawIntegrationChannels(integrations);
-  }
-
   // Prefer explicit presetId from installationConfig; fall back to instanceId matching
   const explicitPresetId = configPayload?.presetId || null;
   const matchedPreset = PRESET_DEFINITIONS.find((p: any) => p.id === (explicitPresetId || normalizedInstanceId));
   const heartbeatForProvision = {
-    // Presets with a heartbeat template fire on a 30m cadence. (Heartbeats fire
-    // once per agent regardless — do NOT set a `global` flag here: openclaw's
-    // HeartbeatSchema is strict and rejects it, crash-looping the gateway.)
+    // Presets with a heartbeat template fire on a 30m cadence.
     ...(matchedPreset?.heartbeatTemplate ? { everyMinutes: 30 } : {}),
     ...(matchedPreset?.defaultHeartbeat || {}),
     ...(configPayload.heartbeat || {}),
@@ -237,10 +168,6 @@ const reprovisionInstallation = async ({
     baseUrl,
     displayName: installation.displayName,
     heartbeat: Object.keys(heartbeatForProvision).length ? heartbeatForProvision : null,
-    gateway,
-    authProfiles: runtimeAuthProfiles,
-    skillEnv: runtimeSkillEnv,
-    integrationChannels,
   });
 
   // Persist heartbeat template to AgentProfile so config card reflects it
@@ -255,31 +182,9 @@ const reprovisionInstallation = async ({
     }
   }
 
-  // ADR-013 Phase 1: auto-import the preset's defaultSkills as PodAssets so
-  // syncOpenClawSkills (called below) picks them up and writes their SKILL.md
-  // files to the agent's workspace on the gateway PVC. Reuses the same
-  // upsertImportedSkillAsset path the manual /api/skills/import route uses;
-  // idempotent across reprovisions.
-  let presetSkillsApplied = null;
-  if (matchedPreset?.defaultSkills?.length && podId) {
-    try {
-      presetSkillsApplied = await applyPresetDefaultSkills({
-        podId: String(podId),
-        preset: matchedPreset,
-        userId: installation.installedBy || null,
-      });
-    } catch (skillErr: unknown) {
-      console.warn(
-        '[reprovision] applyPresetDefaultSkills failed:',
-        (skillErr as Error).message,
-      );
-      presetSkillsApplied = { error: (skillErr as Error).message };
-    }
-  }
-
   let runtimeStart = null;
   try {
-    runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+    runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId);
   } catch (startError: unknown) {
     runtimeStart = { started: false, reason: (startError as Error).message };
   }
@@ -287,58 +192,9 @@ const reprovisionInstallation = async ({
   let runtimeRestart = null;
   if (provisioned.restartRequired && !skipRuntimeRestart) {
     try {
-      runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+      runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId);
     } catch (restartError: unknown) {
       runtimeRestart = { restarted: false, reason: (restartError as Error).message };
-    }
-  }
-
-  let skillsSynced = null;
-  if (name === 'openclaw') {
-    const skillSync = configPayload?.skillSync || null;
-    const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
-    let podIdsToSync = Array.isArray(skillSync?.podIds)
-      ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
-      : [podId];
-    if (skillSync?.allPods) {
-      const allInstallations = await AgentInstallation.find({
-        agentName: name,
-        instanceId: normalizedInstanceId,
-        status: 'active',
-      }).lean();
-      podIdsToSync = allInstallations
-        .map((i: any) => i.podId?.toString?.())
-        .filter(Boolean);
-    }
-    try {
-      const pathSynced = await syncOpenClawSkills({
-        accountId: normalizedInstanceId,
-        podIds: podIdsToSync,
-        mode,
-        skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [],
-        gateway,
-      });
-      skillsSynced = { success: true, path: pathSynced, podIds: podIdsToSync };
-    } catch (syncError: unknown) {
-      skillsSynced = { success: false, error: (syncError as Error).message };
-    }
-  }
-
-  // Seed IDENTITY.md from AgentProfile persona on provision (skip if agent already has custom identity)
-  if (name.toLowerCase() === 'openclaw' && normalizedInstanceId) {
-    const profileForIdentity = await AgentProfile.findOne({
-      agentId: buildAgentProfileId(name, normalizedInstanceId),
-      podId,
-    }).lean();
-    const p = profileForIdentity?.persona;
-    if (p && (p.tone || p.specialties?.length || p.customInstructions)) {
-      const identityContent = buildIdentityContent(
-        installation.displayName || normalizedInstanceId,
-        p,
-      );
-      ensureWorkspaceIdentityFile(normalizedInstanceId, identityContent, { gateway }).catch((err: unknown) => {
-        console.warn('[registry] Failed to seed IDENTITY.md on provision:', (err as Error).message);
-      });
     }
   }
 
@@ -355,9 +211,6 @@ const reprovisionInstallation = async ({
     restartRequired: provisioned.restartRequired,
     runtimeStarted: runtimeStart?.started || false,
     runtimeStartCommand: runtimeStart?.command || null,
-    gatewayId: gateway?._id || existingRuntimeConfig.gatewayId || null,
-    gatewaySlug: gateway?.slug || existingRuntimeConfig.gatewaySlug || null,
-    sharedGateway: runtimeStart?.sharedGateway || false,
     provisionedAt: new Date(),
   };
   await installation.save();
@@ -373,8 +226,6 @@ const reprovisionInstallation = async ({
     runtimeStartError: runtimeStart?.reason || null,
     runtimeRestartError: runtimeRestart?.reason || null,
     tokenRotated: Boolean(runtimeIssued.token),
-    skillsSynced,
-    presetSkillsApplied,
   };
 };
 

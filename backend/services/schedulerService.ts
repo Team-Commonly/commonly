@@ -2,8 +2,6 @@
 const cron = require('node-cron');
 const crypto = require('crypto');
 // eslint-disable-next-line global-require
-const { refreshCodexOAuthTokenIfNeeded } = require('./agentProvisionerServiceK8s');
-// eslint-disable-next-line global-require
 const summarizerService = require('./summarizerService');
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
@@ -28,8 +26,6 @@ const { isHostedInstallation, readRuntimeConfig } = require('./hostedRuntimeServ
 };
 // eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
-// eslint-disable-next-line global-require
-const AgentEnsembleService = require('./agentEnsembleService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
   buildHeartbeatContent: (heartbeatPodId: unknown) => string;
@@ -135,11 +131,6 @@ interface SummarizeResult {
   duration: number;
 }
 
-interface CodexRefreshResult {
-  suffix?: string;
-  expiresAt: number;
-}
-
 const HEARTBEAT_DISPATCH_LEASE_ID = 'agent-heartbeat-dispatch';
 const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 // A rollout briefly runs the old and new schedulers together (~40 seconds).
@@ -148,9 +139,10 @@ const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 const HEARTBEAT_DISPATCH_LEASE_MS = 55 * 1000;
 const SCHEDULER_INSTANCE_ID = `${process.pid}:${crypto.randomUUID()}`;
 
-// The four heavier five-minute passes each get their own minute, so they
+// The heavier five-minute passes each get their own minute, so they
 // never start together. On 2026-11-02 SRE traced two readiness windows to the
-// :30 and :35 ticks, where all four started in the same second and stalled-
+// :30 and :35 ticks, where the four passes then here (the retired ensemble
+// scheduler was one) started in the same second and stalled-
 // connect alone held the tick for about 7s. kernel-sweep keeps :04, :14, …
 // (below), so no pass here shares a minute with it. decision-card reconcile,
 // the approval-call sweep and the spawn-credential reap stay on */5: each is a
@@ -163,7 +155,6 @@ const everyFiveMinutesFrom = (offset: number): string => (
 );
 
 export const FIVE_MINUTE_PASS_SCHEDULES = {
-  ensemble: everyFiveMinutesFrom(0),
   onboardingSilence: everyFiveMinutesFrom(1),
   stalledConnect: everyFiveMinutesFrom(2),
   installableReconcile: everyFiveMinutesFrom(3),
@@ -276,19 +267,6 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
-    const ensembleJob: CronJob = cron.schedule(
-      FIVE_MINUTE_PASS_SCHEDULES.ensemble,
-      async () => {
-        console.log('Running ensemble scheduler...');
-        try {
-          await AgentEnsembleService.processScheduled();
-        } catch (error) {
-          console.error('Error in scheduled ensemble processing:', error);
-        }
-      },
-      { scheduled: false, timezone: 'UTC' },
-    );
-
     const themedPodAutonomyJob: CronJob = cron.schedule(
       '15 */2 * * *',
       async () => {
@@ -333,67 +311,6 @@ class SchedulerService {
           console.log(`Agent heartbeats enqueued: ${result.enqueued}${leaseSuffix}`);
         } catch (error) {
           console.error('Error dispatching agent heartbeats:', error);
-        }
-      },
-      { scheduled: false, timezone: 'UTC' },
-    );
-
-    const agentSessionResetJob: CronJob = cron.schedule(
-      '0 * * * *',
-      async () => {
-        if (!AgentEventService.isSessionResetDue()) return;
-        console.log('Running scheduled OpenClaw session reset...');
-        try {
-          const result = await AgentEventService.clearOpenClawSessionsForActiveInstallations({
-            source: 'scheduled-session-reset',
-            restart: true,
-          });
-          console.log(
-            'OpenClaw session reset complete. '
-            + `Targeted=${result.targetedInstances}, Cleared=${result.clearedCount}, Failed=${result.failedCount}`,
-          );
-        } catch (error) {
-          console.error('Error in scheduled OpenClaw session reset:', error);
-        }
-      },
-      { scheduled: false, timezone: 'UTC' },
-    );
-
-    const agentSessionSizeCheckJob: CronJob = cron.schedule(
-      '*/10 * * * *',
-      async () => {
-        try {
-          const result = await AgentEventService.clearOversizedAgentSessions({
-            source: 'scheduled-size-check',
-            restart: false,
-          });
-          if (result.cleared > 0) {
-            console.log(
-              `[session-size-check] Cleared ${result.cleared} oversized session(s) `
-              + `(threshold: ${result.thresholdKb} KB): `
-              + result.oversized.map((o: { accountId: string; kb: number }) => `${o.accountId}=${o.kb}KB`).join(', '),
-            );
-          }
-        } catch (error) {
-          console.error('Error in agent session size check:', error);
-        }
-      },
-      { scheduled: false, timezone: 'UTC' },
-    );
-
-    const codexTokenRefreshJob: CronJob = cron.schedule(
-      '0 3 * * *',
-      async () => {
-        try {
-          const results: CodexRefreshResult[] | null = await refreshCodexOAuthTokenIfNeeded({ thresholdDays: 3 });
-          if (results && results.length > 0) {
-            results.forEach((r) => {
-              console.log(`[codex-token-refresh] Refreshed account${r.suffix || '1'}. New expiry: ${new Date(r.expiresAt).toISOString()}`);
-            });
-          }
-        } catch (error) {
-          const err = error as { message?: string };
-          console.error('[codex-token-refresh] Failed:', err.message);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -765,13 +682,9 @@ class SchedulerService {
       agentEventGcJob,
       dailyDigestJob,
       cleanupJob,
-      ensembleJob,
       themedPodAutonomyJob,
       agentAutoJoinJob,
       agentHeartbeatJob,
-      agentSessionResetJob,
-      agentSessionSizeCheckJob,
-      codexTokenRefreshJob,
       skillsRefreshJob,
       onboardingSilenceJob,
       stalledConnectJob,
@@ -815,11 +728,6 @@ class SchedulerService {
       + ' config.heartbeat.enabled === true fire, each on its own interval'
       + ' (config.heartbeat.everyMinutes, default 60)',
     );
-    console.log(
-      `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
-    );
-    console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
-    console.log('- Codex OAuth token refresh check runs daily at 3 AM UTC (refreshes if expiring within 3 days)');
     console.log('- Stale agent events are garbage-collected every 10 minutes');
     console.log('- Stalled-connect nudge scan runs every 5 minutes');
     console.log(
@@ -861,16 +769,6 @@ class SchedulerService {
         console.error('Error in initial heartbeat dispatch:', error);
       });
     }, 11000));
-
-    this.startupTimers.push(setTimeout(() => {
-      if (!AgentEventService.isSessionResetDue()) return;
-      AgentEventService.clearOpenClawSessionsForActiveInstallations({
-        source: 'startup-session-reset',
-        restart: true,
-      }).catch((error: unknown) => {
-        console.error('Error in initial OpenClaw session reset:', error);
-      });
-    }, 12000));
 
     this.startupTimers.push(setTimeout(() => {
       AgentAutoJoinService.runAutoJoinAgentOwnedPods({ source: 'startup-autojoin' }).catch((error: unknown) => {

@@ -1,5 +1,7 @@
 // Runtime management routes — extracted from registry.js (GH#112)
-// Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-clear-sessions, runtime-logs
+// Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-logs
+// (runtime-clear-sessions only served the retired OpenClaw gateway; plugins.ts
+// answers it 410.)
 export {};
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
@@ -12,15 +14,10 @@ const {
   restartAgentRuntime,
   getAgentRuntimeStatus,
   getAgentRuntimeLogs,
-  clearAgentRuntimeSessions,
-  resolveOpenClawAccountId,
 } = require('../../services/agentProvisionerService');
+const { moltbotRuntimeRetired, RUNTIME_RETIRED_BODY } = require('../../services/retiredRuntime');
 const {
   getUserId,
-  normalizeConfigMap,
-  buildRuntimeLogFilters,
-  resolveGatewayForRequest,
-  resolveGatewayForInstallation,
   getRequestedInstanceId,
   resolveAuthorizedInstallation,
 } = require('./helpers');
@@ -58,6 +55,43 @@ const auditRuntimeRoute = (req: any, res: any, next: any) => {
   next();
 };
 
+// Authorize, resolve the runtime type, and refuse a retired runtime before
+// anything is dispatched. Answers the response itself and returns null when
+// the route must stop.
+const resolveRuntimeTarget = async (req: any, res: any) => {
+  const { podId, name } = req.params;
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  const instanceId = getRequestedInstanceId(req);
+  const installation = await resolveAuthorizedInstallation({
+    podId, name, instanceId, userId,
+  });
+  const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+  const runtimeType = typeConfig?.runtime;
+  if (!runtimeType) {
+    res.status(400).json({ error: 'Unknown agent runtime type' });
+    return null;
+  }
+  // A stored OpenClaw (moltbot) row has no gateway left to start, stop, read
+  // or restart (ADR-021).
+  if (moltbotRuntimeRetired(runtimeType)) {
+    res.status(410).json(RUNTIME_RETIRED_BODY);
+    return null;
+  }
+  return { runtimeType, instanceId: installation.instanceId };
+};
+
+const sendRuntimeError = (res: any, error: unknown, label: string, fallback: string) => {
+  console.error(label, error);
+  if ((error as any).status) {
+    return res.status((error as any).status).json({ error: (error as Error).message });
+  }
+  return res.status(500).json({ error: fallback });
+};
+
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
@@ -65,46 +99,12 @@ const auditRuntimeRoute = (req: any, res: any, next: any) => {
 runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const instanceId = getRequestedInstanceId(req);
-    const rawGatewayId = req.query.gatewayId;
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: instanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const status = await getAgentRuntimeStatus(runtimeType, effectiveInstanceId, { gateway });
-    return res.json({ runtimeType, status, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
+    const target = await resolveRuntimeTarget(req, res);
+    if (!target) return undefined;
+    const status = await getAgentRuntimeStatus(target.runtimeType, target.instanceId);
+    return res.json({ runtimeType: target.runtimeType, status });
   } catch (error: unknown) {
-    console.error('Error fetching runtime status:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to fetch runtime status' });
+    return sendRuntimeError(res, error, 'Error fetching runtime status:', 'Failed to fetch runtime status');
   }
 });
 
@@ -114,46 +114,12 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
 runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const { gatewayId: rawGatewayId } = req.body || {};
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const normalizedInstanceId = getRequestedInstanceId(req);
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: normalizedInstanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const started = await startAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
-    return res.json({ runtimeType, started, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
+    const target = await resolveRuntimeTarget(req, res);
+    if (!target) return undefined;
+    const started = await startAgentRuntime(target.runtimeType, target.instanceId);
+    return res.json({ runtimeType: target.runtimeType, started });
   } catch (error: unknown) {
-    console.error('Error starting runtime:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to start runtime' });
+    return sendRuntimeError(res, error, 'Error starting runtime:', 'Failed to start runtime');
   }
 });
 
@@ -163,46 +129,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
 runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const { gatewayId: rawGatewayId } = req.body || {};
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const normalizedInstanceId = getRequestedInstanceId(req);
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: normalizedInstanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const stopped = await stopAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
-    return res.json({ runtimeType, stopped, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
+    const target = await resolveRuntimeTarget(req, res);
+    if (!target) return undefined;
+    const stopped = await stopAgentRuntime(target.runtimeType, target.instanceId);
+    return res.json({ runtimeType: target.runtimeType, stopped });
   } catch (error: unknown) {
-    console.error('Error stopping runtime:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to stop runtime' });
+    return sendRuntimeError(res, error, 'Error stopping runtime:', 'Failed to stop runtime');
   }
 });
 
@@ -212,119 +144,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
 runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const { gatewayId: rawGatewayId } = req.body || {};
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const normalizedInstanceId = getRequestedInstanceId(req);
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: normalizedInstanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const restarted = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
-    return res.json({ runtimeType, restarted, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
+    const target = await resolveRuntimeTarget(req, res);
+    if (!target) return undefined;
+    const restarted = await restartAgentRuntime(target.runtimeType, target.instanceId);
+    return res.json({ runtimeType: target.runtimeType, restarted });
   } catch (error: unknown) {
-    console.error('Error restarting runtime:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to restart runtime' });
-  }
-});
-
-/**
- * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
- */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
-  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
-  try {
-    const { podId, name } = req.params;
-    const { gatewayId: rawGatewayId, restart = true } = req.body || {};
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const normalizedInstanceId = getRequestedInstanceId(req);
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: normalizedInstanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-    if (runtimeType !== 'moltbot') {
-      return res.status(400).json({ error: 'Session clearing is only supported for OpenClaw runtimes' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const accountId = resolveOpenClawAccountId({
-      agentName: name,
-      instanceId: effectiveInstanceId,
-    });
-
-    const cleared = await clearAgentRuntimeSessions(runtimeType, effectiveInstanceId, {
-      gateway,
-      accountId,
-    });
-
-    let restarted = null;
-    if (restart) {
-      restarted = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
-    }
-
-    return res.json({
-      runtimeType,
-      accountId,
-      cleared,
-      restarted,
-      gatewayId: gateway?._id || null,
-      gatewaySlug: gateway?.slug || null,
-    });
-  } catch (error: unknown) {
-    console.error('Error clearing runtime sessions:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to clear runtime sessions' });
+    return sendRuntimeError(res, error, 'Error restarting runtime:', 'Failed to restart runtime');
   }
 });
 
@@ -334,55 +159,15 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
 runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
     const requestedLines = Number(req.query.lines ?? 200);
     const lines = Number.isFinite(requestedLines)
       ? Math.min(1000, Math.max(1, Math.trunc(requestedLines))) : 200;
-    const instanceId = getRequestedInstanceId(req);
-    const rawGatewayId = req.query.gatewayId;
-    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
-      return res.status(400).json({ error: 'Invalid gateway ID' });
-    }
-    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const installation = await resolveAuthorizedInstallation({
-      podId, name, instanceId: instanceId, userId,
-    });
-    const effectiveInstanceId = installation.instanceId;
-
-    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
-    const runtimeType = typeConfig?.runtime;
-    if (!runtimeType) {
-      return res.status(400).json({ error: 'Unknown agent runtime type' });
-    }
-
-    const configPayload = normalizeConfigMap(installation?.config) || {};
-    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
-    let gateway = null;
-    if (gatewayId) {
-      gateway = await resolveGatewayForRequest({ gatewayId, userId });
-    } else if (configuredGatewayId) {
-      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
-    }
-
-    const filterTokens = buildRuntimeLogFilters({ runtimeType, agentName: name, instanceId: effectiveInstanceId });
-    const logs = await getAgentRuntimeLogs(runtimeType, effectiveInstanceId, lines, { gateway, filterTokens });
-    return res.json({
-      runtimeType,
-      ...logs,
-      gatewayId: gateway?._id || null,
-      gatewaySlug: gateway?.slug || null,
-    });
+    const target = await resolveRuntimeTarget(req, res);
+    if (!target) return undefined;
+    const logs = await getAgentRuntimeLogs(target.runtimeType, target.instanceId, lines);
+    return res.json({ runtimeType: target.runtimeType, ...logs });
   } catch (error: unknown) {
-    console.error('Error fetching runtime logs:', error);
-    if ((error as any).status) {
-      return res.status((error as any).status).json({ error: (error as Error).message });
-    }
-    return res.status(500).json({ error: 'Failed to fetch runtime logs' });
+    return sendRuntimeError(res, error, 'Error fetching runtime logs:', 'Failed to fetch runtime logs');
   }
 });
 

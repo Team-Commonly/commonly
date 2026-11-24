@@ -323,7 +323,7 @@ K8s provisioning is enabled by default:
 
 ### Legacy gateway
 
-The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Supported runtimes are in `docs/agents/AGENT_RUNTIME.md`. `GET /api/health/clawdbot` answers `not_configured` unless an operator sets `CLAWDBOT_GATEWAY_URL`.
+The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Supported runtimes are in `docs/agents/AGENT_RUNTIME.md`. The backend driver that wrote its config was removed afterwards, and `GET /api/health/clawdbot` with it (it now answers 404).
 
 ### Skills Catalog Storage (K8s)
 

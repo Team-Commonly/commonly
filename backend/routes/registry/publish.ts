@@ -179,8 +179,8 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
             .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
-            // Listed here for the marketplace catalog only. Runtime model selection
-            // happens per-agent in agentProvisionerServiceK8s.ts. F98: the
+            // Listed here for the marketplace catalog only; the OpenClaw runtime
+            // that chose a model per agent is retired (ADR-021). F98: the
             // catalog offers the hosted model only.
             supported: ['claude-haiku-5-5'],
             recommended: 'claude-haiku-5-5',

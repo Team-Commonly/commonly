@@ -33,9 +33,10 @@ Backend endpoints:
 - `GET /api/skills/catalog?source=awesome&sort=stars` (sort by GitHub stars, descending)
 - `GET /api/skills/requirements?sourceUrl=...` (credential hints)
 - `POST /api/skills/import` (requires `podId`, `name`, `content`)
-- `GET /api/skills/gateway-credentials?gatewayId=...` (admin)
-- `PATCH /api/skills/gateway-credentials` (admin, per gateway)
-- `GET /api/gateways` (admin gateway registry)
+
+The gateway skill-credential routes (`/api/skills/gateway-credentials`) and the
+gateway registry (`/api/gateways`) were removed with the OpenClaw driver
+(ADR-021); both now answer 404.
 
 When the backend fetches a `sourceUrl` (for `requirements`, or for `import`
 without `content`), the URL must be https on `github.com` or
@@ -53,16 +54,11 @@ its source."), and a source that cannot be read answers **502**
 (`skill_source_unreachable`). Neither is ever a 500. See `fetchSkillContentFromSource` in
 `backend/services/skillsCatalogService.ts` (#2189).
 
-## Gateway Credentials (Shared)
+## Gateway Credentials (retired)
 
-Skill credentials apply to a **gateway**, not an agent. The Skills page exposes a
-Gateway Credentials tab (admin-only) that stores environment variables under
-`skills.entries` in the gateway config. These values are shared by every agent
-running on that gateway.
-
-- The gateway credential skill dropdown filters to skills installed in the
-  currently selected pod (falls back to the full catalog if no pod is selected).
-- Local gateways store credentials in the gateway config file.
+Shared gateway credentials were stored in the OpenClaw gateway config, and
+`/api/skills/gateway-credentials` was removed with that runtime (ADR-021). A
+local CLI agent takes a skill's credentials from its own environment.
 - Remote/K8s gateways are listed, but credential writes only succeed when the
   selected gateway exposes the gateway-side write path.
 
@@ -114,10 +110,10 @@ will not include per-skill license text unless the linked repo provides it.
 
 ## Runtime Usage
 
-Catalog imports are runtime-aware. Gateway-backed installations receive imported
-skills through the gateway provisioner when the installation uses the OpenClaw
-runtime; local CLI seats declare their skills and environment locally. The
-catalog stores source and license metadata but does not auto-sync upstream.
+Catalog imports are stored as pod skills. Local CLI seats declare their skills
+and environment locally; the gateway provisioner that once synced skills into
+OpenClaw installations was removed with that runtime (ADR-021). The catalog
+stores source and license metadata but does not auto-sync upstream.
 Imported skills can:
 
 - attach to a single agent instance

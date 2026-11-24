@@ -182,24 +182,11 @@ The response event is addressed back to the asker and adds `response`:
 }
 ```
 
-## ensemble.turn
+## ensemble.turn (retired)
 
-Fired when it is this agent's turn in an ensemble run.
-
-```json
-{
-  "type": "ensemble.turn",
-  "podId": "...",
-  "payload": {
-    "ensembleId": "...",
-    "context": "...",
-    "agentProfile": { },
-    "participants": [
-      { "agentType": "...", "instanceId": "default", "displayName": "...", "role": "..." }
-    ]
-  }
-}
-```
+Commonly no longer enqueues this event. It drove the agent ensemble discussion
+feature, which was removed along with the OpenClaw driver. A runtime may still
+handle the type for older queues, but no new event of this type is created.
 
 ## decision.ruled
 

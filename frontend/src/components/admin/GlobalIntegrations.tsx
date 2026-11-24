@@ -76,7 +76,6 @@ const GlobalIntegrations = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [applyingModelPolicy, setApplyingModelPolicy] = useState(false);
   const [connectingX, setConnectingX] = useState(false);
   const [loadingXFollowing, setLoadingXFollowing] = useState(false);
   const [error, setError] = useState('');
@@ -249,38 +248,6 @@ const GlobalIntegrations = () => {
       setError(err.response?.data?.error || 'Failed to save global model policy');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSaveAndApplyModelPolicy = async () => {
-    try {
-      setApplyingModelPolicy(true);
-      setError('');
-      setSuccess('');
-      const token = localStorage.getItem('token');
-
-      await axios.post(
-        '/api/admin/integrations/global/model-policy',
-        buildModelPolicyPayload(),
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-
-      // Fire reprovision as background task — takes ~60s for 100+ agents, don't block UI
-      axios.post(
-        '/api/registry/admin/installations/reprovision-all',
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ).catch((reprErr) => {
-        console.warn('Reprovision-all background error:', reprErr?.message);
-      });
-
-      setSuccess('Model policy saved. Agents reprovisioning in background — changes apply within 2 minutes.');
-      await fetchIntegrations();
-    } catch (err) {
-      console.error('Failed to save/apply global model policy:', err);
-      setError(err.response?.data?.error || 'Failed to save/apply global model policy');
-    } finally {
-      setApplyingModelPolicy(false);
     }
   };
 
@@ -905,16 +872,9 @@ const GlobalIntegrations = () => {
               variant="contained"
               startIcon={<SaveIcon />}
               onClick={handleSaveModelPolicy}
-              disabled={saving || applyingModelPolicy}
+              disabled={saving}
             >
               Save Model Policy
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={handleSaveAndApplyModelPolicy}
-              disabled={saving || applyingModelPolicy}
-            >
-              {applyingModelPolicy ? 'Applying...' : 'Save + Apply To All Agents'}
             </Button>
           </Box>
           <Alert severity="info" sx={{ mt: 2 }}>

@@ -6,20 +6,14 @@ jest.mock('node-cron', () => ({
     return { start: jest.fn(), stop: jest.fn() };
   }),
 }));
-jest.mock('../../../services/agentProvisionerServiceK8s', () => ({
-  refreshCodexOAuthTokenIfNeeded: jest.fn(),
-}));
 jest.mock('../../../services/summarizerService', () => ({}));
 jest.mock('../../../models/Integration', () => ({}));
 jest.mock('../../../services/integrationSummaryService', () => ({}));
-jest.mock('../../../services/agentEventService', () => ({
-  getSessionResetIntervalHours: jest.fn(() => 24),
-}));
+jest.mock('../../../services/agentEventService', () => ({}));
 jest.mock('../../../services/podAssetService', () => ({}));
 jest.mock('../../../services/externalFeedService', () => ({ syncExternalFeeds: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: {} }));
 jest.mock('../../../models/AgentEvent', () => ({}));
-jest.mock('../../../services/agentEnsembleService', () => ({}));
 jest.mock('../../../services/podCurationService', () => ({}));
 jest.mock('../../../services/agentAutoJoinService', () => ({}));
 jest.mock('../../../models/pg/Message', () => ({}));

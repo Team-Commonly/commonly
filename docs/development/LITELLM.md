@@ -75,9 +75,10 @@ The init container in `litellm-deployment.yaml` runs python3 at pod startup:
 3. Writes `auth.json` with `expires_at = exp`
 4. Logs `[VALID]` or `[EXPIRED — refresh job will restart pod with fresh token]`
 
-The daily refresh job (`refreshCodexOAuthTokenIfNeeded`, runs at 3AM UTC) patches the `api-keys`
-secret with fresh tokens **and** triggers `kubectl rollout restart deployment/litellm`, so the init
-container always re-runs with current credentials.
+The backend's daily refresh job (`refreshCodexOAuthTokenIfNeeded`, 3AM UTC) that patched the
+`api-keys` secret and restarted LiteLLM was removed with the OpenClaw driver (ADR-021). Nothing in
+the backend refreshes these tokens now; an operator who still serves Codex through LiteLLM rotates
+them by hand.
 
 ### Multi-account rotation (`codex-auth-rotator`)
 
@@ -668,15 +669,12 @@ console.log('OpenRouter key:', key?.substring(0,10)+'...' || 'MISSING');
 
 ---
 
-## Token Refresh (Automated)
+## Token Refresh (removed)
 
-`refreshCodexOAuthTokenIfNeeded` runs daily at 3AM UTC in `schedulerService.js`.
-
-- Checks `openai-codex-expires-at` from the `api-keys` secret
-- If within `thresholdDays: 3` of expiry, calls the OAuth token endpoint with the refresh token
-- Patches both k8s secret and GCP SM with new tokens
-- Triggers `kubectl rollout restart deployment/litellm` so init container re-runs with fresh creds
-- Controlled by `useLiteLLM = !!process.env.LITELLM_BASE_URL`
+Removed. `refreshCodexOAuthTokenIfNeeded` and its 3AM UTC scheduler job left with the OpenClaw
+driver (ADR-021). It checked `openai-codex-expires-at` in the `api-keys` secret, refreshed within
+3 days of expiry, patched the k8s secret and GCP SM and restarted LiteLLM. The `api-keys` mappings
+it wrote are unchanged.
 
 Manual force-refresh (if refresh fails or token is revoked):
 1. `npx @openai/codex login --device-auth` locally → this writes `~/.codex/auth.json`

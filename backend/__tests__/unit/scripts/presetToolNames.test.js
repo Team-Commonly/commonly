@@ -11,7 +11,6 @@ const {
   loadNativeTools,
   stripComments,
   PRESETS_FILE,
-  RETIRED_RUNTIMES,
 } = require('../../../../scripts/verify-preset-tool-names');
 
 describe('preset tool names resolve on the runtime the preset declares', () => {
@@ -24,7 +23,7 @@ describe('preset tool names resolve on the runtime the preset declares', () => {
   // A source with enough blocks to clear the shape control, so a test about
   // anything else is not silently measuring the control instead.
   const manyPresets = (extra = []) => [
-    ...Array.from({ length: 22 }, (_, i) => presetBlock(`filler-${i}`, 'openclaw')),
+    ...Array.from({ length: 4 }, (_, i) => presetBlock(`filler-${i}`, 'webhook')),
     ...extra,
   ].join('\n');
 
@@ -57,7 +56,7 @@ describe('preset tool names resolve on the runtime the preset declares', () => {
     });
 
     it('refuses to report a result when the block shape no longer matches', () => {
-      // Two blocks parse cleanly and mean nothing — the file has 30+. Without
+      // One block parses cleanly and means nothing — the file has 4+. Without
       // this control a broken segmenter reports "0 presets, all names
       // resolved" and exits 0.
       expect(() => parsePresets(presetBlock('only-one', 'openclaw')))
@@ -98,11 +97,16 @@ describe('preset tool names resolve on the runtime the preset declares', () => {
       ].join('\n')]))).toThrow(/declares 2 distinct runtimes/);
     });
 
+    it('ends the last block where the preset array closes, not at the end of the file', () => {
+      const presets = parsePresets(`${manyPresets([presetBlock('last', 'webhook')])}\n];\nconst TRAILER = \`commonly_log_cycle\`;`);
+      expect(presets.find((p) => p.id === 'last').names).toEqual([]);
+    });
+
     it('parses the live presets.ts without tripping either refusal', () => {
       // Non-vacuity: every negative case above is satisfied by a parser that
       // throws on everything.
       const presets = parsePresets(fs.readFileSync(PRESETS_FILE, 'utf8'));
-      expect(presets.length).toBeGreaterThanOrEqual(20);
+      expect(presets.length).toBeGreaterThanOrEqual(4);
       expect(presets.every((p) => p.runtime && p.id)).toBe(true);
     });
   });
@@ -155,17 +159,11 @@ const toolsForConfig = () => TOOLS;
       openclaw: new Set(['commonly_post_message', 'commonly_create_post']),
       internal: new Set(['commonly_post_message']),
     };
-    const mentionsRemoved = [presetBlock(
-      'removed-note',
-      'openclaw',
-      '    prompt: `(The former commonly_pr_diff/commonly_pr_review tools were removed: a reason.)`,',
-    )];
 
     it('flags a name absent on the runtime its preset declares', () => {
-      // The row's scenario: create_post exists on openclaw only, and is
-      // correct today purely because all its sites sit in openclaw presets.
+      // create_post exists on the openclaw set only, so an internal preset
+      // that teaches it names a tool its driver does not have.
       const presets = parsePresets(manyPresets([
-        ...mentionsRemoved,
         presetBlock('x-curator', 'internal', '    prompt: `Call commonly_create_post(podId).`,'),
       ]));
       const { missing } = checkPresetToolNames({ presets, sets });
@@ -178,7 +176,6 @@ const toolsForConfig = () => TOOLS;
 
     it('passes the same name when its preset declares a runtime that has it', () => {
       const presets = parsePresets(manyPresets([
-        ...mentionsRemoved,
         presetBlock('x-curator', 'openclaw', '    prompt: `Call commonly_create_post(podId).`,'),
       ]));
       expect(checkPresetToolNames({ presets, sets }).missing).toHaveLength(0);
@@ -188,7 +185,6 @@ const toolsForConfig = () => TOOLS;
       // Silence here is the failure this whole file exists to prevent: an
       // unchecked runtime renders identically to a checked one that passed.
       const presets = parsePresets(manyPresets([
-        ...mentionsRemoved,
         presetBlock('cc-preset', 'claude-code', '    prompt: `Call commonly_post_message.`,'),
       ]));
       const { missing, uncovered } = checkPresetToolNames({ presets, sets });
@@ -198,53 +194,18 @@ const toolsForConfig = () => TOOLS;
       expect(uncovered[0].names).toContain('commonly_post_message');
     });
 
-    it('exempts the names presets.ts mentions only to say they were removed', () => {
-      const presets = parsePresets(manyPresets(mentionsRemoved));
-      expect(checkPresetToolNames({ presets, sets }).missing).toHaveLength(0);
-    });
-
-    it('exempts the removal sentence on a checked runtime', () => {
-      const presets = parsePresets(manyPresets([presetBlock(
-        'checked-note',
-        'internal',
-        '    prompt: `(The former commonly_pr_diff/commonly_pr_review tools were removed: a reason.)`,',
-      )]));
-      expect(checkPresetToolNames({ presets, sets }).missing).toHaveLength(0);
-    });
-
-    it('fails a positive instruction to call a removed tool', () => {
+    it('fails an instruction to call a tool the runtime does not have', () => {
       const presets = parsePresets(manyPresets([
-        ...mentionsRemoved,
         presetBlock('calls-it', 'internal', '    prompt: `Read the change with commonly_pr_diff.`,'),
       ]));
       const { missing } = checkPresetToolNames({ presets, sets });
       expect(missing.map((m) => m.tool)).toEqual(['commonly_pr_diff']);
     });
 
-    it('refuses an exemption that outlives the sentence justifying it', () => {
-      // Same self-check as namedForOtherDrivers: an exclusion nobody revisits
-      // silently widens into a licence for a future real use of the name.
-      const presets = parsePresets(manyPresets());
-      expect(() => checkPresetToolNames({ presets, sets }))
-        .toThrow(/no longer mentions the removed tools/);
-    });
-
-    it('skips a retired runtime without calling it uncovered', () => {
-      const presets = parsePresets(manyPresets([
-        ...mentionsRemoved,
-        presetBlock('old-seat', 'gone', '    prompt: `Call commonly_create_post(podId).`,'),
-      ]));
-      const { missing, uncovered, retiredCount } = checkPresetToolNames({ presets, sets, retired: ['gone'] });
-      expect(missing).toHaveLength(0);
-      expect(uncovered).toHaveLength(0);
-      expect(retiredCount).toBe(1);
-    });
-
     it('passes the live presets against the live native runtime', () => {
       const result = checkPresetToolNames({
         presets: parsePresets(fs.readFileSync(PRESETS_FILE, 'utf8')),
         sets: { internal: loadNativeTools() },
-        retired: RETIRED_RUNTIMES,
       });
       expect(result.missing).toEqual([]);
       expect(result.uncovered).toEqual([]);

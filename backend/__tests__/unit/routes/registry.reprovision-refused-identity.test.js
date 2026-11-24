@@ -1,6 +1,6 @@
-// F361: an identity the kernel refuses to run (its owner lost cloudAgents) gets
-// no new tokens on reprovision, and its account comes out of the gateway config
-// so the gateway's own heartbeat stops calling the model.
+// A stored OpenClaw (moltbot) identity gets no new tokens on reprovision: the
+// runtime is retired (ADR-021), so it is skipped as runtime_retired whether or
+// not its owner is still entitled to cloud agents, and a bulk run carries on.
 const TYPE_RUNTIMES = {
   openclaw: 'moltbot', 'commonly-bot': 'internal', 'claude-code': 'claude-code', codex: 'codex',
 };
@@ -15,15 +15,12 @@ jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
   assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../services/hostedEngine', () => ({ hostedEngineInEffect: jest.fn(() => null) }));
-jest.mock('../../../services/presetSkillsAutoImport', () => ({ applyPresetDefaultSkills: jest.fn() }));
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),
   provisionAgentRuntime: jest.fn().mockResolvedValue({ accountId: 'a', restartRequired: false }),
   startAgentRuntime: jest.fn().mockResolvedValue({ started: true }),
   restartAgentRuntime: jest.fn().mockResolvedValue({ restarted: true }),
-  removeOpenClawAccount: jest.fn().mockResolvedValue({ removed: ['scout'] }),
 }));
-jest.mock('../../../services/cloudRuntimeOwnership', () => ({ cloudRuntimeMayRun: jest.fn() }));
 jest.mock('../../../routes/registry/tokens', () => ({
   revokeRuntimeTokensForAgent: jest.fn().mockResolvedValue([]),
   issueRuntimeTokenForAgent: jest.fn().mockResolvedValue({ token: 'new-token' }),
@@ -38,19 +35,16 @@ jest.mock('../../../models/Integration', () => ({
 jest.mock('../../../models/AgentProfile', () => ({ updateMany: jest.fn(), findOne: jest.fn(() => ({ lean: async () => null })) }));
 
 const AgentIdentityService = require('../../../services/agentIdentityService');
-const {
-  provisionAgentRuntime, removeOpenClawAccount, restartAgentRuntime,
-} = require('../../../services/agentProvisionerService');
+const { provisionAgentRuntime, restartAgentRuntime } = require('../../../services/agentProvisionerService');
 const { issueRuntimeTokenForAgent, revokeRuntimeTokensForAgent } = require('../../../routes/registry/tokens');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
-const { cloudRuntimeMayRun } = require('../../../services/cloudRuntimeOwnership');
 const { reprovisionInstallation } = require('../../../routes/registry/reprovision');
 
 const install = (agentName, instanceId = 'scout') => ({
   _id: 'install-1', podId: 'pod-1', agentName, instanceId, config: {}, save: jest.fn(),
 });
 
-describe('reprovision of a refused identity', () => {
+describe('reprovision of a stored OpenClaw identity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     AgentIdentityService.getAgentTypeConfig.mockImplementation((name) => (
@@ -60,90 +54,19 @@ describe('reprovision of a refused identity', () => {
     AgentInstallation.find.mockReturnValue(query);
   });
 
-  it('removes the gateway account and issues nothing', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    const result = await reprovisionInstallation({ installation: install('openclaw') });
-    expect(cloudRuntimeMayRun).toHaveBeenCalledWith('openclaw', 'scout');
-    expect(removeOpenClawAccount).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'openclaw', instanceId: 'scout' }));
-    expect(result).toEqual(expect.objectContaining({
-      skipped: true, skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true,
-    }));
-    expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
-    expect(issueRuntimeTokenForAgent).not.toHaveBeenCalled();
-    expect(provisionAgentRuntime).not.toHaveBeenCalled();
-    // A single reprovision restarts the gateway itself; a bulk one leaves it to the end.
-    expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
-  });
-
-  it('a gateway of its own is the one restarted, and a failed state edit is reported', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    const gateway = { _id: 'gw-1', slug: 'team', mode: 'k8s', status: 'active' };
-    // eslint-disable-next-line global-require
-    const Gateway = require('../../../models/Gateway');
-    const spy = jest.spyOn(Gateway, 'findById').mockReturnValue({ lean: async () => gateway });
-    removeOpenClawAccount.mockResolvedValueOnce({ removed: ['scout'], stateError: 'The state file edit failed.' });
-    const installation = { ...install('openclaw'), config: { runtime: { gatewayId: 'gw-1' } } };
-
-    const result = await reprovisionInstallation({ installation });
-
-    expect(removeOpenClawAccount).toHaveBeenCalledWith(expect.objectContaining({ gateway }));
-    expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'scout', { gateway });
-    expect(result).toEqual(expect.objectContaining({
-      removedFromRuntime: true, runtimeGatewayId: 'gw-1', runtimeRemovalError: 'The state file edit failed.',
-    }));
-    // Only the id leaves the route, never the gateway record itself.
-    expect(result.runtimeGateway).toBeUndefined();
-    spy.mockRestore();
-  });
-
-  it('a single run reports a restart that failed, which restartAgentRuntime returns rather than throws', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'forbidden' });
-    const result = await reprovisionInstallation({ installation: install('openclaw') });
-    expect(result).toEqual(expect.objectContaining({
-      removedFromRuntime: true, runtimeRestartNeeded: true,
-    }));
-    expect(result.runtimeRemovalError).toMatch(/gateway restart failed \(forbidden\)/);
-  });
-
-  it('a removal that found no Deployment restarts nothing and owes no restart', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    removeOpenClawAccount.mockResolvedValueOnce({ removed: ['scout'], deploymentMissing: true });
-    const result = await reprovisionInstallation({ installation: install('openclaw') });
-    expect(restartAgentRuntime).not.toHaveBeenCalled();
-    expect(result).toEqual(expect.objectContaining({ removedFromRuntime: true, runtimeRestartNeeded: false }));
-    expect(result.runtimeRemovalError).toBeUndefined();
-  });
-
-  it('a bulk run leaves the restart to the end', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    await reprovisionInstallation({ installation: install('openclaw'), skipRuntimeRestart: true });
-    expect(restartAgentRuntime).not.toHaveBeenCalled();
-  });
-
-  // The moltbot runtime is retired: an entitled identity is skipped before any
-  // token is issued or any gateway entry written, and a bulk run carries on.
-  it('an entitled moltbot identity is skipped as retired, with no token and no provision', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(true);
-    const result = await reprovisionInstallation({ installation: install('openclaw') });
+  it.each([false, true])('a moltbot identity (forced: %s) is skipped as retired, with no token, provision or restart', async (force) => {
+    const result = await reprovisionInstallation({ installation: install('openclaw'), force });
     expect(result).toMatchObject({ skipped: true, skipReason: 'runtime_retired', runtimeType: 'moltbot' });
-    expect(removeOpenClawAccount).not.toHaveBeenCalled();
     expect(issueRuntimeTokenForAgent).not.toHaveBeenCalled();
     expect(revokeRuntimeTokensForAgent).not.toHaveBeenCalled();
     expect(provisionAgentRuntime).not.toHaveBeenCalled();
+    expect(restartAgentRuntime).not.toHaveBeenCalled();
+    expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
   });
 
   it('every other runtime still reaches the provisioner', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(true);
     const result = await reprovisionInstallation({ installation: install('commonly-bot', 'default') });
     expect(result.skipReason).toBeUndefined();
     expect(provisionAgentRuntime).toHaveBeenCalledWith(expect.objectContaining({ runtimeType: 'internal' }));
-  });
-
-  it('only the gateway runtime is read', async () => {
-    cloudRuntimeMayRun.mockResolvedValue(false);
-    await reprovisionInstallation({ installation: install('commonly-bot', 'default') });
-    expect(cloudRuntimeMayRun).not.toHaveBeenCalled();
-    expect(removeOpenClawAccount).not.toHaveBeenCalled();
   });
 });

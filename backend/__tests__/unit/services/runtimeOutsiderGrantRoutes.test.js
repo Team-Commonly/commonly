@@ -5,8 +5,6 @@ const ts = require('typescript');
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/AgentAsk', () => ({ findOne: jest.fn() }));
-const mockEnsembleFindById = jest.fn();
-jest.mock('../../../models/AgentEnsembleState', () => ({ findById: (...args) => mockEnsembleFindById(...args) }));
 
 const { runtimeOutsiderGrantRouteKeys, classifyRuntimeOutsiderGrantRoute } =
   require('../../../services/runtimeOutsiderGrantRoutes');
@@ -16,7 +14,6 @@ const fileBases = {
   agentsRuntime: '/api/agents/runtime',
   agentHooks: '/api/agents/runtime',
   spawnCredentials: '/api/agents/runtime/spawn-credentials',
-  agentEnsemble: '/api/pods',
   messages: '/api/messages',
   artifacts: '/api/artifacts',
   uploads: '/api/uploads',
@@ -29,7 +26,7 @@ const fileBases = {
 const wrappers = {
   agentsRuntime: ['agentRuntimeAuth', 'dualAuth'],
   agentHooks: ['agentRuntimeAuth'], spawnCredentials: ['agentRuntimeAuth'],
-  agentEnsemble: ['agentRuntimeAuth'], messages: ['dualAuth'],
+  messages: ['dualAuth'],
   artifacts: ['dualAuth'], uploads: ['maybeAgentRuntimeAuth'],
   github: ['dualAuth'], tasksApi: ['auth'],
   grants: ['agentRuntimeAuth', 'dualAuth'], mcpGrants: ['agentRuntimeAuth'],
@@ -167,15 +164,5 @@ test('an ask response resolves the stored ask pod, not the body', async () => {
     params: { requestId: 'ask-1' }, body: { podId: 'pod-a' },
   });
   expect(AgentAsk.findOne).toHaveBeenCalledWith({ requestId: 'ask-1' });
-  expect(route).toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
-});
-
-test('ensemble response resolves the record pod rather than the ignored path pod', async () => {
-  mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
-  const route = await classifyRuntimeOutsiderGrantRoute({
-    baseUrl: '/api/pods', method: 'POST', route: { path: '/:podId/ensemble/response' },
-    params: { podId: 'pod-a' }, body: { ensembleId: 'ensemble-1' },
-  });
-  expect(mockEnsembleFindById).toHaveBeenCalledWith('ensemble-1');
   expect(route).toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
 });

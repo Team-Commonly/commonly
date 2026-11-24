@@ -19,14 +19,12 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),
-  listOpenClawPlugins: jest.fn(),
-  installOpenClawPlugin: jest.fn(),
   restartAgentRuntime: jest.fn(),
-  syncOpenClawSkills: jest.fn(),
 }));
 
 const provisioner = require('../../../services/agentProvisionerService');
 const { OPENCLAW_PLUGINS_RETIRED } = require('../../../routes/registry/plugins');
+const { RUNTIME_RETIRED_BODY } = require('../../../services/retiredRuntime');
 
 const app = express();
 app.use(express.json());
@@ -51,8 +49,22 @@ describe('F585: the OpenClaw plugin routes are retired', () => {
     expect(res.status).toBe(410);
     expect(res.body).toEqual(OPENCLAW_PLUGINS_RETIRED);
     expect(OPENCLAW_PLUGINS_RETIRED.code).toBe('openclaw_plugins_retired');
-    expect(provisioner.listOpenClawPlugins).not.toHaveBeenCalled();
-    expect(provisioner.installOpenClawPlugin).not.toHaveBeenCalled();
+    expect(provisioner.restartAgentRuntime).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  // The gateway's other registry routes, removed with the backend driver.
+  test.each([
+    ['GET', '/api/registry/openclaw/bundled-skills', undefined],
+    ['POST', `/api/registry/pods/${POD}/agents/openclaw/runtime-clear-sessions`, { instanceId: 'default' }],
+    ['POST', `/api/registry/pods/${POD}/agents/openclaw/heartbeat-file`, { content: '# hi' }],
+    ['GET', `/api/registry/pods/${POD}/agents/openclaw/identity-file`, undefined],
+    ['POST', `/api/registry/pods/${POD}/agents/openclaw/identity-file`, { content: '# me' }],
+  ])('%s %s answers 410 runtime_retired without touching a runtime', async (method, path, body) => {
+    const call = method === 'GET' ? request(app).get(path) : request(app).post(path).send(body);
+    const res = await call;
+    expect(res.status).toBe(410);
+    expect(res.body).toEqual(RUNTIME_RETIRED_BODY);
     expect(provisioner.restartAgentRuntime).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
   });

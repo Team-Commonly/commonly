@@ -6,10 +6,9 @@
 // compromise of that process reaches every Secret in the namespace (F533).
 // ops-runner is an exec target for operator scripts, which read Mongo and
 // Postgres and never call the Kubernetes API from inside it (F539).
-// Pods the backend creates at runtime (agent gateways) run as the separate
-// agent-runtime account; the pod spec is checked by
-// backend/__tests__/unit/services/gatewayProvisionerServiceK8s.serviceAccount.test.js,
-// and this script checks the account itself: it renders in every lane, mounts
+// Pods that run agent turns use the separate agent-runtime account (the
+// backend's gateway provisioner that created them was removed with the
+// OpenClaw driver, ADR-021). This script checks the account itself: it renders in every lane, mounts
 // no token, no RoleBinding or ClusterRoleBinding the chart renders names it
 // (as the ServiceAccount, its user name, or a group that holds it:
 // system:authenticated, system:serviceaccounts, system:serviceaccounts:<ns>), and the backend, its worker and ops-runner are told its

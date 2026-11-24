@@ -16,16 +16,10 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: jest.fn(), findOne: jest.fn(), updateOne: jest.fn() },
 }));
 jest.mock('../../../models/Integration', () => ({}));
-jest.mock('../../../models/Gateway', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/agentDigestFoldService', () => ({
   foldExpiredDigests: jest.fn().mockResolvedValue(0),
   readFoldedDigest: jest.fn().mockResolvedValue(null),
   settleFoldedDigest: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(),
 }));
 
 const AgentEvent = require('../../../models/AgentEvent');

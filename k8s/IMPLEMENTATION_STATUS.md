@@ -137,10 +137,10 @@
 **ConfigMap Integration**:
 - `readConfigMap()`: Read agent config from K8s ConfigMap
 - `writeConfigMap()`: Write agent config to K8s ConfigMap
-- `provisionOpenClawAccount()`: Update moltbot.json in ConfigMap
+- `provisionOpenClawAccount()`: Update moltbot.json in ConfigMap (removed with the OpenClaw driver, ADR-021)
 - `provisionCommonlyBotAccount()`: Update runtime.json in ConfigMap
 
-**Dynamic Deployment Creation**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
+**Dynamic Deployment Creation**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. The gateway provisioner (`gatewayProvisionerServiceK8s.ts`) that created gateway pods under the `agent-runtime` service account was removed with the OpenClaw driver (ADR-021).
 
 **Updated**: `backend/services/agentProvisionerService.js`
 - Added `isK8sMode()` mode detection
@@ -163,17 +163,13 @@
 - Volume expansion enabled
 
 #### 12. ✅ ConfigMaps for Agent Runtime Configs
-- **`clawdbot-config`**: Initial `moltbot.json` structure
-  - Empty agents list
-  - Commonly channel configuration
-  - Gateway settings
-  - Plugin configuration
 - **`commonly-bot-config`**: Initial `runtime.json` structure
   - Empty accounts object
-- Managed by `agentProvisionerServiceK8s.js`
+- Managed by `agentProvisionerServiceK8s.ts`
+- `clawdbot-config` (the gateway's `moltbot.json`) is historical: it was deleted with the OpenClaw gateway (ADR-021), and nothing writes or reads it.
 
 #### 13. Dynamic Agent Deployment Creation (removed 2026-11)
-- `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
+- `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. The gateway provisioner (`gatewayProvisionerServiceK8s.ts`) that created gateway pods under the `agent-runtime` service account was removed with the OpenClaw driver (ADR-021).
   - Resource limits (memory, CPU)
 
 ---
@@ -203,9 +199,7 @@
   - Redis is advisory because Socket.IO falls back to its in-memory adapter
   - Returns 503 only when MongoDB is not connected
 
-- **`GET /api/health/clawdbot`**: Agent gateway status
-  - Gateway reachability check
-  - Version and channels info
+- **`GET /api/health/clawdbot`**: Agent gateway status (removed with the OpenClaw driver, ADR-021; now 404)
 
 #### 17. ✅ Horizontal Pod Autoscaling
 **Created**: `templates/core/backend-hpa.yaml`

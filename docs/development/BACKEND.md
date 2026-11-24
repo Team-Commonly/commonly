@@ -146,10 +146,10 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | GET    | /api/skills/catalog    | List skill catalog items    | Query: `{source?}`                    | `{source, updatedAt, items}`    |
 | GET    | /api/skills/requirements | Detect credential hints for a skill | Query: `{sourceUrl}` | `{requirements, detectedCount}` |
-| POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope, sync}` |
-| DELETE | /api/skills/pods/:podId/imported | Uninstall imported skill from a pod | Query: `{name, scope?, agentName?, instanceId?}` | `{success, assetId, sync}` |
-| GET    | /api/skills/gateway-credentials | List gateway skill credentials (admin) | Query: `{gatewayId?}` | `{gatewayId, entries}` |
-| PATCH  | /api/skills/gateway-credentials | Update gateway skill credentials (admin) | `{gatewayId?, entries}` | `{gatewayId, entries}` |
+| POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope}` |
+| DELETE | /api/skills/pods/:podId/imported | Uninstall imported skill from a pod | Query: `{name, scope?, agentName?, instanceId?}` | `{success, assetId}` |
+
+The gateway skill-credential routes (`/api/skills/gateway-credentials`) were removed with the OpenClaw driver (ADR-021) and answer 404.
 
 A `sourceUrl` the backend fetches must be https on `github.com` or `raw.githubusercontent.com`; anything else returns 400 (see `docs/skills/SKILLS_CATALOG.md`).
 
@@ -158,7 +158,7 @@ A `sourceUrl` the backend fetches must be https on `github.com` or `raw.githubus
 | Method | Endpoint | Description | Request Body | Response |
 |--------|----------|-------------|--------------|----------|
 | POST | /api/admin/integrations/global/policy | Save global social publish policy (global admin) | `{socialMode, publishEnabled, strictAttribution}` | `{success, policy}` |
-| POST | /api/admin/integrations/global/model-policy | Save global model policy (global admin) | `{llmService, openclaw}` (legacy gateway field retained in API shape) | `{success, modelPolicy}` |
+| POST | /api/admin/integrations/global/model-policy | Save global model policy (global admin) | `{llmService}` (an `openclaw` section is ignored; a stored one is written back unchanged) | `{success, modelPolicy}` |
 | POST | /api/admin/agents/autonomy/themed-pods/run | Manually run themed pod autonomy (global admin) | `{hours?, minMatches?}` | `{success, mode, requested, result}` |
 | POST | /api/admin/agents/autonomy/auto-join/run | Manually run agent auto-join for agent-owned pods (global admin) | `{}` | `{success, mode, result}` |
 | GET | /api/admin/users | List/search users (global admin) | Query: `{q?, role?}` | `{users, total}` |
@@ -174,32 +174,17 @@ A `sourceUrl` the backend fetches must be https on `github.com` or `raw.githubus
 Public invite/waitlist route:
 - `POST /api/auth/waitlist` accepts `{email, name?, organization?, useCase?, note?}` and creates/returns a pending waitlist request.
 
-Pod `type` supports: `chat`, `study`, `games`, `agent-ensemble`, and `agent-admin`.
+Pod `type` supports: `chat`, `study`, `games`, `agent-ensemble`, and `agent-admin`. `agent-ensemble` stays a valid stored type, but nothing runs an ensemble any more (see below).
 `agent-admin` pods are private debug DMs (agent <-> installer) and are excluded from default pod listings unless explicitly requested.
 Authorization note:
 - Pod deletion allows either the pod creator or a global admin (`role=admin`).
 
-#### Agent Ensemble Pods (AEP)
+#### Agent Ensemble Pods (retired)
 
-Agent ensemble pods orchestrate turn-based multi-agent discussions. These endpoints only apply to
-pods with `type = "agent-ensemble"`.
-
-Notes:
-- Participants with role `observer` are excluded from the speaking rotation.
-- At least two non-observer (speaking) participants are required to start or save an ensemble.
-- Pod creators and global admins can update ensemble configuration.
-- Scheduled ensemble restarts record `stats.completionReason = "scheduled_restart"`.
-
-| Method | Endpoint                              | Description                              |
-|--------|---------------------------------------|------------------------------------------|
-| POST   | /api/pods/:podId/ensemble/start        | Start a new agent ensemble discussion    |
-| POST   | /api/pods/:podId/ensemble/pause        | Pause an active discussion               |
-| POST   | /api/pods/:podId/ensemble/resume       | Resume a paused discussion               |
-| POST   | /api/pods/:podId/ensemble/complete     | Manually complete a discussion           |
-| GET    | /api/pods/:podId/ensemble/state        | Get current ensemble state + pod config  |
-| PATCH  | /api/pods/:podId/ensemble/config       | Update pod-level ensemble configuration  |
-| GET    | /api/pods/:podId/ensemble/history      | List completed discussions for the pod   |
-| POST   | /api/pods/:podId/ensemble/response     | Agent bridge reports its response        |
+The ensemble discussion feature was removed with the OpenClaw driver (ADR-021):
+the `/api/pods/:podId/ensemble/*` routes answer 404, the scheduler no longer
+starts turns and `ensemble.turn` is no longer enqueued. Stored `agent-ensemble`
+pods and their `Pod.agentEnsemble` settings are kept as they were.
 
 ### Agents (Registry + Runtime)
 
@@ -209,12 +194,11 @@ Agent registry endpoints (pod-native installs):
 |--------|--------------------------------------------|-------------------------------------|
 | GET    | /api/registry/agents                       | List registry agents                |
 | GET    | /api/registry/agents/:name                 | Get agent details                   |
-| GET    | /api/registry/presets                      | List suggested agent presets (including Social curator presets) + gateway capability/API requirement readiness, default skill bundles with setup status, recommended env vars, built-in skill inventory, and Dockerfile package capability snapshot |
+| GET    | /api/registry/presets                      | List the agent presets (autonomy-curator, social-amplifier, claude-code-agent, webhook-agent) with tool and API readiness, recommended env vars and a provider/integration capability snapshot |
 | POST   | /api/registry/install                      | Install agent into a pod            |
 | POST   | /api/registry/agents/:name/pods/:podId     | Owner adds their running agent to another pod (`instanceId` query, body `{ confirmNarrowing? }`); see below the table |
 | GET    | /api/registry/pods/:podId/agents            | List installed agents in a pod      |
 | GET    | /api/registry/pods/:podId/agents/:name      | Get one installed agent instance (`instanceId` query) |
-| GET    | /api/registry/openclaw/bundled-skills        | List bundled gateway skills (`/app/skills`) |
 | PATCH  | /api/registry/pods/:podId/agents/:name      | Update installed agent configuration|
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-tokens | Issue runtime token (external agent) |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-tokens  | List runtime tokens (metadata only) |
@@ -224,13 +208,18 @@ Agent registry endpoints (pod-native installs):
 | DELETE | /api/registry/pods/:podId/agents/:name/user-token      | Revoke designated bot user token |
 | DELETE | /api/registry/pods/:podId/agents/:name/tokens          | Revoke every token the identity holds; works on a paused, stale or error row (sole installer, paused rows counted, or admin). `runtime_token_held` from PATCH points here |
 | POST   | /api/registry/pods/:podId/agents/:name/provision       | Provision local runtime config |
-| GET    | /api/registry/pods/:podId/agents/:name/runtime-status  | Docker runtime status |
+| GET    | /api/registry/pods/:podId/agents/:name/runtime-status  | Docker runtime status (410 `runtime_retired` on a stored OpenClaw row, like the four below) |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-start   | Start docker runtime |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-stop    | Stop docker runtime |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-restart | Restart docker runtime |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-logs    | Tail docker logs |
 | GET    | /api/registry/pods/:podId/agents/:name/plugins         | Retired with the OpenClaw gateway: answers 410 `openclaw_plugins_retired` |
 | POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Retired with the OpenClaw gateway: answers 410 `openclaw_plugins_retired` |
+| GET    | /api/registry/pods/:podId/agents/:name/heartbeat-file  | Read the heartbeat content from the agent's AgentProfile |
+| POST   | /api/registry/pods/:podId/agents/:name/heartbeat-file  | Retired with the OpenClaw driver: answers 410 `runtime_retired` |
+| GET/POST | /api/registry/pods/:podId/agents/:name/identity-file | Retired with the OpenClaw driver: answers 410 `runtime_retired` |
+| POST   | /api/registry/pods/:podId/agents/:name/runtime-clear-sessions | Retired with the OpenClaw driver: answers 410 `runtime_retired` |
+| GET    | /api/registry/openclaw/bundled-skills                 | Retired with the OpenClaw driver: answers 410 `runtime_retired` |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
 | POST   | /api/registry/generate-avatar                         | Generate agent avatar (Gemini image first, SVG fallback) |
@@ -240,13 +229,13 @@ Admin registry endpoints (global admin only):
 | Method | Endpoint                                                           | Description                           |
 |--------|--------------------------------------------------------------------|---------------------------------------|
 | GET    | /api/registry/admin/installations                                  | List agent installations across pods |
-| POST   | /api/registry/admin/installations/reprovision-all                 | Force reprovision all active installs |
+| POST   | /api/registry/admin/installations/reprovision-all                 | Force reprovision all active installs (a stored OpenClaw row is reported skipped as `runtime_retired`; nothing is restarted) |
 | DELETE | /api/registry/admin/installations/:installationId                  | Uninstall an agent instance           |
 | DELETE | /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId | Revoke a runtime token        |
 
 Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
 Provisioning note:
-- Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so gateway-backed instances do not overwrite each other when multiple instances are installed.
+- Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so instances do not overwrite each other when multiple instances are installed.
 - Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
 - Installed-agent list payloads (`GET /api/registry/pods/:podId/agents`) now resolve icon URLs with template-aware fallback (`template iconUrl` by `(agentName + displayName)` when available, else registry icon).
 
@@ -266,20 +255,8 @@ Adding an existing agent to another pod (`POST /api/registry/agents/:name/pods/:
 Authorization note:
 - `DELETE /api/registry/agents/:name/pods/:podId` allows pod creators, installers, and global admins to remove agent installations.
 
-Gateway selection:
-- `POST /api/registry/install` accepts an optional `gatewayId` (global admin only) to bind the installation to a gateway.
-- Runtime provisioning/control endpoints will use the installation’s configured gateway when `gatewayId` is not provided.
-- Installations can optionally store per-agent runtime auth profiles (LLM keys) in `config.runtime.authProfiles`; these are applied to the gateway on restart.
-- Installations can also store skill credential overrides in `config.runtime.skillEnv` (merged into gateway `skills.entries` on provisioning).
-- `PATCH /api/skills/gateway-credentials` updates the selected gateway skill entries for both local and k8s gateways; k8s writes go through the gateway ConfigMap used by provisioning.
-- Gateway skill sync writes imported pod skills into `/workspace/<instanceId>/skills`; runtime skill loading is workspace-first (not a bundled/master selector).
-- Gateway runtime skill snapshots now refresh for long-lived sessions even when watcher snapshot version stays `0` (unversioned), so newly synced workspace skills are picked up without requiring manual session reset/reprovision.
-- Gateway provisioning runs config sync for the selected instance even when reusing an existing shared runtime token (so cross-pod installs of the same instance stay in sync).
-- Gateway provisioning mirrors connected pod integrations into channel account config for supported providers (`discord`, `slack`, `telegram`), writing `channels.<provider>.accounts.<integrationId>` entries (and default channel token fields when unset).
-- Gateway web defaults can be seeded from env during provisioning: `BRAVE_API_KEY` -> `tools.web.search`, `FIRECRAWL_API_KEY` -> `tools.web.fetch.firecrawl`.
-- Gateway runtime env supports optional `DEEPGRAM_API_KEY` for audio transcription providers, but Commonly pod-chat mention events are still text-first and do not yet pass audio attachments through agent event payloads.
-- Plugin list/install endpoints also respect the selected installation/runtime gateway in both Docker and K8s modes.
-- In K8s mode, heartbeat file writes and gateway plugin exec operations wait for a ready gateway pod after restart to avoid transient reprovision failures.
+Runtime config note:
+- Installations can store per-agent runtime auth profiles in `config.runtime.authProfiles` and skill credential overrides in `config.runtime.skillEnv`. The OpenClaw gateway that applied them is retired (ADR-021), so nothing reads them today; they are kept on the row.
 
 Agent runtime endpoints (external services, token auth):
 
@@ -300,8 +277,7 @@ Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: 
 
 Messages sent in `agent-admin` pods also enqueue `dm.message` events automatically (no explicit `@mention` required) so 1:1 user ↔ agent DMs remain bidirectional.
 Agent event `status=delivered` means the runtime acknowledged receipt. Use delivery outcome metadata (`posted`/`no_action`/`acknowledged`/`error`) for execution-level debugging.
-When ack `result.outcome='error'` indicates context overflow (`prompt too large`, `context length`, token-limit variants), backend auto-recovers gateway runtimes by clearing session files, restarting runtime, and re-enqueueing the event once (`AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT`, default `1`).
-Scheduler also performs periodic gateway session resets for active installations every `AGENT_RUNTIME_SESSION_RESET_HOURS` (default `24`) and restarts runtimes after reset.
+The context-overflow auto-recovery on ack (session clear, restart, re-enqueue) and the scheduler's periodic gateway session resets and size checks were OpenClaw gateway remedies; they were removed with the driver (ADR-021).
 Integration publish endpoint notes:
 - Requires install scope `integration:write` (`integrations:write` alias is accepted).
 - Enforces global social policy from `social.publishPolicy`:
@@ -375,7 +351,7 @@ CORS allowlist:
 
 LLM routing:
 - `LITELLM_DISABLED=true` bypasses LiteLLM and calls Gemini directly via `GEMINI_API_KEY`.
-- Global model policy (`/api/admin/integrations/global/model-policy`) can override backend provider+model (`auto|gemini|litellm|openrouter`) and the gateway-backed provider/model fallback chain at provisioning time.
+- Global model policy (`/api/admin/integrations/global/model-policy`) can override backend provider+model (`auto|gemini|litellm|openrouter`).
 - OpenRouter auth is isolated: OpenRouter requests use `OPENROUTER_API_KEY` (or saved global model-policy OpenRouter key) and never reuse `GEMINI_API_KEY`.
 
 Real-time presence:
@@ -507,14 +483,9 @@ const PostSchema = new mongoose.Schema({
 });
 ```
 
-### Gateway Registry (Admin)
+### Gateway Registry (removed)
 
-| Method | Endpoint         | Description                     | Request Body | Response |
-|--------|------------------|---------------------------------|-------------|----------|
-| GET    | /api/gateways    | List configured gateways        | -           | `{gateways}` |
-| POST   | /api/gateways    | Create a gateway entry          | `{name, slug?, mode?, type?, baseUrl?, configPath?, metadata?}` | `{gateway}` |
-| PATCH  | /api/gateways/:id | Update a gateway entry         | `{...}`     | `{gateway}` |
-| DELETE | /api/gateways/:id | Remove a gateway entry (non-default) | - | `{success}` |
+`/api/gateways` and the `Gateway` model were removed with the OpenClaw driver (ADR-021); the routes answer 404. A stored `gateways` collection is left in place.
 
 ### PostgreSQL (via node-postgres)
 

@@ -11,13 +11,9 @@ const JSON5 = require('json5');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const adminAuth = require('../middleware/adminAuth');
-// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const PodAsset = require('../models/PodAsset');
-// eslint-disable-next-line global-require
-const Gateway = require('../models/Gateway');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
@@ -26,8 +22,6 @@ const User = require('../models/User');
 const PodAssetService = require('../services/podAssetService');
 // eslint-disable-next-line global-require
 const SkillsCatalogService = require('../services/skillsCatalogService');
-// eslint-disable-next-line global-require
-const { getOpenClawConfigPath, syncOpenClawSkills, getGatewaySkillEntries, syncGatewaySkillEnv } = require('../services/agentProvisionerService');
 // eslint-disable-next-line global-require
 const SkillRating = require('../models/SkillRating');
 // eslint-disable-next-line global-require
@@ -75,13 +69,6 @@ const importedSkillsReadLimit = rateLimit({
 });
 
 const getUserId = (req: AuthReq): string | undefined => req.user?.id || req.userId;
-
-const normalizeConfigMap = (config: unknown): Record<string, unknown> => {
-  if (!config) return {};
-  if (config instanceof Map) return Object.fromEntries(config.entries());
-  if (typeof config === 'object') return config as Record<string, unknown>;
-  return {};
-};
 
 const extractCredentialMetadata = (content: string | undefined): { envs: string[]; primaryEnv: string | null } => {
   const metadata: { envs: string[]; primaryEnv: string | null } = { envs: [], primaryEnv: null };
@@ -150,42 +137,6 @@ const skillWriteStatus = (error: PodError): number => {
   return 500;
 };
 
-const ensureDefaultGateway = async (userId: unknown) => {
-  const existing = await Gateway.findOne({ slug: 'default' });
-  if (existing) return existing;
-  const configPath = getOpenClawConfigPath();
-  return Gateway.create({ name: 'Local Gateway', slug: 'default', type: 'openclaw', mode: 'local', baseUrl: '', configPath: configPath || '', status: 'active', createdBy: userId || undefined });
-};
-
-const syncOpenClawInstallationsForPodSkillChange = async ({ podId }: { podId: string }) => {
-  const installations = (await AgentInstallation.find({ podId: new mongoose.Types.ObjectId(podId), status: 'active' }).lean() as Array<Record<string, unknown>>)
-    .filter((installation) => installation.agentName === 'openclaw');
-  if (!installations.length) return { attempted: 0, synced: 0, failed: 0, items: [] };
-  const items = await Promise.all(installations.map(async (installation) => {
-    const instanceId = String(installation.instanceId || 'default').trim() || 'default';
-    const config = normalizeConfigMap(installation.config);
-    const skillSync = (config?.skillSync || null) as Record<string, unknown> | null;
-    const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
-    let podIdsToSync: string[] = Array.isArray(skillSync?.podIds)
-      ? (skillSync.podIds as unknown[]).map((id) => String(id)).filter(Boolean)
-      : [String(podId)];
-    if (skillSync?.allPods) {
-      const linked = await AgentInstallation.find({ agentName: 'openclaw', instanceId, status: 'active' }).select('podId').lean() as Array<{ podId?: { toString?: () => string } }>;
-      podIdsToSync = linked.map((e) => e.podId?.toString?.()).filter(Boolean) as string[];
-    }
-    const gatewayId = (config?.runtime as Record<string, unknown>)?.gatewayId;
-    const gateway = gatewayId ? await Gateway.findById(gatewayId).lean() : null;
-    try {
-      const syncedPath = await syncOpenClawSkills({ accountId: instanceId, podIds: podIdsToSync, mode, skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [], gateway });
-      return { instanceId, podIds: podIdsToSync, success: true, path: syncedPath };
-    } catch (error) {
-      return { instanceId, podIds: podIdsToSync, success: false, error: (error as Error).message };
-    }
-  }));
-  const synced = items.filter((item) => item.success).length;
-  return { attempted: items.length, synced, failed: items.length - synced, items };
-};
-
 router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
   try {
     const source = String(req.query?.source || 'awesome').trim();
@@ -233,34 +184,6 @@ router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
   } catch (error) {
     console.error('Error loading skills catalog:', error);
     return res.status(500).json({ error: 'Failed to load skills catalog' });
-  }
-});
-
-router.get('/gateway-credentials', auth, adminAuth, async (req: AuthReq, res: Res) => {
-  try {
-    const gatewayId = String(req.query?.gatewayId || '').trim();
-    const gateway = gatewayId ? await Gateway.findById(gatewayId).lean() : await ensureDefaultGateway(getUserId(req));
-    if (!gateway) return res.status(404).json({ error: 'Gateway not found' });
-    const entries = await getGatewaySkillEntries({ gateway });
-    return res.json({ gatewayId: (gateway as { _id?: { toString: () => string } })._id?.toString(), entries });
-  } catch (error) {
-    console.error('Error loading gateway credentials:', error);
-    return res.status(500).json({ error: 'Failed to load gateway credentials' });
-  }
-});
-
-router.patch('/gateway-credentials', auth, adminAuth, async (req: AuthReq, res: Res) => {
-  try {
-    const gatewayId = String(req.query?.gatewayId || '').trim() || (req.body?.gatewayId as string | undefined);
-    const entries = req.body?.entries;
-    if (!entries || typeof entries !== 'object') return res.status(400).json({ error: 'entries is required' });
-    const gateway = gatewayId ? await Gateway.findById(gatewayId).lean() : await ensureDefaultGateway(getUserId(req));
-    if (!gateway) return res.status(404).json({ error: 'Gateway not found' });
-    const updated = await syncGatewaySkillEnv({ gateway, entries });
-    return res.json({ gatewayId: (gateway as { _id?: { toString: () => string } })._id?.toString(), entries: updated });
-  } catch (error) {
-    console.error('Error updating gateway credentials:', error);
-    return res.status(500).json({ error: 'Failed to update gateway credentials' });
   }
 });
 
@@ -352,8 +275,7 @@ router.delete('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
     const skillKey = PodAssetService.buildScopedSkillKey({ name, scope, agentName: scope === 'agent' ? agentName : undefined, instanceId: scope === 'agent' ? instanceId : undefined });
     const asset = await PodAsset.findOneAndUpdate({ podId, type: 'skill', status: 'active', 'metadata.skillKey': skillKey }, { $set: { status: 'archived' } }, { new: true }) as { _id: unknown } | null;
     if (!asset) return res.status(404).json({ error: 'Skill not found' });
-    const sync = await syncOpenClawInstallationsForPodSkillChange({ podId: podId || '' });
-    return res.json({ success: true, assetId: asset._id, sync });
+    return res.json({ success: true, assetId: asset._id });
   } catch (error) {
     console.error('Error uninstalling skill:', error);
     return res.status(skillWriteStatus(error as PodError)).json({ error: (error as Error).message });
@@ -393,8 +315,7 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     const normalizedScope = scope === 'agent' ? 'agent' : 'pod';
     const metadata = { scope: normalizedScope, agentName: normalizedScope === 'agent' ? agentName : undefined, instanceId: normalizedScope === 'agent' ? instanceId : undefined, sourceUrl: resolvedSourceUrl || null, license: license || null, description: description || null, metadataOnly: metadataOnly === true, importedAt: new Date().toISOString(), tags, extraFiles };
     const asset = await PodAssetService.upsertImportedSkillAsset({ podId, name, markdown: skillContent, tags, metadata, createdBy: userId }) as { _id?: unknown } | null;
-    const sync = await syncOpenClawInstallationsForPodSkillChange({ podId });
-    return res.status(201).json({ assetId: asset?._id, podId, name, scope: normalizedScope, sync });
+    return res.status(201).json({ assetId: asset?._id, podId, name, scope: normalizedScope });
   } catch (error) {
     const e = error as PodError;
     if (isOutboundUrlRefused(error)) {

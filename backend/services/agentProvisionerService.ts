@@ -1,75 +1,16 @@
 export {};
-import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
-import { agentDefaultModel } from '../config/agentDefaultModel';
 
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const JSON5 = require('json5');
-const PodAsset = require('../models/PodAsset');
-const PodAssetService = require('./podAssetService');
-const GlobalModelConfigService = require('./globalModelConfigService');
-// Safe at module scope: routes/registry/presets has zero requires of its own,
-// so this cannot close a cycle back through routes/registry/provision.
-const { withCyclesDirective } = require('../routes/registry/presets');
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_COMMONLY_SKILL_FALLBACK = `---
-name: commonly
-description: Access Commonly pods, search team knowledge, and post messages.
-homepage: https://commonly.cc
----
 
-# Commonly Integration
-
-Prefer runtime-token HTTP routes first for heartbeat/context flows. This is a skill file, not a CLI command.
-
-## Preferred: Commonly Tools (no manual token handling)
-
-- \`commonly_read_context\` (pod context + summaries)
-- \`commonly_search\` (pod memory/assets)
-- \`commonly_get_summaries\` (recent summary digest)
-- \`commonly_post_message\` (pod chat)
-- \`commonly_post_thread_comment\` (thread reply)
-- \`commonly_write_memory\` (persist memory back to Commonly)
-
-Use \`podId\` from the runtime event payload (field: \`podId\`). Do not use Commonly target syntax.
-
-## Optional HTTP fallback (only if tools are unavailable)
-
-## Environment
-
-\`\`\`bash
-# Resolve per-agent tokens from gateway config using current workspace account id.
-ACCOUNT_ID="\${ACCOUNT_ID:-\${OPENCLAW_AGENT_ID:-\$(basename \"$PWD\")}}"
-export ACCOUNT_ID
-COMMONLY_API_TOKEN="\${COMMONLY_API_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||\"\");')}"
-COMMONLY_USER_TOKEN="\${COMMONLY_USER_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||\"\");')}"
-\`\`\`
-
-## Pod Context (runtime token)
-
-\`\`\`bash
-curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/agents/runtime/pods/\${POD_ID}/context" \\
-  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
-\`\`\`
-
-## Recent Messages (runtime token)
-
-\`\`\`bash
-curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/agents/runtime/pods/\${POD_ID}/messages?limit=\${LIMIT:-20}" \\
-  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
-\`\`\`
-
-## Recent Posts (runtime token)
-
-\`\`\`bash
-curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/posts?podId=\${POD_ID}&limit=\${LIMIT:-10}" \\
-  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
-\`\`\`
-`;
-
+// The commonly-bot container reads its runtime.json as uid/gid 1000 unless the
+// env says otherwise (the env names are inherited from the retired OpenClaw
+// workspace).
 const getOpenClawWorkspaceOwnership = () => {
   const uidRaw = process.env.OPENCLAW_WORKSPACE_UID || process.env.CLAWDBOT_WORKSPACE_UID;
   const gidRaw = process.env.OPENCLAW_WORKSPACE_GID || process.env.CLAWDBOT_WORKSPACE_GID;
@@ -116,1004 +57,10 @@ const writeJsonFile = (filePath: any, payload: any) => {
   chownPath(filePath);
 };
 
-const DEFAULT_HEARTBEAT_CONTENT = [
-  '# HEARTBEAT.md',
-  '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
-  '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.',
-  '- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
-  '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply `HEARTBEAT_OK` silently.',
-  '- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
-  '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
-  '- Never ask users/owners/other agents which tool or parameter to use during heartbeat.',
-  '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
-  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
-  '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
-  '- Read recent activity and decide naturally whether to engage — like a team member checking the group chat.',
-  '- If a real (non-bot) user asked a question or shared an opinion, respond to it directly with your actual thoughts. Do not just summarize or restate what they said.',
-  '- If there is an interesting discussion underway, weigh in with your perspective.',
-  '- If you have something relevant from your domain or feeds worth sharing, bring it up. Verify or enrich with `web_search` when available.',
-  '- Only stay quiet (reply `HEARTBEAT_OK`) if there is genuinely nothing worth contributing.',
-  '- SILENT WORK RULE: Do NOT post anything to pod chat while fetching data or analyzing activity. Work silently first, then post ONE message only if you have something genuine to say. No intermediate progress messages.',
-  '- HEARTBEAT_OK is a return value, NOT a chat message. Never post "HEARTBEAT_OK" or "No meaningful activity" or any similar phrase to pod chat. If staying quiet, simply return HEARTBEAT_OK as your sole output with zero chat messages posted.',
-  '- Do not post housekeeping-only status updates (e.g. "no new activity", "latest activity from X", "I will follow up", "Fetching messages", "Analyzing activity").',
-  '- When discussing X/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod.',
-  '- Log short-term notes in memory/YYYY-MM-DD.md. Promote durable notes to MEMORY.md.',
-  '- Never output control tokens like HEARTBEAT_OK/HEARTBEAT_NOOP in pod chat — only use them as your sole reply when suppressing output.',
-  '',
-].join('\n');
-
-const DEFAULT_HEARTBEAT_PROMPT = [
-  'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
-  'Resolve podId from the incoming event context.',
-  'Read payload.activityHint first and adapt your reply to current activity.',
-  'Never ask clarification questions about tools/parameters during heartbeat execution.',
-  'Before replying, read current pod activity via runtime-token HTTP routes in HEARTBEAT.md (context/messages/posts).',
-  'Do not output process narration (for example "I will check", "let me try", "I need to check").',
-  'IMPORTANT: If the context response contains "_status": "success" but summaries and assets are empty arrays, that means the pod has NO RECENT ACTIVITY -- it does NOT mean you failed to read it. This is normal for quiet pods.',
-  'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
-  'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
-  'If the HTTP request itself fails (network error, 4xx/5xx status), still post a short mention-based fallback update and avoid diagnostics.',
-  'Even when there is no meaningful new signal, still post a short conversational mention update.',
-  'Do not emit control tokens such as HEARTBEAT_OK or HEARTBEAT_NOOP.',
-].join(' ');
-
-const isHeartbeatContentEffectivelyEmpty = (content = '') => {
-  if (!content) return true;
-  const lines = String(content)
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (!lines.length) return true;
-  const actionable = lines.filter((line) => {
-    if (!line) return false;
-    if (line.startsWith('#')) return false;
-    if (line.startsWith('//')) return false;
-    if (line.startsWith('<!--')) return false;
-    if (line.startsWith('>')) return false;
-    if (line.startsWith('-') || line.startsWith('*') || line.startsWith('+')) {
-      return line.replace(/^[-*+]\s*/, '').trim().length > 0;
-    }
-    return true;
-  });
-  return actionable.length === 0;
-};
-
-const normalizeHeartbeatContent = (content: any) => {
-  const trimmed = String(content || '').trim();
-  if (!trimmed) return DEFAULT_HEARTBEAT_CONTENT;
-  if (trimmed.startsWith('#')) {
-    return `${trimmed}\n`;
-  }
-  return `# HEARTBEAT.md\n\n${trimmed}\n`;
-};
-
-const migrateLegacyCommonlySkillContent = (content: any) => {
-  let next = String(content || '');
-  if (!next) return next;
-
-  next = next.replace(
-    /- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` \(`cm_agent_\.\.\.`\)\n- User token: `OPENCLAW_USER_TOKEN` or `COMMONLY_USER_TOKEN` \(`cm_\.\.\.`\)/g,
-    '- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` (`cm_agent_...`)\n- `POD_ID` from the current heartbeat/mention event payload (`podId` field).',
-  );
-  next = next.replace(/## Recent Messages \(user token\)/g, '## Recent Messages (runtime token)');
-  next = next.replace(
-    /\/api\/messages\/\$\{POD_ID\}\?limit=\$\{LIMIT:-20\}/g,
-    '/api/agents/runtime/pods/${POD_ID}/messages?limit=${LIMIT:-20}',
-  );
-  next = next.replace(
-    /\$\{OPENCLAW_USER_TOKEN:-\$COMMONLY_USER_TOKEN\}/g,
-    '${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}',
-  );
-  if (!/commonly_read_context/.test(next)) {
-    next += [
-      '',
-      '## Preferred: Commonly Tools (no manual token handling)',
-      '',
-      '- `commonly_read_context` (pod context + summaries)',
-      '- `commonly_search` (pod memory/assets)',
-      '- `commonly_get_summaries` (recent summary digest)',
-      '- `commonly_post_message` (pod chat)',
-      '- `commonly_post_thread_comment` (thread reply)',
-      '- `commonly_write_memory` (persist memory back to Commonly)',
-      '',
-      'Use `podId` from runtime event payload (`podId` field). Do not use Commonly target syntax.',
-      '',
-    ].join('\n');
-  }
-  if (!/Resolve per-agent tokens from gateway config/.test(next)) {
-    next += [
-      '## Optional HTTP fallback (only if tools are unavailable)',
-      '',
-      '```bash',
-      '# Resolve per-agent tokens from gateway config using current workspace account id.',
-      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
-      'export ACCOUNT_ID',
-      'COMMONLY_API_TOKEN="${COMMONLY_API_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||"");\')}"',
-      'COMMONLY_USER_TOKEN="${COMMONLY_USER_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||"");\')}"',
-      '```',
-      '',
-    ].join('\n');
-  }
-  next = next.replace(
-    /ACCOUNT_ID="\$\{ACCOUNT_ID:-\$\(basename "\$PWD"\)\}"/g,
-    'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
-  );
-  if (/ACCOUNT_ID="\$\{ACCOUNT_ID:-\$\{OPENCLAW_AGENT_ID:-\$\(basename "\$PWD"\)\}\}"/.test(next) && !/\nexport ACCOUNT_ID\n/.test(next)) {
-    next = next.replace(
-      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
-      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"\nexport ACCOUNT_ID',
-    );
-  }
-  return next;
-};
-
-const migrateLegacyHeartbeatContent = (content: any) => {
-  let next = String(content || '');
-  if (!next) return next;
-  next = next.replace(/\/home\/node\/\.clawdbot\/skills\/commonly\/SKILL\.md/g, './skills/commonly/SKILL.md');
-  next = next.replace(/- Fetch last 20 chat messages and 10 recent posts via user-token routes: `\/api\/messages\/:podId\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g, '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.');
-  next = next.replace(/Fetch last 20 chat messages and 10 recent posts/g, 'Fetch last 8 chat messages and 4 recent posts');
-  next = next.replace(/\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20/g, '/api/agents/runtime/pods/:podId/messages?limit=8');
-  next = next.replace(/\/api\/posts\?podId=:podId&limit=10/g, '/api/posts?podId=:podId&limit=4');
-  next = next.replace(/- If `commonly` skill is missing, use HTTP APIs directly \(do not run `commonly --help`\): context via `\/api\/agents\/runtime\/pods\/:podId\/context` with runtime token, or `\/api\/pods\/:podId\/context` with user token\./g, '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.');
-  if (!/Resolve `podId` from the incoming event context/.test(next)) {
-    next = next.replace(
-      /- If the `commonly` skill is available, read and follow `\.\/skills\/commonly\/SKILL\.md` in this agent workspace\./,
-      '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.\n- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
-    );
-  }
-  if (!/Heartbeat check is incomplete unless you actually read pod activity each run/.test(next)) {
-    next = next.replace(
-      /- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./,
-      '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback).',
-    );
-  }
-  next = next.replace(
-    /- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g,
-    '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
-  );
-  next = next.replace(
-    /- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=8` and `\/api\/posts\?podId=:podId&limit=4`\./g,
-    '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
-  );
-  if (!/verify or enrich it with `web_search` when available/.test(next)) {
-    next = next.replace(
-      /- Heartbeat check is incomplete unless you actually read pod activity each run \(tools or runtime HTTP fallback\)(?:\. Do not return HEARTBEAT_OK without performing those reads first\.)?/,
-      '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback).\n- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
-    );
-  }
-  if (!/If there is no pod\/channel context for this run/.test(next)) {
-    next = next.replace(
-      /- Resolve `podId` from the incoming event context \(usually `To: commonly:<podId>`\)\. Do not use placeholder pod ids\./,
-      '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.\n- If there is no pod/channel context for this run, do not guess a pod id. Post a short mention-only fallback in your most recent active pod.',
-    );
-  }
-  if (!/Do not run token-diagnostic shell checks/.test(next)) {
-    next = next.replace(
-      /- Prefer Commonly tools from that skill \(`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`\) before raw HTTP\./,
-      '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.\n- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output.',
-    );
-  }
-  if (!/Never narrate your checking process in pod chat/.test(next)) {
-    next = next.replace(
-      /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
-      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, post one concise mention-only fallback update.\n- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
-    );
-  }
-  if (!/Never call runtime APIs via localhost/.test(next)) {
-    next = next.replace(
-      /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
-      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, post one concise mention-only fallback update.\n- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
-    );
-  }
-  if (!/Never ask users\/owners\/other agents which tool or parameter to use during heartbeat/.test(next)) {
-    next = next.replace(
-      /- Never narrate your checking process in pod chat \(examples: "I will check\.\.\.", "let me try\.\.\.", "I need to check\.\.\."\)\./,
-      '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").\n- Never ask users/owners/other agents which tool or parameter to use during heartbeat.',
-    );
-  }
-  if (!/On every heartbeat run, always post one concise conversational update/.test(next)) {
-    next = next.replace(
-      /- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts\/threads\./,
-      '- On every heartbeat run, always post one concise conversational update to pod chat.\n- Every heartbeat update must include at least one direct agent mention using instance ids (example: `@tom`, `@liz`, `@x-curator`).\n- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
-    );
-  }
-  next = next.replace(
-    /- Do not post housekeeping-only status updates \(for example: "no new posts" or "most recent post is \.\.\."\)\. If no meaningful new signal exists, reply HEARTBEAT_OK\./g,
-    '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ...").',
-  );
-  next = next.replace(
-    /- Do not repeat or paraphrase your own previous heartbeat message\. If your update would be substantially the same, reply HEARTBEAT_OK instead\./g,
-    '- Do not repeat or paraphrase your own previous heartbeat message. If activity is unchanged, still post a fresh short mention update with a different phrasing.',
-  );
-  next = next.replace(
-    /- If nothing new, reply HEARTBEAT_OK\./g,
-    '- Never output control tokens like HEARTBEAT_OK/HEARTBEAT_NOOP in pod chat.',
-  );
-  if (!/describe them as connected feed or integration-ingested posts/.test(next)) {
-    next = next.replace(
-      /- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply\./,
-      '- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply.\n- When discussing X/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod.',
-    );
-  }
-  return next;
-};
-
-const resolveOpenClawAccountId = ({ agentName, instanceId }: any) => {
-  const normalizedAgent = String(agentName || '').trim().toLowerCase();
-  const normalizedInstance = String(instanceId || 'default').trim().toLowerCase() || 'default';
-  if (normalizedAgent === 'openclaw') {
-    return normalizedInstance;
-  }
-  return `${normalizedAgent}-${normalizedInstance}`;
-};
-
-const resolveOpenClawWorkspacePath = (accountId: any) => {
-  const workspaceRoot = (
-    process.env.OPENCLAW_WORKSPACE_ROOT
-    || process.env.CLAWDBOT_WORKSPACE_DIR
-    || '/home/node/clawd'
-  ).replace(/\/+$/g, '');
-  return `${workspaceRoot}/${accountId}`;
-};
-
-const writeOpenClawHeartbeatFileLocal = (accountId: any, content: any, { allowEmpty = true } = {}) => {
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
-  ensureDir(heartbeatPath);
-  const normalized = allowEmpty ? String(content || '') : normalizeHeartbeatContent(content);
-  fs.writeFileSync(heartbeatPath, normalized.endsWith('\n') ? normalized : `${normalized}\n`);
-  chownPath(heartbeatPath);
-  return heartbeatPath;
-};
-
-const writeWorkspaceIdentityFileLocal = (accountId: any, content: any) => {
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const identityPath = path.join(workspacePath, 'IDENTITY.md');
-  ensureDir(identityPath);
-  const normalized = String(content || '');
-  fs.writeFileSync(identityPath, normalized.endsWith('\n') ? normalized : `${normalized}\n`);
-  chownPath(identityPath);
-  return identityPath;
-};
-
-const ensureWorkspaceIdentityFileLocal = (accountId: any, content: any) => {
-  if (!content || !String(content).trim()) return null;
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const identityPath = path.join(workspacePath, 'IDENTITY.md');
-  if (fs.existsSync(identityPath)) {
-    const existing = fs.readFileSync(identityPath, 'utf8');
-    if (!existing.includes('pick something you like')) return identityPath;
-  }
-  ensureDir(identityPath);
-  const normalized = String(content).trim();
-  fs.writeFileSync(identityPath, `${normalized}\n`);
-  chownPath(identityPath);
-  return identityPath;
-};
-
-const ensureWorkspaceMemoryFilesLocal = (accountId: any) => {
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const memoryDir = path.join(workspacePath, 'memory');
-  const longTermMemoryPath = path.join(workspacePath, 'MEMORY.md');
-  const today = new Date().toISOString().slice(0, 10);
-  const dailyPath = path.join(memoryDir, `${today}.md`);
-
-  fs.mkdirSync(memoryDir, { recursive: true });
-  chownPath(memoryDir);
-
-  if (!fs.existsSync(longTermMemoryPath)) {
-    const seeded = [
-      '# MEMORY.md',
-      '',
-      'Long-term memory for this agent.',
-      '- Keep durable preferences, decisions, and recurring context here.',
-      '- Do not store secrets unless explicitly required.',
-      '',
-    ].join('\n');
-    ensureDir(longTermMemoryPath);
-    fs.writeFileSync(longTermMemoryPath, seeded);
-    chownPath(longTermMemoryPath);
-  }
-
-  if (!fs.existsSync(dailyPath)) {
-    const seededDaily = `# ${today}\n\n`;
-    ensureDir(dailyPath);
-    fs.writeFileSync(dailyPath, seededDaily);
-    chownPath(dailyPath);
-  }
-
-  return { memoryDir, longTermMemoryPath, dailyPath };
-};
-
-const clearOpenClawSkillsDir = (accountId: any) => {
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const skillsDir = path.join(workspacePath, 'skills');
-  try {
-    fs.rmSync(skillsDir, { recursive: true, force: true });
-  } catch (error: any) {
-    console.warn('[agent-provisioner] Failed clearing skills dir:', (error as Error).message);
-  }
-  fs.mkdirSync(skillsDir, { recursive: true });
-  chownPath(skillsDir);
-  return skillsDir;
-};
-
-const getDefaultCommonlySkillContent = () => {
-  const configuredPath = String(process.env.OPENCLAW_COMMONLY_SKILL_PATH || '').trim();
-  const candidates = [
-    configuredPath,
-    path.resolve(__dirname, '../../external/clawdbot-state/config/skills/commonly/SKILL.md'),
-    path.resolve(__dirname, '../../_external/clawdbot/skills/commonly/SKILL.md'),
-  ].filter(Boolean);
-
-  for (const filePath of candidates) {
-    try {
-      if (!fs.existsSync(filePath)) continue;
-      const content = fs.readFileSync(filePath, 'utf8');
-      if (content && content.trim()) return migrateLegacyCommonlySkillContent(content);
-    } catch (error: any) {
-      console.warn('[agent-provisioner] Failed loading commonly skill content:', (error as Error).message);
-    }
-  }
-
-  return migrateLegacyCommonlySkillContent(DEFAULT_COMMONLY_SKILL_FALLBACK);
-};
-
-const syncOpenClawSkillsLocal = async ({
-  accountId,
-  podIds = [],
-  mode = 'all',
-  skillNames = [],
-}: any) => {
-  const skillsDir = clearOpenClawSkillsDir(accountId);
-  const normalizedPods = Array.isArray(podIds)
-    ? podIds.map((id) => String(id)).filter(Boolean)
-    : [];
-  let assets = [];
-  if (normalizedPods.length) {
-    const query = {
-      podId: { $in: normalizedPods },
-      type: 'skill',
-      status: 'active',
-      sourceType: 'imported-skill',
-    };
-    const normalizedSkillNames = Array.isArray(skillNames)
-      ? skillNames.map((name) => String(name).trim()).filter(Boolean)
-      : [];
-    if (mode === 'selected' && normalizedSkillNames.length) {
-      (query as any)['metadata.skillName'] = { $in: normalizedSkillNames };
-    }
-    assets = await PodAsset.find(query).lean();
-  }
-
-  const ensureDirWithMode = (dirPath: any) => {
-    fs.mkdirSync(dirPath, { recursive: true });
-    chownPath(dirPath);
-    try {
-      fs.chmodSync(dirPath, 0o755);
-    } catch (error: any) {
-      console.warn('[agent-provisioner] Failed to chmod dir:', (error as Error).message);
-    }
-  };
-
-  const setFileMode = (filePath: any) => {
-    const lower = filePath.toLowerCase();
-    const isScript = lower.includes(`${path.sep}scripts${path.sep}`)
-      || lower.endsWith('.py')
-      || lower.endsWith('.sh')
-      || lower.endsWith('.bash');
-    const mode = isScript ? 0o755 : 0o644;
-    try {
-      fs.chmodSync(filePath, mode);
-    } catch (error: any) {
-      console.warn('[agent-provisioner] Failed to chmod file:', (error as Error).message);
-    }
-    chownPath(filePath);
-  };
-
-  // Always seed commonly skill so heartbeat/checklists can rely on it in fresh workspaces.
-  const defaultCommonlySkill = getDefaultCommonlySkillContent();
-  if (defaultCommonlySkill && defaultCommonlySkill.trim()) {
-    const commonlyDir = path.join(skillsDir, 'commonly');
-    ensureDirWithMode(commonlyDir);
-    const commonlySkillPath = path.join(commonlyDir, 'SKILL.md');
-    fs.writeFileSync(
-      commonlySkillPath,
-      defaultCommonlySkill.endsWith('\n') ? defaultCommonlySkill : `${defaultCommonlySkill}\n`,
-    );
-    setFileMode(commonlySkillPath);
-  }
-
-  assets.forEach((asset: any) => {
-    const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
-    if (!skillName) return;
-    const slug = PodAssetService.normalizeSkillKey(skillName);
-    const dirPath = path.join(skillsDir, slug);
-    ensureDirWithMode(dirPath);
-    const filePath = path.join(dirPath, 'SKILL.md');
-    const content = asset?.content || '';
-    fs.writeFileSync(filePath, content.endsWith('\n') ? content : `${content}\n`);
-    setFileMode(filePath);
-
-    const extraFiles = Array.isArray(asset?.metadata?.extraFiles)
-      ? asset.metadata.extraFiles
-      : [];
-    extraFiles.forEach((file: any) => {
-      const relPath = String(file?.path || '').trim();
-      const fileContent = file?.content;
-      if (!relPath || typeof fileContent !== 'string') return;
-      const targetPath = path.join(dirPath, relPath);
-      ensureDirWithMode(path.dirname(targetPath));
-      fs.writeFileSync(targetPath, fileContent);
-      setFileMode(targetPath);
-    });
-  });
-
-  return skillsDir;
-};
-
-const normalizeSkillEnvMap = (env: any) => {
-  if (!env || typeof env !== 'object') return null;
-  const entries = Object.entries(env)
-    .map(([key, value]) => [String(key || '').trim(), String(value ?? '').trim()])
-    .filter(([key, value]) => key && value);
-  if (!entries.length) return null;
-  return Object.fromEntries(entries);
-};
-
-const normalizeSkillApiKey = (value: any) => {
-  const next = String(value ?? '').trim();
-  return next ? next : null;
-};
-
-const isEnvLikeKey = (key: any) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
-
-const shouldTreatRawEntryAsEnv = (rawEntry: any) => {
-  if (!rawEntry || typeof rawEntry !== 'object') return false;
-  const keys = Object.keys(rawEntry).filter(Boolean);
-  return keys.length > 0 && keys.every((key) => isEnvLikeKey(key));
-};
-
-const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath }: any = {}) => {
-  if (!skillEnv || typeof skillEnv !== 'object') return null;
-  const configPath = overridePath || getOpenClawConfigPath();
-  const config = readJsonFile(configPath, {});
-  config.skills = config.skills || {};
-  config.skills.entries = config.skills.entries || {};
-
-  Object.entries(skillEnv).forEach(([skillName, entry]) => {
-    const skillKey = PodAssetService.normalizeSkillKey(skillName);
-    const hasEnvProp = entry && typeof entry === 'object'
-      ? Object.prototype.hasOwnProperty.call(entry, 'env')
-      : false;
-    const hasApiKeyProp = entry && typeof entry === 'object'
-      ? Object.prototype.hasOwnProperty.call(entry, 'apiKey')
-      : false;
-    const hasRawFlag = entry && typeof entry === 'object'
-      ? Object.prototype.hasOwnProperty.call(entry, '__raw') && (entry as any).__raw === true
-      : false;
-    const isRawEntry = entry && typeof entry === 'object' && (!hasEnvProp && !hasApiKeyProp);
-    const env = entry && typeof entry === 'object' && hasEnvProp ? (entry as any).env : entry;
-    const apiKey = entry && typeof entry === 'object' ? (entry as any).apiKey : null;
-    const rawEntry = isRawEntry
-      ? Object.fromEntries(
-        Object.entries(entry)
-          .map(([key, value]) => [String(key || '').trim(), value])
-          .filter(([key]) => key),
-      )
-      : null;
-    const normalizedEnv = normalizeSkillEnvMap(env);
-    const normalizedApiKey = normalizeSkillApiKey(apiKey);
-    if (!normalizedEnv && !normalizedApiKey && (!rawEntry || !Object.keys(rawEntry).length)) {
-      if (config.skills.entries[skillKey]) {
-        delete config.skills.entries[skillKey].env;
-        if (hasApiKeyProp) {
-          delete config.skills.entries[skillKey].apiKey;
-        }
-        if (!Object.keys(config.skills.entries[skillKey]).length) {
-          delete config.skills.entries[skillKey];
-        }
-      }
-      return;
-    }
-    if (hasRawFlag) {
-      const cleaned = Object.fromEntries(
-        Object.entries(entry || {})
-          .filter(([key]) => key && key !== '__raw')
-          .map(([key, value]) => [String(key || '').trim(), value]),
-      );
-      if (!Object.keys(cleaned).length) {
-        delete config.skills.entries[skillKey];
-        return;
-      }
-      config.skills.entries[skillKey] = cleaned;
-      return;
-    }
-    if (rawEntry && Object.keys(rawEntry).length) {
-      if (shouldTreatRawEntryAsEnv(rawEntry)) {
-        config.skills.entries[skillKey] = {
-          ...(config.skills.entries[skillKey] || {}),
-          env: normalizeSkillEnvMap(rawEntry) || {},
-        };
-        return;
-      }
-      config.skills.entries[skillKey] = rawEntry;
-      return;
-    }
-    config.skills.entries[skillKey] = {
-      ...(config.skills.entries[skillKey] || {}),
-      ...(normalizedEnv ? { env: normalizedEnv } : {}),
-      ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
-    };
-    if (hasApiKeyProp && !normalizedApiKey) {
-      delete config.skills.entries[skillKey].apiKey;
-    }
-  });
-
-  writeJsonFile(configPath, config);
-  return configPath;
-};
-
-const readGatewaySkillEntries = ({ configPath: overridePath }: any = {}) => {
-  const configPath = overridePath || getOpenClawConfigPath();
-  const config = readJsonFile(configPath, {});
-  const entries = config?.skills?.entries || {};
-  const output = {};
-  Object.entries(entries).forEach(([skillKey, entry]) => {
-    const env = (entry as any)?.env || {};
-    const keys = Object.keys(env).filter(Boolean);
-    const rawKeys = Object.keys(entry || {}).filter(
-      (key) => key && key !== 'env' && key !== 'apiKey',
-    );
-    const merged = Array.from(new Set([...keys, ...rawKeys]));
-    (output as any)[skillKey] = {
-      envKeys: merged,
-      apiKeyPresent: Boolean((entry as any)?.apiKey),
-      rawKeys,
-    };
-  });
-  return output;
-};
-
-const getGatewaySkillEntries = async ({ gateway }: any = {}) => {
-  if (isK8sMode() || gateway?.mode === 'k8s') {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getGatewaySkillEntries({ gateway });
-  }
-  return readGatewaySkillEntries({ configPath: gateway?.configPath });
-};
-
-const syncGatewaySkillEnv = async ({ gateway, entries }: any = {}) => {
-  if (isK8sMode() || gateway?.mode === 'k8s') {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.syncGatewaySkillEnv({ gateway, entries });
-  }
-  syncOpenClawSkillEnv({ skillEnv: entries, configPath: gateway?.configPath });
-  return readGatewaySkillEntries({ configPath: gateway?.configPath });
-};
-
-const ensureHeartbeatTemplate = (accountId: any, heartbeat: any) => {
-  if (!heartbeat || heartbeat.enabled === false) return null;
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
-  let content = '';
-  try {
-    if (fs.existsSync(heartbeatPath)) {
-      content = fs.readFileSync(heartbeatPath, 'utf8');
-    }
-  } catch (error: any) {
-    console.warn('[agent-provisioner] Failed to read HEARTBEAT.md:', (error as Error).message);
-  }
-  if (!content || isHeartbeatContentEffectivelyEmpty(content)) {
-    // Parity with agentProvisionerServiceK8s.ts:489 — the default branch gets
-    // the cycle trailer. Without this, an agent provisioned on the Docker /
-    // self-host path with no matching preset writes a HEARTBEAT.md that
-    // structurally cannot carry the directive, exactly the defect PR #827
-    // fixed on the k8s path.
-    const normalized = withCyclesDirective(normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT));
-    ensureDir(heartbeatPath);
-    fs.writeFileSync(heartbeatPath, normalized);
-    chownPath(heartbeatPath);
-    return heartbeatPath;
-  }
-  // DELIBERATELY NOT full parity. The k8s path also treats "existing file
-  // missing CYCLES_DIRECTIVE_MARKER" as stale and rewrites it. That clause is
-  // only safe there because `skipHeartbeat` short-circuits on
-  // `customizations.heartbeat`, and routes/registry/files.ts sets that flag
-  // when it accepts a hand-authored file. THIS function takes no
-  // customizations argument and its call site (:1096) passes none, so adding
-  // the same clause here would silently overwrite hand-edited HEARTBEAT.md
-  // files on the Docker path. Plumb the flag first; the branch above is safe
-  // without it only because it writes when there is nothing to clobber.
-  const migrated = migrateLegacyHeartbeatContent(content);
-  if (migrated !== content) {
-    const normalized = normalizeHeartbeatContent(migrated);
-    ensureDir(heartbeatPath);
-    fs.writeFileSync(heartbeatPath, normalized);
-    chownPath(heartbeatPath);
-  }
-  return heartbeatPath;
-};
-
-const getOpenClawConfigPath = () => (
-  process.env.OPENCLAW_CONFIG_PATH
-  || path.resolve(__dirname, '../../external/clawdbot-state/config/moltbot.json')
-);
-
 const getCommonlyBotConfigPath = () => (
   process.env.COMMONLY_BOT_CONFIG_PATH
   || path.resolve(__dirname, '../../external/commonly-bot-state/runtime.json')
 );
-
-const applyOpenClawIntegrationChannels = (config: any, integrationChannels: any) => {
-  if (!integrationChannels || typeof integrationChannels !== 'object') return;
-  config.channels = config.channels || {};
-
-  const defaultDiscordToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
-  if (defaultDiscordToken) {
-    config.channels.discord = config.channels.discord || {};
-    config.channels.discord.token = config.channels.discord.token || defaultDiscordToken;
-  }
-  // Slack is deliberately absent (TASK-151): the instance-wide
-  // SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET fallback is
-  // retired. Whether this server can talk to Slack is decided at send time by
-  // the per-workspace OAuth bind, and the webhook path reads its own
-  // SLACK_SIGNING_SECRET directly (`routes/webhooks/slack.ts`).
-  const defaultTelegramBotToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-  const defaultTelegramSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
-  if (defaultTelegramBotToken || defaultTelegramSecret) {
-    config.channels.telegram = config.channels.telegram || {};
-    if (defaultTelegramBotToken) {
-      config.channels.telegram.botToken = (
-        config.channels.telegram.botToken || defaultTelegramBotToken
-      );
-    }
-    if (defaultTelegramSecret) {
-      config.channels.telegram.webhookSecret = (
-        config.channels.telegram.webhookSecret || defaultTelegramSecret
-      );
-    }
-  }
-
-  const asEntries = (value: any) => {
-    if (!Array.isArray(value)) return [];
-    return value
-      .filter((entry) => entry && typeof entry === 'object')
-      .map((entry) => ({
-        accountId: String(entry.accountId || '').trim(),
-        ...entry,
-      }))
-      .filter((entry) => entry.accountId);
-  };
-
-  const discordAccounts = asEntries(integrationChannels.discord);
-  if (discordAccounts.length) {
-    config.channels.discord = config.channels.discord || {};
-    config.channels.discord.accounts = config.channels.discord.accounts || {};
-    discordAccounts.forEach((entry) => {
-      const token = String(entry.token || '').trim();
-      if (!token) return;
-      const existing = config.channels.discord.accounts[entry.accountId] || {};
-      config.channels.discord.accounts[entry.accountId] = {
-        ...existing,
-        ...(entry.name ? { name: entry.name } : {}),
-        token,
-      };
-      if (!config.channels.discord.token) {
-        config.channels.discord.token = token;
-      }
-    });
-  }
-
-  const slackAccounts = asEntries(integrationChannels.slack);
-  if (slackAccounts.length) {
-    config.channels.slack = config.channels.slack || {};
-    config.channels.slack.accounts = config.channels.slack.accounts || {};
-    slackAccounts.forEach((entry) => {
-      const botToken = String(entry.botToken || '').trim();
-      if (!botToken) return;
-      const existing = config.channels.slack.accounts[entry.accountId] || {};
-      config.channels.slack.accounts[entry.accountId] = {
-        ...existing,
-        ...(entry.name ? { name: entry.name } : {}),
-        botToken,
-        ...(entry.appToken ? { appToken: entry.appToken } : {}),
-        ...(entry.signingSecret ? { signingSecret: entry.signingSecret } : {}),
-        ...(entry.channelId ? { channels: { [entry.channelId]: { enabled: true } } } : {}),
-      };
-      if (!config.channels.slack.botToken) {
-        config.channels.slack.botToken = botToken;
-      }
-      if (!config.channels.slack.appToken && entry.appToken) {
-        config.channels.slack.appToken = entry.appToken;
-      }
-      if (!config.channels.slack.signingSecret && entry.signingSecret) {
-        config.channels.slack.signingSecret = entry.signingSecret;
-      }
-    });
-  }
-
-  const telegramAccounts = asEntries(integrationChannels.telegram);
-  if (telegramAccounts.length) {
-    config.channels.telegram = config.channels.telegram || {};
-    config.channels.telegram.accounts = config.channels.telegram.accounts || {};
-    telegramAccounts.forEach((entry) => {
-      const botToken = String(entry.botToken || '').trim();
-      if (!botToken) return;
-      const existing = config.channels.telegram.accounts[entry.accountId] || {};
-      config.channels.telegram.accounts[entry.accountId] = {
-        ...existing,
-        ...(entry.name ? { name: entry.name } : {}),
-        botToken,
-        ...(entry.webhookSecret ? { webhookSecret: entry.webhookSecret } : {}),
-        ...(entry.chatId ? { groups: { [entry.chatId]: { enabled: true } } } : {}),
-      };
-      if (!config.channels.telegram.botToken) {
-        config.channels.telegram.botToken = botToken;
-      }
-      if (!config.channels.telegram.webhookSecret && entry.webhookSecret) {
-        config.channels.telegram.webhookSecret = entry.webhookSecret;
-      }
-    });
-  }
-};
-
-const applyOpenClawWebToolDefaults = (config: any) => {
-  const braveApiKey = String(process.env.BRAVE_API_KEY || '').trim();
-  const firecrawlApiKey = String(process.env.FIRECRAWL_API_KEY || '').trim();
-  if (!braveApiKey && !firecrawlApiKey) return;
-  config.tools = config.tools || {};
-  config.tools.web = config.tools.web || {};
-  if (braveApiKey) {
-    config.tools.web.search = config.tools.web.search || {};
-    if (!config.tools.web.search.provider) {
-      config.tools.web.search.provider = 'brave';
-    }
-    if (!config.tools.web.search.apiKey) {
-      config.tools.web.search.apiKey = braveApiKey;
-    }
-    if (config.tools.web.search.enabled === undefined) {
-      config.tools.web.search.enabled = true;
-    }
-  }
-  if (firecrawlApiKey) {
-    config.tools.web.fetch = config.tools.web.fetch || {};
-    config.tools.web.fetch.firecrawl = config.tools.web.fetch.firecrawl || {};
-    if (!config.tools.web.fetch.firecrawl.apiKey) {
-      config.tools.web.fetch.firecrawl.apiKey = firecrawlApiKey;
-    }
-    if (config.tools.web.fetch.firecrawl.enabled === undefined) {
-      config.tools.web.fetch.firecrawl.enabled = true;
-    }
-  }
-};
-
-const applyOpenClawMemoryDefaults = (config: any) => {
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.memorySearch = config.agents.defaults.memorySearch || {};
-  if (config.agents.defaults.memorySearch.enabled === undefined) {
-    config.agents.defaults.memorySearch.enabled = true;
-  }
-  if (!Array.isArray(config.agents.defaults.memorySearch.sources)) {
-    config.agents.defaults.memorySearch.sources = ['memory'];
-  }
-};
-
-const applyOpenClawContextDefaults = (config: any) => {
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.contextPruning = config.agents.defaults.contextPruning || {};
-  if (!config.agents.defaults.contextPruning.mode) {
-    config.agents.defaults.contextPruning.mode = 'cache-ttl';
-  }
-  if (!config.agents.defaults.contextPruning.ttl) {
-    config.agents.defaults.contextPruning.ttl = '90m';
-  }
-  if (typeof config.agents.defaults.contextPruning.keepLastAssistants !== 'number') {
-    config.agents.defaults.contextPruning.keepLastAssistants = 2;
-  }
-};
-
-// See agentProvisionerServiceK8s.applyOpenClawConcurrencyDefaults for
-// rationale. Mirrored here for the legacy non-K8s provisioner path.
-const applyOpenClawConcurrencyDefaults = (config: any) => {
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  if (typeof config.agents.defaults.maxConcurrent !== 'number'
-    || config.agents.defaults.maxConcurrent < 16) {
-    config.agents.defaults.maxConcurrent = 16;
-  }
-  config.agents.defaults.subagents = config.agents.defaults.subagents || {};
-  if (typeof config.agents.defaults.subagents.maxConcurrent !== 'number'
-    || config.agents.defaults.subagents.maxConcurrent < 4) {
-    config.agents.defaults.subagents.maxConcurrent = 4;
-  }
-};
-
-const applyOpenClawModelDefaults = async (config: any) => {
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.model = config.agents.defaults.model || {};
-  let modelConfig = null;
-  try {
-    modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
-  } catch (error: any) {
-    modelConfig = null;
-  }
-  // The policy's model and fallbacks; the defaults after `||` and `:` are used
-  // only when the policy can't be read, and match its own: the configured
-  // model, no fallbacks (F105; they were three Gemini names).
-  const defaultPrimary = String(
-    modelConfig?.openclaw?.model
-    || modelConfig?.openclaw?.defaultModel
-    || '',
-  ).trim() || `openrouter/${agentDefaultModel()}`;
-  const hasPolicyPrimary = Boolean(String(
-    modelConfig?.openclaw?.model
-    || modelConfig?.openclaw?.defaultModel
-    || '',
-  ).trim());
-  const defaultFallbacks = Array.isArray(modelConfig?.openclaw?.fallbackModels)
-    ? modelConfig.openclaw.fallbackModels
-    : [];
-  if (hasPolicyPrimary) {
-    config.agents.defaults.model.primary = defaultPrimary;
-  } else if (!config.agents.defaults.model.primary) {
-    config.agents.defaults.model.primary = defaultPrimary;
-  }
-  const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
-    ? config.agents.defaults.model.fallbacks
-    : [];
-  const mergedFallbacks = [
-    ...defaultFallbacks,
-    ...existingFallbacks,
-  ].filter(Boolean);
-  config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
-};
-
-const provisionOpenClawAccount = async ({
-  accountId,
-  runtimeToken,
-  userToken,
-  agentName,
-  instanceId,
-  baseUrl,
-  displayName,
-  heartbeat,
-  authProfiles,
-  integrationChannels,
-}: any) => {
-  const configPath = getOpenClawConfigPath();
-  const config = readJsonFile(configPath, {});
-
-  config.channels = config.channels || {};
-  config.channels.commonly = config.channels.commonly || {};
-  config.channels.commonly.enabled = true;
-  config.channels.commonly.baseUrl = config.channels.commonly.baseUrl || baseUrl;
-  config.channels.commonly.accounts = config.channels.commonly.accounts || {};
-
-  const existingAccount = config.channels.commonly.accounts[accountId] || {};
-  const resolvedRuntimeToken = runtimeToken || existingAccount.runtimeToken;
-  const resolvedUserToken = userToken || existingAccount.userToken;
-  if (!resolvedRuntimeToken) {
-    throw new Error('Missing runtime token for OpenClaw account provisioning');
-  }
-  if (!resolvedUserToken) {
-    // A stored user token is a hash, so an account with no saved copy cannot
-    // be given the existing one back.
-    console.warn(`[agent-provisioner] Account ${accountId} has no user token; provision it with force to issue one.`);
-  }
-
-  const normalizeKey = (value: any, fallback: any) => {
-    const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
-    return normalized || String(fallback || '').trim().toLowerCase();
-  };
-  const targetAgent = normalizeKey(agentName, '');
-  const targetInstance = normalizeKey(instanceId, 'default');
-  const removedAccountIds: any[] = [];
-
-  Object.entries(config.channels.commonly.accounts).forEach(([key, entry]) => {
-    if (!entry || key === accountId) return;
-    const entryAgent = normalizeKey((entry as any).agentName, '');
-    const entryInstance = normalizeKey((entry as any).instanceId, 'default');
-    if (entryAgent === targetAgent && entryInstance === targetInstance) {
-      delete config.channels.commonly.accounts[key];
-      removedAccountIds.push(key);
-    }
-  });
-
-  config.channels.commonly.accounts[accountId] = {
-    runtimeToken: resolvedRuntimeToken,
-    userToken: resolvedUserToken,
-    agentName,
-    instanceId,
-    ...(authProfiles ? { authProfiles } : {}),
-  };
-  applyOpenClawIntegrationChannels(config, integrationChannels);
-  applyOpenClawWebToolDefaults(config);
-  applyOpenClawMemoryDefaults(config);
-  applyOpenClawContextDefaults(config);
-  applyOpenClawConcurrencyDefaults(config);
-  await applyOpenClawModelDefaults(config);
-
-  config.agents = config.agents || {};
-  config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
-  if (removedAccountIds.length) {
-    config.agents.list = config.agents.list.filter(
-      (agent: any) => !removedAccountIds.includes(agent?.id),
-    );
-  }
-  const desiredWorkspace = resolveOpenClawWorkspacePath(accountId);
-  const normalizeHeartbeat = (payload: any) => {
-    if (!payload || payload.enabled === false) return null;
-    const minutes = Number(payload.everyMinutes || payload.every || payload.intervalMinutes);
-    const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
-    const session = String(payload.session || '').trim() || 'heartbeat';
-    return {
-      every: every || '60m', // prefer lower heartbeat cadence by default
-      prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
-      target: payload.target || 'commonly', // Default to Commonly for Commonly-installed agents
-      session,
-      // NOTE: do NOT emit `global`/`fixedPod` here — openclaw's HeartbeatSchema
-      // is `.strict()` with no `global` key, so emitting it crash-loops the
-      // gateway. Heartbeats already fire once per agent. See the K8s provisioner
-      // note and the reverted commit b3f0fb5c.
-    };
-  };
-
-  const agentEntry = config.agents.list.find((agent: any) => agent?.id === accountId);
-  const heartbeatConfig = normalizeHeartbeat(heartbeat);
-  if (agentEntry) {
-    if (agentEntry.workspace !== desiredWorkspace) {
-      agentEntry.workspace = desiredWorkspace;
-    }
-    if (!agentEntry.name) {
-      agentEntry.name = displayName || agentName || accountId;
-    }
-    if (heartbeatConfig) {
-      agentEntry.heartbeat = heartbeatConfig;
-    } else if (agentEntry.heartbeat) {
-      delete agentEntry.heartbeat;
-    }
-  } else {
-    config.agents.list.push({
-      id: accountId,
-      name: displayName || agentName || accountId,
-      workspace: desiredWorkspace,
-      ...(heartbeatConfig ? { heartbeat: heartbeatConfig } : {}),
-    });
-  }
-
-  config.bindings = Array.isArray(config.bindings) ? config.bindings : [];
-  if (removedAccountIds.length) {
-    config.bindings = config.bindings.filter(
-      (binding: any) => !removedAccountIds.includes(binding?.match?.accountId),
-    );
-  }
-  const bindingExists = config.bindings.some(
-    (binding: any) => binding?.match?.channel === 'commonly' && binding?.match?.accountId === accountId,
-  );
-  if (!bindingExists) {
-    config.bindings.push({
-      agentId: accountId,
-      match: { channel: 'commonly', accountId },
-    });
-  }
-
-  writeJsonFile(configPath, config);
-  ensureHeartbeatTemplate(accountId, heartbeat);
-  ensureWorkspaceMemoryFilesLocal(accountId);
-
-  return {
-    configPath,
-    accountId,
-    restartRequired: true,
-  };
-};
 
 const provisionCommonlyBotAccount = ({
   accountId,
@@ -1126,7 +73,7 @@ const provisionCommonlyBotAccount = ({
   const config = readJsonFile(configPath, { accounts: {} });
   config.accounts = config.accounts || {};
   // A stored token is a hash, so an existing one is reissued without a bearer;
-  // keep the saved one, as the OpenClaw account writer does.
+  // keep the saved one.
   const existing = config.accounts[accountId] || {};
   config.accounts[accountId] = {
     runtimeToken: runtimeToken || existing.runtimeToken || null,
@@ -1146,6 +93,9 @@ const provisionCommonlyBotAccount = ({
 
 // The runtimes a provision hands a token to, here and in the K8s provisioner.
 // Any other seat runs outside Commonly and keeps the token it was given.
+// 'moltbot' stays although that runtime is retired: reprovision skips a stored
+// moltbot row as runtime_retired only after this set says it receives a token,
+// so dropping it would relabel those rows keeps_its_own_token.
 const RUNTIMES_RECEIVING_TOKENS = new Set(['moltbot', 'internal']);
 const runtimeReceivesToken = (runtimeType: any) => (
   RUNTIMES_RECEIVING_TOKENS.has(String(runtimeType || '').trim().toLowerCase())
@@ -1160,9 +110,6 @@ const provisionAgentRuntime = async ({
   baseUrl,
   displayName,
   heartbeat,
-  authProfiles,
-  skillEnv,
-  integrationChannels,
 }: any) => {
   // Route to K8s or Docker implementation
   if (isK8sMode()) {
@@ -1177,33 +124,10 @@ const provisionAgentRuntime = async ({
       baseUrl,
       displayName,
       heartbeat,
-      authProfiles,
-      skillEnv,
-      integrationChannels,
     });
   }
 
-  // Docker mode (existing file-based logic)
-  if (runtimeType === 'moltbot') {
-    const accountId = resolveOpenClawAccountId({ agentName, instanceId });
-    const result = await provisionOpenClawAccount({
-      accountId,
-      runtimeToken,
-      userToken,
-      agentName,
-      instanceId,
-      baseUrl,
-      displayName,
-      heartbeat,
-      authProfiles,
-      integrationChannels,
-    });
-    if (skillEnv) {
-      syncOpenClawSkillEnv({ skillEnv, configPath: getOpenClawConfigPath() });
-    }
-    return result;
-  }
-
+  // Docker mode (file-based)
   if (runtimeType === 'internal') {
     return provisionCommonlyBotAccount({
       accountId: instanceId,
@@ -1283,7 +207,6 @@ const execDockerCommand = async (args: any, options = {}) => {
 };
 
 const resolveContainerName = (runtimeType: any) => {
-  if (runtimeType === 'moltbot') return 'clawdbot-gateway-dev';
   if (runtimeType === 'internal') return 'commonly-bot-dev';
   return null;
 };
@@ -1305,80 +228,7 @@ const dockerContainerExists = async (containerName: any) => {
   }
 };
 
-const execDockerRuntimeCommand = async (runtimeType: any, args: any, options = {}) => {
-  if (!isDockerProvisioningEnabled()) {
-    throw new Error('docker provisioning disabled');
-  }
-  const containerName = resolveContainerName(runtimeType);
-  if (!containerName) {
-    throw new Error(`unsupported runtime: ${runtimeType}`);
-  }
-  const result = await execDockerCommand(['exec', '-T', containerName, ...args], options);
-  return {
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    command: result.command,
-    service: containerName,
-  };
-};
-
-const listOpenClawPluginsDocker = async () => {
-  const result = await execDockerRuntimeCommand('moltbot', [
-    'node',
-    'dist/index.js',
-    'plugins',
-    'list',
-    '--json',
-  ], { timeout: 30000 });
-  let payload;
-  try {
-    payload = JSON.parse(result.stdout || '{}');
-  } catch (error: any) {
-    throw new Error('Failed to parse OpenClaw plugin list output.');
-  }
-  return {
-    ...payload,
-    command: result.command,
-    service: result.service,
-  };
-};
-
-const installOpenClawPluginDocker = async ({ spec, link = false }: any) => {
-  const args = [
-    'node',
-    'dist/index.js',
-    'plugins',
-    'install',
-    spec,
-  ];
-  if (link) {
-    args.push('--link');
-  }
-  return execDockerRuntimeCommand('moltbot', args);
-};
-
-const listOpenClawBundledSkillsDocker = async () => {
-  const candidates = [
-    '/app/skills',
-    path.resolve(__dirname, '../../_external/clawdbot/skills'),
-  ];
-  const skillsDir = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!skillsDir) {
-    return { skills: [] };
-  }
-  const names = fs.readdirSync(skillsDir, { withFileTypes: true })
-    .filter((entry: any) => entry.isDirectory())
-    .map((entry: any) => entry.name)
-    .filter((name: any) => /^[a-zA-Z0-9._-]+$/.test(name))
-    .sort((a: any, b: any) => a.localeCompare(b));
-  return {
-    skills: names.map((name: any) => ({ name })),
-    path: skillsDir,
-  };
-};
-
 const resolveDockerServiceName = (runtimeType: any) => {
-  if (runtimeType === 'moltbot') return 'clawdbot-gateway';
   if (runtimeType === 'internal') return 'commonly-bot';
   return null;
 };
@@ -1394,18 +244,11 @@ const startDockerRuntime = async (runtimeType: any) => {
     return { started: true, command: result.command, container: containerName };
   }
 
-  const composeFile = getComposeFile();
-  let args = ['-f', composeFile];
-
   const serviceName = resolveDockerServiceName(runtimeType);
   if (!serviceName) {
     return { started: false, reason: `unsupported runtime: ${runtimeType}` };
   }
-  if (runtimeType === 'moltbot') {
-    args = args.concat(['--profile', 'clawdbot', 'up', '-d', serviceName]);
-  } else {
-    args = args.concat(['up', '-d', serviceName]);
-  }
+  const args = ['-f', getComposeFile(), 'up', '-d', serviceName];
 
   const command = buildComposeCommand(args);
   await execFileAsync(command.bin, command.args, { timeout: 60_000 });
@@ -1524,247 +367,57 @@ const getDockerRuntimeLogs = async (runtimeType: any, lines = 200) => {
 // Kubernetes mode detection
 const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
 
-/**
- * Remove an identity's account from the shared OpenClaw gateway config. K8s
- * only: elsewhere there is no shared gateway config to edit, so it removes
- * nothing.
- */
-const removeOpenClawAccount = async ({ agentName, instanceId, gateway }: any = {}) => {
-  if (!isK8sMode()) return { removed: [] };
-  // eslint-disable-next-line global-require
-  const k8sProvisioner = require('./agentProvisionerServiceK8s');
-  return k8sProvisioner.removeOpenClawAccount({ agentName, instanceId, gateway });
-};
-
-
-// The moltbot runtime is retired (ADR-021 Part B; services/retiredRuntime.ts).
-// The two callers of provisionAgentRuntime (the provision route and
-// reprovision) refuse it in every mode, before any token or gateway write. The
-// driver below stays until it is deleted.
-const { moltbotRuntimeRetired } = require('./retiredRuntime');
-
-const syncOpenClawSkills = async (options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.syncOpenClawSkills({
-      ...options,
-      defaultCommonlySkillContent: getDefaultCommonlySkillContent(),
-    });
-  }
-  return syncOpenClawSkillsLocal(options);
-};
-
-const writeOpenClawHeartbeatFile = async (accountId: any, content: any, options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.writeOpenClawHeartbeatFile(accountId, content, options);
-  }
-  return writeOpenClawHeartbeatFileLocal(accountId, content, options);
-};
-
-const readOpenClawHeartbeatFile = async (accountId: any, options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.readOpenClawHeartbeatFile(accountId, options);
-  }
-  // Local: read from filesystem
-  try {
-    const workspacePath = process.env.OPENCLAW_WORKSPACE_PATH || '/workspace';
-    const filePath = `${workspacePath}/${accountId}/HEARTBEAT.md`;
-    // eslint-disable-next-line global-require
-    const fs = require('fs');
-    if (!fs.existsSync(filePath)) return '';
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return '';
-  }
-};
-
-const readOpenClawIdentityFile = async (accountId: any, options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.readOpenClawIdentityFile(accountId, options);
-  }
-  const workspacePath = resolveOpenClawWorkspacePath(accountId);
-  try {
-    return fs.readFileSync(path.join(workspacePath, 'IDENTITY.md'), 'utf8');
-  } catch (error: any) {
-    // Only absence is empty content. Read/modify/write callers must not
-    // report success or replace an unreadable identity with a blank one.
-    if (error.code === 'ENOENT') return '';
-    throw error;
-  }
-};
-
-const writeWorkspaceIdentityFile = async (accountId: any, content: any, options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.writeWorkspaceIdentityFile(accountId, content, options);
-  }
-  return writeWorkspaceIdentityFileLocal(accountId, content);
-};
-
-const ensureWorkspaceIdentityFile = async (accountId: any, content: any, options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.ensureWorkspaceIdentityFile(accountId, content, options);
-  }
-  return ensureWorkspaceIdentityFileLocal(accountId, content);
-};
-
-const clearOpenClawSessionsLocal = ({ accountId }: any) => {
-  const normalizedAccountId = String(accountId || '').trim();
-  if (!normalizedAccountId) {
-    throw new Error('accountId is required');
-  }
-  const candidates = [
-    path.resolve(__dirname, '../../external/clawdbot-state/state/agents', normalizedAccountId),
-    path.resolve('/tmp/openclaw/state/agents', normalizedAccountId),
-  ];
-  const removed: any[] = [];
-  candidates.forEach((agentStateDir) => {
-    const targets = [
-      path.join(agentStateDir, 'sessions'),
-      path.join(agentStateDir, 'sessions.json'),
-      path.join(agentStateDir, 'sessions.jsonl'),
-    ];
-    targets.forEach((targetPath) => {
-      try {
-        if (!fs.existsSync(targetPath)) return;
-        const stat = fs.statSync(targetPath);
-        if (stat.isDirectory()) {
-          fs.rmSync(targetPath, { recursive: true, force: true });
-        } else {
-          fs.unlinkSync(targetPath);
-        }
-        removed.push(targetPath);
-      } catch (error: any) {
-        console.warn('[agent-provisioner] Failed to clear session path:', targetPath, (error as Error).message);
-      }
-    });
-  });
-  return {
-    cleared: true,
-    accountId: normalizedAccountId,
-    removed,
-  };
-};
-
 // Unified interface that routes to K8s or Docker implementation
-const startAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
+const startAgentRuntime = async (runtimeType: any, instanceId: any) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.startAgentRuntime(runtimeType, instanceId, options);
+    return k8sProvisioner.startAgentRuntime(runtimeType, instanceId);
   }
   return startDockerRuntime(runtimeType);
 };
 
-const stopAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
+const stopAgentRuntime = async (runtimeType: any, instanceId: any) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.stopAgentRuntime(runtimeType, instanceId, options);
+    return k8sProvisioner.stopAgentRuntime(runtimeType, instanceId);
   }
   return stopDockerRuntime(runtimeType);
 };
 
-const restartAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
+const restartAgentRuntime = async (runtimeType: any, instanceId: any) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.restartAgentRuntime(runtimeType, instanceId, options);
+    return k8sProvisioner.restartAgentRuntime(runtimeType, instanceId);
   }
   return restartDockerRuntime(runtimeType);
 };
 
-const getAgentRuntimeStatus = async (runtimeType: any, instanceId: any, options = {}) => {
+const getAgentRuntimeStatus = async (runtimeType: any, instanceId: any) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getAgentRuntimeStatus(runtimeType, instanceId, options);
+    return k8sProvisioner.getAgentRuntimeStatus(runtimeType, instanceId);
   }
   return getDockerRuntimeStatus(runtimeType);
 };
 
-const getAgentRuntimeLogs = async (runtimeType: any, instanceId: any, lines = 200, options = {}) => {
+const getAgentRuntimeLogs = async (runtimeType: any, instanceId: any, lines = 200) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines, options);
+    return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines);
   }
-  const result = await getDockerRuntimeLogs(runtimeType, lines);
-  return { ...result, logs: filterRuntimeAccountLogs(result.logs, (options as any).filterTokens || []) };
-};
-
-const getAgentSessionSizes = async (options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getAgentSessionSizes(options);
-  }
-  return [];
-};
-
-const clearAgentRuntimeSessions = async (runtimeType: any, instanceId: any, options = {}) => {
-  if (runtimeType !== 'moltbot') {
-    return {
-      cleared: false,
-      reason: 'Session clearing is only supported for OpenClaw runtimes.',
-      runtimeType,
-    };
-  }
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.clearAgentRuntimeSessions(runtimeType, instanceId, options);
-  }
-  return clearOpenClawSessionsLocal({
-    accountId: (options as any).accountId || instanceId,
-  });
-};
-
-const listOpenClawPlugins = async (options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.listOpenClawPlugins(options);
-  }
-  return listOpenClawPluginsDocker();
-};
-
-const listOpenClawBundledSkills = async (options = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.listOpenClawBundledSkills(options);
-  }
-  return listOpenClawBundledSkillsDocker();
-};
-
-const installOpenClawPlugin = async ({ spec, link = false, ...options }: any = {}) => {
-  if (isK8sMode()) {
-    // eslint-disable-next-line global-require
-    const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.installOpenClawPlugin({ spec, link, ...options });
-  }
-  return installOpenClawPluginDocker({ spec, link });
+  return getDockerRuntimeLogs(runtimeType, lines);
 };
 
 // Export unified interface
 module.exports = {
   // Core provisioning (works in both modes)
   provisionAgentRuntime,
-  removeOpenClawAccount,
-  moltbotRuntimeRetired,
   runtimeReceivesToken,
-  getOpenClawConfigPath,
   getCommonlyBotConfigPath,
 
   // Unified runtime control (auto-routes to K8s or Docker)
@@ -1781,23 +434,6 @@ module.exports = {
   getDockerRuntimeStatus,
   getDockerRuntimeLogs,
   resolveDockerServiceName,
-  execDockerRuntimeCommand,
-  listOpenClawPlugins,
-  listOpenClawBundledSkills,
-  installOpenClawPlugin,
-  getAgentSessionSizes,
-  clearAgentRuntimeSessions,
-  writeOpenClawHeartbeatFile,
-  readOpenClawHeartbeatFile,
-  readOpenClawIdentityFile,
-  writeWorkspaceIdentityFile,
-  ensureWorkspaceIdentityFile,
-  ensureHeartbeatTemplate,
-  syncOpenClawSkills,
-  syncOpenClawSkillEnv,
-  getGatewaySkillEntries,
-  syncGatewaySkillEnv,
-  resolveOpenClawAccountId,
 
   // Mode detection
   isK8sMode,

@@ -25,14 +25,10 @@ const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
 const mockRecordByoEvent = jest.fn();
 const mockNarrowedPods = jest.fn();
-const mockEnsembleFindById = jest.fn();
 const mockMessageFindById = jest.fn();
 const mockCredentialFindOne = jest.fn();
 const mockCredentialFindById = jest.fn();
 
-jest.mock('../../../models/AgentEnsembleState', () => ({
-  findById: (...args) => mockEnsembleFindById(...args),
-}));
 jest.mock('../../../models/pg/Message', () => ({
   findById: (...args) => mockMessageFindById(...args),
 }));
@@ -106,7 +102,6 @@ const buildRes = () => {
 beforeEach(() => {
   mockCloudMayRun.mockReset().mockResolvedValue(true);
   mockNarrowedPods.mockReset().mockResolvedValue(new Set());
-  mockEnsembleFindById.mockReset();
   mockMessageFindById.mockReset();
   mockCredentialFindOne.mockReset().mockResolvedValue(null);
   mockCredentialFindById.mockReset();
@@ -267,32 +262,14 @@ describe('TASK-213 runtime token narrowing', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test('ensemble path in P cannot write into an ensemble stored in Q', async () => {
-    setupLegacy();
-    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
-    mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
-    const req = buildReq('cm_agent_test');
-    Object.assign(req, { method: 'POST', baseUrl: '/api/pods',
-      route: { path: '/:podId/ensemble/response' }, params: { podId: 'pod-a' },
-      body: { ensembleId: 'ensemble-b', content: 'cross-pod' } });
-    const res = buildRes();
-    const next = jest.fn();
-    await agentRuntimeAuth(req, res, next);
-    expect(mockEnsembleFindById).toHaveBeenCalledWith('ensemble-b');
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(next).not.toHaveBeenCalled();
-  });
-
   test('failed route pod lookup refuses a write even when one grant pod is known', async () => {
     setupLegacy();
     mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
-    mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => {
-      throw new Error('ensemble DB unavailable');
-    } }) });
+    mockMessageFindById.mockRejectedValue(new Error('message DB unavailable'));
     const req = buildReq('cm_agent_test');
-    Object.assign(req, { method: 'POST', baseUrl: '/api/pods',
-      route: { path: '/:podId/ensemble/response' }, params: { podId: 'pod-a' },
-      body: { ensembleId: 'ensemble-a', content: 'write' } });
+    Object.assign(req, { method: 'POST', baseUrl: '/api/messages',
+      route: { path: '/:messageId/reactions' }, params: { messageId: 'message-a' },
+      body: { emoji: '👍' } });
     const res = buildRes();
     const next = jest.fn();
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});

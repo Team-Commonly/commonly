@@ -48,6 +48,6 @@ declarations resolve through the catalog instead.
 1. Create `commonly-bundled-skills/<skill-id>/SKILL.md` with the skill prompt.
 2. If the content comes from a third party, include their `LICENSE` file.
 3. Reference the skill ID from `defaultSkills` in `backend/routes/registry/presets.ts`.
-4. The auto-importer (in `backend/services/presetSkillsAutoImport.ts`) picks it
-   up on the next provision/reprovision.
+4. Nothing imports it automatically: the auto-importer that did left with the
+   OpenClaw driver (ADR-021), and no surviving preset declares a default skill.
 5. If applicable, file a PR upstream so we can drop the local bundle eventually.
