@@ -96,6 +96,50 @@ export function endAllWaits(): void {
   for (const waiter of [...allWaiters]) waiter.end();
 }
 
+// Held polls from hold start until their response finishes (or the client
+// leaves), claims after a wake included. Shutdown waits for these, briefly.
+let heldPollsInFlight = 0;
+const heldPollsDrained: Array<() => void> = [];
+
+/** Count one held poll as in flight. The returned release is idempotent. */
+export function trackHeldPoll(): () => void {
+  heldPollsInFlight += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    heldPollsInFlight -= 1;
+    if (heldPollsInFlight === 0) {
+      for (const done of heldPollsDrained.splice(0)) done();
+    }
+  };
+}
+
+/** Held polls whose response has not finished yet. */
+export function heldPollCount(): number {
+  return heldPollsInFlight;
+}
+
+/**
+ * Resolves once no held poll is in flight, or after `boundMs`, whichever comes
+ * first. Shutdown awaits it so a hold mid-claim can send what it claimed.
+ */
+export function waitForHeldPolls(boundMs: number): Promise<void> {
+  if (heldPollsInFlight === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const at = heldPollsDrained.indexOf(done);
+      if (at >= 0) heldPollsDrained.splice(at, 1);
+      resolve();
+    }, boundMs);
+    function done() {
+      clearTimeout(timer);
+      resolve();
+    }
+    heldPollsDrained.push(done);
+  });
+}
+
 /**
  * True once shutdown began. A hold that was claiming after a wake when
  * endAllWaits() ran was not registered then, so it checks this before waiting

@@ -11,7 +11,7 @@ import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
 import { createPollLiveness, formatStall, resolvePollLivenessMs } from './poll-liveness.js';
 import { CLI } from './cli-hint.js';
-import { longPollWaitMs as defaultLongPollWaitMs, wasHeld } from './long-poll.js';
+import { clampHoldToLiveness, longPollWaitMs as defaultLongPollWaitMs, wasHeld } from './long-poll.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -59,7 +59,8 @@ export const startPoller = ({
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
   let pollStalled = false;
-  const holdMs = longPollWaitMs ?? defaultLongPollWaitMs();
+  // Never so long that the poll-liveness clock reads the hold as a wedge.
+  const holdMs = clampHoldToLiveness(longPollWaitMs ?? defaultLongPollWaitMs(), resolvePollLivenessMs(pollLivenessMs));
   // The poll in flight, so stop() ends a held one instead of waiting it out.
   let pollAbort = null;
   const pollLiveness = createPollLiveness({

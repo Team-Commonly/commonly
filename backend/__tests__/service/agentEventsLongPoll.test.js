@@ -132,6 +132,8 @@ beforeEach(async () => {
 afterEach(() => {
   expect(waiters.waiterCount()).toBe(0);
   expect(waiters.heldSlotCount()).toBe(0);
+  // Shutdown waits on this count (hostedShutdownService): it must not leak.
+  expect(waiters.heldPollCount()).toBe(0);
 });
 
 describe('clampWaitMs', () => {
@@ -277,16 +279,37 @@ describe('GET /events?waitMs', () => {
   test('only the hold that returns an event claims it: one event, two holds, one delivery', async () => {
     const otherToken = (await request(app).post(`/api/registry/pods/${pod._id}/agents/alice/runtime-tokens`)
       .set('Authorization', `Bearer ${personToken}`).send({ label: 'second' })).body.token;
-    const a = timed(poll('?waitMs=3000'));
-    const b = timed(poll('?waitMs=3000', otherToken));
-    await untilHeld(2);
-    const event = await enqueue('one for two');
-    const [ra, rb] = await Promise.all([a, b]);
-    const returned = [...ra.res.body.events, ...rb.res.body.events];
-    expect(returned.map((e) => String(e._id))).toEqual([String(event._id)]);
-    const row = await AgentEvent.findById(event._id).lean();
-    expect(row.status).toBe('delivered');
-    expect(row.attempts).toBe(1);
+    // Both holds reach the DB claim together: each post-wake claim waits at a
+    // barrier until the other has arrived, then both race the real claim.
+    const real = AgentEventService.listInboxPage.bind(AgentEventService);
+    let arrived = 0;
+    let openBarrier;
+    const barrier = new Promise((resolve) => { openBarrier = resolve; });
+    let held = false;
+    const spy = jest.spyOn(AgentEventService, 'listInboxPage').mockImplementation(async (options) => {
+      if (held) {
+        arrived += 1;
+        if (arrived === 2) openBarrier();
+        await barrier;
+      }
+      return real(options);
+    });
+    try {
+      const a = timed(poll('?waitMs=3000'));
+      const b = timed(poll('?waitMs=3000', otherToken));
+      await untilHeld(2);
+      held = true;
+      const event = await enqueue('one for two');
+      const [ra, rb] = await Promise.all([a, b]);
+      expect(arrived).toBeGreaterThanOrEqual(2);
+      const returned = [...ra.res.body.events, ...rb.res.body.events];
+      expect(returned.map((e) => String(e._id))).toEqual([String(event._id)]);
+      const row = await AgentEvent.findById(event._id).lean();
+      expect(row.status).toBe('delivered');
+      expect(row.attempts).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('a carry refresh (onlyIds) is never held', async () => {
@@ -416,6 +439,113 @@ describe('shutdown reaches a hold that is mid-claim', () => {
     } finally {
       spy.mockRestore();
       waiters.resetWaitersForTests();
+    }
+  });
+});
+
+describe('after a wake the hold claims from the scope a fresh request would have', () => {
+  // eslint-disable-next-line global-require
+  const { hash } = require('../../utils/secret');
+
+  const enqueueIn = (podId, content) => AgentEventService.enqueue({
+    agentName: 'alice', instanceId: 'default', podId, type: 'chat.mention',
+    payload: { content, messageId: `m-${Math.random()}` },
+  });
+
+  test('a pod uninstalled mid-hold drops out: only the remaining pod\'s event is returned', async () => {
+    const podB = await Pod.create({ name: 'Second', type: 'chat', createdBy: person._id, members: [person._id] });
+    const installedB = await request(app).post('/api/registry/install').set('Authorization', `Bearer ${personToken}`)
+      .send({ agentName: 'alice', podId: podB._id.toString(), scopes: ['context:read'] });
+    expect(installedB.status).toBe(200);
+    const pending = timed(poll('?waitMs=8000'));
+    await untilHeld();
+    await AgentInstallation.updateOne({ agentName: 'alice', podId: pod._id }, { $set: { status: 'uninstalled' } });
+    const inA = await enqueueIn(pod._id, 'for the removed pod');
+    await sleep(100);
+    const inB = await enqueueIn(podB._id, 'for the remaining pod');
+    const { res } = await pending;
+    expect(res.status).toBe(200);
+    expect(res.body.events.map((e) => String(e._id))).toEqual([String(inB._id)]);
+    expect((await AgentEvent.findById(inA._id).lean()).status).toBe('pending');
+  });
+
+  test('a cloud entitlement lost mid-hold is refused like a fresh request, with nothing claimed', async () => {
+    // eslint-disable-next-line global-require
+    const ownership = require('../../services/cloudRuntimeOwnership');
+    const pending = timed(poll('?waitMs=8000'));
+    await untilHeld();
+    const spy = jest.spyOn(ownership, 'cloudRuntimeMayRun').mockResolvedValue(false);
+    try {
+      const event = await enqueue('after the entitlement went');
+      const { res } = await pending;
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe(ownership.CLOUD_RUN_REFUSED_REASON);
+      expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+      expect((await poll('')).status).toBe(403);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('a spawn token whose bot User is gone mid-hold is refused; a valid one keeps working', async () => {
+    // eslint-disable-next-line global-require
+    const { resolveSeatCredential, mintSpawnCredential } = require('../../services/spawnCredentialService');
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': 'alice' });
+    const seatRow = await resolveSeatCredential({ tokenHash: hash(seatToken), agentUserId: bot._id });
+    const minted = await mintSpawnCredential({
+      seat: seatRow, spawnId: 'long-poll-spawn', ttlSeconds: 600, identity: { agentName: 'alice', instanceId: 'default' },
+    });
+    expect(minted.ok).toBe(true);
+    // A valid ledger-only token: held, woken, claims.
+    const first = timed(poll('?waitMs=8000', minted.token));
+    await untilHeld();
+    const claimed = await enqueue('for the spawn');
+    expect((await first).res.body.events.map((e) => String(e._id))).toEqual([String(claimed._id)]);
+
+    const pending = timed(poll('?waitMs=8000', minted.token));
+    await untilHeld();
+    await User.updateOne({ _id: bot._id }, { $set: { isBot: false } });
+    try {
+      const event = await enqueue('after the bot User went');
+      const { res } = await pending;
+      expect(res.status).toBe(401);
+      expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+      expect((await poll('', minted.token)).status).toBe(401);
+    } finally {
+      await User.updateOne({ _id: bot._id }, { $set: { isBot: true } });
+    }
+  });
+
+  test('a client that leaves after the claim and before the answer gets its rows put back', async () => {
+    const real = AgentEventService.listInboxPage.bind(AgentEventService);
+    let clientReq;
+    let held = false;
+    const spy = jest.spyOn(AgentEventService, 'listInboxPage').mockImplementation(async (options) => {
+      const page = await real(options);
+      if (held && page.events.length) {
+        // The claim is made; the client goes away before the answer is sent.
+        clientReq.destroy();
+        await sleep(100);
+      }
+      return page;
+    });
+    try {
+      clientReq = http.get(`${baseUrl}/api/agents/runtime/events?waitMs=8000`, {
+        headers: { Authorization: `Bearer ${seatToken}` },
+      });
+      clientReq.on('error', () => {});
+      await untilHeld();
+      held = true;
+      const event = await enqueue('claimed, then nobody there');
+      for (let i = 0; i < 100 && waiters.heldPollCount() > 0; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(10);
+      }
+      await sleep(100);
+      const row = await AgentEvent.findById(event._id).lean();
+      expect(row).toMatchObject({ status: 'pending', attempts: 0 });
+    } finally {
+      spy.mockRestore();
     }
   });
 });

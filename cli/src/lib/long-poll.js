@@ -26,6 +26,21 @@ export const longPollWaitMs = ({ env = process.env } = {}) => {
 };
 
 /**
+ * The hold a loop may ask for under its poll-liveness limit
+ * (lib/poll-liveness.js): the liveness clock runs while the poll is in flight,
+ * so a hold near the limit would read as a wedged loop and stop the run. The
+ * hold ends a margin before the limit (5 s or a quarter of it, whichever is
+ * larger); if what is left is under LONG_POLL_MIN_LIVENESS_HOLD_MS, no hold.
+ */
+export const LONG_POLL_MIN_LIVENESS_HOLD_MS = 3_000;
+export const clampHoldToLiveness = (holdMs, livenessMs) => {
+  if (!(holdMs > 0)) return 0;
+  if (!Number.isFinite(livenessMs) || livenessMs <= 0) return holdMs;
+  const room = Math.floor(livenessMs - Math.max(5_000, livenessMs / 4));
+  return room >= LONG_POLL_MIN_LIVENESS_HOLD_MS ? Math.min(holdMs, room) : 0;
+};
+
+/**
  * Whether an empty answer was a held one, so the next poll can go at once.
  * Half the requested wait is the line: an old server answers in milliseconds,
  * a held poll that timed out answers at about the full wait.

@@ -68,7 +68,7 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
-import { longPollWaitMs, wasHeld } from '../lib/long-poll.js';
+import { clampHoldToLiveness, longPollWaitMs, wasHeld } from '../lib/long-poll.js';
 import {
   createIdleHeartbeat, createPollLiveness, formatStall, resolveIdleLineMs, resolvePollLivenessMs,
 } from '../lib/poll-liveness.js';
@@ -4683,7 +4683,11 @@ export const performRun = ({
   // which is why a walk on 2026-11-05 needed repeated signals to end it.
   let tickTimer = null;
   // F597: an idle seat's inbox poll is held by the server up to this long.
-  const longPollWait = longPollWaitOverride ?? longPollWaitMs();
+  // Never so long that the poll-liveness clock reads the hold as a wedge.
+  const longPollWait = clampHoldToLiveness(
+    longPollWaitOverride ?? longPollWaitMs(),
+    resolvePollLivenessMs(pollLivenessMs),
+  );
   // The held poll in flight, so stop() can end it instead of waiting it out.
   let holdAbort = null;
   const STOPPED_HOLD = Symbol('stopped-hold');

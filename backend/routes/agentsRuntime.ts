@@ -53,9 +53,10 @@ const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const { settleIntroOnRequestCheckIn } = require('../services/installIntroOnListen');
 const {
-  clampWaitMs, acquireWaiterSlot, waitForAgentEvent, waitsEnded,
+  clampWaitMs, acquireWaiterSlot, waitForAgentEvent, waitsEnded, trackHeldPoll,
 } = require('../services/agentEventWaiters');
 const { recheckHeldRuntimeAuth } = require('../middleware/agentRuntimeAuthRecheck');
+const { resolveEventPodScope } = require('../services/agentEventPodScope');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -917,24 +918,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     const onlyIds = typeof req.query.onlyIds === 'string'
       ? req.query.onlyIds.split(',').map((id: string) => id.trim()).filter((id: string) => /^[a-f0-9]{24}$/i.test(id))
       : [];
-    const installationPodIds = (req.agentInstallations || [])
-      .map((item: any) => item?.podId)
-      .filter(Boolean);
-    const dmPods = await Pod.find({
-      type: 'agent-admin',
-      members: agentUser?._id,
-    }).select('_id').lean();
-    const dmPodIds = dmPods.map((pod: any) => pod._id);
-    const podIds = Array.from(
-      new Set(
-        [...installationPodIds, ...dmPodIds]
-          .filter(Boolean)
-          .map((id) => id.toString()),
-      ),
-    );
-    const fallbackPodId = podIds.length === 0 && installation?.podId
-      ? installation.podId
-      : undefined;
+    const { podIds, fallbackPodId } = await resolveEventPodScope({
+      installations: req.agentInstallations || [],
+      installation,
+      agentUserId: agentUser?._id,
+    });
 
     // Hosted-runtime meter (ADR-023 D3.1): once a hosted agent has used its
     // daily turn budget the feed goes empty for it — the worker idles instead
@@ -947,7 +935,7 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       }
     }
 
-    const inboxOptions = {
+    let inboxOptions = {
       agentName,
       instanceId,
       podId: fallbackPodId,
@@ -963,6 +951,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     if (waitMs > 0 && events.length === 0 && !inboxCount) {
       const releaseSlot = acquireWaiterSlot(req.agentTokenHash || `${agentName}\u0000${instanceId}`);
       if (releaseSlot) {
+        // In flight until the response is done, so shutdown can wait for a
+        // hold that is claiming (hostedShutdownService).
+        const untrackHeldPoll = trackHeldPoll();
+        res.once('finish', untrackHeldPoll);
+        res.once('close', untrackHeldPoll);
         // One listener for the whole hold, so a disconnect during the claim
         // below is seen too. `res` closes on a finished answer as well; only
         // an unfinished one is a client that went away.
@@ -980,6 +973,8 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
           return () => { wakeOnClose = null; };
         };
         let refused = false;
+        // Reads the current scope: a wake below can narrow it.
+        const hasPending = () => AgentEventService.hasPendingWake(inboxOptions);
         try {
           const deadline = Date.now() + waitMs;
           for (;;) {
@@ -991,17 +986,29 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
               agentName,
               instanceId,
               timeoutMs: remaining,
-              hasPending: () => AgentEventService.hasPendingWake(inboxOptions),
+              hasPending,
               onClose,
             });
             if (outcome === 'timeout' || outcome === 'closed' || clientGone) break;
-            // The credential was checked up to 25 s ago: a token revoked or an
-            // agent uninstalled since must not claim (answers 401 here).
+            // The credential was checked up to 25 s ago: a token revoked, an
+            // agent uninstalled or an entitlement lost since must not claim
+            // (answers as a fresh request would here).
             // eslint-disable-next-line no-await-in-loop
-            if (!await recheckHeldRuntimeAuth(req, res)) {
+            const held = await recheckHeldRuntimeAuth(req, res);
+            if (!held) {
               refused = true;
               break;
             }
+            // Claim from the pods the agent is in now, not at the hold's
+            // start: one uninstalled mid-hold drops out, as it would for a
+            // fresh request. The rest of this wait rechecks the same scope.
+            // eslint-disable-next-line no-await-in-loop
+            const scope = await resolveEventPodScope({
+              installations: held.installations,
+              installation: held.installation,
+              agentUserId: agentUser?._id,
+            });
+            inboxOptions = { ...inboxOptions, podIds: scope.podIds, podId: scope.fallbackPodId };
             // eslint-disable-next-line no-await-in-loop
             ({ events, inboxCount } = await AgentEventService.listInboxPage(inboxOptions));
             // A sibling poll can win the row; then this one keeps waiting.

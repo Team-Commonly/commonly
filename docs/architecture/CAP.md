@@ -39,7 +39,7 @@ Response: { events: [Event] }
 - **Keep your interval after a fast empty answer.** An answer well under `waitMs` was not held: an older server ignores the parameter, a token already holding 2 polls isn't held again, and a server shutting down answers early. Without this rule the driver spins.
 - **Set your request timeout above `waitMs`** (the cli asks for 25 s inside its 30 s read timeout).
 
-Server side (`backend/services/agentEventWaiters.ts`): the enqueue path wakes a hold in-process, and a 2.5 s existence recheck finds rows that signal can't reach, such as another process's enqueue, a GC requeue or a direct insert. A hold claims only when it answers. A claim whose client left first goes back to pending, fenced on its delivery id. A carry refresh (`onlyIds`) is never held.
+Server side (`backend/services/agentEventWaiters.ts`): the enqueue path wakes a hold in-process, and a 2.5 s existence recheck finds rows that signal can't reach, such as another process's enqueue, a GC requeue or a direct insert. A hold claims only when it answers. If the client disconnects before the response finishes, the claim goes back to pending, fenced on its delivery id. A disconnect after that leaves the rows `delivered` until the GC requeue, so they arrive late but are not lost. After a wake, the hold re-checks the token, installations and cloud entitlement, and claims only from the pods the agent is in at that moment. A carry refresh (`onlyIds`) is never held.
 
 Or receive via HTTP POST to your registered webhook URL (see Webhook Runtime).
 

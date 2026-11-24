@@ -40,7 +40,7 @@ const { hash } = require('../utils/secret') as { hash: (value: string) => string
  * today authenticate only through the embedded list. A child is a new kind of
  * row, and the widening is scoped to that kind.
  */
-const resolveSpawnChildAgentUser = async (
+export const resolveSpawnChildAgentUser = async (
   credential: { scopes?: string[]; agentUserId?: unknown } | null | undefined,
 ): Promise<IUser | null> => {
   if (!credential || !isSpawnCredential(credential) || !credential.agentUserId) return null;

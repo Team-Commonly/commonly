@@ -35,7 +35,9 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const { startPoller } = await import('../src/lib/poller.js');
-const { longPollWaitMs, wasHeld, LONG_POLL_MAX_WAIT_MS } = await import('../src/lib/long-poll.js');
+const {
+  longPollWaitMs, wasHeld, clampHoldToLiveness, LONG_POLL_MAX_WAIT_MS,
+} = await import('../src/lib/long-poll.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const EVENTS = '/api/agents/runtime/events';
@@ -59,6 +61,7 @@ beforeEach(() => {
 const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
   const queue = [...pages];
   const polls = [];
+  const signals = [];
   const get = jest.fn((route, params, options) => {
     if (route !== EVENTS) {
       if (route.endsWith('/messages')) return Promise.resolve({ messages: [] });
@@ -66,10 +69,13 @@ const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
       return Promise.resolve({});
     }
     polls.push(params);
+    signals.push(options?.signal);
     if (failWith) return Promise.reject(failWith);
     const events = queue.length ? queue.shift() : [];
+    // 'requested': hold exactly what the poll asked for, as a current server does.
+    const ms = holdMs === 'requested' ? (params.waitMs || 0) : holdMs;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => resolve({ events, inboxCount: events.length }), events.length ? 0 : holdMs);
+      const timer = setTimeout(() => resolve({ events, inboxCount: events.length }), events.length ? 0 : ms);
       options?.signal?.addEventListener('abort', () => {
         clearTimeout(timer);
         reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
@@ -78,7 +84,7 @@ const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
   });
   const post = jest.fn(async () => ({}));
   createClient.mockReturnValue({ get, post });
-  return { get, post, polls };
+  return { get, post, polls, signals };
 };
 
 describe('long-poll helpers', () => {
@@ -88,6 +94,16 @@ describe('long-poll helpers', () => {
     expect(longPollWaitMs({ env: { COMMONLY_CAP_TIMEOUT_MS: '12000' } })).toBe(7000);
     // No room for a meaningful hold: off.
     expect(longPollWaitMs({ env: { COMMONLY_CAP_TIMEOUT_MS: '5500' } })).toBe(0);
+  });
+
+  test('the hold stays a margin inside the poll-liveness limit, or is off', () => {
+    expect(clampHoldToLiveness(25_000, 10 * 60 * 1000)).toBe(25_000);
+    expect(clampHoldToLiveness(25_000, 10_000)).toBe(5_000);
+    expect(clampHoldToLiveness(25_000, 40_000)).toBe(25_000);
+    expect(clampHoldToLiveness(25_000, 28_000)).toBe(21_000);
+    // Under 3s left: no hold at all.
+    expect(clampHoldToLiveness(25_000, 7_000)).toBe(0);
+    expect(clampHoldToLiveness(0, 10_000)).toBe(0);
   });
 
   test('held means the answer took at least half the requested wait', () => {
@@ -176,15 +192,44 @@ describe('agent run (performRun)', () => {
     } finally { await run.handle.stop(); }
   });
 
-  test('stop() ends a held poll at once, with no error', async () => {
-    fakeServer({ holdMs: 20_000 });
+  test('stop() ends a held poll at once, with no error, by aborting the request', async () => {
+    const server = fakeServer({ holdMs: 20_000 });
     const run = startRun({ longPollWaitMs: 20_000 });
     await sleep(30);
+    expect(server.signals[0].aborted).toBe(false);
     const started = Date.now();
     await run.handle.stop();
+    expect(server.signals[0].aborted).toBe(true);
     expect(Date.now() - started).toBeLessThan(1000);
     expect(run.errors).toEqual([]);
     expect(run.scheduled).toEqual([]);
+  });
+
+  test('a low poll-liveness limit clamps the hold, and a held idle answer is no stall', async () => {
+    const server = fakeServer({ holdMs: 'requested' });
+    const stalled = jest.fn();
+    // 8s limit: the hold is 8s - 5s = 3s, not 25s.
+    const run = startRun({
+      longPollWaitMs: 25_000, pollLivenessMs: 8_000, pollLivenessCheckMs: 50, onPollStalled: stalled,
+    });
+    try {
+      await sleep(30);
+      expect(server.polls[0].waitMs).toBe(3_000);
+      await sleep(3_200);
+      await untilScheduled(run);
+      expect(run.scheduled[0].delayMs).toBe(0);
+      expect(stalled).not.toHaveBeenCalled();
+      expect(run.errors).toEqual([]);
+    } finally { await run.handle.stop(); }
+  }, 10_000);
+
+  test('a liveness limit with no room for a hold sends no waitMs', async () => {
+    const server = fakeServer();
+    const run = startRun({ longPollWaitMs: 25_000, pollLivenessMs: 6_000 });
+    try {
+      await untilScheduled(run);
+      expect(server.polls[0].waitMs).toBeUndefined();
+    } finally { await run.handle.stop(); }
   });
 });
 
@@ -233,12 +278,30 @@ describe('agent connect (startPoller)', () => {
     expect(errors.every((e) => e.message === 'fetch failed')).toBe(true);
   });
 
-  test('stop() ends a held poll with no error', async () => {
-    fakeServer({ holdMs: 20_000 });
+  test('stop() ends a held poll with no error, by aborting the request', async () => {
+    const server = fakeServer({ holdMs: 20_000 });
     const { handle, errors } = poller({ longPollWaitMs: 20_000 });
     await sleep(30);
+    expect(server.signals[0].aborted).toBe(false);
     handle.stop();
+    expect(server.signals[0].aborted).toBe(true);
     await sleep(30);
     expect(errors).toEqual([]);
   });
+
+  test('a low poll-liveness limit clamps the hold, and a held idle answer is no stall', async () => {
+    const server = fakeServer({ holdMs: 'requested' });
+    const stalled = jest.fn();
+    const { handle, errors } = poller({
+      longPollWaitMs: 25_000, pollLivenessMs: 8_000, pollLivenessCheckMs: 50, onPollStalled: stalled,
+    });
+    try {
+      await sleep(3_400);
+      expect(server.polls[0].waitMs).toBe(3_000);
+      // Held, so it polled again at once instead of sleeping its 100s interval.
+      expect(server.polls.length).toBeGreaterThanOrEqual(2);
+      expect(stalled).not.toHaveBeenCalled();
+      expect(errors).toEqual([]);
+    } finally { handle.stop(); }
+  }, 10_000);
 });
