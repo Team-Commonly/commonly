@@ -136,8 +136,8 @@ ADR-026 machine report in Settings.
    not "active". *Test:* service for the payload, plus a Scout model sample with the real tool result.
 6. **Owner notice.** A sweep writes one `AttentionItem` (`kind: 'blocked'`, new source `agent_health`,
    `actorUserId` set to the agent) on entering `failing`, and resolves it on recovery. That `actorUserId` already
-   moves the Your Team card to Needs you, with no new surface. The episode key follows
-   `initiativeStallSourceId`, so no new store is needed. *A person sees:* an owner learns of failing
+   moves the Your Team card to Needs you, with no new surface. The episode start goes in the
+   source id, so no new store is needed. *A person sees:* an owner learns of failing
    kernel wakes with nobody mentioning the agent. *Test:* service, including one row under racing sweeps, a
    resolve on recovery, and no `AgentEvent` enqueued.
 7. **Fix cards.** `connect_local_agent` already handles a reconnect. Add `start_hosted_agent`, whose executor
