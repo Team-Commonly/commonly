@@ -154,11 +154,9 @@ const axiosMock = (() => {
 /**
  * Intended disclosures — not leaks. config.connectCode is the one-time enable
  * code a Telegram connector's owner pastes into Telegram. It is allowed exactly
- * where a frontend surface reads it, and nowhere else:
- *  - GET /api/integrations/:podId (owner/member/admin): read by the legacy
- *    ChatRoom's pod integrations list until that room was retired; no frontend
- *    surface reads it there now, so this one could be withdrawn. A stranger
- *    is 403.
+ * where a frontend surface reads it, and nowhere else. The pod list
+ * (GET /api/integrations/:podId) dropped it once its one reader, the legacy
+ * ChatRoom, was retired.
  *  - GET /api/installables (owner): the Connectors page builds each catalog
  *    row's connector from entry.integration (V2ConnectorsPage.tsx:215 fetch,
  *    :782-790 connectorForEntry, :794-799 items) and reads connectCode in
@@ -169,12 +167,9 @@ const axiosMock = (() => {
  * Telegram only: those reads sit behind isTelegram (:601, :1089). A Slack row's
  * config.connectCode is its OAuth state (routes/installables.ts:278), never read
  * by the frontend, so it stays a KNOWN_EXPOSURE. /api/integrations/admin/all
- * (AppsManagement.tsx:153) never reads connectCode.
+ * has no reader for connectCode and drops it.
  */
 const ALLOWED_DISCLOSURES = [
-  ...['owner', 'member', 'admin'].map((role) => ({
-    method: 'GET', path: '/api/integrations/:podId', role, sentinelKey: 'INT_TELEGRAM_CONNECTCODE',
-  })),
   { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_TELEGRAM_CONNECTCODE' },
   { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_TELEGRAM_CONNECTCODE' },
 ];

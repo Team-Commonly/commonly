@@ -707,9 +707,11 @@ router.get('/:podId', listIntegrationsRateLimit, auth, requireObjectIdParam('pod
     // inbound messages are authored as, or the reply/digest tables. The
     // connector's creator and an instance administrator see the row whole.
     // canViewPod admits every pod member, so the projection is what keeps a
-    // shared pod's other connectors from being readable here.
+    // shared pod's other connectors from being readable here. No surface reads
+    // a Telegram connect code from this list (the Connectors page reads the
+    // owner's /user/all), so it is dropped for every viewer.
     const viewer = await resolveConnectorViewer(req.user?.id);
-    return res.json(integrations.map((integration: unknown) => projectIntegrationForViewer(integration, viewer)));
+    return res.json(integrations.map((integration: unknown) => withoutConnectCode(projectIntegrationForViewer(integration, viewer))));
   } catch (error) {
     console.error('Error fetching integrations:', error);
     res.status(500).json({ message: 'Server error' });
