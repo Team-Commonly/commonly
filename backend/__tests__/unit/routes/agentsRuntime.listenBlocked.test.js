@@ -41,6 +41,13 @@ describe('POST /api/agents/runtime/listen-blocked', () => {
     expect(mockUpdateOne.mock.calls[0][1].$set['botMetadata.listenBlocked']).toMatchObject({ reason: 'node-too-old', harness: null });
   });
 
+  // F571: the two sandbox stops `agent run` makes once it has read its record.
+  test.each(['sandbox-unavailable', 'unsandboxed-refused'])('%s names no harness and is recorded', async (reason) => {
+    const response = await post({ reason, harness: null });
+    expect(response.status).toBe(200);
+    expect(mockUpdateOne.mock.calls[0][1].$set['botMetadata.listenBlocked']).toMatchObject({ reason, harness: null });
+  });
+
   test('an alias is stored as its catalog id', async () => {
     await post({ reason: 'harness-signed-out', harness: 'claude-code' });
     expect(mockUpdateOne.mock.calls[0][1].$set['botMetadata.listenBlocked'].harness).toBe('claude');
@@ -54,6 +61,8 @@ describe('POST /api/agents/runtime/listen-blocked', () => {
     [{ reason: 'harness-signed-out', harness: 'not-a-harness' }],
     [{ reason: 'harness-signed-out', harness: null }],
     [{ reason: 'harness-missing', harness: 'claude' }],
+    [{ reason: 'sandbox-unavailable', harness: 'claude' }],
+    [{ reason: 'sandbox-broken', harness: null }],
     [{}],
   ])('refuses %j and writes nothing', async (body) => {
     const response = await post(body);

@@ -12,6 +12,7 @@ import { join } from 'path';
 
 import {
   harnessFindings, LISTEN_BLOCKED_REASONS, nodeFinding, preflightOutcome, reportListenBlocked, runHarnessLoginStatus,
+  SANDBOX_STOPS,
 } from '../src/lib/run-preflight.js';
 
 const installed = { detect: async () => true };
@@ -115,7 +116,18 @@ describe('reportListenBlocked', () => {
     const post = jest.fn(async () => ({}));
     await reportListenBlocked({ post }, { reason: 'something-else', harness: null });
     expect(post).not.toHaveBeenCalled();
-    expect(LISTEN_BLOCKED_REASONS).toEqual(['node-too-old', 'harness-signed-out']);
+    expect(LISTEN_BLOCKED_REASONS).toEqual(['node-too-old', 'harness-signed-out', 'sandbox-unavailable', 'unsandboxed-refused']);
+  });
+
+  // F571: the two sandbox stops after the record is read carry no harness and
+  // no text, only their code, and the null harness the route requires.
+  test.each([
+    ['hostRefused', 'sandbox-unavailable'],
+    ['flagRefused', 'unsandboxed-refused'],
+  ])('the %s sandbox stop sends %s with a null harness', async (stop, reason) => {
+    const post = jest.fn(async () => ({}));
+    await reportListenBlocked({ post }, SANDBOX_STOPS[stop]);
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/listen-blocked', { reason, harness: null });
   });
 });
 

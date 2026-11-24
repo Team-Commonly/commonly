@@ -20,7 +20,19 @@ import { resolveWindowsCommandWithReason } from './windows-command.js';
 
 // The reason codes the instance accepts (POST /api/agents/runtime/listen-blocked).
 // A code, never text: nothing from this computer but the code is sent.
-export const LISTEN_BLOCKED_REASONS = ['node-too-old', 'harness-signed-out'];
+export const LISTEN_BLOCKED_REASONS = [
+  'node-too-old', 'harness-signed-out', 'sandbox-unavailable', 'unsandboxed-refused',
+];
+
+// F571: the two sandbox stops `agent run` makes once it has read the record,
+// and so holds a token the instance accepts. Neither names a harness, and the
+// refusal text stays in the terminal: it can carry a path.
+export const SANDBOX_STOPS = Object.freeze({
+  // This computer can't start the sandbox the seat runs in.
+  hostRefused: Object.freeze({ reason: 'sandbox-unavailable', harness: null }),
+  // --unsandboxed was typed where it doesn't apply to this agent.
+  flagRefused: Object.freeze({ reason: 'unsandboxed-refused', harness: null }),
+});
 
 // The floor the CLI declares, read as `commonly doctor` reads it.
 const CLI_ENGINES_NODE = (() => {

@@ -402,7 +402,11 @@ const userSchema = new Schema<IUser>({
     // the harness it is about, and when. Declared or stripped, as above.
     listenBlocked: {
       type: new Schema({
-        reason: { type: String, enum: ['node-too-old', 'harness-signed-out'], required: true },
+        reason: {
+          type: String,
+          enum: ['node-too-old', 'harness-signed-out', 'sandbox-unavailable', 'unsandboxed-refused'],
+          required: true,
+        },
         harness: { type: String, default: null },
         at: { type: Date, required: true },
       }, { _id: false }),

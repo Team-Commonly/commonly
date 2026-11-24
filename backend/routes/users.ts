@@ -3,6 +3,7 @@
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { AccountDeletionError, deleteOwnAccount } from '../services/accountDeletionService';
+import { RUN_STOP_REASONS, runStopsFor } from '../services/byoTelemetry';
 import {
   cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
 } from '../middleware/ipRateLimit';
@@ -209,6 +210,8 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
     const listenBlocked: {
       agentName: string; instanceId: string; reason: string; harness: string | null; at: string;
     }[] = [];
+    // F571: each identity's latest listen, for the run-stopped rows below.
+    const listenByIdentity = new Map<string, Date>();
     for (const agentUser of agentUsers || []) {
       const agentName = String(agentUser.botMetadata?.agentName || '').trim().toLowerCase();
       const instanceId = String(agentUser.botMetadata?.instanceId || 'default').trim().toLowerCase();
@@ -220,6 +223,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         latestToolUse = latestOf(latestToolUse, token?.lastUsedAt, identity);
         ownListen = latestOf(ownListen, token?.lastListenedAt, identity);
       }
+      if (ownListen) listenByIdentity.set(`${agentName}:${instanceId}`, ownListen.at);
       const missing = (agentUser.botMetadata as any)?.harnessMissing;
       const missingAt = missing?.at ? new Date(missing.at) : null;
       if (missingAt && !Number.isNaN(missingAt.getTime()) && (!ownListen || missingAt > ownListen.at)) {
@@ -244,6 +248,43 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
       }
     }
 
+    // F551/F571: a first run that stopped before it could sign in (no key, or
+    // a key the instance refused) reported by name, with no key. Those rows
+    // are the caller's own, for installations listed here, by code, and stand
+    // until the same listen. A failed read only leaves them out.
+    const runStopped: { agentName: string; instanceId: string; reason: string; at: string }[] = [];
+    const identityByInstall = new Map<string, any>();
+    for (const installation of installations || []) {
+      const agentName = String((installation as any).agentName || '').trim().toLowerCase();
+      if (!agentName || SIGNUP_INSTALLED_AGENT_NAMES.has(agentName) || !(installation as any)._id) continue;
+      const instanceId = String((installation as any).instanceId || 'default').trim().toLowerCase();
+      identityByInstall.set(String((installation as any)._id), {
+        agentName,
+        instanceId,
+        key: `${AgentIdentityService.resolveAgentType(agentName)}:${instanceId}`,
+      });
+    }
+    if (identityByInstall.size) {
+      try {
+        const rows = await runStopsFor(
+          userId,
+          (installations || []).filter((i: any) => identityByInstall.has(String(i._id))).map((i: any) => i._id),
+        );
+        for (const row of rows || []) {
+          const identity = identityByInstall.get(String(row?.installationId));
+          const at = row?.at ? new Date(row.at) : null;
+          if (!identity || !RUN_STOP_REASONS.has(row?.reason) || !at || Number.isNaN(at.getTime())) continue;
+          const listened = listenByIdentity.get(identity.key);
+          if (listened && listened >= at) continue;
+          runStopped.push({
+            agentName: identity.agentName, instanceId: identity.instanceId, reason: row.reason, at: at.toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn('[agent-connection] run-stopped read failed:', err?.message);
+      }
+    }
+
     return res.json({
       // "Issued" is deliberately installation ownership, not pod membership
       // or token presence. Joining an agent-rich community pod must not make a
@@ -260,6 +301,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
       } : null,
       ...(harnessMissing.length ? { harnessMissing } : {}),
       ...(listenBlocked.length ? { listenBlocked } : {}),
+      ...(runStopped.length ? { runStopped } : {}),
     });
   } catch (error) {
     console.error('Error reading agent connection status:', error);

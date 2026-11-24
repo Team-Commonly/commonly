@@ -1858,6 +1858,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       return tool ? t('podChat.listenReason.missing', { tool }) : t('podChat.listenReason.missingAny');
     }
     if (found.reason === 'node-too-old') return t('podChat.listenReason.nodeTooOld');
+    // F571: the two sandbox stops a run makes after reading its record.
+    if (found.reason === 'sandbox-unavailable') return t('podChat.listenReason.sandboxUnavailable');
+    if (found.reason === 'unsandboxed-refused') return t('podChat.listenReason.unsandboxedRefused');
     return '';
   };
   const directAgentReason = listenReasonClause(directAgent?.state);

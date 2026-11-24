@@ -84,7 +84,7 @@ const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
-const { recordByoEvent } = require('../services/byoTelemetry');
+const { recordByoEvent, recordRunStopped, RUN_STOP_REASONS } = require('../services/byoTelemetry');
 
 const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
@@ -149,13 +149,14 @@ router.post('/byo-step', rateLimit({
 });
 
 // F551: `agent run` stopped before its first server call because it had no
-// key (the two `$env:` lines pasted into Command Prompt, or skipped). With no
+// key (the two `$env:` lines pasted into Command Prompt, or skipped). F571
+// adds a first-run key the instance refused (401), which can't sign in either.
+// The reasons live in byoTelemetry's RUN_STOP_REASONS. With no
 // key it can't sign in, so this takes no auth: it names the agent, and only a
 // BYO agent of that name made in the last day gets a row, owned by whoever
 // installed it. Fixed fields only, one row per installation and reason. It
 // answers 204 before the lookup, so neither the answer nor its timing says
 // which names exist.
-const RUN_STOP_REASONS = new Set(['no-token']);
 const RUN_PLATFORMS = new Set(['win32', 'darwin', 'linux']);
 const RUN_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 router.post('/run-stopped', rateLimit({
@@ -183,16 +184,12 @@ router.post('/run-stopped', rateLimit({
       'config.runtime.runtimeType': 'webhook',
       createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     }).select('_id installedBy').limit(5).lean();
-    await Promise.all((installs as Array<{ _id: unknown; installedBy: unknown }>).map((install) => recordByoEvent(
+    // One row per installation and reason; a repeat refreshes its time.
+    await Promise.all((installs as Array<{ _id: unknown; installedBy: unknown }>).map((install) => recordRunStopped(
       install.installedBy,
-      'run-stopped',
-      {
-        reason,
-        installationId: install._id,
-        ...(platform ? { platform } : {}),
-        ...(nodeMajor ? { nodeMajor } : {}),
-      },
-      `run-stopped:${String(install._id)}:${reason}`,
+      install._id,
+      reason,
+      { ...(platform ? { platform } : {}), ...(nodeMajor ? { nodeMajor } : {}) },
     )));
   } catch (err: any) {
     console.warn('[byo-telemetry] run-stopped lookup failed:', err?.message);

@@ -169,6 +169,22 @@ const REFUSED_HERE: Record<string, 'dsh' | 'qwen' | 'goose' | 'public'> = {
   dsh: 'dsh', qwen: 'qwen', pi: 'public', goose: 'goose', hermes: 'public',
 };
 const AGENT_KIND = 'agent' as const;
+// Why the issued agent's first run stopped before it checked in, as the page
+// shows it. F457 and F515 sent the first three; F571 the sandbox stops and a
+// refused key. Codes only: an unknown one shows nothing.
+type RunStopReason = 'harness-missing' | 'harness-signed-out' | 'node-too-old'
+  | 'sandbox-unavailable' | 'unsandboxed-refused' | 'token-refused';
+const LISTEN_BLOCKED_SHOWN: ReadonlySet<string> = new Set([
+  'harness-signed-out', 'node-too-old', 'sandbox-unavailable', 'unsandboxed-refused',
+]);
+const RUN_STOPPED_SHOWN: ReadonlySet<string> = new Set(['token-refused']);
+// The stops whose copy names only the agent (each has a OneLine twin).
+const RUN_STOP_COPY: Partial<Record<RunStopReason, string>> = {
+  'node-too-old': 'agentByo.listen.nodeTooOld',
+  'sandbox-unavailable': 'agentByo.listen.sandboxUnavailable',
+  'unsandboxed-refused': 'agentByo.listen.unsandboxedRefused',
+  'token-refused': 'agentByo.listen.tokenRefused',
+};
 const HOSTED_STATUS_POLL_MS = 4000;
 const HOSTED_STATUS_MAX_TICKS = 15;
 
@@ -470,8 +486,9 @@ const V2AgentBYO: React.FC = () => {
   // F457: the issued agent's run stopped before checking in because its
   // harness wasn't on that computer. F515 adds a signed-out harness and an old
   // Node. Keyed to the issue, like stallReport.
+  // F571 adds the two sandbox stops and a key the instance refused.
   const [harnessMissingReport, setHarnessMissingReport] = useState<{
-    key: object; reason: 'harness-missing' | 'harness-signed-out' | 'node-too-old'; harness: string | null;
+    key: object; reason: RunStopReason; harness: string | null;
   } | null>(null);
   // Which command the person copied for THIS issue, and whether they have been
   // waiting long enough to say so. A stranger copied the MCP snippet three
@@ -1508,14 +1525,18 @@ const V2AgentBYO: React.FC = () => {
         const forThisIssue = (row: StopRow) => String(row.agentName || '').toLowerCase() === issued.agentName.toLowerCase()
           && String(row.instanceId || 'default').toLowerCase() === String(issued.instanceId || 'default').toLowerCase()
           && Boolean(row.at) && new Date(row.at as string).getTime() >= issued.issuedAt - 60_000;
-        // F515: a signed-out harness or an old Node arrives as listenBlocked.
-        // Whichever report this agent's run made last is the one to show.
+        // F515: a signed-out harness or an old Node arrives as listenBlocked,
+        // and F571's sandbox stops too. A key the instance refused can't sign
+        // that report, so it arrives as runStopped. Whichever report this
+        // agent's run made last is the one to show.
         const reports = [
           ...(Array.isArray(data?.harnessMissing) ? data.harnessMissing : [])
             .filter(forThisIssue).map((row: StopRow) => ({ ...row, reason: 'harness-missing' })),
           ...(Array.isArray(data?.listenBlocked) ? data.listenBlocked : [])
-            .filter((row: StopRow) => forThisIssue(row)
-              && (row.reason === 'harness-signed-out' || row.reason === 'node-too-old')),
+            .filter((row: StopRow) => forThisIssue(row) && LISTEN_BLOCKED_SHOWN.has(row.reason as string)),
+          ...(Array.isArray(data?.runStopped) ? data.runStopped : [])
+            .filter((row: StopRow) => forThisIssue(row) && RUN_STOPPED_SHOWN.has(row.reason as string))
+            .map((row: StopRow) => ({ ...row, harness: null })),
         ].sort((a: StopRow, b: StopRow) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime());
         const latest = reports[0];
         setHarnessMissingReport(latest ? {
@@ -2677,8 +2698,8 @@ const V2AgentBYO: React.FC = () => {
                 {harnessMissingReport?.key === issued
                   ? (
                     <span data-testid="byo-listen-harness-missing">
-                      {harnessMissingReport.reason === 'node-too-old'
-                        ? t(lineCopy('agentByo.listen.nodeTooOld'), { name: issued.agentName })
+                      {RUN_STOP_COPY[harnessMissingReport.reason]
+                        ? t(lineCopy(RUN_STOP_COPY[harnessMissingReport.reason] as string), { name: issued.agentName })
                         : harnessMissingReport.reason === 'harness-signed-out' && harnessMissingReport.harness
                           ? t(lineCopy('agentByo.listen.harnessSignedOut'), {
                             name: issued.agentName,

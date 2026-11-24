@@ -171,6 +171,56 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
   });
 
+  // F571: a sandbox this computer can't start, --unsandboxed where it doesn't
+  // apply, and a key the instance refused each stop the run; the page says
+  // which, and what to do next. A refused key arrives as runStopped, since it
+  // can't sign the listen-blocked report.
+  test('says the sandbox stopped it, the flag did not apply, or the key was refused', async () => {
+    jest.useFakeTimers();
+    await issueToken();
+    const now = Date.now();
+    const read = (fields) => ({ data: { issued: true, connected: false, lastUsedAt: null, connectedAgent: null, ...fields } });
+
+    axios.get.mockResolvedValueOnce(read({
+      listenBlocked: [{ agentName: 'sam-claude', instanceId: 'default', reason: 'sandbox-unavailable', harness: null, at: new Date(now + 1000).toISOString() }],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: that computer can’t start the sandbox Commonly runs it in. The terminal where you ran it says what to install or change.',
+    );
+    expect(screen.getByTestId('byo-listen-waiting')).toHaveClass('v2-byo__listen-note--stopped');
+
+    axios.get.mockResolvedValueOnce(read({
+      listenBlocked: [{ agentName: 'sam-claude', instanceId: 'default', reason: 'unsandboxed-refused', harness: null, at: new Date(now + 2000).toISOString() }],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: --unsandboxed is only for native Windows and for a private Codex agent on Linux.',
+    );
+
+    // The newest report wins, across both lists.
+    axios.get.mockResolvedValueOnce(read({
+      listenBlocked: [{ agentName: 'sam-claude', instanceId: 'default', reason: 'unsandboxed-refused', harness: null, at: new Date(now + 2000).toISOString() }],
+      runStopped: [{ agentName: 'sam-claude', instanceId: 'default', reason: 'token-refused', at: new Date(now + 3000).toISOString() }],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-harness-missing')).toHaveTextContent(
+      'sam-claude’s command stopped: Commonly didn’t accept its key.',
+    );
+
+    // Another agent's run, a code this build doesn't show, or a stop from
+    // before this issue says nothing.
+    axios.get.mockResolvedValueOnce(read({
+      runStopped: [
+        { agentName: 'old-agent', instanceId: 'default', reason: 'token-refused', at: new Date(now + 4000).toISOString() },
+        { agentName: 'sam-claude', instanceId: 'default', reason: 'no-such-code', at: new Date(now + 4000).toISOString() },
+        { agentName: 'sam-claude', instanceId: 'default', reason: 'token-refused', at: new Date(now - 10 * 60_000).toISOString() },
+      ],
+    }));
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.queryByTestId('byo-listen-harness-missing')).not.toBeInTheDocument();
+  });
+
   test('waits, then flips to verified when THIS agent checks in after issuance', async () => {
     jest.useFakeTimers();
     await issueToken();
