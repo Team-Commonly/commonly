@@ -831,6 +831,82 @@ describe('OAuth Controller', () => {
       const user = await User.findOne({ email: 'octo@example.com' });
       expect(user.username).toMatch(/^octo-dev-[0-9a-f]{4}$/);
     });
+
+    // F595: a username is a mention handle, so an OAuth signup gets one inside
+    // the pattern register and rename enforce, derived the way register derives.
+    describe('a new account\'s username follows the register and rename pattern (F595)', () => {
+      const USERNAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,39}$/;
+
+      const githubSignup = async (profile) => {
+        await seedState();
+        mockGithubProfile(profile);
+        await oauthController.oauthCallback(callbackReq(), mockRes());
+        return (await User.findOne({ email: profile.email }).lean()).username;
+      };
+
+      it('normalises a GitHub login with dots, underscores and capitals', async () => {
+        const username = await githubSignup({ login: 'Octo_Dev.X', email: 'octo@example.com' });
+        expect(username).toBe('octo-dev-x');
+      });
+
+      it('falls back to the email when the login is one character', async () => {
+        const username = await githubSignup({ login: 'a', email: 'octo.cat@example.com' });
+        expect(username).toBe('octo-cat');
+      });
+
+      it('falls back to the email when the login is all symbols', async () => {
+        const username = await githubSignup({ login: '_.-_', email: 'octo.cat@example.com' });
+        expect(username).toBe('octo-cat');
+      });
+
+      it('suffixes a one-character email local part when there is no login', async () => {
+        const username = await githubSignup({ login: '', email: 'a@example.com' });
+        expect(username).toMatch(/^a-[0-9a-f]{4,8}$/);
+        expect(username).toMatch(USERNAME_PATTERN);
+      });
+
+      it('uses "user" plus a suffix when the login and the email local part are all symbols', async () => {
+        const username = await githubSignup({ login: '__', email: '_.@example.com' });
+        expect(username).toMatch(/^user-[0-9a-f]{4,8}$/);
+      });
+
+      it('keeps a taken long login inside 40 characters with its suffix', async () => {
+        const login = 'abcdefghij-abcdefghij-abcdefghij-abcdef'; // 39, GitHub's max
+        const base = login.slice(0, 30);
+        await User.create({ username: base, email: 'other@example.com', password: 'hashed-pass' });
+        const username = await githubSignup({ login, email: 'octo@example.com' });
+        expect(username).toMatch(new RegExp(`^${base}-[0-9a-f]{4,8}$`));
+        expect(username.length).toBeLessThanOrEqual(40);
+        expect(username).toMatch(USERNAME_PATTERN);
+      });
+
+      it('derives a Google signup from the email, the way register does, not the display name', async () => {
+        process.env.GOOGLE_OAUTH_CLIENT_ID = 'g-client';
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'g-secret';
+        await seedState({ provider: 'google' });
+        axios.post.mockResolvedValueOnce({ data: { access_token: 'google-access-token' } });
+        axios.get.mockResolvedValue({ data: {
+          sub: 'google-f595', email: 'zoe.a+news@example.com', email_verified: true, name: 'Zoë Ångström',
+        } });
+        await oauthController.oauthCallback({ ...callbackReq(), params: { provider: 'google' } }, mockRes());
+        const user = await User.findOne({ email: 'zoe.a+news@example.com' }).lean();
+        expect(user.username).toBe('zoe-a');
+      });
+
+      it('never renames an existing OAuth account whose old name is outside the pattern', async () => {
+        await User.create({
+          username: 'octo.dev_old',
+          email: 'octo@example.com',
+          verified: true,
+          authProviders: [{ provider: 'github', providerId: '4242', email: 'octo@example.com', linkedAt: new Date() }],
+        });
+        await seedState();
+        mockGithubProfile({ login: 'Octo_Dev.X' });
+        await oauthController.oauthCallback(callbackReq(), mockRes());
+        const user = await User.findOne({ email: 'octo@example.com' }).lean();
+        expect(user.username).toBe('octo.dev_old');
+      });
+    });
   });
 
   describe('exchangeOAuthCode', () => {
