@@ -228,7 +228,6 @@ test('chart and dynamic gateways no longer consume a direct Anthropic key or rou
   ]) {
     assert.doesNotMatch(fs.readFileSync(path.join(chart, file), 'utf8'), keyRef);
   }
-  assert.doesNotMatch(fs.readFileSync(path.join(root, 'backend/services/gatewayProvisionerServiceK8s.ts'), 'utf8'), /ANTHROPIC_API_KEY|anthropic-api-key/);
 });
 
 // F92: with aiProviders.anthropic the bot's model is Claude Haiku. A Claude

@@ -17,12 +17,6 @@ const mongoose = require('mongoose');
 jest.mock('../../../services/agentMemoryService', () => ({
   buildMemoryDigestBundle: jest.fn(() => ({})),
 }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  getAgentSessionSizes: jest.fn(),
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(() => 'acct'),
-}));
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(() => ({ runtime: 'moltbot' })),
 }));

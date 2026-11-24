@@ -16,19 +16,12 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = 'user-1';
   next();
 });
-jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/PodAsset', () => ({}));
 jest.mock('../../../models/Gateway', () => ({}));
 jest.mock('../../../models/SkillRating', () => ({}));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
 jest.mock('../../../services/podAssetService', () => ({ upsertImportedSkillAsset: jest.fn() }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  getOpenClawConfigPath: jest.fn(),
-  syncOpenClawSkills: jest.fn(),
-  getGatewaySkillEntries: jest.fn(),
-  syncGatewaySkillEnv: jest.fn(),
-}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');

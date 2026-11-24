@@ -25,12 +25,6 @@ const { Pool } = pg.adapters.createPg();
 const mockPool = new Pool();
 jest.mock('../../config/db-pg', () => ({ pool: mockPool }));
 jest.mock('../../config/socket', () => ({ getIO: () => ({ to: () => ({ emit: jest.fn() }) }) }));
-jest.mock('../../services/agentProvisionerService', () => ({
-  getAgentSessionSizes: jest.fn(),
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(() => 'acct'),
-}));
 jest.mock('../../services/agentMemoryService', () => ({ buildMemoryDigestBundle: jest.fn(() => ({})) }));
 jest.mock('../../services/nativeRuntimeService', () => ({ runAgent: jest.fn() }));
 

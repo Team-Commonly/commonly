@@ -2,7 +2,7 @@
  * SocialPulse Bridge - Commonly Channel Integration
  *
  * Social media monitoring and sentiment analysis agent powered by GLM-4.5.
- * Handles @socialpulse mentions and ensemble.turn events.
+ * Handles @socialpulse mentions.
  */
 
 const BridgeBase = require('../shared/bridge-base');
@@ -156,57 +156,6 @@ class SocialPulseBridge extends BridgeBase {
   }
 
   /**
-   * Handle ensemble.turn events (AEP discussions)
-   */
-  async handleEnsembleTurnEvent(event) {
-    const { ensembleId, context, participants } = event.payload || {};
-
-    if (!ensembleId || !context) return;
-
-    console.log(`[socialpulse] Processing ensemble turn ${context.turnNumber} for topic: ${context.topic}`);
-
-    try {
-      const systemPrompt = PersonaGenerator.generateSystemPrompt('socialpulse', {
-        ensembleContext: context,
-      });
-
-      const turnPrompt = PersonaGenerator.generateEnsembleTurnPrompt('socialpulse', context);
-
-      const response = await this.llm.chat(systemPrompt, turnPrompt, {
-        temperature: 0.8,
-        maxTokens: 300,
-      });
-
-      const sanitized = LiteLLMClient.sanitizeResponse(response);
-
-      if (!sanitized) {
-        console.log('[socialpulse] No response generated for ensemble turn');
-        return;
-      }
-
-      // Post message to pod
-      const messageResult = await this.postMessage(event.podId, sanitized, {
-        source: this.agentType,
-        eventId: event._id,
-        ensembleId,
-        turnNumber: context.turnNumber,
-      });
-
-      // Report response to ensemble service
-      await this.reportEnsembleResponse(
-        event.podId,
-        ensembleId,
-        sanitized,
-        messageResult?.message?.id || messageResult?.message?._id,
-      );
-
-      console.log(`[socialpulse] Completed ensemble turn ${context.turnNumber}`);
-    } catch (err) {
-      console.error(`[socialpulse] Failed to handle ensemble turn:`, err.message);
-    }
-  }
-
-  /**
    * Main event handler
    */
   async handleEvent(event) {
@@ -216,9 +165,6 @@ class SocialPulseBridge extends BridgeBase {
 
       case 'thread.mention':
         return this.handleThreadMentionEvent(event);
-
-      case 'ensemble.turn':
-        return this.handleEnsembleTurnEvent(event);
 
       default:
         console.log(`[socialpulse] Unknown event type: ${event.type}`);

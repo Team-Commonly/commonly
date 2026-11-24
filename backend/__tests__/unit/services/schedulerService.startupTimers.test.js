@@ -29,7 +29,7 @@ describe('scheduler: stop() clears the startup timers', () => {
 
   it('arms the startup runs on start()', () => {
     scheduler.start();
-    expect(jest.getTimerCount()).toBeGreaterThanOrEqual(8);
+    expect(jest.getTimerCount()).toBeGreaterThanOrEqual(7);
   });
 
   it('leaves no timer pending after stop(), so the catalog refresh never fires', () => {

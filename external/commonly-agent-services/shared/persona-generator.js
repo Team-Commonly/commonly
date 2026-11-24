@@ -144,60 +144,12 @@ class PersonaGenerator {
       parts.push(options.conversationHistory);
     }
 
-    // Ensemble context if provided
-    if (options.ensembleContext) {
-      parts.push('\n## Ensemble Discussion');
-      parts.push(`Topic: ${options.ensembleContext.topic}`);
-      parts.push(`Turn: ${options.ensembleContext.turnNumber}`);
-      if (options.ensembleContext.isStarter) {
-        parts.push('You are starting this discussion. Set the tone and introduce the topic.');
-      } else {
-        parts.push('Build on what others have said. Add new insights or perspectives.');
-      }
-      if (options.ensembleContext.keyPoints?.length > 0) {
-        parts.push('\nKey points so far:');
-        options.ensembleContext.keyPoints.forEach((kp) => {
-          parts.push(`- ${kp.content}`);
-        });
-      }
-    }
-
     // General guidelines
     parts.push('\n## Guidelines');
     parts.push('- Be helpful and provide value');
     parts.push('- Keep responses concise but complete');
     parts.push('- Do not mention internal tools, channels, or errors');
     parts.push('- Reply with the final answer only');
-
-    return parts.join('\n');
-  }
-
-  /**
-   * Generate an ensemble turn prompt
-   */
-  static generateEnsembleTurnPrompt(agentType, turnContext) {
-    const persona = AGENT_PERSONAS[agentType];
-    const name = persona?.name || agentType;
-    const emoji = persona?.emoji || '🤖';
-
-    const parts = [];
-
-    parts.push(`${emoji} As ${name}, contribute to this discussion about: ${turnContext.topic}`);
-
-    if (turnContext.isStarter) {
-      parts.push('\nYou are starting this discussion. Introduce the topic and share your initial perspective.');
-    } else {
-      parts.push('\nBuild on the conversation. Add your unique perspective based on your expertise.');
-    }
-
-    if (turnContext.recentHistory?.length > 0) {
-      parts.push('\n## What others have said:');
-      turnContext.recentHistory.slice(-5).forEach((msg) => {
-        parts.push(`${msg.agentType}: ${msg.content?.substring(0, 300)}`);
-      });
-    }
-
-    parts.push('\nProvide your contribution in 2-4 sentences. Be insightful and build on the discussion.');
 
     return parts.join('\n');
   }

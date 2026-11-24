@@ -16,7 +16,7 @@ const NOT_MONGO_MODELS = ['ToolCall.ts', 'integrationPublicConfig.ts'];
 
 const MONGO_MODELS = [
   'AccountDeletion', 'Activity', 'AdminUserMutationLock', 'AgentAsk', 'AgentComputerTakeover',
-  'AgentCredential', 'AgentDigestState', 'AgentEnsembleState', 'AgentEvent', 'AgentFirstContact',
+  'AgentCredential', 'AgentDigestState', 'AgentEvent', 'AgentFirstContact',
   'AgentInstallation', 'AgentMemory', 'AgentPodReadCursor', 'AgentProfile', 'AgentProviderKey',
   'AgentRegistry', 'AgentRun', 'AgentRuntimeObservation', 'AgentTaskRowWakeState', 'AgentTaskWakeState',
   'AgentTemplate', 'Announcement', 'App', 'AppInstallation', 'ApprovalAction',

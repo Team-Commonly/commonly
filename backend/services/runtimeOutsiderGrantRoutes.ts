@@ -3,7 +3,6 @@
 import type { Request } from 'express';
 import Post from '../models/Post';
 import AgentAsk from '../models/AgentAsk';
-import AgentEnsembleState from '../models/AgentEnsembleState';
 import Message from '../models/pg/Message';
 
 type RouteClass = 'read' | 'pod_write' | 'grant' | 'own_state' | 'outward';
@@ -27,10 +26,6 @@ const messageIdPod: PodResolver = async (req) => {
 const askPod: PodResolver = async (req) => {
   const ask = await AgentAsk.findOne({ requestId: req.params.requestId }).select('podId').lean();
   return ask?.podId ? String(ask.podId) : null;
-};
-const ensemblePod: PodResolver = async (req) => {
-  const state = await AgentEnsembleState.findById(req.body?.ensembleId).select('podId').lean();
-  return state?.podId ? String(state.podId) : null;
 };
 const privateMemory = (req: Request): boolean => {
   const { content, sections, mode, sourceRuntime } = req.body || {};
@@ -91,8 +86,6 @@ const spawn = `${runtime}/spawn-credentials`;
 // Credential maintenance reaches only the authenticated seat. A minted child
 // resolves the same agent identity in agentRuntimeAuth and inherits this check.
 add(spawn, 'own_state', ['GET /policy', 'POST /', 'POST /:id/renew', 'POST /revoke-orphans', 'DELETE /:id']);
-// The handler ignores :podId and writes to the ensemble named in the body.
-add('/api/pods', 'pod_write', ['POST /:podId/ensemble/response'], ensemblePod);
 add('/api/pods', 'read', ['GET /:podId/record', 'GET /:podId/record/tasks/:taskId']);
 add('/api/messages', 'read', ['GET /threads/state']);
 add('/api/messages', 'pod_write', [

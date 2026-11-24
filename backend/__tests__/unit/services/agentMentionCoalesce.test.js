@@ -11,12 +11,6 @@ const mongoose = require('mongoose');
 jest.mock('../../../services/agentMemoryService', () => ({
   buildMemoryDigestBundle: jest.fn(() => ({})),
 }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  getAgentSessionSizes: jest.fn(),
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(() => 'acct'),
-}));
 jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn() }));
 jest.mock('../../../services/chatSummarizerService', () => ({
   constructor: { getLatestPodSummary: jest.fn() },
@@ -228,9 +222,14 @@ describe('a polled target', () => {
     });
 
     test('a retried row with joined messages reads them all on its next turn', async () => {
-      const payload = AgentEventService.buildContextOverflowRetryPayload(carrying({
-        coalesced: [{ messageId: '72', userId: String(ALICE), username: 'alice', rawContent: 'second' }],
-      }), { reason: 'context overflow' });
+      // A row the retired OpenClaw overflow recovery re-enqueued carries this
+      // count; stored rows can still hold one.
+      const payload = {
+        ...carrying({
+          coalesced: [{ messageId: '72', userId: String(ALICE), username: 'alice', rawContent: 'second' }],
+        }),
+        _contextOverflowRetryCount: 1,
+      };
       await mention({ content: '@codex a waiting message' });
       await enqueue(payload);
 

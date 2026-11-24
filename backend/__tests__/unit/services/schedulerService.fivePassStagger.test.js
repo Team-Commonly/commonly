@@ -1,7 +1,7 @@
 // The heavier five-minute passes each start on their own minute. On
 // 2026-11-02 two readiness windows lined up with the :30 and :35 ticks, where
-// ensemble, onboarding-silence, installable-reconciler and stalled-connect all
-// started in the same second. These tests read the schedules through
+// the ensemble scheduler (since retired), onboarding-silence,
+// installable-reconciler and stalled-connect all started in the same second. These tests read the schedules through
 // node-cron's own matcher, the code that decides when a job fires: node-cron
 // 3.0.3 accepts `2-59/5` but fires it at :05, :10, …, so checking the strings
 // alone would pass a schedule that still stacks.
@@ -10,9 +10,8 @@ jest.mock('node-cron', () => ({
   schedule: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })),
 }));
 
-// The services the five passes call, so each registered callback can be
+// The services the four passes call, so each registered callback can be
 // traced to its job.
-jest.mock('../../../services/agentEnsembleService', () => ({ processScheduled: jest.fn() }));
 jest.mock('../../../services/onboardingAlertService', () => ({
   runOnce: jest.fn().mockResolvedValue({ opened: [], resolved: [] }),
 }));
@@ -61,7 +60,6 @@ describe('five-minute pass stagger', () => {
 
   it('runs each pass on its own schedule: the callback registered under each expression calls that pass', async () => {
     const jobs = {
-      ensemble: [FIVE_MINUTE_PASS_SCHEDULES.ensemble, require('../../../services/agentEnsembleService').processScheduled],
       onboardingSilence: [FIVE_MINUTE_PASS_SCHEDULES.onboardingSilence, require('../../../services/onboardingAlertService').runOnce],
       stalledConnect: [FIVE_MINUTE_PASS_SCHEDULES.stalledConnect, require('../../../services/stalledConnectService').scan],
       installableReconcile: [FIVE_MINUTE_PASS_SCHEDULES.installableReconcile, require('../../../services/installable/installableReconciler').sweep],

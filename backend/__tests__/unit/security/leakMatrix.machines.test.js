@@ -1,11 +1,9 @@
 /**
- * B1 leak matrix — machine and gateway reads:
+ * B1 leak matrix — machine reads:
  *   GET /api/machines      (owner / stranger / admin: each lists its own)
  *   GET /api/machines/me   (the owner's machine via its REAL cm_daemon_ bearer; human JWTs are 401)
- *   GET /api/gateways      (admin only)
  * Each machine's daemon AgentCredential is real: its raw bearer is a boundary
- * sentinel and its stored tokenHash is registered as a sentinel by value. A
- * gateway row carries metadata.gatewayToken as a sentinel.
+ * sentinel and its stored tokenHash is registered as a sentinel by value.
  * Skipped routes: none. Harness and KNOWN_EXPOSURES: __tests__/utils/leakMatrix.js.
  */
 jest.mock('../../../middleware/auth', () => require('../../utils/leakMatrix').authMock);

@@ -62,11 +62,6 @@ jest.mock('../../../models/Gateway', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(() => ({ runtime: 'moltbot' })),
 }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(() => 'acct'),
-}));
 jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn() }));
 // Webhook delivery goes through the open-destination guard. The mock runs the
 // real guard unless a test overrides it, so a refusal arm exercises the real one.

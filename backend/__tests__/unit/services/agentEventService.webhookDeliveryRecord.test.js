@@ -22,11 +22,6 @@ jest.mock('../../../services/agentDigestFoldService', () => ({
   readFoldedDigest: jest.fn().mockResolvedValue(null),
   settleFoldedDigest: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock('../../../services/agentProvisionerService', () => ({
-  clearAgentRuntimeSessions: jest.fn(),
-  restartAgentRuntime: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(),
-}));
 
 const AgentEvent = require('../../../models/AgentEvent');
 const { postToPublicAddress } = require('../../../services/outboundUrlGuard');

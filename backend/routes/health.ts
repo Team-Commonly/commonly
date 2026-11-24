@@ -3,8 +3,6 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
-const { platformIpRateLimit } = require('../middleware/platformRateLimit');
-// eslint-disable-next-line global-require
 const { pool: pgPool } = require('../config/db-pg');
 // The mount probe, not the boot block's flag — see pgBootService.routerIsMounted
 // for why those are two different facts (TASK-168).
@@ -286,45 +284,6 @@ router.get('/ready', async (_req: unknown, res: Res) => {
   } catch (error) {
     const e = error as { message?: string };
     return res.status(503).json({ status: 'not_ready', error: e.message });
-  }
-});
-
-// Anonymous, and each hit makes a request to the agent gateway, so it gets the
-// IP tier for health checks from the legacy agent manager.
-const gatewayHealthLimit = platformIpRateLimit({
-  windowMs: 60 * 1000,
-  limit: 60,
-  label: '60 gateway health checks per minute per IP',
-});
-
-router.get('/clawdbot', gatewayHealthLimit, async (_req: unknown, res: Res) => {
-  // The chart no longer sets this (ADR-021 Part B). Unset means no gateway, so
-  // an anonymous hit must not probe a hard-coded address.
-  const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL;
-  if (!gatewayUrl) {
-    return res.json({ status: 'not_configured', message: 'Clawdbot gateway not configured' });
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const response = await fetch(`${gatewayUrl}/health`, { signal: controller.signal }).catch(() => null);
-    clearTimeout(timeout);
-
-    if (response && response.ok) {
-      const data = await response.json().catch(() => ({})) as { version?: string; channels?: unknown[] };
-      return res.json({ status: 'connected', gateway: gatewayUrl, version: data.version || 'unknown', channels: data.channels || [] });
-    }
-
-    const basicResponse = await fetch(gatewayUrl, { method: 'HEAD' }).catch(() => null);
-    if (basicResponse) {
-      return res.json({ status: 'connected', gateway: gatewayUrl, channels: [] });
-    }
-
-    return res.json({ status: 'not_configured', message: 'Clawdbot gateway not reachable' });
-  } catch (error) {
-    const e = error as { message?: string };
-    return res.json({ status: 'error', message: e.message });
   }
 });
 
