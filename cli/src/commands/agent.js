@@ -68,6 +68,7 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
+import { clampHoldToLiveness, longPollWaitMs, wasHeld } from '../lib/long-poll.js';
 import {
   createIdleHeartbeat, createPollLiveness, formatStall, resolveIdleLineMs, resolvePollLivenessMs,
 } from '../lib/poll-liveness.js';
@@ -2275,6 +2276,10 @@ export const performRun = ({
   // How often a seat that keeps polling and finds nothing says so. Undefined
   // reads COMMONLY_IDLE_LINE_MS, then ten minutes (lib/poll-liveness.js).
   idleLineMs,
+  // F597: the wait an empty inbox poll asks the server to hold it for
+  // (lib/long-poll.js). Undefined derives it from the read timeout; 0 turns
+  // the long-poll off. Tests pin a small value.
+  longPollWaitMs: longPollWaitOverride,
 }) => {
   const stateKey = localKey || agentName;
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
@@ -4677,6 +4682,28 @@ export const performRun = ({
   // a 15-minute circuit wait otherwise stays alive until the timer fires,
   // which is why a walk on 2026-11-05 needed repeated signals to end it.
   let tickTimer = null;
+  // F597: an idle seat's inbox poll is held by the server up to this long.
+  // Never so long that the poll-liveness clock reads the hold as a wedge.
+  const longPollWait = clampHoldToLiveness(
+    longPollWaitOverride ?? longPollWaitMs(),
+    resolvePollLivenessMs(pollLivenessMs),
+  );
+  // The held poll in flight, so stop() can end it instead of waiting it out.
+  let holdAbort = null;
+  const STOPPED_HOLD = Symbol('stopped-hold');
+  const heldInboxPoll = async (holdMs) => {
+    holdAbort = new AbortController();
+    try {
+      return await client.get('/api/agents/runtime/events', { ...inboxQuery(), waitMs: holdMs }, {
+        signal: holdAbort.signal,
+      });
+    } catch (error) {
+      if (!running && holdAbort.signal.aborted) return STOPPED_HOLD;
+      throw error;
+    } finally {
+      holdAbort = null;
+    }
+  };
   let tickInFlight = false;
   // stop() returns this: it resolves once the hand-back has answered, whether
   // the idle stop or the in-flight tick's end performs it.
@@ -4721,14 +4748,26 @@ export const performRun = ({
       // Only wake events count: the server's page cap is on wakes, and a
       // carried digest row takes no body (CodeRabbit on #3511).
       // F237: a full carry in an outage claims nothing new (inboxQuery).
-      const page = await client.get('/api/agents/runtime/events', inboxQuery());
+      // F597: with nothing carried, an empty inbox asks the server to hold the
+      // poll (long-poll). A carry is never held: its retry runs on this tick.
+      const holdMs = heldRetry.length || heldGreeting.length ? 0 : longPollWait;
+      const pollStartedAt = Date.now();
+      const page = holdMs > 0 ? await heldInboxPoll(holdMs) : await client.get('/api/agents/runtime/events', inboxQuery());
       pollLiveness.arm();
       // A stall fired while this request hung: the loop has already given up on
       // it, and `agent run` exits in onStall, so its page is left to the requeue.
       // A plain stop() falls through instead, to the group loop's own `running`
       // check, which hands the page back.
       if (pollStalled) return;
+      // stop() ended a held poll: nothing was claimed, nothing to hand back.
+      if (page === STOPPED_HOLD) return;
       const { events = [], inboxCount } = page;
+      // An empty answer the server held: the next poll goes at once, since the
+      // hold was the wait. One that came back fast (an older server that
+      // ignores waitMs) keeps the ordinary interval, so the loop never spins.
+      if (!events.length && wasHeld({ requestedMs: holdMs, elapsedMs: Date.now() - pollStartedAt })) {
+        nextPollDelayMs = 0;
+      }
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
       // A deployed CLI can briefly run against an older server that still
@@ -5301,6 +5340,8 @@ export const performRun = ({
       running = false;
       pollLiveness.stop();
       clearHeldRenewal();
+      // A held poll would otherwise keep the stop waiting for up to its wait.
+      holdAbort?.abort();
       if (tickTimer !== null) {
         clearTimeoutImpl(tickTimer);
         tickTimer = null;

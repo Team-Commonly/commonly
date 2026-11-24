@@ -8,6 +8,7 @@ import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES, rowsPostedSince } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
 import { prependGrantRemovalCue as prependGrantRemovalLines } from './grantRemovalCueService';
+import { notifyAgentEventWaiters } from './agentEventWaiters';
 import {
   JOINABLE_ROW_AGE_MS,
   LIVE_MENTION_LIMIT,
@@ -2716,6 +2717,8 @@ class AgentEventService {
             this.logEventLifecycle('coalesced', {
               eventId: String(joined._id), agentName: scope.agentName, instanceId, podId: safePodId, type,
             });
+            // F597: the joined row is a pending wake, as its own row would be.
+            notifyAgentEventWaiters(joined.agentName, joined.instanceId);
             // The wake a row of its own would have sent. The row's first push
             // can have found no socket, or a replay that failed or filled its
             // page. A push is only a wake: list() still claims atomically.
@@ -2874,6 +2877,13 @@ class AgentEventService {
       attempts: event.attempts,
     });
 
+    // F597: wake this identity's held long-polls. Only a row a poll can claim
+    // as a head (a pending wake, not a digest, not queued for the runner lease
+    // holder). A hint only: the poll's recheck finds the row without it.
+    if (event.status === 'pending' && deliveryMode === 'wake' && !handedToWorker) {
+      notifyAgentEventWaiters(event.agentName, event.instanceId);
+    }
+
     const wsService = getWebSocketService();
     // A queued native turn is the lease holder's, never an external driver's.
     if (wsService && deliveryMode === 'wake' && !handedToWorker) {
@@ -2960,6 +2970,72 @@ class AgentEventService {
     return this.claimPage(options, { onePod: true, includeInboxCount: true });
   }
 
+  // The caller's pending inbox before any pod partition: what claimPage claims
+  // from, and what the long-poll recheck (F597) looks for. Null for an
+  // explicit empty access set (see claimPage).
+  private static pendingInboxQuery({
+    agentName, podId, podIds, instanceId = 'default',
+  }: Pick<ListOptions, 'agentName' | 'podId' | 'podIds' | 'instanceId'>): Record<string, unknown> | null {
+    if (Array.isArray(podIds) && podIds.length === 0 && !podId) return null;
+    const query: Record<string, unknown> = {
+      // String() is the sanitizer for caller-supplied identifiers (claimPage).
+      agentName: String(agentName || '').toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: 'pending',
+      // A queued native turn waits for the runner lease holder (F52), never a
+      // driver polling under the same identity.
+      inProcessQueued: { $ne: true },
+    };
+    if (podIds && Array.isArray(podIds) && podIds.length > 0) {
+      query.podId = { $in: podIds };
+    } else if (podId) {
+      query.podId = podId;
+    }
+    return query;
+  }
+
+  /**
+   * F597: the long-poll's lean recheck. True when claimPage's one-pod path
+   * would find a head to claim: a pending wake with a pod (a digest alone is
+   * never claimed). One indexed existence read, no claim.
+   */
+  static async hasPendingWake(
+    options: Pick<ListOptions, 'agentName' | 'podId' | 'podIds' | 'instanceId'>,
+  ): Promise<boolean> {
+    const query = this.pendingInboxQuery(options);
+    if (!query) return false;
+    const found = await AgentEvent.exists({
+      $and: [query, { podId: { $exists: true, $ne: null } }, { deliveryMode: { $ne: 'digest' } }],
+    });
+    return Boolean(found);
+  }
+
+  /**
+   * F597: put back rows a long-poll claimed but could not hand over, because
+   * its client went away between the claim and the answer. Undoes exactly the
+   * claim: fenced on this delivery's nonce, so a row since acked, requeued or
+   * re-claimed is left alone, and a wake gets back the attempt the claim
+   * charged. Returns how many rows went back to pending.
+   */
+  static async unclaimUnsent(events: EventDoc[]): Promise<number> {
+    let restored = 0;
+    for (const event of events) {
+      const nonce = event?.payload?.deliveryId ?? event?.deliveryNonce;
+      if (!event?._id || typeof nonce !== 'string' || !nonce) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const result = await AgentEvent.updateOne(
+        { _id: String(event._id), status: 'delivered', deliveryNonce: nonce },
+        {
+          $set: { status: 'pending', deliveredAt: null, deliveryNonce: null },
+          ...(event.deliveryMode === 'digest' ? {} : { $inc: { attempts: -1 } }),
+        },
+      ).catch(() => null) as { modifiedCount?: number } | null;
+      if (result?.modifiedCount) restored += 1;
+    }
+    if (restored > 0) notifyAgentEventWaiters(events[0]?.agentName, events[0]?.instanceId);
+    return restored;
+  }
+
   private static async claimPage({
     agentName, podId, podIds, limit = 20, instanceId = 'default', onlyIds,
   }: ListOptions, { onePod = false, includeInboxCount = false } = {}): Promise<InboxPage> {
@@ -2971,26 +3047,13 @@ class AgentEventService {
     // sanitizer; the String() casts are that sanitizer.
     const safeAgentName = String(agentName || '').toLowerCase();
     const safeInstanceId = String(instanceId || 'default');
+    const query = this.pendingInboxQuery({
+      agentName, instanceId, podId, podIds,
+    });
     // An explicit empty access set means the caller has no currently visible
     // pods. It must not fall through to an identity-wide inbox query after an
     // installation or pod membership was removed between enqueue and drain.
-    if (Array.isArray(podIds) && podIds.length === 0 && !podId) {
-      return { events: [], inboxCount: 0 };
-    }
-    const query: Record<string, unknown> = {
-      agentName: safeAgentName,
-      instanceId: safeInstanceId,
-      status: 'pending',
-      // A queued native turn waits for the runner lease holder (F52), never a
-      // driver polling under the same identity.
-      inProcessQueued: { $ne: true },
-    };
-
-    if (podIds && Array.isArray(podIds) && podIds.length > 0) {
-      query.podId = { $in: podIds };
-    } else if (podId) {
-      query.podId = podId;
-    }
+    if (!query) return { events: [], inboxCount: 0 };
 
     let batchQuery = query;
     let inboxCount = 0;
@@ -3242,7 +3305,11 @@ class AgentEventService {
         },
       },
     );
-    if (result.modifiedCount === 1) return 'released';
+    if (result.modifiedCount === 1) {
+      // F597: a handed-back row is claimable again; wake any held poll.
+      notifyAgentEventWaiters(held.agentName, held.instanceId);
+      return 'released';
+    }
     return await AgentEvent.exists({ ...held, attempts: { $gte: ceiling } }) ? 'at_ceiling' : 'not_held';
   }
 

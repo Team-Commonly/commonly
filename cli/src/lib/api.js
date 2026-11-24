@@ -7,6 +7,7 @@
 
 import { resolveInstanceUrl, getToken, resolveInstance } from './config.js';
 import { CLI } from './cli-hint.js';
+import { capTimeoutMs } from './cap-timeout.js';
 
 const headers = (token, extra = {}) => ({
   'Content-Type': 'application/json',
@@ -65,17 +66,9 @@ const handleResponse = async (res, session = null) => {
 // (TASK-025) only handles a fetch that throws, so a timeout throws: it is an
 // ordinary failed request, retried with backoff, and never an ack.
 //
-// Reads get the base timeout; writes and uploads carry a body and a server-side
-// write, so they get a multiple of it. COMMONLY_CAP_TIMEOUT_MS sets the base.
-export const CAP_TIMEOUT_DEFAULT_MS = 30_000;
-const TIMEOUT_SCALE = { read: 1, write: 2, upload: 4 };
-
-export const capTimeoutMs = (kind, { baseMs, env = process.env } = {}) => {
-  const fromEnv = Number(env.COMMONLY_CAP_TIMEOUT_MS);
-  const base = [baseMs, fromEnv].find((value) => Number.isFinite(value) && value > 0)
-    ?? CAP_TIMEOUT_DEFAULT_MS;
-  return Math.min(base * (TIMEOUT_SCALE[kind] || 1), 2_147_483_647);
-};
+// The numbers live in cap-timeout.js: reads get the base timeout, writes and
+// uploads a multiple of it, and COMMONLY_CAP_TIMEOUT_MS sets the base.
+export { CAP_TIMEOUT_DEFAULT_MS, capTimeoutMs } from './cap-timeout.js';
 
 // A caller's own signal (doctor, and the 5s identity and skills reads in the
 // run loop) still applies; the hard timeout is added beside it, never instead.

@@ -53,6 +53,11 @@ const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const { settleIntroOnRequestCheckIn } = require('../services/installIntroOnListen');
+const {
+  clampWaitMs, acquireWaiterSlot, waitForAgentEvent, waitsEnded, trackHeldPoll,
+} = require('../services/agentEventWaiters');
+const { recheckHeldRuntimeAuth } = require('../middleware/agentRuntimeAuthRecheck');
+const { resolveEventPodScope } = require('../services/agentEventPodScope');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -884,6 +889,9 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
  * Original endpoint for agent runtime tokens (cm_agent_*)
  */
 router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  // F597: a held poll's in-flight count (shutdown waits on it). Released once
+  // the handler is done with the hold, never on the client's `close` alone.
+  let untrackHeldPoll: (() => void) | null = null;
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -918,24 +926,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     const onlyIds = typeof req.query.onlyIds === 'string'
       ? req.query.onlyIds.split(',').map((id: string) => id.trim()).filter((id: string) => /^[a-f0-9]{24}$/i.test(id))
       : [];
-    const installationPodIds = (req.agentInstallations || [])
-      .map((item: any) => item?.podId)
-      .filter(Boolean);
-    const dmPods = await Pod.find({
-      type: 'agent-admin',
-      members: agentUser?._id,
-    }).select('_id').lean();
-    const dmPodIds = dmPods.map((pod: any) => pod._id);
-    const podIds = Array.from(
-      new Set(
-        [...installationPodIds, ...dmPodIds]
-          .filter(Boolean)
-          .map((id) => id.toString()),
-      ),
-    );
-    const fallbackPodId = podIds.length === 0 && installation?.podId
-      ? installation.podId
-      : undefined;
+    const { podIds, fallbackPodId } = await resolveEventPodScope({
+      installations: req.agentInstallations || [],
+      installation,
+      agentUserId: agentUser?._id,
+    });
 
     // Hosted-runtime meter (ADR-023 D3.1): once a hosted agent has used its
     // daily turn budget the feed goes empty for it — the worker idles instead
@@ -948,14 +943,128 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       }
     }
 
-    const { events, inboxCount } = await AgentEventService.listInboxPage({
+    let inboxOptions = {
       agentName,
       instanceId,
       podId: fallbackPodId,
       podIds,
       limit,
       ...(onlyIds.length ? { onlyIds } : {}),
-    });
+    };
+    let { events, inboxCount } = await AgentEventService.listInboxPage(inboxOptions);
+
+    // F597: `?waitMs=` holds an empty answer open (agentEventWaiters.ts). A
+    // carry refresh (onlyIds) is never held: it asks about rows it already has.
+    const waitMs = onlyIds.length ? 0 : clampWaitMs(req.query.waitMs);
+    if (waitMs > 0 && events.length === 0 && !inboxCount) {
+      const releaseSlot = acquireWaiterSlot(req.agentTokenHash || `${agentName}\u0000${instanceId}`);
+      if (releaseSlot) {
+        // In flight until the handler is done with the hold: the answer is
+        // out, or a departed client's claim is put back. Not on `close`: a
+        // client can leave mid-claim, with the restore still to run, and
+        // shutdown (hostedShutdownService) must wait for that restore.
+        const untrack = trackHeldPoll();
+        untrackHeldPoll = untrack;
+        // One listener for the whole hold, so a disconnect during the claim
+        // below is seen too. `res` closes on a finished answer as well; only
+        // an unfinished one is a client that went away.
+        let clientGone = false;
+        let wakeOnClose: (() => void) | null = null;
+        const closeListener = () => {
+          if (res.writableFinished) return;
+          clientGone = true;
+          wakeOnClose?.();
+        };
+        res.on('close', closeListener);
+        const onClose = (cb: () => void) => {
+          wakeOnClose = cb;
+          if (clientGone) cb();
+          return () => { wakeOnClose = null; };
+        };
+        let refused = false;
+        // Reads the current scope: a wake below can narrow it.
+        const hasPending = () => AgentEventService.hasPendingWake(inboxOptions);
+        try {
+          const deadline = Date.now() + waitMs;
+          for (;;) {
+            const remaining = deadline - Date.now();
+            // Shutdown can land while this hold was claiming after a wake.
+            if (remaining <= 0 || waitsEnded()) break;
+            // eslint-disable-next-line no-await-in-loop
+            const outcome = await waitForAgentEvent({
+              agentName,
+              instanceId,
+              timeoutMs: remaining,
+              hasPending,
+              onClose,
+            });
+            if (outcome === 'timeout' || outcome === 'closed' || clientGone) break;
+            // The credential was checked up to 25 s ago: a token revoked, an
+            // agent uninstalled or an entitlement lost since must not claim
+            // (answers as a fresh request would here).
+            // eslint-disable-next-line no-await-in-loop
+            const held = await recheckHeldRuntimeAuth(req, res);
+            if (!held) {
+              refused = true;
+              break;
+            }
+            // Claim from the pods the agent is in now, not at the hold's
+            // start: one uninstalled mid-hold drops out, as it would for a
+            // fresh request. The rest of this wait rechecks the same scope.
+            // eslint-disable-next-line no-await-in-loop
+            const scope = await resolveEventPodScope({
+              installations: held.installations,
+              installation: held.installation,
+              agentUserId: agentUser?._id,
+            });
+            inboxOptions = { ...inboxOptions, podIds: scope.podIds, podId: scope.fallbackPodId };
+            // eslint-disable-next-line no-await-in-loop
+            ({ events, inboxCount } = await AgentEventService.listInboxPage(inboxOptions));
+            // A sibling poll can win the row; then this one keeps waiting.
+            if (events.length > 0 || inboxCount) break;
+          }
+        } finally {
+          res.off('close', closeListener);
+          releaseSlot();
+        }
+        if (refused) {
+          // Refused before any claim: nothing to restore.
+          untrack();
+          return undefined;
+        }
+        if (clientGone) {
+          // Nobody is there to receive what the last claim took: put it back,
+          // so a long-poll never leaves a row delivered that it did not return.
+          try {
+            if (events.length > 0) await AgentEventService.unclaimUnsent(events);
+          } finally {
+            untrack();
+          }
+          return undefined;
+        }
+        // Answered below. Until the answer finishes, a socket that closes
+        // puts back what this hold claimed, then releases; a finished answer
+        // only releases. Delivery stays at-least-once: a client that read the
+        // bytes before the close can see these rows again.
+        const answered = events;
+        const onAnswerFinish = () => {
+          res.off('close', onAnswerClose);
+          untrack();
+        };
+        const onAnswerClose = () => {
+          res.off('finish', onAnswerFinish);
+          if (res.writableFinished || answered.length === 0) {
+            untrack();
+            return;
+          }
+          AgentEventService.unclaimUnsent(answered)
+            .catch(() => 0)
+            .finally(untrack);
+        };
+        res.once('finish', onAnswerFinish);
+        res.once('close', onAnswerClose);
+      }
+    }
 
     // Fire the typing indicator now — at gateway-fetch time, not
     // backend-enqueue time. The chat header shows "X is thinking…"
@@ -973,6 +1082,8 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
 
     return res.json({ events, inboxCount });
   } catch (error: any) {
+    // The release is idempotent; this covers a throw anywhere in the hold.
+    untrackHeldPoll?.();
     console.error('Error listing agent events:', error);
     return res.status(500).json({ message: 'Failed to list agent events' });
   }
