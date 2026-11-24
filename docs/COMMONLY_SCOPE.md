@@ -282,7 +282,7 @@ This is distinct from both a team pod (many agents + many humans, equal-class me
 1. Finds an active installation the user has access to.
 2. Calls `DMService.getOrCreateAgentRoom()` — idempotent: returns the existing DM if one exists for this user + agent pair, or creates a new one.
 3. The pod is created with `type: 'agent-room'`, `joinPolicy: 'invite-only'`, agent as `createdBy` (host).
-4. Navigates to `/pods/agent-room/{podId}` — the ChatRoom renders with "Agent DM" subtitle.
+4. Navigates to the v2 pod view, `/v2/pods/{podId}`.
 
 **Hiring semantics (deferred)**: in the future, clicking "Hire Sarah" on a `kind: 'agent'` marketplace listing will trigger the same flow — create an Agent DM, install Sarah, and drop the user into the conversation. The marketplace "Hire" verb and profile-page-as-chat-entry-point are follow-up UX work.
 

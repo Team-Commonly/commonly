@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -81,9 +81,51 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
   for (const [, sources] of imagePolicies) {
     assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
   }
-  const chatRoom = await readFile(resolve(frontendDir, 'src/components/ChatRoom.tsx'), 'utf8');
-  assert.doesNotMatch(chatRoom, /logo:\s*['"]https?:\/\//);
-  assert.doesNotMatch(chatRoom, /src\s*=\s*['"]https?:\/\//);
+  // The policy admits no remote image host, so no source may hard-code one:
+  // an absolute or protocol-relative URL, any scheme case, quoted or in a
+  // template literal, as an image attribute (plain or a JSX string
+  // expression), a logo property, or a CSS url() in a style.
+  const remote = String.raw`(?:https?:)?\/\/`;
+  const remoteChecks = [
+    new RegExp(String.raw`\b(?:src|poster)\s*=\s*(?:\{\s*)?['"\x60]${remote}`, 'i'),
+    // srcSet is a comma-separated candidate list; any candidate may be remote.
+    new RegExp(String.raw`\bsrcSet\s*=\s*(?:\{\s*)?['"\x60](?:[^'"\x60]*,\s*)?${remote}`, 'i'),
+    new RegExp(String.raw`\blogo\s*:\s*['"\x60]${remote}`, 'i'),
+    new RegExp(String.raw`url\(\s*['"\x60]?${remote}`, 'i'),
+  ];
+  const isRemote = (text) => remoteChecks.some((check) => check.test(text));
+  for (const sample of [
+    'src="https://outside.example/a.png"',
+    "src={'https://outside.example/a.png'}",
+    'src={ `https://outside.example/a.png` }',
+    'src="//cdn.example/a.png"',
+    'src="HTTPS://outside.example/a.png"',
+    'srcSet="https://outside.example/a.png 2x"',
+    'srcSet="/a.png 1x, https://outside.example/a.png 2x"',
+    "srcSet={'/a.png 1x,//cdn.example/a.png 2x'}",
+    'poster="https://outside.example/a.png"',
+    "logo: 'https://outside.example/a.png'",
+    "logo : '//cdn.example/a.png'",
+    "backgroundImage: 'url(https://outside.example/a.png)'",
+    'background: url("//cdn.example/a.png")',
+  ]) assert.ok(isRemote(sample), sample);
+  for (const sample of [
+    'src="/logo.png"',
+    "src={'/assets/a.png'}",
+    'src={imageUrl}',
+    'src={`${base}/a.png`}',
+    "logo: '/brand/mark.svg'",
+    'srcSet="/a.png 1x, /a@2x.png 2x"',
+    "backgroundImage: 'url(/assets/a.png)'",
+    'background: url(data:image/png;base64,AAAA)',
+  ]) assert.ok(!isRemote(sample), sample);
+  const sources = (await readdir(resolve(frontendDir, 'src'), { recursive: true }))
+    .filter((file) => /\.(jsx?|tsx?)$/.test(file) && !/(__tests__|\.test\.)/.test(file));
+  assert.ok(sources.length > 100);
+  for (const file of sources) {
+    const source = await readFile(resolve(frontendDir, 'src', file), 'utf8');
+    for (const check of remoteChecks) assert.doesNotMatch(source, check, file);
+  }
 });
 
 test('unhashed signup capture script revalidates instead of inheriting six-month immutable caching', async () => {

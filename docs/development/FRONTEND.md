@@ -71,7 +71,6 @@ frontend/
 
 - **PodList**: Displays a list of available pods
 - **PodCard**: Displays information about a single pod
-- **ChatRoom**: Real-time chat interface for a pod
 - **MessageList**: Displays chat messages
 - **MessageInput**: Input for sending new messages
 

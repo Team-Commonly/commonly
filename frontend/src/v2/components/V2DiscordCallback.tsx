@@ -117,17 +117,8 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
 
       setSuccess(t('auth.discordHandoff.created'));
 
-      // Every pod returns to the v2 pod view, except agent-ensemble: its controls
-      // live only in the room kept at /v2/pods/agent-ensemble/:id.
-      let back = `/v2/pods/${encodeURIComponent(podId)}`;
-      try {
-        const podResponse = await axios.get<{ type?: string }>(`/api/pods/${podId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (podResponse.data.type === 'agent-ensemble') back = `/v2/pods/agent-ensemble/${encodeURIComponent(podId)}`;
-      } catch (podError) {
-        console.error('Error fetching pod info, returning to the pod view:', podError);
-      }
+      // Every pod returns to the v2 pod view.
+      const back = `/v2/pods/${encodeURIComponent(podId)}`;
       setTimeout(() => navigate(back), 2000);
     } catch (err: unknown) {
       // The status only, as for the channel list: the request body now carries

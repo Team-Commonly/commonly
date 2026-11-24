@@ -61,8 +61,6 @@ const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
-// Only an agent-ensemble pod still opens the V1 room, for its ensemble controls (below).
-const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
@@ -247,12 +245,10 @@ const V2LegacyChatRedirect: React.FC = () => {
 // V1 styling on chat pods and "Failed to load chat room" on team pods, so
 // every link of that shape now opens the v2 pod view. An unknown first
 // segment is read as the pod id (`/v2/pods/:podId/<unknown>`).
-// The exception is agent-ensemble: its configure and discussion controls
-// (AgentEnsemblePanel) live only in the V1 room, so that one type keeps it
-// until the v2 pod view has a replacement.
-const V2LegacyPodRoomRedirect: React.FC<{ ensembleRoom: (room: React.ReactNode) => React.ReactNode }> = ({ ensembleRoom }) => {
+// agent-ensemble pods included: their V1 controls were retired with the
+// gateway that ran ensemble turns, and the pod reads like any room.
+const V2LegacyPodRoomRedirect: React.FC = () => {
   const { podType, roomId } = useParams<{ podType: string; roomId: string }>();
-  if (podType === 'agent-ensemble' && roomId) return <>{ensembleRoom(<ChatRoom />)}</>;
   return <V2PodViewRedirect podId={podType && legacyRoomTypes.has(podType) ? roomId : podType} />;
 };
 
@@ -342,12 +338,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podType/:roomId"
-                  element={(
-                    <V2LegacyPodRoomRedirect
-                      /* ChatRoom owns its own sticky AppBar, so the feature header is off. */
-                      ensembleRoom={(room) => feature(t('common.pageTitle.podTools'), room, false, false)}
-                    />
-                  )}
+                  element={<V2LegacyPodRoomRedirect />}
                 />
                 <Route
                   path="chat/:podId"

@@ -36,8 +36,6 @@ jest.mock('../components/V2InviteModal', () => () => null);
 jest.mock('../components/V2FirstRunHero', () => () => null);
 jest.mock('../components/V2MobileTabs', () => () => null);
 
-// The V1 ChatRoom must never mount inside v2 again (finding 1, 11-04).
-jest.mock('../../components/ChatRoom', () => function LegacyChatRoom() { return <div data-testid="v1-chatroom" />; });
 jest.mock('../components/V2PodBoard', () => function PodBoard() { return <div data-testid="v2-board" />; });
 
 // Finding 1 of the 11-04 consistency audit: in-v2 links reached the legacy
@@ -123,10 +121,9 @@ describe('legacy chat routes inside v2', () => {
     await landsOn('/v2/pods/workspace');
   });
 
-  test('an agent-ensemble pod keeps the V1 room, for its ensemble controls', async () => {
-    renderShell('/v2/pods/agent-ensemble/workspace');
-    expect(await screen.findByTestId('v1-chatroom')).toBeInTheDocument();
-    expect(screen.getByTestId('path').textContent).toBe('/v2/pods/agent-ensemble/workspace');
+  test('an agent-ensemble pod opens the v2 pod view like any room', async () => {
+    renderShell('/v2/pods/agent-ensemble/workspace?message=m-3');
+    await landsOn('/v2/pods/workspace?message=m-3');
   });
 
   test('the v2 board route is untouched', async () => {

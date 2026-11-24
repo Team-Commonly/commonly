@@ -155,9 +155,10 @@ const axiosMock = (() => {
  * Intended disclosures — not leaks. config.connectCode is the one-time enable
  * code a Telegram connector's owner pastes into Telegram. It is allowed exactly
  * where a frontend surface reads it, and nowhere else:
- *  - GET /api/integrations/:podId (owner/member/admin): ChatRoom's pod
- *    integrations list (frontend/src/components/ChatRoom.tsx:957, :1184 fetch;
- *    :1395 reads existingIntegration.config.connectCode). A stranger is 403.
+ *  - GET /api/integrations/:podId (owner/member/admin): read by the legacy
+ *    ChatRoom's pod integrations list until that room was retired; no frontend
+ *    surface reads it there now, so this one could be withdrawn. A stranger
+ *    is 403.
  *  - GET /api/installables (owner): the Connectors page builds each catalog
  *    row's connector from entry.integration (V2ConnectorsPage.tsx:215 fetch,
  *    :782-790 connectorForEntry, :794-799 items) and reads connectCode in

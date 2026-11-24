@@ -187,12 +187,10 @@ identical pair as evidence.**
 
 Route shapes that cost time to rederive:
 
-- `/v2/pods/<podType>/<podId>` — `<podType>` is the **real** pod type (`team`, `agent-room`, …),
-  not the literal string `pod`. A wrong type renders the not-found shell with no error.
-- The pod route renders the legacy `ChatRoom` (`frontend/src/v2/V2App.tsx` →
-  `frontend/src/components/ChatRoom.tsx`). **The connector/integration cards live in that
-  component's members sidebar** (~line 3452), not in a `V2*` component; `/v2/connectors` is the
-  other surface that lists them.
+- The pod route is `/v2/pods/<podId>`. The old `/v2/pods/<podType>/<podId>` shape redirects
+  there for every pod type, and a first segment that is not a pod type is read as the pod id
+  (`V2LegacyPodRoomRedirect` in `frontend/src/v2/V2App.tsx`). The legacy MUI `ChatRoom` that
+  shape used to mount was removed on 2026-11-24; `/v2/connectors` lists the connectors.
 
 ### Capturing something that is below the fold — `--selector`
 
