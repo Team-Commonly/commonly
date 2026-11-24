@@ -89,6 +89,49 @@ export const classifyTrigger = (event, recentMessages) => {
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
+// A board wake about a row this seat owns: it is the assignee or holds the
+// claim, and someone else created or changed that row (F592). It rides
+// message.posted, but it names this seat as surely as a mention does, so the
+// cascade governor gives it the addressed grace. It still counts toward the
+// streak, so two seats editing each other's rows stop at cap + grace per
+// window. Wakes about a seat's previous or dependent rows stay broadcasts. A
+// board wake whose reason the CLI can't classify (missing, or one the kernel
+// adds later) fails toward delivery and takes the grace too.
+const NOT_OWNED_WAKE_REASONS = new Set(['prevAssignee', 'prevClaimant', 'dependentAssignee', 'dependentClaimant']);
+export const isOwnedWorkWake = (payload) => (
+  payload?.boardWake === true && !NOT_OWNED_WAKE_REASONS.has(payload?.wakeReason)
+);
+
+// The one grace rule: admit() gives the addressed grace to these, and the
+// batch ranking reads the same predicate, so the page's pick never hides a
+// grace an entry in it would have had alone.
+export const takesAddressedGrace = (eventType, payload) => (
+  ADDRESSED_EVENT_TYPES.has(eventType) || isOwnedWorkWake(payload)
+);
+
+// The inbox batch prices one cascade admission for its whole page, on the
+// entry ranked first here, earliest on a tie:
+//   0. a mention with no dmKind: exempt from the cap (the kernel dampens it);
+//   1. an entry that takes the addressed grace: a mention, a DM, or an
+//      owned-work board wake (F592): cap + grace;
+//   2. a payload flagged addressed: no grace in admit(), but still ahead of a
+//      plain broadcast, as before;
+//   3. otherwise the page's first entry.
+// Without the owned-work case a broadcast sibling decided the page and refused
+// the assignment with it; without rank 0 first, an owned wake past cap + grace
+// refused an exempt mention; and with the flag ahead of rank 1, a flagged
+// entry refused an owned wake at the plain cap.
+const admissionRank = (event) => {
+  if (MENTION_EVENT_TYPES.has(event.type) && !event.payload?.dmKind) return 0;
+  if (takesAddressedGrace(event.type, event.payload)) return 1;
+  if (event.payload?.addressed === true) return 2;
+  return 3;
+};
+export const pickAdmissionEntry = (wakingEntries) => wakingEntries.reduce(
+  (best, entry) => (best === undefined || admissionRank(entry.event) < admissionRank(best.event) ? entry : best),
+  undefined,
+);
+
 /**
  * A person @-mentioned this seat in a pod (ADR-018 D9.2): the one wake that
  * carries unread message bodies. `trigger` is classifyTrigger's verdict, so an
@@ -270,7 +313,7 @@ export const createCascadeGovernor = ({
     admit(podId, trigger, eventType, payload = {}) {
       if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
-      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
+      const addressed = takesAddressedGrace(eventType, payload);
       if (MENTION_EVENT_TYPES.has(eventType) && !payload?.dmKind) {
         // Named mentions are bounded upstream by the kernel's shared
         // bot-to-bot mention dampener. A DM emits chat.mention too, but its

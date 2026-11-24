@@ -31,6 +31,8 @@ import {
   splitForChat,
   deliverChatReply,
   frameDecisionForkRule,
+  pickAdmissionEntry,
+  takesAddressedGrace,
 } from '../src/lib/enforcement.js';
 
 describe('decision-fork prompt rule', () => {
@@ -306,6 +308,95 @@ describe('cascade governor — addressed grace', () => {
 
     expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
     expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+  });
+
+  // F592: a task assigned to this seat is addressed to it by definition. In a
+  // staging walk the assignee wake (message.posted, boardWake, wakeReason
+  // assignee, dmKind agent-agent) arrived as the third agent-triggered turn and
+  // was refused at the plain cap, so the assignee only ran on the kernel's
+  // re-wake 5 min later. It now takes the addressed grace: still in the streak,
+  // still bounded at cap + grace. Other board wakes stay broadcasts.
+  it('gives the addressed grace to a board wake that assigns or hands this seat work, and only that', () => {
+    const owned = (wakeReason) => ({
+      boardWake: true, wakeReason, taskId: 'TASK-001', taskKind: 'created', dmKind: 'agent-agent',
+    });
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 3, 'message.posted');
+
+    const assignee = gov.admit('pod', 'agent', 'message.posted', owned('assignee'));
+    expect(assignee).toMatchObject({ allowed: true, addressed: true, graceApplied: true });
+    expect(gov.admit('pod', 'agent', 'message.posted', owned('claimant')).allowed).toBe(true);
+
+    for (const reason of ['prevAssignee', 'prevClaimant', 'dependentAssignee', 'dependentClaimant']) {
+      expect(gov.admit('pod', 'agent', 'message.posted', owned(reason))).toMatchObject({ allowed: false, addressed: false });
+    }
+    // A board wake the CLI can't classify (no reason, or one added later)
+    // fails toward delivery: it takes the grace, still bounded.
+    for (const reason of [undefined, 'someFutureReason']) {
+      expect(gov.admit('pod', 'agent', 'message.posted', owned(reason))).toMatchObject({ allowed: true, addressed: true });
+    }
+    expect(gov.admit('pod', 'agent', 'message.posted', { wakeReason: 'assignee' }).allowed).toBe(false);
+
+    // Bounded: the grace runs out like any other addressed event's.
+    burn(gov, 2, 'message.posted');
+    expect(gov.admit('pod', 'agent', 'message.posted', owned('assignee')).allowed).toBe(false);
+  });
+
+  // The inbox batch prices one admission for the whole page, on the entry it
+  // picks here. An owned-work board wake in the page must be that entry, or a
+  // sibling broadcast decides it and the assignment is refused with it (F592).
+  it('picks an owned-work board wake as the batch admission entry over a broadcast', () => {
+    const broadcast = { event: { type: 'message.posted', payload: { content: 'chatter' } } };
+    const assigned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
+    const legacy = { event: { type: 'message.posted', payload: { addressed: true } } };
+    const mention = { event: { type: 'chat.mention', payload: {} } };
+    expect(pickAdmissionEntry([broadcast, assigned])).toBe(assigned);
+    expect(pickAdmissionEntry([broadcast, legacy])).toBe(legacy);
+    expect(pickAdmissionEntry([broadcast, mention])).toBe(mention);
+    expect(pickAdmissionEntry([broadcast])).toBe(broadcast);
+    expect(pickAdmissionEntry([])).toBeUndefined();
+  });
+
+  // CodeRabbit on #4251: a mention with no dmKind is exempt from the cap (the
+  // kernel dampens it), so it must win the page over an owned-work wake, which
+  // is still bounded. Otherwise, past cap + grace, the wake decides the page and
+  // the mention is refused with it, in either order.
+  // CodeRabbit on #4251: a payload flagged addressed takes no grace in admit(),
+  // so ranking it above an owned-work wake refused the page at the plain cap.
+  // The ranking now reads the same grace predicate admit() does; the flag
+  // still outranks a plain broadcast, as before.
+  it('picks an owned-work wake over an entry flagged addressed, at the plain cap', () => {
+    const owned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
+    const flagged = { event: { type: 'message.posted', payload: { addressed: true } } };
+    const broadcast = { event: { type: 'message.posted', payload: {} } };
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 3, 'message.posted');
+    for (const page of [[flagged, owned], [owned, flagged]]) {
+      const picked = pickAdmissionEntry(page);
+      expect(picked).toBe(owned);
+      expect(gov.admit('pod', 'agent', picked.event.type, picked.event.payload)).toMatchObject({ allowed: true, addressed: true });
+    }
+    expect(pickAdmissionEntry([broadcast, flagged])).toBe(flagged);
+    expect(takesAddressedGrace(flagged.event.type, flagged.event.payload)).toBe(false);
+    expect(takesAddressedGrace(owned.event.type, owned.event.payload)).toBe(true);
+  });
+
+  it('picks an exempt mention over an owned-work wake, in either order, past cap + grace', () => {
+    const owned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
+    const mention = { event: { type: 'chat.mention', payload: {} } };
+    const dmMention = { event: { type: 'chat.mention', payload: { dmKind: 'agent-agent' } } };
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 5, 'message.posted');
+    for (const page of [[owned, mention], [mention, owned]]) {
+      const picked = pickAdmissionEntry(page);
+      expect(picked).toBe(mention);
+      expect(gov.admit('pod', 'agent', picked.event.type, picked.event.payload).allowed).toBe(true);
+    }
+    // A DM-backed mention isn't exempt: it takes the same grace as the owned
+    // wake, so the two tie and the earlier one prices the page.
+    expect(pickAdmissionEntry([owned, dmMention])).toBe(owned);
+    expect(pickAdmissionEntry([dmMention, owned])).toBe(dmMention);
+    expect(pickAdmissionEntry([dmMention, mention])).toBe(mention);
   });
 
   it('marks the admission so the caller can say the grace was spent', () => {
