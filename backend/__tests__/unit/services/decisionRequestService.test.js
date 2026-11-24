@@ -332,6 +332,14 @@ describe('DecisionRequestService', () => {
       expect(content.match(/@lily/g)).toHaveLength(1);
     });
 
+    test('a mention that ends a sentence still counts, and an email address does not', async () => {
+      await requestDecision({ ...source(), question: 'Which layout, ask @lily.', deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content.match(/@lily/g)).toHaveLength(1);
+      mockPostMessage.mockClear();
+      await requestDecision({ ...source(), question: 'Mail me at sam@lily.com about it', deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content).toContain('For @lily');
+    });
+
     test('a longer handle that starts with a decider\'s name does not count as naming them', async () => {
       await requestDecision({ ...source(), question: '@lily-bot which one?', deciderUserIds: [LILY] });
       expect(mockPostMessage.mock.calls[0][0].content).toContain('For @lily');

@@ -191,7 +191,9 @@ const formatDecisionMessage = (
   // @handle, so a question often already names its decider. Leave those out
   // of the For line rather than print the handle twice.
   const named = (username: string): boolean => new RegExp(
-    `(^|[^\\w@.-])@${escapeRegExp(username)}(?![\\w.-])`, 'i',
+    // A trailing period counts as the end of a sentence unless a word follows it
+    // (so 'sam@lily.com' and '@lily-bot' still don't name lily).
+    `(^|[^\\w@.-])@${escapeRegExp(username)}(?![\\w-]|\\.\\w)`, 'i',
   ).test(question);
   const unnamed = (deciders || []).filter((decider) => !named(decider.username));
   const forLine = unnamed.length ? `For ${unnamed.map((decider) => `@${decider.username}`).join(', ')}` : '';
