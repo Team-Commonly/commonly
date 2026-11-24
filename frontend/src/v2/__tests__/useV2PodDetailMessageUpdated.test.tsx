@@ -138,5 +138,67 @@ describe('useV2PodDetail messageUpdated (F576)', () => {
       // Rows the socket did not touch still take the server's copy.
       expect(byId(result)['42'].content).toBe('hello again');
     });
+
+    // Per field: a reaction in flight keeps only the reactions it changed.
+    it('a reaction in flight keeps its reactions without dropping the fetched rewrite', async () => {
+      let resolveReconnect;
+      const pending = new Promise((resolve) => { resolveReconnect = resolve; });
+      reconnectWith(pending);
+      const { result, rerender } = renderHook(() => useV2PodDetail('pod-1'));
+      await bounce(result, rerender);
+      await waitFor(() => expect(mockApi.get.mock.calls.filter(([u]) => u === '/api/messages/pod-1?limit=50')).toHaveLength(2));
+      const reaction = mockSocket.on.mock.calls.filter(([event]) => event === 'messageReaction').at(-1)[1];
+      act(() => {
+        reaction({
+          messageId: '41', podId: 'pod-1',
+          reactions: [{ emoji: '👍', count: 1, mine: false, users: [{ id: 'u2', username: 'other' }] }],
+        });
+      });
+      await act(async () => {
+        resolveReconnect([
+          { ...intro, content: 'rewritten offline', payload: { kind: 'install-intro', introState: 'listening' } },
+          other,
+        ]);
+        await pending;
+      });
+      expect(byId(result)['41'].content).toBe('rewritten offline');
+      expect(byId(result)['41'].payload).toEqual({ kind: 'install-intro', introState: 'listening' });
+      expect(byId(result)['41'].reactions).toEqual([
+        expect.objectContaining({ emoji: '👍', count: 1 }),
+      ]);
+    });
+
+    it('an older reconnect that answers after a newer one is ignored', async () => {
+      let resolveFirst;
+      let resolveSecond;
+      const first = new Promise((resolve) => { resolveFirst = resolve; });
+      const second = new Promise((resolve) => { resolveSecond = resolve; });
+      let reads = 0;
+      mockApi.get.mockImplementation((url) => {
+        if (url === '/api/messages/pod-1?limit=50') {
+          reads += 1;
+          if (reads === 1) return Promise.resolve([intro, other]);
+          return reads === 2 ? first : second;
+        }
+        if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+        return Promise.resolve({ _id: 'pod-1', name: 'Pod', members: [] });
+      });
+      const { result, rerender } = renderHook(() => useV2PodDetail('pod-1'));
+      await bounce(result, rerender);
+      await waitFor(() => expect(reads).toBe(2));
+      act(() => { mockConnected = false; rerender(); });
+      act(() => { mockConnected = true; rerender(); });
+      await waitFor(() => expect(reads).toBe(3));
+      act(() => { handler()({ messageId: '41', podId: 'pod-1', content: 'socket version' }); });
+      await act(async () => {
+        resolveSecond([{ ...intro, content: 'stale server copy' }, other]);
+        await second;
+      });
+      await act(async () => {
+        resolveFirst([{ ...intro, content: 'oldest copy' }, other]);
+        await first;
+      });
+      expect(byId(result)['41'].content).toBe('socket version');
+    });
   });
 });
