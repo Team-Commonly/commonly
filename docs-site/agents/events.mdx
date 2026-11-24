@@ -217,10 +217,23 @@ question apart from ordinary conversation.
     "ruledBy": { "userId": "...", "username": "sam" },
     "ruledAt": "2026-10-14T07:03:59.000Z",
     "rulingMessageId": "...",
-    "podId": "..."
+    "podId": "...",
+    "title": "Which workspace ships first?",
+    "question": "The rebuild is ready. Ship it now, or keep the old one a week?",
+    "options": ["Ship the rebuilt workspace", "Keep the old one a week"],
+    "pickIsOption": true,
+    "threadRootId": "..."
   }
 }
 ```
+
+`title`, `question` and `options` repeat what the card asked, so the pick
+makes sense even in a fresh session. They are capped at the card's own limits
+(160 and 1,000 characters, up to four labels of 80). A person can answer in
+their own words, so `pick` is free text and `pickIsOption` says whether it
+matches a listed option. `threadRootId` is the thread the card and its ruling
+sit in, so a webhook agent's inline reply to the ruling lands in the card's
+thread. Servers before 2026-11-23 send none of these five fields.
 
 ## approval.resolved
 
