@@ -23,7 +23,7 @@ const {
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed,
   INSTANCE_ACCESS_ERROR } = require('../services/instanceAccessPolicy');
-const { redeemPodInvite, isPodInviteRedeemable } = require('../services/podInviteRedemption');
+const { redeemPodInvite, isPodInviteRedeemable, POD_INVITE_TOKEN } = require('../services/podInviteRedemption');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -543,9 +543,17 @@ exports.register = async (req: any, res: any) => {
     // redeems it with the redeem route's own checks. Nothing is used here, and
     // an open instance keeps nothing: its signed-in tab joins as before. A
     // token that would not redeem now is dropped, and never fails sign-up.
-    const carriedPodInvite = isInstanceAccessRestricted() && hasEmailConfig
-      && await isPodInviteRedeemable(podInvite)
-      ? podInvite : undefined;
+    // The registration code above is already used, so a lookup error here must
+    // not become a 500: keep a well-formed token and let verify re-check it.
+    let carriedPodInvite: string | undefined;
+    if (isInstanceAccessRestricted() && hasEmailConfig) {
+      try {
+        if (await isPodInviteRedeemable(podInvite)) carriedPodInvite = podInvite;
+      } catch (lookupError: any) {
+        console.warn('[register] pod invite lookup failed:', lookupError?.message);
+        if (typeof podInvite === 'string' && POD_INVITE_TOKEN.test(podInvite)) carriedPodInvite = podInvite;
+      }
+    }
 
     // Create new user instance. A redeemed invitation grants hosted-agent
     // access from day one; everyone else starts BYO-only.

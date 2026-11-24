@@ -141,7 +141,18 @@ test('signing up from a pod invite sends that invite with the sign-up', async ()
 });
 
 test.each([
+  ['a query', `${NEXT}?ref=x`],
+  ['a fragment', `${NEXT}#frag`],
+  ['a trailing slash', `${NEXT}/`],
+])('a pod invite destination with %s still sends the invite', async (_label, next) => {
+  const body = await submitSignUp(`/v2/register?next=${encodeURIComponent(next)}`);
+  expect(body.podInvite).toBe('d'.repeat(32));
+});
+
+test.each([
   ['no destination', '/v2/register'],
+  ['a token that is not 32 hex', `/v2/register?next=${encodeURIComponent('/v2/invite/xyz')}`],
+  ['a longer invite path', `/v2/register?next=${encodeURIComponent(`${NEXT}/extra`)}`],
   ['a destination that is not a pod invite', `/v2/register?next=${encodeURIComponent('/v2/pods/p1')}`],
 ])('signing up with %s sends no pod invite', async (_label, entry) => {
   const body = await submitSignUp(entry);

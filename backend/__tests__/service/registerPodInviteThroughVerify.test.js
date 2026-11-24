@@ -103,6 +103,38 @@ describe('register from a pod invite on a team-gated instance', () => {
     expect(await uses()).toBe(1);
   });
 
+  test('two clicks at once redeem the invite once', async () => {
+    const user = await register({ podInvite: invite.token });
+    const link = await linkFromEmail();
+    const [a, b] = await Promise.all([click(link), click(link)]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect([a.body.podId, b.body.podId].filter(Boolean)).toEqual([String(pod._id)]);
+    expect(await uses()).toBe(1);
+    const members = (await Pod.findById(pod._id).lean()).members.map(String);
+    expect(members.filter((m) => m === String(user._id))).toHaveLength(1);
+  });
+
+  test('a failed invite lookup at sign-up neither fails it nor loses the registration code', async () => {
+    const InvitationCode = require('../../models/InvitationCode');
+    const code = await InvitationCode.create({
+      code: 'ONCE1', isActive: true, maxUses: 1, useCount: 0, createdBy: invite.createdBy,
+    });
+    jest.spyOn(PodInvite, 'findOne').mockRejectedValueOnce(new Error('mongo blip'));
+    const user = await register({ podInvite: invite.token, invitationCode: 'ONCE1' });
+    expect(user).not.toBeNull();
+    expect((await InvitationCode.findById(code._id).lean()).useCount).toBe(1);
+    // Kept as a well-formed token; the verify click re-checks it.
+    expect(await pending(user._id)).toBe(invite.token);
+    const res = await click(await linkFromEmail()).expect(200);
+    expect(res.body.podId).toBe(String(pod._id));
+  });
+
+  test('a failed invite lookup keeps nothing that is not a well-formed token', async () => {
+    jest.spyOn(PodInvite, 'findOne').mockRejectedValueOnce(new Error('mongo blip'));
+    const user = await register({ podInvite: 'not-a-token' });
+    expect(await pending(user._id)).toBeUndefined();
+  });
+
   test('a resent link still carries the invite', async () => {
     const user = await register({ podInvite: invite.token });
     await request(app).post('/api/auth/resend-verification').send({ email }).expect(200);
