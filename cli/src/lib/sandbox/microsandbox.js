@@ -443,6 +443,11 @@ export const startMicrovmTurn = async ({
 };
 
 const INSTALL_LOCK_STALE_MS = 15 * 60 * 1000;
+// Longer than the slowest install can run (a 5-minute download, the volume
+// probe and a 10-minute npm install), so a lock older than this was leaked by
+// its holder, or names a pid since reused, and is taken over even though that
+// pid is alive.
+const INSTALL_LOCK_MAX_MS = 60 * 60 * 1000;
 
 const defaultPidAlive = (pid) => {
   try {
@@ -457,25 +462,30 @@ const defaultPidAlive = (pid) => {
 /**
  * Whether a lock whose file reads `content` can be taken over. The lock lives
  * in this user's %LOCALAPPDATA%, so its holder ran on this machine: it is
- * abandoned once that process is gone, however long an install takes. A lock
- * that names no process (written by something else) falls back to its age.
+ * abandoned once that process is gone, and a slow install is not cut in on
+ * while it runs. Past INSTALL_LOCK_MAX_MS it is abandoned whatever the pid, so
+ * a lock a live process leaked, or one naming a reused pid, can't wedge every
+ * later install. A lock that names no process falls back to the shorter age.
  */
 const lockAbandoned = (content, mtimeMs, { now, pidAlive }) => {
+  const age = now() - mtimeMs;
   const pid = Number.parseInt(String(content).split(/\s+/)[0], 10);
-  if (Number.isInteger(pid) && pid > 0) return !pidAlive(pid);
-  return now() - mtimeMs > INSTALL_LOCK_STALE_MS;
+  if (Number.isInteger(pid) && pid > 0) return age > INSTALL_LOCK_MAX_MS || !pidAlive(pid);
+  return age > INSTALL_LOCK_STALE_MS;
 };
 
 /**
  * Runs `fn` holding this version's install lock, so two first turns never
  * unpack msb or install into the volume (mounted writable then) at once.
  *
- * The lock names its holder (`<pid> <token>`). A waiter takes it over only when
- * that process has exited, so a slow install is never reclaimed while it runs.
- * Taking over is a rename to a private name, which only one waiter can win; a
- * waiter that finds it renamed a lock other than the one it judged abandoned
- * puts it back. The holder removes the lock only while it still holds its own
- * token.
+ * The lock names its holder (`<pid> <token>`). A waiter takes it over when that
+ * process has exited, or past INSTALL_LOCK_MAX_MS. Taking over is a rename to a
+ * private name, so of the waiters that judged the same lock abandoned only one
+ * moves it; a waiter that finds it moved a lock other than the one it judged
+ * (another waiter's new one) puts it back. Between that move and the put-back a
+ * third waiter can take the name, the same narrow window an age-only lock had.
+ * The holder removes the lock while it still holds its own token, or when the
+ * lock can't be read at all, so an unreadable lock is never left behind.
  */
 export const withInstallLock = async (root, fn, {
   waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
@@ -522,8 +532,10 @@ export const withInstallLock = async (root, fn, {
   try {
     return await fn();
   } finally {
-    const current = await readFile(lock, 'utf8').catch(() => null);
-    if (current === mine) await rm(lock, { force: true }).catch(() => {});
+    const current = await readFile(lock, 'utf8').then((text) => text, (error) => error);
+    // Not `instanceof Error`: fs errors can come from another realm (a test VM).
+    const unreadable = typeof current !== 'string' && current?.code !== 'ENOENT';
+    if (current === mine || unreadable) await rm(lock, { recursive: true, force: true }).catch(() => {});
   }
 };
 

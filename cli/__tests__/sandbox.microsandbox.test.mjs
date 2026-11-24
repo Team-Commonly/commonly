@@ -339,9 +339,10 @@ describe('withInstallLock', () => {
   const lock = () => join(root, '.install.lock');
   const anHourAgo = () => { const t = new Date(Date.now() - 60 * 60 * 1000); utimesSync(lock(), t, t); };
 
-  test('a slow install is never taken over while its process runs, however old the lock', async () => {
+  test('a slow install is not taken over while its process runs, past the old 15-minute age', async () => {
     writeFileSync(lock(), '4242 slow\n');
-    anHourAgo();
+    const t = new Date(Date.now() - 30 * 60 * 1000);
+    utimesSync(lock(), t, t);
     const fn = jest.fn(async () => {});
     await expect(withInstallLock(root, fn, { waitMs: 50, pollMs: 10, pidAlive: () => true }))
       .rejects.toThrow(/still installing/);
@@ -378,6 +379,21 @@ describe('withInstallLock', () => {
     await expect(withInstallLock(root, fn, { waitMs: 50, pollMs: 10, pidAlive })).rejects.toThrow(/still installing/);
     expect(fn).not.toHaveBeenCalled();
     expect(readFileSync(lock(), 'utf8')).toBe('5151 other\n');
+  });
+
+  test('past the hard cap a lock is taken over even though its pid is alive (leaked, or a reused pid)', async () => {
+    writeFileSync(lock(), '4242 leaked\n');
+    const t = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(lock(), t, t);
+    await expect(withInstallLock(root, async () => 'ran', { pollMs: 10, pidAlive: () => true })).resolves.toBe('ran');
+  });
+
+  test('a holder that cannot read its lock back removes it rather than leave it', async () => {
+    await withInstallLock(root, async () => {
+      rmSync(lock());
+      mkdirSync(lock());
+    });
+    expect(existsSync(lock())).toBe(false);
   });
 
   test('a holder whose lock was taken over leaves the new holder\'s lock in place', async () => {

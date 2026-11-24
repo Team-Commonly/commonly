@@ -137,9 +137,13 @@ export const startMcpBridge = async ({
         return;
       }
       children.add(child);
-      // A spawn that fails (a missing command) emits 'error' and never 'exit',
-      // so it frees its session slot here too.
-      child.on('error', () => { children.delete(child); socket.destroy(); });
+      // A spawn that fails (a missing command) emits 'error' with no pid and
+      // never 'exit', so it frees its session slot here. A running child that
+      // errors keeps its slot until it exits.
+      child.on('error', () => {
+        if (child.pid === undefined) children.delete(child);
+        socket.destroy();
+      });
       child.on('exit', () => { children.delete(child); socket.end(); });
       child.stdin.on('error', () => {});
       if (rest.length) child.stdin.write(rest);
