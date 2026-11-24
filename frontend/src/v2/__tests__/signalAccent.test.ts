@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { guidePalette, guideTextButtonSx } from '../../components/landing/guideShell';
 
 const frontend = path.resolve(__dirname, '../../..');
 const read = (name: string) => fs.readFileSync(path.join(frontend, name), 'utf8');
@@ -29,7 +28,7 @@ describe('Signal accent on standalone and bridged surfaces', () => {
   test.each([
     'index.html',
     'public/favicon.svg',
-    'src/components/landing/guideShell.ts',
+    'src/components/landing/guide.css',
     'src/v2/components/V2FeaturePage.tsx',
     'src/v2/components/V2CliAuthorize.css',
     'src/v2/v2.css',
@@ -55,7 +54,7 @@ describe('Signal accent on standalone and bridged surfaces', () => {
   });
 
   test.each([
-    ['src/components/landing/guideShell.ts', /accent:\s*'#1d3fd1'/],
+    ['src/components/landing/guide.css', /--guide-accent:\s*#1d3fd1;/],
     ['src/v2/components/V2FeaturePage.tsx', /accent:\s*'#1d3fd1'/],
     ['design-system/tokens.css', /::selection\s*\{\s*background:\s*rgba\(29, 63, 209, 0\.20\)/],
     // The open composer's ring is the focus token, so it shows on the dark ground too (d215 activity).
@@ -65,7 +64,6 @@ describe('Signal accent on standalone and bridged surfaces', () => {
   });
 
   test.each([
-    ['src/components/landing/guideShell.ts', ['accentStrong', 'accentSoft', 'accentText', 'accentDeep']],
     ['src/v2/components/V2FeaturePage.tsx', ['accentStrong', 'accentSoft']],
   ])('%s uses Signal accent variants', (name, keys) => {
     const source = read(name as string);
@@ -85,26 +83,28 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     });
   });
 
-  test.each(['GuidePage.tsx', 'GuidesIndexPage.tsx'])('%s uses the cobalt mark instead of the legacy PNG', (name) => {
-    const source = read(`src/components/landing/${name}`);
-    expect(source).toContain('src="/favicon.svg"');
-    expect(source).not.toContain('commonly-logo.png');
+  test('the guide pages share one header with the cobalt mark, not the legacy PNG', () => {
+    expect(read('src/components/landing/guideShell.tsx')).toContain('src="/favicon.svg"');
+    ['GuidePage.tsx', 'GuidesIndexPage.tsx', 'UseCasePage.tsx'].forEach((name) => {
+      const source = read(`src/components/landing/${name}`);
+      expect(source).toContain('<GuideTop onBack=');
+      expect(source).not.toContain('commonly-logo.png');
+      expect(source).not.toContain('@mui/');
+    });
   });
 
-  test('guide text buttons bind their hover tint to Signal instead of the root theme', () => {
-    expect(guideTextButtonSx.color).toBe('#1d3fd1');
-    expect(guideTextButtonSx['&:hover'].backgroundColor).toBe(guidePalette.accentSoft);
-    expect(guidePalette.accentSoft).toBe('#e9edfb');
-    ['GuidePage.tsx', 'GuidesIndexPage.tsx'].forEach((name) => {
-      const source = read(`src/components/landing/${name}`);
-      expect(source).toContain('sx={guideTextButtonSx}');
-      expect(source).not.toContain('sx={{ color: guidePalette.accentText }}');
-    });
-    const guidePage = read('src/components/landing/GuidePage.tsx');
-    expect(guidePage).toContain("sx={{ ...guideTextButtonSx, alignSelf: 'flex-start' }}");
+  test('guide text buttons bind their color and hover tint to the Signal accent', () => {
+    const css = read('src/components/landing/guide.css');
+    const rule = (selector: string) => css.split(`${selector} {`)[1]?.split('}')[0] ?? '';
+    expect(css).toMatch(/--guide-accent:\s*#1d3fd1;/);
+    expect(css).toMatch(/--guide-accent-strong:\s*#1633a8;/);
+    expect(css).toMatch(/--guide-accent-soft:\s*#e9edfb;/);
+    expect(css).toMatch(/--guide-accent-deep:\s*#0f2378;/);
+    expect(rule('.guide-page .guide-btn')).toContain('color: var(--guide-accent)');
+    expect(rule('.guide-page .guide-btn:hover')).toContain('background: var(--guide-accent-soft)');
     // The /compare/ static-link branch went with the unlisting (TASK-563): no related link is an anchor.
-    expect(guidePage).not.toContain('href={link.path} sx={guideTextButtonSx}>');
-    expect(guidePage).toContain('sx={guideTextButtonSx} onClick={() => navigate(link.path)}>');
+    const guidePage = read('src/components/landing/GuidePage.tsx');
+    expect(guidePage).toContain('className="guide-btn" onClick={() => navigate(link.path)}>');
   });
 
   test('the CLI authorize surface mounts in .v2-root and reads tokens only', () => {

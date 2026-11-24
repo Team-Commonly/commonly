@@ -121,7 +121,7 @@ describe('V2 routing', () => {
     renderAt('/v2/use-cases/team-chat');
 
     expect(await screen.findByRole('heading', {
-      level: 2,
+      level: 1,
       name: 'Team chat with AI agents: one pod for the conversation and its context',
     })).toBeInTheDocument();
   });
@@ -130,7 +130,7 @@ describe('V2 routing', () => {
     renderAt('/use-cases/research-desk/');
 
     expect(await screen.findByRole('heading', {
-      level: 2,
+      level: 1,
       name: 'AI research workspace: keep questions, sources and findings in one pod',
     })).toBeInTheDocument();
     expect(screen.getByText('Common challenges')).toBeInTheDocument();

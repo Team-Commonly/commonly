@@ -1,0 +1,347 @@
+/* The in-app guide, guides index and use-case pages. They mirror the
+   pre-rendered static pages, so they keep their own light palette instead of
+   the v2 tokens; body.guide-canvas (guideShell.ts) keeps App.css's legacy
+   button reset off them. */
+.guide-page {
+  --guide-page: #f8f8fb;
+  --guide-surface: #ffffff;
+  --guide-surface-tint: #f4f3f8;
+  --guide-border: #e5e7eb;
+  --guide-border-soft: #eef0f6;
+  --guide-text-primary: #111827;
+  --guide-text-secondary: #4b5563;
+  --guide-text-tertiary: #7b8494;
+  --guide-accent: #1d3fd1;
+  --guide-accent-strong: #1633a8;
+  --guide-accent-soft: #e9edfb;
+  --guide-accent-deep: #0f2378;
+  min-height: 100vh;
+  background: var(--guide-page);
+  color: var(--guide-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  line-height: 1.5;
+}
+
+.guide-page--missing {
+  padding: 80px 0;
+}
+
+.guide-container {
+  box-sizing: border-box;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.guide-page--missing .guide-container {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.guide-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.guide-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.guide-eyebrow {
+  margin: 0 0 8px;
+  color: var(--guide-accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.guide-title {
+  margin: 0 0 16px;
+  font-size: clamp(2.25rem, 6vw, 3.75rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.guide-missing-title {
+  margin: 24px 0 8px;
+  font-size: 2.125rem;
+  font-weight: 700;
+}
+
+.guide-lede {
+  margin: 0 0 40px;
+  color: var(--guide-text-secondary);
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+.guide-byline {
+  margin: 0 0 40px;
+  color: var(--guide-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.guide-byline a {
+  color: inherit;
+}
+
+.guide-answer {
+  margin: 0 0 24px;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.guide-prose {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--guide-text-secondary);
+  line-height: 1.75;
+}
+
+.guide-prose p {
+  margin: 0;
+}
+
+.guide-prose--intro {
+  margin-bottom: 56px;
+  font-size: 1.05rem;
+}
+
+.guide-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+}
+
+.guide-h2 {
+  margin: 0 0 20px;
+  font-size: clamp(1.625rem, 4vw, 2.125rem);
+  font-weight: 750;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.guide-h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.guide-list {
+  margin: 20px 0;
+  padding-left: 24px;
+  color: var(--guide-text-secondary);
+  line-height: 1.75;
+}
+
+.guide-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.guide-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  color: var(--guide-text-secondary);
+}
+
+.guide-table thead {
+  background: var(--guide-surface-tint);
+}
+
+.guide-table th,
+.guide-table td {
+  padding: 12px;
+  border: 1px solid var(--guide-border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.guide-table th {
+  color: var(--guide-text-primary);
+}
+
+.guide-code {
+  margin: 20px 0 0;
+  padding: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--guide-border-soft);
+  border-radius: 8px;
+  background: var(--guide-surface-tint);
+  color: var(--guide-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  margin-top: 16px;
+}
+
+.guide-actions--stack {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-rule {
+  margin: 56px 0;
+  border: 0;
+  border-top: 1px solid var(--guide-border);
+}
+
+.guide-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.guide-card {
+  padding: 24px;
+  border: 1px solid var(--guide-border-soft);
+  border-radius: 12px;
+  background: var(--guide-surface);
+}
+
+.guide-card p {
+  margin: 0;
+  color: var(--guide-text-secondary);
+  line-height: 1.75;
+}
+
+.guide-card .guide-h2 {
+  margin-bottom: 12px;
+}
+
+.guide-card .guide-eyebrow + .guide-h2 + p {
+  margin-bottom: 20px;
+}
+
+.guide-cta {
+  margin-top: 56px;
+  padding: 40px;
+  border-radius: 16px;
+  background: var(--guide-accent-soft);
+  color: var(--guide-accent-deep);
+}
+
+.guide-cta .guide-h2 {
+  margin-bottom: 12px;
+  color: var(--guide-accent-deep);
+}
+
+.guide-cta p {
+  margin: 0 0 24px;
+  line-height: 1.75;
+}
+
+.guide-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.guide-card--accent {
+  border-color: #c9d3f6;
+  background: var(--guide-accent-soft);
+}
+
+.guide-card ul,
+.guide-card ol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--guide-text-secondary);
+  line-height: 1.6;
+}
+
+.guide-block {
+  margin-bottom: 40px;
+}
+
+/* Buttons. Text buttons carry the accent and a soft tint on hover; the CTA
+   pair is a filled and an outlined button in the accent. */
+.guide-page .guide-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 30px;
+  background: transparent;
+  color: var(--guide-accent);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.guide-page .guide-btn:hover {
+  background: var(--guide-accent-soft);
+}
+
+.guide-page .guide-btn:focus-visible {
+  outline: 2px solid var(--guide-accent);
+  outline-offset: 2px;
+}
+
+.guide-page .guide-btn--filled {
+  background: var(--guide-accent);
+  color: #ffffff;
+}
+
+.guide-page .guide-btn--filled:hover {
+  background: var(--guide-accent-strong);
+}
+
+.guide-page .guide-btn--outlined {
+  border-color: var(--guide-accent);
+}
+
+.guide-page .guide-btn--outlined:hover {
+  border-color: var(--guide-accent-strong);
+  background: var(--guide-surface);
+}
+
+.guide-btn svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 600px) {
+  .guide-container {
+    padding: 40px 16px 80px;
+  }
+
+  .guide-cta {
+    padding: 24px;
+  }
+
+  .guide-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide-actions:not(.guide-actions--stack) {
+    flex-direction: column;
+  }
+}
