@@ -23,6 +23,7 @@ const {
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed,
   INSTANCE_ACCESS_ERROR } = require('../services/instanceAccessPolicy');
+const { redeemPodInvite, isPodInviteRedeemable, POD_INVITE_TOKEN } = require('../services/podInviteRedemption');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -413,6 +414,7 @@ exports.register = async (req: any, res: any) => {
       signupRef,
       signupSource,
       locale,
+      podInvite,
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
@@ -535,6 +537,24 @@ exports.register = async (req: any, res: any) => {
       );
     }
 
+    // F577: someone signing up from a pod invite on a team-gated instance
+    // cannot sign in until the mailbox is verified, and the tab that held the
+    // invite is usually gone by then. Keep the token on the account; verifying
+    // redeems it with the redeem route's own checks. Nothing is used here, and
+    // an open instance keeps nothing: its signed-in tab joins as before. A
+    // token that would not redeem now is dropped, and never fails sign-up.
+    // The registration code above is already used, so a lookup error here must
+    // not become a 500: keep a well-formed token and let verify re-check it.
+    let carriedPodInvite: string | undefined;
+    if (isInstanceAccessRestricted() && hasEmailConfig) {
+      try {
+        if (await isPodInviteRedeemable(podInvite)) carriedPodInvite = podInvite;
+      } catch (lookupError: any) {
+        console.warn('[register] pod invite lookup failed:', lookupError?.message);
+        if (typeof podInvite === 'string' && POD_INVITE_TOKEN.test(podInvite)) carriedPodInvite = podInvite;
+      }
+    }
+
     // Create new user instance. A redeemed invitation grants hosted-agent
     // access from day one; everyone else starts BYO-only.
     const user = new User({
@@ -543,6 +563,7 @@ exports.register = async (req: any, res: any) => {
       password: rawPassword,
       verified: shouldAutoVerify,
       entitlements: { cloudAgents: invitationRedeemed },
+      ...(carriedPodInvite ? { pendingPodInvite: carriedPodInvite } : {}),
       ...signupSourceFields(signupSource, 'password', signupRef),
     });
 
@@ -836,7 +857,28 @@ exports.verifyEmail = async (req: any, res: any) => {
     if (!user.verified) markEmailVerified(user._id);
     joinCommunityPodBestEffort(user._id);
 
-    res.json({ message: 'Email verified successfully' });
+    // F577: the pod invite this account signed up from, taken atomically so
+    // two clicks cannot redeem it twice. Redeeming re-checks the invite, so one
+    // revoked, expired or used up since sign-up grants nothing. Best-effort:
+    // the address is verified either way.
+    let podId: string | undefined;
+    try {
+      const pending = await User.findOneAndUpdate(
+        { _id: user._id, pendingPodInvite: { $type: 'string' } },
+        { $unset: { pendingPodInvite: 1 } },
+      ).select('+pendingPodInvite banned accountDeletionRequestedAt');
+      // A banned account, or one being deleted, joins nothing; the $unset
+      // above still spends the stored invite so it cannot be used later.
+      const mayJoin = !pending?.banned && !pending?.accountDeletionRequestedAt;
+      if (pending?.pendingPodInvite && mayJoin) {
+        const redeemed = await redeemPodInvite(pending.pendingPodInvite, user._id);
+        if (redeemed.ok) podId = String(redeemed.pod._id);
+      }
+    } catch (inviteError: any) {
+      console.warn('[verify-email] pending pod invite failed:', inviteError?.message);
+    }
+
+    res.json({ message: 'Email verified successfully', ...(podId ? { podId } : {}) });
   } catch {
     res.status(400).json({ error: 'Invalid or expired token' });
   }

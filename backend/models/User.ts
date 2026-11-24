@@ -88,6 +88,12 @@ export interface IUser extends Document {
   password?: string;
   authProviders: IAuthProvider[];
   verified: boolean;
+  /**
+   * A pod invite token this person signed up from on a team-gated instance,
+   * where they cannot sign in until the mailbox is verified (F577). Email
+   * verification redeems it with the redeem route's own checks, then clears it.
+   */
+  pendingPodInvite?: string;
   // Admin moderation (GH: admin user management). banned users cannot log in
   // and existing sessions are refused by the auth middleware on next request.
   banned: boolean;
@@ -335,6 +341,8 @@ const userSchema = new Schema<IUser>({
     default: [],
   },
   verified: { type: Boolean, default: false },
+  // A capability for someone else's pod: only the verify handler reads it.
+  pendingPodInvite: { type: String, select: false },
   banned: { type: Boolean, default: false },
   tokenVersion: { type: Number, default: 0 },
   accountDeletionRequestedAt: { type: Date },
