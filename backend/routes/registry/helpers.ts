@@ -1,6 +1,7 @@
 import { escapeRegExp } from '../../utils/escape';
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
+const Pod = require('../../models/Pod');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { RUNTIME_IDENTITY_KEYS, declaredRuntimeIdentity } = require('../../utils/runtimeIdentity');
@@ -692,6 +693,56 @@ const userHasPodAccess = (pod: any, userId: any) => {
   return Boolean(pod.members?.some((m: any) => (m.userId?.toString?.() || m.toString()) === userIdStr));
 };
 
+// The instance a per-agent route acts on: the query string for a GET, the body
+// otherwise. An object or function is refused here so it never reaches a
+// Mongo query as an operator.
+const getRequestedInstanceId = (req: any): string => {
+  const rawInstanceId = req.method === 'GET' ? req.query.instanceId : req.body?.instanceId;
+  if (rawInstanceId && (typeof rawInstanceId === 'object' || typeof rawInstanceId === 'function')) {
+    const error: any = new Error('Invalid instance ID');
+    error.status = 400;
+    throw error;
+  }
+  return String(rawInstanceId || 'default');
+};
+
+// One authorization boundary for routes that act on one installed agent: its
+// runtime, its workspace files, its persona. Pod access is a precondition, not
+// an authority; the caller must have installed this exact instance, or be an
+// instance admin by the role stored on their user row. The installation is
+// matched on its exact instanceId with no fallback to a sibling instance, and
+// an uninstalled row does not count. Errors carry `status` (and `code` for
+// the installer refusal, the same `installer_only` the config PATCH answers).
+const resolveAuthorizedInstallation = async ({ podId, name, instanceId, userId }: any) => {
+  const pod = await Pod.findById(podId).lean();
+  if (!pod) {
+    const error: any = new Error('Pod not found');
+    error.status = 404;
+    throw error;
+  }
+  const isAdmin = await isGlobalAdminUser(userId);
+  if (!isAdmin && !userHasPodAccess(pod, userId)) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    throw error;
+  }
+  const installation = await AgentInstallation.findOne({
+    agentName: String(name).toLowerCase(), podId, instanceId, status: { $ne: 'uninstalled' },
+  });
+  if (!installation) {
+    const error: any = new Error('Agent installation not found');
+    error.status = 404;
+    throw error;
+  }
+  if (!isAdmin && installation.installedBy?.toString() !== userId.toString()) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    error.code = 'installer_only';
+    throw error;
+  }
+  return installation;
+};
+
 const parseJsonFromText = (text: any) => {
   if (!text) return null;
   try {
@@ -799,6 +850,8 @@ module.exports = {
   isGlobalAdminUser,
   resolveGatewayForInstallation,
   userHasPodAccess,
+  getRequestedInstanceId,
+  resolveAuthorizedInstallation,
   parseJsonFromText,
   serializeRuntimeTokens,
   parseEnvFlag,

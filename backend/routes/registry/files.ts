@@ -57,6 +57,8 @@ const {
   getUserId,
   normalizeInstanceId,
   resolveInstallation,
+  resolveAuthorizedInstallation,
+  getRequestedInstanceId,
   buildAgentProfileId,
   buildIdentityContent,
   userHasPodAccess,
@@ -79,7 +81,7 @@ const inspectorRateLimit = rateLimit({
   }),
 });
 
-// Workspace-file writes (HEARTBEAT.md) touch the gateway PVC via an exec into
+// Workspace-file writes (HEARTBEAT.md, IDENTITY.md) touch the gateway PVC via an exec into
 // the pod AND write two Mongo documents, so they are more expensive than the
 // read surface above.
 //
@@ -104,48 +106,44 @@ const workspaceWriteRateLimit = rateLimit({
   }),
 });
 
+// Persona generation and the heartbeat and identity files act on one installed
+// agent, so they share the runtime routes' boundary: the installer of that
+// exact instance, or an instance admin. A pod member who did not install the
+// agent gets 403 `installer_only`, the code the config PATCH answers with.
+// Answers the refusal itself and returns null, or returns the installation.
+const authorizeInstallerOrRespond = async (req: any, res: any) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  try {
+    return await resolveAuthorizedInstallation({
+      podId: req.params.podId,
+      name: req.params.name,
+      instanceId: getRequestedInstanceId(req),
+      userId,
+    });
+  } catch (error: any) {
+    if (!error?.status) throw error;
+    res.status(error.status).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
+    return null;
+  }
+};
+
 filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId } = req.body;
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const resolved = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-
-    if (!resolved.installation) {
-      return res.status(404).json({ error: 'Agent not installed in this pod' });
-    }
+    const installation = await authorizeInstallerOrRespond(req, res);
+    if (!installation) return undefined;
 
     const profile = await AgentProfile.findOne({
-      agentId: buildAgentProfileId(name, resolved.instanceId),
+      agentId: buildAgentProfileId(name, installation.instanceId),
       podId,
     }).lean();
 
-    const displayName = resolved.installation.displayName || profile?.name || name;
-    const purpose = profile?.purpose || resolved.installation?.displayName || name;
+    const displayName = installation.displayName || profile?.name || name;
+    const purpose = profile?.purpose || installation.displayName || name;
     const seed = Math.floor(Math.random() * 1000000);
 
     const prompt = [
@@ -202,25 +200,10 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req:
 filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId } = req.query;
-    const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const installation = await authorizeInstallerOrRespond(req, res);
+    if (!installation) return undefined;
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) return res.status(404).json({ error: 'Pod not found' });
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
-    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
-
-    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
-    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
-
-    const accountId = normalizeInstanceId(resolved.instanceId);
+    const accountId = normalizeInstanceId(installation.instanceId);
 
     // Try reading live from PVC first; fall back to AgentProfile cached copy
     let content = '';
@@ -234,12 +217,12 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
       const profile = await AgentProfile.findOne({
         podId,
         agentName: name.toLowerCase(),
-        instanceId: resolved.instanceId,
+        instanceId: installation.instanceId,
       }).select('heartbeatContent').lean();
       content = profile?.heartbeatContent || '';
     } else if (readFromWorkspace) {
       AgentProfile.updateMany(
-        { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
+        { podId, agentName: name.toLowerCase(), instanceId: installation.instanceId },
         { $set: { heartbeatContent: content } },
       ).catch((profileErr: any) => {
         console.warn('[heartbeat-file] Failed to sync AgentProfile cache from workspace:', profileErr.message);
@@ -256,9 +239,8 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
 filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, content, reset } = req.body;
-    const userId = getUserId(req);
-    if (!userId) {
+    const { content, reset } = req.body;
+    if (!getUserId(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -266,34 +248,10 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateL
       return res.status(400).json({ error: 'Heartbeat file updates are only supported for OpenClaw agents.' });
     }
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
+    const installation = await authorizeInstallerOrRespond(req, res);
+    if (!installation) return undefined;
 
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const resolved = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-
-    if (!resolved.installation) {
-      return res.status(404).json({ error: 'Agent not installed in this pod' });
-    }
-
-    const normalizedInstanceId = normalizeInstanceId(resolved.instanceId);
-    const accountId = normalizedInstanceId;
+    const accountId = normalizeInstanceId(installation.instanceId);
     const trimmed = String(content || '').trim();
     const normalized = trimmed
       ? (trimmed.startsWith('#') ? `${trimmed}\n` : `# HEARTBEAT.md\n\n${trimmed}\n`)
@@ -304,7 +262,7 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateL
     // Persist to AgentProfile so config card can read it without PVC access
     try {
       await AgentProfile.updateMany(
-        { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
+        { podId, agentName: name.toLowerCase(), instanceId: installation.instanceId },
         { $set: { heartbeatContent: normalized } },
       );
     } catch (profileErr: unknown) {
@@ -322,7 +280,7 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateL
     // which is precisely the state in which the provisioner should own the file.
     try {
       await AgentInstallation.updateOne(
-        { _id: resolved.installation._id },
+        { _id: installation._id },
         { $set: { 'config.customizations.heartbeat': !reset } },
       );
     } catch (flagErr: unknown) {
@@ -342,26 +300,10 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateL
  */
 filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const { instanceId } = req.query;
-    const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const installation = await authorizeInstallerOrRespond(req, res);
+    if (!installation) return undefined;
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) return res.status(404).json({ error: 'Pod not found' });
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
-    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
-
-    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
-    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
-
-    const accountId = normalizeInstanceId(resolved.instanceId);
+    const accountId = normalizeInstanceId(installation.instanceId);
 
     let content = '';
     try {
@@ -379,32 +321,20 @@ filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req: any
  * POST /api/registry/pods/:podId/agents/:name/identity-file
  * Write IDENTITY.md to agent workspace
  */
-filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req: any, res: any) => {
+filesRouter.post('/pods/:podId/agents/:name/identity-file', workspaceWriteRateLimit, auth, async (req: any, res: any) => {
   try {
-    const { podId, name } = req.params;
-    const { instanceId, content } = req.body;
-    const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { name } = req.params;
+    const { content } = req.body;
+    if (!getUserId(req)) return res.status(401).json({ error: 'Unauthorized' });
 
     if (name.toLowerCase() !== 'openclaw') {
       return res.status(400).json({ error: 'Identity file updates are only supported for OpenClaw agents.' });
     }
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    const installation = await authorizeInstallerOrRespond(req, res);
+    if (!installation) return undefined;
 
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
-    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
-
-    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
-    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
-
-    const accountId = normalizeInstanceId(resolved.instanceId);
+    const accountId = normalizeInstanceId(installation.instanceId);
     const normalized = String(content || '').trim();
     const filePath = await writeWorkspaceIdentityFile(accountId, normalized);
 

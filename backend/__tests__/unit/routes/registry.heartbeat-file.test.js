@@ -15,6 +15,12 @@ jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
 }));
 
+// The caller installed the agent and is not an admin; the role lookup is the
+// one the installer check reads.
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ role: 'user' }) }) })),
+}));
+
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
@@ -48,6 +54,7 @@ describe('registry heartbeat file updates', () => {
       podId: '6a00000000000000000000a1',
       instanceId: 'default',
       displayName: 'Cuz',
+      installedBy: 'user-1',
     });
     writeOpenClawHeartbeatFile.mockReturnValue('/tmp/HEARTBEAT.md');
   };
@@ -139,6 +146,7 @@ describe('rate limiters run before auth', () => {
 
   it.each([
     ['post', '/pods/:podId/agents/:name/heartbeat-file'],
+    ['post', '/pods/:podId/agents/:name/identity-file'],
     ['get', '/pods/:podId/agents/:name/a2a-dms'],
   ])('%s %s puts its limiter at position 0', (method, path) => {
     const { handles } = routeFor(method, path);
