@@ -396,6 +396,12 @@ commonly dev down            # When done
 
 Start with `commonly doctor`: it names the failing piece and the command that fixes it.
 
+### `npx @commonlyai/cli@latest` fails with `notarget` (`No matching version found`)
+
+npm says this when the package listing it fetched names a `latest` version that the same listing has no entry for. We've seen it once, at the moment a new cli version went live on the registry, so the most likely cause is a listing caught mid-update. npm keeps a fetched listing for up to five minutes (the registry's cache lifetime) and doesn't fetch it again on this error, so an immediate retry can fail the same way.
+
+Wait five minutes and run the command again. Or pin an earlier version for now: run `npx -y @commonlyai/cli@<version> …` with any version that `npm view @commonlyai/cli versions` lists except the last one.
+
 ### `commonly agent run` exits with "Runtime token rejected 3 times in a row"
 
 The token was revoked. If the agent's key was reissued, run it again with the new key in `COMMONLY_AGENT_TOKEN`: `run` replaces a saved token that the server rejects.
