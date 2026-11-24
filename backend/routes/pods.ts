@@ -66,10 +66,13 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// Keyed on the token auth reads (middleware/auth.ts): the Authorization value
+// with `Bearer ` removed, else x-auth-token. Hashing the raw header gave one
+// credential a bucket per spelling (F596, CodeRabbit).
 const podJoinRateLimitKey = (req: any) => {
-  const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
-  if (authHeader) {
-    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  const token = req.get?.('authorization')?.replace('Bearer ', '') || req.get?.('x-auth-token');
+  if (token) {
+    return `tok:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
   }
   return cloudflareIpRateLimitKeyGenerator(req as never);
 };
@@ -121,16 +124,43 @@ const qrCodeObjectKey = (podId: string, mimetype: string): string => (
   `qr/${podId}/${randomBytes(16).toString('hex')}${QR_CODE_TYPES[mimetype]}`
 );
 
+const QR_CODE_TYPE_REFUSAL = 'Only PNG, JPEG, GIF or WebP images are allowed';
+class QrCodeTypeError extends Error {}
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, accept?: boolean) => void) => {
     if (!Object.prototype.hasOwnProperty.call(QR_CODE_TYPES, file.mimetype)) {
-      return cb(new Error('Only PNG, JPEG, GIF or WebP images are allowed'));
+      return cb(new QrCodeTypeError(QR_CODE_TYPE_REFUSAL));
     }
     cb(null, true);
   },
 });
+
+// F596: a refused upload is the client's mistake, so it answers in the route's
+// own shape. Left to the app's error handler, the filter's refusal answered 500
+// and reached Sentry as an unhandled error (staging, 2026-11-24).
+const qrCodeUpload = (req: unknown, res: Res, next: () => void) => {
+  upload.single('qrCode')(req, res, (err: unknown) => {
+    if (!err) return next();
+    const e = err as { code?: string; message?: string };
+    if (e.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'The QR image must be 2 MB or smaller', code: 'qr_code_too_large' });
+    }
+    if (err instanceof QrCodeTypeError) {
+      return res.status(400).json({ message: QR_CODE_TYPE_REFUSAL, code: 'qr_code_type' });
+    }
+    // Memory storage does no I/O, so anything else the parser raises is the
+    // request's: a multer limit, or a malformed multipart body from busboy.
+    return res.status(400).json({
+      message: err instanceof multer.MulterError && e.message ? e.message : 'The upload could not be read',
+      code: 'qr_code_upload',
+    });
+  });
+};
+// A link id that can't be an ObjectId makes findById throw (a 500); no link
+// is stored under one, so it's the same 404 as a missing link.
+const requireLinkId = (param: string, message: string) => requireObjectIdParam(param, { message }, 404);
 
 // The sidebar listing is the heaviest read in the app — it populates
 // createdBy / members / parentPod and joins the last message — and every
@@ -290,7 +320,7 @@ const externalLinkCreateRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
-router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
+router.post('/external-link', externalLinkCreateRateLimit, auth, qrCodeUpload, refuseDollarKeys, async (req: AuthReq, res: Res) => {
   try {
     const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
     if (!podId) return res.status(400).json({ message: 'Missing podId' });
@@ -334,7 +364,20 @@ router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('
   }
 });
 
-router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
+const requireDeletableLinkId = requireLinkId('id', 'External link not found');
+// F596: the delete and the QR read were unlimited (baseline rows), and CodeQL
+// flagged both when their lines changed. The delete gets its own bucket at the
+// create budget; the QR read takes the pod by-id read budget.
+const externalLinkDeleteRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.delete('/external-link/:id', externalLinkDeleteRateLimit, auth, requireDeletableLinkId, async (
+  req: AuthReq, res: Res,
+) => {
   try {
     const linkId = req.params?.id;
     const externalLink = await ExternalLink.findById(linkId) as {
@@ -356,7 +399,8 @@ router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res) => {
+const requireQrLinkId = requireLinkId('linkId', 'QR code not found');
+router.get('/external-link/:linkId/qrcode', podReadRateLimit, auth, requireQrLinkId, async (req: AuthReq, res: Res) => {
   try {
     const { linkId } = req.params || {};
     const link = await ExternalLink.findById(linkId) as {
