@@ -191,7 +191,7 @@ const cleanupLegacyInternalDeployment = async (deploymentName: any) => {
     console.log(`[k8s-provisioner] Removed legacy internal deployment: ${deploymentName}`);
   } catch (error: any) {
     if (error?.response?.statusCode !== 404) {
-      console.warn(`[k8s-provisioner] Failed to remove legacy internal deployment ${deploymentName}:`, (error as Error).message);
+      console.warn('[k8s-provisioner] Failed to remove legacy internal deployment %s: %s', deploymentName, (error as Error).message);
     }
   }
 };
@@ -221,7 +221,7 @@ const startAgentRuntime = async (runtimeType: any, instanceId: any) => {
     console.log(`[k8s-provisioner] Started agent runtime: ${deploymentName}`);
     return { started: true, deployment: deploymentName };
   } catch (error: any) {
-    console.error(`[k8s-provisioner] Failed to start ${deploymentName}:`, (error as Error).message);
+    console.error('[k8s-provisioner] Failed to start %s: %s', deploymentName, (error as Error).message);
     return { started: false, reason: (error as Error).message };
   }
 };
@@ -251,7 +251,7 @@ const stopAgentRuntime = async (runtimeType: any, instanceId: any) => {
     console.log(`[k8s-provisioner] Stopped agent runtime: ${deploymentName}`);
     return { stopped: true, deployment: deploymentName };
   } catch (error: any) {
-    console.error(`[k8s-provisioner] Failed to stop ${deploymentName}:`, (error as Error).message);
+    console.error('[k8s-provisioner] Failed to stop %s: %s', deploymentName, (error as Error).message);
     return { stopped: false, reason: (error as Error).message };
   }
 };
@@ -282,7 +282,7 @@ const restartAgentRuntime = async (runtimeType: any, instanceId: any) => {
     console.log(`[k8s-provisioner] Restarted agent runtime: ${deploymentName}`);
     return { restarted: true, deployment: deploymentName };
   } catch (error: any) {
-    console.error(`[k8s-provisioner] Failed to restart ${deploymentName}:`, (error as Error).message);
+    console.error('[k8s-provisioner] Failed to restart %s: %s', deploymentName, (error as Error).message);
     return { restarted: false, reason: (error as Error).message };
   }
 };
@@ -381,7 +381,7 @@ const getDeploymentLogs = async ({ deploymentName, lines }: any) => {
     );
     return { logs: logsResponse.body || '', pod: pod.metadata.name, deployment: deploymentName };
   } catch (error: any) {
-    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);
+    console.error('[k8s-provisioner] Failed to get logs for %s: %s', deploymentName, (error as Error).message);
     return { logs: '', reason: (error as Error).message };
   }
 };
@@ -403,7 +403,7 @@ const getAgentRuntimeLogs = async (
     // Find pods for this deployment
     return getDeploymentLogs({ deploymentName, lines });
   } catch (error: any) {
-    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);
+    console.error('[k8s-provisioner] Failed to get logs for %s: %s', deploymentName, (error as Error).message);
     return { logs: '', reason: (error as Error).message };
   }
 };
