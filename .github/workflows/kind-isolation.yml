@@ -132,7 +132,8 @@ jobs:
             sed -i "s@image: ${ref}\$@image: ${ref}\@${digest}@" "$RUNNER_TEMP/calico-pinned.yaml"
           done
           sed -i 's@192.168.0.0/16@10.244.0.0/16@g' "$RUNNER_TEMP/calico-pinned.yaml"
-          if grep -E '^\s*image:' "$RUNNER_TEMP/calico-pinned.yaml" | grep -v '@sha256:'; then
+          # Lines with a value only: CRD schemas carry bare `image:` property keys.
+          if grep -E '^\s*-?\s*image:\s*\S' "$RUNNER_TEMP/calico-pinned.yaml" | grep -v '@sha256:'; then
             echo "an image in calico.yaml is not pinned by digest"; exit 1
           fi
           kubectl apply -f "$RUNNER_TEMP/calico-pinned.yaml"
@@ -148,7 +149,7 @@ jobs:
           image="registry.k8s.io/agent-sandbox/agent-sandbox-controller:${AGENT_SANDBOX_VERSION}"
           grep -qF "image: ${image}" "$RUNNER_TEMP/sandbox.yaml"
           sed "s@image: ${image}\$@image: ${image}\@${AGENT_SANDBOX_CONTROLLER_DIGEST}@" "$RUNNER_TEMP/sandbox.yaml" > "$RUNNER_TEMP/sandbox-pinned.yaml"
-          if grep -E '^\s*image:' "$RUNNER_TEMP/sandbox-pinned.yaml" | grep -v '@sha256:'; then
+          if grep -E '^\s*-?\s*image:\s*\S' "$RUNNER_TEMP/sandbox-pinned.yaml" | grep -v '@sha256:'; then
             echo "an image in sandbox.yaml is not pinned by digest"; exit 1
           fi
           kubectl apply -f "$RUNNER_TEMP/sandbox-pinned.yaml"
