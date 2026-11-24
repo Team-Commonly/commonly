@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import {
-  chmod, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile,
+  chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
@@ -201,11 +201,14 @@ const defaultExtract = (archive, dir, env = process.env) => spawnSync(
  * first time. A hash mismatch, a failed download or an archive without msb.exe
  * refuses and leaves nothing runnable behind.
  */
+export const MSB_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const ensureMsb = async ({
   root = microsandboxRoot(),
   asset = msbAsset(),
   fetchImpl = globalThis.fetch,
   extract = defaultExtract,
+  timeoutMs = MSB_DOWNLOAD_TIMEOUT_MS,
 } = {}) => {
   const binary = join(root, 'msb.exe');
   const marker = join(root, '.verified');
@@ -221,9 +224,19 @@ export const ensureMsb = async ({
   const archive = join(root, `.download-${tag}.zip`);
   const staging = join(root, `.staging-${tag}`);
   try {
-    const response = await fetchImpl(msbReleaseUrl(asset), { redirect: 'follow' });
-    if (!response?.ok) throw new Error(`downloading microsandbox ${MSB_PIN.version} failed (HTTP ${response?.status})`);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    // One deadline for the request and the body, so a stalled connection
+    // can't hold the install lock indefinitely.
+    let bytes;
+    try {
+      const response = await fetchImpl(msbReleaseUrl(asset), { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+      if (!response?.ok) throw new Error(`downloading microsandbox ${MSB_PIN.version} failed (HTTP ${response?.status})`);
+      bytes = Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new Error(`downloading microsandbox ${MSB_PIN.version} took longer than ${Math.round(timeoutMs / 1000)} s; try again`);
+      }
+      throw error;
+    }
     const actual = sha256(bytes);
     if (actual !== asset.sha256) {
       throw new Error(`microsandbox ${asset.name} has SHA-256 ${actual}, not the pinned ${asset.sha256}; refusing to run it`);
@@ -430,29 +443,111 @@ export const startMicrovmTurn = async ({
 };
 
 const INSTALL_LOCK_STALE_MS = 15 * 60 * 1000;
+// Longer than the slowest install can run (a 5-minute download, the volume
+// probe and a 10-minute npm install), so a lock older than this was leaked by
+// its holder, or names a pid since reused, and is taken over even though that
+// pid is alive.
+const INSTALL_LOCK_MAX_MS = 60 * 60 * 1000;
+
+const defaultPidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists, owned by someone else.
+    return error?.code === 'EPERM';
+  }
+};
+
+/**
+ * Whether a lock whose file reads `content` can be taken over. The lock lives
+ * in this user's %LOCALAPPDATA%, so its holder ran on this machine: it is
+ * abandoned once that process is gone, and a slow install is not cut in on
+ * while it runs. Past INSTALL_LOCK_MAX_MS it is abandoned whatever the pid, so
+ * a lock a live process leaked, or one naming a reused pid, can't wedge every
+ * later install. A lock that names no process falls back to the shorter age.
+ */
+const lockAbandoned = (content, mtimeMs, { now, pidAlive }) => {
+  const age = now() - mtimeMs;
+  const pid = Number.parseInt(String(content).split(/\s+/)[0], 10);
+  if (Number.isInteger(pid) && pid > 0) return age > INSTALL_LOCK_MAX_MS || !pidAlive(pid);
+  return age > INSTALL_LOCK_STALE_MS;
+};
+
+// The guard is held only for a read and an unlink, so one older than this was
+// left by a process that died inside that window.
+const INSTALL_LOCK_GUARD_STALE_MS = 30 * 1000;
+
+/**
+ * Runs `fn` holding `guard`, a short-lived lock that serialises every removal
+ * of the install lock (a takeover or a release), so no removal can act on a
+ * lock that changed after it was read.
+ */
+const withLockGuard = async (guard, fn, { now }) => {
+  for (;;) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await writeFile(guard, `${process.pid}\n`, { flag: 'wx' });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      // eslint-disable-next-line no-await-in-loop
+      const held = await stat(guard).catch(() => null);
+      if (held && now() - held.mtimeMs > INSTALL_LOCK_GUARD_STALE_MS) {
+        // eslint-disable-next-line no-await-in-loop
+        await rm(guard, { force: true });
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+      }
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(guard, { force: true }).catch(() => {});
+  }
+};
 
 /**
  * Runs `fn` holding this version's install lock, so two first turns never
  * unpack msb or install into the volume (mounted writable then) at once.
+ *
+ * The lock names its holder (`<pid> <token>`, the token unique to each take).
+ * Only an exclusive create takes it. A waiter takes over a lock whose process
+ * has exited, or one past INSTALL_LOCK_MAX_MS, by deleting it and trying the
+ * create again. Every deletion, a takeover or the holder's release, runs under
+ * a guard lock and re-reads the lock first, deleting only the exact lock it
+ * judged (same token). So a takeover can never delete a lock another waiter
+ * took after the judgement, and the lock's path is never free while a live
+ * holder's lock is displaced. The holder also removes a lock it can't read at
+ * all, so an unreadable lock is never left behind.
  */
 export const withInstallLock = async (root, fn, {
-  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now,
+  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
 } = {}) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, '.install.lock');
+  const guard = join(root, '.install.lock.guard');
+  const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
   const deadline = now() + waitMs;
   for (;;) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await writeFile(lock, `${process.pid}\n`, { flag: 'wx' });
+      await writeFile(lock, mine, { flag: 'wx' });
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       // eslint-disable-next-line no-await-in-loop
       const held = await stat(lock).catch(() => null);
-      if (held && now() - held.mtimeMs > INSTALL_LOCK_STALE_MS) {
+      // eslint-disable-next-line no-await-in-loop
+      const judged = held ? await readFile(lock, 'utf8').catch(() => null) : null;
+      if (held && judged !== null && lockAbandoned(judged, held.mtimeMs, { now, pidAlive })) {
         // eslint-disable-next-line no-await-in-loop
-        await rm(lock, { force: true });
+        await withLockGuard(guard, async () => {
+          const current = await readFile(lock, 'utf8').catch(() => null);
+          if (current === judged) await rm(lock, { force: true });
+        }, { now });
       } else if (now() > deadline) {
         throw new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`);
       } else {
@@ -464,7 +559,12 @@ export const withInstallLock = async (root, fn, {
   try {
     return await fn();
   } finally {
-    await rm(lock, { force: true }).catch(() => {});
+    await withLockGuard(guard, async () => {
+      const current = await readFile(lock, 'utf8').then((text) => text, (error) => error);
+      // Not `instanceof Error`: fs errors can come from another realm (a test VM).
+      const unreadable = typeof current !== 'string' && current?.code !== 'ENOENT';
+      if (current === mine || unreadable) await rm(lock, { recursive: true, force: true });
+    }, { now }).catch(() => {});
   }
 };
 
