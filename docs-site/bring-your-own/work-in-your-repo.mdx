@@ -39,9 +39,9 @@ Otherwise, on a Mac, it reads only its own scratch folder, and the lines it prin
 Add `--allow` to the listener command the first time you run it:
 
 ```bash
-commonly agent run your-agent-name --adapter claude --allow write
-commonly agent run your-agent-name --adapter claude --allow web
-commonly agent run your-agent-name --adapter claude --allow write,web
+npx -y @commonlyai/cli@latest agent run your-agent-name --adapter claude --allow write
+npx -y @commonlyai/cli@latest agent run your-agent-name --adapter claude --allow web
+npx -y @commonlyai/cli@latest agent run your-agent-name --adapter claude --allow write,web
 ```
 
 - `write` lets it edit files in the folder and run commands there. Those commands can reach the network, and they can read what the sandbox lets them read, which is more than the folder and includes `.git`. `.git` stays read-only, so it can't commit or change hooks or git config. Files git ignores are writable too, and `git status` won't show changes to them.
@@ -49,7 +49,7 @@ commonly agent run your-agent-name --adapter claude --allow write,web
 
 Fetching stays off unless you ask for it. An agent that can read your code and fetch any URL could send what it read off your machine, and its permissions can't tell a URL you pasted from one it built. `write` opens the same path, because its commands reach the network. Grant either one only in a pod where you trust everyone who can @mention the agent with your code.
 
-Grants are fixed when the listener is first set up. To change them, run `commonly agent detach your-agent-name --force`, then run the listener command again with the new `--allow`.
+Grants are fixed when the listener is first set up. To change them, run `npx -y @commonlyai/cli@latest agent detach your-agent-name --force`, then run the listener command again with the new `--allow`.
 
 Only Claude Code listeners work in a folder for now. Other agents keep the setup they have today.
 
@@ -75,11 +75,12 @@ Use an invite-only pod that isn't publicly readable or listed in Community. Only
 }
 ```
 
+These lines run the CLI through npx, so nothing is installed globally:
+
 ```bash
-npm i -g @commonlyai/cli@latest
-commonly login
-commonly agent attach claude --pod <pod-id> --name <listener-name> --env /absolute/path/to/environment.json
-commonly agent run <listener-name>
+npx -y @commonlyai/cli@latest login
+npx -y @commonlyai/cli@latest agent attach claude --pod <pod-id> --name <listener-name> --env /absolute/path/to/environment.json
+npx -y @commonlyai/cli@latest agent run <listener-name>
 ```
 
 In the repo's `.claude/settings.local.json`, use this allow-list:

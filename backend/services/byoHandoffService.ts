@@ -6,6 +6,7 @@
  * the adapter, operating system, and an optional display name. Everything that
  * reaches a shell-looking code block is validated and composed here.
  */
+import { CLI_NPX_COMMAND } from './cliNpxCommand';
 
 export type ByoHandoffAdapter = 'claude' | 'codex' | 'opencode' | 'dsh';
 type ByoHandoffOs = 'mac' | 'linux' | 'windows';
@@ -17,9 +18,12 @@ const BYO_HANDOFF_OSES: readonly ByoHandoffOs[] = ['mac', 'linux', 'windows'];
 // Adapters whose Windows setup is the Bring your own page, not the card's lines.
 export const CONNECT_PAGE_ON_WINDOWS: ReadonlySet<ByoHandoffAdapter> = new Set<ByoHandoffAdapter>(['claude', 'codex']);
 
-export const CLI_INSTALL = 'npm i -g @commonlyai/cli@latest';
-const DSH_INSTALL = `${CLI_INSTALL} @deepseek-ai/dsh@0.2.1-rc.2`;
-const OPENCODE_INSTALL = `${CLI_INSTALL} opencode-ai`;
+// Commonly's own lines run the CLI through npx, so nothing of Commonly's is
+// installed globally (F582: `npm i -g` stops with EACCES on a stock-Node Mac).
+// A harness is installed from its own docs, as the Bring your own page leaves
+// Claude Code, Codex and OpenCode to theirs. dsh keeps its line: the adapter is
+// smoke-tested against this one pinned version (cli/src/lib/adapters/dsh.js).
+const DSH_INSTALL = 'npm i -g @deepseek-ai/dsh@0.2.1-rc.2';
 
 const isAdapter = (value: unknown): value is ByoHandoffAdapter => (
   typeof value === 'string' && (BYO_HANDOFF_ADAPTERS as readonly string[]).includes(value)
@@ -57,11 +61,7 @@ const environmentPath = (os: ByoHandoffOs): string => {
   return '/Users/you/agents/environment.json';
 };
 
-const installCommand = (adapter: ByoHandoffAdapter): string => {
-  if (adapter === 'dsh') return DSH_INSTALL;
-  if (adapter === 'opencode') return OPENCODE_INSTALL;
-  return CLI_INSTALL;
-};
+const installLines = (adapter: ByoHandoffAdapter): string[] => (adapter === 'dsh' ? [DSH_INSTALL] : []);
 
 /**
  * The bytes copied by the in-pod card. Keep the login, attach, and run lines
@@ -85,12 +85,12 @@ export const buildByoHandoffCommand = ({
   apiOrigin?: string;
 }): string => {
   const memoryFlags = memoryFrom ? ` --memory-from ${memoryFrom} --memory-instance ${memoryInstance}` : '';
-  const attach = `commonly agent attach ${adapter} --pod ${podId} --name ${agentName}${memoryFlags}`;
+  const attach = `${CLI_NPX_COMMAND} agent attach ${adapter} --pod ${podId} --name ${agentName}${memoryFlags}`;
   const withEnvironment = adapter === 'opencode' || adapter === 'dsh'
     ? `${attach} --env ${environmentPath(os)}`
     : attach;
-  const login = apiOrigin ? `commonly login --instance ${apiOrigin}` : 'commonly login';
-  return [installCommand(adapter), login, withEnvironment, `commonly agent run ${agentName}`].join('\n');
+  const login = apiOrigin ? `${CLI_NPX_COMMAND} login --instance ${apiOrigin}` : `${CLI_NPX_COMMAND} login`;
+  return [...installLines(adapter), login, withEnvironment, `${CLI_NPX_COMMAND} agent run ${agentName}`].join('\n');
 };
 
 interface ByoHandoffPayload {

@@ -273,14 +273,17 @@ describe('every harness on the add page', () => {
       + " printf '%s' \"$KEY\" > ~/.config/commonly/anthropic-key)",
     );
     expect(screen.getByTestId('byo-opencode-lines').textContent).toBe([
-      'npm i -g @commonlyai/cli@latest opencode-ai',
-      'commonly login',
+      'npx -y @commonlyai/cli@latest login',
       'cat > ~/.config/commonly/sam-opencode.json <<EOF',
       '{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"claude-haiku-5-5","sandbox":{"trust":"public"}}',
       'EOF',
-      'commonly agent attach opencode --pod p1 --name sam-opencode --env ~/.config/commonly/sam-opencode.json',
-      'commonly agent run sam-opencode',
+      'npx -y @commonlyai/cli@latest agent attach opencode --pod p1 --name sam-opencode --env ~/.config/commonly/sam-opencode.json',
+      'npx -y @commonlyai/cli@latest agent run sam-opencode',
     ].join('\n'));
+    // F582: nothing is installed globally; OpenCode comes from its own docs,
+    // as Claude Code and Codex do, and the step above says it's needed.
+    expect(screen.getByTestId('byo-opencode-lines').textContent).not.toMatch(/npm i -g|^commonly /m);
+    expect(screen.getByText(/needs OpenCode installed/)).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'claude-sonnet-5-5' } });
     expect(screen.getByTestId('byo-opencode-lines').textContent).toContain('"model":"claude-sonnet-5-5"');
     expect(axios.post).not.toHaveBeenCalled();

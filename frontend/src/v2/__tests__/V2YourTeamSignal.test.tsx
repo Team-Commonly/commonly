@@ -113,6 +113,23 @@ describe('Your Team (direction C)', () => {
     }
   });
 
+  test('the server\'s npx run line keeps Connect, and a Windows browser gets npx.cmd (F582)', async () => {
+    const realUserAgent = window.navigator.userAgent;
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', configurable: true });
+    try {
+      renderPage({ p1Agents: [
+        { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',
+          runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+          fixCommand: 'npx -y @commonlyai/cli@latest agent run local' },
+      ] });
+      await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+      expect(within(cardOf('Local')).getByTestId('team-card-fix-command')).toHaveTextContent('npx.cmd -y @commonlyai/cli@latest agent run local');
+      expect(within(cardOf('Local')).getByTestId('team-card-connect')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window.navigator, 'userAgent', { value: realUserAgent, configurable: true });
+    }
+  });
+
   test('a never-connected card shows the run command when the server sends one, and not otherwise', async () => {
     renderPage({ p1Agents: [
       { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',

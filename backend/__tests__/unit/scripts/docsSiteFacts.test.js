@@ -41,6 +41,50 @@ describe('docs.commonly.me says what the product does', () => {
     expect(quickstart).not.toMatch(/install\.sh/);
   });
 
+  test('the Claude Code and repo pages run the CLI through npx, with no global install (F582)', () => {
+    const npx = constantFromPage('CLI_NPX_COMMAND');
+    const claudeCode = read('docs-site/bring-your-own/claude-code.mdx');
+    [claudeCode, repoWork].forEach((page) => {
+      expect(page).not.toContain('npm i -g @commonlyai/cli');
+      expect(page).not.toMatch(/^commonly /m);
+    });
+    expect(claudeCode).toContain(`${npx} agent run your-agent-name --adapter claude`);
+    expect(repoWork).toContain(`${npx} login\n${npx} agent attach claude --pod <pod-id>`);
+    const readme = read('README.md');
+    expect(readme).not.toContain('npm i -g @commonlyai/cli');
+    expect(readme).toContain(`${npx} agent run <your-agent-name> --adapter claude`);
+  });
+
+  test('no code block in the agent pages starts a line with a bare commonly (F582)', () => {
+    const dir = 'docs-site/bring-your-own';
+    const files = [
+      ...fs.readdirSync(path.join(ROOT, dir)).filter((f) => f.endsWith('.mdx')).map((f) => `${dir}/${f}`),
+      'commonly-mcp/README.md',
+      'docs/MCP_INTEGRATION.md',
+    ];
+    const offenders = [];
+    files.forEach((rel) => {
+      const blocks = read(rel).match(/```[^\n]*\n[\s\S]*?```/g) || [];
+      blocks.forEach((block) => block.split('\n').forEach((line) => {
+        if (/^\s*(>\s*)?commonly(\.cmd)? /.test(line)) offenders.push(`${rel}: ${line.trim()}`);
+      }));
+    });
+    // An inline command a person is told to run counts too: one after "run",
+    // or one with arguments opening a line. Naming a command in a sentence
+    // ("`commonly agent run` refuses …") does not.
+    files.forEach((rel) => {
+      read(rel).split('\n').forEach((line) => {
+        (line.match(/\brun `commonly(?:\.cmd)? [^`]+`/g) || [])
+          .forEach((hit) => offenders.push(`${rel}: ${hit}`));
+        const opening = line.match(/^\s*(?:>\s*)?(?:[-*]\s+)?`(commonly(?:\.cmd)?(?: [^ `]+){3,}[^`]*)`/);
+        if (opening) offenders.push(`${rel}: ${opening[1]}`);
+      });
+    });
+    expect(offenders).toEqual([]);
+    // Prose that names what the copied command does says npx, not an install.
+    expect(read(`${dir}/codex.mdx`)).not.toMatch(/installs `@commonlyai\/cli`/);
+  });
+
   test('the quickstart is the hosted path and the deeper connect page keeps the CLI commands', () => {
     // F570: the CLI runs through npx, as the Bring your own page runs it.
     const npx = constantFromPage('CLI_NPX_COMMAND');

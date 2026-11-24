@@ -36,6 +36,7 @@ import crypto from 'crypto';
 import { hostedRunsNative } from './hostedEngine';
 import { BYO_STALE_MS } from './agentConnectionStateService';
 import { newestPerInstall } from './newestPerInstall';
+import { CLI_NPX_COMMAND } from './cliNpxCommand';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
@@ -153,7 +154,9 @@ export function runInstructionFor(installation: InstallationRow): string | null 
   // pushes to a URL has no wrapper for `commonly agent run` to start.
   if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
   if (!isByo) return null;
-  const command = `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
+  // Through npx, as the Bring your own page runs it: a bare `commonly` is
+  // "command not found" after a global install fails (F582).
+  const command = `${CLI_NPX_COMMAND} agent run ${String(installation.agentName || '').toLowerCase()}`;
   const instanceId = String(installation.instanceId || 'default');
   return instanceId.toLowerCase() !== 'default' && INSTANCE_ID_RE.test(instanceId)
     ? `${command} --instance-id ${instanceId}` : command;

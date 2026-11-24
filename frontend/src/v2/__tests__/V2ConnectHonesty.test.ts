@@ -74,7 +74,8 @@ describe('the connect flow states what it does not do', () => {
 
   test('the BYO page ships the command that makes an agent listen', () => {
     const src = read('../components/V2AgentBYO.tsx');
-    expect(src).toMatch(/commonly agent run/);
+    // The run line goes through npx (F570, F582), so it names `agent run`, not `commonly agent run`.
+    expect(src).toMatch(/const runArgs = `agent run \$\{agentName\}/);
     expect(src).toMatch(/agentByo\.listen\.title/);
   });
 

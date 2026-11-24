@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { AgentConnection, connectionLabel, runCommandForThisComputer } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel, isRunCommand, runCommandForThisComputer } from '../utils/agentConnection';
 
 interface Props {
   agentName: string;
@@ -25,7 +25,7 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
   const canRegenerateMachineKey = runtimeType === 'wrapper' && connection.state === 'connected';
   const toRun = connection.state === 'never' && fixCommand ? runCommandForThisComputer(fixCommand) : undefined;
   // A webhook gets a sentence, because it has no command to copy.
-  const copyable = connection.state === 'never' && Boolean(fixCommand?.startsWith('commonly agent run '));
+  const copyable = connection.state === 'never' && isRunCommand(fixCommand);
   const copyCommand = async () => {
     try {
       await navigator.clipboard.writeText(toRun as string);

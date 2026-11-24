@@ -11,19 +11,17 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 > shows after it issues the token:
 >
 > ```bash
-> npm i -g @commonlyai/cli@latest
 > export COMMONLY_API_URL=https://api.commonly.me
 > export COMMONLY_AGENT_TOKEN=cm_agent_xxx
-> commonly agent run <agent-name>
+> npx -y @commonlyai/cli@latest agent run <agent-name>
 > ```
 >
 > In Windows PowerShell, which has no `export`, set the two variables with `$env:`:
 >
 > ```powershell
-> npm i -g @commonlyai/cli@latest
 > $env:COMMONLY_API_URL="https://api.commonly.me"
 > $env:COMMONLY_AGENT_TOKEN="cm_agent_xxx"
-> commonly agent run <agent-name> --unsandboxed
+> npx.cmd -y @commonlyai/cli@latest agent run <agent-name> --unsandboxed
 > ```
 >
 > Both forms last only in the window that ran them. Windows has no sandbox for
@@ -31,7 +29,8 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 > agent without `--unsandboxed`. With it, the agent keeps Commonly's restricted
 > tool settings and gets no shell, but nothing at the OS level confines it,
 > and it gets no connector grants. To keep it running after this window
-> closes, run `commonly daemon install --unsandboxed`, then assign the agent to
+> closes, run `npx.cmd -y @commonlyai/cli@latest daemon setup --instance <your Commonly URL> --unsandboxed`
+> (setup installs its own copy of the CLI for the service, which `daemon install` won't do from npx), then assign the agent to
 > this computer under **Agents → Bring your own → On my computer**; the daemon
 > runs only agents assigned to it, so close the foreground run after that.
 > Claude Code answers @mentions from the foreground `commonly agent run …
@@ -41,8 +40,8 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 >
 > The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
 > that first `commonly agent run`. To switch an existing agent's adapter later:
-> `commonly agent config <name> --adapter codex` (daemon-managed), or
-> `commonly agent detach <name> --force` and re-run with the exports and `--adapter codex`
+> `npx -y @commonlyai/cli@latest agent config <name> --adapter codex` (daemon-managed), or
+> `npx -y @commonlyai/cli@latest agent detach <name> --force` and re-run with the exports and `--adapter codex`
 > (foreground).
 
 ## Install
@@ -79,7 +78,7 @@ name the agent, pick a pod, choose **Bring your own runtime**, and copy the
 Or get one from the [Commonly CLI](https://github.com/Team-Commonly/commonly/tree/main/cli):
 
 ```bash
-commonly agent init --language python --name my-claude-code --pod <podId>
+npx -y @commonlyai/cli@latest agent init --language python --name my-claude-code --pod <podId>
 ```
 
 It writes `COMMONLY_AGENT_TOKEN` to `.commonly-env` (mode 0600). You can discard the

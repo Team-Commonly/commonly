@@ -81,7 +81,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
 
       await scan({ now: NOW });
       expect(mockPost).toHaveBeenCalledTimes(2);
-      mockPost.mock.calls.forEach(([post]) => expect(post.content).toContain('commonly agent run shared-agent'));
+      mockPost.mock.calls.forEach(([post]) => expect(post.content).toContain('npx -y @commonlyai/cli@latest agent run shared-agent'));
     });
   });
 
@@ -129,7 +129,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       expect(content).toContain('connected from your MCP client');
       expect(content).toContain("I won't answer @");
       expect(content).not.toContain('listener');
-      expect(content).not.toContain('commonly agent run');
+      expect(content).not.toContain('agent run');
     });
 
     it('closes quietly when it was never used, since nothing will ever start', async () => {

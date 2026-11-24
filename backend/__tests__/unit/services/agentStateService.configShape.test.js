@@ -59,6 +59,6 @@ describe('deriveAgentState is shape-sensitive on config', () => {
     );
 
     expect(state.state).toBe('never-connected');
-    expect(state.fixCommand).toBe('commonly agent run stamp-verify-agent');
+    expect(state.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run stamp-verify-agent');
   });
 });

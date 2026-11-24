@@ -165,7 +165,7 @@ describe('stalledConnectService.scan', () => {
 
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain('Open my Settings, press Connect, and run the command it gives you on the machine where I should live');
-    expect(content).not.toContain('commonly agent run');
+    expect(content).not.toContain('agent run');
   });
 
   it('sends a second instance made on the page to Connect too: the link carries its instance (F306)', async () => {
@@ -173,7 +173,7 @@ describe('stalledConnectService.scan', () => {
     await scan({ now: NOW });
 
     expect(mockPost.mock.calls[0][0].content).toContain('press Connect');
-    expect(mockPost.mock.calls[0][0].content).not.toContain('commonly agent run');
+    expect(mockPost.mock.calls[0][0].content).not.toContain('agent run');
   });
 
   it.each([
@@ -184,7 +184,7 @@ describe('stalledConnectService.scan', () => {
     setup({ installs: [install(over)], machineId });
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
   });
 
   it('keeps the command when the owner can\'t be read: Connect could be refused', async () => {
@@ -192,7 +192,7 @@ describe('stalledConnectService.scan', () => {
     mockOwns.mockRejectedValue(new Error('read failed'));
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
   });
 
   it.each([
@@ -204,7 +204,7 @@ describe('stalledConnectService.scan', () => {
     setup({ installs: [install({ ...madeOnPage, ...(runtimeTokens ? { runtimeTokens } : {}) })], userTokens });
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
   });
 
   it('nudges a seat whose token was issued long ago and never used', async () => {
@@ -217,7 +217,7 @@ describe('stalledConnectService.scan', () => {
     expect(posted.podId).toBe('pod1');
     expect(posted.authorKind).toBe('kernel');
     expect(posted.content).toContain('@alice');
-    expect(posted.content).toContain('commonly agent run ai1-agent');
+    expect(posted.content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
     expect(posted.content).toContain("I'll post here the moment I connect");
   });
 
@@ -243,7 +243,7 @@ describe('stalledConnectService.scan', () => {
     );
     expect(posted.content).toContain('no connection arrived');
     // Nothing here knows the OS, so the copy doesn't claim to.
-    expect(posted.content).toContain('here is the one thing to check: run `commonly agent run ai1-agent`');
+    expect(posted.content).toContain('here is the one thing to check: run `npx -y @commonlyai/cli@latest agent run ai1-agent`');
     expect(posted.content).not.toContain('for your OS');
   });
 
@@ -272,7 +272,7 @@ describe('stalledConnectService.scan', () => {
       expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.`);
       // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
       expect(content).not.toContain('sandbox');
-      expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
+      expect(content).toContain('Run `npx -y @commonlyai/cli@latest agent run ai1-agent` on a Mac');
       expect(content).toContain('or choose “Run it here” on the Bring your own page for a hosted agent');
       expect(content).toContain("I'll post here the moment I connect");
       expect(content).not.toContain('one thing to check');
@@ -289,7 +289,8 @@ describe('stalledConnectService.scan', () => {
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain('If you ran it on Windows: Claude Code answers @mentions there with CLI 0.1.243 or newer, '
       + 'from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.');
-    expect(content).toContain('Check yours with `commonly.cmd --version`, and run all of the page’s lines again in one PowerShell window');
+    expect(content).toContain('Check yours with `npx.cmd -y @commonlyai/cli@latest --version`, and run all of the page’s lines again in one PowerShell window');
+    expect(content).not.toContain('commonly.cmd');
     expect(content).toContain('Or choose “Run it here” on the Bring your own page for a hosted agent');
     expect(content).not.toContain('may not answer @mentions yet');
     expect(content).not.toMatch(/on a Mac/);
@@ -351,7 +352,7 @@ describe('stalledConnectService.scan', () => {
     expect(content).toContain('you copied the MCP command');
     expect(content).toContain('but not the listener command that starts me');
     expect(content).toContain('MCP-only clients can call Commonly, but they do not answer @mentions');
-    expect(content).toContain('Run `commonly agent run ai1-agent` in a Terminal on the machine where I should live');
+    expect(content).toContain('Run `npx -y @commonlyai/cli@latest agent run ai1-agent` in a Terminal on the machine where I should live');
     expect(content).toContain("I'll post here the moment I connect");
   });
 
@@ -841,7 +842,7 @@ describe('keeping the forward promise', () => {
     const posted = mockPost.mock.calls[0][0];
     expect(posted.content).toContain('last checked in 2026-08-15 09:00 UTC');
     expect(posted.content).toContain("isn't running right now");
-    expect(posted.content).toContain('commonly agent run ai1-agent');
+    expect(posted.content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
   });
 
   it("resolves the installer's needs-you row for the nudge once the agent connects", async () => {
@@ -920,7 +921,7 @@ describe('keeping the forward promise', () => {
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain(os === 'windows'
       ? 'that takes the listener. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.'
-      : '`commonly agent run ai1-agent`, which is tested on a Mac. On Linux it may not answer @mentions yet');
+      : '`npx -y @commonlyai/cli@latest agent run ai1-agent`, which is tested on a Mac. On Linux it may not answer @mentions yet');
     expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
     expect(content).toContain('Run it here');
   });

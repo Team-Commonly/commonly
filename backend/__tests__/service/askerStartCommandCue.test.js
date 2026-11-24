@@ -46,9 +46,11 @@ describe('askerStartCommandCue', () => {
 
     expect(cue).toContain('"River agent"');
     // The listener command's shape: a bare run line fails without the token.
-    expect(cue).toContain('npm i -g @commonlyai/cli@latest\nexport COMMONLY_API_URL=');
+    // F582: the run line fetches the CLI through npx, so there is no install line.
+    expect(cue).not.toContain('npm i -g');
+    expect(cue).toContain('\nexport COMMONLY_API_URL=<from that page>\nexport COMMONLY_AGENT_TOKEN=');
     expect(cue).toContain('export COMMONLY_AGENT_TOKEN=');
-    expect(cue).toContain('commonly agent run river-agent --adapter');
+    expect(cue).toContain('npx -y @commonlyai/cli@latest agent run river-agent --adapter');
     expect(cue).toMatch(/Bring your own page/);
     // Scout wakes on every message here, so the cue must not make it reply.
     expect(cue).toMatch(/If you reply/);
@@ -67,7 +69,7 @@ describe('askerStartCommandCue', () => {
 
     expect(cue).toContain('set up "Newest agent", "Newer agent", "Older agent", and they have never connected');
     expect(cue).not.toContain('Oldest agent');
-    expect(cue).not.toContain('commonly agent run oldest-agent');
+    expect(cue).not.toContain('agent run oldest-agent');
   });
 
   test('says nothing once the agent has listened on its install token', async () => {
@@ -131,7 +133,7 @@ describe('askerStartCommandCue', () => {
     const room = await Pod.create({ name: 'Dana agent', type: 'agent-room', createdBy: owner._id, members: [owner._id, bot._id] });
     await install(room, owner, 'dana-agent');
 
-    expect(await askerStartCommandCue(String(room._id), String(owner._id))).toContain('commonly agent run dana-agent');
+    expect(await askerStartCommandCue(String(room._id), String(owner._id))).toContain('npx -y @commonlyai/cli@latest agent run dana-agent');
   });
 
   test('says nothing to an agent, even about an agent it set up', async () => {
@@ -163,7 +165,7 @@ describe('askerStartCommandCue', () => {
 
     const cue = await askerStartCommandCue(String(room._id), String(asker._id));
 
-    expect(cue).toContain('commonly agent run river-agent');
+    expect(cue).toContain('npx -y @commonlyai/cli@latest agent run river-agent');
   });
 
   test("in the asker's own room, a listen on the agent's install in another pod counts", async () => {

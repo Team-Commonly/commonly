@@ -120,11 +120,11 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.payload.kind).toBe('byo-handoff');
     expect(posted.runId).toBe('run-1');
     expect(posted.payload.agentName).toBe('sam-xu-opencode');
-    expect(posted.payload.commands.mac).toContain('commonly agent attach opencode');
+    expect(posted.payload.commands.mac).toContain('npx -y @commonlyai/cli@latest agent attach opencode');
     expect(posted.payload.commands.mac).toContain('--memory-from scout --memory-instance default');
     expect(posted.payload.commands.mac).not.toContain('victim');
     expect(posted.payload.commands.mac).not.toMatch(/cm_agent|COMMONLY_AGENT_TOKEN|token/i);
-    expect(posted.content).not.toContain('commonly agent attach');
+    expect(posted.content).not.toContain('agent attach');
     expect(posted.answeringMessageId).toBeUndefined();
     expect(posted.authorKind).toBe('kernel');
   });
@@ -141,7 +141,7 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.payload.agentName).toBe('sam-xu-claude-3');
     for (const command of Object.values(posted.payload.commands)) {
       expect(command).toContain('--name sam-xu-claude-3 --memory-from scout');
-      expect(command).toContain('commonly agent run sam-xu-claude-3');
+      expect(command).toContain('npx -y @commonlyai/cli@latest agent run sam-xu-claude-3');
     }
     expect(mockRegistryExists.mock.calls.map(([query]) => query)).toEqual([
       { agentName: 'sam-xu-claude' }, { agentName: 'sam-xu-claude-2' }, { agentName: 'sam-xu-claude-3' },

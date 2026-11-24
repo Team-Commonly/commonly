@@ -56,7 +56,7 @@ describe('deriveAgentState', () => {
   test('BYO with no token use anywhere → never-connected, owner gets the fix command', () => {
     const row = deriveAgentState(byoInstall(), [], 'owner-1', NOW);
     expect(row.state).toBe('never-connected');
-    expect(row.fixCommand).toBe('commonly agent run sam-agent');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run sam-agent');
   });
 
   test('the same state seen by a NON-owner carries the explanation but no instruction', () => {
@@ -117,7 +117,7 @@ describe('deriveAgentState', () => {
     );
     expect(row.state).toBe('never-connected');
     expect(row.lastUsedAt).toBeNull();
-    expect(row.fixCommand).toBe('commonly agent run sam-agent');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run sam-agent');
   });
 
   test('a check-in still decides over a later MCP call: listening, and lastUsedAt reports the check-in', () => {
@@ -155,7 +155,7 @@ describe('deriveAgentState', () => {
       NOW,
     );
     expect(row.state).toBe('gone-dark');
-    expect(row.fixCommand).toBe('commonly agent run sam-agent');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run sam-agent');
   });
 
   test('native runtime is reachable by construction — no dot, no lastUsedAt reading', () => {

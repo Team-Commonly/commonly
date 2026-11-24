@@ -196,8 +196,8 @@ export const composeStalledConnectNudge = ({
         + `If you ran it on Windows: ${WINDOWS_LISTENER_FACTS.replace('answers @mentions with', 'answers @mentions there with')} `
         + (connectable
           // commonly.cmd: a bare `commonly` is the .ps1 shim, which Windows 11's default script policy refuses (F342).
-          ? 'Check yours with `commonly.cmd --version`, then open my Settings, press Connect, and run all the lines it gives you in one PowerShell window. '
-          : 'Check yours with `commonly.cmd --version`, and run all of the page’s lines again in one PowerShell window. ')
+          ? 'Check yours with `npx.cmd -y @commonlyai/cli@latest --version`, then open my Settings, press Connect, and run all the lines it gives you in one PowerShell window. '
+          : 'Check yours with `npx.cmd -y @commonlyai/cli@latest --version`, and run all of the page’s lines again in one PowerShell window. ')
         + `Or ${HOSTED_FALLBACK} `
         + `I'll post here the moment I connect.`;
     }
