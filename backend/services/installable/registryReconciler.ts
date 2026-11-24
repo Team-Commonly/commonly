@@ -8,7 +8,7 @@
  * Guarantees: docs/architecture/installable-registry-bridge.md.
  */
 
-import { registryToInstallable } from './agentRegistryBridge';
+import { registryKeyOf, registryToInstallable } from './agentRegistryBridge';
 import { REGISTRY_BACKFILL_ORIGIN } from './registryBackfillOrigin';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -23,6 +23,8 @@ export interface RegistrySweepResult {
   scanned: number;
   inserted: number;
   existing: number;
+  /** Registry rows with no usable agentName: never keyed, never written. */
+  skipped: number;
   errors: number;
   mismatches: { status: number; stats: number };
 }
@@ -62,13 +64,17 @@ export async function sweepRegistryDrift(
   { dryRun = true }: { dryRun?: boolean } = {},
 ): Promise<RegistrySweepResult> {
   const result: RegistrySweepResult = {
-    dryRun, scanned: 0, inserted: 0, existing: 0, errors: 0, mismatches: { status: 0, stats: 0 },
+    dryRun, scanned: 0, inserted: 0, existing: 0, skipped: 0, errors: 0, mismatches: { status: 0, stats: 0 },
   };
   const cursor = AgentRegistry.find({}).lean().cursor();
   for await (const row of cursor) {
     result.scanned += 1;
     try {
-      const installableId = String(row.agentName).toLowerCase();
+      const installableId = registryKeyOf(row);
+      if (!installableId) {
+        result.skipped += 1;
+        continue;
+      }
       const existing = await Installable.findOne({ installableId })
         .select('status stats.totalInstalls').lean();
       if (existing) {
@@ -100,7 +106,7 @@ export async function sweepRegistryDrift(
  * backfills whatever this misses.
  */
 export async function mirrorRegistryRow(row: Obj | null | undefined, site: string): Promise<void> {
-  if (!row?.agentName) return;
+  if (!row || !registryKeyOf(row)) return;
   try {
     await insertIfMissing(buildInsert(row), row);
   } catch (err) {

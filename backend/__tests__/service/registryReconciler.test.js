@@ -12,7 +12,7 @@ const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentProfile = require('../../models/AgentProfile').default || require('../../models/AgentProfile');
-const { sweepRegistryDrift } = require('../../services/installable/registryReconciler');
+const { sweepRegistryDrift, mirrorRegistryRow } = require('../../services/installable/registryReconciler');
 
 jest.setTimeout(60000);
 
@@ -168,6 +168,32 @@ describe('sweepRegistryDrift', () => {
     const byo = await Installable.findOne({ installableId: 'byo-x' }).lean();
     expect(smoke.marketplace.published).toBe(false);
     expect(byo).toMatchObject({ source: 'user', marketplace: { published: false } });
+  });
+
+  // A January seed left a registry row whose agentName is null; String(null)
+  // turned it into an Installable keyed "null". A row with no usable name is skipped.
+  test('a registry row with no agentName is skipped, never keyed "null"', async () => {
+    const nameless = { registry: 'commonly-official', status: 'active', latestVersion: '1.0.0' };
+    await AgentRegistry.collection.insertMany([
+      // The unique agentName index admits one null-or-missing row at most.
+      { agentName: null, displayName: 'Nameless', ...nameless },
+      { agentName: '   ', displayName: 'Blank', ...nameless },
+    ]);
+    const dry = await sweepRegistryDrift({ dryRun: true });
+    expect(dry).toMatchObject({ scanned: 7, inserted: 4, existing: 1, skipped: 2, errors: 0 });
+
+    const result = await sweepRegistryDrift({ dryRun: false });
+    expect(result).toMatchObject({ scanned: 7, inserted: 4, existing: 1, skipped: 2, errors: 0 });
+    expect(await Installable.countDocuments({ installableId: { $in: ['null', 'undefined', '', '   '] } })).toBe(0);
+    expect(await Installable.countDocuments()).toBe(5);
+  });
+
+  test('the write-path mirror skips a nameless row too', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await mirrorRegistryRow({ agentName: null, displayName: 'Nameless', registry: 'commonly-official' }, 'test');
+    await mirrorRegistryRow({ agentName: '  ', displayName: 'Blank', registry: 'commonly-official' }, 'test');
+    warn.mockRestore();
+    expect(await Installable.countDocuments({ installableId: { $in: ['null', '', '  '] } })).toBe(0);
   });
 
   test('a duplicate-key race on insert counts as existing', async () => {

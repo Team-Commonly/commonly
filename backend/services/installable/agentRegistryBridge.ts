@@ -45,11 +45,23 @@ export const isPublishable = (row: Obj): boolean => (
   row.verified === true && (row.status || 'active') === 'active' && row.ephemeral !== true
 );
 
+/**
+ * The Installable key for a registry row, or null when the row has no usable
+ * name. String(null) would key a nameless row "null", and every other
+ * nameless row would then collide on it, so callers skip these instead.
+ */
+export function registryKeyOf(row: Obj | null | undefined): string | null {
+  const name = row?.agentName;
+  if (typeof name !== 'string' || !name.trim()) return null;
+  return name.toLowerCase();
+}
+
 export function registryToInstallable(input: Obj): Obj {
   const row = plain(input);
   const manifest = row.manifest || {};
   const runtime = manifest.runtime || {};
-  const agentName = String(row.agentName).toLowerCase();
+  const agentName = registryKeyOf(row);
+  if (!agentName) throw new Error('AgentRegistry row has no agentName');
   const version = row.latestVersion || manifest.version || '1.0.0';
   const displayName = row.displayName || agentName;
   const source = row.ephemeral === true ? 'user' : (SOURCE_BY_REGISTRY[row.registry] || 'marketplace');
