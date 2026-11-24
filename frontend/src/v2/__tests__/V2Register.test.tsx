@@ -268,13 +268,18 @@ describe('V2Register', () => {
     const en = require('../../i18n/locales/en.json');
     // eslint-disable-next-line global-require
     const zh = require('../../i18n/locales/zh-CN.json');
-    const enCopy = ['invitationPlaceholder', 'invitationHint', 'invitationHintRequired']
-      .map((key) => en.auth.register[key]).join(' ');
-    expect(enCopy).not.toMatch(/catalog|hiring|hosted|BYO|!/i);
-    const zhCopy = ['invitationPlaceholder', 'invitationHint', 'invitationHintRequired']
-      .map((key) => zh.auth.register[key]).join(' ');
-    expect(zhCopy).not.toMatch(/托管|应用市场|您|！/);
-    expect(zhCopy).toMatch(/智能体/);
+    // Each key on its own, so one missing or drifted string fails by name.
+    ['invitationPlaceholder', 'invitationHint', 'invitationHintRequired'].forEach((key) => {
+      const enText = en.auth.register[key];
+      expect(typeof enText).toBe('string');
+      expect(enText.trim()).not.toBe('');
+      expect(enText).not.toMatch(/catalog|hiring|hosted|BYO|!/i);
+      const zhText = zh.auth.register[key];
+      expect(typeof zhText).toBe('string');
+      expect(zhText.trim()).not.toBe('');
+      expect(zhText).not.toMatch(/托管|应用市场|您|！/);
+      expect(zhText).toMatch(/智能体/);
+    });
     expect(zh.yourTeam.redeem.success).not.toMatch(/托管/);
   });
 });
