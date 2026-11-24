@@ -1,12 +1,18 @@
 import { browserIsWindows } from './daemonSetupCommand';
 
-// The server's run line names `commonly`. On Windows that is the .ps1 shim
-// PowerShell refuses under the default script policy (F342), so the computer
-// reading the page gets commonly.cmd. Anything else (a webhook's sentence) is
-// shown as sent.
+// The server's run line runs the CLI through npx (F582), or names `commonly`
+// on a server from before it. On Windows a bare `npx` or `commonly` is the .ps1
+// shim PowerShell refuses under the default script policy (F342), so the
+// computer reading the page gets the .cmd. Anything else (a webhook's sentence)
+// is shown as sent.
 export const runCommandForThisComputer = (command: string, windows: boolean = browserIsWindows()): string => (
-  windows ? command.replace(/^commonly /, 'commonly.cmd ') : command
+  windows ? command.replace(/^(npx|commonly) /, '$1.cmd ') : command
 );
+
+// Whether the server's fixCommand is a run line to copy, in either form, and
+// not a sentence (a webhook's).
+const RUN_LINE = /^(npx -y @commonlyai\/cli@latest|commonly) agent run /;
+export const isRunCommand = (command?: string | null): boolean => RUN_LINE.test(command || '');
 
 export type AgentConnection = {
   state: 'connected' | 'available' | 'revoked' | 'stale' | 'never' | 'stopped';

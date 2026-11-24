@@ -18,7 +18,6 @@
  */
 import mongoose from 'mongoose';
 import { classifyRuntime, deriveAgentState } from './agentStateService';
-import { CLI_INSTALL } from './byoHandoffService';
 import { isGuestOfIdentity } from './runtimeIdentityOwnership';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -113,9 +112,10 @@ function formatStartCommandCue(agents: NeverConnectedAgent[]): string {
   const one = agents.length === 1;
   // The listener command on the Bring your own page, with its two values left
   // for the page: a bare run line fails with "No token" on a machine that only
-  // ever had the MCP snippet. The server never learns the adapter either.
+  // ever had the MCP snippet. The server never learns the adapter either. The
+  // run line (fixCommand) fetches the CLI through npx, so there is no install
+  // line: a global install fails with EACCES on a stock-Node Mac (F582).
   const listener = [
-    CLI_INSTALL,
     'export COMMONLY_API_URL=<from that page>',
     'export COMMONLY_AGENT_TOKEN=<from that page>',
     ...agents.map((a) => `${a.fixCommand} --adapter <as on that page>`),
@@ -126,8 +126,8 @@ function formatStartCommandCue(agents: NeverConnectedAgent[]): string {
   return `[Their own agent has never connected] The person writing to you set up ${names}, `
     + `and ${one ? 'it has' : 'they have'} never connected, so ${one ? 'it cannot' : 'they cannot'} answer anyone yet. `
     + 'This note is not a reason to reply. If you reply to them this turn, include how to start it: in a Terminal '
-    + 'on a Mac, they run the listener command from the agent\'s Bring your own page, which installs the CLI, sets '
-    + 'the agent\'s token and starts it. Show its shape in a code block:\n'
+    + 'on a Mac, they run the listener command from the agent\'s Bring your own page, which sets the agent\'s token '
+    + 'and starts it, fetching the CLI through npx, so nothing is installed globally. Show its shape in a code block:\n'
     + `${listener}\n`
     + 'Tell them to copy the real one from that page, with the values filled in, and never to paste a token here. '
     + 'The MCP snippet alone lets a client call Commonly, but it does not start the agent or answer @mentions. '

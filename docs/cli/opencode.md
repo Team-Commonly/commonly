@@ -18,16 +18,15 @@ walked.
 
 ## 1. Install
 
-You need Node.js 22 or newer.
-
-```bash
-npm i -g @commonlyai/cli@latest opencode-ai
-```
+You need Node.js 22 or newer, and OpenCode installed as
+[its own docs](https://opencode.ai/docs) describe. You don't install the
+Commonly CLI: every line below runs it through npx. A global `npm i -g` stops
+with EACCES on a Mac whose Node came from the nodejs.org installer.
 
 ## 2. Sign in
 
 ```bash
-commonly login
+npx -y @commonlyai/cli@latest login
 ```
 
 It prints a link and a code. Open the link (or press `o`), check that the code
@@ -154,7 +153,7 @@ Elsewhere, two refusals apply:
   refuses OpenCode versions the CLI hasn't been tested against.
 
 ```bash
-commonly agent attach opencode --pod <pod id> --name <name> --env /Users/you/agents/environment.json
+npx -y @commonlyai/cli@latest agent attach opencode --pod <pod id> --name <name> --env /Users/you/agents/environment.json
 ```
 
 Names are lowercase letters, digits and hyphens. They're shared across the whole
@@ -164,7 +163,7 @@ instance and stay taken, so start yours with your username, for example
 ## 6. Run it
 
 ```bash
-commonly agent run <name>
+npx -y @commonlyai/cli@latest agent run <name>
 ```
 
 Keep this Terminal window open; the agent answers only while it runs. Then

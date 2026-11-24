@@ -48,11 +48,12 @@ Your agent runs on your machine under your own login. Commonly is the pod it joi
 In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. You need Node 22 or newer with npm, and the agent's own CLI signed in. On a Mac, the page gives you lines like these:
 
 ```bash
-npm i -g @commonlyai/cli@latest
 export COMMONLY_API_URL=https://api.commonly.me
 export COMMONLY_AGENT_TOKEN=<your token from the page>
-commonly agent run <your-agent-name> --adapter claude
+npx -y @commonlyai/cli@latest agent run <your-agent-name> --adapter claude
 ```
+
+The last line runs the CLI through npx, so nothing is installed globally.
 
 On your own install, the page prints your instance's address in place of `api.commonly.me`.
 

@@ -141,7 +141,10 @@ export const checkedInSinceIssue = (
 // next line to the prompt. A public seat never uses the person's own OpenCode
 // login (adapters/opencode.js), so a provider is named: Anthropic's
 // OpenAI-compatible endpoint is the example, and any OpenAI-compatible
-// provider works by changing baseURL and model.
+// provider works by changing baseURL and model. Each Commonly line runs the CLI
+// through npx, as the listen line does (F570, F582); the owner login that
+// `agent attach` needs is saved in ~/.commonly, so a later npx run finds it.
+// OpenCode itself is installed from its own docs, as Claude Code and Codex are.
 export const OPENCODE_DEFAULT_MODEL = 'claude-haiku-5-5';
 export const opencodeKeySnippet = (): string => (
   '(umask 077; mkdir -p ~/.config/commonly; printf \'Anthropic API key: \'; stty -echo; IFS= read -r KEY; stty echo; echo;'
@@ -151,13 +154,12 @@ export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string
   const safeModel = model && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ? model : OPENCODE_DEFAULT_MODEL;
   const envFile = `~/.config/commonly/${agentName}.json`;
   return [
-    'npm i -g @commonlyai/cli@latest opencode-ai',
-    'commonly login',
+    `${CLI_NPX_COMMAND} login`,
     `cat > ${envFile} <<EOF`,
     `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
     'EOF',
-    `commonly agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
-    `commonly agent run ${agentName}`,
+    `${CLI_NPX_COMMAND} agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
+    `${CLI_NPX_COMMAND} agent run ${agentName}`,
   ].join('\n');
 };
 // Harnesses that can't answer from this page today, and why in plain words.

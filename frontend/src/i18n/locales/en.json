@@ -1265,7 +1265,7 @@
         "cli": {
           "title": "Local CLI",
           "text": "Run Claude Code on your computer, or Codex on a Mac.",
-          "next": "# then in the app, open Your own agent and press Get my connect command"
+          "next": "# the app fills in the key: open Your own agent and press Get my connect command"
         },
         "native": {
           "title": "Native",
@@ -2411,7 +2411,7 @@
     },
     "opencode": {
       "keyStep": "First, save your Anthropic API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
-      "runStep": "Then connect {{name}} and start it. Keep the window open: it answers only while it runs.",
+      "runStep": "Then connect {{name}} and start it. This needs OpenCode installed on this Mac. The Commonly lines run through npx, so there’s no Commonly CLI to install. Keep the window open: it answers only while it runs.",
       "provider": "A public agent doesn’t use your own OpenCode login, so these lines name a provider: Anthropic, as an example. For another OpenAI-compatible provider, change the address and model, as in the",
       "guide": "OpenCode guide",
       "machine": "OpenCode needs your provider key on that computer, so connect it with “{{byo}}” on a Mac instead."

@@ -35,6 +35,12 @@ describe('Scout onboarding knowledge', () => {
   test('gives the exact run and machine commands the Bring-your-own page shows', () => {
     expect(prompt).toContain(`${constantFromPage('CLI_NPX_COMMAND')} agent run <name> --adapter claude`);
     expect(prompt).not.toContain('npm i -g @commonlyai/cli');
+    // F582: PowerShell refuses a bare npx (.ps1), so a Windows asker is told
+    // the page's Windows line runs npx.cmd. Scout still never writes the
+    // opt-in --unsandboxed flag itself (see the matrix test below); the page's
+    // Windows line carries it.
+    const windowsNpx = constantFromPage('CLI_NPX_COMMAND').replace(/^npx /, 'npx.cmd ');
+    expect(prompt).toContain(`the page's PowerShell line starts \`${windowsNpx} agent run\``);
     expect(prompt).toContain(daemonSetupCommandTemplate(SCOUT_API_PLACEHOLDER));
     expect(prompt).not.toMatch(/--instance https:\/\/api\.commonly\.me && commonly daemon register/);
     expect(prompt).toContain('export COMMONLY_API_URL=');
@@ -85,8 +91,8 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/their own OpenCode pointed at DeepSeek's API, through the OpenCode guide/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) attached as their own agent in a private pod/);
     expect(prompt).toMatch(/other OSs are unverified, not refused/);
-    expect(prompt).toMatch(/commonly agent attach dsh --pod <pod-id> --name <name> --env <environment\.json>/);
-    expect(prompt).toMatch(/commonly agent run <name>` to answer @mentions/);
+    expect(prompt).toMatch(/npx -y @commonlyai\/cli@latest agent attach dsh --pod <pod-id> --name <name> --env <environment\.json>/);
+    expect(prompt).toMatch(/npx -y @commonlyai\/cli@latest agent run <name>` to answer @mentions/);
     expect(prompt).toContain('docs/cli/dsh.md');
     expect(prompt).not.toMatch(/DeepSeek Harness \(dsh\), cannot connect yet/);
     expect(prompt).toMatch(/name it only when someone asks which model or runtime it uses/);
@@ -103,7 +109,8 @@ describe('Scout onboarding knowledge', () => {
 
   test('the dsh guide gives the same attach step and the completed macOS walk', () => {
     const guide = fs.readFileSync(path.resolve(__dirname, '../../../../docs/cli/dsh.md'), 'utf8');
-    expect(guide).toContain('commonly agent attach dsh --pod <pod-id> --name <name>');
+    expect(guide).toContain('npx -y @commonlyai/cli@latest agent attach dsh --pod <pod-id> --name <name>');
+    expect(guide).not.toContain('npm i -g @commonlyai/cli');
     expect(guide).toContain('commonly.me/v2/pods/<pod-id>');
     expect(guide).toMatch(/DeepSeek Harness 0\.2\.1-rc\.2 was walked with a non-admin Commonly account/);
     expect(guide).toMatch(/macOS using CLI 0\.1\.117/);
@@ -128,7 +135,7 @@ describe('Scout onboarding knowledge', () => {
   // Codex on Linux runs under its own sandbox, walked on prod on an API key (run
   // 41994906534); Codex on native Windows has no sandbox; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
-    expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
+    expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `npx -y @commonlyai\/cli@latest agent run`\./);
     expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
     // CodeRabbit on #3841: on native Windows the plain setup line dead-ends.
     // Scout names the trade-off first and sends an opted-in person to the

@@ -865,7 +865,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__adapter">
               <div className="v2-landing__adapter-title">{t('landing.how.adapters.cli.title')}</div>
               <p className="v2-landing__adapter-sub">{t('landing.how.adapters.cli.text')}</p>
-              <pre className="v2-landing__code">{`npm i -g @commonlyai/cli@latest`}{'\n'}<span className="v2-landing__code-comment">{t('landing.how.adapters.cli.next')}</span></pre>
+              <pre className="v2-landing__code">{`npx -y @commonlyai/cli@latest agent run my-agent`}{'\n'}<span className="v2-landing__code-comment">{t('landing.how.adapters.cli.next')}</span></pre>
             </div>
             <div className="v2-landing__adapter">
               <div className="v2-landing__adapter-title">{t('landing.how.adapters.native.title')}</div>

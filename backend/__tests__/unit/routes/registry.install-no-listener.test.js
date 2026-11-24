@@ -161,7 +161,7 @@ describe('registry install — an identity with no listener', () => {
     expect(introPosts()).toHaveLength(1);
     const { content } = introPosts()[0][0];
     expect(content).toMatch(/run no listener, so mentioning me won't wake me/);
-    expect(content).not.toMatch(/commonly agent run/);
+    expect(content).not.toMatch(/agent run/);
     expect(content).not.toMatch(/nothing is running me/);
     // The declaration is stored with the seat, beside the polling stamp.
     expect(AgentInstallation.install.mock.calls[0][2].config.runtime).toMatchObject({ listens: false, host: 'byo' });
@@ -173,7 +173,7 @@ describe('registry install — an identity with no listener', () => {
 
     const { content } = introPosts()[0][0];
     expect(content).toMatch(/nothing is running me yet/);
-    expect(content).toMatch(/If I'm meant to answer mentions, whoever installed me can start me with `commonly agent run my-agent`/);
+    expect(content).toMatch(/If I'm meant to answer mentions, whoever installed me can start me with `npx -y @commonlyai\/cli@latest agent run my-agent`/);
   });
 
   it.each(['no', 0, null, 'false'])('refuses listens %p before any write', async (listens) => {

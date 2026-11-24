@@ -63,14 +63,14 @@ describe('stamped and legacy polling seats both reach the honesty surface', () =
     const state = deriveAgentState(install({ runtimeType: 'webhook' }), [], 'u1');
 
     expect(state.state).toBe('never-connected');
-    expect(state.fixCommand).toBe('commonly agent run kaka-agent');
+    expect(state.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run kaka-agent');
   });
 
   test('WITH the stamp the same seat reads `never-connected` and offers the fix', () => {
     const state = deriveAgentState(install({ runtimeType: 'webhook', host: 'byo' }), [], 'u1');
 
     expect(state.state).toBe('never-connected');
-    expect(state.fixCommand).toBe('commonly agent run kaka-agent');
+    expect(state.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run kaka-agent');
   });
 
   test('a stamped seat that HAS been polled recently reads listening', () => {

@@ -66,7 +66,7 @@ describe('never-connected seat command (TASK-716)', () => {
   it('gives the installer the run command while the seat has never polled', async () => {
     const agent = await agentFor(owner);
     expect(agent.connection.state).toBe('never');
-    expect(agent.fixCommand).toBe('commonly agent run nova');
+    expect(agent.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run nova');
   });
 
   it('gives another member no command', async () => {

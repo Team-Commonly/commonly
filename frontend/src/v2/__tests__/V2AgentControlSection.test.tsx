@@ -34,6 +34,16 @@ describe('a never-connected agent on Settings, from a Windows browser', () => {
     expect(writeText).toHaveBeenCalledWith('commonly.cmd agent run maple');
   });
 
+  // F582: the server's line runs the CLI through npx; PowerShell needs npx.cmd.
+  test('shows and copies the npx line as npx.cmd', () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    showFix('npx -y @commonlyai/cli@latest agent run maple');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('npx.cmd -y @commonlyai/cli@latest agent run maple');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('npx.cmd -y @commonlyai/cli@latest agent run maple');
+  });
+
   test('keeps a second instance\'s flag', () => {
     showFix('commonly agent run maple --instance-id nova');
     expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly.cmd agent run maple --instance-id nova');
@@ -55,6 +65,16 @@ describe('a never-connected agent on Settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(writeText).toHaveBeenCalledWith('commonly agent run maple');
     expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+  });
+
+  // F582: the server now sends the npx form, which installs nothing globally.
+  test('shows and copies the server\'s npx line', () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    showFix('npx -y @commonlyai/cli@latest agent run maple --instance-id nova');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('npx -y @commonlyai/cli@latest agent run maple --instance-id nova');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('npx -y @commonlyai/cli@latest agent run maple --instance-id nova');
   });
 
   test('links to the page that hands out the key the command needs, keeping the agent\'s name', () => {

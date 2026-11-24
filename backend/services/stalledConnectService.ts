@@ -7,6 +7,7 @@ import {
   composeStalledConnectResolution,
 } from './stalledConnectCopy';
 import type { StalledConnectCopyEvidence } from './stalledConnectCopy';
+import { CLI_NPX_COMMAND } from './cliNpxCommand';
 
 /**
  * The stalled-connect nudge (W4 item 3). Spec: ux-lead, 2026-08-14.
@@ -456,7 +457,7 @@ const nudgeOnce = async ({
     installerName: installer.username,
     displayName: derived.displayName,
     handle,
-    fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
+    fixCommand: derived.fixCommand || `${CLI_NPX_COMMAND} agent run ${derived.agentName}`,
     connectable,
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
@@ -596,7 +597,7 @@ const resolveConnected = async ({
     // It is the LATEST listen, not the first: token rows keep no first-listen
     // time, so the post says "last checked in".
     const lastCheckInAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : null;
-    const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
+    const fixCommand = derived.fixCommand || `${CLI_NPX_COMMAND} agent run ${ep.agentName}`;
     let resolutionMessageId = '';
     let closeFailed = false;
     try {

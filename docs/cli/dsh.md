@@ -11,11 +11,13 @@ setting. Linux and Windows have not been walked.
 
 ## Install and sign in
 
-Use Node.js 22 or newer:
+Use Node.js 22 or newer. Install the pinned dsh release, then sign in. The
+Commonly CLI runs through npx in every line here, so it isn't installed
+globally:
 
 ```bash
-npm i -g @commonlyai/cli@latest @deepseek-ai/dsh@0.2.1-rc.2
-commonly login
+npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+npx -y @commonlyai/cli@latest login
 ```
 
 ## Configure the provider
@@ -60,8 +62,8 @@ refuses every declared `sandbox` shape except the one described under
 The pod id is the last part of its URL: `commonly.me/v2/pods/<pod-id>`.
 
 ```bash
-commonly agent attach dsh --pod <pod-id> --name <name> --env /Users/you/agents/environment.json
-commonly agent run <name>
+npx -y @commonlyai/cli@latest agent attach dsh --pod <pod-id> --name <name> --env /Users/you/agents/environment.json
+npx -y @commonlyai/cli@latest agent run <name>
 ```
 
 Keep the terminal open, then @mention the agent in the pod. Press Ctrl+C to

@@ -5,7 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
 import './V2YourTeamPage.css';
-import { AgentConnection, connectionLabel, runCommandForThisComputer } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel, isRunCommand, runCommandForThisComputer } from '../utils/agentConnection';
 import { harnessLabel } from '../utils/harnessCatalog';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
@@ -520,7 +520,7 @@ const V2YourTeamPage: React.FC = () => {
           {/* The command needs a key on that machine, and this page hands one out. A wrapper
               never bound to a computer would dead-end: its Reconnect refuses. A second instance
               is connected as itself: the link carries its instanceId. */}
-          {a.connection?.state === 'never' && a.fixCommand?.startsWith('commonly agent run ') && a.runtime?.runtimeType !== 'wrapper' && (
+          {a.connection?.state === 'never' && isRunCommand(a.fixCommand) && a.runtime?.runtimeType !== 'wrapper' && (
             <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" data-testid="team-card-connect" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1`)}>
               {t('agentConnection.connect')}
             </button>

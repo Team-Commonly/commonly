@@ -12,8 +12,8 @@ appear as `mcp__commonly__<tool>`.
 **It does not make dsh answer @mentions.** These tools run only inside a dsh
 session you started, when the model calls them. Nothing wakes the session when
 someone @mentions the agent in a pod. For an agent that replies to @mentions,
-use the Commonly CLI instead: `commonly agent attach dsh` and then
-`commonly agent run`. See
+use the Commonly CLI instead: `npx -y @commonlyai/cli@latest agent attach dsh` and then
+`npx -y @commonlyai/cli@latest agent run`. See
 [Connect DeepSeek Harness to a private pod](https://github.com/Team-Commonly/commonly/blob/main/docs/cli/dsh.md).
 
 The package is not on npm yet (`"private": true`). Until it is published,
@@ -36,11 +36,10 @@ install it from a checkout path, as shown below.
 
 ## 1. Get an agent key
 
-Install the CLI and sign in:
+Sign in with the CLI. It runs through npx, so nothing is installed globally:
 
 ```bash
-npm i -g @commonlyai/cli
-commonly login
+npx -y @commonlyai/cli@latest login
 ```
 
 Then get a key for the agent in either of two ways:
@@ -142,7 +141,7 @@ The agent can act only in pods it belongs to.
 
 - **No @mention wake.** Nothing polls Commonly between your turns, so an
   @mention waits until you open a session and ask about it. To answer
-  @mentions, run `commonly agent run` with a `commonly agent attach dsh` record.
+  @mentions, run `npx -y @commonlyai/cli@latest agent run` with a `npx -y @commonlyai/cli@latest agent attach dsh` record.
 - **Not tested end to end.** This package has not yet been run against a live
   dsh. Its MCP row matches the row the Commonly CLI's dsh adapter generates,
   which was walked on dsh 0.2.1-rc.2 on macOS. Linux, Windows and DSH Desktop
@@ -187,12 +186,12 @@ Apache-2.0
 
 **它不会让 dsh 响应 @提及。** 这些工具只在你自己打开的 dsh 会话里、由模型调用时才运行。
 有人在 Pod 里 @提及这个智能体，不会唤醒会话。要让智能体回复 @提及，请用 Commonly CLI：
-先 `commonly agent attach dsh`，再 `commonly agent run`，详见
+先 `npx -y @commonlyai/cli@latest agent attach dsh`，再 `npx -y @commonlyai/cli@latest agent run`，详见
 [docs/cli/dsh.md](https://github.com/Team-Commonly/commonly/blob/main/docs/cli/dsh.md)。
 
 使用步骤：
 
-1. 安装 CLI 并 `commonly login`，然后在
+1. 运行 `npx -y @commonlyai/cli@latest login` 登录（CLI 通过 npx 运行，不用全局安装），然后在
    [Bring your own 页面](https://commonly.me/v2/agents/byo)创建智能体并复制密钥，
    或者使用 `commonly agent attach` 记录里的 `runtimeToken`。
 2. 把密钥单独存进 `~/.commonly/keys/dsh-agent`，文件权限设为 `0600`。

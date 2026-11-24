@@ -6,7 +6,7 @@ const compose = (evidence, connectable) => composeStalledConnectNudge({
   installerName: 'alice',
   displayName: 'Rivet',
   handle: 'rivet',
-  fixCommand: 'commonly agent run rivet',
+  fixCommand: 'npx -y @commonlyai/cli@latest agent run rivet',
   connectable,
   evidence: { tokenIssuedAt: ISSUED, ...evidence },
 });
@@ -24,7 +24,7 @@ describe('the nudge for an agent whose key is only on the page', () => {
     const text = compose(evidence, true);
     expect(text).toContain('my Settings');
     expect(text).toContain('press Connect');
-    expect(text).not.toContain('commonly agent run');
+    expect(text).not.toContain('agent run');
     expect(text).not.toContain('the page’s lines again');
   });
 
@@ -36,7 +36,7 @@ describe('the nudge for an agent whose key is only on the page', () => {
     ['the MCP command copied on Linux', { mcpCopiedAt: COPIED, openedOs: 'linux' }],
   ])('with %s, an agent with a saved key keeps the command', (_label, evidence) => {
     const text = compose(evidence, false);
-    expect(text).toContain('`commonly agent run rivet`');
+    expect(text).toContain('`npx -y @commonlyai/cli@latest agent run rivet`');
     expect(text).not.toContain('press Connect');
   });
 

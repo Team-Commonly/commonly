@@ -58,7 +58,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('bound', home._id, wrapper);
     await install('bound', room._id, wrapper);
     const row = await rowIn(room, 'bound');
-    expect(row.fixCommand).toBe('commonly agent run bound');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run bound');
     expect(row.connectPodId).toBeUndefined();
   });
 
@@ -110,7 +110,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
   it('leaves an attached agent its command: the key is saved on that computer', async () => {
     await install('kept', home._id, { runtimeType: 'claude-code', host: 'byo' });
     const row = await rowIn(home, 'kept');
-    expect(row.fixCommand).toBe('commonly agent run kept');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run kept');
     expect(row.connectPodId).toBeUndefined();
     expect(row.noSavedKey).toBeUndefined();
   });
@@ -132,7 +132,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('published', theirs._id, BYO, other._id);
     await install('published', home._id);
     const row = await rowIn(home, 'published');
-    expect(row.fixCommand).toBe('commonly agent run published');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run published');
     expect(row.connectPodId).toBeUndefined();
   });
 
@@ -226,7 +226,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('shared', theirs._id, BYO, other._id);
     await install('shared', room._id);
     const row = await rowIn(room, 'shared');
-    expect(row.fixCommand).toBe('commonly agent run shared');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run shared');
     expect(row.connectPodId).toBeUndefined();
   });
 
@@ -290,7 +290,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect(row.state).toBe('never-connected');
     expect(row.instanceId).toBe('nova');
     expect(row.connectPodId).toBe(String(home._id));
-    expect(row.fixCommand).toBe('commonly agent run persona --instance-id nova');
+    expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run persona --instance-id nova');
   });
 
   it('keeps the notice when the lookup fails', async () => {
