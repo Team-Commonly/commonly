@@ -22,3 +22,32 @@ describe('F583: the dead backend-docs route is removed', () => {
     expect(fs.existsSync(path.join(backendRoot, 'routes', 'docs.ts'))).toBe(false);
   });
 });
+
+// F587: nothing is served at /api/docs, so the docs a newcomer reads first must
+// not send them there. CONTRIBUTING listed "API Docs (Swagger)" at
+// localhost:5000/api/docs, and no Swagger UI was ever mounted. Dated records
+// under docs/audits and docs/plans keep their history and aren't checked.
+describe('F587: front-door docs do not point to a docs page at /api/docs', () => {
+  const repoRoot = path.join(backendRoot, '..');
+  const frontDoor = ['README.md', 'CONTRIBUTING.md', 'docs/README.md'];
+  const docsSite = path.join(repoRoot, 'docs-site');
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(full);
+    return /\.mdx?$/.test(entry.name) ? [full] : [];
+  });
+  const files = [
+    ...frontDoor.map((rel) => path.join(repoRoot, rel)).filter((file) => fs.existsSync(file)),
+    ...(fs.existsSync(docsSite) ? walk(docsSite) : []),
+  ];
+
+  test('finds the docs it checks', () => {
+    expect(files.map((file) => path.relative(repoRoot, file))).toEqual(expect.arrayContaining(['CONTRIBUTING.md']));
+  });
+
+  test.each(files.map((file) => [path.relative(repoRoot, file), file]))('%s', (_rel, file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text).not.toMatch(/(localhost|127\.0\.0\.1|commonly\.me)(:\d+)?\/api\/docs\b/);
+    expect(text).not.toMatch(/swagger/i);
+  });
+});
