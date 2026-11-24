@@ -3927,7 +3927,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
 
 .v2-connectors__aside { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, var(--v2-bg-subtle)); }
+.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-panel, var(--v2-bg-subtle)); }
 .v2-connector-aside__step p, .v2-connector-aside__card p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 20px; }
 .v2-connector-aside__eyebrow { margin-bottom: 8px !important; color: var(--v2-accent-text) !important; font-family: var(--v2-font-mono); font-size: 11px !important; font-weight: 500; text-transform: lowercase; }
 .v2-connector-aside__card h2 { margin: 0 0 8px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
