@@ -1,0 +1,20 @@
+{{- /*
+The account for pods that run agent turns (the backend's provisioned gateways,
+gatewayProvisionerServiceK8s.ts). No Role or RoleBinding names it and it mounts
+no token, so a process inside reaches nothing in the Kubernetes API. Rendered
+wherever the backend may provision (either RBAC template renders), so the
+backend never names an account its chart lacks. Checked by
+scripts/verify-service-account-tokens-chart.js.
+*/ -}}
+{{- if or .Values.agentProvisioning.enabled .Values.rbac.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.agentProvisioning.runtimeServiceAccount | default "agent-runtime" }}
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-runtime
+automountServiceAccountToken: false
+{{- end }}

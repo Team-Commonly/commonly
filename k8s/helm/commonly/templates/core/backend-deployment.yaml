@@ -492,6 +492,8 @@ spec:
         # Agent Runtime Configuration
         - name: AGENT_PROVISIONER_K8S
           value: {{ .Values.backend.env.agentProvisionerK8s | quote }}
+        - name: AGENT_RUNTIME_SERVICE_ACCOUNT
+          value: {{ .Values.agentProvisioning.runtimeServiceAccount | default "agent-runtime" | quote }}
         - name: AGENT_PROVISIONER_DOCKER
           value: {{ .Values.backend.env.agentProvisionerDocker | quote }}
         {{- if .Values.backend.env.agentProvisionerNodePool }}

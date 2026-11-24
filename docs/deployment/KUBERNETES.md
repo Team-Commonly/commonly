@@ -159,6 +159,14 @@ When `AGENT_PROVISIONER_K8S=1`, backend provisioning needs namespace RBAC for:
 
 If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but heartbeat file updates will fail.
 
+That Role belongs to the backend's own account (`rbac.serviceAccount.name`, default `agent-provisioner`), which
+the backend, its worker and ops-runner run as. A pod the backend provisions to run agent turns (today, a gateway
+from `gatewayProvisionerServiceK8s`) runs as a separate account, `agentProvisioning.runtimeServiceAccount`
+(default `agent-runtime`). The chart creates that account with no Role and no token, and passes its name to the
+backend as `AGENT_RUNTIME_SERVICE_ACCOUNT`. Code an agent runs therefore reaches nothing in the Kubernetes API, not
+even with a token mounted by mistake. `scripts/verify-service-account-tokens-chart.js` fails the build if the
+account is missing, mounts a token, or appears in any binding.
+
 ### CORS Configuration
 
 The backend requires `FRONTEND_URL` to be set for CORS to work:
