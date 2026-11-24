@@ -982,6 +982,35 @@ describe('an agent answering the person who asked', () => {
     expect(recipients()).toEqual(['lee']);
   });
 
+  // F578: a hosted agent's first-contact greeting opens with @lee so a plain
+  // answer reaches it, and that address put "Needs you: 1 waiting on you" in
+  // a brand-new person's Activity. The real path is in
+  // __tests__/service/firstContactGreetingNeedsYou.test.js.
+  describe('a first-contact greeting', () => {
+    beforeEach(() => mockLiveClaims.mockResolvedValue([]));
+    const greeting = (content) => answer(content, { greetedUserId: 'lee' });
+
+    it('opens no row for the person it greets', async () => {
+      await greeting("@lee hi, I'm here. What should we start on this week?");
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('still opens a row for anyone else it names', async () => {
+      await greeting('@lee hi. @quinn can you take the review?');
+      expect(recipients()).toEqual(['quinn']);
+    });
+
+    it('carrying an escalation marker still opens their row', async () => {
+      await greeting('[BLOCKED] @lee I need the staging key to go on.');
+      expect(recipients()).toEqual(['lee']);
+    });
+
+    it('a post without the marker opens their row', async () => {
+      await answer('@lee which repo should I use?');
+      expect(recipients()).toEqual(['lee']);
+    });
+  });
+
   it('a lapsed claim, or an unprompted ping, still opens their row', async () => {
     mockLiveClaims.mockResolvedValue([]);
     await answer('@lee the deploy failed.');
