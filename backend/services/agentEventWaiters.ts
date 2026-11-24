@@ -6,17 +6,19 @@
  * be claimed or the wait runs out, so an idle agent asks about once per 25 s.
  *
  * Two things end a hold early:
- *   - an in-process wake from the enqueue path (`notifyAgentEventWaiters`),
- *     keyed by the same (agentName, instanceId) the poll filters on;
+ *   - a wake from the enqueue path (`notifyAgentEventWaiters`), keyed by the
+ *     same (agentName, instanceId) the poll filters on, in this process and,
+ *     over the process bus, in the other backend processes;
  *   - a periodic recheck with the lean pending-wake query, every
- *     RECHECK_INTERVAL_MS. Correctness rests on this one: an enqueue on
- *     another backend process, a GC requeue or a direct insert never signals
+ *     RECHECK_INTERVAL_MS. Correctness rests on this one: a bus message lost
+ *     while Redis is down, a GC requeue or a direct insert never signals
  *     this process, and the recheck still finds it within one interval.
  *
  * The wake is only a hint. Nothing here claims a row: the route claims through
  * the ordinary listInboxPage path, after the hold, and only while the client
  * is still connected.
  */
+import { publish, subscribe } from './processBus';
 
 export const MAX_WAIT_MS = 25_000;
 export const RECHECK_INTERVAL_MS = 2_500;
@@ -49,11 +51,33 @@ export function clampWaitMs(raw: unknown): number {
   return Math.min(parsed, MAX_WAIT_MS);
 }
 
-/** Wake every hold for this identity. Cheap and synchronous; never throws. */
-export function notifyAgentEventWaiters(agentName: unknown, instanceId: unknown): void {
+function wakeLocalWaiters(agentName: unknown, instanceId: unknown): void {
   const set = waitersByIdentity.get(identityKey(agentName, instanceId));
   if (!set) return;
   for (const waiter of [...set]) waiter.wake();
+}
+
+// The same wake for holds on the other backend processes. Without it they
+// still find the event, but only at their next recheck (up to
+// RECHECK_INTERVAL_MS late); the recheck stays the guarantee, since a bus
+// message can be dropped.
+const WAKE_CHANNEL = 'agent-event-wake';
+subscribe(WAKE_CHANNEL, (payload) => wakeLocalWaiters(payload.agentName, payload.instanceId));
+
+/**
+ * Wake every hold for this identity, in this process and the others. Cheap
+ * and synchronous; never throws.
+ */
+export function notifyAgentEventWaiters(agentName: unknown, instanceId: unknown): void {
+  wakeLocalWaiters(agentName, instanceId);
+  try {
+    publish(WAKE_CHANNEL, {
+      agentName: String(agentName || ''),
+      instanceId: String(instanceId || 'default'),
+    });
+  } catch {
+    // The publish is a hint; the other processes' recheck covers a lost one.
+  }
 }
 
 /**
