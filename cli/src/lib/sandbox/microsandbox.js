@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import {
-  chmod, link, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
+  chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
@@ -474,24 +474,61 @@ const lockAbandoned = (content, mtimeMs, { now, pidAlive }) => {
   return age > INSTALL_LOCK_STALE_MS;
 };
 
+// The guard is held only for a read and an unlink, so one older than this was
+// left by a process that died inside that window.
+const INSTALL_LOCK_GUARD_STALE_MS = 30 * 1000;
+
+/**
+ * Runs `fn` holding `guard`, a short-lived lock that serialises every removal
+ * of the install lock (a takeover or a release), so no removal can act on a
+ * lock that changed after it was read.
+ */
+const withLockGuard = async (guard, fn, { now }) => {
+  for (;;) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await writeFile(guard, `${process.pid}\n`, { flag: 'wx' });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      // eslint-disable-next-line no-await-in-loop
+      const held = await stat(guard).catch(() => null);
+      if (held && now() - held.mtimeMs > INSTALL_LOCK_GUARD_STALE_MS) {
+        // eslint-disable-next-line no-await-in-loop
+        await rm(guard, { force: true });
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+      }
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(guard, { force: true }).catch(() => {});
+  }
+};
+
 /**
  * Runs `fn` holding this version's install lock, so two first turns never
  * unpack msb or install into the volume (mounted writable then) at once.
  *
- * The lock names its holder (`<pid> <token>`). A waiter takes it over when that
- * process has exited, or past INSTALL_LOCK_MAX_MS. Taking over is a rename to a
- * private name, so of the waiters that judged the same lock abandoned only one
- * moves it; a waiter that finds it moved a lock other than the one it judged
- * (another waiter's new one) puts it back. Between that move and the put-back a
- * third waiter can take the name, the same narrow window an age-only lock had.
- * The holder removes the lock while it still holds its own token, or when the
- * lock can't be read at all, so an unreadable lock is never left behind.
+ * The lock names its holder (`<pid> <token>`, the token unique to each take).
+ * Only an exclusive create takes it. A waiter takes over a lock whose process
+ * has exited, or one past INSTALL_LOCK_MAX_MS, by deleting it and trying the
+ * create again. Every deletion, a takeover or the holder's release, runs under
+ * a guard lock and re-reads the lock first, deleting only the exact lock it
+ * judged (same token). So a takeover can never delete a lock another waiter
+ * took after the judgement, and the lock's path is never free while a live
+ * holder's lock is displaced. The holder also removes a lock it can't read at
+ * all, so an unreadable lock is never left behind.
  */
 export const withInstallLock = async (root, fn, {
   waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
 } = {}) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, '.install.lock');
+  const guard = join(root, '.install.lock.guard');
   const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
   const deadline = now() + waitMs;
   for (;;) {
@@ -504,23 +541,13 @@ export const withInstallLock = async (root, fn, {
       // eslint-disable-next-line no-await-in-loop
       const held = await stat(lock).catch(() => null);
       // eslint-disable-next-line no-await-in-loop
-      const content = held ? await readFile(lock, 'utf8').catch(() => null) : null;
-      if (held && content !== null && lockAbandoned(content, held.mtimeMs, { now, pidAlive })) {
-        const claimed = `${lock}.${randomBytes(6).toString('hex')}.stale`;
+      const judged = held ? await readFile(lock, 'utf8').catch(() => null) : null;
+      if (held && judged !== null && lockAbandoned(judged, held.mtimeMs, { now, pidAlive })) {
         // eslint-disable-next-line no-await-in-loop
-        const won = await rename(lock, claimed).then(() => true, () => false);
-        if (won) {
-          // eslint-disable-next-line no-await-in-loop
-          const taken = await readFile(claimed, 'utf8').catch(() => null);
-          if (taken !== null && taken !== content) {
-            // Another waiter took over first and this rename caught its new
-            // lock: put it back unless a third has taken the name since.
-            // eslint-disable-next-line no-await-in-loop
-            await link(claimed, lock).catch(() => {});
-          }
-          // eslint-disable-next-line no-await-in-loop
-          await rm(claimed, { force: true });
-        }
+        await withLockGuard(guard, async () => {
+          const current = await readFile(lock, 'utf8').catch(() => null);
+          if (current === judged) await rm(lock, { force: true });
+        }, { now });
       } else if (now() > deadline) {
         throw new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`);
       } else {
@@ -532,10 +559,12 @@ export const withInstallLock = async (root, fn, {
   try {
     return await fn();
   } finally {
-    const current = await readFile(lock, 'utf8').then((text) => text, (error) => error);
-    // Not `instanceof Error`: fs errors can come from another realm (a test VM).
-    const unreadable = typeof current !== 'string' && current?.code !== 'ENOENT';
-    if (current === mine || unreadable) await rm(lock, { recursive: true, force: true }).catch(() => {});
+    await withLockGuard(guard, async () => {
+      const current = await readFile(lock, 'utf8').then((text) => text, (error) => error);
+      // Not `instanceof Error`: fs errors can come from another realm (a test VM).
+      const unreadable = typeof current !== 'string' && current?.code !== 'ENOENT';
+      if (current === mine || unreadable) await rm(lock, { recursive: true, force: true });
+    }, { now }).catch(() => {});
   }
 };
 

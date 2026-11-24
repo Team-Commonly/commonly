@@ -332,7 +332,8 @@ describe('withInstallLock', () => {
   });
 
   test('gives up waiting on a live lock past its deadline', async () => {
-    writeFileSync(join(root, '.install.lock'), '1');
+    // This process is certainly alive, on every platform.
+    writeFileSync(join(root, '.install.lock'), `${process.pid} live\n`);
     await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);
   });
 
@@ -364,7 +365,28 @@ describe('withInstallLock', () => {
     await expect(withInstallLock(root, async () => 'ran', { pollMs: 10 })).resolves.toBe('ran');
   });
 
-  test('a waiter that catches another waiter\'s fresh lock in its takeover puts it back', async () => {
+  test('three waiters taking over one abandoned lock run their installs one at a time', async () => {
+    writeFileSync(lock(), '4242 crashed\n');
+    let inside = 0;
+    let most = 0;
+    let ran = 0;
+    const install = async () => {
+      inside += 1;
+      ran += 1;
+      most = Math.max(most, inside);
+      await new Promise((resolve) => { setTimeout(resolve, 25); });
+      inside -= 1;
+    };
+    const opts = { pollMs: 5, pidAlive: (pid) => pid !== 4242 };
+    await Promise.all([
+      withInstallLock(root, install, opts), withInstallLock(root, install, opts), withInstallLock(root, install, opts),
+    ]);
+    expect(ran).toBe(3);
+    expect(most).toBe(1);
+    expect(existsSync(lock())).toBe(false);
+  });
+
+  test('a takeover never deletes a lock taken after it judged the old one abandoned', async () => {
     writeFileSync(lock(), '4242 crashed\n');
     // Between this waiter judging 4242's lock abandoned and renaming it,
     // another waiter takes it over and writes its own.
