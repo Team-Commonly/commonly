@@ -10,7 +10,7 @@
  * only process. One started with REQUIRE_SHARED_REDIS=1 stops serving instead,
  * at boot or on any later loss (config/sharedRedisRequired.ts).
  */
-import { onSharedRedisLost, sharedRedisLost } from './sharedRedisRequired';
+import { onSharedRedisLost, sharedRedisLost, sharedRedisRequired } from './sharedRedisRequired';
 
 const ADAPTER_CONNECT_DEADLINE_MS = Number(process.env.REDIS_ADAPTER_CONNECT_DEADLINE_MS) || 15_000;
 
@@ -105,20 +105,31 @@ module.exports = {
         subClient.on('ready', handleRedisReady);
 
         // node-redis retries a failed connect forever, and the agent socket
-        // namespace is set up only after this returns, so the wait is bounded:
-        // past it the clients are stopped below and this process serves alone
-        // (or, if it requires shared Redis, stops).
+        // namespace is set up only after this returns, so the wait is bounded.
+        // Past it, a process that requires shared Redis stops (below). Any
+        // other process attaches the adapter anyway, with its clients still
+        // retrying: node-redis queues commands while a client is open and
+        // re-subscribes its channels on every connect, so the process joins
+        // the cluster by itself once Redis answers. It never serves on a
+        // different delivery path from its peers, and needs no restart.
+        // Meanwhile its revocations act locally (config/socketRooms).
+        const connecting = Promise.all([pubClient.connect(), subClient.connect()]);
+        connecting.catch(() => undefined); // a failure after the deadline is handled by the error listeners
+        let timedOut = false;
         let deadline: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            Promise.all([pubClient.connect(), subClient.connect()]),
+            connecting,
             new Promise((_, reject) => {
-              deadline = setTimeout(
-                () => reject(new Error(`Redis did not answer within ${ADAPTER_CONNECT_DEADLINE_MS / 1000}s`)),
-                ADAPTER_CONNECT_DEADLINE_MS,
-              );
+              deadline = setTimeout(() => {
+                timedOut = true;
+                reject(new Error(`Redis did not answer within ${ADAPTER_CONNECT_DEADLINE_MS / 1000}s`));
+              }, ADAPTER_CONNECT_DEADLINE_MS);
             }),
           ]);
+        } catch (connectError) {
+          if (!timedOut || sharedRedisRequired()) throw connectError;
+          console.warn(`[socket.io] Redis did not answer within ${ADAPTER_CONNECT_DEADLINE_MS / 1000}s; attaching the adapter anyway, and it joins the other processes once Redis is up`);
         } finally {
           clearTimeout(deadline);
         }

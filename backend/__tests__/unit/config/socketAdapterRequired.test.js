@@ -105,7 +105,10 @@ describe('socket.io Redis adapter', () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
-  test('a connect that never answers (node-redis retries forever) falls back after the deadline, so the agent namespace still comes up', async () => {
+  // A primary that boots during a Redis outage must not serve on its own
+  // delivery path for the rest of its life: once Redis is up, a second process
+  // would broadcast and revoke past it.
+  test('a connect that never answers: the primary attaches the adapter after the deadline and keeps its clients retrying', async () => {
     process.env.REDIS_HOST = 'redis';
     mockConnectHangs = true;
     jest.useFakeTimers();
@@ -114,10 +117,27 @@ describe('socket.io Redis adapter', () => {
       const done = load().init(io);
       await jest.advanceTimersByTimeAsync(15000);
       await done;
-      expect(io.adapter).not.toHaveBeenCalled();
-      // The clients are stopped, ending node-redis's retry loop.
-      mockClients.forEach((client) => expect(client.disconnect).toHaveBeenCalled());
+      expect(io.adapter).toHaveBeenCalledWith('redis-adapter');
+      mockClients.forEach((client) => expect(client.disconnect).not.toHaveBeenCalled());
       expect(kill).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a connect that never answers stops a process that requires shared Redis, and ends its retry loop', async () => {
+    process.env.REDIS_HOST = 'redis';
+    process.env.REQUIRE_SHARED_REDIS = '1';
+    mockConnectHangs = true;
+    jest.useFakeTimers();
+    try {
+      const io = fakeIo();
+      const done = load().init(io);
+      await jest.advanceTimersByTimeAsync(15000);
+      await done;
+      expect(io.adapter).not.toHaveBeenCalled();
+      mockClients.forEach((client) => expect(client.disconnect).toHaveBeenCalled());
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
     } finally {
       jest.useRealTimers();
     }

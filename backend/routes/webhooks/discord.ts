@@ -52,18 +52,24 @@ export const verifyDiscordWebhookRequest = (req: any): boolean => {
   });
 };
 
+// Before the per-webhook limiter: webhook_id is the caller's word, so only a
+// signed delivery may spend that webhook's budget. Verification is a local
+// Ed25519 check against one key, and the IP ceiling above already bounds it.
+const requireDiscordSignature = (req: any, res: any, next: () => void) => {
+  if (!verifyDiscordWebhookRequest(req)) {
+    return res.status(401).json({ error: 'Invalid Discord signature' });
+  }
+  return next();
+};
+
 // Discord webhook endpoint
-router.post('/', discordWebhookIpRateLimit, discordWebhookRateLimit, async (req: any, res: any) => {
+router.post('/', discordWebhookIpRateLimit, requireDiscordSignature, discordWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const event = req.body;
 
     if (!event || typeof event !== 'object') {
       return res.status(400).json({ error: 'Invalid Discord event' });
-    }
-
-    if (!verifyDiscordWebhookRequest(req)) {
-      return res.status(401).json({ error: 'Invalid Discord signature' });
     }
 
     // Handle Discord webhook verification

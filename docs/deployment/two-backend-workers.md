@@ -80,7 +80,7 @@ in front of two stand-in backends and checks the last three behaviours live.
 
 | | backend | backend-2 |
 |---|---|---|
-| Redis down at boot | Connects for up to 15 s, then serves alone: no adapter until it restarts, limits in memory | Stops (drops its sockets, SIGTERM drain), and compose restarts it; it stops again until Redis is back |
+| Redis down at boot | Waits up to 15 s, then serves with the adapter attached and its clients still retrying: it joins the other process by itself once Redis is up. Limits count in memory meanwhile | Stops (drops its sockets, SIGTERM drain), and compose restarts it; it stops again until Redis is back |
 | Redis lost later | Keeps serving: revocations act on its own sockets at once, and the adapter and bus reconnect on their own | Stops the same way, dropping only its own sockets (`.local`) |
 
 While `backend-2` is stopped or draining, `api-lb` sends everything to
@@ -88,11 +88,14 @@ While `backend-2` is stopped or draining, `api-lb` sends everything to
 the other process, and a request whose body was already sent is never
 replayed. Its clients' sockets reconnect through `api-lb` to `backend`.
 
-**One case needs a hand.** If `backend` booted while Redis was down, it runs
-without the adapter until it restarts. With `backend-2` back, the two are
-split: an emit from one doesn't reach the other's sockets. Its log says
-`Continuing without Redis adapter`. With the profile on, restart `backend`
-once Redis is healthy.
+**No case needs a hand.** A `backend` that boots while Redis is down still
+attaches the adapter, so it never serves on a different delivery path from
+`backend-2`. node-redis queues the adapter's commands while its clients retry,
+and re-subscribes its channels when they connect. Its log says `attaching the
+adapter anyway`, then `Redis clients recovered`. The only path left without an
+adapter is a client that can't be created, or a connect that fails outright
+rather than retrying (`Continuing without Redis adapter`). That is a broken
+image or config, not an outage: restart `backend` once it's fixed.
 
 ## Roll (SRE)
 
