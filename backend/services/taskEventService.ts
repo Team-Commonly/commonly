@@ -24,6 +24,8 @@ let ioRef: SocketIOLike | null = null;
 type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
+// Wake reasons that mean the seat owns the row; see the board-wake fold.
+const OWNED_ROW_WAKE_REASONS = new Set(['assignee', 'claimant']);
 const FOUND_WORK_BATCH_INTERVAL_MS = 60 * 60 * 1000;
 type BoardTask = Record<string, unknown>;
 
@@ -432,6 +434,19 @@ export async function notifyPodAgents(
         // Match `payload.boardWake`, never the event type: non-hosted wakes
         // share message.posted with chat, and hosted wakes use chat.mention.
         // Folding into an unread chat message would destroy it.
+        // Only an owned-row reason (assignee or claimant) overwrites the
+        // pending one (F594). Every wake opens with a reason, and the CLI gives
+        // an owned-row wake the addressed grace past its cascade cap, so a later
+        // prevAssignee/dependent* change folding in must not demote the batch
+        // back to a broadcast. No reader tells the weaker reasons apart.
+        // A human edit arriving on top of agent churn must re-price the whole
+        // batch as human — otherwise one agent write early in a sweep
+        // permanently marks a wake the human later contributed to.
+        const foldSet: Record<string, unknown> = {
+          ...(OWNED_ROW_WAKE_REASONS.has(wakeReason) ? { 'payload.wakeReason': wakeReason } : {}),
+          ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
+          ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
+        };
         const folded = await AgentEvent.findOneAndUpdate(
           {
             agentName,
@@ -442,14 +457,7 @@ export async function notifyPodAgents(
           },
           {
             $inc: { 'payload.boardChanges': 1 },
-            // A human edit arriving on top of agent churn must re-price the
-            // whole batch as human — otherwise one agent write early in a sweep
-            // permanently marks a wake the human later contributed to.
-            $set: {
-              'payload.wakeReason': wakeReason,
-              ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
-              ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
-            },
+            ...(Object.keys(foldSet).length ? { $set: foldSet } : {}),
           },
           { new: true },
         );
