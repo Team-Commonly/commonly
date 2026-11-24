@@ -17,6 +17,11 @@ const k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
 // GCP project id). The placeholder is intentionally generic; a real deploy
 // sets GATEWAY_IMAGE, and gateway.metadata.image overrides per-gateway.
 const DEFAULT_GATEWAY_IMAGE = process.env.GATEWAY_IMAGE || 'gcr.io/PROJECT_ID/clawdbot-gateway:latest';
+// The account a pod that runs agent turns uses: the chart creates it with no
+// Role and no token (templates/agent-provisioning/agent-runtime-sa.yaml), so it
+// can reach nothing in the Kubernetes API. agent-provisioner is for the
+// backend, which provisions.
+const AGENT_RUNTIME_SERVICE_ACCOUNT = String(process.env.AGENT_RUNTIME_SERVICE_ACCOUNT || '').trim() || 'agent-runtime';
 const DEFAULT_GATEWAY_PORT = 18789;
 
 interface GatewayMetadata {
@@ -268,10 +273,11 @@ const createOrUpdateDeployment = async ({
       template: {
         metadata: { labels },
         spec: {
-          serviceAccountName: 'agent-provisioner',
-          // The gateway runs agent turns and never calls the Kubernetes API,
-          // and this account can read every Secret in the namespace and exec
-          // into pods. So it gets no token (F533).
+          // The gateway runs agent turns and never calls the Kubernetes API, so
+          // it runs as an account with no Role, and mounts no token either
+          // (F533: it used to run as agent-provisioner, which can read every
+          // Secret in the namespace and exec into pods).
+          serviceAccountName: AGENT_RUNTIME_SERVICE_ACCOUNT,
           automountServiceAccountToken: false,
           ...(nodeSelector ? { nodeSelector } : {}),
           ...(tolerations ? { tolerations } : {}),

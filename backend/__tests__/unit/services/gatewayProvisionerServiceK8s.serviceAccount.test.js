@@ -1,8 +1,9 @@
 // A provisioned agent gateway runs agent turns, so it must not carry a
-// Kubernetes token. Its pods run as the agent-provisioner service account,
-// which can read every Secret in the namespace and exec into pods; the gateway
-// itself never calls the Kubernetes API (F533). The chart's own workloads are
-// checked by scripts/verify-service-account-tokens-chart.js.
+// Kubernetes token, nor run as an account that holds a Role: the gateway never
+// calls the Kubernetes API, and agent-provisioner can read every Secret in the
+// namespace and exec into pods (F533). It runs as the chart's agent-runtime
+// account, which has no Role. The chart side is checked by
+// scripts/verify-service-account-tokens-chart.js.
 
 const notFound = () => Object.assign(new Error('not found'), { response: { statusCode: 404 } });
 
@@ -58,5 +59,30 @@ describe('a provisioned gateway mounts no Kubernetes token (F533)', () => {
     expect(mockApps.replaceNamespacedDeployment).toHaveBeenCalledTimes(1);
     const [, , deployment] = mockApps.replaceNamespacedDeployment.mock.calls[0];
     expect(deployment.spec.template.spec.automountServiceAccountToken).toBe(false);
+  });
+
+  it('runs as the agent-runtime account, never the provisioner', async () => {
+    await provisionGateway({ gateway: { slug: 'team-gamma' }, token: 't' });
+
+    const [, deployment] = mockApps.createNamespacedDeployment.mock.calls[0];
+    expect(deployment.spec.template.spec.serviceAccountName).toBe('agent-runtime');
+  });
+
+  it('takes the account name the chart passes in AGENT_RUNTIME_SERVICE_ACCOUNT', async () => {
+    const saved = process.env.AGENT_RUNTIME_SERVICE_ACCOUNT;
+    process.env.AGENT_RUNTIME_SERVICE_ACCOUNT = 'team-agents';
+    try {
+      let provision;
+      jest.isolateModules(() => {
+        ({ provisionGateway: provision } = require('../../../services/gatewayProvisionerServiceK8s'));
+      });
+      await provision({ gateway: { slug: 'team-delta' }, token: 't' });
+      const [, deployment] = mockApps.createNamespacedDeployment.mock.calls[0];
+      expect(deployment.spec.template.spec.serviceAccountName).toBe('team-agents');
+      expect(deployment.spec.template.spec.automountServiceAccountToken).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.AGENT_RUNTIME_SERVICE_ACCOUNT;
+      else process.env.AGENT_RUNTIME_SERVICE_ACCOUNT = saved;
+    }
   });
 });

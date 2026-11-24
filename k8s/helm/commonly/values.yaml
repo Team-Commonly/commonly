@@ -128,6 +128,10 @@ githubConnectApp:
 # Agent provisioning (RBAC)
 agentProvisioning:
   enabled: true
+  # The account pods that run agent turns use (the backend's provisioned
+  # gateways). It has no Role and mounts no token. The backend provisions as
+  # rbac.serviceAccount.name; nothing an agent runs gets that account.
+  runtimeServiceAccount: agent-runtime
 
 # Backend service configuration
 backend:
