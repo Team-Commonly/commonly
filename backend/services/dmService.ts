@@ -9,6 +9,7 @@ import {
 } from './hostedRuntimeService';
 import { HostedRoomRefusedError } from './hostedRoomRefusal';
 import { identityIsPaused } from './runtimeIdentityOwnership';
+import { moltbotRuntimeRetired } from './retiredRuntime';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
@@ -438,6 +439,12 @@ class DMService {
         // With no owner to name there is no row: the agent can't answer here.
         if (hosted && !hostedOwner?.live) {
           console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
+          return roomPod;
+        }
+        // A retired moltbot runtime (ADR-021 Part B) is not copied onto a new
+        // row: nothing would ever answer from it. The stored rows stay.
+        if (moltbotRuntimeRetired((inherited?.runtime as { runtimeType?: unknown } | undefined)?.runtimeType)) {
+          console.warn(`[dm-service] retired moltbot runtime for agent-room pod=${roomPod._id}; no installation written`);
           return roomPod;
         }
         await writeRoomRow({
