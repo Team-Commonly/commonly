@@ -156,7 +156,7 @@ describe('V2AgentBYO on Windows', () => {
     renderPage();
     const listen = await issue();
     expect(listen).toHaveTextContent(/^在 PowerShell 里运行这段命令/);
-    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent('四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。');
+    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent('三行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。');
     const note = screen.getByTestId('byo-listen-windows');
     expect(note).toHaveTextContent(/^Claude Code 在 Windows 上需要 CLI 0\.1\.243或更高版本，才能回复 @提及。Windows 上没有能给 \S+ 用的沙箱，/);
     expect(note).not.toHaveTextContent('测试过');
@@ -164,7 +164,8 @@ describe('V2AgentBYO on Windows', () => {
     expect(note).toHaveTextContent('--allow write');
     expect(note).toHaveTextContent('不能运行命令');
     expect(note).toHaveTextContent('连接器授权');
-    expect(note).toHaveTextContent('commonly.cmd daemon install --unsandboxed');
+    expect(note).toHaveTextContent('就在「其他接入方式」里添加这台电脑');
+    expect(note).not.toHaveTextContent('commonly.cmd');
     expect(note).toHaveTextContent('--allow');
     expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/PowerShell 窗口/);
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(/^Windows 上没有沙箱。/);

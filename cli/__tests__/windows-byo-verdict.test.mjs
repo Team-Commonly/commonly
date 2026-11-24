@@ -1,65 +1,78 @@
 // What the Windows Bring-your-own walk (cli/scripts/windows-byo-smoke.mjs)
 // fails on. On a pull request the published leg is mostly reported, because a
 // CLI fix reaches npm only after it merges. But this tree's leg replaces the
-// page's install line, so it cannot stand in for that line: a page that names
-// a package npm cannot install must fail the PR, not warn.
+// page's package spec, so it cannot stand in for the page's own command: a
+// page that names a package npx cannot fetch must fail the PR, not warn.
 
 import { execFileSync } from 'child_process';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import {
-  cliHintsFrom, describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
-  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, unconfinedNoticeFrom,
+  cliHintsFrom, COMMAND_GUARD, commandExitFrom, describeCause, parseRecorderLog,
+  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, unconfinedNoticeFrom, withCliSpec,
 } from '../scripts/windows-byo-verdict.mjs';
 
 const CLI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const PAGE = [
-  'npm i -g @commonlyai/cli@latest',
   '$env:COMMONLY_API_URL="http://127.0.0.1:1"',
   '$env:COMMONLY_AGENT_TOKEN="cm_agent_x"',
-  'commonly agent run win-byo --adapter claude --unsandboxed',
+  'npx.cmd -y @commonlyai/cli@latest agent run win-byo --adapter claude --unsandboxed',
 ];
 
-// What PowerShell prints when the page's install line names a missing package
-// and the guard after it trips (npm's own E404 lines, then the guard's).
-const BROKEN_INSTALL_OUT = 'npm error code E404\n'
+// What PowerShell prints when the page's run line names a missing package and
+// the guard after it trips (npm's own E404 lines, then the guard's).
+const BROKEN_COMMAND_OUT = 'npm error code E404\n'
   + 'npm error 404 Not Found - GET https://registry.npmjs.org/@commonlyai%2fclii - Not found\n'
-  + 'windows-byo-smoke: the install line exited 1\n';
+  + "windows-byo-smoke: the page's command exited 1\n";
 
 describe('the pasted script', () => {
-  test('stops right after the install line when that line fails', () => {
+  test('the guard follows the run line, the page\'s whole command', () => {
     const script = pasteScript(PAGE);
-    expect(script[0]).toBe(PAGE[0]);
-    expect(script[1]).toBe(INSTALL_GUARD);
-    expect(script.slice(2)).toEqual(PAGE.slice(1));
-    expect(INSTALL_GUARD).toMatch(/\$LASTEXITCODE/);
-    expect(INSTALL_GUARD).toMatch(/exit 97/);
+    expect(script).toHaveLength(4);
+    expect(script.slice(0, 3)).toEqual(PAGE);
+    expect(script[3]).toBe(COMMAND_GUARD);
+    expect(COMMAND_GUARD).toMatch(/\$LASTEXITCODE/);
+    expect(COMMAND_GUARD).toMatch(/exit 97/);
   });
 
-  test('the guard\'s line is read back as the install exit code', () => {
-    expect(installExitFrom(BROKEN_INSTALL_OUT)).toBe(1);
-    expect(installExitFrom('added 12 packages in 4s\n')).toBeNull();
+  test('the guard\'s line is read back as the page\'s command exit code', () => {
+    expect(commandExitFrom(BROKEN_COMMAND_OUT)).toBe(1);
+    expect(commandExitFrom('polling http://127.0.0.1:1 for events\n')).toBeNull();
+  });
+
+  // A path in npx's first position is run as a command, not installed: on the
+  // Windows runner the .tgz went to its file association and PowerShell exited
+  // 0 with nothing polled. So the tarball goes in --package, and the bin is named.
+  test('this tree\'s leg swaps only the package spec in the run line, as --package with the bin named', () => {
+    expect(withCliSpec(PAGE[2], 'D:\\a\\_temp\\commonlyai-cli-0.1.9.tgz'))
+      .toBe('npx.cmd -y --package D:\\a\\_temp\\commonlyai-cli-0.1.9.tgz commonly agent run win-byo --adapter claude --unsandboxed');
+    // The bare leg's `npx` keeps the swap too.
+    expect(withCliSpec(PAGE[2].replace(/^npx\.cmd /, 'npx '), 'C:\\t.tgz'))
+      .toBe('npx -y --package C:\\t.tgz commonly agent run win-byo --adapter claude --unsandboxed');
+    // A `$` in the spec is taken literally, not as a replacement pattern.
+    expect(withCliSpec(PAGE[2], 'C:\\$&.tgz')).toMatch(/^npx\.cmd -y --package C:\\\$&\.tgz commonly agent run /);
+    expect(() => withCliSpec('commonly.cmd agent run x', 'C:\\t.tgz')).toThrow(/not an npx run line/);
   });
 });
 
 describe('the published leg on a pull request', () => {
   const reportOnly = true;
 
-  test('a page install line npm cannot install fails, it is not a warning', () => {
+  test('a page command npx cannot fetch fails, it is not a warning', () => {
     const out = publishedOutcome({
       problems: ['the agent never polled for its @mention', 'PowerShell exited 97 before the walk finished'],
-      installExit: installExitFrom(BROKEN_INSTALL_OUT),
+      commandExit: commandExitFrom(BROKEN_COMMAND_OUT),
       delivered: false,
     }, { reportOnly });
     expect(out.warn).toEqual([]);
-    expect(out.fail).toEqual(expect.arrayContaining([expect.stringMatching(/install line exited 1/)]));
+    expect(out.fail[0]).toBe("the page's command exited 1");
   });
 
   test('a published CLI that never picks up its @mention fails', () => {
     const out = publishedOutcome({
-      problems: ['the agent never polled for its @mention'], installExit: null, delivered: false,
+      problems: ['the agent never polled for its @mention'], commandExit: null, delivered: false,
     }, { reportOnly });
     expect(out.warn).toEqual([]);
     expect(out.fail).toEqual(['the agent never polled for its @mention']);
@@ -67,21 +80,31 @@ describe('the published leg on a pull request', () => {
 
   test('a CLI that got the @mention but did not answer it is reported (the fix ships on merge)', () => {
     const problems = ['Claude Code never reached the model', 'no reply came back to the pod within 41 s'];
-    const out = publishedOutcome({ problems, installExit: null, delivered: true }, { reportOnly });
+    const out = publishedOutcome({ problems, commandExit: null, delivered: true }, { reportOnly });
     expect(out).toEqual({ fail: [], warn: problems });
+  });
+
+  // The guard now follows the run line, so it also trips when a CLI that held
+  // its @mention later exits: that is the CLI's behaviour, reported like the rest.
+  test('a CLI that exits after its @mention was delivered is reported, not failed', () => {
+    const problems = ['no reply came back to the pod within 41 s'];
+    const out = publishedOutcome({ problems, commandExit: 1, delivered: true }, { reportOnly });
+    expect(out).toEqual({ fail: [], warn: ["the page's command exited 1", ...problems] });
   });
 });
 
 describe('dispatched, or this tree\'s leg', () => {
   test('every problem fails', () => {
     const problems = ['no reply came back to the pod within 41 s'];
-    expect(publishedOutcome({ problems, installExit: null, delivered: true }, { reportOnly: false }))
+    expect(publishedOutcome({ problems, commandExit: null, delivered: true }, { reportOnly: false }))
       .toEqual({ fail: problems, warn: [] });
+    expect(publishedOutcome({ problems, commandExit: 3, delivered: true }, { reportOnly: false }).fail)
+      .toEqual(["the page's command exited 3", ...problems]);
   });
 
-  test('a failed install names its exit code first', () => {
-    const out = publishedOutcome({ problems: ['the agent never polled for its @mention'], installExit: 1, delivered: false });
-    expect(out.fail[0]).toMatch(/install line exited 1/);
+  test("a failed page command names its exit code first, not 'never polled'", () => {
+    const out = publishedOutcome({ problems: ['the agent never polled for its @mention'], commandExit: 1, delivered: false });
+    expect(out.fail[0]).toBe("the page's command exited 1");
   });
 });
 

@@ -4,19 +4,34 @@
  * windows-byo-smoke.mjs.
  */
 
-// Pasted right after the install line. PowerShell runs the next line whatever
-// a native command exits with, so without this a failed install goes on to
-// run whichever `commonly` is already on PATH: in this tree's leg, the
-// published CLI the first leg installed, which would pass for this checkout.
-// `$LASTEXITCODE`, not `$?`: Windows PowerShell can clear `$?` when npm only
-// warns on stderr. A missing `npm` leaves it unset, and `commonly` then never
-// polls, which fails the leg anyway.
-export const INSTALL_GUARD = 'if ($LASTEXITCODE) { Write-Output "windows-byo-smoke: the install line exited $LASTEXITCODE"; exit 97 }';
+// Pasted right after the run line, which is the page's whole command: npx
+// fetches the CLI and runs it. A walk that works is stopped while that line
+// still runs, so the guard speaks only when npx or the CLI exits early (npx
+// could not fetch the package, or the CLI quit before or during its poll
+// loop), and the walk can name that exit rather than "never polled".
+// `$LASTEXITCODE`, not `$?`: Windows PowerShell can clear `$?` when a native
+// command only warns on stderr. A missing `npx` leaves it unset, and the CLI
+// then never polls, which fails the leg anyway.
+export const COMMAND_GUARD = 'if ($LASTEXITCODE) { Write-Output "windows-byo-smoke: the page\'s command exited $LASTEXITCODE"; exit 97 }';
 
-/** The page's lines as pasted: the install line, the guard, the rest. */
-export const pasteScript = (lines) => [lines[0], INSTALL_GUARD, ...lines.slice(1)];
+/** The page's lines as pasted: the lines, then the guard. */
+export const pasteScript = (lines) => [...lines, COMMAND_GUARD];
 
-/** The install line's exit code when the guard tripped, else null. */
+/**
+ * The run line with another package spec in place of the page's
+ * `@commonlyai/cli@latest` (this checkout's packed tarball), so the rest of
+ * the line, and the shim it names (npx.cmd), stand as the page has them.
+ *
+ * The spec goes in `--package`, with the bin named after it. A path in npx's
+ * first position is run as a command, not installed as a package: on Windows
+ * cmd hands the .tgz to its file association and exits 0, so the walk saw
+ * PowerShell exit 0 with nothing polled.
+ */
+export const withCliSpec = (runLine, spec) => {
+  if (!/^\S+ -y \S+ /.test(String(runLine))) throw new Error(`not an npx run line: ${runLine}`);
+  return String(runLine).replace(/^(\S+ -y )\S+/, (_, head) => `${head}--package ${spec} commonly`);
+};
+
 // The CLI's own line saying this seat runs with nothing confining it, or null.
 // The walk logs it on a pass, because PowerShell's output is dumped only on a failure.
 export const unconfinedNoticeFrom = (out) => String(out).split(/\r?\n/)
@@ -48,8 +63,9 @@ export const cliHintsFrom = (out) => {
   return { shim, problems };
 };
 
-export const installExitFrom = (out) => {
-  const m = /windows-byo-smoke: the install line exited (-?\d+)/.exec(String(out || ''));
+/** The page's command's exit code when the guard after it tripped, else null. */
+export const commandExitFrom = (out) => {
+  const m = /windows-byo-smoke: the page's command exited (-?\d+)/.exec(String(out || ''));
   return m ? Number(m[1]) : null;
 };
 
@@ -59,18 +75,20 @@ export const installExitFrom = (out) => {
  * `reportOnly` is the published leg on a pull request. A CLI fix reaches npm
  * only after it merges, so what the published CLI does once it holds an
  * @mention is reported there and this tree's leg decides. That leg replaces
- * the page's install line, though, so it cannot stand in for it: a published
- * install that fails, or a published CLI that never picks up its @mention,
- * fails the pull request too.
+ * the page's package spec, though, so it cannot stand in for the page's
+ * command reaching the CLI: a published command that fails before the CLI
+ * ever polled (npx could not fetch it, or the CLI quit on start) fails the
+ * pull request even under reportOnly. Once the CLI was handed its @mention,
+ * the command exiting is just another problem, reported like the rest.
  *
  * @returns {{ fail: string[], warn: string[] }}
  */
-export const publishedOutcome = ({ problems = [], installExit = null, delivered = false } = {}, { reportOnly = false } = {}) => {
-  const all = installExit === null
+export const publishedOutcome = ({ problems = [], commandExit = null, delivered = false } = {}, { reportOnly = false } = {}) => {
+  const all = commandExit === null
     ? [...problems]
-    : [`the install line exited ${installExit}`, ...problems];
+    : [`the page's command exited ${commandExit}`, ...problems];
   if (!all.length) return { fail: [], warn: [] };
-  if (reportOnly && installExit === null && delivered) return { fail: [], warn: all };
+  if (reportOnly && delivered) return { fail: [], warn: all };
   return { fail: all, warn: [] };
 };
 

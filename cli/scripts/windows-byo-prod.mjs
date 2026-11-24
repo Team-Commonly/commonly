@@ -2,8 +2,9 @@
  * D164 prod walk (byo-windows.yml, target=prod): the Bring your own page's
  * Windows lines for Claude Code or Codex (the dispatch's `adapter`), pasted into one PowerShell process against
  * the live API with a real model, as a Windows user would. The published CLI
- * is walked (the page's `@latest` install line, verbatim), or, with `cli:
- * tree`, this checkout's packed CLI in that line's place (walkInstallLines).
+ * is walked (the page's `npx.cmd -y @commonlyai/cli@latest` run line,
+ * verbatim), or, with `cli: tree`, this checkout's packed CLI in place of
+ * that package spec (walkCliLines).
  *
  * The run does not post the @mention. When the CLI is polling, it logs
  * `READY: listening in <podId>`, and a person in the pod posts the @mention.
@@ -32,9 +33,12 @@ import { homedir, tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-import { codexSystemConfig, walkAdapter } from './linux-byo-prod.mjs';
 import {
-  describeCause, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact, unconfinedNoticeFrom,
+  codexSystemConfig, neverPolledProblem, npxCliVersion, walkAdapter,
+} from './linux-byo-prod.mjs';
+import {
+  commandExitFrom, describeCause, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact,
+  unconfinedNoticeFrom, withCliSpec,
 } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,25 +66,23 @@ export const windowsProfileRoot = () => homedir();
 
 /** What is wrong with the page's Windows lines for this adapter, if anything. */
 export const windowsLineProblems = (lines, { agentName, adapter }) => {
-  if (lines.length !== 4) return [`the page's Windows lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
+  if (lines.length !== 3) return [`the page's Windows lines are ${lines.length} lines, not 3: ${JSON.stringify(lines)}`];
   const problems = [];
-  if (!/^npm\.cmd i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm.cmd install: ${lines[0]}`);
-  const run = `commonly.cmd agent run ${agentName} --adapter ${adapter} --unsandboxed`;
-  if (lines[3] !== run) problems.push(`line 4 is not the ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
+  const run = `npx.cmd -y @commonlyai/cli@latest agent run ${agentName} --adapter ${adapter} --unsandboxed`;
+  if (lines[2] !== run) problems.push(`line 3 is not the ${ADAPTER_LABEL[adapter] || adapter} run through npx.cmd: ${lines[2]}`);
   return problems;
 };
 
 /**
- * The CLI the walk installs: the page's own line (the published CLI), or,
- * with `cli: tree`, this checkout's packed CLI in its place, so a CLI fix can
- * be walked before it merges and publishes. The rest of the page's lines
- * stand either way.
+ * The CLI the walk runs: the page's own package spec (the published CLI), or,
+ * with `cli: tree`, this checkout's packed CLI in its place inside the run
+ * line, so a CLI fix can be walked before it merges and publishes. The rest
+ * of the page's lines, and the npx.cmd shim, stand either way.
  */
-export const walkInstallLines = (lines, { cli = 'published', tarball = '' } = {}) => {
+export const walkCliLines = (lines, { cli = 'published', tarball = '' } = {}) => {
   if (cli !== 'tree') return lines;
   if (!tarball) throw new Error('cli=tree needs this checkout packed (COMMONLY_BYO_TREE_TARBALL)');
-  // The page's own npm entry (npm.cmd on Windows), so the tree leg meets the same script policy.
-  return [`${lines[0].split(' ')[0]} i -g ${tarball}`, ...lines.slice(1)];
+  return [...lines.slice(0, -1), withCliSpec(lines[lines.length - 1], tarball)];
 };
 
 export const runProdWalk = async ({ pageConnectSnippet }) => {
@@ -108,7 +110,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   };
 
   // The token must be the agent the dispatch names, installed in its pod,
-  // before anything is installed or anyone is asked to post.
+  // before the page's command runs or anyone is asked to post.
   const who = await api('/api/agents/runtime/installations')
     .catch((err) => ({ status: 0, body: {}, error: err.message }));
   if (who.status !== 200) {
@@ -164,16 +166,16 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     return 1;
   }
   const cli = process.env.COMMONLY_BYO_PROD_CLI === 'tree' ? 'tree' : 'published';
-  let installLines;
+  let walkLines;
   try {
-    installLines = walkInstallLines(lines, { cli, tarball: process.env.COMMONLY_BYO_TREE_TARBALL });
+    walkLines = walkCliLines(lines, { cli, tarball: process.env.COMMONLY_BYO_TREE_TARBALL });
   } catch (err) {
     fail(err.message);
     forgetKey();
     return 1;
   }
   const cliLabel = cli === 'tree' ? "this checkout's" : 'published';
-  const script = pasteScript(installLines);
+  const script = pasteScript(walkLines);
   const profile = mkdtempSync(join(windowsProfileRoot(), 'byo-prod-profile-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-prod-acks-')), 'acks.jsonl');
   log(`pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
@@ -213,19 +215,25 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     await sleep(1000);
   }
   if (!polling()) {
-    const installExit = installExitFrom(out);
-    fail(installExit !== null
-      ? `the page's install line exited ${installExit}`
-      : `the CLI never started polling ${API} (${exited === null ? `${Math.round((Date.now() - start) / 1000)} s` : `PowerShell exited ${exited}`})`);
+    fail(neverPolledProblem({
+      commandExit: commandExitFrom(out),
+      api: API,
+      shell: 'PowerShell',
+      exited,
+      seconds: Math.round((Date.now() - start) / 1000),
+    }));
     dump();
     stop();
     return 1;
   }
-  const version = spawnSync('npm', ['ls', '-g', '--depth=0', '--json', '@commonlyai/cli'], { encoding: 'utf8', shell: true });
-  let cliVersion = 'unknown';
-  try { cliVersion = JSON.parse(version.stdout).dependencies['@commonlyai/cli'].version; } catch { /* reported as unknown */ }
+  // npm's cache on Windows is under %LocalAppData%, not the walk's profile, so
+  // this reads the newest CLI npx fetched there.
+  const cliVersion = npxCliVersion([
+    process.env.npm_config_cache,
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'npm-cache'),
+  ]);
   const readyAt = Date.now();
-  log(`${cliLabel} @commonlyai/cli ${cliVersion}, installed by ${cli === 'tree' ? 'its packed tarball' : "the page's line"}, is polling ${API}`);
+  log(`${cliLabel} @commonlyai/cli ${cliVersion}, fetched by the page's npx.cmd line${cli === 'tree' ? ' from its packed tarball' : ''}, is polling ${API}`);
   console.log(`READY: listening in ${podId}`);
   console.log(`::notice::READY: listening in ${podId}. Post the @${agentName} mention now; the walk fails at ${new Date(readyAt + ANSWER_TIMEOUT_MS).toISOString()}.`);
 
@@ -272,7 +280,10 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);
-  if (exited !== null) log(`PowerShell exited ${exited} before the walk finished`);
+  if (exited !== null) {
+    const commandExit = commandExitFrom(out);
+    log(`PowerShell exited ${exited} before the walk finished${commandExit !== null ? ` (the page's command exited ${commandExit})` : ''}`);
+  }
   dump();
   return 1;
 };

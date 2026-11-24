@@ -252,7 +252,7 @@ describe('V2AgentBYO listening verification', () => {
       expect(waitingText()).not.toMatch(/not the Terminal command/);
 
       await act(async () => { jest.advanceTimersByTime(61 * 1000); });
-      expect(waitingText()).toMatch(/copied the MCP snippet, but not the Terminal command that starts sam-claude, the one that ends in commonly agent run sam-claude/);
+      expect(waitingText()).toMatch(/copied the MCP snippet, but not the Terminal command that starts sam-claude, the one with agent run sam-claude in it/);
     });
 
     test('the Copy buttons count the same way as a manual copy', async () => {
@@ -267,7 +267,7 @@ describe('V2AgentBYO listening verification', () => {
       await act(async () => { jest.advanceTimersByTime(3 * 60 * 1000 + 1000); });
       expect(waitingText()).toMatch(/not the Terminal command that starts sam-claude/);
 
-      await act(async () => { fireEvent.click(copyButtonFor(/commonly agent run sam-claude/)); });
+      await act(async () => { fireEvent.click(copyButtonFor(/@commonlyai\/cli@latest agent run sam-claude/)); });
       expect(waitingText()).not.toMatch(/not the Terminal command/);
     });
 
@@ -275,7 +275,7 @@ describe('V2AgentBYO listening verification', () => {
       jest.useFakeTimers();
       await issueToken();
       copyBlock(/claude mcp add/);
-      copyBlock(/commonly agent run sam-claude/);
+      copyBlock(/@commonlyai\/cli@latest agent run sam-claude/);
 
       await act(async () => { jest.advanceTimersByTime(4 * 60 * 1000); });
       expect(waitingText()).not.toMatch(/not the Terminal command/);
@@ -301,10 +301,12 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.queryByTestId('byo-listen-ok')).not.toBeInTheDocument();
   });
 
-  test('the listen snippet carries the CLI install line for first-time machines', async () => {
+  test('the listen snippet fetches the CLI through npx, so a first-time machine installs nothing globally', async () => {
     jest.useFakeTimers();
     await issueToken();
-    // Scoped to the listen snippet: the result page's Other ways block also shows an npm line.
-    expect(screen.getByText(/commonly agent run sam-claude/)).toHaveTextContent(/npm i -g @commonlyai\/cli/);
+    // Scoped to the listen snippet: the result page's Other ways block also shows an npx line.
+    const snippet = screen.getByText(/@commonlyai\/cli@latest agent run sam-claude/);
+    expect(snippet).toHaveTextContent(/npx -y @commonlyai\/cli@latest agent run sam-claude --adapter claude/);
+    expect(snippet).not.toHaveTextContent(/npm i -g/);
   });
 });

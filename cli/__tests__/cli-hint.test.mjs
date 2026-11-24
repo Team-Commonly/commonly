@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
-import { cliName, cliSteps, npmName, npxName } from '../src/lib/cli-hint.js';
+import { cliName, cliSteps, npmName, npxName, runsFromNpxCache } from '../src/lib/cli-hint.js';
 import { foregroundDaemonHint } from '../src/lib/daemon-hint.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
@@ -17,6 +17,29 @@ describe('the command names a hint prints (F435)', () => {
     expect(cliName(platform)).toBe('commonly');
     expect(npxName(platform)).toBe('npx');
     expect(npmName(platform)).toBe('npm');
+  });
+
+  // F570: the Bring your own page's line runs the CLI through npx, which keeps
+  // it under a `_npx` folder of npm's cache and puts no `commonly` on PATH. A
+  // hint that names `commonly` would fail there, so it names the npx line.
+  test('run from the npx cache, hints name the npx line that started it, with the .cmd shim on Windows', () => {
+    const mac = '/Users/a/.npm/_npx/4f2c1a/node_modules/@commonlyai/cli/src/index.js';
+    const win = 'C:\\Users\\a\\AppData\\Local\\npm-cache\\_npx\\4f2c1a\\node_modules\\@commonlyai\\cli\\src\\index.js';
+    expect(runsFromNpxCache(mac)).toBe(true);
+    expect(runsFromNpxCache(win)).toBe(true);
+    expect(cliName('darwin', { entry: mac })).toBe('npx -y @commonlyai/cli@latest');
+    expect(cliName('linux', { entry: mac })).toBe('npx -y @commonlyai/cli@latest');
+    expect(cliName('win32', { entry: win })).toBe('npx.cmd -y @commonlyai/cli@latest');
+  });
+
+  test('a global install, a stable setup copy or a checkout keeps the bare name', () => {
+    for (const entry of ['/usr/local/lib/node_modules/@commonlyai/cli/src/index.js',
+      '/Users/a/.commonly/cli/node_modules/@commonlyai/cli/src/index.js',
+      '/Users/a/src/commonly/cli/src/index.js', '/Users/a/my_npx_notes/cli/src/index.js', undefined, '']) {
+      expect(runsFromNpxCache(entry)).toBe(false);
+      expect(cliName('darwin', { entry })).toBe('commonly');
+      expect(cliName('win32', { entry })).toBe('commonly.cmd');
+    }
   });
 
   test('dependent steps join with && off Windows, and print one per line on it, where PowerShell 5.1 has no &&', () => {

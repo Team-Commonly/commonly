@@ -15,7 +15,15 @@
 // The guard in __tests__/cli-hint.test.mjs fails on a `commonly <subcommand>`
 // written into a string anywhere else in cli/src: use `${CLI} <subcommand>`.
 
-export const cliName = (platform = process.platform) => (platform === 'win32' ? 'commonly.cmd' : 'commonly');
+//
+// Run through npx (F570: the Bring your own page's line), the CLI lives under
+// a `_npx` folder of npm's cache and no `commonly` is on PATH, so a hint that
+// names `commonly` would fail; it names the npx line that started it instead.
+export const runsFromNpxCache = (entry = process.argv[1]) => Boolean(entry) && /[\\/]_npx[\\/]/.test(String(entry));
+export const cliName = (platform = process.platform, { entry = process.argv[1] } = {}) => {
+  if (runsFromNpxCache(entry)) return `${npxName(platform)} -y @commonlyai/cli@latest`;
+  return platform === 'win32' ? 'commonly.cmd' : 'commonly';
+};
 export const npxName = (platform = process.platform) => (platform === 'win32' ? 'npx.cmd' : 'npx');
 export const npmName = (platform = process.platform) => (platform === 'win32' ? 'npm.cmd' : 'npm');
 

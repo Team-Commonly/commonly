@@ -88,10 +88,10 @@ describe('BYO one-line connect', () => {
     expect(screen.queryByTestId('byo-line-expired')).not.toBeInTheDocument();
   });
 
-  test('without a code (an instance that doesn\'t issue them) the four lines and their copy stay', async () => {
+  test('without a code (an instance that doesn\'t issue them) the three lines and their copy stay', async () => {
     await issueWithCode({ token: 'cm_agent_test_token' });
-    expect(listenBox().textContent.split('\n')).toHaveLength(4);
-    expect(screen.getByText(/run all four lines in one window/i)).toBeInTheDocument();
+    expect(listenBox().textContent.split('\n')).toHaveLength(3);
+    expect(screen.getByText(/run all three lines in one window/i)).toBeInTheDocument();
     expect(screen.getByTestId('byo-key-once')).toHaveTextContent(/private key we show only once/i);
   });
 
@@ -148,7 +148,7 @@ describe('BYO one-line connect', () => {
     await act(async () => { fireEvent.click(copyButton); });
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
     const copied = navigator.clipboard.writeText.mock.calls[0][0];
-    expect(copied).toMatch(/--unsandboxed }\n$/);
+    expect(copied).toMatch(/--unsandboxed\n$/);
     expect(copied.split('\n')).toHaveLength(2);
   });
 

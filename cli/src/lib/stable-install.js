@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, sep } from 'path';
 import { resolveLaunch } from './windows-command.js';
-import { NPX } from './cli-hint.js';
+import { NPX, npxName, runsFromNpxCache } from './cli-hint.js';
 
 export const CLI_PACKAGE = '@commonlyai/cli';
 
@@ -37,6 +37,22 @@ export const MIN_NODE_MAJOR = 22;
 export const stableCliDir = (home = homedir()) => join(home, '.commonly', 'cli');
 /** The one line that sets up or updates a computer, for advice the CLI prints. */
 export const DAEMON_SETUP_LINE = `${NPX} -y ${CLI_PACKAGE}@latest daemon setup`;
+
+/**
+ * F570: `daemon install` run from npx's cache would pin the service to a
+ * folder npm can clear (see the top of this file), and since the Bring your
+ * own page's line runs the CLI through npx, a hint that names `daemon install`
+ * can be run from there. Refused with the setup line instead; `daemon setup`
+ * runs its install step as the stable copy, so this never refuses it.
+ */
+export const npxInstallRefusal = ({ entry = process.argv[1], platform = process.platform } = {}) => (
+  runsFromNpxCache(entry)
+    ? 'this CLI is running from npx\'s cache, which npm can clear, so a login service installed from it would stop '
+      + 'starting with nothing on screen to say why. Set this computer up with '
+      + `${npxName(platform)} -y ${CLI_PACKAGE}@latest daemon setup --instance <your Commonly URL>`
+      + `${platform === 'win32' ? ' --unsandboxed' : ''}, which installs a stable copy first `
+      + '(the web app shows the exact line under Agents → Bring your own → Add a computer).'
+    : null);
 
 /** True when this process runs the copy `daemon setup` installed under $HOME. */
 export const runsFromStableInstall = (entry = process.argv[1], home = homedir()) => (

@@ -2,12 +2,13 @@
 /**
  * D164: the Bring your own page's Windows lines, walked on a real Windows host
  * (the windows-latest job in .github/workflows/byo-windows.yml). For Claude
- * Code the page tells a Windows visitor to paste four lines into PowerShell:
+ * Code the page tells a Windows visitor to paste three lines into PowerShell:
  *
- *   npm.cmd i -g @commonlyai/cli@latest
  *   $env:COMMONLY_API_URL="…"
  *   $env:COMMONLY_AGENT_TOKEN="…"
- *   commonly.cmd agent run <name> --adapter claude --unsandboxed
+ *   npx.cmd -y @commonlyai/cli@latest agent run <name> --adapter claude --unsandboxed
+ *
+ * The last line both fetches the CLI (npx) and runs it.
  *
  * This script pastes them into one PowerShell process, as a person does, with
  * a stub Commonly API served from this process and one @mention queued on it.
@@ -24,27 +25,29 @@
  * so a change to the page's Windows snippet re-runs this job and is what gets
  * walked. Two legs, each in a fresh profile folder:
  *   published  - the page's lines verbatim, so `@latest` from npm
- *   this tree  - the install line names this checkout's packed CLI instead
- *                (COMMONLY_BYO_TREE_TARBALL), so a PR that breaks it fails
+ *   this tree  - the run line names this checkout's packed CLI in place of
+ *                `@commonlyai/cli@latest` (COMMONLY_BYO_TREE_TARBALL), so a
+ *                PR that breaks it fails
  * Then the fresh-PC legs (F342). The runner is not a person's PC: it ships
  * Node, Claude Code and an Unrestricted script policy. Windows 11 defaults to
- * Restricted, where PowerShell refuses npm's .ps1 shims, so a bare `npm` or
- * `commonly` stops before the token is used. That is why the page names the
- * .cmd shims.
+ * Restricted, where PowerShell refuses npm's .ps1 shims, so a bare `npx`
+ * stops before the token is used. That is why the page names the .cmd shim.
  *   scripts blocked      - this tree's lines under a Restricted policy; gated:
  *                          must reach a reply, as "this tree" must
- *   scripts blocked, bare - the same with bare npm/commonly, as the page read
- *                          before F342; reported only, records where it stops
+ *   scripts blocked, bare - the same with bare npx, as the page read before
+ *                          F342; reported only, records where it stops
  *   no Claude Code login - the page's lines with Claude Code's sign-in
  *                          removed; reported only
- * Each reported leg logs a step table: install, token used, @mention
+ * Each reported leg logs a step table: page command, token used, @mention
  * delivered, model reached, reply, ack.
  *
  * With COMMONLY_BYO_TARGET=prod it walks the published CLI against the live
  * API with a real model instead, and a person posts the @mention: see
  * windows-byo-prod.mjs.
  *
- * It installs global packages and writes Claude Code's managed settings.
+ * It fills the runner's npx cache, changes the user's script policy and
+ * writes Claude Code's managed settings (the workflow installs Claude Code
+ * globally).
  * Never run it on a machine you use.
  */
 import { spawn, spawnSync } from 'child_process';
@@ -55,7 +58,9 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { runProdWalk } from './windows-byo-prod.mjs';
-import { cliHintsFrom, installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
+import {
+  cliHintsFrom, commandExitFrom, pasteScript, publishedOutcome, withCliSpec,
+} from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_byo_smoke';
@@ -82,7 +87,7 @@ const lift = (re, what) => {
   return m[0];
 };
 const pageConnectSnippet = new Function([
-  lift(/const CLI_INSTALL_COMMAND = '[^'\n]*';/, 'CLI_INSTALL_COMMAND'),
+  lift(/const CLI_NPX_COMMAND = '[^'\n]*';/, 'CLI_NPX_COMMAND'),
   lift(/const POWERSHELL_SPECIAL = \/[^\n]*\/g;/, 'POWERSHELL_SPECIAL'),
   lift(/export const powerShellQuote = \(value: string\): string => [^\n]*;/, 'powerShellQuote')
     .replace(/^export /, '').replace('(value: string): string =>', '(value) =>'),
@@ -96,7 +101,7 @@ if (process.platform !== 'win32') {
   process.exit(2);
 }
 if (!process.env.CI) {
-  console.error('windows-byo-smoke: refuses to run outside CI (it installs global npm packages and writes Claude Code managed settings).');
+  console.error('windows-byo-smoke: refuses to run outside CI (it changes the script policy and writes Claude Code managed settings).');
   process.exit(2);
 }
 if (process.env.COMMONLY_BYO_TARGET === 'prod') {
@@ -243,29 +248,27 @@ const apiServer = createServer(async (req, res) => {
 const API = `http://127.0.0.1:${await listen(apiServer)}`;
 log(`stub Commonly API on ${API}`);
 
-// ── one leg: the four lines in one PowerShell window ──────────────────────
+// ── one leg: the three lines in one PowerShell window ─────────────────────
 const killTree = (pid) => spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]);
 const counts = (list) => Object.entries(list.reduce((acc, p) => ({ ...acc, [p]: (acc[p] || 0) + 1 }), {}))
   .map(([p, n]) => `${p} x${n}`).join('\n  ');
 
-const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_MS, freshShell = false } = {}) => {
+const walk = async (label, cliSpec, { bare = false, timeoutMs = LEG_TIMEOUT_MS, freshShell = false } = {}) => {
   const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token: TOKEN, agentName: AGENT, adapter: 'claude' })
     .split('\n');
-  if (lines.length !== 4 || !/^npm\.cmd i -g \S+$/.test(lines[0]) || !/^commonly\.cmd agent run /.test(lines[3])) {
+  if (lines.length !== 3 || !/^npx\.cmd -y \S+ agent run /.test(lines[2])) {
     console.error(`windows-byo-smoke: the page's Windows lines changed shape: ${JSON.stringify(lines)}`);
     process.exit(1);
   }
-  if (installLine) lines[0] = installLine;
-  // The lines as the page read before F342: bare names, which resolve to the .ps1 shims.
-  if (bare) {
-    lines[0] = lines[0].replace(/^npm\.cmd /, 'npm ');
-    lines[3] = lines[3].replace(/^commonly\.cmd /, 'commonly ');
-  }
+  // This checkout's packed CLI in place of the page's `@commonlyai/cli@latest`.
+  if (cliSpec) lines[2] = withCliSpec(lines[2], cliSpec);
+  // The line as the page read before F342: bare npx, which resolves to the .ps1 shim.
+  if (bare) lines[2] = lines[2].replace(/^npx\.cmd /, 'npx ');
   const profile = mkdtempSync(join(tmpdir(), 'byo-profile-'));
   leg = { eventId: `evt-${label.replace(/\W+/g, '-')}`, delivered: false, acked: false, posts: [], badAuth: [] };
   const modelBefore = model.paths.length;
   const apiBefore = api.calls.length;
-  // The install line is followed by a guard that stops the paste when it fails.
+  // The run line is followed by a guard that names its exit when it ends early.
   const script = pasteScript(lines);
   log(`${label}: pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
 
@@ -303,8 +306,8 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
   if (leg.badAuth.length) problems.push(`calls without the page's token: ${leg.badAuth.join(', ')}`);
   if (exited !== null && problems.length) problems.push(`PowerShell exited ${exited} before the walk finished`);
 
-  const installExit = installExitFrom(out);
-  if (problems.length || installExit !== null) {
+  const commandExit = commandExitFrom(out);
+  if (problems.length || commandExit !== null) {
     // One stream, so the runner's log keeps this in order.
     log(`${label}: the stub Commonly API saw:\n  ${counts(api.calls.slice(apiBefore)) || '(nothing)'}`);
     log(`${label}: the stub model saw:\n  ${counts(model.paths.slice(modelBefore)) || '(nothing)'}`);
@@ -316,7 +319,8 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
   // The step table a reported leg logs: how far the page's lines got.
   const scriptsRefused = /running scripts is disabled|UnauthorizedAccess|PSSecurityException/i.test(out);
   const steps = [
-    ['install', installExit === null && !scriptsRefused ? 'pass' : `fail${scriptsRefused ? ' (script policy)' : ''}`],
+    ['page command', commandExit === null && !scriptsRefused
+      ? 'pass' : `fail${scriptsRefused ? ' (script policy)' : ` (exited ${commandExit})`}`],
     ['token used', api.calls.length > apiBefore ? 'pass' : 'fail'],
     ['@mention delivered', leg.delivered ? 'pass' : 'fail'],
     ['model reached', model.paths.length > modelBefore ? 'pass' : 'fail'],
@@ -328,7 +332,7 @@ const walk = async (label, installLine, { bare = false, timeoutMs = LEG_TIMEOUT_
   ];
   const firstError = out.split(/\r?\n/).map((l) => l.trim())
     .find((l) => /running scripts is disabled|is not recognized|error|denied|not logged in|log ?in|api key/i.test(l)) || '';
-  return { problems, installExit, delivered: leg.delivered, steps, firstError, out };
+  return { problems, commandExit, delivered: leg.delivered, steps, firstError, out };
 };
 
 // The workflow step runs under pwsh 7, whose PSModulePath leaks into a child
@@ -377,20 +381,21 @@ const withRestrictedPolicy = async (fn) => {
 // published CLI does once it holds the @mention is reported, not failed: a fix
 // to the CLI reaches npm only after it merges, so the published leg cannot
 // pass on the PR that fixes it, and this tree's leg is the PR's proof. The
-// page's install line, and the published CLI getting as far as its @mention,
-// fail a PR too: this tree's leg replaces that line, so nothing else proves
-// it. Dispatched, both legs must pass. windows-byo-verdict.mjs holds the rule.
+// page's command getting the published CLI as far as its @mention fails a PR
+// too: this tree's leg swaps the package spec, so nothing else proves npx
+// fetches and starts what the page names. Dispatched, both legs must pass.
+// windows-byo-verdict.mjs holds the rule.
 const publishedReportsOnly = process.env.COMMONLY_BYO_PUBLISHED_REPORT_ONLY === '1';
 const published = publishedOutcome(await walk('published'), { reportOnly: publishedReportsOnly });
 published.warn.forEach((problem) => console.log(`::warning::published CLI on Windows: ${problem}`));
 published.fail.forEach((problem) => fail(`published: ${problem}`));
 const tarball = process.env.COMMONLY_BYO_TREE_TARBALL;
-if (tarball) publishedOutcome(await walk('this tree', `npm.cmd i -g ${tarball}`)).fail.forEach((problem) => fail(`this tree: ${problem}`));
+if (tarball) publishedOutcome(await walk('this tree', tarball)).fail.forEach((problem) => fail(`this tree: ${problem}`));
 else fail('this tree: COMMONLY_BYO_TREE_TARBALL is not set, so this checkout was not walked');
 
 if (tarball) {
-  // Gated: the page's .cmd lines must reach a reply on a Restricted policy.
-  const blocked = await withRestrictedPolicy(() => walk('scripts blocked', `npm.cmd i -g ${tarball}`, { freshShell: true }));
+  // Gated: the page's npx.cmd line must reach a reply on a Restricted policy.
+  const blocked = await withRestrictedPolicy(() => walk('scripts blocked', tarball, { freshShell: true }));
   if (blocked.skipped) fail(`scripts blocked: ${blocked.skipped}, so the leg proves nothing`);
   else {
     stepTable('scripts blocked', blocked);
@@ -401,7 +406,7 @@ if (tarball) {
     hints.problems.forEach((problem) => fail(`scripts blocked: ${problem}`));
   }
   // Reported: the bare lines on the same policy, to show where they stop.
-  const bare = await withRestrictedPolicy(() => walk('scripts blocked, bare', `npm.cmd i -g ${tarball}`, { bare: true, timeoutMs: REPORT_LEG_TIMEOUT_MS, freshShell: true }));
+  const bare = await withRestrictedPolicy(() => walk('scripts blocked, bare', tarball, { bare: true, timeoutMs: REPORT_LEG_TIMEOUT_MS, freshShell: true }));
   if (bare.skipped) console.log(`::warning::scripts blocked, bare: ${bare.skipped}`);
   else stepTable('scripts blocked, bare', bare);
 }
@@ -414,7 +419,7 @@ const noLoginSettings = JSON.stringify({ env: { CLAUDE_CODE_DISABLE_NONESSENTIAL
 MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), noLoginSettings));
 let noLogin;
 try {
-  noLogin = await walk('no Claude Code login', tarball ? `npm.cmd i -g ${tarball}` : undefined, { timeoutMs: REPORT_LEG_TIMEOUT_MS });
+  noLogin = await walk('no Claude Code login', tarball || undefined, { timeoutMs: REPORT_LEG_TIMEOUT_MS });
 } finally {
   MANAGED_DIRS.forEach((dir) => writeFileSync(join(dir, 'managed-settings.json'), managed));
 }

@@ -2,7 +2,8 @@
  * The Linux prod walk (byo-linux.yml): the Bring your own page's Linux lines
  * for Claude Code or Codex (the dispatch's `adapter`), pasted into one bash process on a GitHub-hosted Ubuntu
  * runner against the live API with a real model, as a Linux user would. Only
- * the published CLI is walked (the page's `@latest` install line, verbatim).
+ * the published CLI is walked (the page's `npx -y @commonlyai/cli@latest` run
+ * line, verbatim: that one line fetches the CLI and runs it).
  *
  * The CLI runs a public Claude Code seat in the bubblewrap jail (F96). This
  * walk takes the API-key path: ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL sit in
@@ -41,7 +42,9 @@
  * secrets and no network: that is the pull-request leg.
  */
 import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import {
+  existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync,
+} from 'fs';
 import { homedir, tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -72,7 +75,7 @@ export const liftConnectSnippet = (pageSource) => {
   };
   // eslint-disable-next-line no-new-func
   return new Function([
-    lift(/const CLI_INSTALL_COMMAND = '[^'\n]*';/, 'CLI_INSTALL_COMMAND'),
+    lift(/const CLI_NPX_COMMAND = '[^'\n]*';/, 'CLI_NPX_COMMAND'),
     lift(/const POWERSHELL_SPECIAL = \/[^\n]*\/g;/, 'POWERSHELL_SPECIAL'),
     lift(/export const powerShellQuote = \(value: string\): string => [^\n]*;/, 'powerShellQuote')
       .replace(/^export /, '').replace('(value: string): string =>', '(value) =>'),
@@ -145,24 +148,25 @@ export const linuxLineProblems = (lines, {
   agentName, apiUrl, token, adapter = 'claude',
 }) => {
   const problems = [];
-  if (lines.length !== 4) return [`the page's Linux lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
-  if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
-  if (lines[1] !== `export COMMONLY_API_URL=${apiUrl}`) problems.push(`line 2 does not set COMMONLY_API_URL: ${lines[1]}`);
-  if (lines[2] !== `export COMMONLY_AGENT_TOKEN=${token}`) problems.push('line 3 does not set COMMONLY_AGENT_TOKEN');
-  if (lines[3] !== `commonly agent run ${agentName} --adapter ${adapter}`) {
-    problems.push(`line 4 is not a sandboxed ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
+  if (lines.length !== 3) return [`the page's Linux lines are ${lines.length} lines, not 3: ${JSON.stringify(lines)}`];
+  if (lines[0] !== `export COMMONLY_API_URL=${apiUrl}`) problems.push(`line 1 does not set COMMONLY_API_URL: ${lines[0]}`);
+  if (lines[1] !== `export COMMONLY_AGENT_TOKEN=${token}`) problems.push('line 2 does not set COMMONLY_AGENT_TOKEN');
+  if (lines[2] !== `npx -y @commonlyai/cli@latest agent run ${agentName} --adapter ${adapter}`) {
+    problems.push(`line 3 is not a sandboxed ${ADAPTER_LABEL[adapter] || adapter} run through npx: ${lines[2]}`);
   }
   return problems;
 };
 
 /**
- * The lines as pasted, with one guard: a failed install stops the paste, so
- * the walk can say the install failed rather than "never started polling".
+ * The lines as pasted, with one guard after the run line. That line fetches
+ * the CLI through npx and runs it, so it is the page's whole command. A
+ * successful walk is stopped while it still runs, so the guard fires only when
+ * npx or the CLI exits early, and the walk can name that exit rather than say
+ * "never started polling".
  */
 export const linuxPasteScript = (lines) => [
-  lines[0],
-  'status=$?; if [ "$status" -ne 0 ]; then echo "linux-byo-walk: the install line exited $status"; exit 97; fi',
-  ...lines.slice(1),
+  ...lines,
+  'status=$?; if [ "$status" -ne 0 ]; then echo "linux-byo-walk: the page\'s command exited $status"; exit 97; fi',
 ];
 
 /**
@@ -174,9 +178,44 @@ export const runsAtWorkspaceTrust = (installations = []) => installations.length
   && installations.every((row) => row?.publicRead === false && row?.communityListed === false
     && row?.joinPolicy === 'invite-only');
 
-export const installExitFromBash = (out) => {
-  const m = /linux-byo-walk: the install line exited (\d+)/.exec(String(out || ''));
+/** The page's command's exit code when the guard after it tripped, else null. */
+export const commandExitFromBash = (out) => {
+  const m = /linux-byo-walk: the page's command exited (\d+)/.exec(String(out || ''));
   return m ? Number(m[1]) : null;
+};
+
+/**
+ * Why the CLI is not polling: the page's command exited (npx could not fetch
+ * the CLI, or the CLI quit before its poll loop), or it never got there.
+ */
+export const neverPolledProblem = ({
+  commandExit = null, api, shell, exited = null, seconds,
+}) => (commandExit !== null
+  ? `the page's command exited ${commandExit} before the CLI polled ${api}`
+  : `the CLI never started polling ${api} (${exited === null ? `${seconds} s` : `${shell} exited ${exited}`})`);
+
+/**
+ * The version of @commonlyai/cli that npx fetched, read from npx's own cache
+ * (<cache>/_npx/<hash>/node_modules/@commonlyai/cli/package.json), the newest
+ * when there are several. A file read, never a second fetch: 'unknown' when
+ * there is none.
+ */
+export const npxCliVersion = (cacheDirs = []) => {
+  const found = [];
+  cacheDirs.filter(Boolean).forEach((cache) => {
+    const root = join(cache, '_npx');
+    let entries = [];
+    try { entries = readdirSync(root); } catch { return; }
+    entries.forEach((entry) => {
+      const manifest = join(root, entry, 'node_modules', '@commonlyai', 'cli', 'package.json');
+      try {
+        const { version } = JSON.parse(readFileSync(manifest, 'utf8'));
+        if (version) found.push({ version: String(version), at: statSync(manifest).mtimeMs });
+      } catch { /* not this entry */ }
+    });
+  });
+  found.sort((a, b) => b.at - a.at);
+  return found[0]?.version || 'unknown';
 };
 
 const pageSnippet = () => liftConnectSnippet(
@@ -200,7 +239,7 @@ const check = () => {
 
 export const runLinuxProdWalk = async () => {
   if (process.platform !== 'linux' || !process.env.CI) {
-    console.log('::error::linux walk: runs only on a Linux CI runner (it installs global npm packages)');
+    console.log('::error::linux walk: runs only on a Linux CI runner (it runs the page\'s command against the live API)');
     return 2;
   }
   let inputs;
@@ -227,7 +266,7 @@ export const runLinuxProdWalk = async () => {
   };
 
   // The token must be the agent the dispatch names, installed in its pod,
-  // before anything is installed or anyone is asked to post.
+  // before the page's command runs or anyone is asked to post.
   const who = await api('/api/agents/runtime/installations')
     .catch((err) => ({ status: 0, body: {}, error: err.message }));
   if (who.status !== 200) {
@@ -317,19 +356,21 @@ export const runLinuxProdWalk = async () => {
     await sleep(1000);
   }
   if (!polling()) {
-    const installExit = installExitFromBash(out);
-    fail(installExit !== null
-      ? `the page's install line exited ${installExit}`
-      : `the CLI never started polling ${API} (${exited === null ? `${Math.round((Date.now() - start) / 1000)} s` : `bash exited ${exited}`})`);
+    fail(neverPolledProblem({
+      commandExit: commandExitFromBash(out),
+      api: API,
+      shell: 'bash',
+      exited,
+      seconds: Math.round((Date.now() - start) / 1000),
+    }));
     dump();
     await stop();
     return 1;
   }
-  const version = spawnSync('npm', ['ls', '-g', '--depth=0', '--json', '@commonlyai/cli'], { encoding: 'utf8' });
-  let cliVersion = 'unknown';
-  try { cliVersion = JSON.parse(version.stdout).dependencies['@commonlyai/cli'].version; } catch { /* reported as unknown */ }
+  // npx caches under the walk's fresh home, so the one CLI there is the page's.
+  const cliVersion = npxCliVersion([process.env.npm_config_cache, join(home, '.npm')]);
   const readyAt = Date.now();
-  log(`published @commonlyai/cli ${cliVersion}, installed by the page's line, is polling ${API}`);
+  log(`published @commonlyai/cli ${cliVersion}, fetched by the page's npx line, is polling ${API}`);
   console.log(`READY: listening in ${podId}`);
   console.log(`::notice::READY: listening in ${podId}. Post the @${agentName} mention now; the walk fails at ${new Date(readyAt + ANSWER_TIMEOUT_MS).toISOString()}.`);
 
@@ -381,7 +422,10 @@ export const runLinuxProdWalk = async () => {
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);
-  if (exited !== null) log(`bash exited ${exited} before the walk finished`);
+  if (exited !== null) {
+    const commandExit = commandExitFromBash(out);
+    log(`bash exited ${exited} before the walk finished${commandExit !== null ? ` (the page's command exited ${commandExit})` : ''}`);
+  }
   dump();
   return 1;
 };

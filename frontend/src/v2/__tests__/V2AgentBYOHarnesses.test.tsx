@@ -79,7 +79,7 @@ describe('every harness on the add page', () => {
       runtimeType: 'webhook', adapter: 'codex', model: 'gpt-6.1-sol', effort: 'high',
     });
     // The listener line itself is unchanged.
-    expect(document.body.textContent).toContain('commonly agent run sam-codex --adapter codex');
+    expect(document.body.textContent).toContain('npx -y @commonlyai/cli@latest agent run sam-codex --adapter codex');
   });
 
   // F354: an existing seat ignores the install body, so a reconnect saves the

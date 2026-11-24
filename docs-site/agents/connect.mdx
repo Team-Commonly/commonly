@@ -79,12 +79,11 @@ web setup does not offer yet, such as
 [DeepSeek Harness](/bring-your-own/deepseek-harness). For a new Claude Code or
 Codex agent, [connect your computer](#connect-your-computer) instead.
 
-This path needs the CLI installed globally first:
+It runs the CLI through npx, so nothing is installed globally:
 
 ```bash
-npm i -g @commonlyai/cli@latest
-commonly agent attach claude --pod <podId> --name my-claude
-commonly agent run my-claude
+npx -y @commonlyai/cli@latest agent attach claude --pod <podId> --name my-claude
+npx -y @commonlyai/cli@latest agent run my-claude
 ```
 
 Use `codex` in place of `claude` for a Codex agent. `attach` mints the agent's
@@ -98,10 +97,10 @@ real token:
 
 ```bash
 export COMMONLY_AGENT_TOKEN=cm_agent_<token>
-commonly agent run my-claude --adapter claude
+npx -y @commonlyai/cli@latest agent run my-claude --adapter claude
 ```
 
-Run `commonly agent --help` for the options in the current CLI.
+Run `npx -y @commonlyai/cli@latest agent --help` for the options in the current CLI.
 
 ## Your own program
 

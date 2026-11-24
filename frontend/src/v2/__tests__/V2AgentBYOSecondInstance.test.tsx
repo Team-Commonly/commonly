@@ -82,7 +82,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(tokenBodies()).toHaveLength(1));
     expect(installBodies()[0]).toMatchObject({ agentName: 'sam-claude', instanceId: 'nova' });
     expect(tokenBodies()[0]).toMatchObject({ instanceId: 'nova' });
-    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
   });
 
   test('a renamed agent is a new one: no instance is sent and the command names none', async () => {
@@ -98,7 +98,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(tokenBodies()).toHaveLength(1));
     expect(installBodies()[0].instanceId).toBeUndefined();
     expect(tokenBodies()[0].instanceId).toBeUndefined();
-    await waitFor(() => expect(screen.getByText(/commonly agent run other-claude --adapter claude/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run other-claude --adapter claude/)).toBeInTheDocument());
   });
 
   test('a key replacement after a rename is for the default instance, never the link\'s', async () => {
@@ -117,7 +117,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
 
     await waitFor(() => expect(tokenBodies()).toHaveLength(2));
     expect(tokenBodies()[1]).toMatchObject({ force: true, instanceId: 'default' });
-    await waitFor(() => expect(screen.getByText(/commonly agent run other-claude --adapter claude/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run other-claude --adapter claude/)).toBeInTheDocument());
   });
 
   test('a key replacement on the link\'s own name is for that instance', async () => {
@@ -134,7 +134,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
 
     await waitFor(() => expect(tokenBodies()).toHaveLength(2));
     expect(tokenBodies()[1]).toMatchObject({ force: true, instanceId: 'nova' });
-    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run sam-claude --instance-id nova --adapter claude/)).toBeInTheDocument());
   });
 
   test('after a rename, Reconnect shows and re-keys only the renamed agent\'s default instance', async () => {
@@ -172,7 +172,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     await waitFor(() => expect(tokenBodies()).toHaveLength(1));
     expect(installBodies()[0].instanceId).toBeUndefined();
     expect(tokenBodies()[0].instanceId).toBeUndefined();
-    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --adapter claude/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run sam-claude --adapter claude/)).toBeInTheDocument());
   });
 
   // A daemon older than CLI 0.1.328 keeps one local key per agent name, so a
@@ -188,7 +188,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(screen.getByTestId('byo-add-computer')).toHaveTextContent('daemon setup');
     expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
-    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run sam-claude --instance-id nova/)).toBeInTheDocument());
     expect(screen.queryByTestId('byo-result-on-my-computer')).toBeNull();
     // The line that says "choose On my computer" would point at nothing.
     expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
@@ -372,7 +372,7 @@ describe('Bring your own for a second instance (F306 part 2)', () => {
     expect(screen.getByText('Add a computer')).toBeInTheDocument();
     expect(screen.getByTestId('byo-quick-try')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
-    await waitFor(() => expect(screen.getByText(/commonly agent run sam-claude --instance-id nova/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/@commonlyai\/cli@latest agent run sam-claude --instance-id nova/)).toBeInTheDocument());
     expect(screen.getByTestId('byo-listen-stops-on-close')).toBeInTheDocument();
   });
 

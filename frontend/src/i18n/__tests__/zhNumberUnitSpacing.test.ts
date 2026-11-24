@@ -51,6 +51,8 @@ const OPAQUE_PLACEHOLDERS = [
   // common.aboutPage receives a page title, currently Latin, not a count.
   'adapter', 'title',
   'holder', 'actor',
+  // agentByo.listen.repo.saved receives the npx command that runs the CLI (F570), not a count.
+  'cli',
   // approvalCard.runRequest.asked names the person who asked the agent (F371).
   'requester',
   // board.card.needs names the task a blocked card waits on (TASK-123), not a count.

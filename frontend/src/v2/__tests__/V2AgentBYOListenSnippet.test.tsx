@@ -146,7 +146,7 @@ describe('BYO listener snippet', () => {
   test('the connect command is the first box; the MCP line is optional; the bare key is folded away', async () => {
     await issueToken();
     const pres = Array.from(document.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent || '');
-    const listener = pres.findIndex((txt) => /commonly(\.cmd)? agent run /.test(txt));
+    const listener = pres.findIndex((txt) => /@commonlyai\/cli@latest agent run /.test(txt));
     const claudeMcp = pres.findIndex((txt) => /claude mcp add commonly/.test(txt));
     expect(listener).toBe(0);
     expect(claudeMcp).toBeGreaterThan(listener);
@@ -159,7 +159,7 @@ describe('BYO listener snippet', () => {
   // sprint-review on #2287: one test carried four properties, so a break named
   // the wrong one. One property per test.
   const listenCommand = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
-    .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
+    .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || ''));
 
   test('what it needs is said before the command it is about', async () => {
     await issueToken();
@@ -176,18 +176,36 @@ describe('BYO listener snippet', () => {
     expect(zhNeeds).toMatch(new RegExp(`需要 Node ${CLI_NODE_FLOOR}\\+`));
   });
 
-  test('an npm EACCES names the fix and says not to use sudo, right after the command', async () => {
+  // F570: the line runs the CLI through npx, so there is no global install
+  // to stop with EACCES, and no advice about one.
+  // A teammate's @mention runs on the owner's Claude Code sign-in, so the page
+  // says whose plan pays. On a Mac it also says how to bill a key instead
+  // (adapters/claude.js proxies ANTHROPIC_API_KEY there); the Windows case,
+  // where the key is dropped, is in the Windows block below. Claude Code
+  // only: nothing here has checked how another harness bills.
+  test('Claude Code on a Mac: says teammates\' turns count toward your Claude plan, and how to bill a key instead', async () => {
     await issueToken();
-    const hint = screen.getByTestId('byo-listen-npm-hint');
-    expect(hint).toHaveTextContent(/npm stops with EACCES/);
-    expect(hint).toHaveTextContent(/don’t add sudo/);
-    // eslint-disable-next-line no-bitwise
-    expect(listenCommand().compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const note = screen.getByTestId('byo-listen-plan-note');
+    expect(note).toHaveTextContent(/When teammates @mention \S+, its replies run on this computer’s Claude Code sign-in and count toward your Claude plan\./);
+    expect(note).toHaveTextContent(/set ANTHROPIC_API_KEY before you run the command/);
+  });
+
+  test('Codex: no Claude plan note', async () => {
+    await issueToken('codex');
+    expect(listenCommand()).toBeDefined();
+    expect(screen.queryByTestId('byo-listen-plan-note')).toBeNull();
+  });
+
+  test('no npm EACCES advice: the command installs nothing globally', async () => {
+    await issueToken();
+    expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+    expect(listenCommand().textContent).not.toMatch(/npm i -g|sudo/);
+    expect(document.body.textContent).not.toMatch(/EACCES/);
   });
 
   test('picking Codex before the install gives a Codex command named for Codex, and no runner switch after issue', async () => {
     await issueToken('codex');
-    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
+    expect((listenCommand().textContent || '').split('\n')[2]).toMatch(/^npx -y @commonlyai\/cli@latest agent run sam-codex --adapter codex$/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
     expect(screen.queryByTestId('byo-runner')).toBeNull();
   });
@@ -205,7 +223,7 @@ describe('BYO listener snippet', () => {
     await screen.findByText(/your connect command for/i);
     const installs = axios.post.mock.calls.filter(([url]) => url === '/api/registry/install');
     expect(installs[installs.length - 1][1].agentName).toBe('sam-codex');
-    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
+    expect((listenCommand().textContent || '').split('\n')[2]).toMatch(/^npx -y @commonlyai\/cli@latest agent run sam-codex --adapter codex$/);
   });
 
   test('after issue, the way back returns to the start and leaves the install alone', async () => {
@@ -252,20 +270,20 @@ describe('BYO listener snippet', () => {
     // Several <pre class="v2-byo__pre"> render on the issued screen (the token,
     // the MCP add command, the Cursor config, the listener); pick the listener.
     const pre = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || ''));
     expect(pre).toBeDefined();
     const lines = (pre.textContent || '').split('\n');
-    expect(lines).toHaveLength(4);
-    // The install line must run when the whole snippet is pasted, in stock
-    // interactive zsh too: no trailing comment, since zsh passes it to npm as
-    // arguments unless `interactivecomments` is set (off by default on macOS).
-    expect(lines[0]).toBe('npm i -g @commonlyai/cli@latest');
+    expect(lines).toHaveLength(3);
+    // Every line must run when the whole snippet is pasted, in stock
+    // interactive zsh too: no trailing comment, since zsh passes it to the
+    // command as arguments unless `interactivecomments` is set (off by default
+    // on macOS).
     expect(pre.textContent).not.toContain('#');
-    expect(lines[1]).toMatch(/^export COMMONLY_API_URL=/);
-    expect(lines[2]).toBe('export COMMONLY_AGENT_TOKEN=cm_agent_test_token');
-    // The command names its tool, so a missing Claude Code is an error, not a
-    // quiet switch to Codex (QA BYO walk 1).
-    expect(lines[3]).toMatch(/^commonly agent run \S+ --adapter claude$/);
+    expect(lines[0]).toMatch(/^export COMMONLY_API_URL=/);
+    expect(lines[1]).toBe('export COMMONLY_AGENT_TOKEN=cm_agent_test_token');
+    // The run line fetches the CLI through npx (F570) and names its tool, so a
+    // missing Claude Code is an error, not a quiet switch to Codex (QA BYO walk 1).
+    expect(lines[2]).toMatch(/^npx -y @commonlyai\/cli@latest agent run \S+ --adapter claude$/);
     // No line in the snippet is a bare comment.
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
@@ -284,7 +302,7 @@ describe('BYO listener snippet', () => {
     const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
     const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
     const listener = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly(\.cmd)? agent run /.test(el.textContent || ''));
+      .find((el) => /@commonlyai\/cli@latest agent run /.test(el.textContent || ''));
     const mcpBox = () => screen.getByTestId('byo-mcp-claude').querySelector('.v2-byo__pre').textContent || '';
 
     // jsdom puts its host's process.platform in the user agent, lower case. On
@@ -312,10 +330,9 @@ describe('BYO listener snippet', () => {
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-windows')).toHaveAttribute('aria-pressed', 'true');
       expect((listener()?.textContent || '').split('\n')).toEqual([
-        'npm.cmd i -g @commonlyai/cli@latest',
         expect.stringMatching(/^\$env:COMMONLY_API_URL="\S+"$/),
         '$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"',
-        expect.stringMatching(/^commonly\.cmd agent run \S+ --adapter claude --unsandboxed$/),
+        expect.stringMatching(/^npx\.cmd -y @commonlyai\/cli@latest agent run \S+ --adapter claude --unsandboxed$/),
       ]);
       expect(listener()?.textContent).not.toMatch(/export /);
       expect(screen.getByTestId('byo-listen')).toHaveTextContent(/^Run this in PowerShell/);
@@ -330,7 +347,13 @@ describe('BYO listener snippet', () => {
       expect(note).not.toHaveTextContent(/tested on Windows/);
       expect(note).toHaveTextContent('it only reads its folder unless you add --allow write, which lets it edit files there.');
       expect(note).toHaveTextContent('It can’t run commands on Windows, and it gets no connector grants.');
-      expect(note).toHaveTextContent('commonly.cmd daemon install --unsandboxed sets it up as a task that starts when you log in');
+      expect(note).toHaveTextContent('add this computer under Other ways to connect, and the agent then starts on its own when you log in.');
+      expect(note).not.toHaveTextContent('commonly.cmd');
+      // The --unsandboxed seat drops ANTHROPIC_API_KEY from its environment
+      // (adapters/claude.js PUBLIC_SAFE_ENV_WIN32), so the key sentence would
+      // be false here: the plan line stays, the key line does not.
+      expect(screen.getByTestId('byo-listen-plan-note')).toHaveTextContent(/count toward your Claude plan\.$/);
+      expect(screen.getByTestId('byo-listen-plan-note')).not.toHaveTextContent(/ANTHROPIC_API_KEY/);
       expect(note).not.toHaveTextContent(/WSL|Codex/);
       // PowerShell, not Terminal, on Windows.
       expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/^This stops when this PowerShell window closes\./);
@@ -375,7 +398,7 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect((listener()?.textContent || '').split('\n')[2]).toMatch(/ --adapter claude$/);
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* runs inside bubblewrap \(bwrap\)\. Usually it works in its own scratch folder/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
@@ -404,8 +427,8 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken('codex');
       const lines = (listener()?.textContent || '').split('\n');
-      expect(lines[1]).toMatch(/^export COMMONLY_API_URL=/);
-      expect(lines[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
+      expect(lines[0]).toMatch(/^export COMMONLY_API_URL=/);
+      expect(lines[2]).toMatch(/^npx -y @commonlyai\/cli@latest agent run \S+ --adapter codex$/);
       expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in\..*On Linux, install bubblewrap \(bwrap\) first\./);
       expect(screen.getByTestId('byo-listen-linux-codex')).toHaveTextContent(
         'On Nov 5 we ran Codex on a fresh Ubuntu machine against Commonly, through a model gateway with an API key, and it answered its first @mention. With your own ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet.',
@@ -430,7 +453,7 @@ describe('BYO listener snippet', () => {
     test('Linux with Claude Code in an invite-only pod: the same listener command and reach note', async () => {
       setUserAgent(LINUX);
       await issueToken(undefined, PRIVATE_POD);
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect((listener()?.textContent || '').split('\n')[2]).toMatch(/ --adapter claude$/);
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/it reads only that folder instead/);
     });
 
@@ -450,7 +473,7 @@ describe('BYO listener snippet', () => {
     test('Linux with Codex in an invite-only pod: the same listener command', async () => {
       setUserAgent(LINUX);
       await issueToken('codex', PRIVATE_POD);
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
+      expect((listener()?.textContent || '').split('\n')[2]).toMatch(/ --adapter codex$/);
     });
 
     // The pod rule is gone with F96: a pod's join policy no longer decides
@@ -462,7 +485,7 @@ describe('BYO listener snippet', () => {
     ])('Linux with Claude Code in a pod %s: the listener command', async (_label, pod) => {
       setUserAgent(LINUX);
       await issueToken(undefined, pod);
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect((listener()?.textContent || '').split('\n')[2]).toMatch(/ --adapter claude$/);
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
     });
 
@@ -477,7 +500,7 @@ describe('BYO listener snippet', () => {
     test('Codex on Windows in an invite-only pod: the PowerShell line with --unsandboxed, and what that costs', async () => {
       setUserAgent(WINDOWS);
       await issueToken('codex', PRIVATE_POD);
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly\.cmd agent run \S+ --adapter codex --unsandboxed$/);
+      expect((listener()?.textContent || '').split('\n')[2]).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest agent run \S+ --adapter codex --unsandboxed$/);
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
       const note = screen.getByTestId('byo-listen-windows');
       expect(note).toHaveTextContent(/nothing confines/);
@@ -550,7 +573,7 @@ describe('BYO listener: Work in my repo', () => {
   const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
   const runLine = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
     .map((el) => el.textContent || '')
-    .find((txt) => /commonly(\.cmd)? agent run /.test(txt));
+    .find((txt) => /@commonlyai\/cli@latest agent run /.test(txt));
 
   beforeEach(() => {
     Object.defineProperty(window.navigator, 'userAgent', { value: MAC_UA, configurable: true });
@@ -565,13 +588,14 @@ describe('BYO listener: Work in my repo', () => {
   test('choosing it adds no cd step (the note says to run from the project folder), and write/web add only their own --allow', async () => {
     await issueToken(undefined, PRIVATE_POD);
     fireEvent.click(screen.getByTestId('byo-repo-toggle'));
-    expect(runLine()).toMatch(/commonly agent run \S+ --adapter claude$/);
+    expect(runLine()).toMatch(/@commonlyai\/cli@latest agent run \S+ --adapter claude$/);
     fireEvent.click(screen.getByTestId('byo-repo-write'));
     expect(runLine()).toMatch(/--adapter claude --allow write$/);
     fireEvent.click(screen.getByTestId('byo-repo-web'));
     expect(runLine()).toMatch(/--adapter claude --allow write,web$/);
     expect(runLine()).not.toMatch(/dangerously|skip-permissions|cd /);
-    expect(screen.getByTestId('byo-repo-saved-note')).toHaveTextContent(/detach/);
+    // The person ran the npx line, so no `commonly` is on PATH (F570).
+    expect(screen.getByTestId('byo-repo-saved-note')).toHaveTextContent('Then change them with: npx -y @commonlyai/cli@latest agent detach <name> --force');
   });
 
   // Each level says what it can do, and neither promises a commit or a pull
