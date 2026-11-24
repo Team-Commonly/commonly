@@ -47,7 +47,7 @@ describe('F587: front-door docs do not point to a docs page at /api/docs', () =>
 
   test.each(files.map((file) => [path.relative(repoRoot, file), file]))('%s', (_rel, file) => {
     const text = fs.readFileSync(file, 'utf8');
-    expect(text).not.toMatch(/(localhost:\d+|commonly\.me)\/api\/docs\b/);
+    expect(text).not.toMatch(/(localhost|127\.0\.0\.1|commonly\.me)(:\d+)?\/api\/docs\b/);
     expect(text).not.toMatch(/swagger/i);
   });
 });
