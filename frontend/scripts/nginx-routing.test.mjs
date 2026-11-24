@@ -81,14 +81,26 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
   for (const [, sources] of imagePolicies) {
     assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
   }
-  // The policy admits no remote image host, so no source may hard-code one.
+  // The policy admits no remote image host, so no source may hard-code one,
+  // as a plain attribute or a string-literal JSX expression.
+  const remoteSrc = /src\s*=\s*(?:\{\s*)?['"`]https?:\/\//;
+  const remoteLogo = /logo:\s*['"`]https?:\/\//;
+  for (const sample of [
+    'src="https://outside.example/a.png"',
+    "src={'https://outside.example/a.png'}",
+    'src={ `https://outside.example/a.png` }',
+  ]) assert.match(sample, remoteSrc, sample);
+  for (const sample of ['src="/logo.png"', "src={'/assets/a.png'}", 'src={imageUrl}']) {
+    assert.doesNotMatch(sample, remoteSrc, sample);
+  }
+  assert.match("logo: 'https://outside.example/a.png'", remoteLogo);
   const sources = (await readdir(resolve(frontendDir, 'src'), { recursive: true }))
     .filter((file) => /\.(jsx?|tsx?)$/.test(file) && !/(__tests__|\.test\.)/.test(file));
   assert.ok(sources.length > 100);
   for (const file of sources) {
     const source = await readFile(resolve(frontendDir, 'src', file), 'utf8');
-    assert.doesNotMatch(source, /logo:\s*['"]https?:\/\//, file);
-    assert.doesNotMatch(source, /src\s*=\s*['"]https?:\/\//, file);
+    assert.doesNotMatch(source, remoteLogo, file);
+    assert.doesNotMatch(source, remoteSrc, file);
   }
 });
 
