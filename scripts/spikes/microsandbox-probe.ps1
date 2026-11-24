@@ -93,18 +93,27 @@ Remove-Item Env:RUST_LOG
 & $msb inspect cm-dbg 2>&1 | Select-String -Pattern 'net|rule|default|egress|status' | Select-Object -First 25
 & $msb rm --force cm-dbg 2>&1 | Select-Object -First 2
 
-Section 'fence: rules alone vs rules on --no-net, via msb run'
+Section 'fence: rules alone vs rules on --no-net, and domain rule forms, via msb run'
 $vendor = "fetch('https://api.anthropic.com/v1/models').then(r=>console.log('anthropic status',r.status)).catch(e=>console.log('anthropic refused:',e.cause?.code||e.message));fetch('https://registry.npmjs.org/-/ping').then(r=>console.log('registry status',r.status)).catch(e=>console.log('registry refused:',e.cause?.code||e.message))"
 foreach ($flags in @(
     @('--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443'),
-    @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443'))) {
+    @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443'),
+    @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org'),
+    @('--no-net', '--net-rule', 'allow@dns,allow@*.npmjs.org'))) {
   "-- [$($flags -join ' ')]"
   & $msb run @flags node -- node -e $vendor
 }
 
 Section 'agents: Claude Code 2.1.331 and Codex 0.172.0 inside, proxy as the only way out'
-$fence = @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443,allow@host:tcp:18100,allow@host:tcp:18101')
-"fence: $($fence -join ' ')  (one msb run: install, then the agents, under the same fence)"
+# Install unfenced onto an ext4 disk volume, then run the agents from it under
+# the fence: only DNS and the two proxy ports.
+& $msb volume create agents --kind disk --size 3G 2>&1 | Out-Host
+$t = Measure-Command {
+  & $msb run --cpus 2 --memory 2G --mount-named agents:/opt/agents node -- sh -c "npm i -g --prefix /opt/agents --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -5; ls /opt/agents/bin" | Out-Host
+}
+"install (unfenced): $([int]$t.TotalSeconds) s"
+$fence = @('--no-net', '--net-rule', 'allow@dns,allow@host:tcp:18100,allow@host:tcp:18101', '--mount-named', 'agents:/opt/agents')
+"fence: $($fence -join ' ')"
 $codexCfg = @"
 model = "spike-model"
 model_provider = "commonly"
@@ -115,8 +124,7 @@ env_key = "COMMONLY_PROXY_TOKEN"
 wire_api = "responses"
 "@
 $agentScript = @"
-echo '== install'
-npm i -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -15
+export PATH=/opt/agents/bin:`$PATH
 claude --version; codex --version
 export HOME=/root ANTHROPIC_BASE_URL=http://${H}:18100 ANTHROPIC_API_KEY=$($cfg.anthropicProxyToken)
 export CODEX_HOME=/root/.codex COMMONLY_PROXY_TOKEN=$($cfg.openaiProxyToken)
