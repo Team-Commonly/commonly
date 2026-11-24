@@ -16,10 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # main at the time of the run, and #4272's head. If #4272 has merged, these
-  # become its merge parent and its merge commit.
+  # #4272's merge commit on main, and its parent.
   BEFORE_SHA: 1fad09f55e033bb0a7cdf6261cddd6bb82e4a5b1
-  PR_HEAD_SHA: 5dbe7760a2e15b6ce564d69a38316e1f64485702
+  AFTER_SHA: 7716e863c1ab394c9d97a163ba08080aaad2b28f
 
 jobs:
   compare:
@@ -32,19 +31,22 @@ jobs:
           fetch-depth: 0
       - name: Check out the two backends
         run: |
-          git fetch -q origin "$BEFORE_SHA" "$PR_HEAD_SHA"
+          git fetch -q origin "$BEFORE_SHA" "$AFTER_SHA"
+          test "$(git log -1 --format=%P "$AFTER_SHA")" = "$BEFORE_SHA"
           git worktree add -q --detach "$RUNNER_TEMP/before" "$BEFORE_SHA"
-          git worktree add -q --detach "$RUNNER_TEMP/after" "$BEFORE_SHA"
-          git -C "$RUNNER_TEMP/after" -c user.name=ci -c user.email=ci@invalid merge -q --no-edit "$PR_HEAD_SHA"
+          git worktree add -q --detach "$RUNNER_TEMP/after" "$AFTER_SHA"
           echo "before: $(git -C "$RUNNER_TEMP/before" rev-parse HEAD)"
-          echo "after:  $(git -C "$RUNNER_TEMP/after" rev-parse HEAD) (parents $(git -C "$RUNNER_TEMP/after" log -1 --format=%P))"
+          echo "after:  $(git -C "$RUNNER_TEMP/after" rev-parse HEAD) (parent $(git -C "$RUNNER_TEMP/after" log -1 --format=%P))"
           grep -c "waitMs" "$RUNNER_TEMP/after/backend/routes/agentsRuntime.ts"
           ! grep -q "waitMs" "$RUNNER_TEMP/before/backend/routes/agentsRuntime.ts"
-          # lang-core's install script reports to PostHog unless this is set;
-          # these Dockerfiles predate the opt-out, so set it in every stage.
+          # lang-core's install script reports to PostHog unless this is set.
+          # These Dockerfiles set it only in the runtime stage, so set it right
+          # after every FROM too (a repeat is harmless) and check that every
+          # stage now opens with it.
           for leg in before after; do
-            sed -i '/^FROM /a ENV OPENUI_TELEMETRY_DISABLED=1' "$RUNNER_TEMP/$leg/backend/Dockerfile"
-            test "$(grep -c '^ENV OPENUI_TELEMETRY_DISABLED=1' "$RUNNER_TEMP/$leg/backend/Dockerfile")" = 2
+            f="$RUNNER_TEMP/$leg/backend/Dockerfile"
+            sed -i '/^FROM /a ENV OPENUI_TELEMETRY_DISABLED=1' "$f"
+            test "$(grep -A1 '^FROM ' "$f" | grep -c '^ENV OPENUI_TELEMETRY_DISABLED=1')" = "$(grep -c '^FROM ' "$f")"
           done
       - name: Build both backend images
         run: |
