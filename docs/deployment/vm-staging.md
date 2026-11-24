@@ -14,7 +14,7 @@ file prod runs.
 | Path | What |
 |---|---|
 | `/opt/commonly-staging` | Its own checkout. Never `/opt/commonly`, which is prod's; `staging.sh` refuses to run from there. |
-| `deploy/vm/.env` | Staging's `.env`: image registry and tag, its own Postgres, Mongo and Redis passwords, the staging tunnel token, the journey invite code, the sink read token. Mode 0600. |
+| `deploy/vm/.env` | Staging's `.env`: image registry and tag, its own Postgres, Mongo and Redis passwords, the journey invite code, the sink read token, and placeholder `BACKUP_S3_*` and `TUNNEL_TOKEN` values. The prod file requires those last two with `${VAR:?}` even for services staging switches off, and the override blanks `TUNNEL_TOKEN` before it reaches cloudflared. Mode 0600. |
 | `deploy/vm/backend.env`, `litellm.env` | Rendered once from the old GKE staging namespace (below). Mode 0600. |
 | `deploy/vm/litellm/config.yaml` | Staging's LiteLLM config. |
 | `deploy/vm/staging-secrets/` | The staging tunnel's `cloudflared.yml` (ingress) and `cloudflared-credentials.json`. Owned by uid 65532, the cloudflared image's non-root user, at mode 0400; root-owned 0600 makes the connector crash-loop on "permission denied". |
@@ -31,9 +31,13 @@ port. Prod's containers, volumes and network are never named.
 - **`cpu_shares: 256`**, a quarter of prod's default weight, so prod wins any CPU
   contention 4:1.
 - **`oom_score_adj: 500`**, so under memory pressure the kernel kills staging first.
-- **Stopped by default.** `down` removes the containers. Nothing restarts on a VM
-  reboot.
-- **Its own tunnel.** It never uses prod's tunnel token.
+- **Stopped by default.** `down` removes the containers, and every service has
+  `restart: "no"`, so nothing comes back after a VM or Docker restart.
+- **Logs capped** at 10 MB x 3 per container, like prod's.
+- **Its own tunnel.** The connector joins only the tunnel its credentials file
+  names: the override blanks `TUNNEL_TOKEN`, which would otherwise outrank the file.
+- **One verb at a time.** `staging.sh` holds `/run/commonly-staging.lock`, so a
+  merge's `down` waits for a walk's run to finish rather than cutting it off.
 
 Measured on the first boot (2026-11-24): all services healthy in about 4 minutes,
 and VM memory available went from 5.7 GB to 4.6 GB while it ran.
@@ -55,14 +59,21 @@ A tag needs images for it: Deploy Staging builds `commonly-backend:<tag>`,
 The VM has no external address. The workflow authenticates to GCP through WIF
 (trusted for `refs/heads/main` only), opens an IAP tunnel to port 22, and logs in
 as `staging-ci` with a key held in the `STAGING_VM_SSH_KEY` secret. The host key is
-pinned in `STAGING_VM_KNOWN_HOSTS`, and the instance and zone are the repo
+pinned in `STAGING_VM_KNOWN_HOSTS`, as one line keyed `[localhost]:2222` (the
+tunnel's local end), and the instance and zone are the repo
 variables `STAGING_VM_INSTANCE` and `STAGING_VM_ZONE`.
 
 `staging-ci` can run one thing. Its `authorized_keys` line forces
 `sudo /usr/local/sbin/commonly-staging-ci`, sudoers allows only that file (keeping
 `SSH_ORIGINAL_COMMAND`), and the script accepts only `up <40-hex sha>`, `journey`,
 `down` and `status`. `up` fetches main and refuses a SHA that is not on it, so even
-a leaked key can only put a main commit on staging.
+a leaked key can only put a main commit on staging. Note what that still means:
+`staging.sh` and the compose files come from the commit being deployed and run as
+root, so anything merged to main can run as root on the prod VM through this path.
+That is the same trust main already has over prod's images.
+
+A run that a newer push supersedes while it is still queued posts no
+`staging-smoke` status, so that SHA cannot be rolled to prod; roll the newer one.
 
 The CI service account holds `roles/iap.tunnelResourceAccessor` and
 `roles/compute.viewer` on the VM instance only, which is enough to open the tunnel

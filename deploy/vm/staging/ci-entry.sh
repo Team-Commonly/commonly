@@ -19,7 +19,8 @@ umask 022
 CHECKOUT=/opt/commonly-staging
 REPO=https://github.com/Team-Commonly/commonly.git
 
-# Only the cases below are accepted; the request is split on spaces only.
+# Only the cases below are accepted. The request is split on whitespace (IFS),
+# with globbing off, and each word is validated below.
 set -f
 # shellcheck disable=SC2086
 set -- ${SSH_ORIGINAL_COMMAND:-}

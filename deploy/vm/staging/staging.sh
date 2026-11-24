@@ -22,9 +22,16 @@ die() { echo "staging: $*" >&2; exit 1; }
 [ "$HERE" != "/opt/commonly/deploy/vm" ] || die "refusing to run from the prod checkout"
 [ -f .env ] || die "no .env in $HERE (see docs/deployment/vm-staging.md, First setup)"
 
+# One verb at a time: a merge's `down` must not cut off a walk's `up`, and two `up`s
+# must not race on .env. Waits up to 30 minutes for the other run to finish.
+if [ -z "${STAGING_LOCKED:-}" ]; then
+  exec env STAGING_LOCKED=1 flock -w 1800 /run/commonly-staging.lock sh "$HERE/staging/staging.sh" "$@"
+fi
+
 # Drop staging's old image tags so a merge a day can't fill the disk. Keeps the
-# current staging tag and every tag any prod .env or .env backup names (prod's
-# live tag and its rollbacks); an image a container still uses is never removed.
+# current staging tag and every tag a prod .env or .env.bak-* names (prod's live
+# tag, and its rollback when the roll saved one); an image a container still uses
+# is never removed.
 prune_images() {
   cur=$(sed -n 's/^COMMONLY_IMAGE_TAG=//p' .env)
   keep=$(cat /opt/commonly/deploy/vm/.env /opt/commonly/deploy/vm/.env.bak-* 2>/dev/null | sed -n 's/^COMMONLY_IMAGE_TAG=//p' | sort -u)
@@ -43,7 +50,7 @@ case "${1:-}" in
     TAG=${2:-}
     printf '%s' "$TAG" | grep -Eq '^[0-9a-f]{8}$' || die "up needs an 8-character image tag"
     sed -i "s/^COMMONLY_IMAGE_TAG=.*/COMMONLY_IMAGE_TAG=$TAG/" .env
-    compose pull -q
+    timeout 300 docker compose -p "$PROJECT" -f docker-compose.yml -f staging/compose.staging.yml pull -q
     # --wait: every service with a healthcheck must report healthy. litellm's boot
     # check is the slow one under staging's CPU cap.
     compose up -d --wait --wait-timeout 600 --remove-orphans

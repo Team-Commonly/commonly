@@ -19,6 +19,16 @@
 x-staging-caps: &caps
   cpu_shares: 256
   oom_score_adj: 500
+  # Never comes back by itself: a VM or Docker restart leaves staging down.
+  restart: "no"
+  # Anchors don't cross files, so the prod file's log cap is repeated here for the
+  # services this file adds (prod's disk is staging's disk).
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+      labels: "com.docker.compose.service"
 
 services:
   postgres:
@@ -64,6 +74,11 @@ services:
   cloudflared:
     <<: *caps
     command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # A token outranks the credentials file and decides which tunnel the connector
+    # joins, so blank the one the prod file passes: staging joins only the tunnel
+    # its credentials file names, even if .env ever carried prod's token.
+    environment:
+      - TUNNEL_TOKEN=
     volumes:
       - ./staging-secrets/cloudflared.yml:/etc/cloudflared/config.yml:ro
       - ./staging-secrets/cloudflared-credentials.json:/etc/cloudflared/credentials.json:ro
@@ -81,7 +96,6 @@ services:
   mongo:
     <<: *caps
     image: mongo:7.0.28
-    restart: "no"
     command: ["--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${STAGING_MONGO_USER:?set STAGING_MONGO_USER in .env}
@@ -103,7 +117,6 @@ services:
   email-sink:
     <<: *caps
     image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-backend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
-    restart: "no"
     working_dir: /app
     command: ["node", "dist/services/stagingEmailSink.js"]
     user: "1000:1000"

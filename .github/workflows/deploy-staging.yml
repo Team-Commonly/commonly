@@ -43,9 +43,9 @@ jobs:
     name: Build + push + staging smoke on the VM
     runs-on: ubuntu-latest
     environment: staging
-    # Builds ~10m, staging up (pull + litellm boot under its CPU cap) up to ~12m,
-    # smokes ~15m, down ~1m.
-    timeout-minutes: 50
+    # Builds ~10m, up <= 20m (staging.sh bounds pull 5m + compose up 10m + ready
+    # 2.5m), Tier-1 <= 15m, journey <= 16m, down <= 5m.
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
@@ -140,8 +140,9 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
           nohup gcloud compute start-iap-tunnel "$VM" 22 --zone "$ZONE" --project "$PROJECT_ID" \
             --local-host-port=localhost:2222 > "$RUNNER_TEMP/ssh/tunnel.log" 2>&1 &
+          # A listening port only proves gcloud is up; ssh-keyscan proves IAP let us through to sshd.
           for _ in $(seq 1 30); do
-            if (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then echo "tunnel open"; exit 0; fi
+            if ssh-keyscan -T 5 -p 2222 -t ed25519 localhost 2>/dev/null | grep -q ssh-ed25519; then echo "tunnel open"; exit 0; fi
             sleep 2
           done
           echo "::error title=staging VM::the IAP tunnel did not open"; cat "$RUNNER_TEMP/ssh/tunnel.log"; exit 1
@@ -163,6 +164,7 @@ jobs:
       # a red run blocks the prod roll. It caught the FRONTEND_URL/CORS regression on 2026-10-23.
       - name: Tier-1 UI smoke (Playwright)
         id: tier1
+        timeout-minutes: 15
         env:
           SMOKE_BASE: https://staging.commonly.me
           SMOKE_API: https://api-staging.commonly.me
@@ -224,7 +226,7 @@ jobs:
           DESC="VM staging: up=$UP tier1=$TIER1 journey=$JOURNEY ($TAG)"
           echo "staging-smoke = $STATE for $SHA: $DESC"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-            -f state="$STATE" -f context="staging-smoke" -f description="$DESC" >/dev/null
+            -f state="$STATE" -f context="staging-smoke" -f description="$DESC" >/dev/null || exit 1
           [ "$STATE" = success ]
 
       # Stopped by default: always take staging down again, even after a failure,

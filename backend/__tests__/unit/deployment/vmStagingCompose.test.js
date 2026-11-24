@@ -39,7 +39,20 @@ describe('staging on the prod VM', () => {
       expect([name, svc.cpus]).toEqual([name, expect.anything()]);
       expect([name, svc.cpu_shares]).toEqual([name, 256]);
       expect([name, svc.oom_score_adj > 0]).toEqual([name, true]);
+      // Nothing comes back after a VM or Docker restart, and every log is capped on prod's disk.
+      expect([name, svc.restart]).toEqual([name, 'no']);
+      expect([name, svc.logging && svc.logging.options['max-size']]).toEqual([name, '10m']);
     }
+  });
+
+  test('the connector joins only the tunnel its credentials file names, never a token', () => {
+    // A token outranks the credentials file; the prod file passes TUNNEL_TOKEN.
+    expect(override.services.cloudflared.environment).toContain('TUNNEL_TOKEN=');
+    expect(override.services.cloudflared.command).toEqual(expect.arrayContaining(['--config', '/etc/cloudflared/config.yml']));
+  });
+
+  test('staging.sh takes a lock so CI and a walk never overlap', () => {
+    expect(stagingSh).toMatch(/flock -w \d+ \/run\/commonly-staging\.lock/);
   });
 
   test('the caps add up to well under the VM, leaving prod its memory', () => {
