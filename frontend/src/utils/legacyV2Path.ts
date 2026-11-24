@@ -13,7 +13,7 @@ export const getV2EquivalentPath = (pathname: string, search: string): string | 
   if (pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
   if (pathname === '/admin/users') return '/v2/admin/users';
   if (pathname === '/admin/integrations/global') return `/v2${pathname}${search}`;
-  if (pathname === '/dev/api' || pathname === '/dev/pod-context') return `/v2${pathname}${search}`;
+  if (pathname === '/dev/pod-context') return `/v2${pathname}${search}`;
   if (pathname === '/pods') return `/v2${search}`;
   if (pathname.startsWith('/pods/')) return `/v2${pathname}${search}`;
   if (pathname.startsWith('/chat/')) return `/v2${pathname}${search}`;
