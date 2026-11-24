@@ -15,7 +15,11 @@ import { useAuth } from '../context/AuthContext';
 interface Result {
   ok: boolean;
   message?: string;
+  // F577: the pod this address was invited to, joined when the link was clicked.
+  podId?: string;
 }
+
+const POD_ID = /^[a-f0-9]{24}$/;
 
 const VerifyEmail: React.FC = () => {
   const { t } = useTranslation();
@@ -38,13 +42,24 @@ const VerifyEmail: React.FC = () => {
     if (sent.current === token) return;
     sent.current = token;
     axios
-      .get<{ message?: string }>(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)
-      .then((res) => setResult({ ok: true, message: res.data?.message }))
+      .get<{ message?: string; podId?: string }>(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)
+      .then((res) => setResult({
+        ok: true,
+        message: res.data?.message,
+        podId: POD_ID.test(String(res.data?.podId || '')) ? res.data?.podId : undefined,
+      }))
       .catch((err: unknown) => {
         const e = err as { response?: { data?: { error?: string } } };
         setResult({ ok: false, message: e.response?.data?.error });
       });
   }, [token]);
+
+  // Signing up from a pod invite joins that pod here, so the way on leads there.
+  const destination = (r: Result): string => {
+    const home = r.podId ? `/v2/pods/${r.podId}` : '/v2';
+    if (r.ok && isAuthenticated) return home;
+    return r.ok && r.podId ? `/v2/login?next=${encodeURIComponent(home)}` : '/v2/login';
+  };
 
   return (
     <div className="v2-login">
@@ -64,7 +79,7 @@ const VerifyEmail: React.FC = () => {
             <button
               type="button"
               className={result.ok ? 'v2-login__submit' : 'v2-login__submit v2-login__submit--ghost'}
-              onClick={() => navigate(result.ok && isAuthenticated ? '/v2' : '/v2/login')}
+              onClick={() => navigate(destination(result))}
             >
               {t(result.ok && isAuthenticated ? 'auth.verify.continue' : 'auth.verify.goToSignIn')}
             </button>

@@ -8,6 +8,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import V2Register from '../components/V2Register';
 import V2Login from '../components/V2Login';
 import RegistrationInviteRequired from '../../components/RegistrationInviteRequired';
+import VerifyEmail from '../../components/VerifyEmail';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -116,4 +117,68 @@ test.each([
   fireEvent.change(await screen.findByLabelText(/invitation code/i), { target: { value: 'CM-WALK1' } });
   fireEvent.click(screen.getByRole('button', { name: /continue to registration/i }));
   expect(await screen.findByTestId('here')).toHaveTextContent(dest);
+});
+
+// F577: on a team-gated instance the sign-in after sign-up fails until the
+// mailbox is verified, so the pod invite has to ride with the account (the
+// server redeems it when the emailed link is clicked) rather than with this tab.
+const submitSignUp = async (entry) => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url === '/api/auth/registration-policy' ? { inviteOnly: false } : { providers: [] } }));
+  axios.post.mockResolvedValueOnce({ data: { message: 'Registered. Verify your email to join the Community pod.' } });
+  auth.login.mockRejectedValueOnce({ response: { status: 403, data: { code: 'INSTANCE_ACCESS_RESTRICTED', reason: 'unverified' } } });
+  renderAt(entry);
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+  fireEvent.change(await screen.findByLabelText(/^email$/i), { target: { value: 'b@example.com' } });
+  for (const box of screen.getAllByLabelText(/password/i)) fireEvent.change(box, { target: { value: 'pw-123456789' } });
+  fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalled());
+  return axios.post.mock.calls[0][1];
+};
+
+test('signing up from a pod invite sends that invite with the sign-up', async () => {
+  const body = await submitSignUp(`/v2/register?next=${ENC}`);
+  expect(body.podInvite).toBe('d'.repeat(32));
+});
+
+test.each([
+  ['no destination', '/v2/register'],
+  ['a destination that is not a pod invite', `/v2/register?next=${encodeURIComponent('/v2/pods/p1')}`],
+])('signing up with %s sends no pod invite', async (_label, entry) => {
+  const body = await submitSignUp(entry);
+  expect(body).not.toHaveProperty('podInvite');
+});
+
+describe('the emailed verify link, when it joined the invited pod', () => {
+  const POD_ID = '6b0558390aa2f5d9f307df1c';
+  const mountVerify = (isAuthenticated) => render(
+    <AuthContext.Provider value={{ ...auth, isAuthenticated }}>
+      <MemoryRouter initialEntries={['/v2/verify-email?token=t1']}>
+        <Routes>
+          <Route path="/v2/verify-email" element={<VerifyEmail />} />
+          <Route path="*" element={<Here />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+
+  test('signs in on to that pod', async () => {
+    axios.get.mockResolvedValue({ data: { message: 'Email verified successfully', podId: POD_ID } });
+    mountVerify(false);
+    fireEvent.click(await screen.findByRole('button', { name: /go to sign in/i }));
+    expect(screen.getByTestId('here')).toHaveTextContent(`/v2/login?next=${encodeURIComponent(`/v2/pods/${POD_ID}`)}`);
+  });
+
+  test('a visitor already signed in goes straight to that pod', async () => {
+    axios.get.mockResolvedValue({ data: { message: 'Email verified successfully', podId: POD_ID } });
+    mountVerify(true);
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    expect(screen.getByTestId('here')).toHaveTextContent(new RegExp(`^/v2/pods/${POD_ID}$`));
+  });
+
+  test('a pod id that is not a plain id is not followed', async () => {
+    axios.get.mockResolvedValue({ data: { message: 'Email verified successfully', podId: '//evil.example' } });
+    mountVerify(false);
+    fireEvent.click(await screen.findByRole('button', { name: /go to sign in/i }));
+    expect(screen.getByTestId('here')).toHaveTextContent(/^\/v2\/login$/);
+  });
 });
