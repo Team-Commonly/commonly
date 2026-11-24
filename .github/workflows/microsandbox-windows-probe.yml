@@ -7,7 +7,7 @@ name: microsandbox Windows probe
 on:
   push:
     branches: [stack/microsandbox-win]
-    paths: [.github/workflows/microsandbox-windows-probe.yml]
+    paths: [.github/workflows/microsandbox-windows-probe.yml, scripts/spikes/**]
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ permissions:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       MSB_VERSION: v0.8.1
       # From the release's own checksums.sha256.
@@ -25,6 +25,11 @@ jobs:
       run:
         shell: pwsh
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: What virtualization does this runner have?
         continue-on-error: true
         run: |
@@ -63,11 +68,7 @@ jobs:
           & $env:MSB run python -- python3 -c "print('hello from a microVM')"
           "exit: $LASTEXITCODE"
 
-      - name: Try turning WHP on (needs a reboot, which a hosted runner can't do)
+      - name: Fence, driver contract and agents (scripts/spikes/microsandbox-probe.ps1)
         continue-on-error: true
-        run: |
-          $r = Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -NoRestart -All -ErrorAction Continue
-          "RestartNeeded: $($r.RestartNeeded)"
-          "-- msb run python after enabling (without reboot)"
-          & $env:MSB run python -- python3 -c "print('hello from a microVM')"
-          "exit: $LASTEXITCODE"
+        timeout-minutes: 20
+        run: ./scripts/spikes/microsandbox-probe.ps1
