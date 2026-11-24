@@ -451,7 +451,7 @@ The reply pipeline:
    PG column.
 4. **Render** — `GET /api/messages/:podId` JOINs the parent message and
    returns each row with `replyTo: { id, content, username, userId }`
-   populated. Frontend `ChatRoom.tsx` renders a `.quote-bubble` whenever
+   populated. The v2 thread (`V2MessageRow`) renders the quoted parent whenever
    that field is present. `stripDirectiveTags()` strips any leftover
    inline tags from messages that predate the pipeline fix.
 

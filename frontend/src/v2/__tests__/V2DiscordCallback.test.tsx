@@ -117,7 +117,7 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(screen.getByText('at /v2/pods/p1')).toBeInTheDocument();
   });
 
-  test('an agent-ensemble pod returns to its kept room, where its controls live', async () => {
+  test('an agent-ensemble pod returns to the v2 pod view, without a pod-type lookup', async () => {
     jest.useFakeTimers();
     localStorage.setItem('token', 'jwt');
     axios.get.mockImplementation((url) => (url === '/api/discord/channels/112233445566778899'
@@ -131,7 +131,8 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
     act(() => { jest.advanceTimersByTime(2000); });
-    expect(screen.getByText('at /v2/pods/agent-ensemble/p1')).toBeInTheDocument();
+    expect(screen.getByText('at /v2/pods/p1')).toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith('/api/pods/p1', expect.anything());
   });
 
   test('a failed channel fetch and a failed create each land in the alert row', async () => {

@@ -183,7 +183,6 @@
     },
     "pageTitle": {
       "connect": "Connect",
-      "podTools": "Pod tools",
       "agentSettings": "Agent settings",
       "agentMemory": "Agent memory",
       "profile": "Profile",
