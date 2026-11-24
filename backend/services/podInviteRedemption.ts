@@ -82,19 +82,21 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
   const alreadyMember = (pod.members || []).some(
     (m: any) => String(m?._id || m) === String(userId),
   );
-  if (!alreadyMember) {
-    const joiningUser = await User.findById(userId).select('isBot botType botMetadata').lean();
-    if (joiningUser?.isBot || joiningUser?.botType) {
-      try {
-        await assertInstalledAgentMayJoinPod(
-          pod._id, joiningUser.botMetadata?.agentName, joiningUser.botMetadata?.instanceId,
-        );
-      } catch (joinError: any) {
-        if (joinError?.code === 'outsider_grant_non_native_agent_join') {
-          return { ok: false, status: 403, body: { code: joinError.code, message: joinError.message } };
-        }
-        throw joinError;
+  // A member opening the link joins nothing, so it spends no use: a one-use
+  // link a member clicks stays open for the person it was meant for. An
+  // unusable invite has already refused above, members included.
+  if (alreadyMember) return { ok: true, pod, alreadyMember: true };
+  const joiningUser = await User.findById(userId).select('isBot botType botMetadata').lean();
+  if (joiningUser?.isBot || joiningUser?.botType) {
+    try {
+      await assertInstalledAgentMayJoinPod(
+        pod._id, joiningUser.botMetadata?.agentName, joiningUser.botMetadata?.instanceId,
+      );
+    } catch (joinError: any) {
+      if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+        return { ok: false, status: 403, body: { code: joinError.code, message: joinError.message } };
       }
+      throw joinError;
     }
   }
   // F603: count the use before granting membership, as one conditional update
@@ -110,15 +112,33 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
   if (!claimed.modifiedCount) {
     return { ok: false, status: 404, body: { msg: 'Invite invalid or expired' } };
   }
-  if (!alreadyMember) {
-    try {
-      pod.members.push(userId);
-      pod.updatedAt = new Date();
-      await pod.save();
-    } catch (joinError) {
-      await giveBackUse(invite._id, pod._id);
-      throw joinError;
+  // F604: add the member with one conditional update, so the same person
+  // redeeming twice at once (a double-click, two tabs), or joining another way
+  // meanwhile, lands in `members` once. The loser of that race was already a
+  // member by the time it wrote: it gives its use back and reports so. Pod's
+  // save hook only acts on a new pod, so skipping save() skips nothing.
+  // A pod deleted since the lookup matches nothing too; that refuses as the
+  // lookup would have.
+  let joined = false;
+  try {
+    const added = await Pod.updateOne(
+      { _id: pod._id, members: { $ne: userId } },
+      { $push: { members: userId }, $set: { updatedAt: new Date() } },
+    );
+    joined = added.modifiedCount > 0;
+  } catch (joinError) {
+    await giveBackUse(invite._id, pod._id);
+    throw joinError;
+  }
+  if (!joined) {
+    await giveBackUse(invite._id, pod._id);
+    if (!(await Pod.exists({ _id: pod._id }))) {
+      return { ok: false, status: 404, body: { msg: 'Pod no longer exists' } };
     }
+  }
+  // Callers read the pod as joined, so the returned doc includes the person.
+  pod.members.push(userId);
+  if (joined) {
     // F183: best-effort PG mirror write; never fails the redemption.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     await require('./pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(userId));
@@ -139,7 +159,7 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
       }
     }
   }
-  return { ok: true, pod, alreadyMember };
+  return { ok: true, pod, alreadyMember: !joined };
 };
 
 // Whether a token would redeem for someone right now, without using it.
