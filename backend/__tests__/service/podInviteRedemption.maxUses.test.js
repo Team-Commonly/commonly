@@ -30,16 +30,36 @@ const members = async () => (await Pod.findById(pod._id).lean()).members.map(Str
 const uses = async (invite) => (await PodInvite.findById(invite._id).lean()).useCount;
 
 // Holds every redemption at its pod lookup, which comes after the isUsable()
-// read and before the claim, until `count` of them have arrived.
+// read and before the claim, until `count` of them have read the pod. No
+// redemption goes on until every one has its pod, so none can join before
+// another reads the members.
 const holdAtPodLookup = (count, onRelease = async () => {}) => {
   const findById = Pod.findById.bind(Pod);
   let arrived = 0;
   let release;
   const allArrived = new Promise((resolve) => { release = resolve; });
-  return jest.spyOn(Pod, 'findById').mockImplementation((...args) => {
+  return jest.spyOn(Pod, 'findById').mockImplementation(async (...args) => {
+    const doc = await findById(...args);
     arrived += 1;
     if (arrived === count) onRelease().then(release);
-    return allArrived.then(() => findById(...args));
+    await allArrived;
+    return doc;
+  });
+};
+// Holds every member add (the Pod.updateOne whose filter names `members`)
+// until `count` of them have arrived, so all of them race the add itself.
+const holdAtMemberAdd = (count) => {
+  const updateOne = Pod.updateOne.bind(Pod);
+  let arrived = 0;
+  let release;
+  const allArrived = new Promise((resolve) => { release = resolve; });
+  return jest.spyOn(Pod, 'updateOne').mockImplementation(async (filter, ...rest) => {
+    if (filter && 'members' in filter) {
+      arrived += 1;
+      if (arrived === count) release();
+      await allArrived;
+    }
+    return updateOne(filter, ...rest);
   });
 };
 // A give-back is the update that takes a use away again.
@@ -107,7 +127,7 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
   test('a join that fails to save gives its counted use back', async () => {
     const invite = await makeInvite({ maxUses: 1 });
     const a = await person();
-    const save = jest.spyOn(Pod.prototype, 'save').mockRejectedValueOnce(new Error('write failed'));
+    const save = jest.spyOn(Pod, 'updateOne').mockRejectedValueOnce(new Error('write failed'));
     try {
       await expect(redeemPodInvite(invite.token, a._id)).rejects.toThrow('write failed');
     } finally {
@@ -120,7 +140,7 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
   test('a join that fails to save retries a failed give-back until it lands', async () => {
     const invite = await makeInvite({ maxUses: 1 });
     const a = await person();
-    const save = jest.spyOn(Pod.prototype, 'save').mockRejectedValueOnce(new Error('write failed'));
+    const save = jest.spyOn(Pod, 'updateOne').mockRejectedValueOnce(new Error('write failed'));
     const updateOne = PodInvite.updateOne.bind(PodInvite);
     let giveBacks = 0;
     const update = jest.spyOn(PodInvite, 'updateOne').mockImplementation((filter, change, ...rest) => {
@@ -143,7 +163,7 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
   test('a give-back that fails every try is logged with the invite id; the join error is thrown', async () => {
     const invite = await makeInvite({ maxUses: 1 });
     const a = await person();
-    const save = jest.spyOn(Pod.prototype, 'save').mockRejectedValueOnce(new Error('write failed'));
+    const save = jest.spyOn(Pod, 'updateOne').mockRejectedValueOnce(new Error('write failed'));
     const updateOne = PodInvite.updateOne.bind(PodInvite);
     let giveBacks = 0;
     const update = jest.spyOn(PodInvite, 'updateOne').mockImplementation((filter, change, ...rest) => {
@@ -197,5 +217,127 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
     expect(await redeemPodInvite(invite.token, a._id)).toEqual(REFUSED);
     expect(await uses(invite)).toBe(fields.useCount || 0);
     expect(await members()).not.toContain(String(a._id));
+  });
+});
+
+describe('redeemPodInvite joins one user once (F604)', () => {
+  beforeAll(setupMongoDb);
+  afterAll(closeMongoDb);
+  beforeEach(async () => {
+    owner = await User.create({
+      username: 'owner', email: 'owner@example.com', password: 'Password123!', verified: true,
+    });
+    pod = await Pod.create({
+      name: 'Team room', type: 'chat', createdBy: owner._id, members: [owner._id],
+    });
+  });
+  afterEach(clearMongoDb);
+
+  // Both redemptions read the pod before either goes on; with `bothAdd`, both
+  // also reach the member add before either writes (only when the invite has
+  // room for both claims).
+  const redeemTwiceAtOnce = async (invite, user, { bothAdd = false } = {}) => {
+    const hold = holdAtPodLookup(2);
+    const add = bothAdd ? holdAtMemberAdd(2) : null;
+    try {
+      return await Promise.all([
+        redeemPodInvite(invite.token, user._id), redeemPodInvite(invite.token, user._id),
+      ]);
+    } finally {
+      hold.mockRestore();
+      add?.mockRestore();
+    }
+  };
+
+  test('the same person redeeming twice at once joins once and spends one use', async () => {
+    const invite = await makeInvite({ maxUses: 5 });
+    const a = await person();
+    const results = await redeemTwiceAtOnce(invite, a, { bothAdd: true });
+
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(results.map((r) => r.alreadyMember).sort()).toEqual([false, true]);
+    results.forEach((r) => expect(r.pod.members.map(String)).toContain(String(a._id)));
+    expect((await members()).filter((m) => m === String(a._id))).toHaveLength(1);
+    expect(await uses(invite)).toBe(1);
+  });
+
+  test('the same person redeeming a one-use invite twice at once joins once', async () => {
+    const invite = await makeInvite({ maxUses: 1 });
+    const a = await person();
+    const results = await redeemTwiceAtOnce(invite, a);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect((await members()).filter((m) => m === String(a._id))).toHaveLength(1);
+    expect(await uses(invite)).toBe(1);
+  });
+
+  test('a person who joined another way during the redemption gives the use back', async () => {
+    const invite = await makeInvite({ maxUses: 5 });
+    const a = await person();
+    const { mirrorMemberAdded } = require('../../services/pgMirrorWrite');
+    mirrorMemberAdded.mockClear();
+    // The pod is read, then the person joins another way before the claim.
+    const findById = Pod.findById.bind(Pod);
+    const lookup = jest.spyOn(Pod, 'findById').mockImplementationOnce(async (...args) => {
+      const doc = await findById(...args);
+      await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: a._id } });
+      return doc;
+    });
+    let result;
+    try {
+      result = await redeemPodInvite(invite.token, a._id);
+    } finally {
+      lookup.mockRestore();
+    }
+    expect(result).toMatchObject({ ok: true, alreadyMember: true });
+    expect((await members()).filter((m) => m === String(a._id))).toHaveLength(1);
+    expect(await uses(invite)).toBe(0);
+    expect(mirrorMemberAdded).not.toHaveBeenCalled();
+    expect((await PodInvite.findById(invite._id).lean()).firstTeammateJoinedAt).toBeUndefined();
+  });
+});
+
+describe('redeemPodInvite members and vanished pods', () => {
+  beforeAll(setupMongoDb);
+  afterAll(closeMongoDb);
+  beforeEach(async () => {
+    owner = await User.create({
+      username: 'owner', email: 'owner@example.com', password: 'Password123!', verified: true,
+    });
+    pod = await Pod.create({
+      name: 'Team room', type: 'chat', createdBy: owner._id, members: [owner._id],
+    });
+  });
+  afterEach(clearMongoDb);
+
+  test('a member opening a one-use invite spends no use, so a newcomer still can', async () => {
+    const invite = await makeInvite({ maxUses: 1 });
+    const result = await redeemPodInvite(invite.token, owner._id);
+    expect(result).toMatchObject({ ok: true, alreadyMember: true });
+    expect(await uses(invite)).toBe(0);
+
+    const a = await person();
+    expect(await redeemPodInvite(invite.token, a._id)).toMatchObject({ ok: true, alreadyMember: false });
+    expect(await uses(invite)).toBe(1);
+    expect(await members()).toContain(String(a._id));
+  });
+
+  test('a pod deleted between the lookup and the join refuses as not found and gives the use back', async () => {
+    const invite = await makeInvite({ maxUses: 5 });
+    const a = await person();
+    const findById = Pod.findById.bind(Pod);
+    const lookup = jest.spyOn(Pod, 'findById').mockImplementationOnce(async (...args) => {
+      const doc = await findById(...args);
+      await Pod.deleteOne({ _id: pod._id });
+      return doc;
+    });
+    let result;
+    try {
+      result = await redeemPodInvite(invite.token, a._id);
+    } finally {
+      lookup.mockRestore();
+    }
+    expect(result).toEqual({ ok: false, status: 404, body: { msg: 'Pod no longer exists' } });
+    expect(await uses(invite)).toBe(0);
   });
 });
