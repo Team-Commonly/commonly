@@ -18,6 +18,11 @@ const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require(
 const { recordListenerCheckIn } = require('./agentListenerCheckIn');
 const { isFirstListen, settleInstallIntroOnFirstListen } = require('./installIntroOnListen');
 const { cloudRuntimeMayRun } = require('./cloudRuntimeOwnership');
+const { publish, subscribe } = require('./processBus');
+const { disconnectRoom } = require('../config/socketRooms');
+
+// Wakes for an agent socket another backend process holds (pushEvent).
+const PUSH_CHANNEL = 'agent-ws-push';
 
 interface AgentSocket {
   agentName: string;
@@ -141,6 +146,11 @@ class AgentWebSocketService {
   init(io: IoServer): void {
     this.io = io;
     this.agentNamespace = io.of('/agents');
+    // A sibling process found no local socket for this agent; deliver here if
+    // this process holds it. pushLocal ignores an agent it doesn't hold.
+    subscribe(PUSH_CHANNEL, ({ event }: { event?: AgentEvent }) => {
+      if (event && typeof event === 'object') this.pushLocal(event);
+    });
 
     this.agentNamespace.use(async (socket, next) => {
       try {
@@ -374,10 +384,10 @@ class AgentWebSocketService {
 
   disconnectIdentity(agentName: string, instanceId = 'default'): void {
     const agentKey = `${agentName.toLowerCase()}:${instanceId.toLowerCase()}`;
-    // Socket.IO broadcasts this room operation through its adapter, including
-    // sockets on other backend replicas. A revoked bearer must not keep an
+    // At once on this process, and through the adapter on the other backend
+    // processes (config/socketRooms). A revoked bearer must not keep an
     // already-connected transport after the last installation is removed.
-    this.agentNamespace?.to(`agent:${agentKey}`).disconnectSockets?.(true);
+    if (this.agentNamespace) disconnectRoom(this.agentNamespace, `agent:${agentKey}`);
   }
 
   async validateAgentToken(token: string): Promise<AgentTokenInfo | null> {
@@ -548,7 +558,19 @@ class AgentWebSocketService {
     return null;
   }
 
+  /**
+   * Wakes the agent's socket. Returns true only when this process holds it.
+   * Otherwise the wake goes over the process bus to whichever process does: a
+   * push is only a wake (list() still claims atomically), so a lost or late one
+   * costs the agent a poll, never an event.
+   */
   pushEvent(event: AgentEvent): boolean {
+    if (this.pushLocal(event)) return true;
+    publish(PUSH_CHANNEL, { event: JSON.parse(JSON.stringify(event)) });
+    return false;
+  }
+
+  private pushLocal(event: AgentEvent): boolean {
     if (!this.agentNamespace) return false;
 
     const agentKey = `${event.agentName}:${event.instanceId || 'default'}`;

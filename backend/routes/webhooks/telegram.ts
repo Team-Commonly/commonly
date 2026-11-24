@@ -1,6 +1,7 @@
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const rateLimit = require('express-rate-limit');
+const { SharedRateLimitStore } = require('../../middleware/sharedRateLimitStore');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
 const Summary = require('../../models/Summary');
@@ -34,6 +35,7 @@ import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay
 const router = express.Router({ mergeParams: true });
 
 const telegramWebhookRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'webhook-telegram' }),
   windowMs: 60_000,
   max: 600,
   standardHeaders: true,
@@ -127,7 +129,7 @@ const handleEnableCommand = async (chat: any, code: any) => {
 
   // The code is the only proof of ownership this path has (the redeemer is
   // unauthenticated), so guessing is rate-limited per chat and codes expire.
-  if (!registerEnableAttempt(chatId)) {
+  if (!(await registerEnableAttempt(chatId))) {
     await telegramService.sendMessage(
       botToken,
       chatId,

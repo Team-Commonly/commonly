@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -11,6 +12,7 @@ const { recordNeedsYouClick } = require('../services/needsYouEmailService');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const unsubscribeRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'email-unsubscribe' }),
   windowMs: 60 * 60 * 1000,
   max: 30,
   standardHeaders: true,

@@ -1,6 +1,7 @@
 // ESM imports keep CodeQL's missing-rate-limiting dataflow connected to the
 // DB-backed polling route below (same established pattern as messages.ts).
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { createHash } from 'crypto';
 import { AccountDeletionError, deleteOwnAccount } from '../services/accountDeletionService';
 import { RUN_STOP_REASONS, runStopsFor } from '../services/byoTelemetry';
@@ -96,6 +97,7 @@ const profileWriteUserLimit = rateLimit({
 });
 
 const accountDeletionCredentialRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'account-deletion-credential' }),
   windowMs: 15 * 60_000,
   max: 120,
   standardHeaders: true,
@@ -104,6 +106,7 @@ const accountDeletionCredentialRateLimit = rateLimit({
 });
 
 const accountDeletionRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'account-deletion-user' }),
   windowMs: 15 * 60_000,
   max: 10,
   standardHeaders: true,

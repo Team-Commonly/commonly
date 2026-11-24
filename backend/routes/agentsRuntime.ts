@@ -22,6 +22,7 @@ const MAX_UPSTREAM_STATUS = 599;
 // ESM import shape but has trouble tracing rate-limit middleware through
 // require() returns; using `import` here makes the recognition unambiguous.
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 
 const express = require('express');
@@ -119,6 +120,7 @@ const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConf
 // (IP 3000/60s, then account). `phase4RateLimit` is the whole stack;
 // registering it registers both limiters, in that order.
 const phase4IpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-ip' }),
   windowMs: 60_000,
   max: 3000,
   standardHeaders: true,
@@ -131,6 +133,7 @@ const phase4IpRateLimit = rateLimit({
 });
 
 const phase4AgentRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-token' }),
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -161,6 +164,7 @@ const longPollIpLimit = platformIpRateLimit({
   windowMs: 60_000,
   limit: 3000,
   label: '3000 long-poll reads per 60s per IP',
+  store: new SharedRateLimitStore({ name: 'agents-runtime-long-poll' }),
 });
 
 // /room accepts human sessions and runtime credentials through shared dualAuth.
@@ -646,6 +650,7 @@ router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: an
 // code is the credential, so this route has its own tight per-IP limit, and
 // the service caps redeems per code (one live code per agent).
 const connectCodeIpRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-connect-code' }),
   windowMs: 10 * 60_000,
   max: 30,
   standardHeaders: true,

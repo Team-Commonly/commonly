@@ -5,9 +5,11 @@
 // identity mapping exists), the code IS the entire proof of ownership. It was
 // 24 bits, non-expiring, single-lookup across every outstanding code (ADR-025
 // review, 2026-08-26). Now: 128 bits, 10-minute TTL, single-use, and the
-// webhook rate-limits redemption attempts per chat.
+// webhook rate-limits redemption attempts per chat, counted in shared Redis.
 
 import crypto from 'crypto';
+import type { Options } from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 
 export const CONNECT_CODE_TTL_MS = 10 * 60 * 1000;
 // The one number the minted code and its shape both come from. Changing the
@@ -42,46 +44,43 @@ export const isConnectCodeExpired = (
   return new Date(config.connectCodeExpiresAt).getTime() <= now;
 };
 
-// Per-chat sliding window for /commonly-enable attempts. In-memory is enough:
-// a code lives 10 minutes and the backend runs one replica; a restart resets
-// the window, which is the failure mode we accept over a Redis dependency.
-// COUPLING: the "one replica" premise is `replicaCount: 1` in the Helm values
-// AND `autoscaling.backend.enabled: false` (values.yaml). Enabling backend
-// autoscaling silently makes the effective limit ENABLE_ATTEMPT_LIMIT × replicas
-// — move this window to Redis in the same change.
-// The key is attacker-supplied (any chat id), so the map is bounded: past
-// ENABLE_ATTEMPT_MAX_CHATS keys, every chat whose window has fully slid out is
-// evicted before a new key is added. A chat that attempts once and never
-// returns costs one slot for one window, not forever.
-export const ENABLE_ATTEMPT_MAX_CHATS = 10_000;
-const attempts = new Map<string, number[]>();
+// Per-chat budget for /commonly-enable attempts: ENABLE_ATTEMPT_LIMIT tries per
+// ENABLE_ATTEMPT_WINDOW_MS. It counts in the same shared Redis store as the
+// route limiters (middleware/sharedRateLimitStore.ts), so the budget holds
+// across backend processes instead of multiplying by their number. Redis being
+// down or slow never refuses a chat: the store falls back to a per-process
+// memory count, with the same timeout and logging as every other limiter.
+//
+// The window is fixed, not sliding: it starts at a chat's first attempt and the
+// count resets when it ends, as with express-rate-limit. A refused attempt
+// still counts but does not extend the window.
+//
+// The key is attacker-supplied (any chat id). In Redis each key is hashed and
+// carries the window as its expiry; the memory fallback drops a key once its
+// window has passed. Neither grows without bound.
+const newAttemptStore = (): SharedRateLimitStore => {
+  const store = new SharedRateLimitStore({ name: 'telegram-enable-attempt' });
+  store.init({ windowMs: ENABLE_ATTEMPT_WINDOW_MS } as Options);
+  return store;
+};
+let attemptStore = newAttemptStore();
 
-const sweepIdleChats = (now: number): void => {
-  attempts.forEach((stamps, key) => {
-    if (!stamps.some((t) => now - t < ENABLE_ATTEMPT_WINDOW_MS)) attempts.delete(key);
-  });
+export const registerEnableAttempt = async (chatId: string): Promise<boolean> => {
+  const { totalHits } = await attemptStore.increment(chatId);
+  return totalHits <= ENABLE_ATTEMPT_LIMIT;
 };
 
-export const registerEnableAttempt = (chatId: string, now: number = Date.now()): boolean => {
-  if (!attempts.has(chatId) && attempts.size >= ENABLE_ATTEMPT_MAX_CHATS) sweepIdleChats(now);
-  const recent = (attempts.get(chatId) || []).filter((t) => now - t < ENABLE_ATTEMPT_WINDOW_MS);
-  if (recent.length >= ENABLE_ATTEMPT_LIMIT) {
-    attempts.set(chatId, recent);
-    return false;
-  }
-  recent.push(now);
-  attempts.set(chatId, recent);
-  return true;
+// For tests: a fresh store, so one case's count never leaks into the next.
+export const resetEnableAttempts = (): void => {
+  attemptStore.shutdown();
+  attemptStore = newAttemptStore();
 };
-
-export const resetEnableAttempts = (): void => { attempts.clear(); };
 
 module.exports = {
   CONNECT_CODE_TTL_MS,
   CONNECT_CODE_BYTES,
   ENABLE_ATTEMPT_WINDOW_MS,
   ENABLE_ATTEMPT_LIMIT,
-  ENABLE_ATTEMPT_MAX_CHATS,
   mintConnectCode,
   isConnectCodeShape,
   isConnectCodeExpired,

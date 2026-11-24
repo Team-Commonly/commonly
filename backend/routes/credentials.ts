@@ -6,6 +6,7 @@ import { Types } from 'mongoose';
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognizes the limiter (same pattern as routes/messages.ts).
 import rateLimit from 'express-rate-limit';
+import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
@@ -24,6 +25,7 @@ const router = express.Router();
 // Token-hash/IP keyed, same shape as the messages read limiter. Credential
 // operations are rare; tight caps are free safety.
 const credentialRateLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'credentials' }),
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,

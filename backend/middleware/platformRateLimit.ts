@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import type { Request, Response } from 'express';
+import type { Store } from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from './ipRateLimit';
 
 /**
@@ -56,11 +57,16 @@ export const platformIpRateLimit = ({
   windowMs,
   limit,
   label,
+  store,
 }: {
   windowMs: number;
   limit: number;
   label: string;
+  // Optional: a SharedRateLimitStore makes the limit hold across backend
+  // processes. Without one the limiter counts per process, as before.
+  store?: Store;
 }) => rateLimit({
+  ...(store ? { store } : {}),
   windowMs,
   limit,
   standardHeaders: 'draft-7',

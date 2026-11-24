@@ -34,6 +34,7 @@ import {
 } from './hostedMcpEntryService';
 import { GATEWAY_STATUSES, markWriteUnknown } from './brokerWriteOutcome';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+import { publish, subscribe } from './processBus';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
 
@@ -534,9 +535,18 @@ const productionDriftCache = createHostedMcpRuntimeDriftCache({
   fetcher: guardedFetch,
 });
 
-/** A removed row must not retain an assessment after its credential is gone. */
+const FORGET_CHANNEL = 'hosted-mcp-drift-forget';
+subscribe(FORGET_CHANNEL, ({ connectionId }) => {
+  if (typeof connectionId === 'string' && connectionId) productionDriftCache.forget({ connectionId });
+});
+
+/**
+ * A removed row must not retain an assessment after its credential is gone, on
+ * any backend process (processBus); the cache TTL bounds one that missed it.
+ */
 export const forgetHostedMcpDrift = (connectionId: string): void => {
   productionDriftCache.forget({ connectionId });
+  publish(FORGET_CHANNEL, { connectionId: String(connectionId) });
 };
 
 export const assertHostedToolUnchanged = async (

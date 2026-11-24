@@ -144,6 +144,7 @@ const io = socketIo(server, {
 
 // Initialize socket instance for other services
 const socketConfig = require('./config/socket');
+const { fetchRoomSockets } = require('./config/socketRooms');
 const agentWebSocketService = require('./services/agentWebSocketService');
 const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypingService');
 const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventService');
@@ -151,6 +152,9 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
 // Socket.io Redis adapter initialization is async in K8s mode
 if (startServices) (async () => {
   try {
+    // Cross-process signals (cache invalidations, agent socket wakes); a
+    // no-op without REDIS_HOST. Only a serving process connects it.
+    require('./services/processBus').startProcessBus();
     await socketConfig.init(io);
     agentWebSocketService.init(io);
     bindAgentTypingSocketIO(io);
@@ -516,11 +520,13 @@ io.use((socket: any, next: any) => {
 const emitPresence = async (podId: any) => {
   if (!podId) return;
   try {
-    const sockets = await io.in(`pod_${podId}`).fetchSockets();
+    // Every process's sockets (a remote one carries only `data`), or this
+    // process's alone if Redis doesn't answer in time (config/socketRooms).
+    const sockets = await fetchRoomSockets(io, `pod_${podId}`);
     const userIds = Array.from(
       new Set(
         sockets
-          .map((s: any) => s.userId)
+          .map((s: any) => s.data?.userId ?? s.userId)
           .filter((userId: any) => userId),
       ),
     );

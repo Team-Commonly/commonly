@@ -150,4 +150,15 @@ describe('Discord webhook hardening', () => {
     await request(app).post('/api/webhooks/discord/invite').send({ clientId: 'client-1' }).expect(404);
     await request(app).post('/api/webhooks/discord/test/integration-1').expect(404);
   });
+
+  // webhook_id is the caller's word: only a signed delivery may spend that
+  // webhook's shared budget, so verification runs between the IP ceiling and
+  // the per-webhook limiter. (Both limiters skip under NODE_ENV=test, so the
+  // order itself is what's pinned.)
+  test('signature verification runs before the per-webhook limiter', () => {
+    const layer = routes.stack.find((l) => l.route?.path === '/' && l.route.methods.post);
+    const names = layer.route.stack.map((l) => l.handle.name);
+    expect(names.slice(1, 2)).toEqual(['requireDiscordSignature']);
+    expect(names).toHaveLength(4);
+  });
 });
