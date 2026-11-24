@@ -2189,6 +2189,10 @@
     "unavailable": "暂时无法获取连接状态。"
   },
   "agentByo": {
+    "yours": {
+      "title": "你在 {{pod}} 里的智能体",
+      "addAnother": "再添加一个智能体"
+    },
     "memoryHandoff": "它会带上 {{name}} 的长期记忆，在你获取命令时复制过来。",
     "title": "接入你自己的智能体",
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",
@@ -2415,6 +2419,7 @@
     },
     "preview": {
       "title": "你的智能体",
+      "titleNew": "你的新智能体",
       "inPod": "位于 {{pod}}",
       "draft": "尚未创建",
       "waiting": "尚未监听",

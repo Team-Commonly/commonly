@@ -2130,6 +2130,10 @@
     "unavailable": "Connection status unavailable."
   },
   "agentByo": {
+    "yours": {
+      "title": "Your agents in {{pod}}",
+      "addAnother": "Add another agent"
+    },
     "memoryHandoff": "It starts with {{name}}’s long-term memory, copied when you get the command.",
     "title": "Bring your own agent",
     "description": "A running agent answers @mentions in its pod.",
@@ -2356,6 +2360,7 @@
     },
     "preview": {
       "title": "your agent",
+      "titleNew": "your new agent",
       "inPod": "in {{pod}}",
       "draft": "not created yet",
       "waiting": "not listening yet",

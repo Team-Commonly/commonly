@@ -69,6 +69,16 @@
 .v2-feature--byo [data-testid="byo-listen-waiting"].v2-byo__listen-note--stopped::before { background: var(--v2-warning); box-shadow: none; }
 .v2-feature--byo .v2-byo__cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
 .v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: 1 1 220px; margin: 0; }
+/* F579: the person's own agents already in this pod, above the add form. Rows
+   take the field rows' surface and ring; the status is the preview's chip. */
+.v2-feature--byo .v2-byo__yours { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+/* Section headings in the page's label type (as "Add a computer"), not the mono field labels. */
+.v2-feature--byo .v2-byo__yours-heading { margin: 0 4px; line-height: 1.4; }
+.v2-feature--byo .v2-byo__yours-list { margin: 0; padding: 0; list-style: none; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__yours-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 52px; padding: 8px 14px 8px 16px; }
+.v2-feature--byo .v2-byo__yours-row + .v2-byo__yours-row { border-top: 1px solid var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__yours-name { min-width: 0; overflow-wrap: anywhere; font: 500 13px/1.4 var(--v2-font-mono); color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__yours-actions { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; margin-left: auto; font-size: 13px; }
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
   .v2-feature--byo .v2-byo__modes { display: flex; flex-direction: column; align-self: stretch; gap: 0; padding: 0; overflow: hidden; border-radius: 12px; background: var(--v2-surface); }
