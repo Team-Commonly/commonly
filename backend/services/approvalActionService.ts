@@ -24,6 +24,7 @@ import { prWriteApprovalSummary } from './prWriteScope';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 import { PLACEHOLDER_AGENT_DESCRIPTION } from './agentInstallationIdentity';
 import { releaseRunRequest, noteRunRequestDeclined } from './runRequestService';
+import { mirrorRegistryRow } from './installable/registryReconciler';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -2111,6 +2112,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
       publisher: { userId: row.ownerUserId },
       ephemeral: true,
     });
+    await mirrorRegistryRow(registryRow, 'approval.ephemeral');
   }
 
   await AgentInstallation.findOneAndUpdate(

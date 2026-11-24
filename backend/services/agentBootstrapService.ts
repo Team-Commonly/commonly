@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { AgentRegistry } from '../models/AgentRegistry';
+import { mirrorRegistryRow } from './installable/registryReconciler';
 
 const AGENT_SERVICES_DIR = path.join(
   __dirname,
@@ -63,7 +64,7 @@ class AgentBootstrapService {
 
     for (const agent of manifests) {
       try {
-        await AgentRegistry.findOneAndUpdate(
+        const row = await AgentRegistry.findOneAndUpdate(
           { agentName: agent.agentName },
           {
             $set: {
@@ -85,8 +86,9 @@ class AgentBootstrapService {
               }],
             },
           },
-          { upsert: true },
+          { upsert: true, new: true },
         );
+        await mirrorRegistryRow(row, 'agent-bootstrap');
         console.log(`[agent-bootstrap] ${agent.agentName} registered`);
       } catch (error) {
         console.error(`[agent-bootstrap] Failed to register ${agent.agentName}:`, (error as Error).message);
