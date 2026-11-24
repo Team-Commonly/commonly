@@ -36,6 +36,7 @@ const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   hasForeignOwner, inheritablePodConfig, resolveAdditionSource, withRoutedRuntime,
@@ -420,6 +421,11 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       agent = await AgentRegistry.create(registryData);
       if (req.body.memoryFrom !== undefined) {
         handoffRegistryClaim = { id: agent._id, agentName: agent.agentName, userId, version: agent.__v };
+      } else {
+        // Not during a memory handoff: a failed handoff deletes this registry
+        // row, and the mirror's Installable would outlive it. The sweep
+        // backfills a handoff row once it survives.
+        await mirrorRegistryRow(agent, 'install.ephemeral');
       }
       console.log('[cap self-serve-install]', {
         user: String(userId),

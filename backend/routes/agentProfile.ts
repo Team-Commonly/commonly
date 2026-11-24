@@ -26,6 +26,7 @@ import {
   coarsenAgentMemoryWrite,
 } from '../services/agentMemoryService';
 import { referencesOthersPodUpload } from '../services/attachmentAccess';
+import { mirrorRegistryAvatar } from '../services/installable/registryReconciler';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -359,6 +360,7 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
       const previousAvatar = String((current as any).profilePicture || '');
       if (previousAvatar && previousAvatar !== 'default') {
         await AgentRegistry.updateOne({ agentName, iconUrl: previousAvatar }, { $set: { iconUrl: '' } });
+        await mirrorRegistryAvatar(agentName, '', previousAvatar);
       }
     }
 
@@ -381,6 +383,7 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
     if (!reset) {
       try {
         await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
+        await mirrorRegistryAvatar(agentName, avatar);
       } catch (regErr) {
         console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
       }

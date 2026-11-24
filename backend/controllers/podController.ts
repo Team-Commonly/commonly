@@ -1,6 +1,7 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
+import { mirrorRegistryRow } from '../services/installable/registryReconciler';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -85,6 +86,7 @@ const ensureDefaultAgentRegistryEntry = async (agentName: any) => {
     versions: [{ version: '1.0.0', publishedAt: new Date() }],
     stats: { installs: 0, rating: 0, ratingCount: 0 },
   });
+  await mirrorRegistryRow(agent, 'pod.commonly-bot');
 
   return agent;
 };

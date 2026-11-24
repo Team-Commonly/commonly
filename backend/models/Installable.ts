@@ -1,4 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { REGISTRY_BACKFILL_ORIGIN } from '../services/installable/registryBackfillOrigin';
+import type { InstallableOrigin } from '../services/installable/registryBackfillOrigin';
 
 /**
  * Installable — unified catalog model for every kind of thing a user (or agent)
@@ -55,6 +57,7 @@ export type InstallableSource =
 export type InstallableKind = 'agent' | 'app' | 'skill' | 'bundle';
 
 export type InstallableScope = 'instance' | 'pod' | 'user' | 'dm';
+
 
 export type InstallableStatus =
   | 'active'
@@ -307,6 +310,10 @@ export interface IInstallable extends Document {
 
   // Lifecycle
   status: InstallableStatus;
+
+  // Set on rows the AgentRegistry bridge synthesized. Such a row is not a
+  // marketplace listing: marketplace routes skip it, and a publish takes it over.
+  origin?: InstallableOrigin;
 
   // Version history (for marketplace packages with deprecation/rollback)
   versions?: IVersionEntry[];
@@ -562,6 +569,8 @@ const InstallableSchema = new Schema<IInstallable>(
       enum: ['active', 'deprecated', 'unpublished', 'pending-review'],
       default: 'active',
     },
+
+    origin: { type: String, enum: [REGISTRY_BACKFILL_ORIGIN] },
 
     versions: { type: [VersionSubSchema], default: undefined },
 

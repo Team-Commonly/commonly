@@ -510,6 +510,34 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // AgentRegistry -> Installable backfill (ADR-001 Phase 3). Lease-free for
+    // the same reason as above: every write is a $setOnInsert upsert, so two
+    // replicas racing insert one row and the loser's E11000 is a no-op.
+    // Hourly at :39, a minute no five-minute pass or hourly job uses.
+    // Off unless INSTALLABLE_REGISTRY_SWEEP=1: prod turns it on only after a
+    // fresh backup. The per-request mirrors run regardless.
+    const registryDriftJob: CronJob = cron.schedule(
+      '39 * * * *',
+      async () => {
+        if (process.env.INSTALLABLE_REGISTRY_SWEEP !== '1') {
+          console.log('[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1');
+          return;
+        }
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepRegistryDrift } = require('./installable/registryReconciler');
+          const r = await sweepRegistryDrift({ dryRun: false });
+          console.log(
+            `[registry-reconciler] pass scanned=${r.scanned} inserted=${r.inserted} existing=${r.existing} `
+            + `errors=${r.errors} statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}`,
+          );
+        } catch (error) {
+          console.error('[registry-reconciler] scheduled sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // Decision card receipts are durable until the fork settles. Reconcile
     // every five minutes: close rows whose decision was ruled or removed, and
     // prune receipts seven days after their closedAt mark.
@@ -694,6 +722,7 @@ class SchedulerService {
       kernelWorkSweepJob,
       assignedTaskWakeJob,
       installableReconcileJob,
+      registryDriftJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
       spawnCredentialReapJob,
@@ -736,6 +765,10 @@ class SchedulerService {
     );
     console.log('- Skills catalog refreshes every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
+    console.log(
+      '- AgentRegistry -> Installable backfill runs hourly at :39 (insert-only; no lease required)'
+      + `${process.env.INSTALLABLE_REGISTRY_SWEEP === '1' ? '' : ' (OFF: INSTALLABLE_REGISTRY_SWEEP unset)'}`,
+    );
 
     this.startupTimers.push(setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {

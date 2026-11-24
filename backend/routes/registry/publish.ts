@@ -9,6 +9,7 @@ const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
 const { getUserId, resolveUsername } = require('./helpers');
 const {
   ManifestValidationError,
@@ -102,6 +103,8 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
         tags,
       });
     }
+    // Insert-only: an update here leaves an existing Installable as it is.
+    await mirrorRegistryRow(agent, 'registry.publish');
 
     res.json({
       success: true,
@@ -201,9 +204,11 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         const existing = await AgentRegistry.findOne({ agentName: agentData.agentName });
         if (existing) {
           await AgentRegistry.updateOne({ agentName: agentData.agentName }, agentData);
+          await mirrorRegistryRow(agentData, 'registry.seed');
           return 'updated';
         }
-        await AgentRegistry.create(agentData);
+        const created = await AgentRegistry.create(agentData);
+        await mirrorRegistryRow(created, 'registry.seed');
         return 'created';
       }),
     );
