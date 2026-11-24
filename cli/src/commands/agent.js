@@ -2097,7 +2097,9 @@ const extractPrompt = (event) => {
   }
   if (event.type === 'decision.ruled') {
     if (!p.decisionId || !p.pick || !p.ruledAt) return null;
-    const ruler = p.ruledBy?.username || 'A human';
+    // Registration keeps a client-sent username after only a trim, so a line
+    // break in the ruler's name folds to a space rather than open a frame line.
+    const ruler = String(p.ruledBy?.username || 'A human').replace(/[\r\n\u2028\u2029]+/g, ' ');
     // F588: a server since 2026-11-23 sends what the card asked, so a recycled
     // session or an agent with several cards knows what the pick answers. The
     // card text was written by an agent and the pick by a person, so with the
