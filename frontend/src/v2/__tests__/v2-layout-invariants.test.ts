@@ -6961,3 +6961,39 @@ describe('the phone tab bar steps aside for the keyboard', () => {
     expect(css).toMatch(/\.v2-shell \.v2-pane \{\s*height: 100vh;\s*height: 100dvh;\s*\}/);
   });
 });
+
+// The pod context inspector (admin) shrinks and wraps through these
+// declarations; without them a long asset id or tag pushes the page sideways.
+describe('pod context inspector layout', () => {
+  const css = read('../v2.css');
+  const start = css.indexOf('\n.v2-pod-context {');
+  const block = css.slice(start, css.indexOf('/* ============ Admin analytics', start));
+  const phoneAt = block.indexOf('@media (max-width: 760px)');
+  const phone = block.slice(phoneAt);
+
+  it('finds its block and its phone query', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(phoneAt).toBeGreaterThan(-1);
+  });
+  it('lets grid columns shrink below their content', () => {
+    expect(ruleBody(css, '.v2-pod-context__grid', { within: block })).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(ruleBody(css, '.v2-pod-context__split', { within: block })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+  });
+  it('lets flex children shrink', () => {
+    ['.v2-pod-context__section', '.v2-pod-context__field', '.v2-pod-context__input', '.v2-pod-context__item'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('min-width: 0;');
+    });
+  });
+  it('wraps rows, chips and long text', () => {
+    ['.v2-pod-context__row', '.v2-pod-context__chips', '.v2-pod-context__item-title'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('flex-wrap: wrap;');
+    });
+    ['.v2-pod-context__item-title', '.v2-pod-context__muted', '.v2-pod-context__markdown', '.v2-pod-context__pre'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('overflow-wrap: anywhere;');
+    });
+  });
+  it('collapses the grid and the split on a phone', () => {
+    expect(ruleBody(css, '.v2-pod-context__grid', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(ruleBody(css, '.v2-pod-context__split', { within: phone })).toContain('grid-template-columns: minmax(0, 1fr);');
+  });
+});
