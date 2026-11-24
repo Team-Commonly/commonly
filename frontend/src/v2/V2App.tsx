@@ -67,7 +67,7 @@ const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
 const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
-const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
+const V2GlobalIntegrations = React.lazy(() => import('./components/V2GlobalIntegrations'));
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
 const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
 
@@ -427,7 +427,7 @@ const V2App: React.FC = () => {
                   path="admin/integrations/global"
                   element={feature(
                     'Global Integrations',
-                    <ProtectedRoute requireAdmin><GlobalIntegrations /></ProtectedRoute>,
+                    <ProtectedRoute requireAdmin><V2GlobalIntegrations /></ProtectedRoute>,
                     false,
                   )}
                 />

@@ -3210,7 +3210,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         "'./connectors/ConnectorsPage'",
         "'./components/V2ActivityPage'",
         "'./components/V2ArtifactsPage'",
-        "'../components/admin/GlobalIntegrations'",
+        "'./components/V2GlobalIntegrations'",
       ]) {
         expect(shell).toContain(`React.lazy(() => import(${heavy}))`);
       }
