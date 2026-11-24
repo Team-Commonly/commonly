@@ -227,7 +227,10 @@ const V2PodContextDev: React.FC = () => {
   const [loadingContext, setLoadingContext] = useState(false);
 
   const [indexStats, setIndexStats] = useState<{ stats?: Record<string, number | boolean> } | null>(null);
-  const [indexBusy, setIndexBusy] = useState<'' | 'stats' | 'pod' | 'all'>('');
+  const [indexBusy, setIndexBusy] = useState<'' | 'stats' | 'pod'>('');
+  // Not pod state: a pod switch must not clear it, since the server runs two
+  // rebuild-alls at once if asked.
+  const [rebuildAllBusy, setRebuildAllBusy] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
   const [indexDone, setIndexDone] = useState<string | null>(null);
 
@@ -367,17 +370,19 @@ const V2PodContextDev: React.FC = () => {
 
   const rebuildAll = async () => {
     if (!token) return;
-    setIndexBusy('all');
+    const forPod = podId;
+    setRebuildAllBusy(true);
     setIndexDone(null);
     try {
       const res = await axios.post('/api/v1/index/rebuild-all', { reset: true }, { headers });
       setIndexDone(`Rebuilt ${res.data?.pods} pods: ${res.data?.indexed} indexed, ${res.data?.errors} errors.`);
       setIndexError(null);
-      if (podId) await fetchIndexStats();
+      // This closure's stats fetch is bound to the pod it started on.
+      if (forPod && currentPod.current === forPod) await fetchIndexStats();
     } catch (err) {
       setIndexError(errorText(err, 'error', 'Failed to rebuild all indices.'));
     } finally {
-      setIndexBusy('');
+      setRebuildAllBusy(false);
     }
   };
 
@@ -609,20 +614,20 @@ const V2PodContextDev: React.FC = () => {
         <section className="v2-pod-context__section v2-pod-context__card">
           <h3 className="v2-pod-context__card-title">Vector index</h3>
           <div className="v2-pod-context__row">
-            <button type="button" className="v2p-b v2p-b-s" onClick={fetchIndexStats} disabled={!!indexBusy}>
+            <button type="button" className="v2p-b v2p-b-s" onClick={fetchIndexStats} disabled={!!indexBusy || rebuildAllBusy}>
               {indexBusy === 'stats' ? 'Loading…' : 'Fetch stats'}
             </button>
-            <button type="button" className="v2p-b v2p-b-s" onClick={() => rebuildIndex(false)} disabled={!!indexBusy}>
+            <button type="button" className="v2p-b v2p-b-s" onClick={() => rebuildIndex(false)} disabled={!!indexBusy || rebuildAllBusy}>
               Rebuild index
             </button>
-            <button type="button" className="v2p-b v2p-b-s" onClick={() => rebuildIndex(true)} disabled={!!indexBusy}>
+            <button type="button" className="v2p-b v2p-b-s" onClick={() => rebuildIndex(true)} disabled={!!indexBusy || rebuildAllBusy}>
               Reset and rebuild
             </button>
-            <button type="button" className="v2p-b v2p-b-g" onClick={rebuildAll} disabled={!!indexBusy}>
+            <button type="button" className="v2p-b v2p-b-g" onClick={rebuildAll} disabled={!!indexBusy || rebuildAllBusy}>
               Reset and rebuild all pods
             </button>
             {indexBusy === 'pod' && <span className="v2-pod-context__muted">Rebuilding…</span>}
-            {indexBusy === 'all' && <span className="v2-pod-context__muted">Rebuilding all pods…</span>}
+            {rebuildAllBusy && <span className="v2-pod-context__muted">Rebuilding all pods…</span>}
           </div>
           {indexError && <Notice tone="error">{indexError}</Notice>}
           {indexDone && <Notice tone="success">{indexDone}</Notice>}

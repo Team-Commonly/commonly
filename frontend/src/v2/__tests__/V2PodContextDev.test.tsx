@@ -238,6 +238,29 @@ test('a search that resolves after the pod changed is dropped', async () => {
   expect(screen.getByRole('button', { name: 'Search memory' })).toBeEnabled();
 });
 
+// The server does not serialize rebuild-all, so the lock holds across a pod
+// switch, and the rebuild's stats refresh does not land on the new pod.
+test('a rebuild-all keeps the index buttons locked across a pod switch', async () => {
+  const pending = deferred();
+  axios.get.mockResolvedValueOnce({ data: [{ _id: 'pod-1', name: 'Incident Pod' }, { _id: 'pod-2', name: 'Release Pod' }] });
+  axios.post.mockReturnValueOnce(pending.promise);
+  await renderPage();
+  await click('Reset and rebuild all pods');
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Pod'), { target: { value: 'pod-2' } }); });
+  expect(screen.getByText('Rebuilding all pods…')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reset and rebuild all pods' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Fetch stats' })).toBeDisabled();
+
+  const getsBefore = axios.get.mock.calls.length;
+  await act(async () => { pending.resolve({ data: { pods: 2, indexed: 5, errors: 0 } }); });
+
+  expect(screen.getByText('Rebuilt 2 pods: 5 indexed, 0 errors.')).toBeInTheDocument();
+  expect(axios.get.mock.calls.slice(getsBefore).some(([url]) => url.includes('/index/stats'))).toBe(false);
+  expect(screen.getByRole('button', { name: 'Reset and rebuild all pods' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Fetch stats' })).toBeEnabled();
+});
+
 test('the inspector card radius is a token v2.css defines', () => {
   // An undefined custom property computes border-radius to 0 and squares the card.
   // eslint-disable-next-line global-require
