@@ -29,6 +29,22 @@ const makeInvite = (fields) => {
 const members = async () => (await Pod.findById(pod._id).lean()).members.map(String);
 const uses = async (invite) => (await PodInvite.findById(invite._id).lean()).useCount;
 
+// Holds every redemption at its pod lookup, which comes after the isUsable()
+// read and before the claim, until `count` of them have arrived.
+const holdAtPodLookup = (count, onRelease = async () => {}) => {
+  const findById = Pod.findById.bind(Pod);
+  let arrived = 0;
+  let release;
+  const allArrived = new Promise((resolve) => { release = resolve; });
+  return jest.spyOn(Pod, 'findById').mockImplementation((...args) => {
+    arrived += 1;
+    if (arrived === count) onRelease().then(release);
+    return allArrived.then(() => findById(...args));
+  });
+};
+// A give-back is the update that takes a use away again.
+const isGiveBack = (update) => update?.$inc?.useCount === -1;
+
 describe('redeemPodInvite counts uses atomically (F603)', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
@@ -46,9 +62,15 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
     const invite = await makeInvite({ maxUses: 3, useCount: 2 });
     const a = await person();
     const b = await person();
-    const results = await Promise.all([
-      redeemPodInvite(invite.token, a._id), redeemPodInvite(invite.token, b._id),
-    ]);
+    const hold = holdAtPodLookup(2);
+    let results;
+    try {
+      results = await Promise.all([
+        redeemPodInvite(invite.token, a._id), redeemPodInvite(invite.token, b._id),
+      ]);
+    } finally {
+      hold.mockRestore();
+    }
 
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(results.find((r) => !r.ok)).toEqual(REFUSED);
@@ -91,6 +113,76 @@ describe('redeemPodInvite counts uses atomically (F603)', () => {
     } finally {
       save.mockRestore();
     }
+    expect(await uses(invite)).toBe(0);
+    expect(await members()).not.toContain(String(a._id));
+  });
+
+  test('a join that fails to save retries a failed give-back until it lands', async () => {
+    const invite = await makeInvite({ maxUses: 1 });
+    const a = await person();
+    const save = jest.spyOn(Pod.prototype, 'save').mockRejectedValueOnce(new Error('write failed'));
+    const updateOne = PodInvite.updateOne.bind(PodInvite);
+    let giveBacks = 0;
+    const update = jest.spyOn(PodInvite, 'updateOne').mockImplementation((filter, change, ...rest) => {
+      if (isGiveBack(change)) {
+        giveBacks += 1;
+        if (giveBacks === 1) return Promise.reject(new Error('db down'));
+      }
+      return updateOne(filter, change, ...rest);
+    });
+    try {
+      await expect(redeemPodInvite(invite.token, a._id)).rejects.toThrow('write failed');
+    } finally {
+      save.mockRestore();
+      update.mockRestore();
+    }
+    expect(giveBacks).toBe(2);
+    expect(await uses(invite)).toBe(0);
+  });
+
+  test('a give-back that fails every try is logged with the invite id; the join error is thrown', async () => {
+    const invite = await makeInvite({ maxUses: 1 });
+    const a = await person();
+    const save = jest.spyOn(Pod.prototype, 'save').mockRejectedValueOnce(new Error('write failed'));
+    const updateOne = PodInvite.updateOne.bind(PodInvite);
+    let giveBacks = 0;
+    const update = jest.spyOn(PodInvite, 'updateOne').mockImplementation((filter, change, ...rest) => {
+      if (isGiveBack(change)) {
+        giveBacks += 1;
+        return Promise.reject(new Error('db down'));
+      }
+      return updateOne(filter, change, ...rest);
+    });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(redeemPodInvite(invite.token, a._id)).rejects.toThrow('write failed');
+      expect(giveBacks).toBe(3);
+      const lines = error.mock.calls.map((args) => args.join(' '));
+      expect(lines.filter((l) => l.includes(String(invite._id)))).toHaveLength(1);
+      expect(lines.join('\n')).toContain(String(pod._id));
+      expect(lines.join('\n')).not.toContain(String(a._id));
+    } finally {
+      save.mockRestore();
+      update.mockRestore();
+      error.mockRestore();
+    }
+    expect(await uses(invite)).toBe(1);
+  });
+
+  test.each([
+    ['revoked', { revokedAt: new Date() }],
+    ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+  ])('an invite %s after the usability read refuses at the claim, without joining', async (_label, change) => {
+    const invite = await makeInvite({ maxUses: 5 });
+    const a = await person();
+    const hold = holdAtPodLookup(1, () => PodInvite.updateOne({ _id: invite._id }, { $set: change }));
+    let result;
+    try {
+      result = await redeemPodInvite(invite.token, a._id);
+    } finally {
+      hold.mockRestore();
+    }
+    expect(result).toEqual(REFUSED);
     expect(await uses(invite)).toBe(0);
     expect(await members()).not.toContain(String(a._id));
   });

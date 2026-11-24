@@ -28,6 +28,34 @@ const usableInviteFilter = (now: Date) => ({
   ],
 });
 
+// Waits between give-back tries: three tries, about a second in all.
+const GIVE_BACK_RETRY_DELAYS_MS = [250, 750];
+
+// Hands a counted use back after a join that failed. A lost give-back leaves
+// the use counted with no member behind it, and a one-use invite would then
+// refuse forever, so it retries; if every try fails, one line names the ids an
+// operator needs to restore the count.
+const giveBackUse = async (inviteId: unknown, podId: unknown): Promise<void> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await PodInvite.updateOne({ _id: inviteId, useCount: { $gt: 0 } }, { $inc: { useCount: -1 } });
+      return;
+    } catch (error) {
+      const delay = GIVE_BACK_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        console.error(
+          `[pod-invite] give-back failed after ${attempt + 1} tries; invite ${String(inviteId)}`
+          + ` (pod ${String(podId)}) has one use too many counted: ${(error as Error)?.name}`,
+        );
+        return;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, delay); });
+    }
+  }
+};
+
 export type PodInviteRedemption =
   | { ok: true; pod: any; alreadyMember: boolean }
   | { ok: false; status: number; body: Record<string, unknown> };
@@ -88,8 +116,7 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
       pod.updatedAt = new Date();
       await pod.save();
     } catch (joinError) {
-      await PodInvite.updateOne({ _id: invite._id, useCount: { $gt: 0 } }, { $inc: { useCount: -1 } })
-        .catch(() => undefined);
+      await giveBackUse(invite._id, pod._id);
       throw joinError;
     }
     // F183: best-effort PG mirror write; never fails the redemption.
