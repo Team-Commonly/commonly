@@ -27,7 +27,7 @@ The flag stays off on every instance until both of these are fixed and the drive
    - a test must show that a sandbox can't reach a loopback service the allowlist doesn't name;
    - the gateway must run where its host's loopback holds nothing else, or in bridge mode once bridge mode is shown to close this.
 
-   Today's run-code driver writes no network rule, so it isn't exposed yet. The first change that adds a rule is.
+   The built-in `SANDBOX_POLICY` has no network rule. `OPENSHELL_SANDBOX_POLICY_FILE` replaces that policy wholesale, and the driver passes the file to `openshell sandbox create --policy` without reading it, so a deployment can add a rule through configuration alone. Before enabling, either remove the override or make the driver refuse a file whose `network_policies` go beyond the code-defined allowlist.
 2. **No user namespaces inside, so no nested sandbox.** An agent's own sandbox (Codex's bubblewrap, our CLI's `bwrap` mode) can't start inside OpenShell, so OpenShell's policy is the only boundary (finding 3). Before a hosted agent runs inside:
    - the driver must start the agent with its own sandbox off, on purpose and visibly (for example, Codex with `--sandbox danger-full-access`);
    - ADR-008 needs a decision. It defines `container` mode for the local-CLI and OpenClaw paths only, and refuses to run an install whose asked-for sandbox mode can't be met. A hosted driver extends `container` mode to a new path, so the ADR has to say whether `container` under OpenShell satisfies an install that asks for `bwrap`, or whether that install is refused;
