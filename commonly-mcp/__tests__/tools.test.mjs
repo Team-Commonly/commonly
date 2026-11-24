@@ -739,6 +739,14 @@ describe('commonly_dm_agent', () => {
     expect(payload.room._id).toBe('POD-DM');
   });
 
+  // F589: the model takes the target's identity from the roster, not a guess.
+  it('points the model at the get_context roster for agentName/instanceId', () => {
+    const { description } = byName.commonly_dm_agent;
+    expect(description).toContain('agentName');
+    expect(description).toContain('commonly_get_context');
+    expect(byName.commonly_get_context.description).toContain('agentName');
+  });
+
   it('surfaces 400 self-DM rejection from the backend', async () => {
     installFetch(async () => ({
       ok: false, status: 400,

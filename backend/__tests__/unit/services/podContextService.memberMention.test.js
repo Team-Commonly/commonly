@@ -127,6 +127,39 @@ describe('pod context members', () => {
     expect(human).toMatchObject({ userId: HUMAN_ID, isAgent: false, self: true });
   });
 
+  // F589: commonly_dm_agent takes { agentName, instanceId }, so an agent member
+  // carries the identity it routes to here, not just a label and a handle.
+  it('gives an agent member the agentName and instanceId commonly_dm_agent takes, a human neither', async () => {
+    const context = await PodContextService.getPodContext({
+      podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none',
+    });
+
+    const [bot, human] = context.members;
+    expect(bot).toMatchObject({ agentName: 'codex', instanceId: 'swe-dogfood' });
+    expect(human).not.toHaveProperty('agentName');
+    expect(human).not.toHaveProperty('instanceId');
+  });
+
+  it("leaves out a 'default' instanceId, which the agent-dm route assumes", async () => {
+    AgentInstallation.find.mockReturnValue(chain([
+      { agentName: 'pixel', instanceId: 'default', displayName: 'Pixel', status: 'active' },
+    ]));
+    User.find.mockReturnValue(chain([
+      {
+        _id: BOT_ID, username: 'pixel', isBot: true, botMetadata: { displayName: 'Pixel', agentName: 'pixel' },
+      },
+      { _id: HUMAN_ID, username: 'lily-shen', isBot: false },
+    ]));
+
+    const context = await PodContextService.getPodContext({
+      podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none',
+    });
+
+    const [bot] = context.members;
+    expect(bot).toMatchObject({ name: 'Pixel', agentName: 'pixel' });
+    expect(bot).not.toHaveProperty('instanceId');
+  });
+
   it('still lists members when the pod map cannot be read', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('db down')) });
@@ -138,6 +171,9 @@ describe('pod context members', () => {
     const [bot, human] = context.members;
     expect(bot).toMatchObject({ name: 'Rivet', mention: '', isAgent: true });
     expect(human).toMatchObject({ name: 'lily-shen', mention: 'lily-shen', isAgent: false });
+    // No map, no identity it can vouch for: the fields are left out, not guessed.
+    expect(bot).not.toHaveProperty('agentName');
+    expect(bot).not.toHaveProperty('instanceId');
     warn.mockRestore();
   });
 

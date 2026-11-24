@@ -422,7 +422,9 @@ class PodContextService {
     } catch (error) {
       console.warn('Pod mention map unavailable:', (error as Error).message);
     }
-    let members: Array<{ userId?: string; name: string; mention: string; isAgent: boolean; self: boolean }> = [];
+    let members: Array<{
+      userId?: string; name: string; mention: string; agentName?: string; instanceId?: string; isAgent: boolean; self: boolean;
+    }> = [];
     if (memberIds.length) {
       const memberDocs = await User.find({ _id: { $in: memberIds } })
         .select('_id username displayName isBot botMetadata')
@@ -431,6 +433,17 @@ class PodContextService {
         .map((user) => [toObjectIdString(user._id), user]));
       members = memberIds.map((id) => {
         const user = usersById.get(id);
+        const mention = mentions.mentionHandleForUser(mentionMap, user || null);
+        // F589: an agent member's identity, the { agentName, instanceId }
+        // commonly_dm_agent targets, read from the same map entry its handle
+        // routes to. Agents only, and only when the map vouches for it: no
+        // map, no guess. A 'default' instance is left out; the agent-dm route
+        // assumes it.
+        const target = user?.isBot && mention ? mentionMap.get(mention.toLowerCase()) : undefined;
+        const identity = target ? {
+          agentName: target.agentName,
+          ...(target.instanceId && target.instanceId !== 'default' ? { instanceId: target.instanceId } : {}),
+        } : {};
         return {
           // The id commonly_request_decision's deciderUserIds takes (F362). A
           // deleted user has no one left to name, so theirs is left out.
@@ -439,7 +452,8 @@ class PodContextService {
             ? resolveAgentDisplayLabel(user, (user.username as string) || 'agent')
             : (user ? ((user.displayName as string) || (user.username as string) || 'member') : 'Deleted user'),
           // The @handle mention routing resolves, next to the display name.
-          mention: mentions.mentionHandleForUser(mentionMap, user || null),
+          mention,
+          ...identity,
           isAgent: !!user?.isBot,
           self: id === selfId,
         };
