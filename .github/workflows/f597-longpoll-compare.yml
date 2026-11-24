@@ -1,0 +1,67 @@
+name: F597 long-poll comparison
+
+# A one-off measurement, run from its own branch and never merged: idle BYO
+# agents polling the events verb, against main without #4272 ("before") and with
+# it ("after"), on the same free runner in one job. Nothing here touches a
+# serving VM or holds a real credential.
+on:
+  push:
+    branches: [loadtest/f597-longpoll]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: f597-longpoll-compare
+  cancel-in-progress: true
+
+env:
+  # main at the time of the run, and #4272's head. If #4272 has merged, these
+  # become its merge parent and its merge commit.
+  BEFORE_SHA: 1fad09f55e033bb0a7cdf6261cddd6bb82e4a5b1
+  PR_HEAD_SHA: 5dbe7760a2e15b6ce564d69a38316e1f64485702
+
+jobs:
+  compare:
+    name: before vs after, idle polling
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check out the two backends
+        run: |
+          git fetch -q origin "$BEFORE_SHA" "$PR_HEAD_SHA"
+          git worktree add -q --detach "$RUNNER_TEMP/before" "$BEFORE_SHA"
+          git worktree add -q --detach "$RUNNER_TEMP/after" "$BEFORE_SHA"
+          git -C "$RUNNER_TEMP/after" -c user.name=ci -c user.email=ci@invalid merge -q --no-edit "$PR_HEAD_SHA"
+          echo "before: $(git -C "$RUNNER_TEMP/before" rev-parse HEAD)"
+          echo "after:  $(git -C "$RUNNER_TEMP/after" rev-parse HEAD) (parents $(git -C "$RUNNER_TEMP/after" log -1 --format=%P))"
+          grep -c "waitMs" "$RUNNER_TEMP/after/backend/routes/agentsRuntime.ts"
+          ! grep -q "waitMs" "$RUNNER_TEMP/before/backend/routes/agentsRuntime.ts"
+          # lang-core's install script reports to PostHog unless this is set;
+          # these Dockerfiles predate the opt-out, so set it in every stage.
+          for leg in before after; do
+            sed -i '/^FROM /a ENV OPENUI_TELEMETRY_DISABLED=1' "$RUNNER_TEMP/$leg/backend/Dockerfile"
+            test "$(grep -c '^ENV OPENUI_TELEMETRY_DISABLED=1' "$RUNNER_TEMP/$leg/backend/Dockerfile")" = 2
+          done
+      - name: Build both backend images
+        run: |
+          docker build -q "$RUNNER_TEMP/before/backend" -t ci.local/commonly-backend:before
+          docker build -q "$RUNNER_TEMP/after/backend" -t ci.local/commonly-backend:after
+      - name: Run the comparison
+        env:
+          LEGS: before=ci.local/commonly-backend:before after=ci.local/commonly-backend:after
+          KEEP_LOGS: ${{ runner.temp }}/logs
+        run: |
+          mkdir -p "$KEEP_LOGS"
+          bash scripts/vm-two-workers/ci/longpoll.sh
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f597-longpoll-logs
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: ignore
+          retention-days: 7
