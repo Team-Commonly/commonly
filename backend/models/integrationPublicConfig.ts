@@ -9,8 +9,9 @@
  * any of them, and until #1673 the X and Instagram edit forms prefilled
  * accessToken from the pod list because it happened to be there.
  * `connectCode` is deliberately NOT here: it is the one-time enable code a
- * member pastes into Telegram, and ChatRoom and the Connectors page read it
- * from the pod list and the owner's list. Surfaces with no reader drop it
+ * member pastes into Telegram, and the Connectors page reads it from the
+ * owner's list. The pod list still returns it, though its one reader, the
+ * legacy ChatRoom, was retired. Surfaces with no reader drop it
  * through withoutConnectCode instead: the admin list, and a Slack row in the
  * catalog, where the code is the OAuth state. Ingest tokens are listed without
  * their hash by GET /api/integrations/:id/ingest-tokens.

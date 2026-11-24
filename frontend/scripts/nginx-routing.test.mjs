@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -81,9 +81,15 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
   for (const [, sources] of imagePolicies) {
     assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
   }
-  const chatRoom = await readFile(resolve(frontendDir, 'src/components/ChatRoom.tsx'), 'utf8');
-  assert.doesNotMatch(chatRoom, /logo:\s*['"]https?:\/\//);
-  assert.doesNotMatch(chatRoom, /src\s*=\s*['"]https?:\/\//);
+  // The policy admits no remote image host, so no source may hard-code one.
+  const sources = (await readdir(resolve(frontendDir, 'src'), { recursive: true }))
+    .filter((file) => /\.(jsx?|tsx?)$/.test(file) && !/(__tests__|\.test\.)/.test(file));
+  assert.ok(sources.length > 100);
+  for (const file of sources) {
+    const source = await readFile(resolve(frontendDir, 'src', file), 'utf8');
+    assert.doesNotMatch(source, /logo:\s*['"]https?:\/\//, file);
+    assert.doesNotMatch(source, /src\s*=\s*['"]https?:\/\//, file);
+  }
 });
 
 test('unhashed signup capture script revalidates instead of inheriting six-month immutable caching', async () => {
