@@ -28,7 +28,7 @@ jest.mock('../../../services/turnSandboxService', () => ({
   TurnSandbox: jest.fn().mockImplementation(() => ({ run: mockRun, close: mockClose })),
 }));
 
-// D343 spike: the OpenShell flag, off unless a test turns it on.
+// OpenShell spike: the OpenShell flag, off unless a test turns it on.
 let mockOpenShellEnabled = false;
 const mockOpenShellRun = jest.fn();
 const mockOpenShellClose = jest.fn();

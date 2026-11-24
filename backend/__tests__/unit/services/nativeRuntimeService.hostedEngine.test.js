@@ -251,7 +251,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(prompt).toMatch(/for example, running code, searching the web or opening an attached file\)/);
     });
 
-    // D343 spike: the OpenShell flag offers code runs without an E2B key, and the prompt says so.
+    // OpenShell spike: the OpenShell flag offers code runs without an E2B key, and the prompt says so.
     test('the OpenShell flag offers code runs and the prompt names them', async () => {
       const saved = [process.env.OPENSHELL_SANDBOX_ENABLED, process.env.OPENSHELL_SANDBOX_IMAGE];
       process.env.OPENSHELL_SANDBOX_ENABLED = 'true';

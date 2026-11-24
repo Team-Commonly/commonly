@@ -1,5 +1,5 @@
 /**
- * D343 spike: OpenShell as the run-code sandbox, behind OPENSHELL_SANDBOX_ENABLED.
+ * OpenShell spike: the run-code sandbox, behind OPENSHELL_SANDBOX_ENABLED.
  * Same contract as the E2B TurnSandbox: one sandbox per turn, no egress, no
  * environment, deleted when the turn ends. The CLI is injected, so these tests
  * check the calls the driver makes; docs/plans/openshell-spike.md has the live run.

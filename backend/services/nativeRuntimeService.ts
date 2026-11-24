@@ -1732,7 +1732,7 @@ export async function dispatchTool(
       }
 
       case 'commonly_run_code': {
-        // D343 spike: the OpenShell flag, when set, takes the turn instead of E2B.
+        // OpenShell spike: the OpenShell flag, when set, takes the turn instead of E2B.
         const openShell = isOpenShellSandboxEnabled();
         if (!openShell && !isSandboxConfigured()) {
           return { content: null, error: 'Running code is not available on this instance.' };

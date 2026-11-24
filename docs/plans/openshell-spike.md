@@ -1,7 +1,7 @@
 # OpenShell spike: a sandbox boundary for hosted agents that run code
 
 **Status:** spike done, driver behind a flag (off by default). Not deployed anywhere.
-**Owner:** Stack. **Asked for by:** D343 (next tech stack), first PR on the CTO's list.
+**Asked for by:** the next-tech-stack review, as its first spike.
 **Pins:** OpenShell v0.1.9 (released 2026-11-17, Apache-2.0). Refs are to `origin/main` at `f471811d4`.
 
 ## The question

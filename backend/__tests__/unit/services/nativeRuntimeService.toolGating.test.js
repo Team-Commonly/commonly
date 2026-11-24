@@ -204,7 +204,7 @@ describe('toolsForConfig', () => {
     }
   });
 
-  // D343 spike: the OpenShell flag (with an image) offers run_code without an E2B key.
+  // OpenShell spike: the OpenShell flag (with an image) offers run_code without an E2B key.
   test('run_code is offered on the OpenShell flag too, and only with an image', () => {
     const saved = ['E2B_API_KEY', 'OPENSHELL_SANDBOX_ENABLED', 'OPENSHELL_SANDBOX_IMAGE']
       .map((key) => [key, process.env[key]]);

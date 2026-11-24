@@ -1,5 +1,5 @@
 /**
- * OpenShell as the run-code sandbox for native turns: a spike behind a flag (D343).
+ * OpenShell as the run-code sandbox for native turns: a spike behind a flag.
  *
  * This is the ADR-008 driver for `sandbox.mode: container` on the hosted path.
  * It runs a turn's `commonly_run_code` in an OpenShell sandbox (Docker driver,
