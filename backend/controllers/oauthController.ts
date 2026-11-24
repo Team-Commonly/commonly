@@ -13,7 +13,7 @@ const {
 } = require('./authController');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeScoutLocale } = require('../config/native-agents/scout');
-const { isFreeUsername } = require('../services/derivedUsername');
+const { deriveUsernameFromHandleOrEmail } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
 
@@ -155,7 +155,9 @@ const PROVIDERS: Record<string, {
         providerId: String(infoRes.data?.sub || ''),
         email,
         emailVerified: infoRes.data?.email_verified === true || infoRes.data?.email_verified === 'true',
-        usernameHint: String(infoRes.data?.name || email.split('@')[0] || ''),
+        // Google has no handle, only a display name, so the username comes from
+        // the email the way register derives it (F595).
+        usernameHint: '',
       };
     },
   },
@@ -204,26 +206,6 @@ const loginErrorRedirect = (res: any, code: string, next?: string) => {
   const dest = next ? safeNextPath(next) : '/v2';
   if (dest !== '/v2') params.set('next', dest);
   return res.redirect(`${frontendUrl()}/v2/login?${params.toString()}`);
-};
-
-// Derive a unique username from the provider handle. Existing usernames have
-// no charset constraint server-side, but keep these URL/mention-friendly.
-const generateUsername = async (hint: string, email: string) => {
-  const base = (hint || email.split('@')[0] || 'user')
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
-    .slice(0, 30) || 'user';
-  // A derived agent name is not free either (TASK-133 b): it has no User row to
-  // collide with, so `User.exists` answers no while the install would derive the
-  // same name and adopt whatever row holds it.
-  if (await isFreeUsername(base)) return base;
-  for (let i = 0; i < 5; i += 1) {
-    const candidate = `${base}-${crypto.randomBytes(2).toString('hex')}`;
-    // eslint-disable-next-line no-await-in-loop
-    if (await isFreeUsername(candidate)) return candidate;
-  }
-  return `${base}-${crypto.randomBytes(6).toString('hex')}`;
 };
 
 const issueSession = (user: any) => {
@@ -400,7 +382,9 @@ exports.oauthCallback = async (req: any, res: any) => {
       }
 
       user = new User({
-        username: await generateUsername(profile.usernameHint, profile.email),
+        // The register/rename pattern (F595): the provider handle (a GitHub login)
+        // or the email, through register's derivation. Only a new account is named.
+        username: await deriveUsernameFromHandleOrEmail(profile.usernameHint, profile.email),
         email: profile.email,
         verified: true, // provider-asserted
         entitlements: { cloudAgents: invitationRedeemed },

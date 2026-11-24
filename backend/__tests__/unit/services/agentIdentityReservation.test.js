@@ -8,7 +8,7 @@
 //
 // The predictors here are the ones both registration paths call:
 // `controllers/authController.register` (password) and
-// `controllers/oauthController.generateUsername` (provider).
+// `controllers/oauthController` through `services/derivedUsername` (provider).
 
 const AgentIdentityService = require('../../../services/agentIdentityService');
 const { AgentRegistry } = require('../../../models/AgentRegistry');
