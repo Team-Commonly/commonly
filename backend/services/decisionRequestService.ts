@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { DecisionCardOption, DecisionRelayCard } from './decisionCardRelay';
+import { escapeRegExp } from '../utils/escape';
 
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
@@ -186,7 +187,16 @@ const formatDecisionMessage = (
     const description = option.description ? ` — ${option.description}` : '';
     return `- ${option.label}${recommendation}${description}`;
   }).join('\n');
-  const forLine = deciders?.length ? `For ${deciders.map((decider) => `@${decider.username}`).join(', ')}` : '';
+  // F593: the decision-fork cue tells an agent to include the person's real
+  // @handle, so a question often already names its decider. Leave those out
+  // of the For line rather than print the handle twice.
+  const named = (username: string): boolean => new RegExp(
+    // A trailing period counts as the end of a sentence unless a word follows it
+    // (so 'sam@lily.com' and '@lily-bot' still don't name lily).
+    `(^|[^\\w@.-])@${escapeRegExp(username)}(?![\\w-]|\\.\\w)`, 'i',
+  ).test(question);
+  const unnamed = (deciders || []).filter((decider) => !named(decider.username));
+  const forLine = unnamed.length ? `For ${unnamed.map((decider) => `@${decider.username}`).join(', ')}` : '';
   return [title, forLine, question, context, `Options:\n${optionsText}`].filter(Boolean).join('\n\n');
 };
 

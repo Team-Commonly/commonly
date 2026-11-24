@@ -377,6 +377,38 @@ describe('DecisionRequestService', () => {
       expect(result.deciders).toHaveLength(2);
     });
 
+    // F593: the decision-fork cue tells an agent to include the person's real
+    // @handle, so the question often opens with it. The For line then repeated
+    // it ("For @b @b Should …" in a staging walk). A decider the question
+    // already names is left out of the For line; one it doesn't name stays.
+    test('the For line leaves out a decider the question already @mentions', async () => {
+      await requestDecision({ ...source(), question: '@Lily should the report use a table?', deciderUserIds: [LILY, SAM] });
+      const content = mockPostMessage.mock.calls[0][0].content;
+      expect(content).toContain('For @sam');
+      expect(content).not.toContain('@lily, ');
+      expect(content.match(/@lily/gi)).toHaveLength(1);
+    });
+
+    test('the For line goes away when the question names every decider', async () => {
+      await requestDecision({ ...source(), question: '@lily which one?', deciderUserIds: [LILY] });
+      const content = mockPostMessage.mock.calls[0][0].content;
+      expect(content).not.toContain('For ');
+      expect(content.match(/@lily/g)).toHaveLength(1);
+    });
+
+    test('a mention that ends a sentence still counts, and an email address does not', async () => {
+      await requestDecision({ ...source(), question: 'Which layout, ask @lily.', deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content.match(/@lily/g)).toHaveLength(1);
+      mockPostMessage.mockClear();
+      await requestDecision({ ...source(), question: 'Mail me at sam@lily.com about it', deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content).toContain('For @lily');
+    });
+
+    test('a longer handle that starts with a decider\'s name does not count as naming them', async () => {
+      await requestDecision({ ...source(), question: '@lily-bot which one?', deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content).toContain('For @lily');
+    });
+
     test.each([
       ['an agent', [BOT]],
       ['someone outside the pod', [OUTSIDER]],
