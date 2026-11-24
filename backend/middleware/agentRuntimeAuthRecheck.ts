@@ -51,9 +51,12 @@ export async function recheckHeldRuntimeAuth(req: Request, res: Response): Promi
     && Boolean(agentUser?.agentRuntimeTokens?.some((t) => t.tokenHash === tokenHash));
 
   const [credential, holder, tokenRow, installations, mayRun] = await Promise.all([
-    req.agentCredential ? AgentCredential.findOne({ tokenHash }).lean() : Promise.resolve(null),
+    // Every recheck: a legacy token can gain a ledger row mid-hold
+    // (resolveSeatCredential), and a revoke of that row must count.
+    AgentCredential.findOne({ tokenHash }).lean(),
     embedded
-      ? User.findOne({ _id: agentUser?._id, 'agentRuntimeTokens.tokenHash': tokenHash })
+      // isBot as in the middleware's fresh-request lookup.
+      ? User.findOne({ _id: agentUser?._id, 'agentRuntimeTokens.tokenHash': tokenHash, isBot: true })
         .select({ 'agentRuntimeTokens.$': 1 }).lean()
       : Promise.resolve(null),
     byInstallation

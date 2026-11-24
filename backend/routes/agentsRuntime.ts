@@ -1037,11 +1037,27 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
           }
           return undefined;
         }
-        // Answered below. A client leaving from here on leaves nothing to
-        // restore, so `close` may release too (an unfinished answer never
-        // emits `finish`).
-        res.once('finish', untrack);
-        res.once('close', untrack);
+        // Answered below. Until the answer finishes, a socket that closes
+        // puts back what this hold claimed, then releases; a finished answer
+        // only releases. Delivery stays at-least-once: a client that read the
+        // bytes before the close can see these rows again.
+        const answered = events;
+        const onAnswerFinish = () => {
+          res.off('close', onAnswerClose);
+          untrack();
+        };
+        const onAnswerClose = () => {
+          res.off('finish', onAnswerFinish);
+          if (res.writableFinished || answered.length === 0) {
+            untrack();
+            return;
+          }
+          AgentEventService.unclaimUnsent(answered)
+            .catch(() => 0)
+            .finally(untrack);
+        };
+        res.once('finish', onAnswerFinish);
+        res.once('close', onAnswerClose);
       }
     }
 

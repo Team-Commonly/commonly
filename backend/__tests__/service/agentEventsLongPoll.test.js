@@ -104,6 +104,19 @@ beforeAll(async () => {
   await setupMongoDb();
   app = express();
   app.use(express.json());
+  // Test hook: a request with this header loses its socket at the moment the
+  // route calls res.json, so the answer never finishes (`close` without
+  // `finish`), the window between the answer and its delivery.
+  app.use((req, res, next) => {
+    if (req.headers['x-test-drop-answer']) {
+      const json = res.json.bind(res);
+      res.json = (body) => {
+        req.socket.destroy();
+        return json(body);
+      };
+    }
+    next();
+  });
   app.use('/api/registry', require('../../routes/registry'));
   app.use('/api/agents/runtime', require('../../routes/agentsRuntime'));
   server = http.createServer(app);
@@ -485,6 +498,62 @@ describe('after a wake the hold claims from the scope a fresh request would have
     } finally {
       spy.mockRestore();
     }
+  });
+
+  test('an embedded token whose holder stops being a bot mid-hold is refused, with nothing claimed', async () => {
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': 'alice' });
+    expect(bot.agentRuntimeTokens.some((t) => t.tokenHash === hash(seatToken))).toBe(true);
+    const pending = timed(poll('?waitMs=8000'));
+    await untilHeld();
+    await User.updateOne({ _id: bot._id }, { $set: { isBot: false } });
+    try {
+      const event = await enqueue('after the holder stopped being a bot');
+      const { res } = await pending;
+      expect(res.status).toBe(401);
+      expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+    } finally {
+      await User.updateOne({ _id: bot._id }, { $set: { isBot: true } });
+    }
+  });
+
+  test('a ledger row that appears mid-hold and is revoked refuses the poll', async () => {
+    // eslint-disable-next-line global-require
+    const AgentCredential = require('../../models/AgentCredential');
+    // eslint-disable-next-line global-require
+    const { resolveSeatCredential } = require('../../services/spawnCredentialService');
+    await AgentCredential.deleteMany({ tokenHash: hash(seatToken) });
+    const pending = timed(poll('?waitMs=8000'));
+    await untilHeld();
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': 'alice' });
+    await resolveSeatCredential({ tokenHash: hash(seatToken), agentUserId: bot._id });
+    await AgentCredential.updateOne({ tokenHash: hash(seatToken) }, { $set: { status: 'revoked' } });
+    const event = await enqueue('after the ledger row was revoked');
+    const { res } = await pending;
+    expect(res.status).toBe(401);
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+    expect((await poll('')).status).toBe(401);
+  });
+
+  test('an answer whose socket closes before it finishes puts its rows back', async () => {
+    const clientReq = http.get(`${baseUrl}/api/agents/runtime/events?waitMs=8000`, {
+      headers: { Authorization: `Bearer ${seatToken}`, 'x-test-drop-answer': '1' },
+    });
+    clientReq.on('error', () => {});
+    await untilHeld();
+    const event = await enqueue('answered into a closed socket');
+    for (let i = 0; i < 200 && waiters.heldPollCount() > 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(10);
+    }
+    let row;
+    for (let i = 0; i < 40; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      row = await AgentEvent.findById(event._id).lean();
+      if (row.status === 'pending') break;
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(50);
+    }
+    expect(row).toMatchObject({ status: 'pending', attempts: 0 });
   });
 
   test('a spawn token whose bot User is gone mid-hold is refused; a valid one keeps working', async () => {
