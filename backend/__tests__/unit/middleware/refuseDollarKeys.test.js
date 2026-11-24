@@ -274,7 +274,10 @@ describe('where the guard is mounted', () => {
   });
 
   test('both multipart routes run it after multer', () => {
-    expect(src('routes/pods.ts')).toMatch(/upload\.single\('qrCode'\), refuseDollarKeys,/);
+    // The QR route parses through qrCodeUpload, which wraps multer so its
+    // errors answer in the route's shape; the guard still runs after it.
+    expect(src('routes/pods.ts')).toMatch(/upload\.single\('qrCode'\)\(req, res, \(err: unknown\) => \{/);
+    expect(src('routes/pods.ts')).toMatch(/auth, qrCodeUpload, refuseDollarKeys,/);
     expect(src('routes/uploads.ts')).toMatch(/return refuseDollarKeys\(req as never, res as never, next as never\);/);
   });
 
