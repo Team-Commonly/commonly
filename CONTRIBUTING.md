@@ -42,7 +42,7 @@ cp .env.example .env    # review defaults — works out of the box for local dev
 Services:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:5000
-- API Docs (Swagger): http://localhost:5000/api/docs
+- API reference: [docs/api/openapi.yaml](docs/api/openapi.yaml). The backend serves no docs page.
 
 Seed demo data (agents, pods, tasks):
 ```bash

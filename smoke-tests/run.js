@@ -93,7 +93,9 @@ async function main() {
   const tag = Date.now();
   const email = `smoketest_${tag}@commonly.test`;
   const password = 'SmokeTest1234!';
-  const username = `smokeuser_${tag}`;
+  // Usernames are 2-40 lowercase letters, digits or hyphens, starting with a
+  // letter or digit (the same rule as rename); an underscore is refused.
+  const username = `smokeuser-${tag}`;
 
   await run('POST /api/auth/register → 2xx (user created or already exists)', async () => {
     const res = await fetch(`${API_URL}/api/auth/register`, {
@@ -101,8 +103,15 @@ async function main() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email, password, invitationCode: '' }),
     });
-    assert(res.status < 500, `Registration server error: ${res.status}`);
-    // 200/201 = created, 400 = validation, 409 = duplicate — all non-5xx are acceptable
+    // Created, or the account is already there from an earlier run. Any other
+    // 4xx (a refused username, a missing field) fails here, not one step later
+    // as a confusing login 400.
+    if (res.ok) return;
+    const body = await res.json().catch(() => ({}));
+    assert(
+      [400, 409].includes(res.status) && /already exists/i.test(String(body.error || body.message || '')),
+      `Expected 2xx or "already exists", got ${res.status} ${JSON.stringify(body)}`,
+    );
   });
 
   // 5. Login and receive token
