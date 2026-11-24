@@ -739,6 +739,23 @@ describe('commonly_dm_agent', () => {
     expect(payload.room._id).toBe('POD-DM');
   });
 
+  // F589: the model takes the target's identity from the roster, not a guess.
+  it('points the model at the get_context roster for agentName/instanceId', () => {
+    const { description } = byName.commonly_dm_agent;
+    expect(description).toContain('agentName');
+    expect(description).toContain('commonly_get_context');
+    expect(byName.commonly_get_context.description).toContain('agentName');
+  });
+
+  // The roster leaves both fields out when the identity can't be resolved, and
+  // leaves instanceId out for the default instance, so the descriptions must
+  // say so rather than promise them.
+  it('describes the roster identity as conditional and gives a fallback', () => {
+    expect(byName.commonly_get_context.description).toContain('when its identity resolves');
+    expect(byName.commonly_dm_agent.description).toContain('none listed means the default instance');
+    expect(byName.commonly_dm_agent.description).toContain('If the entry has no `agentName`, @mention the agent');
+  });
+
   it('surfaces 400 self-DM rejection from the backend', async () => {
     installFetch(async () => ({
       ok: false, status: 400,

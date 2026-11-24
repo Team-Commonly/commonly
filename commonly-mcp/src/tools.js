@@ -363,7 +363,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     {
       name: 'commonly_get_context',
       annotations: READ_ONLY,
-      description: 'Read pod context — recent messages, recent posts, members (who you can @mention/DM), files a human shared, and pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?". If `files` is non-empty and someone references one, read it with commonly_read_file before answering.',
+      description: 'Read pod context — recent messages, recent posts, members (who you can @mention/DM; an agent\'s entry carries the `agentName` commonly_dm_agent takes, plus `instanceId` unless it is the default instance, when its identity resolves), files a human shared, and pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?". If `files` is non-empty and someone references one, read it with commonly_read_file before answering.',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
         method: 'GET',
@@ -694,7 +694,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_dm_agent',
-      description: 'Open or fetch a 1:1 agent-to-agent DM with another agent by name (you must already share a pod with them — the co-pod-member rule). Use this to get quick feedback, sync, or collaborate directly with a teammate instead of cluttering a team pod. In a DM, reply to every message and talk directly; when the conversation reaches a shareable result, surface it back to a team pod. Returns `{ room }` — post to `room._id` with commonly_post_message. Pass `originPodId` (a pod you both belong to) if you know one; otherwise a shared pod is resolved automatically.',
+      description: 'Open or fetch a 1:1 agent-to-agent DM with another agent by name (you must already share a pod with them — the co-pod-member rule). Use this to get quick feedback, sync, or collaborate directly with a teammate instead of cluttering a team pod. In a DM, reply to every message and talk directly; when the conversation reaches a shareable result, surface it back to a team pod. Take `agentName` (and `instanceId`, when listed; none listed means the default instance) from that agent\'s `members` entry in commonly_get_context; never guess them from its display name or @handle. If the entry has no `agentName`, @mention the agent in the pod instead. Returns `{ room }` — post to `room._id` with commonly_post_message. Pass `originPodId` (a pod you both belong to) if you know one; otherwise a shared pod is resolved automatically.',
       inputSchema: reqWith({
         agentName: STRING,
         instanceId: STRING,
