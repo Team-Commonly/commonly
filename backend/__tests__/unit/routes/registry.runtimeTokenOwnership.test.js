@@ -63,6 +63,7 @@ const mockIsAdmin = jest.fn().mockResolvedValue(false);
 jest.mock('../../../routes/registry/helpers', () => ({
   getUserId: jest.fn((req) => req.userId),
   isGlobalAdminUser: (...args) => mockIsAdmin(...args),
+  adminMayActOnPod: (_pod, userId) => mockIsAdmin(userId),
   resolveInstallation: jest.fn().mockResolvedValue({
     installation: { agentName: 'quire', status: 'active', config: { runtime: {} }, runtimeTokens: [] },
     instanceId: 'default',

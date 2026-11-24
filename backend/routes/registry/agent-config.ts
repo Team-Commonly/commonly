@@ -8,6 +8,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
   getUserId,
+  adminRoleReachesPod,
   isGlobalAdminUser,
   normalizeInstanceId,
   normalizeConfigMap,
@@ -119,7 +120,9 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return memberId && memberId === userId.toString();
     });
 
-    const isInstanceAdmin = req.user?.role === 'admin' || await isGlobalAdminUser(userId);
+    // On an agent-room or agent-admin pod the role counts only for a member.
+    const isInstanceAdmin = (req.user?.role === 'admin' || await isGlobalAdminUser(userId))
+      && adminRoleReachesPod(pod, userId);
     if (!membership && !isCreator && !isInstanceAdmin) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -339,7 +342,9 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       peerPods.filter((entry: any) => AgentIdentityService.DM_POD_TYPES_GUARD?.has(String(entry.type)))
         .forEach((entry: any) => dmPeerPodIds.add(entry._id.toString()));
       accessiblePodIds = peerPods
-        .filter((entry: any) => isInstanceAdmin || userHasPodAccess(entry, userId))
+        // The fan-out reaches an agent-room or agent-admin peer only for a member.
+        .filter((entry: any) => (isInstanceAdmin && adminRoleReachesPod(entry, userId))
+          || userHasPodAccess(entry, userId))
         .map((entry: any) => entry._id.toString());
       if (!accessiblePodIds.includes(podId.toString())) {
         accessiblePodIds.push(podId.toString());

@@ -21,6 +21,7 @@ const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const { limitConcurrency } = require('../../utils/concurrencyLimit');
 const {
   getUserId,
+  adminMayActOnPod,
   isGlobalAdminUser,
   normalizeInstanceId,
   normalizeConfigMap,
@@ -58,12 +59,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const isGlobalAdmin = await isGlobalAdminUser(userId);
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
       return res.status(404).json({ error: 'Pod not found' });
     }
+    const isGlobalAdmin = await adminMayActOnPod(pod, userId);
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m: any) => {
@@ -569,7 +570,7 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
     });
-    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
+    if (!membership && !isCreator && !(await adminMayActOnPod(pod, userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (!installation || installation.status === 'uninstalled') {
