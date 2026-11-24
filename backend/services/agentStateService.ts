@@ -221,8 +221,12 @@ function webhookReach(installation: InstallationRow): {
   return { state: 'unknown', lastUsedAt: null };
 }
 
+const LISTEN_BLOCKED_CODES: ReadonlySet<string> = new Set([
+  'harness-signed-out', 'node-too-old', 'sandbox-unavailable', 'unsandboxed-refused',
+]);
+
 export interface ListenReason {
-  reason: 'harness-missing' | 'harness-signed-out' | 'node-too-old';
+  reason: 'harness-missing' | 'harness-signed-out' | 'node-too-old' | 'sandbox-unavailable' | 'unsandboxed-refused';
   harness: string | null;
 }
 
@@ -246,7 +250,7 @@ export function listenReasonFor(botMetadata: any): ListenReason | null {
   }
   const blocked = botMetadata?.listenBlocked;
   const blockedAt = at(blocked?.at);
-  if (blockedAt !== null && (blocked.reason === 'harness-signed-out' || blocked.reason === 'node-too-old')) {
+  if (blockedAt !== null && LISTEN_BLOCKED_CODES.has(blocked.reason)) {
     reports.push({ at: blockedAt, reason: { reason: blocked.reason, harness: harnessOf(blocked.harness) } });
   }
   if (!reports.length) return null;

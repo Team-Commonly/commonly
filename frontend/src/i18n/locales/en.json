@@ -884,7 +884,9 @@
       "signedOut": "{{tool}} isn't signed in on its computer",
       "missing": "{{tool}} isn't installed on its computer",
       "missingAny": "its computer has no Claude Code, Codex or pi",
-      "nodeTooOld": "its computer's Node is too old to run it"
+      "nodeTooOld": "its computer's Node is too old to run it",
+      "sandboxUnavailable": "its computer can't start the sandbox it runs in",
+      "unsandboxedRefused": "--unsandboxed doesn't apply on its computer"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
@@ -2248,6 +2250,12 @@
       "nodeTooOld": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the last line again, and this page will confirm it.",
       "harnessSignedOutOneLine": "{{name}}’s command stopped: {{tool}} is installed on that computer but not signed in. Run {{command}} there once to sign in, then run the line again, and this page will confirm it.",
       "nodeTooOldOneLine": "{{name}}’s command stopped: that computer’s Node is older than version 22. Install Node 22 or later from nodejs.org, then run the line again, and this page will confirm it.",
+      "sandboxUnavailable": "{{name}}’s command stopped: that computer can’t start the sandbox Commonly runs it in. The terminal where you ran it says what to install or change. Do that, then run the last line again, and this page will confirm it.",
+      "sandboxUnavailableOneLine": "{{name}}’s command stopped: that computer can’t start the sandbox Commonly runs it in. The terminal where you ran it says what to install or change. Do that, then run the line again, and this page will confirm it.",
+      "unsandboxedRefused": "{{name}}’s command stopped: --unsandboxed is only for native Windows and for a private Codex agent on Linux. Run the last line again without --unsandboxed, and this page will confirm it.",
+      "unsandboxedRefusedOneLine": "{{name}}’s command stopped: --unsandboxed is only for native Windows and for a private Codex agent on Linux. Run the line again without --unsandboxed, and this page will confirm it.",
+      "tokenRefused": "{{name}}’s command stopped: Commonly didn’t accept its key. Copy all the lines above again and run them. If it stops the same way, the key has been replaced: press “Get my connect command” again for a new one.",
+      "tokenRefusedOneLine": "{{name}}’s command stopped: Commonly didn’t accept its key. Copy the whole line above again and run it. If it stops the same way, the key has been replaced: press “Get my connect command” again for a new one.",
       "windowsPaste": "If Windows Terminal asks before it pastes several lines, choose Paste anyway. Cancel runs none of them.",
       "windowsPasteOneLine": "If Windows Terminal asks before it pastes, choose Paste anyway. Cancel runs nothing.",
       "lineExpired": "This line ran out before {{name}} connected.",

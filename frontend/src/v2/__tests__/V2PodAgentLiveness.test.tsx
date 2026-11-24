@@ -95,6 +95,9 @@ describe('group pod agent liveness', () => {
     [{ reason: 'harness-missing', harness: 'codex' }, "Sam Agent isn't connected yet: Codex isn't installed on its computer."],
     [{ reason: 'harness-missing', harness: null }, "Sam Agent isn't connected yet: its computer has no Claude Code, Codex or pi."],
     [{ reason: 'node-too-old', harness: null }, "Sam Agent isn't connected yet: its computer's Node is too old to run it."],
+    // F571: the two sandbox stops.
+    [{ reason: 'sandbox-unavailable', harness: null }, "Sam Agent isn't connected yet: its computer can't start the sandbox it runs in."],
+    [{ reason: 'unsandboxed-refused', harness: null }, "Sam Agent isn't connected yet: --unsandboxed doesn't apply on its computer."],
   ])('says why it is not connected: %j', async (listenReason, line) => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: false, listenReason,

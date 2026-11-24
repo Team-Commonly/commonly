@@ -610,14 +610,18 @@ router.post('/harness-missing', phase4RateLimit, agentRuntimeAuth, async (req: a
 // here first, by reason code only: free text from a computer could carry a path
 // or a secret. GET /api/users/me/agent-connection and the pod's agent states
 // show it to the owner until the agent listens again.
-const LISTEN_BLOCKED_REASONS = new Set(['node-too-old', 'harness-signed-out']);
+// F571 adds the two sandbox stops a run makes after reading its record: this
+// computer can't start the sandbox, or --unsandboxed doesn't apply here.
+const LISTEN_BLOCKED_REASONS = new Set([
+  'node-too-old', 'harness-signed-out', 'sandbox-unavailable', 'unsandboxed-refused',
+]);
 router.post('/listen-blocked', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   const body = req.body || {};
   const keys = Object.keys(body).sort();
   const harness = typeof body.harness === 'string' ? harnessCatalogEntry(body.harness) : null;
   const valid = keys.length === 2 && keys[0] === 'harness' && keys[1] === 'reason'
     && LISTEN_BLOCKED_REASONS.has(body.reason)
-    // A sign-in names the harness it is about; Node names none.
+    // A sign-in names the harness it is about; Node and the sandbox name none.
     && (body.reason === 'harness-signed-out' ? Boolean(harness) : body.harness === null);
   if (!valid) return res.status(400).json({ code: 'invalid_listen_blocked_report' });
   // A legacy installation token whose bot User the middleware couldn't find has

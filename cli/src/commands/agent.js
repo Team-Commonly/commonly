@@ -41,7 +41,7 @@ import { formatDigestFrame, formatUnreadMessagesFrame } from '../lib/digest-fram
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
 import {
-  harnessFindings, nodeFinding, preflightOutcome, reportListenBlocked,
+  harnessFindings, nodeFinding, preflightOutcome, reportListenBlocked, SANDBOX_STOPS,
 } from '../lib/run-preflight.js';
 import {
   getSession,
@@ -296,6 +296,9 @@ export const deleteAgentToken = (name) => {
 // just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 export const NO_AGENT_CLI_CODE = 'no_agent_cli';
+// F571: the instance answered 401 to the first-run key, so the run can't sign
+// in to say why it stopped, and reports without a key instead.
+export const TOKEN_REFUSED_CODE = 'token_refused';
 
 /**
  * What `agent run` says when no token is set. On Windows the page's lines are
@@ -596,10 +599,14 @@ export const bootstrapAgentRecordFromEnv = async ({
     client = clientFactory({ instance: instanceUrl, token: runtimeToken });
     identity = await client.get('/api/agents/runtime/installations');
   } catch (err) {
-    throw new Error(
+    const resolveErr = new Error(
       `Could not resolve the agent behind COMMONLY_AGENT_TOKEN against ${instanceUrl}: ${err.message}. `
       + 'Check the token was copied whole and the URL matches the instance that issued it.',
     );
+    // 401 alone, as adoptEnvToken reads it: a 403 comes from something in
+    // front of the app, and a network failure means nothing reached it.
+    if (err?.status === 401) resolveErr.code = TOKEN_REFUSED_CODE;
+    throw resolveErr;
   }
 
   const installs = Array.isArray(identity?.installations) ? identity.installations : [];
@@ -6020,6 +6027,12 @@ Docs:
           if (err.code === NO_AGENT_CLI_CODE && process.platform === 'win32') {
             console.error(windowsSandboxMessage('claude'));
           }
+          // F571: a refused key can't sign the listen-blocked report, so this
+          // one goes keyless, by name and code only. An unreachable instance
+          // hears nothing either way, so nothing is sent for it.
+          if (err.code === TOKEN_REFUSED_CODE) {
+            await reportRunStopped({ agentName: agentArg, reason: 'token-refused' });
+          }
           process.exit(1);
         }
         if (!record) {
@@ -6068,6 +6081,15 @@ Docs:
         const flagRefusal = unsandboxedFlagRefusal(process.platform, { adapterName: record.adapter });
         if (flagRefusal) {
           console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          // F571: the record's token still works here, so the page hears why.
+          // Only a first run: the page waits on nothing else, and a saved seat's
+          // respawn must not wait on a black-holed instance.
+          if (bootstrapped) {
+            await reportListenBlocked(
+              createClient({ instance: record.instanceUrl, token: record.runtimeToken }),
+              SANDBOX_STOPS.flagRefused,
+            );
+          }
           process.exit(1);
         }
       }
@@ -6126,6 +6148,14 @@ Docs:
       });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
+        // F571: by code only; the refusal text can name a path on this computer.
+        // First run only, as above.
+        if (bootstrapped) {
+          await reportListenBlocked(
+            createClient({ instance: record.instanceUrl, token: record.runtimeToken }),
+            SANDBOX_STOPS.hostRefused,
+          );
+        }
         process.exit(1);
       }
       // F444: on Linux a private Codex seat has a sandbox, so a flag its pods

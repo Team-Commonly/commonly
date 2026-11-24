@@ -880,7 +880,9 @@
       "signedOut": "它那台电脑上的 {{tool}} 还没登录",
       "missing": "它那台电脑上没装 {{tool}}",
       "missingAny": "它那台电脑上没装 Claude Code、Codex 或 pi",
-      "nodeTooOld": "它那台电脑上的 Node 版本太旧，没法运行"
+      "nodeTooOld": "它那台电脑上的 Node 版本太旧，没法运行",
+      "sandboxUnavailable": "它那台电脑启动不了它要用的沙箱",
+      "unsandboxedRefused": "--unsandboxed 在它那台电脑上用不了"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
@@ -2307,6 +2309,12 @@
       "nodeTooOld": "{{name}} 的命令停了：那台电脑上的 Node 低于22版。到 nodejs.org 装 Node 22或更高版本，再运行一遍最后一行，这里会自动确认。",
       "harnessSignedOutOneLine": "{{name}} 的命令停了：那台电脑装了 {{tool}}，但还没登录。先在那台电脑上运行一次 {{command}} 登录，再运行一遍这一行，这里会自动确认。",
       "nodeTooOldOneLine": "{{name}} 的命令停了：那台电脑上的 Node 低于22版。到 nodejs.org 装 Node 22或更高版本，再运行一遍这一行，这里会自动确认。",
+      "sandboxUnavailable": "{{name}} 的命令停了：那台电脑启动不了 Commonly 给它用的沙箱。运行命令的终端里写了要装什么或改什么，照着做完，再运行一遍最后一行，这里会自动确认。",
+      "sandboxUnavailableOneLine": "{{name}} 的命令停了：那台电脑启动不了 Commonly 给它用的沙箱。运行命令的终端里写了要装什么或改什么，照着做完，再运行一遍这一行，这里会自动确认。",
+      "unsandboxedRefused": "{{name}} 的命令停了：--unsandboxed 只能用在原生 Windows 上，或者 Linux 上的私有 Codex 智能体。去掉 --unsandboxed，再运行一遍最后一行，这里会自动确认。",
+      "unsandboxedRefusedOneLine": "{{name}} 的命令停了：--unsandboxed 只能用在原生 Windows 上，或者 Linux 上的私有 Codex 智能体。去掉 --unsandboxed，再运行一遍这一行，这里会自动确认。",
+      "tokenRefused": "{{name}} 的命令停了：Commonly 没认它的密钥。把上面几行完整地重新复制一遍再运行。如果还是这样停下，说明密钥已经换过了，再点一次“获取接入命令”拿个新的。",
+      "tokenRefusedOneLine": "{{name}} 的命令停了：Commonly 没认它的密钥。把上面这一行完整地重新复制一遍再运行。如果还是这样停下，说明密钥已经换过了，再点一次“获取接入命令”拿个新的。",
       "windowsPaste": "如果 Windows 终端在粘贴多行文本前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则一行都不会运行。",
       "windowsPasteOneLine": "如果 Windows 终端在粘贴前询问，请选择「仍然粘贴」（Paste anyway）。选「取消」则什么都不会运行。",
       "lineExpired": "{{name}} 还没接入，这一行就已经失效了。",

@@ -2,6 +2,7 @@ const request = require('supertest');
 const express = require('express');
 
 const mockInsertOne = jest.fn().mockResolvedValue({ acknowledged: true });
+const mockUpdateOne = jest.fn().mockResolvedValue({ acknowledged: true });
 const mockFind = jest.fn();
 const mockPassThrough = () => (_req, _res, next) => next();
 
@@ -19,7 +20,14 @@ jest.mock('../../../services/onboardingMarks', () => ({
 jest.mock('express-rate-limit', () => ({ __esModule: true, default: mockPassThrough, rateLimit: mockPassThrough }));
 jest.mock('../../../middleware/ipRateLimit', () => ({ cloudflareIpRateLimitKeyGenerator: jest.fn() }));
 jest.mock('mongoose', () => ({
-  connection: { db: { collection: () => ({ insertOne: (...args) => mockInsertOne(...args) }) } },
+  connection: {
+    db: {
+      collection: () => ({
+        insertOne: (...args) => mockInsertOne(...args),
+        updateOne: (...args) => mockUpdateOne(...args),
+      }),
+    },
+  },
 }));
 
 const statsRoutes = require('../../../routes/stats');
@@ -36,6 +44,17 @@ const installsFound = (lean) => {
 // The route answers before it looks anything up, so let that work finish.
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 10); });
 const post = (body) => request(app).post('/api/stats/run-stopped').send(body);
+// One row per installation and reason, upserted: a repeat refreshes `at`.
+const upserted = ({ id, userId, reason, set = {} }) => [
+  { _id: `run-stopped:${id}:${reason}` },
+  {
+    $set: { at: expect.any(Date), ...set },
+    $setOnInsert: {
+      userId, step: 'run-stopped', reason, installationId: id,
+    },
+  },
+  { upsert: true },
+];
 
 describe('POST /api/stats/run-stopped (F551)', () => {
   beforeEach(() => {
@@ -60,16 +79,24 @@ describe('POST /api/stats/run-stopped (F551)', () => {
       createdAt: { $gte: expect.any(Date) },
     });
     expect(Date.now() - filter.createdAt.$gte.getTime()).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);
-    expect(mockInsertOne).toHaveBeenCalledWith({
-      _id: 'run-stopped:inst-1:no-token',
-      userId: 'human-1',
-      step: 'run-stopped',
-      reason: 'no-token',
-      installationId: 'inst-1',
-      platform: 'win32',
-      nodeMajor: 22,
-      at: expect.any(Date),
+    expect(mockUpdateOne).toHaveBeenCalledWith(...upserted({
+      id: 'inst-1', userId: 'human-1', reason: 'no-token', set: { platform: 'win32', nodeMajor: 22 },
+    }));
+  });
+
+  // F571: a first-run key the instance answered 401 to can't sign a report.
+  it('records token-refused the same way, by code only', async () => {
+    installsFound(() => Promise.resolve([{ _id: 'inst-3', installedBy: 'human-3' }]));
+
+    const res = await post({
+      reason: 'token-refused', agentName: 'newbie', platform: 'darwin', nodeMajor: 22,
     });
+    await settle();
+
+    expect(res.status).toBe(204);
+    expect(mockUpdateOne).toHaveBeenCalledWith(...upserted({
+      id: 'inst-3', userId: 'human-3', reason: 'token-refused', set: { platform: 'darwin', nodeMajor: 22 },
+    }));
   });
 
   it('answers before the lookup, so a hit and a miss take the same time', async () => {
@@ -91,11 +118,13 @@ describe('POST /api/stats/run-stopped (F551)', () => {
     await settle();
 
     expect(res.status).toBe(204);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
     expect(mockInsertOne).not.toHaveBeenCalled();
   });
 
   it.each([
     ['an unknown reason', { reason: 'cm_agent_secret', agentName: 'a1' }],
+    ['a near-miss reason', { reason: 'token-revoked', agentName: 'a1' }],
     ['a malformed name', { reason: 'no-token', agentName: 'a b; drop' }],
     ['a missing name', { reason: 'no-token' }],
     ['a name sent as an array', { reason: 'no-token', agentName: ['a1'] }],
@@ -109,6 +138,7 @@ describe('POST /api/stats/run-stopped (F551)', () => {
 
     expect(res.status).toBe(204);
     expect(mockFind).not.toHaveBeenCalled();
+    expect(mockUpdateOne).not.toHaveBeenCalled();
     expect(mockInsertOne).not.toHaveBeenCalled();
   });
 
@@ -120,9 +150,9 @@ describe('POST /api/stats/run-stopped (F551)', () => {
     });
     await settle();
 
-    const row = mockInsertOne.mock.calls[0][0];
-    expect(row).not.toHaveProperty('platform');
-    expect(row).not.toHaveProperty('nodeMajor');
-    expect(JSON.stringify(row)).not.toContain('cm_agent');
+    const [, update] = mockUpdateOne.mock.calls[0];
+    expect(update.$set).not.toHaveProperty('platform');
+    expect(update.$set).not.toHaveProperty('nodeMajor');
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toContain('cm_agent');
   });
 });

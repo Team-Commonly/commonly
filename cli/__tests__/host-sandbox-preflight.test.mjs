@@ -476,6 +476,7 @@ describe('agent run on a host that cannot confine the seat', () => {
     const oldApiUrl = process.env.COMMONLY_API_URL;
     process.env.COMMONLY_AGENT_TOKEN = 'cm_agent_test';
     process.env.COMMONLY_API_URL = 'https://api.commonly.me';
+    const reportPost = jest.fn().mockResolvedValue({ recorded: true });
     createClientMock
       .mockReturnValueOnce({
         get: jest.fn().mockResolvedValue({
@@ -486,7 +487,9 @@ describe('agent run on a host that cannot confine the seat', () => {
           }],
         }),
       })
-      // Anything past the preflight would make a second client: the binding
+      // F571: the refusal tells the instance why, with a client that can only post.
+      .mockReturnValueOnce({ post: reportPost })
+      // Anything past the preflight would make a third client: the binding
       // check or the poll loop. Either one reaching here fails the arm.
       .mockImplementation(() => { throw new Error('agent run went past the host check'); });
 
@@ -501,7 +504,10 @@ describe('agent run on a host that cannot confine the seat', () => {
     }
 
     expect(exitSentinel.code).toBe(1);
-    expect(createClientMock).toHaveBeenCalledTimes(1);
+    expect(createClientMock).toHaveBeenCalledTimes(2);
+    expect(reportPost.mock.calls).toEqual([
+      ['/api/agents/runtime/listen-blocked', { reason: 'sandbox-unavailable', harness: null }],
+    ]);
     expect(fs.existsSync(tokenPath)).toBe(false);
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain('[byo-win] Commonly runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet');
@@ -586,6 +592,9 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
   const hostReport = jest.fn().mockResolvedValue({ hostUnconfined: true });
   const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result, post: hostReport });
 
+  // F571 review: a saved seat (a respawn, the daemon's) sends no report: the
+  // page waits only on a first run, and a black-holed instance must not hold
+  // the exit.
   test('no flag, private pods: refused, the pods are not read, and the line names the flag', async () => {
     await run([], exitSentinel);
     expect(exitSentinel.code).toBe(1);
@@ -709,6 +718,16 @@ describe('agent run: a private Codex agent on Linux (F387, F444)', () => {
   const hostReport = jest.fn().mockResolvedValue({ hostUnconfined: true });
   const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result, post: hostReport });
   const pollLoop = () => createClientMock.mockImplementation(() => { throw new Error('reached the poll loop'); });
+  // F571: a refusal makes one client, which can only post its reason code:
+  // a pod read through it would throw.
+  const listenBlockedOnly = () => {
+    const post = jest.fn().mockResolvedValue({ recorded: true });
+    createClientMock.mockReturnValueOnce({ post });
+    return post;
+  };
+  const reported = (post, reason) => expect(post.mock.calls).toEqual([
+    ['/api/agents/runtime/listen-blocked', { reason, harness: null }],
+  ]);
 
   test('where bubblewrap starts, it runs in its sandbox: past the host check, with no flag and no notice', async () => {
     host(0);
@@ -722,6 +741,7 @@ describe('agent run: a private Codex agent on Linux (F387, F444)', () => {
     host(1);
     await run('byo-codex-linux', [], exitSentinel);
     expect(exitSentinel.code).toBe(1);
+    // A saved seat: no report (F571 review).
     expect(createClientMock).not.toHaveBeenCalled();
     const stderr = printed(errorSpy);
     expect(stderr).toContain("runs inside Codex's own sandbox");
@@ -794,9 +814,33 @@ describe('agent run: a private Codex agent on Linux (F387, F444)', () => {
     saveSeat('byo-claude-linux', 'claude', { model: 'claude-haiku-5-5', sandbox: { trust: 'public' } });
     await run('byo-claude-linux', ['--unsandboxed'], exitSentinel);
     expect(exitSentinel.code).toBe(1);
+    // A saved seat: no report (F571 review).
     expect(createClientMock).not.toHaveBeenCalled();
     expect(printed(errorSpy)).toContain('is only for native Windows');
     expect(printed(errorSpy)).toContain('of a private Codex agent on Linux');
+  });
+
+  // F571: on a first run (the pasted line) the page is waiting, so the refusal
+  // tells it why, with a client that can only post.
+  test('a first run refused --unsandboxed reports unsandboxed-refused', async () => {
+    const oldToken = process.env.COMMONLY_AGENT_TOKEN;
+    process.env.COMMONLY_AGENT_TOKEN = 'cm_agent_test';
+    createClientMock.mockReturnValueOnce({
+      get: jest.fn().mockResolvedValue({
+        agentName: 'byo-first-linux',
+        installations: [{ type: 'installation', podId: 'pod-1', instanceId: 'default', status: 'active', runtimeAdapter: null }],
+      }),
+    });
+    const post = listenBlockedOnly();
+    try {
+      await run('byo-first-linux', ['--unsandboxed'], exitSentinel);
+    } finally {
+      if (oldToken === undefined) delete process.env.COMMONLY_AGENT_TOKEN; else process.env.COMMONLY_AGENT_TOKEN = oldToken;
+    }
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain('is only for native Windows');
+    reported(post, 'unsandboxed-refused');
+    expect(fs.existsSync(recordPath('byo-first-linux'))).toBe(false);
   });
 });
 

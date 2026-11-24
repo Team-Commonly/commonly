@@ -12,6 +12,12 @@ jest.mock('../../../models/User', () => ({
   find: mockUserFind,
 }));
 
+const mockRunStopsFor = jest.fn();
+jest.mock('../../../services/byoTelemetry', () => ({
+  ...jest.requireActual('../../../services/byoTelemetry'),
+  runStopsFor: (...args) => mockRunStopsFor(...args),
+}));
+
 jest.mock('../../../services/agentIdentityService', () => ({
   resolveAgentType: jest.fn((agentName) => agentName.toLowerCase()),
 }));
@@ -52,6 +58,7 @@ describe('GET /api/users/me/agent-connection', () => {
     jest.clearAllMocks();
     mockInstallationFind.mockReturnValue(query([]));
     mockUserFind.mockReturnValue(query([]));
+    mockRunStopsFor.mockResolvedValue([]);
   });
 
   it('requires human authentication', async () => {
@@ -310,5 +317,56 @@ describe('GET /api/users/me/agent-connection', () => {
     mockUserFind.mockReturnValue(query([user(new Date('2026-11-14T18:05:00.000Z'))]));
     const listening = await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
     expect(listening.body).not.toHaveProperty('listenBlocked');
+  });
+  // F571: a first run whose key the instance refused (401) can't sign a
+  // report, so it sent the keyless run-stopped one. The page reads it here,
+  // by code, for the caller's own installations, until a later listen.
+  describe('run-stopped reports (F571)', () => {
+    const install = { _id: 'inst-1', agentName: 'newbie', instanceId: 'default', podId: 'workspace-1' };
+    const seat = (lastListenedAt) => ({
+      botMetadata: { agentName: 'newbie', instanceId: 'default' },
+      agentRuntimeTokens: lastListenedAt ? [{ lastListenedAt }] : [],
+    });
+    const get = () => request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+
+    it('reports token-refused for an owned installation with no listen since', async () => {
+      mockInstallationFind.mockReturnValue(query([install]));
+      mockUserFind.mockReturnValue(query([seat(null)]));
+      mockRunStopsFor.mockResolvedValue([
+        { installationId: 'inst-1', reason: 'token-refused', at: new Date('2026-11-23T10:00:00.000Z') },
+      ]);
+
+      const res = await get();
+
+      expect(mockRunStopsFor).toHaveBeenCalledWith('human-1', ['inst-1']);
+      expect(res.body.runStopped).toEqual([{
+        agentName: 'newbie', instanceId: 'default', reason: 'token-refused', at: '2026-11-23T10:00:00.000Z',
+      }]);
+    });
+
+    it('drops it once the agent listened after it, and drops unknown codes and other installations', async () => {
+      mockInstallationFind.mockReturnValue(query([install]));
+      mockUserFind.mockReturnValue(query([seat(new Date('2026-11-23T10:05:00.000Z'))]));
+      mockRunStopsFor.mockResolvedValue([
+        { installationId: 'inst-1', reason: 'token-refused', at: new Date('2026-11-23T10:00:00.000Z') },
+        { installationId: 'inst-1', reason: 'cm_agent_x', at: new Date('2026-11-23T11:00:00.000Z') },
+        { installationId: 'inst-9', reason: 'token-refused', at: new Date('2026-11-23T11:00:00.000Z') },
+      ]);
+
+      const res = await get();
+
+      expect(res.body).not.toHaveProperty('runStopped');
+    });
+
+    it('a failed read leaves the rest of the answer standing', async () => {
+      mockInstallationFind.mockReturnValue(query([install]));
+      mockUserFind.mockReturnValue(query([seat(null)]));
+      mockRunStopsFor.mockRejectedValue(new Error('down'));
+
+      const res = await get();
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('runStopped');
+    });
   });
 });

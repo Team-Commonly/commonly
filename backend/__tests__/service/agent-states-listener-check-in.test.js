@@ -107,6 +107,18 @@ describe('GET /api/pods/:podId/agent-states reads listener check-ins', () => {
     expect((await states())['signed-out']).not.toHaveProperty('listenReason');
   });
 
+  // F571: the two sandbox stops ride the same field; the schema keeps them.
+  it.each(['sandbox-unavailable', 'unsandboxed-refused'])('a %s stop reaches the pod as its reason', async (reason) => {
+    await install(`sbx-${reason}`);
+    const seat = await botUser(`sbx-${reason}`, []);
+    await User.updateOne({ _id: seat._id }, {
+      $set: { 'botMetadata.listenBlocked': { reason, harness: null, at: new Date() } },
+    });
+    expect((await states())[`sbx-${reason}`]).toMatchObject({
+      state: 'never-connected', listenReason: { reason, harness: null },
+    });
+  });
+
   it('a missing harness reads as its own reason, and the newer report wins', async () => {
     await install('no-harness');
     const seat = await botUser('no-harness', []);
