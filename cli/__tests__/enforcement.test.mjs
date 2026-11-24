@@ -32,6 +32,7 @@ import {
   deliverChatReply,
   frameDecisionForkRule,
   pickAdmissionEntry,
+  takesAddressedGrace,
 } from '../src/lib/enforcement.js';
 
 describe('decision-fork prompt rule', () => {
@@ -360,6 +361,26 @@ describe('cascade governor — addressed grace', () => {
   // kernel dampens it), so it must win the page over an owned-work wake, which
   // is still bounded. Otherwise, past cap + grace, the wake decides the page and
   // the mention is refused with it, in either order.
+  // CodeRabbit on #4251: a payload flagged addressed takes no grace in admit(),
+  // so ranking it above an owned-work wake refused the page at the plain cap.
+  // The ranking now reads the same grace predicate admit() does; the flag
+  // still outranks a plain broadcast, as before.
+  it('picks an owned-work wake over an entry flagged addressed, at the plain cap', () => {
+    const owned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
+    const flagged = { event: { type: 'message.posted', payload: { addressed: true } } };
+    const broadcast = { event: { type: 'message.posted', payload: {} } };
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 3, 'message.posted');
+    for (const page of [[flagged, owned], [owned, flagged]]) {
+      const picked = pickAdmissionEntry(page);
+      expect(picked).toBe(owned);
+      expect(gov.admit('pod', 'agent', picked.event.type, picked.event.payload)).toMatchObject({ allowed: true, addressed: true });
+    }
+    expect(pickAdmissionEntry([broadcast, flagged])).toBe(flagged);
+    expect(takesAddressedGrace(flagged.event.type, flagged.event.payload)).toBe(false);
+    expect(takesAddressedGrace(owned.event.type, owned.event.payload)).toBe(true);
+  });
+
   it('picks an exempt mention over an owned-work wake, in either order, past cap + grace', () => {
     const owned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
     const mention = { event: { type: 'chat.mention', payload: {} } };
@@ -371,9 +392,10 @@ describe('cascade governor — addressed grace', () => {
       expect(picked).toBe(mention);
       expect(gov.admit('pod', 'agent', picked.event.type, picked.event.payload).allowed).toBe(true);
     }
-    // A DM-backed mention isn't exempt, so it ranks with the other addressed
-    // events, ahead of the owned wake but no longer above the cap.
-    expect(pickAdmissionEntry([owned, dmMention])).toBe(dmMention);
+    // A DM-backed mention isn't exempt: it takes the same grace as the owned
+    // wake, so the two tie and the earlier one prices the page.
+    expect(pickAdmissionEntry([owned, dmMention])).toBe(owned);
+    expect(pickAdmissionEntry([dmMention, owned])).toBe(dmMention);
     expect(pickAdmissionEntry([dmMention, mention])).toBe(mention);
   });
 

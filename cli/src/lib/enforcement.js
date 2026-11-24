@@ -102,19 +102,29 @@ export const isOwnedWorkWake = (payload) => (
   payload?.boardWake === true && !NOT_OWNED_WAKE_REASONS.has(payload?.wakeReason)
 );
 
+// The one grace rule: admit() gives the addressed grace to these, and the
+// batch ranking reads the same predicate, so the page's pick never hides a
+// grace an entry in it would have had alone.
+export const takesAddressedGrace = (eventType, payload) => (
+  ADDRESSED_EVENT_TYPES.has(eventType) || isOwnedWorkWake(payload)
+);
+
 // The inbox batch prices one cascade admission for its whole page, on the
 // entry ranked first here, earliest on a tie:
 //   0. a mention with no dmKind: exempt from the cap (the kernel dampens it);
-//   1. any other addressed event: cap + grace;
-//   2. an owned-work board wake: cap + grace (F592);
+//   1. an entry that takes the addressed grace: a mention, a DM, or an
+//      owned-work board wake (F592): cap + grace;
+//   2. a payload flagged addressed: no grace in admit(), but still ahead of a
+//      plain broadcast, as before;
 //   3. otherwise the page's first entry.
-// Without rank 2 a broadcast sibling decided the page and refused the
-// assignment with it; without rank 0 ahead of it, an owned wake past cap +
-// grace refused an exempt mention in the same page.
+// Without the owned-work case a broadcast sibling decided the page and refused
+// the assignment with it; without rank 0 first, an owned wake past cap + grace
+// refused an exempt mention; and with the flag ahead of rank 1, a flagged
+// entry refused an owned wake at the plain cap.
 const admissionRank = (event) => {
   if (MENTION_EVENT_TYPES.has(event.type) && !event.payload?.dmKind) return 0;
-  if (ADDRESSED_EVENT_TYPES.has(event.type) || event.payload?.addressed === true) return 1;
-  if (isOwnedWorkWake(event.payload)) return 2;
+  if (takesAddressedGrace(event.type, event.payload)) return 1;
+  if (event.payload?.addressed === true) return 2;
   return 3;
 };
 export const pickAdmissionEntry = (wakingEntries) => wakingEntries.reduce(
@@ -303,7 +313,7 @@ export const createCascadeGovernor = ({
     admit(podId, trigger, eventType, payload = {}) {
       if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
-      const addressed = ADDRESSED_EVENT_TYPES.has(eventType) || isOwnedWorkWake(payload);
+      const addressed = takesAddressedGrace(eventType, payload);
       if (MENTION_EVENT_TYPES.has(eventType) && !payload?.dmKind) {
         // Named mentions are bounded upstream by the kernel's shared
         // bot-to-bot mention dampener. A DM emits chat.mention too, but its
