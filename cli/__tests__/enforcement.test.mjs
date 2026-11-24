@@ -326,8 +326,13 @@ describe('cascade governor — addressed grace', () => {
     expect(assignee).toMatchObject({ allowed: true, addressed: true, graceApplied: true });
     expect(gov.admit('pod', 'agent', 'message.posted', owned('claimant')).allowed).toBe(true);
 
-    for (const reason of ['prevAssignee', 'prevClaimant', 'dependentAssignee', undefined]) {
+    for (const reason of ['prevAssignee', 'prevClaimant', 'dependentAssignee', 'dependentClaimant']) {
       expect(gov.admit('pod', 'agent', 'message.posted', owned(reason))).toMatchObject({ allowed: false, addressed: false });
+    }
+    // A board wake the CLI can't classify (no reason, or one added later)
+    // fails toward delivery: it takes the grace, still bounded.
+    for (const reason of [undefined, 'someFutureReason']) {
+      expect(gov.admit('pod', 'agent', 'message.posted', owned(reason))).toMatchObject({ allowed: true, addressed: true });
     }
     expect(gov.admit('pod', 'agent', 'message.posted', { wakeReason: 'assignee' }).allowed).toBe(false);
 
@@ -349,6 +354,27 @@ describe('cascade governor — addressed grace', () => {
     expect(pickAdmissionEntry([broadcast, mention])).toBe(mention);
     expect(pickAdmissionEntry([broadcast])).toBe(broadcast);
     expect(pickAdmissionEntry([])).toBeUndefined();
+  });
+
+  // CodeRabbit on #4251: a mention with no dmKind is exempt from the cap (the
+  // kernel dampens it), so it must win the page over an owned-work wake, which
+  // is still bounded. Otherwise, past cap + grace, the wake decides the page and
+  // the mention is refused with it, in either order.
+  it('picks an exempt mention over an owned-work wake, in either order, past cap + grace', () => {
+    const owned = { event: { type: 'message.posted', payload: { boardWake: true, wakeReason: 'assignee' } } };
+    const mention = { event: { type: 'chat.mention', payload: {} } };
+    const dmMention = { event: { type: 'chat.mention', payload: { dmKind: 'agent-agent' } } };
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 5, 'message.posted');
+    for (const page of [[owned, mention], [mention, owned]]) {
+      const picked = pickAdmissionEntry(page);
+      expect(picked).toBe(mention);
+      expect(gov.admit('pod', 'agent', picked.event.type, picked.event.payload).allowed).toBe(true);
+    }
+    // A DM-backed mention isn't exempt, so it ranks with the other addressed
+    // events, ahead of the owned wake but no longer above the cap.
+    expect(pickAdmissionEntry([owned, dmMention])).toBe(dmMention);
+    expect(pickAdmissionEntry([dmMention, mention])).toBe(mention);
   });
 
   it('marks the admission so the caller can say the grace was spent', () => {

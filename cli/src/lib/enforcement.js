@@ -94,22 +94,32 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
 // message.posted, but it names this seat as surely as a mention does, so the
 // cascade governor gives it the addressed grace. It still counts toward the
 // streak, so two seats editing each other's rows stop at cap + grace per
-// window. Wakes about a seat's previous or dependent rows stay broadcasts.
-const OWNED_WORK_WAKE_REASONS = new Set(['assignee', 'claimant']);
+// window. Wakes about a seat's previous or dependent rows stay broadcasts. A
+// board wake whose reason the CLI can't classify (missing, or one the kernel
+// adds later) fails toward delivery and takes the grace too.
+const NOT_OWNED_WAKE_REASONS = new Set(['prevAssignee', 'prevClaimant', 'dependentAssignee', 'dependentClaimant']);
 export const isOwnedWorkWake = (payload) => (
-  payload?.boardWake === true && OWNED_WORK_WAKE_REASONS.has(payload?.wakeReason)
+  payload?.boardWake === true && !NOT_OWNED_WAKE_REASONS.has(payload?.wakeReason)
 );
 
-// The inbox batch prices one cascade admission for its whole page, on this
-// entry: an addressed one if the page has it, else the first. Without the
-// owned-work case a broadcast sibling decided the page and the assignment
-// was refused along with it.
-export const pickAdmissionEntry = (wakingEntries) => (
-  wakingEntries.find((entry) => (
-    ADDRESSED_EVENT_TYPES.has(entry.event.type)
-    || entry.event.payload?.addressed === true
-    || isOwnedWorkWake(entry.event.payload)
-  )) || wakingEntries[0]
+// The inbox batch prices one cascade admission for its whole page, on the
+// entry ranked first here, earliest on a tie:
+//   0. a mention with no dmKind: exempt from the cap (the kernel dampens it);
+//   1. any other addressed event: cap + grace;
+//   2. an owned-work board wake: cap + grace (F592);
+//   3. otherwise the page's first entry.
+// Without rank 2 a broadcast sibling decided the page and refused the
+// assignment with it; without rank 0 ahead of it, an owned wake past cap +
+// grace refused an exempt mention in the same page.
+const admissionRank = (event) => {
+  if (MENTION_EVENT_TYPES.has(event.type) && !event.payload?.dmKind) return 0;
+  if (ADDRESSED_EVENT_TYPES.has(event.type) || event.payload?.addressed === true) return 1;
+  if (isOwnedWorkWake(event.payload)) return 2;
+  return 3;
+};
+export const pickAdmissionEntry = (wakingEntries) => wakingEntries.reduce(
+  (best, entry) => (best === undefined || admissionRank(entry.event) < admissionRank(best.event) ? entry : best),
+  undefined,
 );
 
 /**
