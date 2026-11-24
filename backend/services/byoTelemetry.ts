@@ -3,9 +3,9 @@ import mongoose from 'mongoose';
 
 // Server-side BYO funnel rows. The browser posts its steps through
 // POST /api/stats/byo-step; events only the backend can see (an agent's first
-// authenticated call) are written here directly, so they never depend on the
-// user keeping the page open. Fixed step names only: never a command, key or name.
-type ServerByoStep = 'seat-registered' | 'daemon-registered' | 'run-stopped';
+// authenticated call, its first listen) are written here directly, so they
+// never depend on the user keeping the page open. Fixed step names only: never a command, key or name.
+type ServerByoStep = 'seat-registered' | 'first-listen' | 'daemon-registered' | 'run-stopped';
 
 // Why a run stopped before its first authenticated call, sent without a key
 // (POST /api/stats/run-stopped). `no-token`: the run had no key (F551).
@@ -17,6 +17,16 @@ export const RUN_STOP_REASONS: ReadonlySet<string> = new Set(['no-token', 'token
 // and is never the credential itself.
 export function seatRegisteredKey(tokenHash: string): string {
   return `seat-registered:${createHash('sha256').update(tokenHash).digest('hex')}`;
+}
+
+// F573: a token's first listen (events poll, renew or WebSocket connect), so the
+// funnel can tell "registered but never listened" from "listening". Same shape and
+// key scheme as seat-registered: the unique _id makes concurrent first listens
+// write one row. Callers fire it only when `isFirstListen` (installIntroOnListen.ts)
+// already said so, from the records they loaded; it never blocks or throws.
+export function recordFirstListen(userId: unknown, tokenHash: string): void {
+  const key = `first-listen:${createHash('sha256').update(tokenHash).digest('hex')}`;
+  void recordByoEvent(userId, 'first-listen', {}, key);
 }
 
 // A person registers a daemon once per setup, however many machines they add,
