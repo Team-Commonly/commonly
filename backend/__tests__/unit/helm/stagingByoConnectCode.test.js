@@ -5,7 +5,7 @@ const { HELM_CHART } = require('../../utils/repoRoot');
 
 // Staging must hand out the same BYO connect step as prod. Prod (the VM) sets
 // BYO_CONNECT_CODE=1, so agent-tokens.ts issues a one-line connect code beside
-// the key. Staging had no way to set it, so a D341 walk on staging (2026-11-24)
+// the key. Staging had no way to set it, so a first-run walk on staging (2026-11-24)
 // got the old four-line command with the full key and tested a step prod no
 // longer serves.
 const loadValues = (name) => yaml.load(fs.readFileSync(path.join(HELM_CHART, name), 'utf8'), { json: true });
