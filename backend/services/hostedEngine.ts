@@ -19,6 +19,7 @@
  */
 import { isHostedInstallation, readRuntimeConfig } from './hostedRuntimeService';
 import { isSandboxConfigured } from './turnSandboxService';
+import { isOpenShellSandboxEnabled } from './openshellTurnSandbox';
 import { isSearchConfigured } from './webSearchService';
 
 export const HOSTED_ENGINE_NATIVE = 'native';
@@ -350,7 +351,8 @@ export const hostedNativeRunConfig = (
     hosted: { engine: HOSTED_ENGINE_NATIVE },
     systemPrompt: hostedNativeSystemPrompt(displayName, about, {
       webSearch: isSearchConfigured(),
-      runCode: isSandboxConfigured(),
+      // Same check as nativeRuntimeService's toolAvailable, so the prompt never denies a tool the turn offers.
+      runCode: isOpenShellSandboxEnabled() || isSandboxConfigured(),
     }, lookups),
     tools: [...HOSTED_NATIVE_TOOLS],
     recentMessages: HOSTED_NATIVE_RECENT_MESSAGES,
