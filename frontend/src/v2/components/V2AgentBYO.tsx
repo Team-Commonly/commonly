@@ -2776,7 +2776,7 @@ const V2AgentBYO: React.FC = () => {
                           {' '}{t('agentByo.listen.repo.web')}
                         </label>
                         <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
-                        <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved', { cli: setupOs === 'windows' ? CLI_NPX_COMMAND.replace(/^npx /, 'npx.cmd ') : CLI_NPX_COMMAND })}</p>
+                        <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved', { cli: CLI_NPX_COMMAND })}</p>
                       </>
                     )}
                   </div>

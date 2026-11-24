@@ -42,14 +42,17 @@ describe('the pasted script', () => {
     expect(commandExitFrom('polling http://127.0.0.1:1 for events\n')).toBeNull();
   });
 
-  test('this tree\'s leg swaps only the package spec in the run line', () => {
+  // A path in npx's first position is run as a command, not installed: on the
+  // Windows runner the .tgz went to its file association and PowerShell exited
+  // 0 with nothing polled. So the tarball goes in --package, and the bin is named.
+  test('this tree\'s leg swaps only the package spec in the run line, as --package with the bin named', () => {
     expect(withCliSpec(PAGE[2], 'D:\\a\\_temp\\commonlyai-cli-0.1.9.tgz'))
-      .toBe('npx.cmd -y D:\\a\\_temp\\commonlyai-cli-0.1.9.tgz agent run win-byo --adapter claude --unsandboxed');
+      .toBe('npx.cmd -y --package D:\\a\\_temp\\commonlyai-cli-0.1.9.tgz commonly agent run win-byo --adapter claude --unsandboxed');
     // The bare leg's `npx` keeps the swap too.
     expect(withCliSpec(PAGE[2].replace(/^npx\.cmd /, 'npx '), 'C:\\t.tgz'))
-      .toBe('npx -y C:\\t.tgz agent run win-byo --adapter claude --unsandboxed');
+      .toBe('npx -y --package C:\\t.tgz commonly agent run win-byo --adapter claude --unsandboxed');
     // A `$` in the spec is taken literally, not as a replacement pattern.
-    expect(withCliSpec(PAGE[2], 'C:\\$&.tgz')).toMatch(/^npx\.cmd -y C:\\\$&\.tgz agent run /);
+    expect(withCliSpec(PAGE[2], 'C:\\$&.tgz')).toMatch(/^npx\.cmd -y --package C:\\\$&\.tgz commonly agent run /);
     expect(() => withCliSpec('commonly.cmd agent run x', 'C:\\t.tgz')).toThrow(/not an npx run line/);
   });
 });

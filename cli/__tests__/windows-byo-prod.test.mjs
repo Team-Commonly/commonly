@@ -55,7 +55,7 @@ describe('the Windows prod walk', () => {
     expect(walkCliLines(lines, { cli: 'published', tarball: 'C:\\t\\cli.tgz' })).toBe(lines);
     // The shim and every flag stay as the page has them; only the spec moves.
     expect(walkCliLines(lines, { cli: 'tree', tarball: 'C:\\t\\cli.tgz' }))
-      .toEqual(['a', 'b', 'npx.cmd -y C:\\t\\cli.tgz agent run x --adapter codex --unsandboxed']);
+      .toEqual(['a', 'b', 'npx.cmd -y --package C:\\t\\cli.tgz commonly agent run x --adapter codex --unsandboxed']);
     expect(() => walkCliLines(lines, { cli: 'tree' })).toThrow(/packed/);
   });
 

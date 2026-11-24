@@ -21,10 +21,15 @@ export const pasteScript = (lines) => [...lines, COMMAND_GUARD];
  * The run line with another package spec in place of the page's
  * `@commonlyai/cli@latest` (this checkout's packed tarball), so the rest of
  * the line, and the shim it names (npx.cmd), stand as the page has them.
+ *
+ * The spec goes in `--package`, with the bin named after it. A path in npx's
+ * first position is run as a command, not installed as a package: on Windows
+ * cmd hands the .tgz to its file association and exits 0, so the walk saw
+ * PowerShell exit 0 with nothing polled.
  */
 export const withCliSpec = (runLine, spec) => {
   if (!/^\S+ -y \S+ /.test(String(runLine))) throw new Error(`not an npx run line: ${runLine}`);
-  return String(runLine).replace(/^(\S+ -y )\S+/, (_, head) => `${head}${spec}`);
+  return String(runLine).replace(/^(\S+ -y )\S+/, (_, head) => `${head}--package ${spec} commonly`);
 };
 
 // The CLI's own line saying this seat runs with nothing confining it, or null.
