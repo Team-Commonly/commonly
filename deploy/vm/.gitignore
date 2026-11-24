@@ -7,3 +7,5 @@ commonly-bot-state/
 litellm/config.yaml
 # A render killed mid-write leaves its temp file here; it holds secrets too.
 .render-*
+# Staging on the VM: tunnel config and credentials (docs/deployment/vm-staging.md).
+staging-secrets/
