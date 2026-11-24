@@ -597,6 +597,10 @@ exports.register = async (req: any, res: any) => {
         message: hasEmailConfig
           ? 'Registered. Verify your email to join the Community pod.'
           : 'User registered successfully. Email verification is not required.',
+        // F581: login() refuses an unverified account on a team-gated
+        // instance, so the register page must not say the person is in.
+        // Same condition as that refusal, read off the row just saved.
+        verificationRequired: isInstanceAccessRestricted() && !user.verified,
       });
   } catch (err: any) {
     console.error(err.message);

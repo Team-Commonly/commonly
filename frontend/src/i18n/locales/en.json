@@ -580,7 +580,9 @@
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "checkEmailMessageInvite": "Verify your email to join the pod you were invited to. The link went to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
-        "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
+        "verifyRequiredTitle": "Check your email",
+        "verifyRequiredMessage": "Your account is made. Open the link we sent to {{email}}, then sign in.",
+        "verifyRequiredMessageInvite": "Your account is made. Open the link we sent to {{email}} to join the pod you were invited to, then sign in.",
         "continue": "Continue to sign in"
       }
     },

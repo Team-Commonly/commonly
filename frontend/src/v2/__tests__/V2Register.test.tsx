@@ -161,20 +161,51 @@ describe('V2Register', () => {
     expect(login).toHaveBeenCalledWith('new@example.com', 'Password123!');
   });
 
-  it('tells a new team user to verify before signing in', async () => {
+  // F581: on a team-gated instance the account exists but login refuses it
+  // until the mailbox is verified. The screen must not say "You're in".
+  it('says to verify, not "You\'re in", when the response requires verification', async () => {
+    axios.post.mockResolvedValue({
+      data: { message: 'Registered. Verify your email to join the Community pod.', verificationRequired: true },
+    });
+    const { login } = renderRegister(jest.fn().mockRejectedValue(new Error('should not be called')));
+
+    await createAccount();
+
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+    expect(screen.getByText(
+      'Your account is made. Open the link we sent to new@example.com, then sign in.',
+    )).toBeInTheDocument();
+    expect(screen.queryByText("You're in")).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'sign in now' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to sign in' })).toBeInTheDocument();
+    // A login the server refuses anyway is not tried.
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it('a pod invite sign-up that needs verification says the link also joins the pod', async () => {
+    axios.post.mockResolvedValue({ data: { message: 'Registered.', verificationRequired: true } });
+    renderRegister(undefined, `/v2/register?next=${encodeURIComponent(`/v2/invite/${'d'.repeat(32)}`)}`);
+
+    await createAccount();
+
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+    expect(screen.getByText(
+      'Your account is made. Open the link we sent to new@example.com to join the pod you were invited to, then sign in.',
+    )).toBeInTheDocument();
+  });
+
+  it('falls back to the refused login when an older backend sends no flag', async () => {
     const login = jest.fn().mockRejectedValue({
       response: { data: { code: 'INSTANCE_ACCESS_RESTRICTED' } },
     });
     renderRegister(login);
 
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
-    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+    await createAccount();
 
-    expect(await screen.findByText(/Verify your email first, then/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'sign in' })).toHaveAttribute('href', '/v2/login');
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+    expect(screen.queryByText("You're in")).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'sign in now' })).not.toBeInTheDocument();
+    expect(login).toHaveBeenCalled();
   });
 
   it('still shows the reminder for the pre-2026-09-23 wording a rolling backend sends', async () => {
