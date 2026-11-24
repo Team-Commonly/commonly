@@ -324,7 +324,7 @@ describe('the command page puts only what the paste needs above the copy', () =>
       expect(command.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     };
     after(screen.getByTestId('byo-key-once'));
-    after(screen.getByText(/MCP alone won't wake .* for @mentions\. Keep this Terminal open/));
+    after(screen.getByText(/answers @mentions only while this Terminal stays open\. Adding it to your editor over MCP doesn't change that\./));
     // The page lead is behind them now: no eyebrow or description above the copy.
     expect(document.querySelector('.v2-feature__description')).toBeNull();
     expect(document.querySelector('.v2-feature__eyebrow')).toBeNull();

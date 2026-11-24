@@ -357,7 +357,7 @@ describe('BYO listener snippet', () => {
       expect(note).not.toHaveTextContent(/WSL|Codex/);
       // PowerShell, not Terminal, on Windows.
       expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/^This stops when this PowerShell window closes\./);
-      expect(screen.getByText(/Keep this PowerShell window open\./)).toBeInTheDocument();
+      expect(screen.getByText(/answers @mentions only while this PowerShell window stays open\./)).toBeInTheDocument();
       expect(screen.getByTestId('byo-listen')).not.toHaveTextContent(/Terminal (window|open)/);
       // It sits directly above the lines it explains.
       expect(note.nextElementSibling).toContainElement(listener());
