@@ -3,9 +3,13 @@ name: microsandbox Windows probe
 # Can a free GitHub-hosted Windows runner boot a microsandbox microVM (it needs
 # the Windows Hypervisor Platform), and does the sandbox hold Commonly's fence?
 # scripts/spikes/microsandbox-probe.ps1 does the work; results are in
-# docs/plans/microsandbox-windows-spike.md. Run by hand. It isn't a required
-# check and uses no secrets: every key in it is fake.
+# docs/plans/microsandbox-windows-spike.md. It runs by hand, and on pushes to
+# its spike branch that touch it. It isn't a required check and uses no
+# secrets: every key in it is fake.
 on:
+  push:
+    branches: [stack/microsandbox-win]
+    paths: [.github/workflows/microsandbox-windows-probe.yml, scripts/spikes/**]
   workflow_dispatch:
 
 permissions:
