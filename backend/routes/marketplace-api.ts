@@ -603,7 +603,11 @@ router.post('/fork', auth, async (req: any, res: any) => {
       });
     }
 
-    if (await installableIdTaken(newInstallableId.toLowerCase())) {
+    // A backfilled row in the caller's own namespace (checked above) is not a
+    // claim on the id: an interrupted fork's retry finds the row the sweep
+    // inserted from its AgentRegistry write, and takes it over like publish.
+    const forkId = newInstallableId.toLowerCase();
+    if (await installableIdTaken(forkId) && !(await findBackfillForTakeover(forkId))) {
       return res.status(409).json({ error: 'installableId already taken' });
     }
 
@@ -650,16 +654,27 @@ router.post('/fork', auth, async (req: any, res: any) => {
 
     let created;
     try {
-      created = await listings.create(forkDoc);
+      created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
+      if (!created) created = await listings.create(forkDoc);
     } catch (installableError) {
-      // AR succeeded but the Installable row didn't land. Mirror the publish
-      // path: return 201 with a drift warning so the caller knows to retry.
-      // Skip the source forkCount increment — we'll bump it on the retry
-      // that actually creates the Installable row.
       console.warn(
         '[marketplace] Installable create failed on fork (AR succeeded):',
         (installableError as any).message,
       );
+      // The hourly backfill can insert between the check above and create.
+      if ((installableError as any)?.code === 11000) {
+        try {
+          created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
+        } catch (takeoverError) {
+          console.warn('[marketplace] backfill takeover failed on fork:', (takeoverError as any).message);
+        }
+      }
+    }
+    if (!created) {
+      // AR succeeded but the Installable row didn't land. Mirror the publish
+      // path: return 201 with a drift warning so the caller knows to retry.
+      // Skip the source forkCount increment — we'll bump it on the retry
+      // that actually creates the Installable row.
       return res.status(201).json({
         success: true,
         warnings: [

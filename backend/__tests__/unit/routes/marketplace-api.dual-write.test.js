@@ -117,8 +117,10 @@ describe('marketplace-api dual-write drift warnings', () => {
 
     // First Installable.findOne: source lookup → returns the source.
     // Second: existence check on newInstallableId → returns null (no collision).
+    // Third: the backfill-takeover lookup → null (no backfilled row to take over).
     Installable.findOne
       .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
     AgentRegistry.findOneAndUpdate.mockResolvedValue({ agentName: '@nova/legal-fork' });
     const createError = new Error('E11000 duplicate key on installableId');

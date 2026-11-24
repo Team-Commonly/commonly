@@ -96,6 +96,45 @@ describe('marketplace routes and backfilled rows', () => {
     expect(JSON.stringify(fork.components)).not.toMatch(/registryManifest|registryRow/);
   });
 
+  test('an interrupted fork completes on retry after the sweep backfills it', async () => {
+    await request(app).post('/api/marketplace/publish').set('Authorization', bobAuth)
+      .send(publishBody('@bob/helper', '1.0.0')).expect(201);
+    const createSpy = jest.spyOn(Installable, 'create').mockRejectedValueOnce(new Error('catalog down'));
+    const first = await request(app).post('/api/marketplace/fork').set('Authorization', aliceAuth)
+      .send({ sourceInstallableId: '@bob/helper', newInstallableId: '@alice/helper' });
+    createSpy.mockRestore();
+    expect(first.status).toBe(201);
+    expect(first.body.warnings).toHaveLength(1);
+    expect(await AgentRegistry.countDocuments({ agentName: '@alice/helper' })).toBe(1);
+
+    await sweepRegistryDrift({ dryRun: false });
+    expect((await Installable.findOne({ installableId: '@alice/helper' }).lean()).origin).toBe('registry-backfill');
+
+    const retry = await request(app).post('/api/marketplace/fork').set('Authorization', aliceAuth)
+      .send({ sourceInstallableId: '@bob/helper', newInstallableId: '@alice/helper' });
+    expect(retry.status).toBe(201);
+    expect(retry.body.warnings).toBeUndefined();
+    const row = await Installable.findOne({ installableId: '@alice/helper' }).lean();
+    expect(row.origin).toBeUndefined();
+    expect(row.marketplace.published).toBe(true);
+    expect(row.forkedFrom.installableId).toBe('@bob/helper');
+    expect(await Installable.countDocuments({ installableId: '@alice/helper' })).toBe(1);
+    expect(await browseIds()).toContain('@alice/helper');
+  });
+
+  test('a fork onto a real listing still answers 409', async () => {
+    await request(app).post('/api/marketplace/publish').set('Authorization', bobAuth)
+      .send(publishBody('@bob/helper', '1.0.0')).expect(201);
+    await request(app).post('/api/marketplace/publish').set('Authorization', aliceAuth)
+      .send(publishBody('@alice/helper', '1.0.0', { description: 'Mine.' })).expect(201);
+    const res = await request(app).post('/api/marketplace/fork').set('Authorization', aliceAuth)
+      .send({ sourceInstallableId: '@bob/helper', newInstallableId: '@alice/helper' });
+    expect(res.status).toBe(409);
+    const row = await Installable.findOne({ installableId: '@alice/helper' }).lean();
+    expect(row.description).toBe('Mine.');
+    expect(row.forkedFrom?.installableId).toBeUndefined();
+  });
+
   test.each([
     ['the same version', '1.0.0'],
     ['a new version with no categories or tags', '2.0.0'],
