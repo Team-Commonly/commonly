@@ -18,6 +18,16 @@ const { HUMAN_FILTER, internalAccountExclusion } = require('./userClassification
 // Pod invite tokens are 16 random bytes in hex (routes/podInvites.ts).
 export const POD_INVITE_TOKEN = /^[a-f0-9]{32}$/;
 
+// The query form of PodInvite.isUsable(): not revoked, not expired, and a use
+// left (maxUses null means unlimited; 0 means none, as isUsable() reads it).
+const usableInviteFilter = (now: Date) => ({
+  revokedAt: null,
+  $and: [
+    { $or: [{ expiresAt: null }, { expiresAt: { $gte: now } }] },
+    { $or: [{ maxUses: null }, { $expr: { $lt: ['$useCount', '$maxUses'] } }] },
+  ],
+});
+
 export type PodInviteRedemption =
   | { ok: true; pod: any; alreadyMember: boolean }
   | { ok: false; status: number; body: Record<string, unknown> };
@@ -58,9 +68,30 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
         throw joinError;
       }
     }
-    pod.members.push(userId);
-    pod.updatedAt = new Date();
-    await pod.save();
+  }
+  // F603: count the use before granting membership, as one conditional update
+  // on a still-usable invite. Two redemptions at once can both pass the
+  // isUsable() read above; only as many as maxUses has room for match here,
+  // and the rest refuse exactly as a used-up invite does. Counting first means
+  // a refused claim never leaves an uncounted member behind; a failed join
+  // gives its use back.
+  const claimed = await PodInvite.updateOne(
+    { _id: invite._id, ...usableInviteFilter(new Date()) },
+    { $inc: { useCount: 1 }, $set: { lastUsedAt: new Date() } },
+  );
+  if (!claimed.modifiedCount) {
+    return { ok: false, status: 404, body: { msg: 'Invite invalid or expired' } };
+  }
+  if (!alreadyMember) {
+    try {
+      pod.members.push(userId);
+      pod.updatedAt = new Date();
+      await pod.save();
+    } catch (joinError) {
+      await PodInvite.updateOne({ _id: invite._id, useCount: { $gt: 0 } }, { $inc: { useCount: -1 } })
+        .catch(() => undefined);
+      throw joinError;
+    }
     // F183: best-effort PG mirror write; never fails the redemption.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     await require('./pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(userId));
@@ -81,9 +112,6 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
       }
     }
   }
-  invite.useCount += 1;
-  invite.lastUsedAt = new Date();
-  await invite.save();
   return { ok: true, pod, alreadyMember };
 };
 
