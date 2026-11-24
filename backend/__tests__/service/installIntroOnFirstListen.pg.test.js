@@ -82,6 +82,34 @@ describe('first-listen intro rewrite on Postgres (F576)', () => {
     expect(mockEmits).toHaveLength(0);
   });
 
+  it('a second write failing still announces the first', async () => {
+    const first = await insert(intro('never-connected'));
+    await insert(intro('never-connected'), { podId: 'pod-2' });
+    const real = mockPool.query.bind(mockPool);
+    let updates = 0;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const spy = jest.spyOn(mockPool, 'query').mockImplementation((sql, params) => {
+      if (/^\s*UPDATE/i.test(sql)) {
+        updates += 1;
+        if (updates === 2) return Promise.reject(new Error('pg down'));
+      }
+      return real(sql, params);
+    });
+    try {
+      await settleInstallIntroOnFirstListen({ agentUserId: AGENT, podIds: [POD, 'pod-2'] });
+    } finally {
+      spy.mockRestore();
+      warn.mockRestore();
+    }
+    const written = (await mockPool.query(
+      "SELECT id FROM messages WHERE payload->>'introState' = 'listening'",
+    )).rows.map((r) => String(r.id));
+    expect(written).toHaveLength(1);
+    // Rows are read newest first, so the first write is the pod-2 intro.
+    expect(written).not.toContain(String(first.rows[0].id));
+    expect(mockEmits.map((e) => e.body.messageId)).toEqual(written);
+  });
+
   it('a failing store logs and answers 0, never throws', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const spy = jest.spyOn(mockPool, 'query').mockRejectedValueOnce(new Error('pg down'));

@@ -272,6 +272,32 @@ const mergeMessagesById = (a: V2Message[], b: V2Message[]): V2Message[] => {
   return chronologicalMessages([...byId.values()]);
 };
 
+// The fields of a held message a socket update can change.
+type SocketField = 'content' | 'payload' | 'reactions';
+// By message id, the latest value each in-flight socket update set.
+type TouchedFields = Map<string, Partial<Record<SocketField, unknown>>>;
+
+// The reconnect catch-up's merge. Unlike a history page, the fetched row is
+// newer than the held one for an id both have (an intro rewritten while the
+// tab was disconnected, F576), so it wins, except for the fields a socket
+// update changed while the request was in flight: those keep the held value,
+// which is newer still. A row only the fetched page has (it arrived while
+// disconnected) still takes those values, since the update had no row to land
+// on. Rows only one side has are otherwise kept, as in mergeMessagesById.
+const mergeReconnectPage = (
+  fetched: V2Message[], held: V2Message[], touchedInFlight: TouchedFields,
+): V2Message[] => {
+  const byId = new Map<string, V2Message>();
+  for (const m of held) byId.set(String(m.id), m);
+  for (const m of fetched) {
+    const id = String(m.id);
+    const previous = byId.get(id);
+    const touched = touchedInFlight.get(id) || {};
+    byId.set(id, { ...(previous || {}), ...m, ...touched } as V2Message);
+  }
+  return chronologicalMessages([...byId.values()]);
+};
+
 const normalizeMessage = (raw: V2Message): V2Message => {
   const rawUserId = raw.userId;
   const userObject = typeof rawUserId === 'object' && rawUserId !== null ? rawUserId : null;
@@ -352,6 +378,17 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
   const refreshSequenceRef = useRef(0);
   const messagesRef = useRef<V2Message[]>([]);
+  // Set while a reconnect catch-up is in flight: the fields socket updates
+  // touched, by message id. Only the newest catch-up applies, so its own
+  // sequence, separate from refreshSequenceRef (a full refresh's guard).
+  const inFlightTouchedRef = useRef<TouchedFields | null>(null);
+  const reconnectSequenceRef = useRef(0);
+  const touchInFlight = useCallback((messageId: string, values: Partial<Record<SocketField, unknown>>) => {
+    const touched = inFlightTouchedRef.current;
+    if (!touched) return;
+    const id = String(messageId);
+    touched.set(id, { ...(touched.get(id) || {}), ...values });
+  }, []);
   const hasMoreRef = useRef(false);
   const loadingOlderRef = useRef(false);
   const historySearchRef = useRef<HistorySearchState>(historySearch);
@@ -392,7 +429,14 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     if (activePodIdRef.current === id) setPod(result);
   }, [api]);
 
-  const fetchMessages = useCallback(async (id: string, reconnect = false) => {
+  // A reconnect catch-up answers 'superseded' when a newer one owns the
+  // sequence: it neither merges nor touches the reconnect error, and its
+  // failure is not rethrown.
+  const fetchMessages = useCallback(async (id: string, reconnect = false): Promise<'applied' | 'superseded' | void> => {
+    // Fields socket updates touch while this catch-up is in flight.
+    const touched: TouchedFields = new Map();
+    const reconnectSequence = reconnect ? ++reconnectSequenceRef.current : 0;
+    if (reconnect) inFlightTouchedRef.current = touched;
     try {
       const data = await api.get<V2Message[]>(
         `/api/messages/${id}?limit=${PAGE_SIZE}`,
@@ -400,6 +444,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       );
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
+      // A newer catch-up owns the merge; an older answer could restore an
+      // older row.
+      if (reconnect && reconnectSequence !== reconnectSequenceRef.current) return 'superseded';
       const normalized = chronologicalMessages(list.map(normalizeMessage));
       // A catch-up page cannot establish whether earlier history exists.
       if (!reconnect) setInitialMessagesLoaded(true);
@@ -408,7 +455,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         // while the catch-up request is in flight. Keep those rows and dedupe.
         setMessages((previous) => {
           if (activePodIdRef.current !== id) return previous;
-          const merged = mergeMessagesById(normalized, previous);
+          const merged = mergeReconnectPage(normalized, previous, touched);
           messagesRef.current = merged;
           return merged;
         });
@@ -424,15 +471,21 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         hasMoreRef.current = list.length >= PAGE_SIZE;
         setHasMore(hasMoreRef.current);
       }
+      return reconnect ? 'applied' : undefined;
     } catch (err) {
       const e = err as { response?: { status?: number } };
-      if (reconnect) throw err;
+      if (reconnect) {
+        if (reconnectSequence !== reconnectSequenceRef.current) return 'superseded';
+        throw err;
+      }
       if (e.response?.status === 404 && activePodIdRef.current === id) {
         messagesRef.current = [];
         hasMoreRef.current = false;
         setMessages([]);
         setHasMore(false);
       } else throw err;
+    } finally {
+      if (inFlightTouchedRef.current === touched) inFlightTouchedRef.current = null;
     }
   }, [api]);
 
@@ -694,7 +747,8 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     state.wasConnected = connected;
     if (connected) state.hasConnected = true;
     if (!reconnected || !podId) return;
-    fetchMessages(podId, true).then(() => {
+    fetchMessages(podId, true).then((outcome) => {
+      if (outcome === 'superseded') return;
       if (activePodIdRef.current === podId) {
         setError((current) => current === RECONNECT_ERROR ? null : current);
       }
@@ -733,11 +787,17 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       // reaction's user list (2026-07-24). Fall back to the wire value only
       // when `users` is absent (older server / Mongo fallback).
       const reactions = recomputeReactionMine(payload.reactions, currentUser?._id);
-      setMessages((prev) => prev.map((m) => (
-        String(m.id) === String(payload.messageId)
-          ? { ...m, reactions }
-          : m
-      )));
+      touchInFlight(payload.messageId, { reactions });
+      // The ref moves with the state, as in handleMessageUpdate.
+      setMessages((prev) => {
+        const next = prev.map((m) => (
+          String(m.id) === String(payload.messageId)
+            ? { ...m, reactions }
+            : m
+        ));
+        messagesRef.current = next;
+        return next;
+      });
     };
     // ADR-020 D3: card status transitions. Same patch discipline as
     // reactions — one field on one message; the server's payload is
@@ -745,11 +805,16 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     const handleCardUpdate = (update: { messageId: string; podId?: string; payload?: V2Message['payload'] }) => {
       if (!update || !update.messageId) return;
       if (update.podId && update.podId !== podId) return;
-      setMessages((prev) => prev.map((m) => (
-        String(m.id) === String(update.messageId)
-          ? { ...m, payload: update.payload }
-          : m
-      )));
+      touchInFlight(update.messageId, { payload: update.payload });
+      setMessages((prev) => {
+        const next = prev.map((m) => (
+          String(m.id) === String(update.messageId)
+            ? { ...m, payload: update.payload }
+            : m
+        ));
+        messagesRef.current = next;
+        return next;
+      });
     };
     // F576: a message the kernel rewrote in place (an install intro on its
     // agent's first listen). Merges whichever of content and payload it carries.
@@ -758,15 +823,25 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     }) => {
       if (!update || !update.messageId) return;
       if (update.podId && update.podId !== podId) return;
-      setMessages((prev) => prev.map((m) => (
-        String(m.id) === String(update.messageId)
-          ? {
-            ...m,
-            ...(typeof update.content === 'string' ? { content: update.content } : {}),
-            ...(update.payload !== undefined ? { payload: update.payload } : {}),
-          }
-          : m
-      )));
+      touchInFlight(update.messageId, {
+        ...(typeof update.content === 'string' ? { content: update.content } : {}),
+        ...(update.payload !== undefined ? { payload: update.payload } : {}),
+      });
+      // The ref moves with the state: loadOlder merges from it, and a stale
+      // ref would put the pre-rewrite text back.
+      setMessages((prev) => {
+        const next = prev.map((m) => (
+          String(m.id) === String(update.messageId)
+            ? {
+              ...m,
+              ...(typeof update.content === 'string' ? { content: update.content } : {}),
+              ...(update.payload !== undefined ? { payload: update.payload } : {}),
+            }
+            : m
+        ));
+        messagesRef.current = next;
+        return next;
+      });
     };
     socket.on('newMessage', handleNewMessage);
     socket.on('messageReaction', handleReactionChange);
@@ -779,7 +854,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       socket.off('messageUpdated', handleMessageUpdate);
       leavePod(podId);
     };
-  }, [podId, socket, connected, joinPod, leavePod, currentUser?._id]);
+  }, [podId, socket, connected, joinPod, leavePod, currentUser?._id, touchInFlight]);
 
   const sendMessage = useCallback(async (
     content: string,

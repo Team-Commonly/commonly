@@ -65,7 +65,9 @@ const asPayload = (payload: unknown): Record<string, unknown> => {
   return payload && typeof payload === 'object' ? { ...(payload as Record<string, unknown>) } : {};
 };
 
-const rewritePg = async (pool: any, agentUserId: string, podIds: string[]): Promise<Rewrite[]> => {
+// Each guarded write is announced the moment it lands, so a later row's
+// failure cannot leave an earlier rewrite unannounced.
+const rewritePg = async (pool: any, agentUserId: string, podIds: string[]): Promise<number> => {
   const placeholders = podIds.map((_, i) => `$${i + 2}`).join(', ');
   const found = await pool.query(
     `SELECT id, pod_id, content, payload FROM messages
@@ -74,7 +76,7 @@ const rewritePg = async (pool: any, agentUserId: string, podIds: string[]): Prom
      ORDER BY id DESC LIMIT ${INTRO_SCAN_LIMIT}`,
     [agentUserId, ...podIds],
   );
-  const done: Rewrite[] = [];
+  let done = 0;
   for (const row of found.rows || []) {
     const payload = asPayload(row.payload);
     if (payload.kind !== INTRO_KIND || payload.introState === LISTENING) continue;
@@ -89,17 +91,18 @@ const rewritePg = async (pool: any, agentUserId: string, podIds: string[]): Prom
       [content, JSON.stringify(next), row.id, row.content],
     );
     if (updated.rows?.length) {
-      done.push({ messageId: String(row.id), podId: String(row.pod_id), content, payload: next });
+      emitUpdated({ messageId: String(row.id), podId: String(row.pod_id), content, payload: next });
+      done += 1;
     }
   }
   return done;
 };
 
-const rewriteMongo = async (agentUserId: string, podIds: string[]): Promise<Rewrite[]> => {
+const rewriteMongo = async (agentUserId: string, podIds: string[]): Promise<number> => {
   const rows = await MongoMessage.find({
     userId: agentUserId, authorKind: 'kernel', 'payload.kind': INTRO_KIND, podId: { $in: podIds },
   }).select('_id podId content payload').lean();
-  const done: Rewrite[] = [];
+  let done = 0;
   for (const row of rows || []) {
     const payload = asPayload(row.payload);
     if (payload.introState === LISTENING) continue;
@@ -112,14 +115,27 @@ const rewriteMongo = async (agentUserId: string, podIds: string[]): Promise<Rewr
       { $set: { content, payload: next } },
     );
     if (result?.modifiedCount) {
-      done.push({ messageId: String(row._id), podId: String(row.podId), content, payload: next });
+      emitUpdated({ messageId: String(row._id), podId: String(row.podId), content, payload: next });
+      done += 1;
     }
   }
   return done;
 };
 
-const settle = async ({ agentUserId, agentName, instanceId, podIds }: SettleOptions): Promise<number> => {
-  const pods = [...new Set((podIds || []).map((id) => String(id || '')).filter(Boolean))];
+const settle = async ({
+  agentUserId, agentName, instanceId, podIds, morePodIds,
+}: SettleOptions): Promise<number> => {
+  let extra: unknown[] = [];
+  if (morePodIds) {
+    // Inside the bound and the failure boundary: a lookup error degrades to
+    // the pods already known, and never reaches the caller's validation.
+    try {
+      extra = await morePodIds();
+    } catch (err) {
+      console.warn('[install-intro] pod lookup failed; settling the known pods:', (err as Error).message);
+    }
+  }
+  const pods = [...new Set([...(podIds || []), ...extra].map((id) => String(id || '')).filter(Boolean))];
   if (!pods.length) return 0;
   let userId = agentUserId ? String(agentUserId) : '';
   if (!userId && agentName) {
@@ -131,11 +147,9 @@ const settle = async ({ agentUserId, agentName, instanceId, podIds }: SettleOpti
   if (!userId) return 0;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg');
-  const rewrites = pool && process.env.PG_HOST
-    ? await rewritePg(pool, userId, pods)
-    : await rewriteMongo(userId, pods);
-  rewrites.forEach(emitUpdated);
-  return rewrites.length;
+  return pool && process.env.PG_HOST
+    ? rewritePg(pool, userId, pods)
+    : rewriteMongo(userId, pods);
 };
 
 type SettleOptions = {
@@ -143,6 +157,8 @@ type SettleOptions = {
   agentName?: string;
   instanceId?: string;
   podIds: unknown[];
+  /** More of the seat's pods, looked up inside the bound; a failure keeps `podIds`. */
+  morePodIds?: () => Promise<unknown[]>;
 };
 
 /**
