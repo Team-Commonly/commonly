@@ -20,7 +20,7 @@ Yes. On a free GitHub-hosted `windows-latest` runner, with no paid infra:
 - **WHP is on.** The runner is a Windows Server 2025 VM on Azure (10.0.26100) with `HypervisorPlatform`, `Microsoft-Hyper-V` and `VirtualMachinePlatform` all enabled, so nested virtualization works. The first microVM printed "hello from a microVM" (guest kernel 6.12.118).
 - **The fence holds when it's set up the right way.** With `--no-net` plus port rules, a sandbox reached exactly the ports it was given. Vendor hosts, the raw upstream, the public internet and cloud metadata were all refused.
 - **Claude Code 2.1.331 and Codex 0.172.0 both ran inside** and answered through Commonly's provider proxy, with only DNS and the two proxy ports open. The stub model echoed the upstream key, and both agents received `[redacted]`.
-- **Codex's own sandbox works inside.** User namespaces are allowed in the guest, so Codex ran with its read-only bubblewrap sandbox on. This is the nesting that OpenShell refuses (its hazard 2).
+- **Nesting works inside.** User namespaces are allowed in the guest. A command run through `codex sandbox` ran under Codex's read-only policy, and a `bwrap` sandbox shaped like our CLI's `bwrap` mode allowed workspace writes and refused `/etc` and the network. This is the nesting that OpenShell refuses (its hazard 2).
 - **Two traps:** port rules on their own leave the public internet open, and domain rules didn't connect. A third problem: `msb create` fails on the runner. Details under Findings.
 
 ## Results
@@ -37,7 +37,8 @@ Every key is fake. The front (`scripts/spikes/sandbox-front.mjs`) is the OpenShe
 | `--no-net` | refused | refused | refused | blocked |
 | `--no-net` + `allow@host:tcp:18100` | refused | **open** | refused | blocked |
 | `--no-net` + `allow@dns,allow@host` (whole group) | refused | open | **open** | blocked |
-| `allow@dns,allow@registry.npmjs.org:tcp:443` (no `--no-net`) | **open** (api.anthropic.com answered 401) | | | |
+
+The last trap needs its own line. With `--net-rule allow@dns,allow@registry.npmjs.org:tcp:443` and no `--no-net`, api.anthropic.com answered 401, so the public internet was open. The registry the rule names reset at the TLS handshake (finding 4).
 
 A connection to `169.254.169.254:80` opens under every policy, but no request reaches the metadata service. The gateway accepts the connection and answers 403 with no `Server` header. A plain-HTTP request to example.com that the policy blocks gets the same answer, and Azure's metadata service would answer 400 to a request without its header.
 
@@ -50,32 +51,35 @@ A connection to `169.254.169.254:80` opens under every policy, but no request re
 | nonzero exit | passed through (exit 3) |
 | `msb exec --timeout 3s` | exit 1 after about 4.2 s, stderr `exec timed out after 3s` |
 | one exec in a running sandbox | 1.2–1.5 s (`-q` changes nothing) |
-| `msb run python` warm, or `msb run node` cold with the image pull | about 1.6 s / 4.4–5.9 s |
+| one `msb run python`, image already pulled | 1.8–2.1 s (six timed runs) |
+| `msb run node`, cold with the image pull | 4.4–5.9 s |
 | root inside, writes to `/etc` | allowed; the VM is the boundary |
 | user namespaces inside | allowed |
 
 ### Agents
 
-Installed unfenced onto an ext4 disk volume in 24 s, then run from that volume under `--no-net --net-rule allow@dns,allow@host:tcp:18100,allow@host:tcp:18101`:
+Installed unfenced onto a disk-kind named volume (microsandbox's ext4 disk image, per its `--mount-owned` help) in 24–33 s, then run from that volume under `--no-net --net-rule allow@dns,allow@host:tcp:18100,allow@host:tcp:18101`:
 
 | Check | Result |
 |---|---|
 | `claude -p 'reply with OK' --model spike-model` | answered through the proxy, exit 0, key echo `[redacted]` |
-| `codex exec` (its own read-only sandbox on) | answered through the proxy, exit 0, key echo `[redacted]` |
+| `codex exec` (read-only sandbox configured; the stub asks for no tool call, so no command goes through it) | answered through the proxy, exit 0, key echo `[redacted]` |
 | `codex exec --sandbox danger-full-access` | same |
 | api.anthropic.com, api.openai.com | refused |
 | raw upstream (host :18090, not in the allowlist) | refused |
-| whole agents run | 6 s |
+| `codex sandbox -- sh -c …`, a command run under Codex's own sandbox | ran; writes to `/etc` and to the working directory refused (its default read-only policy) |
+| a `bwrap` sandbox shaped like the CLI's `bwrap` mode (`--ro-bind / /`, the workspace bound read-write, `--unshare-all`), with Debian's `bwrap` | ran; workspace write allowed, `/etc` write refused, network unreachable |
+| whole agents run | 6–7 s |
 
 ## Findings
 
 1. **A free hosted Windows runner can host microsandbox.** So Windows sandbox work can be tested in CI at no cost, and a Windows CLI sandbox mode can have a real test tier. On a user's machine, WHP has to be turned on, which takes admin rights and a reboot. The CLI can detect that, but it can't do it for the user.
-2. **Port rules alone don't close the network.** The help text says egress defaults to deny once any rule is present. In practice, with `--net-rule` but without `--no-net`, the public internet stayed open. A driver must always pass `--no-net` and then add its rules, and it needs a test that a vendor host is refused.
-3. **`allow@host` reaches everything bound to the host's loopback.** It's the same hazard as OpenShell's hazard 1. A rule naming the host group without a port reached the loopback-only stand-in for Postgres. Port-scoped rules held: `allow@host:tcp:18100` reached 18100 and nothing else. Any driver has to build its rules in code as port-scoped allowlists.
+2. **Port rules alone don't close the network.** The help text says egress defaults to deny once any rule is present. In practice, with `--net-rule` but without `--no-net`, the public internet stayed open. The source explains why: without `--no-net`, a `--net` profile or a `--net-default*` flag, the rules are prepended to the existing policy, and that policy keeps its implicit `allow@public` (`crates/cli/lib/commands/common.rs`, v0.8.1). A driver must always pass `--no-net` and then add its rules, and it needs a test that a vendor host is refused.
+3. **`allow@host` reaches everything bound to the host's loopback.** It's the same hazard as OpenShell's hazard 1. A rule naming the host group without a port reached the loopback-only stand-in for Postgres. Port-scoped rules held: `allow@host:tcp:18100` reached 18100 and not 18199. Any driver has to build its rules in code as port-scoped allowlists.
 4. **Domain rules didn't connect.** `allow@registry.npmjs.org:tcp:443`, `allow@registry.npmjs.org` and `allow@*.npmjs.org`, each on `--no-net` with `allow@dns`, all reset at the TLS handshake. So either install agents unfenced onto a volume and then run them fenced (what worked here), or route installs through a proxy on an allowed host port. Whether domain rules need TLS interception is still open.
-5. **`msb create` fails on the runner** with `io error: Access is denied. (os error 5)`. The sandbox is still recorded as stopped, and `msb exec` starts it, but the error is unexplained, and `RUST_LOG=debug` adds nothing. `msb run` works every time, at about the same cost as an exec (1.2–1.6 s), so a driver can use one `msb run` per turn and skip `create` until this is understood.
+5. **`msb create` fails on the runner** with `io error: Access is denied. (os error 5)`. The sandbox is still recorded as stopped, and `msb exec` starts it, but the error is unexplained, and `RUST_LOG=debug` adds nothing. `msb run` works every time and costs 1.8–2.1 s warm, close to an exec in a running sandbox (1.2–1.5 s), so a driver can use one `msb run` per turn and skip `create` until this is understood.
 6. **`msb modify` can't change the network.** A sandbox keeps its creation fence, so install and run happen in two sandboxes that share a volume.
-7. **Nesting works, unlike OpenShell.** The guest is a full Linux kernel with user namespaces, so an agent's own sandbox (Codex's bubblewrap, our CLI's `bwrap` mode) can start inside. That makes microsandbox a candidate for a real layered sandbox: the microVM outside, and the agent's own sandbox inside.
+7. **Nesting works, unlike OpenShell.** The guest is a full Linux kernel with user namespaces. Codex's own sandbox ran a command inside, and so did a `bwrap` sandbox shaped like our CLI's `bwrap` mode. That makes microsandbox a candidate for a real layered sandbox: the microVM outside, and the agent's own sandbox inside.
 
 ## What a Windows sandbox mode would need
 
@@ -98,4 +102,4 @@ This is a sketch, not a decision. Building it is a separate change.
 
 ## Reproduce
 
-`.github/workflows/microsandbox-windows-probe.yml` runs `scripts/spikes/microsandbox-probe.ps1` on `windows-latest`. Run it from the Actions tab (workflow_dispatch). It needs no secrets and takes about 8 minutes.
+`.github/workflows/microsandbox-windows-probe.yml` runs `scripts/spikes/microsandbox-probe.ps1` on `windows-latest`. Run it from the Actions tab (workflow_dispatch). It needs no secrets and takes 3–5 minutes.

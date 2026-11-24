@@ -5,7 +5,8 @@ name: microsandbox Windows probe
 # scripts/spikes/microsandbox-probe.ps1 does the work; results are in
 # docs/plans/microsandbox-windows-spike.md. It runs by hand, and on pushes to
 # its spike branch that touch it. It isn't a required check and uses no
-# secrets: every key in it is fake.
+# secrets: every key in it is fake. Its steps continue on error, so a green
+# run proves only that it ran; the results are in the log.
 on:
   push:
     branches: [stack/microsandbox-win]
