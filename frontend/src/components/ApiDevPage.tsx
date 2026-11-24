@@ -405,20 +405,6 @@ const ApiDevPage = () => {
             ]
         },
         {
-            category: "Documentation",
-            endpoints: [
-                {
-                    id: "docs-backend",
-                    method: "GET",
-                    path: "/api/docs/backend",
-                    description: "Get backend API documentation",
-                    requiresAuth: false,
-                    exampleInput: null,
-                    exampleOutput: "# Backend Documentation\n\nThis document provides details about the backend architecture..."
-                }
-            ]
-        },
-        {
             category: "Dev Tools",
             endpoints: [
                 {

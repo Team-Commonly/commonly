@@ -24,7 +24,6 @@ const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
 const { installSocketEventBudget } = require('./middleware/socketRateLimit');
 const { sessionSocketRoom } = require('./services/sessionSocketService');
-const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
 const appPlatformRoutes = require('./routes/apps');
@@ -257,7 +256,6 @@ app.use('/api/approvals', require('./routes/approvals'));
 app.use('/api/uploads', uploadsRoutes);
 // Direction C PR 5: every file and page shared in your pods (dualAuth; see routes/artifacts.ts)
 app.use('/api/artifacts', require('./routes/artifacts'));
-app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
 const installableRoutes = require('./routes/installables');
