@@ -308,6 +308,41 @@ const decisionPayload = (row: any): Record<string, unknown> => ({
   } : null,
 });
 
+// The ruled wake names what was asked, so an agent whose session was recycled,
+// or that raised several cards, knows what the pick answers (F588). The caps
+// are the model's own field limits (title 160, question 1000, 2–4 options of
+// 80 chars); they are applied again here so an older or hand-written row can't
+// bloat the event.
+const RULED_TITLE_MAX = 160;
+const RULED_QUESTION_MAX = 1000;
+const RULED_OPTIONS_MAX = 4;
+const RULED_OPTION_LABEL_MAX = 80;
+
+const boundText = (value: unknown, max: number): string => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (text.length <= max) return text;
+  // Cut in UTF-16 units, but never keep half of a surrogate pair (an emoji).
+  const cut = text.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/, '');
+  return `${cut}…`;
+};
+
+const ruledDecisionContext = (decision: any, pick: string): Record<string, unknown> => {
+  const labels: string[] = (Array.isArray(decision?.options) ? decision.options : [])
+    .map((option: any) => (typeof option?.label === 'string' ? option.label.trim() : ''))
+    .filter(Boolean);
+  const pickKey = pick.trim().toLocaleLowerCase();
+  const threadRootId = decision?.threadRootId || decision?.messageId;
+  return {
+    title: boundText(decision?.title, RULED_TITLE_MAX),
+    question: boundText(decision?.question, RULED_QUESTION_MAX),
+    options: labels.slice(0, RULED_OPTIONS_MAX).map((label) => boundText(label, RULED_OPTION_LABEL_MAX)),
+    // A ruling is free text (up to 2000 chars), not an option index: a person
+    // can answer in their own words. Say which, against the full labels.
+    pickIsOption: labels.some((label) => label.toLocaleLowerCase() === pickKey),
+    ...(threadRootId ? { threadRootId: String(threadRootId) } : {}),
+  };
+};
+
 const enqueueRuledDecisionEvent = async (decision: any): Promise<void> => {
   const ruling = decision?.ruling;
   if (!ruling?.value || !ruling?.byUserId || !ruling?.at || !ruling?.messageId) {
@@ -329,6 +364,7 @@ const enqueueRuledDecisionEvent = async (decision: any): Promise<void> => {
       ruledAt: new Date(ruling.at).toISOString(),
       rulingMessageId: String(ruling.messageId),
       podId: String(decision.podId),
+      ...ruledDecisionContext(decision, String(ruling.value)),
     },
   });
 };

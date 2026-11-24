@@ -190,11 +190,75 @@ describe('DecisionRequestService', () => {
         ruledAt: '2026-09-06T08:00:00.000Z',
         rulingMessageId: '901',
         podId: 'pod-1',
+        title: 'Choose the release train',
+        question: 'Which rollout should I run?',
+        options: ['Canary', 'Fast lane'],
+        pickIsOption: false,
+        threadRootId: '612',
       },
     });
     expect(mockEnqueue.mock.invocationCallOrder[0])
       .toBeGreaterThan(mockDecision.findOneAndUpdate.mock.invocationCallOrder[1]);
     expect(mockResolveAttention).toHaveBeenCalledWith('decision_request', 'decision-1');
+  });
+
+  test('the ruled wake carries a bounded title, question and option list, and says when the pick is a listed option', async () => {
+    const row = pending({
+      title: 'T'.repeat(400),
+      question: 'Q'.repeat(5000),
+      options: [
+        { label: 'Canary' }, { label: 'L'.repeat(300) }, { label: 'Three' }, { label: 'Four' }, { label: 'Five' },
+      ],
+      threadRootId: undefined,
+    });
+    mockDecision.findById.mockResolvedValue(row);
+    mockUser.findById.mockReturnValue(userChain({ _id: 'human-1', username: 'Sam', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1'], type: 'team' }));
+    mockDecision.findOneAndUpdate
+      .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
+      .mockResolvedValueOnce({
+        ...row,
+        status: 'ruled',
+        ruling: {
+          value: 'canary', byUserId: 'human-1', byUsername: 'Sam',
+          at: new Date('2026-09-06T08:00:00.000Z'), messageId: '901',
+        },
+      });
+
+    await chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-1', value: 'canary' });
+
+    const { payload } = mockEnqueue.mock.calls[0][0];
+    expect(payload.title).toBe(`${'T'.repeat(159)}…`);
+    expect(payload.question).toBe(`${'Q'.repeat(999)}…`);
+    expect(payload.options).toEqual(['Canary', `${'L'.repeat(79)}…`, 'Three', 'Four']);
+    expect(payload.pickIsOption).toBe(true);
+    // No explicit thread root: the card message itself roots the thread.
+    expect(payload.threadRootId).toBe('700');
+    expect(payload).toMatchObject({ decisionId: 'decision-1', pick: 'canary', rulingMessageId: '901' });
+  });
+
+  test('the ruled wake never cuts an emoji in half at the question cap', async () => {
+    // 998 chars, then a 2-unit emoji at units 998-999: a plain slice(0, 999) keeps a lone high surrogate.
+    const row = pending({ question: `${'Q'.repeat(998)}\u{1F680}tail` });
+    mockDecision.findById.mockResolvedValue(row);
+    mockUser.findById.mockReturnValue(userChain({ _id: 'human-1', username: 'Sam', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1'], type: 'team' }));
+    mockDecision.findOneAndUpdate
+      .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
+      .mockResolvedValueOnce({
+        ...row,
+        status: 'ruled',
+        ruling: {
+          value: 'Canary', byUserId: 'human-1', byUsername: 'Sam',
+          at: new Date('2026-09-06T08:00:00.000Z'), messageId: '901',
+        },
+      });
+
+    await chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-1', value: 'Canary' });
+
+    const { question } = mockEnqueue.mock.calls[0][0].payload;
+    expect(question).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(question).toBe(`${'Q'.repeat(998)}…`);
   });
 
   test('falls back to the ordinary implicit-reply wake when the typed queue is unavailable', async () => {
