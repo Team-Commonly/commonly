@@ -226,10 +226,17 @@ export async function maybeFireFirstContact({
       ? `${language ? ` Use the person's language for this greeting: ${language}.` : ''} `
         + 'Do not introduce yourself using a human name, including one inferred from your @handle. '
       : '';
-    const opening = hostedAgentUserId
-      ? 'A person just started you in this pod and has not seen you speak here recently. '
-      : 'A human just added you to this workspace and is seeing you for the first time. '
-        + 'This is your one first impression. ';
+    // F578: "has not seen you speak here recently" went to a brand-new
+    // person too, and the agent opened with "welcome back". Only a person
+    // who already met this agent is told anything but a first meeting.
+    let opening = 'A human just added you to this workspace and is seeing you for the first time. '
+      + 'This is your one first impression. ';
+    if (hostedAgentUserId) {
+      opening = alreadyMet
+        ? 'A person just started you in this pod and has not seen you speak in this pod recently. '
+        : 'A person just started you in this pod. This is the first time they have met you, '
+          + 'so do not welcome them back. ';
+    }
     let mentionCue = '';
     if (MENTION_HANDLE.test(handle)) {
       const person = await personHandle(safeUserId);

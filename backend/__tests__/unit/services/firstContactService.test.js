@@ -258,6 +258,30 @@ describe('firstContactService', () => {
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  // F578: a brand-new person's hosted agent opened with "welcome back". The
+  // cue said they had "not seen you speak here recently", which reads as an
+  // old acquaintance. A first meeting says so.
+  test('a first hosted greeting tells the agent this is the first time they meet', async () => {
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('This is the first time they have met you');
+    expect(cue).toContain('do not welcome them back');
+    expect(cue).not.toMatch(/recently/);
+  });
+
+  test('a returning hosted owner is not told it is a first meeting', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce(existingMarker());
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('has not seen you speak in this pod recently');
+    expect(cue).not.toContain('first time they have met you');
+  });
+
   test('a new hosted first greeting uses prior Japanese words and avoids the owner name', async () => {
     Message.recentContentByUser.mockResolvedValue(['こんにちは、手伝ってください']);
     await maybeFireFirstContact(baseOptions({

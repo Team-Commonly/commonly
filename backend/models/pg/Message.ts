@@ -135,6 +135,9 @@ class Message {
     // F212: this reply stays top-level. agentAnswerService decides; here it
     // skips the derivation below and marks the row for reRootOrphanedChains.
     topLevelAnswer = false,
+    // F578: the person a first-contact greeting is for, handed to the
+    // attention writer like answeringMessageId and never stored.
+    greetedUserId: string | null = null,
   ): Promise<MessageRow> {
     if (replyToMessageId != null && replyToMessageId !== '') {
       const resolvedReply = await Message.resolveId(replyToMessageId);
@@ -244,7 +247,7 @@ class Message {
           resolveMentionAttentionForReply,
         } = require('../../services/attentionItemService');
         await recordMentionedUsers({
-          ...row, podId, userId, content, threadRootId: resolvedThreadRootId, answeringMessageId,
+          ...row, podId, userId, content, threadRootId: resolvedThreadRootId, answeringMessageId, greetedUserId,
         });
         await resolveMentionAttentionForReply({
           podId,
