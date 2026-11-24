@@ -119,6 +119,7 @@ services:
   # mail from the sink above. staging.sh journey runs it once.
   stranger-journey:
     <<: *caps
+    cpus: 0.1
     environment:
       - JOURNEY_API=https://api-staging.commonly.me
       - JOURNEY_TRIGGER=${JOURNEY_TRIGGER:-staging-smoke}
