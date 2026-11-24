@@ -204,6 +204,26 @@ describe('toolsForConfig', () => {
     }
   });
 
+  // D343 spike: the OpenShell flag (with an image) offers run_code without an E2B key.
+  test('run_code is offered on the OpenShell flag too, and only with an image', () => {
+    const saved = ['E2B_API_KEY', 'OPENSHELL_SANDBOX_ENABLED', 'OPENSHELL_SANDBOX_IMAGE']
+      .map((key) => [key, process.env[key]]);
+    try {
+      delete process.env.E2B_API_KEY;
+      process.env.OPENSHELL_SANDBOX_ENABLED = 'true';
+      delete process.env.OPENSHELL_SANDBOX_IMAGE;
+      expect(names(toolsForConfig({ tools: ['commonly_run_code'] }))).not.toContain('commonly_run_code');
+      process.env.OPENSHELL_SANDBOX_IMAGE = 'commonly/runcode@sha256:abc';
+      expect(names(toolsForConfig({ tools: ['commonly_run_code'] }))).toContain('commonly_run_code');
+      expect(names(toolsForConfig({}))).not.toContain('commonly_run_code');
+    } finally {
+      saved.forEach(([key, value]) => {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      });
+    }
+  });
+
   // TASK-267a: web search is opt-in by declaration AND needs a search key.
   test('web_search is offered only when declared and the instance has a search key', () => {
     const previous = process.env.SEARCH_API_KEY;

@@ -44,6 +44,7 @@ import { isLimitedUseTool, isNoTrainingModel } from './limitedUseConnectors';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
+import { isOpenShellSandboxEnabled, OpenShellTurnSandbox } from './openshellTurnSandbox';
 import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
@@ -856,7 +857,7 @@ const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
 const toolAvailable = (name: string): boolean => {
   if (name.startsWith('computer_')) return agentComputerEnabled();
   if (name === 'commonly_offer_hosted_agent') return hostedEngineAvailable();
-  if (name === 'commonly_run_code') return isSandboxConfigured();
+  if (name === 'commonly_run_code') return isOpenShellSandboxEnabled() || isSandboxConfigured();
   if (name === 'commonly_web_search') return isSearchConfigured();
   return true;
 };
@@ -974,7 +975,7 @@ interface DispatchContext {
   computerRequesterId?: string;
   inPodOnly?: boolean;
   /** Opened on the turn's first commonly_run_code call; closed when the turn ends. */
-  sandbox?: TurnSandbox;
+  sandbox?: TurnSandbox | OpenShellTurnSandbox;
   /** Set when a web search has returned in this turn (TASK-267a). */
   webTainted?: boolean;
   /** A computer read returned this turn; do not offer search/fetch afterward. */
@@ -1731,10 +1732,13 @@ export async function dispatchTool(
       }
 
       case 'commonly_run_code': {
-        if (!isSandboxConfigured()) {
+        // D343 spike: the OpenShell flag, when set, takes the turn instead of E2B.
+        const openShell = isOpenShellSandboxEnabled();
+        if (!openShell && !isSandboxConfigured()) {
           return { content: null, error: 'Running code is not available on this instance.' };
         }
-        ctx.sandbox = ctx.sandbox || new TurnSandbox({ podId: ctx.podId, agent: `${ctx.agentName}:${ctx.instanceId}` });
+        const sandboxMeta = { podId: ctx.podId, agent: `${ctx.agentName}:${ctx.instanceId}` };
+        ctx.sandbox = ctx.sandbox || (openShell ? new OpenShellTurnSandbox(sandboxMeta) : new TurnSandbox(sandboxMeta));
         const result = await ctx.sandbox.run(String(args.language || ''), String(args.code ?? ''));
         return { content: result };
       }
