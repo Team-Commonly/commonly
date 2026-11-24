@@ -102,6 +102,9 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     expect(css).toMatch(/--guide-accent-deep:\s*#0f2378;/);
     expect(rule('.guide-page .guide-btn')).toContain('color: var(--guide-accent)');
     expect(rule('.guide-page .guide-btn:hover')).toContain('background: var(--guide-accent-soft)');
+    // The eyebrow sits in index cards, whose `.guide-card p` would otherwise grey it.
+    expect(css).not.toMatch(/\n\.guide-eyebrow \{/);
+    expect(rule('.guide-page .guide-eyebrow')).toContain('color: var(--guide-accent)');
     // The /compare/ static-link branch went with the unlisting (TASK-563): no related link is an anchor.
     const guidePage = read('src/components/landing/GuidePage.tsx');
     expect(guidePage).toContain('className="guide-btn" onClick={() => navigate(link.path)}>');

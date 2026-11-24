@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useLayoutEffect } from 'react';
 import './guide.css';
 
 // Guides render outside V2's component tree, so keep their page canvas light
 // while the rest of the legacy application continues to use its dark shell.
+// Before paint: until the class is on, App.css's legacy button reset applies.
 export const useGuideCanvas = () => {
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.body.classList.add('guide-canvas');
     return () => document.body.classList.remove('guide-canvas');
   }, []);

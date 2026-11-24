@@ -1,6 +1,6 @@
 /* The in-app guide, guides index and use-case pages. They mirror the
    pre-rendered static pages, so they keep their own light palette instead of
-   the v2 tokens; body.guide-canvas (guideShell.ts) keeps App.css's legacy
+   the v2 tokens; body.guide-canvas (guideShell.tsx) keeps App.css's legacy
    button reset off them. */
 .guide-page {
   --guide-page: #f8f8fb;
@@ -54,7 +54,8 @@
   letter-spacing: -0.02em;
 }
 
-.guide-eyebrow {
+/* Scoped to the page so it outranks .guide-card p inside an index card. */
+.guide-page .guide-eyebrow {
   margin: 0 0 8px;
   color: var(--guide-accent);
   font-weight: 700;
@@ -192,6 +193,10 @@
   margin-top: 16px;
 }
 
+.guide-related {
+  margin-top: 32px;
+}
+
 .guide-actions--stack {
   flex-direction: column;
   gap: 8px;
@@ -210,7 +215,7 @@
 }
 
 .guide-card {
-  padding: 24px;
+  padding: 32px;
   border: 1px solid var(--guide-border-soft);
   border-radius: 12px;
   background: var(--guide-surface);
@@ -328,9 +333,13 @@
   height: 18px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 599.98px) {
   .guide-container {
     padding: 40px 16px 80px;
+  }
+
+  .guide-card {
+    padding: 24px;
   }
 
   .guide-cta {
@@ -343,5 +352,10 @@
 
   .guide-actions:not(.guide-actions--stack) {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .guide-actions:not(.guide-actions--stack) > .guide-btn {
+    justify-content: center;
   }
 }
