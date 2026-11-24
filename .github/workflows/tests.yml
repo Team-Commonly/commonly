@@ -349,6 +349,10 @@ jobs:
       - run: cd backend && npm run tsc:check
       - run: cd packages/types && ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
       - run: cd backend && npm run lint:ts
+      # Errors only, like the frontend. The tests' parked rules are listed
+      # in backend/.eslintrc.js. docs/development/lint-gate-state.md.
+      - name: Backend JavaScript lint (errors)
+        run: cd backend && npm run lint -- --quiet
 
   frontend-tests:
     name: Frontend tests

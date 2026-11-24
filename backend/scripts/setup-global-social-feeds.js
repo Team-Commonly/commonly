@@ -38,7 +38,7 @@ async function setupGlobalSocialFeeds() {
 
     // 1. Find or create admin user
     const adminEmail = process.env.ADMIN_USER_EMAIL || 'admin@commonly.app';
-    let adminUser = await User.findOne({ email: adminEmail });
+    const adminUser = await User.findOne({ email: adminEmail });
 
     if (!adminUser) {
       console.error('❌ Admin user not found. Please set ADMIN_USER_EMAIL environment variable.');
@@ -56,7 +56,7 @@ async function setupGlobalSocialFeeds() {
         type: 'chat',
         members: [adminUser._id],
         createdBy: adminUser._id,
-        tags: ['social', 'global', 'feeds']
+        tags: ['social', 'global', 'feeds'],
       });
       console.log('✅ Created global pod for social feeds');
     } else {
@@ -70,7 +70,7 @@ async function setupGlobalSocialFeeds() {
       // Check if integration already exists
       let xIntegration = await Integration.findOne({
         type: 'x',
-        podId: globalPod._id
+        podId: globalPod._id,
       });
 
       if (xIntegration) {
@@ -84,7 +84,7 @@ async function setupGlobalSocialFeeds() {
           followUserIds,
           category: 'Social',
           maxResults: 50,
-          exclude: 'retweets,replies'
+          exclude: 'retweets,replies',
         };
         xIntegration.status = 'connected';
         await xIntegration.save();
@@ -103,7 +103,7 @@ async function setupGlobalSocialFeeds() {
             maxResults: 50,
             exclude: 'retweets,replies',
           },
-          createdBy: adminUser._id
+          createdBy: adminUser._id,
         });
         console.log('✅ Created X integration');
       }
@@ -117,7 +117,7 @@ async function setupGlobalSocialFeeds() {
       // Check if integration already exists
       let instagramIntegration = await Integration.findOne({
         type: 'instagram',
-        podId: globalPod._id
+        podId: globalPod._id,
       });
 
       if (instagramIntegration) {
@@ -127,7 +127,7 @@ async function setupGlobalSocialFeeds() {
           accessToken: process.env.INSTAGRAM_GLOBAL_ACCESS_TOKEN,
           igUserId: process.env.INSTAGRAM_GLOBAL_IG_USER_ID,
           username: process.env.INSTAGRAM_GLOBAL_USERNAME || 'commonly.app',
-          category: 'Social'
+          category: 'Social',
         };
         instagramIntegration.status = 'connected';
         await instagramIntegration.save();
@@ -142,7 +142,7 @@ async function setupGlobalSocialFeeds() {
             username: process.env.INSTAGRAM_GLOBAL_USERNAME || 'commonly.app',
             category: 'Social',
           },
-          createdBy: adminUser._id
+          createdBy: adminUser._id,
         });
         console.log('✅ Created Instagram integration');
       }

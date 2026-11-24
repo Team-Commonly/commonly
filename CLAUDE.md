@@ -180,13 +180,13 @@ cd frontend && npm test -- --watchAll=false   # npm run test:coverage
 ./dev.sh up && ./dev.sh test:integration      # INTEGRATION_TEST=true against real DBs
 ./dev.sh cluster up && ./dev.sh cluster test  # full local k8s via kind
 cd backend && npm run lint:ts                 # backend .ts — 0 errors, gated in CI + lint-staged
-npm run lint                                  # cli && backend .js && frontend — stops at the first red leg
+npm run lint                                  # cli && backend .js && frontend — 0 errors, warnings remain
 npm run lint:fix                              # auto-fix
 ```
 
 **If tests are failing:** frontend → `frontend/TESTING.md` (likely axios mocking or ES modules); backend → `backend/TESTING.md` (likely static method calls).
 
-**`npm run lint` is not a green command.** Only backend `.ts` and cli are gated; backend `.js` and frontend carry known errors, and the frontend leg never runs while the backend leg is red. Do not describe either as green until the burn-down is done. Measured state: [`docs/development/lint-gate-state.md`](docs/development/lint-gate-state.md).
+**`npm run lint` has 0 errors, and CI gates errors in every leg (2026-11-24).** It passes because rules that fire on existing code are parked in `backend/.eslintrc.js`, with counts, for `.ts` and for the `.js` tests, and warnings are not gated. Re-enabling the parked rules is the burn-down. Measured state: [`docs/development/lint-gate-state.md`](docs/development/lint-gate-state.md).
 
 **UI verification with MCP Playwright:** `browser_navigate` → `https://commonly.me/<route>`, then `browser_snapshot` (assert text/tabs/buttons), `browser_take_screenshot`, and `browser_resize { width: 390, height: 844 }` for mobile. Auth injection: `browser_evaluate: () => { localStorage.setItem('token', 'eyJ...'); location.reload(); }`.
 

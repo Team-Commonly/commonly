@@ -47,11 +47,13 @@ async function buildUsageReport(db, opts = {}) {
   // is excluded in both forms, since a row may hold the string (Mongo 3.6+).
   const inWindow = { at: { $gte: since, $lt: until } };
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const accounts = await db.collection('users').find({ $or: [
-    { role: 'admin' },
-    ...usernames.map((name) => ({ username: new RegExp(`^${escape(name)}$`, 'i') })),
-    ...prefixes.map((prefix) => ({ username: new RegExp(`^${escape(prefix)}`, 'i') })),
-  ] }).project({ _id: 1 }).toArray();
+  const accounts = await db.collection('users').find({
+    $or: [
+      { role: 'admin' },
+      ...usernames.map((name) => ({ username: new RegExp(`^${escape(name)}$`, 'i') })),
+      ...prefixes.map((prefix) => ({ username: new RegExp(`^${escape(prefix)}`, 'i') })),
+    ],
+  }).project({ _id: 1 }).toArray();
   const ours = accounts.flatMap((account) => [account._id, String(account._id)]);
   const kept = { ...inWindow, isInternal: { $ne: true }, userId: { $nin: ours } };
   const dayOf = { $dateToString: { format: '%Y-%m-%d', date: '$at' } };
@@ -60,12 +62,20 @@ async function buildUsageReport(db, opts = {}) {
     db.collection('ui_events').countDocuments({ ...inWindow, $or: [{ isInternal: true }, { userId: { $in: ours } }] }),
     db.collection('ui_events').aggregate([
       { $match: kept },
-      { $group: {
-        _id: { day: dayOf, name: '$name', screen: '$screen', props: '$props' },
-        events: { $sum: 1 },
-        people: { $addToSet: '$userId' },
-      } },
-      { $project: { _id: 0, key: '$_id', events: 1, people: { $size: '$people' } } },
+      {
+        $group: {
+          _id: {
+            day: dayOf, name: '$name', screen: '$screen', props: '$props',
+          },
+          events: { $sum: 1 },
+          people: { $addToSet: '$userId' },
+        },
+      },
+      {
+        $project: {
+          _id: 0, key: '$_id', events: 1, people: { $size: '$people' },
+        },
+      },
     ], { allowDiskUse: true }).toArray(),
     db.collection('ui_events').aggregate([
       { $match: kept },
@@ -81,7 +91,9 @@ async function buildUsageReport(db, opts = {}) {
 
   const counts = await db.collection('ui_daily_counts')
     .find({ day: { $gte: utcDay(since), $lt: utcDay(until) } })
-    .project({ _id: 0, day: 1, name: 1, page: 1, refTag: 1, value: 1, n: 1 })
+    .project({
+      _id: 0, day: 1, name: 1, page: 1, refTag: 1, value: 1, n: 1,
+    })
     .toArray();
   // F399's failed-read count lives in the same collection; it is no page hit.
   // A cell under USAGE_STATE_MIN prints as '<5'.
@@ -137,6 +149,8 @@ function formatUsageReport(report) {
 }
 
 async function main() {
+  // Loaded only when run, so the test can import buildUsageReport alone.
+  // eslint-disable-next-line global-require
   const { MongoClient } = require('mongodb');
   const client = new MongoClient(process.env.MONGO_URI);
   await client.connect();
