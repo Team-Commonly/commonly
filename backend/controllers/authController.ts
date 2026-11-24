@@ -14,7 +14,7 @@ const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
-const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
+const { deriveUsernameFromEmail, isValidUsername, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
   issueEmailVerificationToken,
@@ -436,11 +436,19 @@ exports.register = async (req: any, res: any) => {
 
     // The register page asks only for an email and a password (TASK-290 A), so
     // the handle comes from the email. A client that sends a username keeps it,
-    // with every check below as before.
+    // once it passes the rules a rename uses (F591): lowercased, then the same
+    // pattern, so no account name carries spaces or line breaks into the
+    // prompts, mentions and cards that print it.
     const usernameDerived = !typedUsername;
+    if (!usernameDerived && !isValidUsername(typedUsername.toLowerCase())) {
+      return res.status(400).json({
+        error: 'Username must be 2-40 lowercase letters, digits, or hyphens, starting with a letter or digit.',
+        code: 'invalid_username',
+      });
+    }
     const normalizedUsername = usernameDerived
       ? await deriveUsernameFromEmail(normalizedEmail)
-      : typedUsername;
+      : typedUsername.toLowerCase();
 
     // Reserved for agents (TASK-133 b). A row that takes an agent's derived name
     // or its address IS the row an install would adopt, and registration is the

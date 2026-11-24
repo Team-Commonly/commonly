@@ -52,7 +52,7 @@ test.describe('Authentication', () => {
     const password = 'LoginPass456!';
     await request.post(
       `${process.env.E2E_API_URL || 'http://localhost:5000'}/api/auth/register`,
-      { data: { username: `loginuser_${tag}`, email, password, invitationCode: '' } },
+      { data: { username: `loginuser-${tag}`, email, password, invitationCode: '' } },
     );
 
     await page.goto('/v2/login');
