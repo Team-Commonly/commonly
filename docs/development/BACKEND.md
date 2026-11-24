@@ -66,7 +66,7 @@ backend/
 
 | Method | Endpoint               | Description                 | Request Body                          | Response                        |
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
-| POST   | /api/auth/register     | Register a new user; without a `username`, one is derived from the email | `{email, password, username?, invitationCode?}` | Registration status message |
+| POST   | /api/auth/register     | Register a new user; without a `username`, one is derived from the email. A sent `username` is lowercased and must be 2-40 letters, digits or hyphens, starting with a letter or digit (the rename rule); otherwise 400 `invalid_username` | `{email, password, username?, invitationCode?}` | Registration status message |
 | GET    | /api/auth/registration-policy | Public registration mode | - | `{inviteOnly, invitationRequired, hasInvitationCodes, registrationOpen}` |
 | POST   | /api/auth/login        | Login user                  | `{email, password}`                  | User object with token          |
 | GET    | /api/auth/user         | Get current user            | -                                    | User object                     |

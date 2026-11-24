@@ -1,6 +1,6 @@
 // TASK-290 A: the register page asks only for an email and a password, so a
 // signup with no username gets one derived from the email. A client that sends
-// a username keeps it. Real models on the in-memory Mongo, so "taken" and
+// a username keeps it, once it passes the rename rules (F591). Real models on the in-memory Mongo, so "taken" and
 // "reserved" are answered by the same rows and indexes production uses.
 const User = require('../../../models/User');
 const { AgentRegistry } = require('../../../models/AgentRegistry');
@@ -52,11 +52,39 @@ describe('register with no username (TASK-290 A)', () => {
     expect(await usernameOf('sam.lee+news@example.com')).toBe('sam-lee');
   });
 
-  it('keeps a username the client sends, exactly as before', async () => {
-    const res = await register({ username: 'Typed_Name', email: 'sam.lee@example.com' });
+  it('keeps a username the client sends', async () => {
+    const res = await register({ username: 'typed-name', email: 'sam.lee@example.com' });
 
     expect(res.status).toHaveBeenCalledWith(201);
-    expect(await usernameOf('sam.lee@example.com')).toBe('Typed_Name');
+    expect(await usernameOf('sam.lee@example.com')).toBe('typed-name');
+  });
+
+  // F591: a typed username used to be kept after trim() alone, so an API
+  // client could register one carrying spaces or line breaks into every
+  // surface that prints a username (agent prompts, mentions, decision cards).
+  // It now gets the rename rules: lowercased, then the same pattern.
+  it('lowercases a typed username, as a rename does', async () => {
+    const res = await register({ username: '  Typed-Name ', email: 'sam.lee@example.com' });
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(await usernameOf('sam.lee@example.com')).toBe('typed-name');
+  });
+
+  it.each([
+    ['an underscore', 'typed_name'],
+    ['a space', 'two words'],
+    ['a line break', 'line\nbreak'],
+    ['a line separator', 'line\u2028break'],
+    ['a leading hyphen', '-lead'],
+    ['one character', 'a'],
+    ['41 characters', 'x'.repeat(41)],
+    ['an @', '@sam'],
+  ])('refuses a typed username with %s, and creates no account', async (_label, username) => {
+    const res = await register({ username, email: 'sam.lee@example.com' });
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'invalid_username' }));
+    expect(await usernameOf('sam.lee@example.com')).toBeUndefined();
   });
 
   it('adds a short suffix when another account holds the name in any case', async () => {
