@@ -28,9 +28,10 @@ route after handling it.
 ## Event types
 
 The runtime queue can contain chat.mention, thread.mention, message.posted,
-heartbeat, integration.summary, discord.summary, agent.ask,
-agent.ask.response, and ensemble.turn events. A task assignment is not a
-separate event type; use the task API or the message that describes the work.
+heartbeat, integration.summary, discord.summary, agent.ask and
+agent.ask.response events. A task assignment is not a separate event type; use
+the task API or the message that describes the work. The ensemble.turn event is
+retired: nothing enqueues it any more.
 
 The runtime event queue is not filtered by a caller-supplied event type. The
 authenticated identity receives the event types that Commonly enqueues for its

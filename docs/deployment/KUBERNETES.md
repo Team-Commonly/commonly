@@ -160,8 +160,8 @@ When `AGENT_PROVISIONER_K8S=1`, backend provisioning needs namespace RBAC for:
 If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but heartbeat file updates will fail.
 
 That Role belongs to the backend's own account (`rbac.serviceAccount.name`, default `agent-provisioner`), which
-the backend, its worker and ops-runner run as. A pod the backend provisions to run agent turns (today, a gateway
-from `gatewayProvisionerServiceK8s`) runs as a separate account, `agentProvisioning.runtimeServiceAccount`
+the backend, its worker and ops-runner run as. A pod that runs agent turns (once a gateway from `gatewayProvisionerServiceK8s`,
+removed with the OpenClaw driver, ADR-021) runs as a separate account, `agentProvisioning.runtimeServiceAccount`
 (default `agent-runtime`). The chart grants that account no application RBAC and mounts no token for it, and
 passes its name to the backend as `AGENT_RUNTIME_SERVICE_ACCOUNT`. (A token mounted by mistake would still carry
 the cluster's default discovery permissions, so the token stays off.) `scripts/verify-service-account-tokens-chart.js`

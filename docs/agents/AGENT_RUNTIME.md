@@ -186,68 +186,12 @@ so every CAP-compliant runtime sees it through the existing
 
 `payload.rawContent` (F109) carries the author's message with no frames at all, on every `chat.mention` / `thread.mention` / `message.posted` / DM payload built from one message; `content` is unchanged. Read `rawContent` when you need the user's own words (echo, quoting, parsing a command), `content` when a model should see the cues. A row can carry more than one message (see *Second mention of one agent* under Event Queue): `rawContent` then holds each message, separated by a blank line, and `payload.coalesced` lists the later ones apart.
 
-### Legacy gateway concurrency: `agents.defaults.maxConcurrent: 16`
+### Legacy gateway notes (removed)
 
-This section applies only when the optional legacy gateway profile is enabled.
-
-The legacy gateway's built-in default is 4 — too tight under degraded LLM hours.
-Each session task acquires a slot in `lane=main` before its LLM call;
-with 4 slots and ~20 active dev agents, queueAhead climbs to 20+ and
-lane waits exceed 200s.
-
-`agentProvisionerServiceK8s.applyOpenClawConcurrencyDefaults` writes
-`agents.defaults.maxConcurrent: 16` to ConfigMap + PVC `moltbot.json`
-on every reprovision. `subagents.maxConcurrent` stays tighter (4) to
-avoid fan-out blowups when a long task spawns many sub-tasks.
-
-Takes effect on `reprovision-all` + gateway config refresh. Verify:
-
-```bash
-kubectl exec -n commonly-dev deploy/clawdbot-gateway -- python3 -c \
-  "import json; d=json.load(open('/state/moltbot.json')); print(d['agents']['defaults'])"
-```
-
-### Legacy gateway inbound `From` is always `commonly:<podId>`
-
-The legacy gateway's outbound dispatcher uses the inbound `From` field as the
-**conversation key** for routing replies. For Commonly the conversation
-is always the pod (whether 1:1 or team) — never an individual user.
-Sender identity lives separately in `SenderId` / `SenderName`.
-
-Setting `From: commonly:<userId>` (the historical bug, fixed in
-clawdbot `4a169db59`) silently breaks every agent-room DM: the assistant
-generates a correct reply visible in the agent's `session.jsonl`, but
-the gateway dispatches it to a non-existent `commonly:<userId>` chat
-and the message never lands in the pod.
-
-**Tell-tale**: `conversation_label` in the session metadata equals
-`commonly:<userId>` instead of `commonly:<podId>`. If you see that with
-no error in the gateway log and a fast clean ack, the reply was
-generated and dropped on the floor.
-
-### Auth profiles must declare `type` and `provider`
-
-The legacy gateway's `resolveApiKeyForProfile` (in `auth-profiles/oauth.ts`)
-filters profiles by `cred.type === 'api_key' | 'oauth' | 'token'`. A
-profile with `key` and `apiKey` set but `type` undefined returns null
-and the resolver falls through to env-var lookup — sending the wrong
-key (e.g. real `OPENROUTER_API_KEY` to LiteLLM, which rejects with
-`401 Invalid proxy server token`).
-
-Every profile written from `agentProvisionerServiceK8s.ts` must include:
-
-```js
-store.profiles['<provider>:<id>'] = {
-  type: 'api_key',
-  provider: 'openrouter' | 'openai-codex' | ...,
-  key: '<value>',
-  apiKey: '<value>',
-};
-```
-
-Codex profiles in `CODEX_BYPASS_LITELLM=true` mode use `type: 'oauth'`
-with raw JWT in `access`. With bypass off (the current default), use
-`type: 'api_key'` with the LiteLLM virtual key.
+The sections on the OpenClaw gateway's concurrency defaults, its inbound `From`
+conversation key and its auth-profile shape described config the backend
+moltbot driver wrote into `moltbot.json`. That driver was removed (ADR-021), so
+nothing in this repo writes that config any more. The history is in git.
 
 ### Typing indicator fires at gateway-fetch time, not enqueue time
 
@@ -455,32 +399,15 @@ The reply pipeline:
    that field is present. `stripDirectiveTags()` strips any leftover
    inline tags from messages that predate the pipeline fix.
 
-### Preset customization survives reprovision
+### Preset customization
 
-Agent installations carry `config.customizations: { soul: bool, heartbeat: bool }`.
-When a flag is true, the provisioner SKIPS overwriting that file
-during reprovision-all — letting users fork a preset and keep their
-edits. Per-agent preset matching:
-
-```ts
-const matched = PRESET_DEFINITIONS.find(
-  p => p.id === (configPayload.presetId || normalizedInstanceId)
-);
-```
-
-Without an explicit `presetId`, `instanceId` matches a preset of the
-same name (e.g. instance `chief-of-staff` → preset `chief-of-staff`).
-With `config.presetId` set, that wins (e.g. instance `kate` with
-`config.presetId: "marketing-strategist"` → matches that preset).
-
-Both `presetId` and `customizations` are surfaced in the API response
-from `buildAgentInstallationPayload`. The frontend Agent card shows a
-`preset:<id>` chip and (if customized) a `customized` badge.
-
-`force: true` on `POST .../provision` overrides both flags and
-re-applies the preset. Currently only the K8s provisioner
-(`agentProvisionerServiceK8s.ts`) honors customizations — the Docker
-variant (`agentProvisionerService.ts`) doesn't yet.
+Agent installations can carry `config.presetId` and
+`config.customizations: { soul: bool, heartbeat: bool }`, and both are surfaced
+by `buildAgentInstallationPayload` (the Agent card shows a `preset:<id>` chip
+and a `customized` badge). The flags guarded the SOUL.md and HEARTBEAT.md files
+the OpenClaw provisioner wrote; that provisioner was removed (ADR-021), so no
+reprovision writes those files now. The four surviving presets are
+autonomy-curator, social-amplifier, claude-code-agent and webhook-agent.
 
 ## Event Queue
 
@@ -677,109 +604,52 @@ An example external runtime lives at:
 
 ## Provisioning (Local Dev)
 
-Agents Hub can now provision local runtime configs for supported agents:
+Agents Hub can provision local runtime configs for supported agents:
 
 - `POST /api/registry/pods/:podId/agents/:name/provision`
 
 This endpoint:
-1. Issues a runtime token (and, for the optional legacy gateway, a user token).
-2. Writes runtime config to:
-   - `external/clawdbot-state/config/moltbot.json` (legacy gateway)
-   - `external/commonly-bot-state/runtime.json` (Commonly Summarizer)
-3. For the legacy gateway, mirrors connected pod integrations (Discord/Slack/Telegram) into
-   gateway channel config (`channels.<provider>.accounts.<integrationId>`) so
-   channel skills can use pod-installed integrations without manual token copy.
-4. Returns tokens and a `restartRequired` hint.
+1. Issues a runtime token, and a user token where the runtime receives one.
+2. For the `internal` runtime (Commonly Summarizer), writes the account into
+   `external/commonly-bot-state/runtime.json` (`COMMONLY_BOT_CONFIG_PATH`).
+3. Returns tokens and a `restartRequired` hint.
+
+A stored OpenClaw (`runtimeType=moltbot`) row answers 410 `runtime_retired`:
+the backend driver that wrote `moltbot.json` was removed (ADR-021), and so were
+the gateway registry (`/api/gateways`) and its skill credentials
+(`/api/skills/gateway-credentials`).
 
 Force reprovision:
 - Pass `force: true` in the provision request body to rotate the shared runtime token and bypass the recent-provision throttle.
 - Agents Hub exposes this as **Force reprovision (rotate runtime token)** in the Runtime section.
-- For the legacy gateway (`runtimeType=moltbot`), provision/reprovision always rewrites runtime
-  config for that instance even when the runtime token already exists, so shared
-  per-instance settings stay aligned across pods.
-
-The backend uses:
-- `OPENCLAW_CONFIG_PATH` (default `external/clawdbot-state/config/moltbot.json`)
-- `COMMONLY_BOT_CONFIG_PATH` (default `external/commonly-bot-state/runtime.json`)
-
-### Gateway Registry + Credentials (Admin)
-
-Commonly tracks gateways separately from agents. Admins can create gateway
-records via `/api/gateways` and manage shared skill credentials per gateway via:
-- `GET /api/skills/gateway-credentials?gatewayId=...`
-- `PATCH /api/skills/gateway-credentials`
-
-These credentials are stored under `skills.entries` in the gateway config and
-apply to **all agents** running on that gateway.
-For k8s gateways, credential writes target the selected gateway ConfigMap.
 
 Optional Docker auto-start (dev only):
 - Set `AGENT_PROVISIONER_DOCKER=1` and mount `/var/run/docker.sock` into the backend container.
-- Backend will run `docker compose` to start:
-  - `clawdbot-gateway` (legacy gateway)
-  - `commonly-bot` (summarizer)
+- Backend will run `docker compose` to start `commonly-bot` (summarizer).
 
-Runtime controls:
+Runtime controls (a stored OpenClaw row answers 410 `runtime_retired` on each):
 - `GET /api/registry/pods/:podId/agents/:name/runtime-status`
 - `POST /api/registry/pods/:podId/agents/:name/runtime-start`
 - `POST /api/registry/pods/:podId/agents/:name/runtime-stop`
 - `POST /api/registry/pods/:podId/agents/:name/runtime-restart`
 - `GET /api/registry/pods/:podId/agents/:name/runtime-logs?lines=200`
 
+The OpenClaw workspace routes (`runtime-clear-sessions`, the `heartbeat-file`
+write, `identity-file`, `/openclaw/bundled-skills`) answer 410
+`runtime_retired`. `GET heartbeat-file` reads the agent's AgentProfile.
+
 ## Provisioning (K8s)
-
-In K8s, the legacy gateway provisioning flow writes its config into a gateway
-ConfigMap instead of local files. Two gateway options are supported:
-
-- **Shared gateway**: uses the namespace `clawdbot-gateway` deployment/config.
-- **Custom gateway**: targets a `gateway-<slug>` deployment/config (admin only).
 
 For agent-first summarization in K8s:
 - `commonly-bot` should run as a dedicated Deployment (`commonly-bot`) managed by Helm.
 - Provisioning `runtimeType=internal` writes account tokens/config into `commonly-bot-config` (`runtime.json`).
 - Runtime start/stop endpoints for `internal` are config-only on K8s; the Helm deployment is the live event consumer.
 
-Heartbeat workspace file behavior in K8s:
-- Provisioning ensures `/workspace/<instanceId>/HEARTBEAT.md` exists in the selected gateway pod.
-- `POST /api/registry/pods/:podId/agents/:name/heartbeat-file` writes to the same workspace path in K8s.
-- Provision/reprovision syncs workspace skills to `/workspace/<instanceId>/skills` and seeds a default `commonly/SKILL.md`.
-- Seeded `commonly/SKILL.md` now exports `ACCOUNT_ID` before token lookup so heartbeat fallback reads the correct per-agent runtime/user token from `/config/moltbot.json`.
-- Legacy gateway skill sync runs on provision using installation `config.skillSync` (or current pod fallback), so Force reprovision refreshes imported skills.
-- Runtime skill discovery is per-agent workspace (`/workspace/<instanceId>/skills`); `/workspace/_master` is internal and not a user-selectable skill source.
-- Bundled gateway skills are not treated as a separate runtime source in Agent Hub sync settings.
-- Long-lived sessions now refresh unversioned (`version=0`) skill snapshots so newly synced workspace skills are picked up without manual session reset.
-- After changing gateway skill credentials (for example `tavily` API key), reprovision the agent runtime or restart the selected gateway deployment to apply values immediately.
-- Backend service account needs `pods/exec` RBAC in the namespace for heartbeat file writes to work.
-
-Runtime logs stream from the selected gateway deployment and are filtered by
-instance/account id. The runtime endpoints accept:
-
-- `instanceId` (query/body)
-- `gatewayId` (query/body, admin only)
-
-When provisioning the legacy gateway in K8s, the gateway deployment is automatically
-restarted after config updates so new accounts take effect.
-Provision can briefly return empty/failed log fetch while the deployment rolls;
-retry runtime logs after the gateway pod reaches `Running`.
-
 Global social integrations:
 - Admin global X/Instagram setup creates/uses the `Global Social Feed` pod in MongoDB.
 - Admin global X setup supports PKCE OAuth connect (`POST /api/admin/integrations/global/x/oauth/start`, callback `GET /api/admin/integrations/global/x/oauth/callback`) and persists refreshable user-context tokens for runtime feed sync.
 - Global X feed sync supports OAuth-following ingestion controls (`followFromAuthenticatedUser`, `followingWhitelistUserIds`, `followingMaxUsers`) plus admin following-list discovery via `GET /api/admin/integrations/global/x/following`.
 - Backend also syncs that pod into PostgreSQL so standard chat/message access works for the creator.
-
-### Legacy gateway auth profiles (LLM keys)
-
-- By default, gateway pods seed `auth-profiles.json` for each account using
-  `GEMINI_API_KEY` (plus optional `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) from
-  the `api-keys` secret.
-- If an installation provides custom LLM keys, they are stored on the
-  installation runtime config and copied into that agent’s `auth-profiles.json`
-  on gateway restart.
-
-Skill credential overrides:
-- Installations can include `config.runtime.skillEnv` (skill name → env/apiKey).
-- Provisioning merges these into gateway `skills.entries` so the gateway runtime can access them.
 
 ## Docker Compose (dev)
 
@@ -799,36 +669,14 @@ Defaults:
 Optional:
 - `COMMONLY_SUMMARIZER_USER_TOKEN` can be set if the summarizer needs MCP/REST access beyond the runtime endpoints.
 
-### Commonly queue settings (legacy gateway)
-
-To prevent duplicate ensemble turn bursts from merging into huge prompts, set a global queue policy in `moltbot.json`:
-
-```json
-{
-  "messages": {
-    "queue": {
-      "mode": "queue",
-      "cap": 1,
-      "drop": "old"
-    }
-  }
-}
-```
-
-Note: per-channel overrides like `messages.queue.byChannel.commonly` are **not** supported by the legacy gateway config validation.
-
 ### Token Names (Dev)
 
 - `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` → runtime token (`cm_agent_*`)
 - `COMMONLY_SUMMARIZER_USER_TOKEN` → bot user token (`cm_*`, optional)
-- `OPENCLAW_RUNTIME_TOKEN` → legacy gateway runtime token (`cm_agent_*`)
-- `OPENCLAW_USER_TOKEN` → legacy gateway bot user token (`cm_*`)
-- `OPENCLAW_B_RUNTIME_TOKEN` → runtime token for a second legacy gateway instance
-- `OPENCLAW_B_USER_TOKEN` → bot user token for a second legacy gateway instance
 
 ## Legacy gateway (Clawdbot/Moltbot)
 
-The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). The `clawdbot` compose profile, `./dev.sh clawdbot` and `commonly dev clawdbot` are gone with it.
+The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). The `clawdbot` compose profile, `./dev.sh clawdbot` and `commonly dev clawdbot` are gone with it. The backend moltbot driver followed: the provisioner no longer writes `moltbot.json`, the scheduler runs no session reset, session-size or Codex OAuth refresh job, and the agent ensemble feature and its `ensemble.turn` event are gone. Stored moltbot installation rows are kept; their runtime routes answer 410 `runtime_retired`.
 
 ## E2E Testing
 

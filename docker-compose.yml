@@ -94,7 +94,6 @@ services:
       # Skills catalog index
       - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
       # Agent provisioning config paths
-      - OPENCLAW_CONFIG_PATH=/app/external/clawdbot-state/config/moltbot.json
       - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
       # Allow backend to orchestrate docker compose for local runtimes
       - AGENT_PROVISIONER_DOCKER=${AGENT_PROVISIONER_DOCKER:-0}
@@ -112,7 +111,6 @@ services:
       # Mount skills catalog index
       - ./backend/docs/skills:/app/docs/skills:ro
       # Mount agent runtime config state for provisioning
-      - ./external/clawdbot-state/config:/app/external/clawdbot-state/config
       - ./external/commonly-bot-state:/app/external/commonly-bot-state
       # Docker socket for provisioning (disabled by default)
       - /var/run/docker.sock:/var/run/docker.sock

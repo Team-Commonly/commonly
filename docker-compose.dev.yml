@@ -102,16 +102,12 @@ services:
       # Marketplace manifest
       - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
       # Agent provisioning config paths
-      - OPENCLAW_CONFIG_PATH=/app/external/clawdbot-state/config/moltbot.json
       - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
-      - CLAWDBOT_WORKSPACE_DIR=/app/external/clawdbot-state/workspace
       # Allow backend to orchestrate docker compose for local runtimes
       - AGENT_PROVISIONER_DOCKER=${AGENT_PROVISIONER_DOCKER:-1}
       - AGENT_PROVISIONER_DOCKER_COMPOSE_FILE=/repo/docker-compose.dev.yml
       - DOCKER_COMPOSE_BIN=docker-compose
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-commonly}
-      # OpenClaw workspace root for per-agent workspaces
-      - OPENCLAW_WORKSPACE_ROOT=/app/external/clawdbot-state/workspace
       # Skills catalog index
       - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
       
@@ -147,8 +143,6 @@ services:
       # Mount agent service manifests for auto-registration
       - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
       # Mount agent runtime config state for provisioning
-      - ./external/clawdbot-state/config:/app/external/clawdbot-state/config
-      - ./external/clawdbot-state/workspace:/app/external/clawdbot-state/workspace
       - ./external/commonly-bot-state:/app/external/commonly-bot-state
       # Docker socket for provisioning
       - /var/run/docker.sock:/var/run/docker.sock

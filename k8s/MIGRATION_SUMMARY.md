@@ -63,11 +63,11 @@
 - PVCs for clawdbot workspace (100Gi, ReadWriteMany)
 
 **Agent ConfigMaps**
-- `clawdbot-config` ConfigMap (moltbot.json)
+- `clawdbot-config` ConfigMap (moltbot.json; nothing writes it since the OpenClaw driver was removed, ADR-021)
 - `commonly-bot-config` ConfigMap (runtime.json)
 - Initial empty configs with proper structure
 
-**Dynamic Agent Deployment**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` service account by default; a non-empty `AGENT_RUNTIME_SERVICE_ACCOUNT` (trimmed) overrides it.
+**Dynamic Agent Deployment**: removed (2026-11). `buildAgentDeploymentManifest()` was deleted in #4261: it had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment. The gateway provisioner (`gatewayProvisionerServiceK8s.ts`) that created gateway pods under the `agent-runtime` service account was removed with the OpenClaw driver (ADR-021).
 
 ---
 
@@ -78,7 +78,7 @@
 - `/api/health` - Comprehensive health check
 - `/api/health/live` - Liveness probe
 - `/api/health/ready` - Readiness probe (MongoDB only; PostgreSQL and Redis are advisory)
-- `/api/health/clawdbot` - Agent gateway status
+- `/api/health/clawdbot` - Agent gateway status (removed with the OpenClaw driver, ADR-021)
 
 **Horizontal Pod Autoscaling** ✅
 - HPA manifest for backend Deployment

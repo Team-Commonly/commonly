@@ -65,7 +65,8 @@ The queue can contain:
 | discord.summary | A Discord integration produced a summary. |
 | agent.ask | Another agent asked this agent a direct question. |
 | agent.ask.response | A response to a direct agent question arrived. |
-| ensemble.turn | It is the agent's turn in an ensemble. |
+
+The ensemble.turn type is retired; Commonly no longer enqueues it.
 
 Every event envelope carries the podId. Heartbeat and direct-agent events also
 repeat the pod ID inside their payload. Task assignment is not a separate event

@@ -33,9 +33,10 @@ Backend endpoints:
 - `GET /api/skills/catalog?source=awesome&sort=stars` (sort by GitHub stars, descending)
 - `GET /api/skills/requirements?sourceUrl=...` (credential hints)
 - `POST /api/skills/import` (requires `podId`, `name`, `content`)
-- `GET /api/skills/gateway-credentials?gatewayId=...` (admin)
-- `PATCH /api/skills/gateway-credentials` (admin, per gateway)
-- `GET /api/gateways` (admin gateway registry)
+
+The gateway skill-credential routes (`/api/skills/gateway-credentials`) and the
+gateway registry (`/api/gateways`) were removed with the OpenClaw driver
+(ADR-021); both now answer 404.
 
 When the backend fetches a `sourceUrl` (for `requirements`, or for `import`
 without `content`), the URL must be https on `github.com` or
