@@ -11,8 +11,8 @@
 // backend/__tests__/unit/services/gatewayProvisionerServiceK8s.serviceAccount.test.js,
 // and this script checks the account itself: it renders in every lane, mounts
 // no token, no RoleBinding or ClusterRoleBinding the chart renders names it
-// (as the ServiceAccount, its user name, or a system:serviceaccounts group
-// that holds it), and the backend, its worker and ops-runner are told its
+// (as the ServiceAccount, its user name, or a group that holds it:
+// system:authenticated, system:serviceaccounts, system:serviceaccounts:<ns>), and the backend, its worker and ops-runner are told its
 // name. Bindings made outside the chart are not visible here.
 // Renders the chart itself:
 //   node scripts/verify-service-account-tokens-chart.js
@@ -82,7 +82,7 @@ for (const lane of Object.keys(lanes)) {
   const runtimeNs = runtimeAccount?.metadata.namespace;
   const namesRuntime = (s) => (s.kind === 'ServiceAccount' && s.name === AGENT_RUNTIME)
     || (s.kind === 'User' && s.name === `system:serviceaccount:${runtimeNs}:${AGENT_RUNTIME}`)
-    || (s.kind === 'Group' && (s.name === 'system:serviceaccounts' || s.name === `system:serviceaccounts:${runtimeNs}`));
+    || (s.kind === 'Group' && ['system:authenticated', 'system:serviceaccounts', `system:serviceaccounts:${runtimeNs}`].includes(s.name));
   for (const binding of docs.filter((d) => d.kind === 'RoleBinding' || d.kind === 'ClusterRoleBinding')) {
     if ((binding.subjects || []).some(namesRuntime)) {
       failures.push(`${lane}: ${binding.kind}/${binding.metadata.name} binds ${AGENT_RUNTIME}; agent pods must hold no Role`);

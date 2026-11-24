@@ -144,9 +144,9 @@
 - `buildAgentDeploymentManifest()`: Generate Deployment YAML
 - Support for `moltbot` (clawdbot-gateway) and `internal` (commonly-bot)
 - Labels, volume mounts, environment variables
+- Resource limits and health probes
 
 > **Removed (2026-11, #4261):** `buildAgentDeploymentManifest()` had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment, and was deleted. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` account.
-- Resource limits and health probes
 
 **Updated**: `backend/services/agentProvisionerService.js`
 - Added `isK8sMode()` mode detection

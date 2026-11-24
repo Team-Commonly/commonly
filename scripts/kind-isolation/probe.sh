@@ -27,7 +27,7 @@ CANARY_URL="$CANARY:8080"
 passed=0
 failed=0
 ok() { passed=$((passed + 1)); echo "  ok    $1"; }
-bad() { failed=$((failed + 1)); echo "  FAIL  $1"; [ -n "${2:-}" ] && echo "        $2"; }
+bad() { failed=$((failed + 1)); echo "  FAIL  $1"; if [ -n "${2:-}" ]; then echo "        $2"; fi; }
 
 # probe-pod <namespace> <name> <labels> [runtimeClass]
 probe_pod() {
@@ -60,7 +60,7 @@ probe_pod "$NS" edge app=edge-probe
 probe_pod "$NS" backup component=backup,app=backup-probe
 probe_pod "$FOREIGN" spoof app=ops-runner
 probe_pod "$NS" runc-kernel app=kernel-probe
-probe_pod "$NS" gvisor-kernel app=kernel-probe gvisor
+probe_pod "$NS" gvisor-kernel app=ops-runner gvisor
 
 # The per-turn shape OpenShell's Kubernetes driver creates: an agent-sandbox
 # Sandbox whose pod runs under gVisor.
@@ -111,6 +111,10 @@ check "$NS" backup "$CANARY_URL" open "the exempt backup component reaches the c
 check "$NS" intruder "$CANARY_URL" closed "an ordinary pod is dropped on the way to the canary"
 
 echo "== the sandboxed agent pod"
+# Network works under gVisor: the same runtime with a listed label connects, so
+# the drops below are the policies, not a broken sandbox network.
+check "$NS" gvisor-kernel "$MONGO" open "a listed client under gVisor reaches Mongo"
+check "$NS" gvisor-kernel "$CANARY_URL" closed "a pod under gVisor is dropped on the way to the canary"
 for target in "$MONGO" "$REDIS" "$POSTGRES" "$BACKEND" "$CANARY_URL"; do
   check "$NS" "$SANDBOX" "$target" closed "the Sandbox pod is dropped at $target"
 done

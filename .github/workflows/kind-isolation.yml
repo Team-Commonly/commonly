@@ -5,7 +5,9 @@ name: kind isolation harness
 # gVisor RuntimeClass isolates agent pods, and an agent-sandbox Sandbox (the
 # per-turn shape OpenShell's Kubernetes driver creates) is fenced off from the
 # stores. Runs scripts/kind-isolation/probe.sh against values-kind-isolation.yaml.
-# Everything outside this repo is pinned by version and checksum or digest.
+# Every download, and the Calico, agent-sandbox and probe images, are pinned by
+# checksum or digest. The chart's own store images (values-local.yaml), the
+# kind node image and the setup actions come by tag, as in smoke-test.yml.
 
 on:
   workflow_dispatch:
@@ -13,6 +15,10 @@ on:
     paths:
       - 'k8s/helm/commonly/templates/network/**'
       - 'k8s/helm/commonly/templates/agent-provisioning/**'
+      - 'k8s/helm/commonly/templates/databases/**'
+      - 'k8s/helm/commonly/templates/core/backend-deployment.yaml'
+      - 'k8s/helm/commonly/templates/ops/**'
+      - 'k8s/helm/commonly/templates/backup/**'
       - 'k8s/helm/commonly/values.yaml'
       - 'k8s/helm/commonly/values-local.yaml'
       - 'k8s/helm/commonly/values-kind-isolation.yaml'
@@ -115,15 +121,21 @@ jobs:
           curl -sSfL --retry 4 --connect-timeout 10 --max-time 60 \
             "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml" -o "$RUNNER_TEMP/calico.yaml"
           echo "${CALICO_SHA256}  $RUNNER_TEMP/calico.yaml" | sha256sum --check --strict
-          # Pull each image by digest on the runner (verified), and load it into
-          # the node under the tag the manifest names, so the node never pulls.
+          # Pin each image the manifest names to its digest; the node's
+          # containerd then pulls by digest and checks it. Then assert no
+          # unpinned image is left, so a manifest change can't slip one in.
+          cp "$RUNNER_TEMP/calico.yaml" "$RUNNER_TEMP/calico-pinned.yaml"
           for pair in "cni:${CALICO_CNI_DIGEST}" "node:${CALICO_NODE_DIGEST}" "kube-controllers:${CALICO_KUBE_CONTROLLERS_DIGEST}"; do
             name=${pair%%:*}; digest=${pair#*:}
-            docker pull "docker.io/calico/${name}@${digest}"
-            docker tag "docker.io/calico/${name}@${digest}" "docker.io/calico/${name}:${CALICO_VERSION}"
-            kind load docker-image "docker.io/calico/${name}:${CALICO_VERSION}" --name "$CLUSTER"
+            ref="docker.io/calico/${name}:${CALICO_VERSION}"
+            grep -qF "image: ${ref}" "$RUNNER_TEMP/calico-pinned.yaml"
+            sed -i "s@image: ${ref}\$@image: ${ref}\@${digest}@" "$RUNNER_TEMP/calico-pinned.yaml"
           done
-          sed 's@192.168.0.0/16@10.244.0.0/16@g' "$RUNNER_TEMP/calico.yaml" | kubectl apply -f -
+          sed -i 's@192.168.0.0/16@10.244.0.0/16@g' "$RUNNER_TEMP/calico-pinned.yaml"
+          if grep -E '^\s*image:' "$RUNNER_TEMP/calico-pinned.yaml" | grep -v '@sha256:'; then
+            echo "an image in calico.yaml is not pinned by digest"; exit 1
+          fi
+          kubectl apply -f "$RUNNER_TEMP/calico-pinned.yaml"
           kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
           kubectl -n kube-system rollout status deployment/calico-kube-controllers --timeout=300s
           kubectl wait nodes --all --for=condition=Ready --timeout=120s
@@ -135,7 +147,11 @@ jobs:
           echo "${AGENT_SANDBOX_SHA256}  $RUNNER_TEMP/sandbox.yaml" | sha256sum --check --strict
           image="registry.k8s.io/agent-sandbox/agent-sandbox-controller:${AGENT_SANDBOX_VERSION}"
           grep -qF "image: ${image}" "$RUNNER_TEMP/sandbox.yaml"
-          sed "s@image: ${image}\$@image: ${image}\@${AGENT_SANDBOX_CONTROLLER_DIGEST}@" "$RUNNER_TEMP/sandbox.yaml" | kubectl apply -f -
+          sed "s@image: ${image}\$@image: ${image}\@${AGENT_SANDBOX_CONTROLLER_DIGEST}@" "$RUNNER_TEMP/sandbox.yaml" > "$RUNNER_TEMP/sandbox-pinned.yaml"
+          if grep -E '^\s*image:' "$RUNNER_TEMP/sandbox-pinned.yaml" | grep -v '@sha256:'; then
+            echo "an image in sandbox.yaml is not pinned by digest"; exit 1
+          fi
+          kubectl apply -f "$RUNNER_TEMP/sandbox-pinned.yaml"
           kubectl -n agent-sandbox-system wait --for=condition=Available deployment --all --timeout=300s
           kubectl wait --for=condition=Established crd/sandboxes.agents.x-k8s.io --timeout=60s
 

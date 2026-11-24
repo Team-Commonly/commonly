@@ -6,8 +6,8 @@ CNI (kindnet) ignores NetworkPolicy, and so does any cluster whose CNI doesn't e
 (`scripts/verify-network-policy-chart.js`) prove what the chart *renders*. This harness proves what a cluster
 running it *enforces*.
 
-It runs on any PR that touches the network or agent-provisioning templates, the values it layers, or the harness
-itself, and on `workflow_dispatch`. It needs nothing outside a GitHub-hosted runner: no cloud account and no
+It runs on any PR that touches the network, agent-provisioning, database, backup or ops templates, the backend
+Deployment, the values it layers, or the harness itself, and on `workflow_dispatch`. It needs nothing outside a GitHub-hosted runner: no cloud account and no
 image registry.
 
 ## What it sets up
@@ -15,7 +15,7 @@ image registry.
 | Piece | Why | Pin |
 |---|---|---|
 | kind v0.26.0, no default CNI, pod subnet `10.244.0.0/16` | a real API server and kubelet | binary sha256 |
-| Calico v3.30.3 | enforces NetworkPolicy (the version OpenShell's own kind tests use) | manifest sha256; each image pulled by digest and loaded into the node |
+| Calico v3.30.3 | enforces NetworkPolicy (the version OpenShell's own kind tests use) | manifest sha256; every image it names rewritten to its digest, checked before apply |
 | gVisor `runsc` + `containerd-shim-runsc-v1` | the `runsc` handler, mounted into the node and registered with containerd | release tarball sha512 |
 | agent-sandbox v1.0.3 (`Sandbox` CRD + controller) | the per-turn pod shape OpenShell's Kubernetes driver creates | manifest sha256; controller image by digest |
 | a canary (`agnhost netexec`) on the kind Docker network | stands in for a metadata server: an address in `egress.restrict.exceptCidrs` | image by digest |
@@ -34,8 +34,9 @@ Every probe runs from a throwaway `agnhost` pod with no service-account token.
   the backend. The backup component reaches Mongo. A pod in another namespace that copies a client's label is
   dropped.
 - **Egress.** The canary is dropped for an ordinary pod and reachable from the exempt backup component.
-- **The sandboxed agent pod.** A `Sandbox` whose pod runs under gVisor is dropped at every store, the backend and
-  the canary.
+- **The sandboxed agent pod.** A pod under gVisor with a listed client label reaches Mongo, so gVisor's own
+  networking works. A `Sandbox` whose pod runs under gVisor is then dropped at every store, the backend and the
+  canary.
 - **gVisor.** The RuntimeClass uses the `runsc` handler. A pod under it, and the Sandbox's pod, report gVisor's
   own kernel (`Linux version 4.4.0`), not the node's.
 
@@ -44,6 +45,10 @@ DNS failure or a refused port can't pass as enforcement. Every closed path is pa
 allowed client, so a cluster that drops everything fails too.
 
 ## What it does not prove
+
+- **Pinning is partial.** Downloads and the Calico, agent-sandbox and probe images are pinned by checksum or
+  digest. The chart's store images (`mongo`, `postgres`, `redis` in `values-local.yaml`), the kind node image and
+  the setup actions come by tag. The job holds a read-only token and no secrets.
 
 - **OpenShell itself.** The OpenClaw gateway runtime is retired and its image is no longer built, so the harness
   doesn't provision a gateway. It probes the pod shape a sandboxed turn uses instead. Running OpenShell's sandbox
