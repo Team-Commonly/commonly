@@ -297,7 +297,7 @@ const V2GlobalIntegrations: React.FC = () => {
       <div className="v2-global-int__pair">
         <section className="v2-global-int__card" aria-labelledby="v2-global-int-x">
           <div className="v2-global-int__head">
-            <h2 className="v2-global-int__name" id="v2-global-int-x">X (Twitter) <Status status={xConfig.status} /></h2>
+            <div className="v2-global-int__name"><h2 className="v2-global-int__title" id="v2-global-int-x">X (Twitter)</h2><Status status={xConfig.status} /></div>
             <Check label="Enabled" checked={xConfig.enabled} onChange={(enabled) => setXConfig({ ...xConfig, enabled })} />
           </div>
           <details className="v2-global-int__details">
@@ -363,7 +363,7 @@ const V2GlobalIntegrations: React.FC = () => {
 
         <section className="v2-global-int__card" aria-labelledby="v2-global-int-instagram">
           <div className="v2-global-int__head">
-            <h2 className="v2-global-int__name" id="v2-global-int-instagram">Instagram <Status status={instagramConfig.status} /></h2>
+            <div className="v2-global-int__name"><h2 className="v2-global-int__title" id="v2-global-int-instagram">Instagram</h2><Status status={instagramConfig.status} /></div>
             <Check label="Enabled" checked={instagramConfig.enabled} onChange={(enabled) => setInstagramConfig({ ...instagramConfig, enabled })} />
           </div>
           <details className="v2-global-int__details">

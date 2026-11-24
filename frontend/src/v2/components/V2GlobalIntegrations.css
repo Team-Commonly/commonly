@@ -58,8 +58,19 @@
   color: var(--v2-text-tertiary);
 }
 
-.v2-global-int__status--on {
+.v2-global-int__title {
+  margin: 0;
+  font: inherit;
+}
+
+.v2p-chip.v2-global-int__status--on {
   color: var(--v2-success-text);
+}
+
+/* The v2p-b primitives carry no :disabled state; a page that disables one adds it. */
+.v2-global-int .v2p-b:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .v2-global-int__details > summary {

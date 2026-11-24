@@ -1,8 +1,7 @@
 // @ts-nocheck
 // The v2 global integrations page keeps the MUI page's calls and contracts:
 // saved tokens are write-only, the backend LLM offer (F98) shows a retired
-// current value disabled, no OpenClaw section is shown or sent, and a model
-// policy save no longer reprovisions every agent.
+// current value disabled, and no OpenClaw section is shown or sent.
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -210,6 +209,9 @@ describe('social policy and status', () => {
     mockGet.mockResolvedValue(connected());
     await renderPage();
     expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    // The status chip sits beside the heading, not inside its name.
+    expect(screen.getByRole('heading', { name: 'X (Twitter)' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Instagram' })).toBeInTheDocument();
   });
 
   test('a failed load shows the server error', async () => {
