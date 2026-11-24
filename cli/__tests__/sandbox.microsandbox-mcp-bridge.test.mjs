@@ -5,13 +5,16 @@
  */
 import { jest } from '@jest/globals';
 import { spawn } from 'child_process';
+import { EventEmitter } from 'events';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import net from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { PassThrough } from 'stream';
 
 import {
-  MCP_BRIDGE_ENV, MCP_BRIDGE_SECRET_ENV, MCP_SHIM_SOURCE, expandPlaceholders, hostMcpServers, startMcpBridge,
+  MAX_LIVE_SESSIONS, MCP_BRIDGE_ENV, MCP_BRIDGE_SECRET_ENV, MCP_SHIM_SOURCE, expandPlaceholders, hostMcpServers,
+  startMcpBridge,
 } from '../src/lib/sandbox/microsandbox-mcp-bridge.js';
 
 // A stand-in stdio server: echoes each line back with its env marker.
@@ -79,6 +82,43 @@ describe('startMcpBridge', () => {
     expect(await talk(bridge.port, `${'0'.repeat(48)} commonly`, 'ping\n')).toBe('');
     expect(await talk(bridge.port, 'commonly', 'ping\n')).toBe('');
     expect(spawnImpl).not.toHaveBeenCalled();
+  });
+
+  test('starts each server in the workspace folder it was given', async () => {
+    const spawnImpl = jest.fn(spawn);
+    const cwd = mkdtempSync(join(tmpdir(), 'bridge-cwd-'));
+    try {
+      bridge = await startMcpBridge({ servers: echoServers(), spawnImpl, cwd });
+      expect(await talk(bridge.port, `${bridge.secret} commonly`, 'ping\n')).toBe('echo[host-side]:ping\n');
+      expect(spawnImpl.mock.calls[0][2].cwd).toBe(cwd);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('caps the live sessions a guest can start', async () => {
+    // A stand-in that never exits, so every session stays live.
+    const spawnImpl = jest.fn(() => {
+      const child = new EventEmitter();
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.kill = () => {};
+      return child;
+    });
+    bridge = await startMcpBridge({ servers: echoServers(), spawnImpl });
+    const sockets = [];
+    for (let i = 0; i < MAX_LIVE_SESSIONS + 2; i += 1) {
+      const socket = net.connect(bridge.port, '127.0.0.1');
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => socket.on('connect', resolve));
+      socket.on('error', () => {});
+      socket.write(`${bridge.secret} commonly\n`);
+      sockets.push(socket);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+    }
+    expect(spawnImpl).toHaveBeenCalledTimes(MAX_LIVE_SESSIONS);
+    for (const socket of sockets) socket.destroy();
   });
 
   test('an unknown server name gets nothing', async () => {

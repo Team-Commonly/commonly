@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import {
-  chmod, mkdir, mkdtemp, readdir, rename, rm, writeFile,
+  chmod, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
@@ -65,7 +65,11 @@ export const MSB_PIN = Object.freeze({
 export const GUEST_IMAGE = 'node:22-bookworm-slim@sha256:170fab707454b1350981adcdc2f536ec21f24d06d7f008e8d40064afeacb8a94';
 export const GUEST_CLAUDE_VERSION = '2.1.331';
 export const GUEST_VOLUME = 'commonly-agents';
+// Writable only for the one-time install. Every turn mounts it read-only, so
+// no seat can replace the Claude Code another seat's next turn runs, and
+// concurrent turns never write the same disk image.
 export const GUEST_VOLUME_SPEC = `${GUEST_VOLUME}:/opt/agents:kind=disk,size=4G`;
+export const GUEST_VOLUME_TURN_SPEC = `${GUEST_VOLUME_SPEC},ro`;
 export const GUEST_CLAUDE = '/opt/agents/bin/claude';
 export const GUEST_HOST = 'host.microsandbox.internal';
 export const GUEST_TURN_DIR = '/run/commonly';
@@ -205,8 +209,11 @@ export const ensureMsb = async ({
 } = {}) => {
   const binary = join(root, 'msb.exe');
   const marker = join(root, '.verified');
+  // The marker holds the archive's pinned hash and the hash msb.exe had when
+  // it was unpacked; the binary is hashed again on every use.
   try {
-    if (existsSync(binary) && readFileSync(marker, 'utf8').trim() === asset.sha256) return binary;
+    const [archiveSha, binarySha] = readFileSync(marker, 'utf8').trim().split(/\s+/);
+    if (archiveSha === asset.sha256 && binarySha && sha256(readFileSync(binary)) === binarySha) return binary;
   } catch { /* not installed yet */ }
 
   await mkdir(root, { recursive: true });
@@ -247,7 +254,7 @@ export const ensureMsb = async ({
       // eslint-disable-next-line no-await-in-loop
       await rename(join(from, name), join(root, name));
     }
-    await writeFile(marker, `${asset.sha256}\n`);
+    await writeFile(marker, `${asset.sha256} ${sha256(readFileSync(binary))}\n`);
     return binary;
   } finally {
     await rm(archive, { force: true }).catch(() => {});
@@ -304,16 +311,18 @@ const mountSource = (path, label) => {
   return value;
 };
 
+// The workspace is always read-only here: a writable one would hand the guest
+// the project's .git, whose hooks and config the host's own git later runs.
 export const buildMicrovmRunArgs = ({
-  ports, turnDir, workspace, home, workspaceWritable = false, cpus = 2, memory = '2G',
+  ports, turnDir, workspace, home, cpus = 2, memory = '2G',
 }) => [
   'run',
   '--cpus', String(cpus),
   '--memory', memory,
   ...buildMicrovmFence(ports),
-  '--mount-named', GUEST_VOLUME_SPEC,
+  '--mount-named', GUEST_VOLUME_TURN_SPEC,
   '--mount-dir', `${mountSource(turnDir, 'turn folder')}:${GUEST_TURN_DIR}:ro`,
-  '--mount-dir', `${mountSource(workspace, 'workspace')}:${GUEST_WORKSPACE}${workspaceWritable ? '' : ':ro'}`,
+  '--mount-dir', `${mountSource(workspace, 'workspace')}:${GUEST_WORKSPACE}:ro`,
   '--mount-dir', `${mountSource(home, 'seat home')}:${GUEST_HOME}`,
   '--workdir', GUEST_WORKSPACE,
   GUEST_IMAGE,
@@ -347,8 +356,11 @@ export const writeMicrovmTurn = async (dir, { argv, env, mcpConfig = { mcpServer
 
 // The seat's own HOME inside the guest, kept on the host between turns
 // (transcripts, Claude's settings). Nothing on the host ever runs from it.
-export const microvmSeatHome = (identity, env = process.env) => join(
-  microsandboxRoot(env), 'seats', sha256(Buffer.from(String(identity || 'anonymous'))).slice(0, 20),
+// One per trust, as bwrap keeps a public seat's state apart from the same
+// agent's workspace turns.
+export const microvmSeatHome = (identity, trust = 'public', env = process.env) => join(
+  microsandboxRoot(env), 'seats',
+  `${sha256(Buffer.from(String(identity || 'anonymous'))).slice(0, 20)}-${trust === 'workspace' ? 'workspace' : 'public'}`,
 );
 
 /** The guest's base URL for the host provider proxy: same port and path, the host alias. */
@@ -389,14 +401,19 @@ export const guestMcpConfig = (names, bridge) => ({
  * bridge and removes the folder.
  */
 export const startMicrovmTurn = async ({
-  proxyPort, hostMcpConfig = null, vars = {}, baseEnv = {}, startBridge = startMcpBridge,
+  proxyPort, hostMcpConfig = null, vars = {}, baseEnv = {}, cwd, serverEnv = {}, startBridge = startMcpBridge,
 }) => {
+  // The servers run unconfined on the host, so they enforce the seat's limits
+  // themselves: `serverEnv` carries them (the withheld tools), and `cwd` is the
+  // workspace, the folder a server treats as the seat's own.
+  if (!cwd) throw new Error('the microVM MCP bridge needs the workspace as its servers\' folder');
   const servers = hostMcpServers(hostMcpConfig, vars);
+  for (const spec of servers.values()) Object.assign(spec.env, serverEnv);
   const turnDir = await mkdtemp(join(tmpdir(), 'commonly-microvm-'));
   let bridge = null;
   try {
     await chmod(turnDir, 0o700);
-    if (servers.size) bridge = await startBridge({ servers, baseEnv });
+    if (servers.size) bridge = await startBridge({ servers, baseEnv, cwd });
   } catch (error) {
     await rm(turnDir, { recursive: true, force: true }).catch(() => {});
     throw error;
@@ -412,12 +429,51 @@ export const startMicrovmTurn = async ({
   };
 };
 
-/** msb and the guest's Claude, ready to run a turn. */
-export const prepareMicrovmHost = async ({ log } = {}) => {
-  const msb = await ensureMsb();
-  ensureGuestClaude({ msb, log });
-  return { msb };
+const INSTALL_LOCK_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Runs `fn` holding this version's install lock, so two first turns never
+ * unpack msb or install into the volume (mounted writable then) at once.
+ */
+export const withInstallLock = async (root, fn, {
+  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now,
+} = {}) => {
+  await mkdir(root, { recursive: true });
+  const lock = join(root, '.install.lock');
+  const deadline = now() + waitMs;
+  for (;;) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await writeFile(lock, `${process.pid}\n`, { flag: 'wx' });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      // eslint-disable-next-line no-await-in-loop
+      const held = await stat(lock).catch(() => null);
+      if (held && now() - held.mtimeMs > INSTALL_LOCK_STALE_MS) {
+        // eslint-disable-next-line no-await-in-loop
+        await rm(lock, { force: true });
+      } else if (now() > deadline) {
+        throw new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`);
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setTimeout(resolve, pollMs); });
+      }
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lock, { force: true }).catch(() => {});
+  }
 };
+
+/** msb and the guest's Claude, ready to run a turn. */
+export const prepareMicrovmHost = async ({ log, root = microsandboxRoot() } = {}) => withInstallLock(root, async () => {
+  const msb = await ensureMsb({ root });
+  ensureGuestClaude({ msb, root, log });
+  return { msb };
+});
 
 /**
  * msb gets the host environment it needs to find its own state and the

@@ -35,7 +35,7 @@ const opencode = (await import('../src/lib/adapters/opencode.js')).default;
 const qwen = (await import('../src/lib/adapters/qwen.js')).default;
 
 const {
-  GUEST_CLAUDE, GUEST_HOST, GUEST_MCP_CONFIG, GUEST_TURN_DIR, MICROVM_FLAG_ENV,
+  GUEST_CLAUDE, GUEST_HOST, GUEST_MCP_CONFIG, GUEST_TURN_DIR, MICROVM_FLAG_ENV, startMicrovmTurn,
 } = microsandbox;
 
 const FLAG_ON = { [MICROVM_FLAG_ENV]: '1' };
@@ -199,6 +199,8 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-home-'));
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-scratch-'));
     fs.writeFileSync(path.join(scratch, 'server.mjs'), '');
+    // Windows resolves the launch target before spawning, so it must exist.
+    fs.writeFileSync(MSB, '');
     spawnSync.mockImplementation((cmd) => (cmd === 'which'
       ? { status: 0, stdout: '/usr/bin/true\n' }
       : { status: 0, stdout: '' }));
@@ -281,6 +283,10 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     expect(turn.env.ANTHROPIC_BASE_URL).toBe(`http://${GUEST_HOST}:${PROXY_PORT}/`);
     expect(mcp.mcpServers.commonly.args).toEqual([`${GUEST_TURN_DIR}/mcp-shim.js`, 'commonly']);
     expect(mcp.mcpServers.commonly.env.COMMONLY_MCP_BRIDGE).toMatch(new RegExp(`^${GUEST_HOST}:\\d+$`));
+    // The fence's other port is exactly the bridge the guest's shims dial.
+    const bridgePort = Number(mcp.mcpServers.commonly.env.COMMONLY_MCP_BRIDGE.split(':')[1]);
+    expect(rules).toContain(`allow@host:tcp:${bridgePort}`);
+    expect(bridgePort).not.toBe(PROXY_PORT);
 
     // The host key is nowhere the VM or msb can see.
     const everything = [args.join('\n'), JSON.stringify(opts.env), JSON.stringify(turn), JSON.stringify(mcp)].join('\n');
@@ -291,6 +297,60 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     // The proxy closes and the turn folder is gone afterwards.
     expect(proxy.closed).toBe(1);
     expect(fs.existsSync(turnDir)).toBe(false);
+  });
+
+  test('the bridged MCP servers run in the workspace and withhold the seat\'s tools themselves', async () => {
+    const proxy = proxyStub();
+    const { impl } = recorder();
+    let seen = null;
+    await withFlag('1', () => run(impl, {
+      extra: {
+        _startProviderProxy: proxy.start,
+        _startMicrovmTurn: async (opts) => { seen = opts; return startMicrovmTurn(opts); },
+      },
+    }));
+    expect(seen.cwd).toBe(cwd);
+    const withheld = seen.serverEnv.COMMONLY_MCP_WITHHELD_TOOLS.split(',');
+    // A public seat never gets self-install (F118), whoever woke it.
+    expect(withheld).toContain('commonly_self_install_into_pod');
+    expect(seen.vars.ANTHROPIC_API_KEY).toBe(PROXY_TOKEN);
+  });
+
+  test('a microVM that was resolved but never prepared refuses in prepareArgv, with no spawn', async () => {
+    const proxy = proxyStub();
+    const { calls, impl } = recorder();
+    await withFlag('1', async () => {
+      await expect(run(impl, {
+        extra: {
+          _startProviderProxy: proxy.start,
+          _startMicrovmTurn: async () => ({ ports: [PROXY_PORT], mcpConfig: { mcpServers: {} }, close: async () => {} }),
+        },
+      })).rejects.toThrow(/need a prepared microVM/);
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a workspace seat with grants is refused: the workspace mounts read-only', async () => {
+    const proxy = proxyStub();
+    const { calls, impl } = recorder();
+    await withFlag('1', async () => {
+      await expect(claude.spawn('hi', {
+        agentName: 'mv-seat',
+        cwd,
+        skillMountDir: scratch,
+        env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: HOST_KEY },
+        environment: { model: 'm', sandbox: { trust: 'workspace', allow: ['write'] } },
+        _platform: 'win32',
+        _spawnImpl: impl,
+        _probeWhp: () => ({ available: true }),
+        _prepareMicrovmHost: async () => ({ msb: MSB }),
+        _microvmHome: home,
+        _startProviderProxy: proxy.start,
+        _publicClaudeState: home,
+      })).rejects.toThrow(/remove sandbox.allow/);
+    });
+    expect(calls).toHaveLength(0);
+    expect(proxy.started).toHaveLength(0);
   });
 
   const refuses = async (message, { env, extra, platform, flag = '1' } = {}) => {

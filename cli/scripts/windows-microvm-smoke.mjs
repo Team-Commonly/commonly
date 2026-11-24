@@ -38,6 +38,7 @@ const listen = (body) => new Promise((resolve) => {
 const GUEST_PROBE = `'use strict';
 const http = require('http');
 const https = require('https');
+const net = require('net');
 const { spawn, spawnSync } = require('child_process');
 const { readFileSync, writeFileSync } = require('fs');
 const get = (mod, url) => new Promise((resolve) => {
@@ -54,13 +55,26 @@ const mcp = () => new Promise((resolve) => {
   child.stdin.write('ping\\n');
   setTimeout(() => { child.kill(); resolve(out.trim() || 'no answer (timeout)'); }, 8000);
 });
+const wrongSecret = () => new Promise((resolve) => {
+  const [host, port] = JSON.parse(readFileSync('${GUEST_TURN_DIR}/mcp.json', 'utf8')).mcpServers.echo.env.COMMONLY_MCP_BRIDGE.split(':');
+  const socket = net.connect(Number(port), host, () => socket.write('0'.repeat(48) + ' echo\\nping\\n'));
+  let out = '';
+  socket.on('data', (c) => { out += c; });
+  socket.on('error', () => {});
+  socket.on('close', () => resolve(out ? 'answered: ' + out.trim() : 'closed, nothing'));
+  setTimeout(() => { socket.destroy(); resolve(out ? 'answered: ' + out.trim() : 'nothing (timeout)'); }, 4000);
+});
+const tryWrite = (path) => { try { writeFileSync(path, 'x'); return 'written'; } catch (e) { return 'refused (' + e.code + ')'; } };
 (async () => {
   const report = {};
   report.proxy = await get(http, 'http://${GUEST_HOST}:' + process.argv[2] + '/');
   report.otherHostPort = await get(http, 'http://${GUEST_HOST}:' + process.argv[3] + '/');
   report.publicHttps = await get(https, 'https://example.com/');
   report.mcp = await mcp();
-  try { writeFileSync('/workspace/should-not-exist', 'x'); report.workspaceWrite = 'written'; } catch (e) { report.workspaceWrite = 'refused (' + e.code + ')'; }
+  report.workspaceWrite = tryWrite('/workspace/should-not-exist');
+  report.gitHookWrite = tryWrite('/workspace/.git/hooks/pre-commit');
+  report.agentsVolumeWrite = tryWrite('/opt/agents/bin/planted');
+  report.wrongSecret = await wrongSecret();
   const claude = spawnSync('${GUEST_CLAUDE}', ['--version'], { encoding: 'utf8' });
   report.claude = String(claude.stdout || claude.error?.code || '').trim();
   console.log('PROBE ' + JSON.stringify(report));
@@ -87,7 +101,7 @@ const main = async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'commonly-mv-smoke-'));
   const workspace = join(scratch, 'workspace');
   const home = join(scratch, 'home');
-  mkdirSync(workspace);
+  mkdirSync(join(workspace, '.git', 'hooks'), { recursive: true });
   mkdirSync(home);
   const echo = join(scratch, 'echo-server.js');
   writeFileSync(echo, ECHO_SERVER);
@@ -129,6 +143,9 @@ const main = async () => {
     if (!report.publicHttps.startsWith('blocked')) fail(`the public internet was reachable: ${report.publicHttps}`);
     if (report.mcp !== 'host-echo:ping') fail(`the MCP bridge did not answer: ${report.mcp}`);
     if (!report.workspaceWrite.startsWith('refused')) fail(`the read-only workspace took a write: ${report.workspaceWrite}`);
+    if (!report.gitHookWrite.startsWith('refused')) fail(`the guest could write a git hook: ${report.gitHookWrite}`);
+    if (!report.agentsVolumeWrite.startsWith('refused')) fail(`a turn could write the agents volume: ${report.agentsVolumeWrite}`);
+    if (report.wrongSecret.startsWith('answered')) fail(`the bridge answered a wrong secret: ${report.wrongSecret}`);
     if (!report.claude.includes(GUEST_CLAUDE_VERSION)) fail(`Claude Code ${GUEST_CLAUDE_VERSION} is not on the volume: ${report.claude}`);
   } finally {
     await turn.close();

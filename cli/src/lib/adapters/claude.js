@@ -667,6 +667,17 @@ const permissionPath = (path, platform) => (platform === 'win32'
 // The tools that read or write the seat's agent-wide memory.
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
 
+// The Commonly tools a confined seat's policy denies, by name, for an MCP
+// server that must withhold them itself: the microVM bridge runs it on the
+// host, outside Claude's deny list. The same sets buildPublicClaudePolicyArgs
+// denies below.
+const confinedWithheldTools = ({ trust, ownerWoken = false, memoryWithheld = false }) => [...new Set([
+  ...(trust === 'workspace'
+    ? ['commonly_self_install_into_pod', ...PUBLIC_WITHHELD_TOOLS]
+    : publicSeatWithheldTools({ ownerWoken })),
+  ...(memoryWithheld ? MEMORY_TOOLS : []),
+])];
+
 export const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   trust, allow = [], memoryWithheld = false, ownerWoken = false, platform = process.platform, home: homeOverride = null,
   noShell = false,
@@ -1650,7 +1661,6 @@ const prepareArgv = async (innerArgv, ctx) => {
         turnDir: microvm.turnDir,
         workspace: ctx.workspaceRealpath || ctx.cwd,
         home: microvm.home,
-        workspaceWritable: grants.includes('write'),
       }),
       env: msbHostEnv(ctx.env || process.env),
     };
@@ -2054,7 +2064,7 @@ export default {
     // carry this turn's grant elsewhere. The record sits beside the seat's
     // state folder, the one bwrapClaudeStatePath names for both jails.
     const heldWorkspace = ctx.environment?.sandbox?.trust === 'workspace' && Boolean(ctx.cwd)
-      && (publicNativeSandbox || workspaceBwrapSandbox);
+      && (publicNativeSandbox || workspaceBwrapSandbox || microvmSandbox);
     const workspacePinDirs = heldWorkspace ? [workspacePinDir(bwrapClaudeStatePath(ctx))] : [];
     let workspaceRealpath = null;
     // The proxy's address and per-turn token, never the host's key.
@@ -2090,6 +2100,12 @@ export default {
             throw new Error(`Claude agents in the microVM sandbox do not allow sandbox.filesystem.${key}`);
           }
         }
+        // The workspace mounts read-only (its .git must never be the guest's to
+        // write), and the fence has no route to the web, so no grant applies yet.
+        if (workspaceGrants(ctx.environment?.sandbox).length) {
+          throw new Error('Claude agents in the microVM sandbox run read-only, with no web access, for now; '
+            + 'remove sandbox.allow to run this seat in it.');
+        }
         // The guest reaches the model only through the host proxy: the fence
         // opens its port and nothing else, so there is no login to carry.
         const source = ctx.env || process.env;
@@ -2107,7 +2123,10 @@ export default {
           wire: 'anthropic-messages',
           adapterLabel: 'Claude',
         });
-        microvm = { msb: host.msb, home: ctx._microvmHome || microvmSeatHome(ctx.agentName || ctx.cwd) };
+        microvm = {
+          msb: host.msb,
+          home: ctx._microvmHome || microvmSeatHome(ctx.agentName || ctx.cwd, ctx.environment?.sandbox?.trust),
+        };
         await mkdir(microvm.home, { recursive: true, mode: 0o700 });
       } else if (publicNativeSandbox) {
         // F151: Seatbelt strips the environment to the safe list, so a seat
@@ -2203,7 +2222,10 @@ export default {
         if (ctx.environment?.sandbox?.trust === 'public' && publicClaudeState?.statePath) {
           readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
           await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
-        } else if (ctx.environment?.sandbox?.trust === 'public') {
+        } else if (ctx.environment?.sandbox?.trust === 'public' && !microvm) {
+          // (A microVM seat names no ready-file folder: its servers start only
+          // once the VM has booted, so the credential stays on the host for the
+          // turn and goes with the config folder.)
           // A policy-only host prepares no state folder and runs the MCP
           // children unjailed, so a folder of this turn's own serves.
           ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
@@ -2249,6 +2271,14 @@ export default {
           hostMcpConfig: mcpConfig?.file ? JSON.parse(await readFile(mcpConfig.file, 'utf8')) : null,
           vars: claudeEnv,
           baseEnv: claudeEnv,
+          cwd: workspaceRealpath || ctx.cwd,
+          serverEnv: {
+            COMMONLY_MCP_WITHHELD_TOOLS: confinedWithheldTools({
+              trust: ctx.environment?.sandbox?.trust,
+              ownerWoken: ctx.ownerWoken,
+              memoryWithheld: ctx.memoryWithheld === true,
+            }).join(','),
+          },
         }), { guestEnv: guestClaudeEnv({ proxyBaseUrl: providerProxy.baseURL, proxyToken: providerProxy.token }) });
       }
       const spawnCtx = {

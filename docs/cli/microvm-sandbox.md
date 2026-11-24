@@ -36,9 +36,10 @@ Claude Code into a disk volume. Later turns boot in a couple of seconds.
 | Adapters | Claude only. Attach, the run-time host check and every other adapter refuse it. |
 | Fail closed | The claude adapter checks the platform, the flag, WHP and msb at every spawn. A missing piece refuses the turn; nothing falls through to a bare spawn. |
 | Network | `--no-net`, then `allow@dns` and `allow@host:tcp:<port>` for exactly two ports: the provider proxy and the MCP bridge. There is never a whole-group `allow@host`, which reaches every service on the host's loopback. There is never a `--net-rule` without `--no-net` either, since that keeps the public internet open. |
-| Credentials | The provider key stays in the host proxy. The Commonly MCP server, and with it the agent's runtime token, run on the host behind the bridge. The guest's shim must send the turn's secret first. |
-| Files | The turn folder is read-only. The workspace is read-only unless the seat has `write`. The seat's own HOME lives under `%LOCALAPPDATA%\commonly\microsandbox\<version>\seats`. The Claude Code install lives on a named disk volume. Argv and env go through a turn file, never the msb command line. |
-| msb | Pinned to v0.8.1 and checked against the release's SHA-256. It goes to `%LOCALAPPDATA%\commonly\microsandbox\0.8.1`, never through an install script and never globally. Moving the pin is a reviewed change, with the Windows workflow run on the new version. |
+| Credentials | The provider key stays in the host proxy. The Commonly MCP server, and with it the agent's runtime token, run on the host behind the bridge. The guest's shim must send the turn's secret first. The bridge caps live sessions, and starts each server in the workspace folder with the seat's withheld tools in `COMMONLY_MCP_WITHHELD_TOOLS`, so a server that runs outside Claude's deny list still withholds them itself. |
+| Files | The turn folder and the workspace are always read-only, so the project's `.git` (hooks, config) is never the guest's to write. A workspace seat with `sandbox.allow` grants (`write`, `web`) is refused for now. The seat's own HOME lives under `%LOCALAPPDATA%\commonly\microsandbox\<version>\seats`, one per trust. Argv and env go through a turn file, never the msb command line. |
+| Install volume | Claude Code lives on the `commonly-agents` disk volume. It is mounted writable only for the one-time install, under a lock so two first turns never install at once; every turn mounts it read-only. |
+| msb | Pinned to v0.8.1 and checked against the release's SHA-256. It goes to `%LOCALAPPDATA%\commonly\microsandbox\0.8.1`, never through an install script and never globally, and the installed `msb.exe` is hashed again before every use. Moving the pin is a reviewed change, with the Windows workflow run on the new version. |
 | Guest | `node:22-bookworm-slim`, pinned by digest, with Claude Code `2.1.331` on the `commonly-agents` volume. |
 
 `--unsandboxed` still means what it did: the person's own choice to run a
@@ -46,6 +47,13 @@ Claude seat without an OS sandbox wins over the flag.
 
 ## Known limits
 
+- Read-only seats only. Write and web grants need a walk of their own (a
+  read-only `.git` mounted over a writable workspace, and a fenced web route).
+- DNS stays open (`allow@dns`), so a guest can leak data through lookups. The
+  host alias resolves through msb's resolver; whether it still resolves without
+  that rule is untested.
+- Stopping a turn kills `msb.exe`. Whether the VM process always goes with it is
+  untested; one left behind costs memory, not access.
 - Only stdio MCP servers can cross the bridge. An HTTP or SSE server is refused,
   not silently cut off.
 - The guest installs Claude Code with the network open, once, with no secrets
@@ -64,4 +72,6 @@ Claude seat without an OS sandbox wins over the flag.
   resolution, never stored, fail closed), plus the claude adapter's turn.
 - `.github/workflows/cli-microsandbox-windows.yml` runs these on Windows. It then
   boots a real fenced VM with `cli/scripts/windows-microvm-smoke.mjs` and probes
-  the fence from inside.
+  from inside: the proxy answers; another loopback service, the internet and a
+  wrong bridge secret do not; the workspace, its `.git` and the agents volume
+  refuse writes.

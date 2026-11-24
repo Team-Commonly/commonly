@@ -74,6 +74,10 @@ const sameSecret = (given, secret) => {
 };
 
 const MAX_HANDSHAKE_BYTES = 512;
+// A turn's Claude starts one session per server; these caps only stop a guest
+// from starting host processes without end.
+export const MAX_LIVE_SESSIONS = 8;
+export const MAX_SESSIONS_PER_TURN = 64;
 
 /**
  * Starts the bridge for one turn. Returns its port, the secret the guest must
@@ -83,12 +87,14 @@ export const startMcpBridge = async ({
   servers,
   baseEnv = {},
   host = '127.0.0.1',
+  cwd,
   spawnImpl = spawn,
   handshakeTimeoutMs = 10000,
 } = {}) => {
   const secret = randomBytes(24).toString('hex');
   const children = new Set();
   const sockets = new Set();
+  let started = 0;
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
@@ -112,11 +118,17 @@ export const startMcpBridge = async ({
         socket.destroy();
         return;
       }
+      if (children.size >= MAX_LIVE_SESSIONS || started >= MAX_SESSIONS_PER_TURN) {
+        socket.destroy();
+        return;
+      }
+      started += 1;
       const spec = servers.get(name);
       let child;
       try {
         child = spawnImpl(spec.command, spec.args, {
           env: { ...baseEnv, ...spec.env },
+          ...(cwd ? { cwd } : {}),
           stdio: ['pipe', 'pipe', 'ignore'],
           windowsHide: true,
         });

@@ -18,6 +18,7 @@ import {
   GUEST_IMAGE,
   GUEST_TURN_DIR,
   GUEST_VOLUME_SPEC,
+  GUEST_VOLUME_TURN_SPEC,
   GUEST_WORKSPACE,
   MICROVM_FLAG_ENV,
   MSB_PIN,
@@ -26,9 +27,11 @@ import {
   checkMicrovmAttach,
   ensureMsb,
   microvmFlagOn,
+  microvmSeatHome,
   msbAsset,
   parseWhpProbe,
   probeWhp,
+  withInstallLock,
   writeMicrovmTurn,
 } from '../src/lib/sandbox/microsandbox.js';
 
@@ -181,10 +184,19 @@ describe('ensureMsb', () => {
     const path = await ensureMsb({ root, asset, fetchImpl: fetchOk, extract: extractSpy });
     expect(path).toBe(join(root, 'msb.exe'));
     expect(existsSync(join(root, 'libkrunfw.dll'))).toBe(true);
-    expect(readFileSync(join(root, '.verified'), 'utf8').trim()).toBe(sha);
+    expect(readFileSync(join(root, '.verified'), 'utf8').trim().split(' ')[0]).toBe(sha);
     expect(fetchOk.mock.calls[0][0]).toBe(`https://github.com/superradcompany/microsandbox/releases/download/v${MSB_PIN.version}/${asset.name}`);
     await ensureMsb({ root, asset, fetchImpl: fetchOk, extract: extractSpy });
     expect(extractSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('an installed msb.exe that changed since it was unpacked is replaced, not run', async () => {
+    const extractSpy = jest.fn(extract);
+    await ensureMsb({ root, asset, fetchImpl: fetchOk, extract: extractSpy });
+    writeFileSync(join(root, 'msb.exe'), 'planted');
+    await ensureMsb({ root, asset, fetchImpl: fetchOk, extract: extractSpy });
+    expect(extractSpy).toHaveBeenCalledTimes(2);
+    expect(readFileSync(join(root, 'msb.exe'), 'utf8')).toBe('exe');
   });
 
   test('a hash mismatch refuses and leaves nothing to run', async () => {
@@ -231,7 +243,7 @@ describe('buildMicrovmRunArgs', () => {
     const args = buildMicrovmRunArgs(base);
     expect(args[0]).toBe('run');
     expect(args).toEqual(expect.arrayContaining(buildMicrovmFence([4100, 4200])));
-    expect(args).toEqual(expect.arrayContaining(['--mount-named', GUEST_VOLUME_SPEC]));
+    expect(args).toEqual(expect.arrayContaining(['--mount-named', GUEST_VOLUME_TURN_SPEC]));
     expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.turnDir}:${GUEST_TURN_DIR}:ro`]));
     expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.workspace}:${GUEST_WORKSPACE}:ro`]));
     expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.home}:${GUEST_HOME}`]));
@@ -245,10 +257,17 @@ describe('buildMicrovmRunArgs', () => {
     expect(GUEST_IMAGE).toMatch(/@sha256:[0-9a-f]{64}$/);
   });
 
-  test('a writable workspace drops :ro on that mount only', () => {
+  test('a turn mounts the agents volume read-only; only the install mounts it writable', () => {
+    expect(GUEST_VOLUME_TURN_SPEC).toBe(`${GUEST_VOLUME_SPEC},ro`);
+    const args = buildMicrovmRunArgs(base);
+    expect(args).not.toContain(GUEST_VOLUME_SPEC);
+  });
+
+  test('the workspace is read-only whatever is asked, so its .git is never the guest\'s', () => {
     const args = buildMicrovmRunArgs({ ...base, workspaceWritable: true });
-    expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.workspace}:${GUEST_WORKSPACE}`]));
-    expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.turnDir}:${GUEST_TURN_DIR}:ro`]));
+    expect(args).toEqual(expect.arrayContaining(['--mount-dir', `${base.workspace}:${GUEST_WORKSPACE}:ro`]));
+    const rw = args.filter((arg, i) => args[i - 1] === '--mount-dir' && !arg.endsWith(':ro'));
+    expect(rw).toEqual([`${base.home}:${GUEST_HOME}`]);
   });
 
   test('a mount source holding a comma or a colon after the drive is refused', () => {
@@ -260,6 +279,51 @@ describe('buildMicrovmRunArgs', () => {
     const args = buildMicrovmRunArgs(base);
     expect(args).not.toContain('-e');
     expect(args).not.toContain('--env');
+  });
+});
+
+describe('microvmSeatHome', () => {
+  test('keeps a public seat apart from the same agent\'s workspace turns', () => {
+    const env = { LOCALAPPDATA: 'C:\\Users\\a\\AppData\\Local' };
+    const pub = microvmSeatHome('agent-1', 'public', env);
+    const ws = microvmSeatHome('agent-1', 'workspace', env);
+    expect(pub).not.toBe(ws);
+    expect(pub).toMatch(/-public$/);
+    expect(ws).toMatch(/-workspace$/);
+    expect(microvmSeatHome('agent-1', 'internal', env)).toBe(pub);
+  });
+});
+
+describe('withInstallLock', () => {
+  let root;
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'mvlock-')); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  test('runs one holder at a time and releases after', async () => {
+    const order = [];
+    let release;
+    const first = withInstallLock(root, () => new Promise((resolve) => {
+      order.push('first in');
+      release = () => { order.push('first out'); resolve(); };
+    }));
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+    const second = withInstallLock(root, async () => { order.push('second in'); }, { pollMs: 10 });
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
+    expect(order).toEqual(['first in']);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first in', 'first out', 'second in']);
+    expect(existsSync(join(root, '.install.lock'))).toBe(false);
+  });
+
+  test('releases the lock when the holder throws', async () => {
+    await expect(withInstallLock(root, async () => { throw new Error('install failed'); })).rejects.toThrow('install failed');
+    expect(existsSync(join(root, '.install.lock'))).toBe(false);
+  });
+
+  test('gives up waiting on a live lock past its deadline', async () => {
+    writeFileSync(join(root, '.install.lock'), '1');
+    await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);
   });
 });
 

@@ -49,6 +49,7 @@ jobs:
           __tests__/sandbox.microvm-mode.test.mjs
           --runInBand
       - name: Boot a fenced microVM and probe it from inside
+        if: ${{ !cancelled() }}
         working-directory: cli
         timeout-minutes: 20
         run: node scripts/windows-microvm-smoke.mjs
