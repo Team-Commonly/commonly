@@ -1,13 +1,11 @@
 name: microsandbox Windows probe
 
-# One question: can a free GitHub-hosted Windows runner boot a microsandbox
-# microVM? microsandbox needs the Windows Hypervisor Platform (WHP). It runs on
-# pushes to its own spike branch and by hand. It isn't a required check, uses
-# no secrets, and is never meant to merge as is.
+# Can a free GitHub-hosted Windows runner boot a microsandbox microVM (it needs
+# the Windows Hypervisor Platform), and does the sandbox hold Commonly's fence?
+# scripts/spikes/microsandbox-probe.ps1 does the work; results are in
+# docs/plans/microsandbox-windows-spike.md. Run by hand. It isn't a required
+# check and uses no secrets: every key in it is fake.
 on:
-  push:
-    branches: [stack/microsandbox-win]
-    paths: [.github/workflows/microsandbox-windows-probe.yml, scripts/spikes/**]
   workflow_dispatch:
 
 permissions:

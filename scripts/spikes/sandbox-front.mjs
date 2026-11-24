@@ -1,21 +1,24 @@
-// The "front" for the OpenShell spike: what sits between a sandbox and the world.
+// The "front" for the sandbox spikes (docs/plans/openshell-spike.md,
+// docs/plans/microsandbox-windows-spike.md): what sits between a sandbox and the world.
 //   - stub model upstream on 127.0.0.1:18090 (Anthropic Messages + OpenAI Responses),
-//     which ECHOES the key it received, so we can watch our proxy redact it;
-//   - Commonly's real provider proxy (packages/seats/src/wire/provider-proxy.js, copied
-//     from origin/main), one per wire, holding FAKE upstream keys;
-//   - forwarders on 0.0.0.0:18100/18101 so the sandbox can reach the loopback-only
-//     proxies via host.openshell.internal (OpenShell never authorizes loopback);
-//   - a stub grant broker on 0.0.0.0:18102 shaped like POST /api/mcp/grants/:grantId.
-// Writes per-spawn proxy tokens to /run/front/front.json (outside every sandbox).
-// Every key here is fake. Nothing reaches a real provider.
+//     which ECHOES the key it received, so a run shows whether our proxy redacted it;
+//   - Commonly's real provider proxy (packages/seats/src/wire/provider-proxy.js), one
+//     per wire, holding FAKE upstream keys;
+//   - forwarders on FRONT_BIND:18100/18101 to the loopback-only proxies, which a
+//     sandbox reaches through its host alias (host.openshell.internal,
+//     host.microsandbox.internal);
+//   - a stub grant broker on FRONT_BIND:18102 shaped like POST /api/mcp/grants/:grantId.
+// FRONT_DIR (default /run/front) gets front.json (per-spawn proxy tokens, 0600) and
+// requests.log, outside every sandbox. Every key here is fake; nothing reaches a
+// real provider. Spike tooling only, never run in a deployment.
 import { createServer } from 'node:http';
 import net from 'node:net';
 import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { startProviderProxy } from '../../packages/seats/src/wire/provider-proxy.js';
 
-const FAKE_ANTHROPIC_KEY = 'sk-ant-spike-FAKE-upstream-0001';
-const FAKE_OPENAI_KEY = 'sk-openai-spike-FAKE-upstream-0002';
-const FAKE_AGENT_TOKEN = 'cm_agent_spikeFAKE0003';
+const FAKE_ANTHROPIC_KEY = 'fake-anthropic-upstream-key-0001';
+const FAKE_OPENAI_KEY = 'fake-openai-upstream-key-0002';
+const FAKE_AGENT_TOKEN = 'fake-agent-token-0003';
 const DIR = process.env.FRONT_DIR || '/run/front';
 const BIND = process.env.FRONT_BIND || '0.0.0.0';
 const LOG = `${DIR}/requests.log`;
