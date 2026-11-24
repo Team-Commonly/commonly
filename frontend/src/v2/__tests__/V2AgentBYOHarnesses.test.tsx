@@ -5,7 +5,7 @@
 // gets its own Mac lines; the rest say what can answer instead.
 jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 import React from 'react';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import i18n, { i18nReady } from '../../i18n';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO, { opencodeKeySnippet, opencodeSnippet } from '../components/V2AgentBYO';
@@ -40,7 +40,10 @@ const CATALOG = [
 ];
 const INSTALL_BUTTON = /get my connect command/i;
 
-const renderPage = async () => {
+// Most tests here pick a tool behind "More tools" (F574), so the helper opens
+// it unless a test is about the row before that.
+const renderPage = async ({ more = true, url = '/v2/agents/byo' } = {}) => {
+  window.history.pushState({}, '', url);
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
     if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 3, turnsPerDay: 20 } } });
@@ -50,12 +53,69 @@ const renderPage = async () => {
   });
   render(<AuthContext.Provider value={authValue}><MemoryRouter><V2AgentBYO /></MemoryRouter></AuthContext.Provider>);
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+  if (!more) return;
+  fireEvent.click(await screen.findByTestId('byo-runner-more'));
   await waitFor(() => expect(screen.getByTestId('byo-runner-dsh')).toBeInTheDocument());
 };
 
 afterEach(() => { jest.clearAllMocks(); axios.get.mockReset(); axios.post.mockReset(); axios.patch.mockReset(); window.history.pushState({}, '', '/'); });
 
 describe('every harness on the add page', () => {
+  // F574 (first-run walk): eight tools up front read as a form to fill in.
+  // Claude Code and Codex lead; the rest wait behind "More tools".
+  test('the runner row leads with Claude Code and Codex, and More tools shows the rest in order', async () => {
+    await renderPage({ more: false });
+    const row = () => Array.from(screen.getByTestId('byo-runner').querySelectorAll('button')).map((b) => b.textContent);
+    expect(row()).toEqual(['Claude Code', 'Codex', 'More tools']);
+    expect(screen.getByTestId('byo-runner-more')).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByTestId('byo-runner-more'));
+    expect(row()).toEqual(['Claude Code', 'Codex', 'OpenCode', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness']);
+  });
+
+  test('a link that names another tool (?adapter=) shows that tool picked, next to the two', async () => {
+    await renderPage({ more: false, url: '/v2/agents/byo?adapter=opencode' });
+    const row = Array.from(screen.getByTestId('byo-runner').querySelectorAll('button')).map((b) => b.textContent);
+    expect(row).toEqual(['Claude Code', 'Codex', 'OpenCode', 'More tools']);
+    expect(screen.getByTestId('byo-runner-opencode')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // F574: the name, pod and model have working defaults, so they sit behind one
+  // line that says what they are now.
+  test('the name, pod and model sit behind one closed Options line that shows the name and pod', async () => {
+    await renderPage({ more: false });
+    const options = screen.getByTestId('byo-options');
+    expect(options).not.toHaveAttribute('open');
+    expect(options.querySelector('summary')).toHaveTextContent(/^Name, pod and model/);
+    await waitFor(() => expect(screen.getByTestId('byo-options-current')).toHaveTextContent(/^sam-claude · Workspace$/));
+    expect(within(options).getByRole('combobox', { name: /Pod it joins/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByTestId('byo-options-current')).toHaveTextContent(/^sam-codex · Workspace$/));
+  });
+
+  test('More tools moves keyboard focus to the first tool it shows', async () => {
+    await renderPage({ more: false });
+    fireEvent.click(screen.getByTestId('byo-runner-more'));
+    await waitFor(() => expect(screen.getByTestId('byo-runner-opencode')).toHaveFocus());
+  });
+
+  // F574 review: the replace-key prompt's other way out is a new name, so the
+  // name field must not stay folded away under Options.
+  test('when the name already has a key, Options opens so another name is one field away', async () => {
+    await renderPage({ more: false });
+    expect(screen.getByTestId('byo-options')).not.toHaveAttribute('open');
+    await waitFor(() => expect(screen.getByRole('button', { name: INSTALL_BUTTON })).toBeEnabled());
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { existing: true } });
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    await waitFor(() => expect(screen.getByTestId('byo-options')).toHaveAttribute('open'));
+  });
+
+  test('a link that already chose the name (?name=) opens Options', async () => {
+    await renderPage({ more: false, url: '/v2/agents/byo?name=growth-claude' });
+    expect(screen.getByTestId('byo-options')).toHaveAttribute('open');
+  });
+
   test('the runner choice lists every harness, Claude Code and Codex first, with no tested marks', async () => {
     await renderPage();
     const runners = Array.from(screen.getByTestId('byo-runner').querySelectorAll('button')).map((b) => b.textContent);

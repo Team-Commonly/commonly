@@ -35,6 +35,11 @@
 .v2-feature--byo .v2-byo__more > summary::after { content: ""; flex: none; margin-left: auto; width: 7px; height: 7px; border-right: 1.8px solid var(--v2-text-muted); border-bottom: 1.8px solid var(--v2-text-muted); transform: translateY(-2px) rotate(45deg); }
 .v2-feature--byo .v2-byo__more[open] > summary::after { transform: translateY(2px) rotate(225deg); }
 .v2-feature--byo .v2-byo__more > :not(summary) { margin: 0 16px 14px; }
+/* F574: "More tools" opens the row rather than picking a tool, so it reads quieter. */
+.v2-feature--byo .v2-byo__runner-more { color: var(--v2-text-muted); font-weight: 400; }
+/* F574: the Options line says what the defaults are now, quieter than its title. */
+.v2-feature--byo .v2-byo__options-fields { margin-top: -8px; }
+.v2-feature--byo .v2-byo__options-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--v2-text-muted); }
 .v2-feature--byo .v2-byo__more + .v2-byo__more { margin-top: 0; }
 .v2-feature--byo .v2-byo__footnote, .v2-feature--byo .v2-byo__more .v2-byo__hint, .v2-feature--byo .v2-byo__listen-note, .v2-feature--byo .v2-byo__needs, .v2-feature--byo [data-testid="byo-key-once"] { margin: 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--v2-text-secondary); }
 .v2-feature--byo .v2-byo__needs { font-size: 13px; }

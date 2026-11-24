@@ -291,6 +291,10 @@ const listenerRunsOn = (os: SetupOs, adapter: string, podPrivate?: boolean): boo
   return false;
 };
 
+// The tools the runner row shows before "More tools" (F574): the two the
+// connect card proposes and the Windows listener supports.
+const LEAD_RUNNERS: readonly string[] = ['claude', 'codex'];
+
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
   .replace(/[^a-z0-9-]/g, '-')
@@ -676,6 +680,12 @@ const V2AgentBYO: React.FC = () => {
   // before the roster arrived; a link's own ?adapter= wins.
   const harnessAppliedFor = useRef<string | null>(null);
   const listenAdapterPicked = useRef(false);
+  // F574 (first-run walk): eight tools and four settings up front read as a
+  // form to fill in before anything happens. Claude Code and Codex lead; the
+  // rest wait behind "More tools", and the name, pod and model, whose defaults
+  // work, wait behind one Options line.
+  const [moreRunners, setMoreRunners] = useState<boolean>(false);
+  const [optionsOpen, setOptionsOpen] = useState<boolean>(Boolean(prefill.name));
   useEffect(() => {
     if (prefill.adapter || listenAdapterPicked.current) return;
     const harness = existingConnection?.harness;
@@ -1295,6 +1305,8 @@ const V2AgentBYO: React.FC = () => {
       );
       if (tokenRes?.existing) {
         setPendingReplacement({ agentName: cleanName, podId, instanceId: linkInstance });
+        // Its other way out is a new name, so the name field shows (F574).
+        setOptionsOpen(true);
         return;
       }
       const tok = tokenRes?.token;
@@ -1314,6 +1326,8 @@ const V2AgentBYO: React.FC = () => {
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;
+      // The fix is another name, so the name field shows (F574).
+      if (code === IN_PROCESS_NAME_CODE) setOptionsOpen(true);
       setError(code === IN_PROCESS_NAME_CODE
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
         // A refused memory copy from a handoff link: the server's text is the
@@ -1888,7 +1902,9 @@ const V2AgentBYO: React.FC = () => {
     <>
     <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
     <p className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
-      {orderHarnessIds(harnessCatalog).map((runner) => (
+      {orderHarnessIds(harnessCatalog)
+        .filter((runner) => moreRunners || LEAD_RUNNERS.includes(runner) || runner === listenAdapter)
+        .map((runner) => (
         <button
           key={runner}
           type="button"
@@ -1902,7 +1918,33 @@ const V2AgentBYO: React.FC = () => {
           {harnessLabel(harnessCatalog, runner)}
         </button>
       ))}
+      {!moreRunners && orderHarnessIds(harnessCatalog).some((runner) => !LEAD_RUNNERS.includes(runner) && runner !== listenAdapter) && (
+        <button
+          type="button"
+          className="v2-byo__link v2-byo__runner-more"
+          aria-expanded={false}
+          data-testid="byo-runner-more"
+          disabled={submitting}
+          onClick={(event) => {
+            // The button leaves the row, so focus moves to the first tool it revealed.
+            const row = event.currentTarget.parentElement;
+            const firstHidden = orderHarnessIds(harnessCatalog)
+              .find((runner) => !LEAD_RUNNERS.includes(runner) && runner !== listenAdapter);
+            setMoreRunners(true);
+            if (row && firstHidden) {
+              window.setTimeout(() => {
+                (row.querySelector(`[data-testid="byo-runner-${firstHidden}"]`) as HTMLButtonElement | null)?.focus();
+              }, 0);
+            }
+          }}
+        >
+          {t('agentByo.form.moreTools')}
+        </button>
+      )}
     </p>
+    </>
+  ) : null;
+  const runnerModelPicker = runnerPicker ? (
     <V2HarnessChoice
       key={`byo:${listenAdapter}`}
       catalog={harnessCatalog}
@@ -1912,7 +1954,6 @@ const V2AgentBYO: React.FC = () => {
       onModel={setModel}
       onEffort={setEffort}
     />
-    </>
   ) : null;
 
   const heldReason = t('agentByo.hosted.heldNotice', { cap: hosting?.caps.agentsPerUser ?? 1 });
@@ -2211,6 +2252,57 @@ const V2AgentBYO: React.FC = () => {
             />
           )}
           {runnerPicker}
+          {runnerPicker ? (
+            // Open when a field needs fixing, or a ?name= link already chose one.
+            <details
+              className="v2-byo__more v2-byo__options"
+              data-testid="byo-options"
+              open={optionsOpen || errorField === 'name' || errorField === 'pod' || Boolean(nameLookupError)}
+              onToggle={(event) => setOptionsOpen((event.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary>
+                {t('agentByo.form.optionsTitle')}
+                <span className="v2-byo__options-current" data-testid="byo-options-current">
+                  {sanitizeAgentName(name) || DEFAULT_AGENT_NAME} · {pods.find((p) => p._id === podId)?.name || '…'}
+                </span>
+              </summary>
+              {/* One box, so the fields keep stacking as one table inside it. */}
+              <div className="v2-byo__options-fields">
+                {runnerModelPicker}
+              <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
+                <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); lastSuggestedName.current = null; setName(e.target.value); }}
+                  placeholder={DEFAULT_AGENT_NAME}
+                  className="v2-byo__input"
+                />
+                <span className="v2-byo__hint">
+                  {t('agentByo.form.nameHint')}
+                </span>
+              </label>
+              <label className={`v2-byo__field${errorField === 'pod' ? ' v2-byo__field--error' : ''}`}>
+                <span className="v2-byo__label">{t('agentByo.form.podLabel')}</span>
+                <select
+                  value={podId}
+                  onChange={(e) => { setErrorField(null); setPendingReplacement(null); setPodId(e.target.value); }}
+                  className="v2-byo__input"
+                >
+                  {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
+                  {pods.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {isDefaultWorkspaceName(p.name) && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
+                        ? t('podNames.otherWorkspace', { name: p.name, owner: p.createdBy.username || t('podNames.shared') })
+                        : p.name} ({p.type || DEFAULT_POD_TYPE})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              </div>
+            </details>
+          ) : (
+            <>
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
@@ -2241,6 +2333,8 @@ const V2AgentBYO: React.FC = () => {
               ))}
             </select>
           </label>
+            </>
+          )}
           {/* The act sits right under the fields it acts on. Below "Add a computer" it
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}
