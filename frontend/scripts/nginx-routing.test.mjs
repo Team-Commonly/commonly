@@ -87,7 +87,9 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
   // expression), a logo property, or a CSS url() in a style.
   const remote = String.raw`(?:https?:)?\/\/`;
   const remoteChecks = [
-    new RegExp(String.raw`\b(?:src|srcSet|poster)\s*=\s*(?:\{\s*)?['"\x60]${remote}`, 'i'),
+    new RegExp(String.raw`\b(?:src|poster)\s*=\s*(?:\{\s*)?['"\x60]${remote}`, 'i'),
+    // srcSet is a comma-separated candidate list; any candidate may be remote.
+    new RegExp(String.raw`\bsrcSet\s*=\s*(?:\{\s*)?['"\x60](?:[^'"\x60]*,\s*)?${remote}`, 'i'),
     new RegExp(String.raw`\blogo\s*:\s*['"\x60]${remote}`, 'i'),
     new RegExp(String.raw`url\(\s*['"\x60]?${remote}`, 'i'),
   ];
@@ -99,6 +101,8 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
     'src="//cdn.example/a.png"',
     'src="HTTPS://outside.example/a.png"',
     'srcSet="https://outside.example/a.png 2x"',
+    'srcSet="/a.png 1x, https://outside.example/a.png 2x"',
+    "srcSet={'/a.png 1x,//cdn.example/a.png 2x'}",
     'poster="https://outside.example/a.png"',
     "logo: 'https://outside.example/a.png'",
     "logo : '//cdn.example/a.png'",
@@ -111,6 +115,7 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
     'src={imageUrl}',
     'src={`${base}/a.png`}',
     "logo: '/brand/mark.svg'",
+    'srcSet="/a.png 1x, /a@2x.png 2x"',
     "backgroundImage: 'url(/assets/a.png)'",
     'background: url(data:image/png;base64,AAAA)',
   ]) assert.ok(!isRemote(sample), sample);
