@@ -1,4 +1,5 @@
 import { listeningIntroFrom } from './installIntroCopy';
+import { recordFirstListen } from './byoTelemetry';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
@@ -164,12 +165,15 @@ type SettleOptions = {
 /**
  * The HTTP check-in's half: first listen read from what `agentRuntimeAuth`
  * loaded (the bot's token list, and every active install's), then the
- * rewrite across the seat's installed pods. Awaited by the caller.
+ * first-listen telemetry row (F573) and the rewrite across the seat's
+ * installed pods. Awaited by the caller.
  */
 export async function settleIntroOnRequestCheckIn(req: any): Promise<void> {
   const installs = Array.isArray(req?.agentInstallations) ? req.agentInstallations : [];
   const lists = [req?.agentUser?.agentRuntimeTokens, ...installs.map((i: any) => i?.runtimeTokens)];
   if (!isFirstListen(req?.agentTokenHash, lists)) return;
+  // F573: the funnel's first-listen row, keyed like seat-registered. Not awaited.
+  recordFirstListen(req?.agentInstallation?.installedBy, req.agentTokenHash);
   await settleInstallIntroOnFirstListen({
     agentUserId: req?.agentUser?._id,
     agentName: req?.agentInstallation?.agentName,

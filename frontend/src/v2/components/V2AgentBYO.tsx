@@ -30,6 +30,7 @@ import V2Hint from './V2Hint';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
+import { buildAgentUsername } from '../utils/threadAgentIdentity';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
@@ -3130,7 +3131,16 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__cta-row">
             <button
               type="button"
-              onClick={() => navigate(`/v2/pods/${issued.podId}`)}
+              // F573: the composer opens addressed to the agent, as on the hosted path.
+              // A second instance shares the pod with its sibling, where the bare
+              // name routes to neither (agentMentionService answers it only for a
+              // single install), so its draft names the instance's username.
+              onClick={() => navigate(`/v2/pods/${issued.podId}`, {
+                state: {
+                  composeDraft: `@${issued.instanceId && issued.instanceId !== 'default'
+                    ? buildAgentUsername(issued.agentName, issued.instanceId) : issued.agentName} `,
+                },
+              })}
               // Copy carries the fill until the agent can answer: the fill read
               // as the next step, and people wrote to an agent nothing was running.
               className={listenState !== 'listening' && listenerAvailable ? 'v2-byo__secondary v2-byo__secondary--waiting' : 'v2-byo__submit'}

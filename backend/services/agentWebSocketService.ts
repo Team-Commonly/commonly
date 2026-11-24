@@ -17,6 +17,7 @@ const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require(
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { recordListenerCheckIn } = require('./agentListenerCheckIn');
 const { isFirstListen, settleInstallIntroOnFirstListen } = require('./installIntroOnListen');
+const { recordFirstListen } = require('./byoTelemetry');
 const { cloudRuntimeMayRun } = require('./cloudRuntimeOwnership');
 
 interface AgentSocket {
@@ -443,6 +444,7 @@ class AgentWebSocketService {
               tokenHash, [agentUser.agentRuntimeTokens, ...installs.map((i) => i?.runtimeTokens)],
             );
             if (firstListen) {
+              recordFirstListen(installs[0]?.installedBy, tokenHash); // F573, as seat-registered
               await settleInstallIntroOnFirstListen({
                 agentUserId: agentUser._id, podIds: installs.map((i) => i?.podId),
               });
@@ -494,6 +496,7 @@ class AgentWebSocketService {
           }
 
           if (firstLegacyListen) {
+            recordFirstListen(installation.installedBy, tokenHash); // F573
             // Every pod the agent is installed in, as on HTTP: the stamp has
             // landed, so a pod skipped here would keep its stale intro.
             // The lookup runs inside the settlement's bound and failure
