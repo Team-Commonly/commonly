@@ -119,10 +119,19 @@ const V2Register: React.FC = () => {
         locale: i18n.language === 'zh-CN' ? 'zh-CN' : 'en',
         ...(podInvite ? { podInvite } : {}),
       });
-      const data = res.data as { message?: string };
+      const data = res.data as { message?: string; verificationRequired?: boolean };
       const message = data?.message || t('auth.register.success.ready');
       forgetInvite();
       forgetInviteOAuthStart();
+
+      // F581: a team-gated instance refuses sign-in until the mailbox is
+      // verified, and the response says so. Skip the login that would be
+      // refused and show the verify step, never "You're in".
+      if (data?.verificationRequired) {
+        setTeamVerificationPending(true);
+        setDone(message);
+        return;
+      }
 
       // Registration succeeds before a session exists. Sign in immediately
       // with the credentials already supplied so a new user reaches the
@@ -182,21 +191,26 @@ const V2Register: React.FC = () => {
         <div className="v2-login__card v2-login__card--stack">
           <Brand />
           <h1 className="v2-login__title">
-            {verifyPending ? t('auth.register.success.checkEmailTitle') : t('auth.register.success.createdTitle')}
+            {teamVerificationPending ? t('auth.register.success.verifyRequiredTitle')
+              : verifyPending ? t('auth.register.success.checkEmailTitle')
+                : t('auth.register.success.createdTitle')}
           </h1>
           <p className="v2-login__subtitle">
-            {verifyPending
-              // F518: someone signing up from a pod invite is joining that pod.
-              ? t(nextPath?.startsWith('/v2/invite/') ? 'auth.register.success.checkEmailMessageInvite'
-                : 'auth.register.success.checkEmailMessage', { email: email.trim() })
-              : t('auth.register.success.ready')}
+            {teamVerificationPending
+              // F581: the account exists but cannot sign in yet. F577: a pod
+              // invite rides with the account and is redeemed on verify.
+              ? t(nextPath?.startsWith('/v2/invite/') ? 'auth.register.success.verifyRequiredMessageInvite'
+                : 'auth.register.success.verifyRequiredMessage', { email: email.trim() })
+              : verifyPending
+                // F518: someone signing up from a pod invite is joining that pod.
+                ? t(nextPath?.startsWith('/v2/invite/') ? 'auth.register.success.checkEmailMessageInvite'
+                  : 'auth.register.success.checkEmailMessage', { email: email.trim() })
+                : t('auth.register.success.ready')}
           </p>
-          {verifyPending && (
+          {verifyPending && !teamVerificationPending && (
             <p className="v2-login__hint">
               <Trans
-                i18nKey={teamVerificationPending
-                  ? 'auth.register.success.verifyBeforeSignIn'
-                  : 'auth.register.success.verifyThenSignIn'}
+                i18nKey="auth.register.success.verifyThenSignIn"
                 components={{ signIn: <Link to={loginHref} className="v2-login__link" /> }}
               />
             </p>

@@ -307,6 +307,8 @@ describe('Auth Controller Tests', () => {
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
         message: 'Registered. Verify your email to join the Community pod.',
+        // An open instance lets the unverified account sign in (F581).
+        verificationRequired: false,
       });
     });
 

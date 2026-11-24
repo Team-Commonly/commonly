@@ -578,7 +578,9 @@
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
         "checkEmailMessageInvite": "验证邮箱后就能加入你受邀的 Pod，链接已发到 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
-        "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
+        "verifyRequiredTitle": "查收邮件",
+        "verifyRequiredMessage": "账号已创建。打开我们发到 {{email}} 的链接，然后登录。",
+        "verifyRequiredMessageInvite": "账号已创建。打开我们发到 {{email}} 的链接，就能加入你受邀的 Pod，之后再登录。",
         "continue": "继续登录"
       }
     },

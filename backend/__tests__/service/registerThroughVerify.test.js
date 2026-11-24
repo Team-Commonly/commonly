@@ -81,6 +81,7 @@ describe('register through verify', () => {
       else process.env[key] = saved[key];
     });
     delete process.env.REGISTRATION_INVITE_ONLY;
+    delete process.env.AUTH_ALLOWED_DOMAINS;
   });
 
   test('the emailed link verifies the account and writes the mark once', async () => {
@@ -143,5 +144,28 @@ describe('register through verify', () => {
     await request(app).get(`/api/auth/verify-email?token=${issueEmailVerificationToken(user._id)}`).expect(200);
     expect(markEmailVerifiedCalls).toEqual([]);
     expect(await mark(user._id)).toBeUndefined();
+  });
+
+  // F581: the register screen said "You're in" while login refused the account.
+  // The 201 names the gate, and it is set exactly when the login that follows
+  // would be refused for an unverified mailbox.
+  test.each([
+    ['an open instance with mail', {}, false],
+    ['an open instance without mail', { SMTP2GO_API_KEY: undefined }, false],
+    ['a team-gated instance with mail', { AUTH_ALLOWED_DOMAINS: 'example.com' }, true],
+  ])('verificationRequired on %s matches what login does', async (_label, env, required) => {
+    Object.entries(env).forEach(([key, value]) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    });
+    const res = await request(app).post('/api/auth/register').send({ email, password }).expect(201);
+    await waitFor(() => welcome.mock.results.length > 0);
+    await welcome.mock.results[0].value.catch(() => undefined);
+    expect(res.body.verificationRequired).toBe(required);
+    expect(res.body).not.toHaveProperty('token');
+
+    const login = await request(app).post('/api/auth/login').send({ email, password });
+    expect(login.status).toBe(required ? 403 : 200);
+    if (required) expect(login.body).toMatchObject({ code: 'INSTANCE_ACCESS_RESTRICTED', reason: 'unverified' });
   });
 });
