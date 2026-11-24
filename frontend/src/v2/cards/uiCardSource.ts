@@ -46,6 +46,9 @@ export function cardRevision(payload: { catalogId?: unknown; catalogRev?: unknow
 export function parseCard(source: unknown, rev: CardRevision = CARD_REVISIONS[0]): ElementNode | null {
   const { names, parser, validate } = rev;
   if (typeof source !== 'string' || new TextEncoder().encode(source).length > 32 * 1024) return null;
+  // lang-core's parser lifts the code out of a ``` fence before it parses, so
+  // the program it renders could differ from the one checked below.
+  if (source.includes('```')) return null;
   try {
     // The forgiving lexer drops characters such as # outside quoted prose.
     let quote = ''; let escaped = false;

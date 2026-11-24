@@ -241,6 +241,11 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
     return allowedCall(rev, name);
   };
   try {
+    // lang-core's parser lifts the code out of a ``` fence before it parses, so
+    // a source holding a fence can parse to a different program from the one
+    // the token checks below inspect. No card needs one; code belongs in the
+    // text fallback.
+    if (source.includes('```')) refuse('UI card source may not contain a ``` code fence');
     // The lexer drops unknown characters. Reject those in the original source,
     // while leaving quoted prose (including Unicode and escapes) untouched.
     let quote = '';
