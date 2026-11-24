@@ -11,6 +11,7 @@ const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const { PLACEHOLDER_AGENT_DESCRIPTION } = require('../../services/agentInstallationIdentity');
+const { listeningInvite, snapshotPointer } = require('../../services/installIntroCopy');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -313,9 +314,9 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
  * because of the sentence. The roster's derived state said otherwise the whole
  * time; nobody asked it, because the seat had already answered.
  */
-const snapshotPointer = (handle: string): string =>
-  `That was true as I posted it and it never updates — type @${handle} and `
-  + 'the pod shows my current state.';
+// The pointer and the listening arm live in services/installIntroCopy.ts,
+// because the first listen rewrites a state-scoped intro to the listening arm
+// with the same words (F576).
 
 const composeInstallIntro = ({
   displayName, blurb, handle, state, fixCommand, connectable = false, listens = true,
@@ -388,7 +389,7 @@ const composeInstallIntro = ({
   // reachable / listening / unknown — anything we cannot show to be down keeps
   // the invitation. Wrongly telling a live agent's room that nothing listens is
   // the opposite lie.
-  return `${lead} Mention me with @${handle} when you need me.`;
+  return `${lead} ${listeningInvite(handle)}`;
 };
 
 // Internal ops/smoke/demo seats (spec §1.1, BEND-3 follow-up #1377):
