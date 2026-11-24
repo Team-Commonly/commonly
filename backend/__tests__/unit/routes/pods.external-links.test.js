@@ -231,27 +231,27 @@ describe('pods routes - external links', () => {
     });
     Pod.findById.mockResolvedValue({
       createdBy: { toString: () => 'user1' },
-      externalLinks: ['l1'],
+      externalLinks: ['0123456789abcdef01234567'],
       save: podSave,
     });
     fs.existsSync.mockReturnValue(true);
 
-    await request(app).delete('/api/pods/external-link/l1').expect(200);
+    await request(app).delete('/api/pods/external-link/0123456789abcdef01234567').expect(200);
 
-    expect(ExternalLink.findByIdAndDelete).toHaveBeenCalledWith('l1');
+    expect(ExternalLink.findByIdAndDelete).toHaveBeenCalledWith('0123456789abcdef01234567');
     expect(fs.unlinkSync).toHaveBeenCalledWith('code.png');
     expect(podSave).toHaveBeenCalled();
   });
 
   it('returns 404 when external link missing on delete', async () => {
     ExternalLink.findById.mockResolvedValue(null);
-    await request(app).delete('/api/pods/external-link/l1').expect(404);
+    await request(app).delete('/api/pods/external-link/0123456789abcdef01234567').expect(404);
   });
 
   it('returns 403 when deleting link as non-owner', async () => {
     ExternalLink.findById.mockResolvedValue({ podId: 'p1' });
     Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' } });
-    await request(app).delete('/api/pods/external-link/l1').expect(403);
+    await request(app).delete('/api/pods/external-link/0123456789abcdef01234567').expect(403);
   });
 
   it('fetches qrcode when user is member', async () => {
@@ -262,12 +262,12 @@ describe('pods routes - external links', () => {
     });
     Pod.findById.mockResolvedValue({ members: ['user1'] });
 
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(200);
   });
 
   it('returns 404 when qrcode not found', async () => {
     ExternalLink.findById.mockResolvedValue(null);
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(404);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(404);
   });
 
   it('returns 403 when user not member for qrcode', async () => {
@@ -277,7 +277,7 @@ describe('pods routes - external links', () => {
       qrCodePath: 'code.png',
     });
     Pod.findById.mockResolvedValue({ members: [] });
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(403);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(403);
   });
 
   it('fetches external links list', async () => {
@@ -322,7 +322,7 @@ describe('pods routes - WeChat QR image', () => {
   it('is sent private, no-store', async () => {
     ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: '/uploads/qr.png', podId: 'p1' });
     Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(200);
     expect(headerAtSend).toBe('private, no-store');
   });
 });
@@ -349,7 +349,7 @@ describe('pods routes - external link QR code type', () => {
 
   it('serves an image inline, typed by its extension, sandboxed and nosniff', async () => {
     ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: 'uploads/qrcodes/qrcode-1.png', podId: 'p1' });
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(200);
     expect(sent.headers['content-type']).toBe('image/png');
     expect(sent.headers['content-disposition']).toBe('inline');
     expect(sent.headers['x-content-type-options']).toBe('nosniff');
@@ -358,7 +358,7 @@ describe('pods routes - external link QR code type', () => {
 
   it('downloads an old file whose extension is not an image', async () => {
     ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: 'uploads/qrcodes/qrcode-1.html', podId: 'p1' });
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(200);
     expect(sent.headers['content-type']).toBe('application/octet-stream');
     expect(sent.headers['content-disposition']).toBe('attachment');
   });
@@ -370,9 +370,35 @@ describe('pods routes - external link QR code type', () => {
       .field('type', 'wechat')
       .field('name', 'qr')
       .attach('qrCode', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), { filename: 'qr.svg', contentType: 'image/svg+xml' });
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.text).toMatch(/Only PNG, JPEG, GIF or WebP images are allowed/);
+    // F596: the upload filter's refusal reached the app's error handler as an
+    // unhandled error, so a wrong file type answered 500 and paged Sentry
+    // (staging, 2026-11-24). It's the client's mistake: a 400 it can show.
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 'qr_code_type', message: 'Only PNG, JPEG, GIF or WebP images are allowed' });
     expect(ExternalLink).not.toHaveBeenCalled();
+  });
+
+  it('refuses an image over 2 MB with a 413 before anything is stored', async () => {
+    const res = await request(app)
+      .post('/api/pods/external-link')
+      .field('podId', 'p1')
+      .field('type', 'wechat')
+      .field('name', 'qr')
+      .attach('qrCode', Buffer.alloc(2 * 1024 * 1024 + 1), { filename: 'qr.png', contentType: 'image/png' });
+    expect(res.status).toBe(413);
+    expect(res.body).toMatchObject({ code: 'qr_code_too_large' });
+    expect(ExternalLink).not.toHaveBeenCalled();
+    expect(mockStore.put).not.toHaveBeenCalled();
+  });
+
+  // A link id that can't be an ObjectId made findById throw a CastError,
+  // caught as a 500. Nothing can be stored under such an id: it's a 404.
+  it.each([
+    ['get', '/api/pods/external-link/not-an-id/qrcode'],
+    ['delete', '/api/pods/external-link/not-an-id'],
+  ])('answers 404 to %s with a link id that is not an ObjectId', async (method, url) => {
+    await request(app)[method](url).expect(404);
+    expect(ExternalLink.findById).not.toHaveBeenCalled();
   });
 });
 
@@ -439,7 +465,7 @@ describe('pods routes - external link QR code in the object store', () => {
     ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodeKey: `qr/${POD}/abc.png`, podId: POD });
     Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
     mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('png-bytes')), mime: 'image/png', size: 9 });
-    const res = await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    const res = await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(200);
     expect(mockStore.get).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
     expect(res.headers['content-type']).toBe('image/png');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -452,13 +478,13 @@ describe('pods routes - external link QR code in the object store', () => {
     ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodeKey: `qr/${POD}/abc.png`, podId: POD });
     Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
     mockStore.get.mockResolvedValue(null);
-    await request(app).get('/api/pods/external-link/l1/qrcode').expect(404);
+    await request(app).get('/api/pods/external-link/0123456789abcdef01234567/qrcode').expect(404);
   });
 
   it('deletes the stored image with the link', async () => {
     ExternalLink.findById.mockResolvedValue({ podId: POD, qrCodeKey: `qr/${POD}/abc.png` });
     Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: ['l1'], save: jest.fn() });
-    await request(app).delete('/api/pods/external-link/l1').expect(200);
+    await request(app).delete('/api/pods/external-link/0123456789abcdef01234567').expect(200);
     expect(mockStore.delete).toHaveBeenCalledWith(`qr/${POD}/abc.png`);
   });
 });

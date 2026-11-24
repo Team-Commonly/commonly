@@ -121,16 +121,41 @@ const qrCodeObjectKey = (podId: string, mimetype: string): string => (
   `qr/${podId}/${randomBytes(16).toString('hex')}${QR_CODE_TYPES[mimetype]}`
 );
 
+const QR_CODE_TYPE_REFUSAL = 'Only PNG, JPEG, GIF or WebP images are allowed';
+class QrCodeTypeError extends Error {}
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req: unknown, file: { mimetype: string }, cb: (err: Error | null, accept?: boolean) => void) => {
     if (!Object.prototype.hasOwnProperty.call(QR_CODE_TYPES, file.mimetype)) {
-      return cb(new Error('Only PNG, JPEG, GIF or WebP images are allowed'));
+      return cb(new QrCodeTypeError(QR_CODE_TYPE_REFUSAL));
     }
     cb(null, true);
   },
 });
+
+// F596: a refused upload is the client's mistake, so it answers in the route's
+// own shape. Left to the app's error handler, the filter's refusal answered 500
+// and reached Sentry as an unhandled error (staging, 2026-11-24).
+const qrCodeUpload = (req: unknown, res: Res, next: (err?: unknown) => void) => {
+  upload.single('qrCode')(req, res, (err: unknown) => {
+    if (!err) return next();
+    const e = err as { code?: string; message?: string };
+    if (e.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'The QR image must be 2 MB or smaller', code: 'qr_code_too_large' });
+    }
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ message: e.message || 'The QR image could not be read', code: 'qr_code_upload' });
+    }
+    if (err instanceof QrCodeTypeError) {
+      return res.status(400).json({ message: QR_CODE_TYPE_REFUSAL, code: 'qr_code_type' });
+    }
+    return next(err);
+  });
+};
+// A link id that can't be an ObjectId makes findById throw (a 500); no link
+// is stored under one, so it's the same 404 as a missing link.
+const requireLinkId = (param: string, message: string) => requireObjectIdParam(param, { message }, 404);
 
 // The sidebar listing is the heaviest read in the app — it populates
 // createdBy / members / parentPod and joins the last message — and every
@@ -290,7 +315,7 @@ const externalLinkCreateRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
-router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
+router.post('/external-link', externalLinkCreateRateLimit, auth, qrCodeUpload, refuseDollarKeys, async (req: AuthReq, res: Res) => {
   try {
     const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
     if (!podId) return res.status(400).json({ message: 'Missing podId' });
@@ -334,7 +359,8 @@ router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('
   }
 });
 
-router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
+const requireDeletableLinkId = requireLinkId('id', 'External link not found');
+router.delete('/external-link/:id', auth, requireDeletableLinkId, async (req: AuthReq, res: Res) => {
   try {
     const linkId = req.params?.id;
     const externalLink = await ExternalLink.findById(linkId) as {
@@ -356,7 +382,8 @@ router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res) => {
+const requireQrLinkId = requireLinkId('linkId', 'QR code not found');
+router.get('/external-link/:linkId/qrcode', auth, requireQrLinkId, async (req: AuthReq, res: Res) => {
   try {
     const { linkId } = req.params || {};
     const link = await ExternalLink.findById(linkId) as {
