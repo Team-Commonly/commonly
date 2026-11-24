@@ -64,17 +64,17 @@ describe('Install endpoint rejects a query operator as podId', () => {
     });
 
     await AgentRegistry.create({
-      agentName: 'openclaw',
-      displayName: 'Cuz 🦞',
-      description: 'OpenClaw test',
+      agentName: 'codex',
+      displayName: 'Codex',
+      description: 'Codex test',
       manifest: {
-        name: 'openclaw',
+        name: 'codex',
         version: '1.0.0',
         capabilities: [],
         context: { required: [], optional: [] },
       },
       latestVersion: '1.0.0',
-      versions: [{ version: '1.0.0', manifest: { name: 'openclaw', version: '1.0.0', capabilities: [], context: { required: [], optional: [] } }, publishedAt: new Date() }],
+      versions: [{ version: '1.0.0', manifest: { name: 'codex', version: '1.0.0', capabilities: [], context: { required: [], optional: [] } }, publishedAt: new Date() }],
       registry: 'private',
     });
   });
@@ -102,7 +102,7 @@ describe('Install endpoint rejects a query operator as podId', () => {
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: { $ne: null },
         version: '1.0.0',
@@ -131,7 +131,7 @@ describe('Install endpoint rejects a query operator as podId', () => {
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: value(),
         version: '1.0.0',
@@ -149,7 +149,7 @@ describe('Install endpoint rejects a query operator as podId', () => {
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: pod._id.toString(),
         version: '1.0.0',

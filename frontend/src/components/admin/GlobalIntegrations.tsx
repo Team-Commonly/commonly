@@ -45,13 +45,10 @@ const XIcon = () => (
   </svg>
 );
 
-// F98 (decided 11-04): hosted agents are Claude-only, and the gateway
-// offers Claude Haiku 5.5 only (Sonnet comes later, under a cap). Platform
-// features (llmService) are Claude-only too, but not Haiku-only, and they have
-// no model list here. The server always returns a full policy (what was saved,
-// or its own defaults, which still name Gemini), so a current value that is no
-// longer offered still shows, disabled and marked current.
-const HOSTED_MODEL = 'anthropic/claude-haiku-5-5';
+// F98 (decided 11-04): platform features (llmService) are Claude-only, and
+// they have no model list here. The server always returns a full policy (what
+// was saved, or its own defaults, which still name Gemini), so a current value
+// that is no longer offered still shows, disabled and marked current.
 
 // Backend LLM service model options (provider → model list)
 const LLM_SERVICE_PROVIDERS = [
@@ -60,12 +57,6 @@ const LLM_SERVICE_PROVIDERS = [
   { value: 'openrouter', label: 'OpenRouter' },
 ];
 const LLM_SERVICE_MODEL_OPTIONS = {};
-
-// OpenClaw gateway model options (provider → model list)
-const OPENCLAW_PROVIDERS = [{ value: 'anthropic', label: 'Anthropic' }];
-const OPENCLAW_MODEL_OPTIONS = {
-  anthropic: [{ value: HOSTED_MODEL, label: 'Claude Haiku 5.5' }],
-};
 
 // The offered items, plus the current value (disabled) when it is not one of them.
 const offeredItems = (options, current) => [
@@ -102,16 +93,6 @@ const GlobalIntegrations = () => {
       openrouter: {
         baseUrl: 'https://openrouter.ai/api/v1',
         model: '',
-      },
-    },
-    openclaw: {
-      provider: 'anthropic',
-      model: HOSTED_MODEL,
-      fallbackModels: [],
-      devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
-      communityAgentModel: {
-        primary: HOSTED_MODEL,
-        fallbacks: [],
       },
     },
   });
@@ -225,25 +206,6 @@ const GlobalIntegrations = () => {
               model: nextModelPolicy?.llmService?.openrouter?.model || '',
             },
           },
-          openclaw: {
-            provider: nextModelPolicy?.openclaw?.provider || 'anthropic',
-            model: nextModelPolicy?.openclaw?.model
-              || nextModelPolicy?.openclaw?.defaultModel
-              || HOSTED_MODEL,
-            fallbackModels: Array.isArray(nextModelPolicy?.openclaw?.fallbackModels)
-              ? nextModelPolicy.openclaw.fallbackModels
-              : [],
-            devAgentIds: Array.isArray(nextModelPolicy?.openclaw?.devAgentIds)
-              ? nextModelPolicy.openclaw.devAgentIds
-              : ['theo', 'nova', 'pixel', 'ops'],
-            communityAgentModel: {
-              primary: nextModelPolicy?.openclaw?.communityAgentModel?.primary
-                || HOSTED_MODEL,
-              fallbacks: Array.isArray(nextModelPolicy?.openclaw?.communityAgentModel?.fallbacks)
-                ? nextModelPolicy.openclaw.communityAgentModel.fallbacks
-                : [],
-            },
-          },
         });
       }
     } catch (err) {
@@ -254,10 +216,9 @@ const GlobalIntegrations = () => {
     }
   };
 
+  // No openclaw section: the OpenClaw runtime is retired (ADR-021 Part B), and
+  // a save that names none keeps the stored one as it was.
   const buildModelPolicyPayload = () => {
-    const fallbackModels = Array.isArray(modelPolicy?.openclaw?.fallbackModels)
-      ? modelPolicy.openclaw.fallbackModels
-      : String(modelPolicy?.openclaw?.fallbackModels || '').split(',').map((e) => e.trim()).filter(Boolean);
     return {
       llmService: {
         provider: modelPolicy?.llmService?.provider || 'auto',
@@ -265,20 +226,6 @@ const GlobalIntegrations = () => {
         openrouter: {
           baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
           model: modelPolicy?.llmService?.openrouter?.model || '',
-        },
-      },
-      openclaw: {
-        provider: modelPolicy?.openclaw?.provider || 'anthropic',
-        model: modelPolicy?.openclaw?.model || '',
-        fallbackModels,
-        devAgentIds: Array.isArray(modelPolicy?.openclaw?.devAgentIds)
-          ? modelPolicy.openclaw.devAgentIds
-          : String(modelPolicy?.openclaw?.devAgentIds || '').split(',').map((e) => e.trim()).filter(Boolean),
-        communityAgentModel: {
-          primary: modelPolicy?.openclaw?.communityAgentModel?.primary || '',
-          fallbacks: Array.isArray(modelPolicy?.openclaw?.communityAgentModel?.fallbacks)
-            ? modelPolicy.openclaw.communityAgentModel.fallbacks
-            : String(modelPolicy?.openclaw?.communityAgentModel?.fallbacks || '').split(',').map((e) => e.trim()).filter(Boolean),
         },
       },
     };
@@ -848,7 +795,7 @@ const GlobalIntegrations = () => {
             Global Model Policy
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Set global defaults for backend LLM routing and OpenClaw gateway model defaults. OpenClaw model applies to <strong>all agents</strong> — there is one shared gateway.
+            Set global defaults for backend LLM routing.
           </Typography>
           <Grid container spacing={2}>
             <Grid item xs={12}>
@@ -952,162 +899,6 @@ const GlobalIntegrations = () => {
                 </Grid>
               </>
             )}
-            <Grid item xs={12}>
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                OpenClaw — Agent Model Routing
-              </Typography>
-              <Typography variant="caption" color="text.disabled">
-                Dev agents (by ID) use the primary below. All other agents use the Community section.
-              </Typography>
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Dev Agents
-              </Typography>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="openclaw-provider-label">Dev Agent Provider</InputLabel>
-                <Select
-                  labelId="openclaw-provider-label"
-                  value={modelPolicy.openclaw.provider}
-                  label="Dev Agent Provider"
-                  onChange={(event) => {
-                    const nextProvider = event.target.value;
-                    const models = OPENCLAW_MODEL_OPTIONS[nextProvider];
-                    const nextModel = models ? models[0].value : '';
-                    setModelPolicy({
-                      ...modelPolicy,
-                      openclaw: {
-                        ...modelPolicy.openclaw,
-                        provider: nextProvider,
-                        model: nextModel,
-                      },
-                    });
-                  }}
-                >
-                  {offeredItems(OPENCLAW_PROVIDERS, modelPolicy.openclaw.provider)}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] ? (
-                <FormControl fullWidth size="small">
-                  <InputLabel id="openclaw-model-label">Dev Agent Primary Model</InputLabel>
-                  <Select
-                    labelId="openclaw-model-label"
-                    value={modelPolicy.openclaw.model}
-                    label="Dev Agent Primary Model"
-                    onChange={(event) => setModelPolicy({
-                      ...modelPolicy,
-                      openclaw: {
-                        ...modelPolicy.openclaw,
-                        model: event.target.value,
-                      },
-                    })}
-                  >
-                    {offeredItems(OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider], modelPolicy.openclaw.model)}
-                  </Select>
-                </FormControl>
-              ) : (
-                <TextField
-                  label="Dev Agent Primary Model"
-                  value={modelPolicy.openclaw.model}
-                  onChange={(event) => setModelPolicy({
-                    ...modelPolicy,
-                    openclaw: {
-                      ...modelPolicy.openclaw,
-                      model: event.target.value,
-                    },
-                  })}
-                  fullWidth
-                  size="small"
-                  helperText="Applied to gateway defaults on reprovision."
-                />
-              )}
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Dev Agent Fallback Models"
-                value={Array.isArray(modelPolicy.openclaw.fallbackModels)
-                  ? modelPolicy.openclaw.fallbackModels.join(', ')
-                  : modelPolicy.openclaw.fallbackModels}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  openclaw: {
-                    ...modelPolicy.openclaw,
-                    fallbackModels: event.target.value as any,
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Comma-separated fallbacks for dev agents, in order. Left empty, the server uses its default list."
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Dev Agent IDs"
-                value={Array.isArray(modelPolicy.openclaw.devAgentIds)
-                  ? modelPolicy.openclaw.devAgentIds.join(', ')
-                  : modelPolicy.openclaw.devAgentIds}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  openclaw: {
-                    ...modelPolicy.openclaw,
-                    devAgentIds: event.target.value as any,
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Comma-separated instance IDs that use the dev agent primary above. All other agents use the community model below. Example: theo, nova, pixel, ops"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Community Agents
-              </Typography>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Community Agent Primary Model"
-                value={modelPolicy.openclaw.communityAgentModel?.primary || ''}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  openclaw: {
-                    ...modelPolicy.openclaw,
-                    communityAgentModel: {
-                      ...modelPolicy.openclaw.communityAgentModel,
-                      primary: event.target.value,
-                    },
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Primary model for agents not in Dev Agent IDs."
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Community Agent Fallback Models"
-                value={Array.isArray(modelPolicy.openclaw.communityAgentModel?.fallbacks)
-                  ? modelPolicy.openclaw.communityAgentModel.fallbacks.join(', ')
-                  : (modelPolicy.openclaw.communityAgentModel?.fallbacks || '')}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  openclaw: {
-                    ...modelPolicy.openclaw,
-                    communityAgentModel: {
-                      ...modelPolicy.openclaw.communityAgentModel,
-                      fallbacks: event.target.value as any,
-                    },
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Comma-separated fallbacks for community agents (Gemini appended automatically)."
-              />
-            </Grid>
           </Grid>
           <Box display="flex" gap={1} mt={2}>
             <Button

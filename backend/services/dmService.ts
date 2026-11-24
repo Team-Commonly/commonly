@@ -9,6 +9,7 @@ import {
 } from './hostedRuntimeService';
 import { HostedRoomRefusedError } from './hostedRoomRefusal';
 import { identityIsPaused } from './runtimeIdentityOwnership';
+import { moltbotRuntimeRetired } from './retiredRuntime';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
@@ -438,6 +439,19 @@ class DMService {
         // With no owner to name there is no row: the agent can't answer here.
         if (hosted && !hostedOwner?.live) {
           console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
+          return roomPod;
+        }
+        // A retired moltbot runtime (ADR-021 Part B) gets no new row: nothing
+        // would ever answer from it. The stored rows stay. The runtime is
+        // resolved the way install resolves it: the stored one, else the
+        // agent type's (AGENT_TYPES), so a type that defaults to moltbot is
+        // caught even when no stored row names a runtime.
+        const storedRuntimeType = (inherited?.runtime as { runtimeType?: unknown } | undefined)?.runtimeType;
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const effectiveRuntimeType = storedRuntimeType || require('./agentIdentityService')
+          .getAgentTypeConfig(agentName.toLowerCase())?.runtime;
+        if (moltbotRuntimeRetired(effectiveRuntimeType)) {
+          console.warn(`[dm-service] retired moltbot runtime for agent-room pod=${roomPod._id}; no installation written`);
           return roomPod;
         }
         await writeRoomRow({

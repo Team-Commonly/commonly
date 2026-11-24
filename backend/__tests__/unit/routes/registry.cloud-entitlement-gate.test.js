@@ -50,7 +50,9 @@ jest.mock('../../../models/Activity', () => ({
 }));
 
 // Real-ish taxonomy so the gate exercises the actual decision logic; only the
-// AGENT_TYPES lookup is stubbed (openclaw → moltbot, others unknown).
+// AGENT_TYPES lookup is stubbed (codex → codex, others unknown). codex is the
+// built-in cloud agent here: the moltbot runtime is retired (refused before
+// this gate; see the runtime_retired case below).
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
     instanceId === 'default' ? agentName : `${agentName}-${instanceId}`
@@ -58,7 +60,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
   getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'bot-1' }),
   ensureAgentInPod: jest.fn().mockResolvedValue(true),
   getAgentTypeConfig: jest.fn((name) => (
-    String(name).toLowerCase() === 'openclaw' ? { runtime: 'moltbot' } : null
+    String(name).toLowerCase() === 'codex' ? { runtime: 'codex' } : null
   )),
   // The real classifier, not a copy, so this file tests the rule the route runs.
   isCloudRuntime: jest.requireActual('../../../services/agentIdentityService').isCloudRuntime,
@@ -129,11 +131,11 @@ describe('registry install — cloud-agent entitlement gate', () => {
     Activity.create.mockResolvedValue(true);
   });
 
-  it('403s a non-admin, non-entitled installer on a cloud (moltbot) agent', async () => {
+  it('403s a non-admin, non-entitled installer on a cloud (codex) agent', async () => {
     AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'openclaw',
-      displayName: 'Cuz',
-      description: 'OpenClaw',
+      agentName: 'codex',
+      displayName: 'Codex',
+      description: 'Codex',
       latestVersion: '1.0.0',
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
@@ -144,7 +146,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'codex', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -161,11 +163,11 @@ describe('registry install — cloud-agent entitlement gate', () => {
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 
-  it('allows an entitled (non-admin) installer on a cloud (moltbot) agent', async () => {
+  it('allows an entitled (non-admin) installer on a cloud (codex) agent', async () => {
     AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'openclaw',
-      displayName: 'Cuz',
-      description: 'OpenClaw',
+      agentName: 'codex',
+      displayName: 'Codex',
+      description: 'Codex',
       latestVersion: '1.0.0',
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
@@ -175,7 +177,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'codex', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -187,11 +189,11 @@ describe('registry install — cloud-agent entitlement gate', () => {
     expect(AgentInstallation.install).toHaveBeenCalled();
   });
 
-  it('allows an admin installer on a cloud (moltbot) agent', async () => {
+  it('allows an admin installer on a cloud (codex) agent', async () => {
     AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'openclaw',
-      displayName: 'Cuz',
-      description: 'OpenClaw',
+      agentName: 'codex',
+      displayName: 'Codex',
+      description: 'Codex',
       latestVersion: '1.0.0',
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
@@ -201,7 +203,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'codex', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'admin' },
       userId: 'user-1',
@@ -308,13 +310,25 @@ describe('registry install — cloud-agent entitlement gate', () => {
   };
 
   it.each([
-    ['native'], ['moltbot'], ['internal'], ['managed-agents'],
+    ['native'], ['internal'], ['managed-agents'],
   ])('gates a %s runtime whatever host the install names', async (runtimeType) => {
     const res = await unentitledInstall({ runtime: { runtimeType, host: 'byo' } });
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'cloud_agents_not_entitled' }));
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
+
+  // ADR-021 Part B, Phase 1: the moltbot runtime is retired, so its install is
+  // refused as such (410) before the entitlement gate, whatever host it names.
+  it.each([[{ runtimeType: 'moltbot', host: 'byo' }], [{ runtimeType: 'MoltBot' }]])(
+    'refuses a moltbot runtime as retired, writing nothing: %j',
+    async (runtime) => {
+      const res = await unentitledInstall({ runtime });
+      expect(res.status).toHaveBeenCalledWith(410);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'runtime_retired' }));
+      expect(AgentInstallation.install).not.toHaveBeenCalled();
+    },
+  );
 
   it('gates a manifest-declared native runtime whatever host the install names', async () => {
     const res = await unentitledInstall({ runtime: { host: 'byo' } }, manifestWithRuntimeType('native'));

@@ -283,6 +283,38 @@ describe('an agent-room row and who owns the agent', () => {
         .toEqual({ owned: false, failure: 'another_installer' });
     });
 
+    // ADR-021 Part B: nothing runs a moltbot, so a DM opened with a stored one
+    // gets its room but no new installation row; the stored row stays.
+    it('a DM with a stored moltbot agent writes no room row and leaves the stored row', async () => {
+      await seedRow(owner._id, home._id, { config: { runtime: { runtimeType: 'moltbot' } } });
+      await shareAgentWith(guest);
+      const roomId = await openDm(guest);
+      expect(await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean()).toBeNull();
+      const stored = await AgentInstallation.findOne({ agentName: NAME, podId: home._id }).lean();
+      expect(stored.config.runtime.runtimeType).toBe('moltbot');
+      expect(stored.status).toBe('active');
+    });
+
+    // The same runtime install resolves: with no stored runtime, the agent
+    // type's (AGENT_TYPES.openclaw is moltbot) decides.
+    it('a DM with an agent whose type defaults to moltbot, and no stored runtime, writes no room row', async () => {
+      NAME = 'openclaw';
+      await seedRow(owner._id, home._id, { config: {} });
+      await shareAgentWith(guest);
+      const roomId = await openDm(guest);
+      expect(await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean()).toBeNull();
+      expect(await AgentInstallation.findOne({ agentName: NAME, podId: home._id }).lean()).not.toBeNull();
+    });
+
+    it('a stored runtime still wins over the type default, as at install', async () => {
+      NAME = 'openclaw';
+      await seedRow(owner._id, home._id);
+      await shareAgentWith(guest);
+      const roomId = await openDm(guest);
+      const row = await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean();
+      expect(row.config.runtime.runtimeType).toBe('webhook');
+    });
+
     it('a room row with no recorded installer does not block the owner', async () => {
       await seedRow(owner._id, home._id);
       const room = await seedRoom(guest);
@@ -573,7 +605,7 @@ describe('an agent-room row and who owns the agent', () => {
 
     it('a DM another agent opens while this one is paused starts paused, and comes back with its runtime', async () => {
       await AgentInstallation.updateOne({ agentName: NAME, podId: home._id }, { $set: {
-        'config.runtime': { runtimeType: 'moltbot' },
+        'config.runtime': { runtimeType: 'codex' },
       } });
       await setStatus(owner, home._id, 'paused');
 
@@ -585,7 +617,7 @@ describe('an agent-room row and who owns the agent', () => {
       expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
       const row = await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean();
       expect(row.status).toBe('active');
-      expect(row.config.runtime.runtimeType).toBe('moltbot');
+      expect(row.config.runtime.runtimeType).toBe('codex');
     });
 
     it('a paused agent removed from its last pod ends the DM, and reinstalling brings it back', async () => {

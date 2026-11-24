@@ -17,14 +17,25 @@ jest.mock('../../../models/AgentRegistry', () => ({
 const DMService = require('../../../services/dmService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 
+// codex, like openclaw, is a shared-runtime agentName whose name can leak into
+// a label. openclaw itself is retired (ADR-021 Part B), so its rooms get no
+// installation row; the case below pins that its room still gets the clean name.
 test.each([
-  ['openclaw (nova)', 'nova'], ['OpenClaw (NOVA)', 'nova'], ['openclaw', 'nova'],
+  ['codex (nova)', 'nova'], ['Codex (NOVA)', 'nova'], ['codex', 'nova'],
   ['Nova, the reviewer', 'Nova, the reviewer'],
 ])('room and installation names resolve %s as %s', async (displayName, expected) => {
-  mockUser.value = { username: 'openclaw-nova', botMetadata: { agentName: 'openclaw', instanceId: 'nova', displayName } };
-  const room = await DMService.getOrCreateAgentRoom('agent-1', 'person-1', { agentName: 'openclaw', instanceId: 'nova' });
+  mockUser.value = { username: 'codex-nova', botMetadata: { agentName: 'codex', instanceId: 'nova', displayName } };
+  const room = await DMService.getOrCreateAgentRoom('agent-1', 'person-1', { agentName: 'codex', instanceId: 'nova' });
   expect(room.name).toBe(expected);
-  expect(AgentInstallation.install).toHaveBeenLastCalledWith('openclaw', 'room-1', expect.objectContaining({ displayName: expected }));
+  expect(AgentInstallation.install).toHaveBeenLastCalledWith('codex', 'room-1', expect.objectContaining({ displayName: expected }));
+});
+
+test('a retired openclaw agent\'s room gets the clean name and no installation row', async () => {
+  AgentInstallation.install.mockClear();
+  mockUser.value = { username: 'openclaw-nova', botMetadata: { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' } };
+  const room = await DMService.getOrCreateAgentRoom('agent-1', 'person-1', { agentName: 'openclaw', instanceId: 'nova' });
+  expect(room.name).toBe('nova');
+  expect(AgentInstallation.install).not.toHaveBeenCalled();
 });
 
 test('the agent-admin DM creation path uses the same runtime-leak guard', async () => {

@@ -319,6 +319,24 @@ describe('globalModelConfigService', () => {
       expect(savedValue().openclaw.model).toBe('google/gemini-2.5-flash');
     });
 
+    // ADR-021 Part B: the admin screen no longer sends an openclaw section, so
+    // a save that names only llmService must keep the stored one as it was.
+    it('a save with no openclaw section keeps the stored openclaw settings', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      const openclaw = {
+        provider: 'google',
+        model: 'google/gemini-2.5-flash',
+        fallbackModels: ['google/gemini-2.0-flash'],
+        devAgentIds: ['theo', 'nova'],
+        communityAgentModel: { primary: 'openrouter/some-pick', fallbacks: ['openrouter/other'] },
+      };
+      stored({ openclaw });
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto', model: 'claude-haiku-5-5' } });
+
+      expect(savedValue().openclaw).toEqual(expect.objectContaining(openclaw));
+    });
+
     // CodeRabbit on #3972: the OpenClaw `google` provider calls Google directly,
     // so with no model it keeps a Gemini name rather than the OpenRouter route.
     it('a save that picks the google OpenClaw provider with no model gets a Gemini model', async () => {

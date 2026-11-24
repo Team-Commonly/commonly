@@ -50,7 +50,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       username: 'installer',
       email: 'installer@test.com',
       password: 'password123',
-      // openclaw is a cloud (moltbot) agent — entitle the installer so the
+      // codex is a cloud agent (no host: 'byo') — entitle the installer so the
       // hosted-agent gate passes; this test asserts displayName preservation.
       entitlements: { cloudAgents: true },
     });
@@ -64,19 +64,19 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
     });
 
     // Registry-wide manifest with the "ugly" default name — mirror the
-    // production shape where openclaw → "Cuz 🦞" and codex → "Codex".
+    // production shape where codex → "Codex" (openclaw → "Cuz 🦞" before its retirement).
     await AgentRegistry.create({
-      agentName: 'openclaw',
-      displayName: 'Cuz 🦞',
-      description: 'OpenClaw test',
+      agentName: 'codex',
+      displayName: 'Codex',
+      description: 'Codex test',
       manifest: {
-        name: 'openclaw',
+        name: 'codex',
         version: '1.0.0',
         capabilities: [],
         context: { required: [], optional: [] },
       },
       latestVersion: '1.0.0',
-      versions: [{ version: '1.0.0', manifest: { name: 'openclaw', version: '1.0.0', capabilities: [], context: { required: [], optional: [] } }, publishedAt: new Date() }],
+      versions: [{ version: '1.0.0', manifest: { name: 'codex', version: '1.0.0', capabilities: [], context: { required: [], optional: [] } }, publishedAt: new Date() }],
       registry: 'private',
     });
 
@@ -84,12 +84,12 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
     // "Pixel" case — the User row has the right name, we're just installing
     // her into a NEW pod.
     await User.create({
-      username: 'openclaw-aria',
-      email: 'openclaw-aria@bot.local',
+      username: 'codex-aria',
+      email: 'codex-aria@bot.local',
       password: 'bot-no-login',
       isBot: true,
       botMetadata: {
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         displayName: 'Aria',
       },
@@ -110,7 +110,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: pod._id.toString(),
         version: '1.0.0',
@@ -122,34 +122,34 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
 
     const installation = await AgentInstallation.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(installation).toBeTruthy();
     expect(installation.displayName).toBe('Aria');
-    expect(installation.displayName).not.toBe('Cuz 🦞');
+    expect(installation.displayName).not.toBe('Codex');
 
     const profile = await AgentProfile.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(profile).toBeTruthy();
     expect(profile.name).toBe('Aria');
-    expect(profile.name).not.toBe('Cuz 🦞');
+    expect(profile.name).not.toBe('Codex');
   });
 
   it('does not promote a legacy runtime-shaped User displayName into either higher-precedence label', async () => {
     await User.create({
-      username: 'openclaw-nova',
-      email: 'openclaw-nova@bot.local',
+      username: 'codex-nova',
+      email: 'codex-nova@bot.local',
       password: 'bot-no-login',
       isBot: true,
       botMetadata: {
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'nova',
         // A historical writer stored the runtime rather than Nova’s label.
-        displayName: 'openclaw (nova)',
+        displayName: 'codex (nova)',
       },
     });
 
@@ -157,7 +157,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'nova',
         podId: pod._id.toString(),
         version: '1.0.0',
@@ -168,19 +168,19 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
 
     const installation = await AgentInstallation.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'nova',
     }).lean();
     expect(installation.displayName).toBe('nova');
-    expect(installation.displayName).not.toBe('openclaw (nova)');
+    expect(installation.displayName).not.toBe('codex (nova)');
 
     const profile = await AgentProfile.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'nova',
     }).lean();
     expect(profile.name).toBe('nova');
-    expect(profile.name).not.toBe('openclaw (nova)');
+    expect(profile.name).not.toBe('codex (nova)');
   });
 
   it('respects explicit displayName in request body over both registry default AND existing User row', async () => {
@@ -188,7 +188,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: pod._id.toString(),
         version: '1.0.0',
@@ -200,14 +200,14 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
 
     const installation = await AgentInstallation.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(installation.displayName).toBe('Aria Prime');
 
     const profile = await AgentProfile.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(profile.name).toBe('Aria Prime');
@@ -221,7 +221,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'fresh-agent',
         podId: pod._id.toString(),
         version: '1.0.0',
@@ -232,11 +232,11 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
 
     const installation = await AgentInstallation.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'fresh-agent',
     }).lean();
     // Registry default is acceptable when there's no curated identity to preserve.
-    expect(installation.displayName).toBe('Cuz 🦞');
+    expect(installation.displayName).toBe('Codex');
   });
 
   // TASK-032, ruled 2026-09-02: AgentInstallation is canonical; the User row
@@ -257,7 +257,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
   // (and its curated name) across the uninstall.
   it('keeps an existing installation displayName over the curated User row on re-install', async () => {
     await AgentInstallation.create({
-      agentName: 'openclaw',
+      agentName: 'codex',
       podId: pod._id,
       instanceId: 'aria',
       installedBy: installer._id,
@@ -273,7 +273,7 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       .post('/api/registry/install')
       .set('Authorization', `Bearer ${installerToken}`)
       .send({
-        agentName: 'openclaw',
+        agentName: 'codex',
         instanceId: 'aria',
         podId: pod._id.toString(),
         version: '1.0.0',
@@ -285,17 +285,17 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
 
     const installation = await AgentInstallation.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(installation.displayName).toBe('Aria (Sprint Desk)');
     // The two values the old precedence would have written instead.
     expect(installation.displayName).not.toBe('Aria');
-    expect(installation.displayName).not.toBe('Cuz 🦞');
+    expect(installation.displayName).not.toBe('Codex');
 
     const profile = await AgentProfile.findOne({
       podId: pod._id,
-      agentName: 'openclaw',
+      agentName: 'codex',
       instanceId: 'aria',
     }).lean();
     expect(profile.name).toBe('Aria (Sprint Desk)');
