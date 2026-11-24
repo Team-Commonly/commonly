@@ -20,7 +20,9 @@ const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
-const { getUserId, normalizeConfigMap, normalizeInstanceId } = require('./helpers');
+const {
+  adminMayActOnPod, getUserId, normalizeConfigMap, normalizeInstanceId,
+} = require('./helpers');
 
 const router = express.Router();
 const settingsRateLimit = rateLimit({
@@ -279,7 +281,8 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
       status: { $ne: 'uninstalled' },
     });
     if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
-    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    // On an agent-room or agent-admin pod the admin role counts only for a member.
+    const isAdmin = await adminMayActOnPod(await Pod.findById(installation.podId).lean(), userId);
     // The agent's owner may manage its row too: a mention auto-join records
     // whoever mentioned it as installedBy (runRequestService.ownerOfInstall).
     const owner = await ownerOfInstall(installation).catch(() => null);
@@ -333,7 +336,7 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     // spend. The sole-installer rule, as for a push webhook, admins exempt.
     // Whoever manages the row can still stop what's on it, or someone else's
     // mention of the agent would lock its owner out. That write sets nothing else.
-    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    const isAdmin = await adminMayActOnPod(await Pod.findById(installation.podId).lean(), userId);
     const ownership = isAdmin
       ? { owned: true as const }
       : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId || 'default');

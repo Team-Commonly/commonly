@@ -572,7 +572,7 @@ const registry = {
       { owner: 200, member: 403, stranger: 403, admin: 200 }),
     ...matrix('GET', '/api/registry/pods/:podId/agents/:name/user-token',
       (ctx) => `/api/registry/pods/${ctx.podId}/agents/${REG_AGENT}/user-token`,
-      { owner: 200, member: 200, stranger: 403, admin: 403 }),
+      { owner: 200, member: 403, stranger: 403, admin: 403 }),
   ],
 };
 
