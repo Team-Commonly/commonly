@@ -50,9 +50,9 @@ A connection to `169.254.169.254:80` opens under every policy, but no request re
 | host environment inside | absent: a variable set on the host didn't appear in the guest |
 | nonzero exit | passed through (exit 3) |
 | `msb exec --timeout 3s` | exit 1 after about 4.2 s, stderr `exec timed out after 3s` |
-| one exec in a running sandbox | 1.2–1.5 s (`-q` changes nothing) |
+| one exec in a running sandbox | 1.2–1.7 s (`-q` changes nothing) |
 | one `msb run python`, image already pulled | 1.8–2.1 s (six timed runs) |
-| `msb run node`, cold with the image pull | 4.4–5.9 s |
+| `msb run node`, cold with the image pull | 4.4–6.3 s |
 | root inside, writes to `/etc` | allowed; the VM is the boundary |
 | user namespaces inside | allowed |
 
@@ -77,7 +77,7 @@ Installed unfenced onto a disk-kind named volume (microsandbox's ext4 disk image
 2. **Port rules alone don't close the network.** The help text says egress defaults to deny once any rule is present. In practice, with `--net-rule` but without `--no-net`, the public internet stayed open. The source explains why: without `--no-net`, a `--net` profile or a `--net-default*` flag, the rules are prepended to the existing policy, and that policy keeps its implicit `allow@public` (`crates/cli/lib/commands/common.rs`, v0.8.1). A driver must always pass `--no-net` and then add its rules, and it needs a test that a vendor host is refused.
 3. **`allow@host` reaches everything bound to the host's loopback.** It's the same hazard as OpenShell's hazard 1. A rule naming the host group without a port reached the loopback-only stand-in for Postgres. Port-scoped rules held: `allow@host:tcp:18100` reached 18100 and not 18199. Any driver has to build its rules in code as port-scoped allowlists.
 4. **Domain rules didn't connect.** `allow@registry.npmjs.org:tcp:443`, `allow@registry.npmjs.org` and `allow@*.npmjs.org`, each on `--no-net` with `allow@dns`, all reset at the TLS handshake. So either install agents unfenced onto a volume and then run them fenced (what worked here), or route installs through a proxy on an allowed host port. Whether domain rules need TLS interception is still open.
-5. **`msb create` fails on the runner** with `io error: Access is denied. (os error 5)`. The sandbox is still recorded as stopped, and `msb exec` starts it, but the error is unexplained, and `RUST_LOG=debug` adds nothing. `msb run` works every time and costs 1.8–2.1 s warm, close to an exec in a running sandbox (1.2–1.5 s), so a driver can use one `msb run` per turn and skip `create` until this is understood.
+5. **`msb create` fails on the runner** with `io error: Access is denied. (os error 5)`. The sandbox is still recorded as stopped, and `msb exec` starts it, but the error is unexplained, and `RUST_LOG=debug` adds nothing. `msb run` works every time and costs 1.8–2.1 s warm, close to an exec in a running sandbox (1.2–1.7 s), so a driver can use one `msb run` per turn and skip `create` until this is understood.
 6. **`msb modify` can't change the network.** A sandbox keeps its creation fence, so install and run happen in two sandboxes that share a volume.
 7. **Nesting works, unlike OpenShell.** The guest is a full Linux kernel with user namespaces. Codex's own sandbox ran a command inside, and so did a `bwrap` sandbox shaped like our CLI's `bwrap` mode. That makes microsandbox a candidate for a real layered sandbox: the microVM outside, and the agent's own sandbox inside.
 
