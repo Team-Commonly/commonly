@@ -8,7 +8,7 @@
 import { jest } from '@jest/globals';
 import { createHash } from 'crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -190,6 +190,16 @@ describe('ensureMsb', () => {
     expect(extractSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('a download that stalls is abandoned at its deadline, leaving nothing behind', async () => {
+    const stalled = jest.fn((url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason));
+    }));
+    await expect(ensureMsb({ root, asset, fetchImpl: stalled, extract, timeoutMs: 30 }))
+      .rejects.toThrow(/took longer than/);
+    expect(stalled.mock.calls[0][1].signal).toBeDefined();
+    expect(existsSync(join(root, 'msb.exe'))).toBe(false);
+  });
+
   test('an installed msb.exe that changed since it was unpacked is replaced, not run', async () => {
     const extractSpy = jest.fn(extract);
     await ensureMsb({ root, asset, fetchImpl: fetchOk, extract: extractSpy });
@@ -324,6 +334,55 @@ describe('withInstallLock', () => {
   test('gives up waiting on a live lock past its deadline', async () => {
     writeFileSync(join(root, '.install.lock'), '1');
     await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);
+  });
+
+  const lock = () => join(root, '.install.lock');
+  const anHourAgo = () => { const t = new Date(Date.now() - 60 * 60 * 1000); utimesSync(lock(), t, t); };
+
+  test('a slow install is never taken over while its process runs, however old the lock', async () => {
+    writeFileSync(lock(), '4242 slow\n');
+    anHourAgo();
+    const fn = jest.fn(async () => {});
+    await expect(withInstallLock(root, fn, { waitMs: 50, pollMs: 10, pidAlive: () => true }))
+      .rejects.toThrow(/still installing/);
+    expect(fn).not.toHaveBeenCalled();
+    expect(readFileSync(lock(), 'utf8')).toBe('4242 slow\n');
+  });
+
+  test('a lock whose process has exited is taken over at once', async () => {
+    writeFileSync(lock(), '4242 crashed\n');
+    const fn = jest.fn(async () => 'ran');
+    await expect(withInstallLock(root, fn, { pollMs: 10, pidAlive: (pid) => pid !== 4242 })).resolves.toBe('ran');
+    expect(existsSync(lock())).toBe(false);
+  });
+
+  test('a lock naming no process is judged by its age', async () => {
+    writeFileSync(lock(), 'not a pid\n');
+    await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);
+    anHourAgo();
+    await expect(withInstallLock(root, async () => 'ran', { pollMs: 10 })).resolves.toBe('ran');
+  });
+
+  test('a waiter that catches another waiter\'s fresh lock in its takeover puts it back', async () => {
+    writeFileSync(lock(), '4242 crashed\n');
+    // Between this waiter judging 4242's lock abandoned and renaming it,
+    // another waiter takes it over and writes its own.
+    const pidAlive = jest.fn((pid) => {
+      if (pid === 4242) {
+        writeFileSync(lock(), '5151 other\n');
+        return false;
+      }
+      return true;
+    });
+    const fn = jest.fn(async () => {});
+    await expect(withInstallLock(root, fn, { waitMs: 50, pollMs: 10, pidAlive })).rejects.toThrow(/still installing/);
+    expect(fn).not.toHaveBeenCalled();
+    expect(readFileSync(lock(), 'utf8')).toBe('5151 other\n');
+  });
+
+  test('a holder whose lock was taken over leaves the new holder\'s lock in place', async () => {
+    await withInstallLock(root, async () => { writeFileSync(lock(), '5151 other\n'); });
+    expect(readFileSync(lock(), 'utf8')).toBe('5151 other\n');
   });
 });
 

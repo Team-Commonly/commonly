@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import {
-  chmod, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile,
+  chmod, link, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
@@ -201,11 +201,14 @@ const defaultExtract = (archive, dir, env = process.env) => spawnSync(
  * first time. A hash mismatch, a failed download or an archive without msb.exe
  * refuses and leaves nothing runnable behind.
  */
+export const MSB_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const ensureMsb = async ({
   root = microsandboxRoot(),
   asset = msbAsset(),
   fetchImpl = globalThis.fetch,
   extract = defaultExtract,
+  timeoutMs = MSB_DOWNLOAD_TIMEOUT_MS,
 } = {}) => {
   const binary = join(root, 'msb.exe');
   const marker = join(root, '.verified');
@@ -221,9 +224,19 @@ export const ensureMsb = async ({
   const archive = join(root, `.download-${tag}.zip`);
   const staging = join(root, `.staging-${tag}`);
   try {
-    const response = await fetchImpl(msbReleaseUrl(asset), { redirect: 'follow' });
-    if (!response?.ok) throw new Error(`downloading microsandbox ${MSB_PIN.version} failed (HTTP ${response?.status})`);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    // One deadline for the request and the body, so a stalled connection
+    // can't hold the install lock indefinitely.
+    let bytes;
+    try {
+      const response = await fetchImpl(msbReleaseUrl(asset), { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+      if (!response?.ok) throw new Error(`downloading microsandbox ${MSB_PIN.version} failed (HTTP ${response?.status})`);
+      bytes = Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new Error(`downloading microsandbox ${MSB_PIN.version} took longer than ${Math.round(timeoutMs / 1000)} s; try again`);
+      }
+      throw error;
+    }
     const actual = sha256(bytes);
     if (actual !== asset.sha256) {
       throw new Error(`microsandbox ${asset.name} has SHA-256 ${actual}, not the pinned ${asset.sha256}; refusing to run it`);
@@ -431,28 +444,73 @@ export const startMicrovmTurn = async ({
 
 const INSTALL_LOCK_STALE_MS = 15 * 60 * 1000;
 
+const defaultPidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists, owned by someone else.
+    return error?.code === 'EPERM';
+  }
+};
+
+/**
+ * Whether a lock whose file reads `content` can be taken over. The lock lives
+ * in this user's %LOCALAPPDATA%, so its holder ran on this machine: it is
+ * abandoned once that process is gone, however long an install takes. A lock
+ * that names no process (written by something else) falls back to its age.
+ */
+const lockAbandoned = (content, mtimeMs, { now, pidAlive }) => {
+  const pid = Number.parseInt(String(content).split(/\s+/)[0], 10);
+  if (Number.isInteger(pid) && pid > 0) return !pidAlive(pid);
+  return now() - mtimeMs > INSTALL_LOCK_STALE_MS;
+};
+
 /**
  * Runs `fn` holding this version's install lock, so two first turns never
  * unpack msb or install into the volume (mounted writable then) at once.
+ *
+ * The lock names its holder (`<pid> <token>`). A waiter takes it over only when
+ * that process has exited, so a slow install is never reclaimed while it runs.
+ * Taking over is a rename to a private name, which only one waiter can win; a
+ * waiter that finds it renamed a lock other than the one it judged abandoned
+ * puts it back. The holder removes the lock only while it still holds its own
+ * token.
  */
 export const withInstallLock = async (root, fn, {
-  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now,
+  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
 } = {}) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, '.install.lock');
+  const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
   const deadline = now() + waitMs;
   for (;;) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await writeFile(lock, `${process.pid}\n`, { flag: 'wx' });
+      await writeFile(lock, mine, { flag: 'wx' });
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       // eslint-disable-next-line no-await-in-loop
       const held = await stat(lock).catch(() => null);
-      if (held && now() - held.mtimeMs > INSTALL_LOCK_STALE_MS) {
+      // eslint-disable-next-line no-await-in-loop
+      const content = held ? await readFile(lock, 'utf8').catch(() => null) : null;
+      if (held && content !== null && lockAbandoned(content, held.mtimeMs, { now, pidAlive })) {
+        const claimed = `${lock}.${randomBytes(6).toString('hex')}.stale`;
         // eslint-disable-next-line no-await-in-loop
-        await rm(lock, { force: true });
+        const won = await rename(lock, claimed).then(() => true, () => false);
+        if (won) {
+          // eslint-disable-next-line no-await-in-loop
+          const taken = await readFile(claimed, 'utf8').catch(() => null);
+          if (taken !== null && taken !== content) {
+            // Another waiter took over first and this rename caught its new
+            // lock: put it back unless a third has taken the name since.
+            // eslint-disable-next-line no-await-in-loop
+            await link(claimed, lock).catch(() => {});
+          }
+          // eslint-disable-next-line no-await-in-loop
+          await rm(claimed, { force: true });
+        }
       } else if (now() > deadline) {
         throw new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`);
       } else {
@@ -464,7 +522,8 @@ export const withInstallLock = async (root, fn, {
   try {
     return await fn();
   } finally {
-    await rm(lock, { force: true }).catch(() => {});
+    const current = await readFile(lock, 'utf8').catch(() => null);
+    if (current === mine) await rm(lock, { force: true }).catch(() => {});
   }
 };
 
