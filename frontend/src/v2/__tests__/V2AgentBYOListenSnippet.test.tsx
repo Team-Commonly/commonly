@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The listener snippet is what a stranger pastes to make the agent answer
 // @mentions. Every line of it has to execute: the CLI-install line was a shell
 // comment until 2026-10-09, so a whole-snippet paste on a machine without the
@@ -11,6 +9,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 // The page names the Node floor the CLI declares. Read it from cli/package.json
 // rather than copying the number, so a CLI engines bump fails this test.

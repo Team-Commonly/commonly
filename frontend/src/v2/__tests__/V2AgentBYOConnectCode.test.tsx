@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Where the server issues a connect code, the page shows one line that carries
 // the code instead of the agent's key, says so, and offers a new line once the
 // code runs out before the agent connects.
@@ -9,6 +7,9 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {

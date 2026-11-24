@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // 2026-09-01: "Hire an agent" and "Add a computer" converged on this
 // page with the persona silently dropped. Pinned: a ?persona= param renders
 // a context card, names the agent after the persona, and the
@@ -14,6 +12,9 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('axios', () => {
   const mock = {

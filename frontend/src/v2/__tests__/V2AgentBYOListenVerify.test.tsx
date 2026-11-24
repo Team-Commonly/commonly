@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The listening-verification loop on the BYO page (#887 class, second half).
 // #888 made the listening step legible; this pins the step being CHECKABLE:
 // the page polls /api/users/me/agent-connection until THIS agent's runtime
@@ -13,6 +11,9 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // This suite owns the BYO request sequence, not the rail's attention query.
 jest.mock('../components/V2NavRail', () => () => null);
 

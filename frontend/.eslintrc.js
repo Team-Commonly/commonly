@@ -93,6 +93,24 @@ module.exports = {
               'inputMode', 'accept', 'd', 'viewBox', 'fill', 'fontSize', 'stroke',
               'sx', 'value', 'aria-hidden', 'anchorOrigin', 'transformOrigin',
               'PaperProps',
+              // Enum props and identity seeds, never shown as text.
+              'kind', 'tone', 'seed', 'separator',
+            ],
+          },
+          // Options a component maps to labels: the label goes through t(),
+          // the value and kind are keys.
+          'object-properties': { exclude: ['[A-Z_-]+', 'value', 'kind'] },
+          // The plugin's defaults, which an override replaces rather than
+          // extends, plus Set.has and the inspector's group renderer. Its
+          // first two arguments are a group id and an icon name, but the
+          // exclude covers the whole call, so its third (the header label)
+          // goes unchecked too: pass that through t().
+          callees: {
+            exclude: [
+              'i18n(ext)?', 't', 'require', 'addEventListener',
+              'removeEventListener', 'postMessage', 'getElementById',
+              'dispatch', 'commit', 'includes', 'indexOf', 'endsWith',
+              'startsWith', 'renderGroup', 'has',
             ],
           },
         }],

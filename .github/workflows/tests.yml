@@ -372,6 +372,10 @@ jobs:
       - run: cd backend && npm ci --include=dev
       - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
       - run: cd frontend && npm run typecheck
+      # Errors only: the 379 warnings (mostly react/jsx-filename-extension on
+      # .tsx) are not yet a gate. docs/development/lint-gate-state.md.
+      - name: Frontend lint (errors)
+        run: cd frontend && npx eslint src --ext .js,.jsx,.ts,.tsx --quiet
       - name: Run frontend tests (coverage on the nightly schedule only)
         run: |
           cd frontend

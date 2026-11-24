@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // TASK-645 item 3 and 4: the two connect paths. The run command is the quick
 // try and dies with its Terminal; the daemon is the one that keeps an agent
 // running. Each state is pinned by its own copy, so a rewording can't drop it.
@@ -9,6 +7,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../hooks/useV2PodAttention', () => ({

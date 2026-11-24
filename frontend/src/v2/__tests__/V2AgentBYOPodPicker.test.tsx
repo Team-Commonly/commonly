@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Guards the BYO pod-picker default after the 2026-07-24 launch incident:
 // new users auto-join Commonly HQ (publicRead), it sorts first by activity in
 // /api/pods, and the old `installablePods[0]` default silently attached
@@ -14,6 +12,9 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import { POD_VISITS_KEY } from '../lib/podRecency';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // This suite owns the BYO request sequence, not the attention queries the chrome
 // makes. Each one would otherwise consume a queued pod-list response.
 jest.mock('../components/V2NavRail', () => () => null);

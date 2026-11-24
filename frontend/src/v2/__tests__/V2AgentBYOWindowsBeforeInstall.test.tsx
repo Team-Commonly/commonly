@@ -1,6 +1,4 @@
 // @ts-nocheck
-// Keep setup request assertions independent of funnel telemetry.
-jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Windows, before and after install. Until 11-04 the page told a
 // Windows visitor, before install, that the agent would not answer @mentions
 // (11-02: four agents made on Windows never ran). The listener now runs on
@@ -13,6 +11,9 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import i18n, { i18nReady } from '../../i18n';
+
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 
 jest.mock('axios', () => {
   const mock = {

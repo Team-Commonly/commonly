@@ -1,6 +1,7 @@
 import { TextEncoder } from 'util';
-Object.assign(global, { TextEncoder });
 import { cardHref, parseCard } from '../uiCardSource';
+
+Object.assign(global, { TextEncoder });
 
 test('parses the canonical positional Card and nested helper grammar', () => {
   expect(parseCard('root = Card("Result", [KeyValue([Pair("Count", 2)]), Steps([Step("Read", "done"), Step("Write", "pending")])])')?.typeName).toBe('Card');
