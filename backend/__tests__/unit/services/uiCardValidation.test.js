@@ -88,8 +88,12 @@ describe('untrusted UI card write validation', () => {
       ['hiding an action', 'a = Text("a") X // \'\nroot = Text("hi")\nx = Action(@OpenUrl("https://evil.example/x"))\nz = Text("c") // \''],
       ['trailing', 'root = Text("hello") // note'],
     ])('is refused under both revisions: %s', (_name, source) => {
+      // By the comment check itself: on lang-core 1.1.1 these would be refused
+      // anyway (their Source), so a bare 400 wouldn't prove the check there.
       [card(source), { ...card(source), ...rev2 }].forEach((payload) => {
-        expect(() => validate(payload)).toThrow(expect.objectContaining({ statusCode: 400 }));
+        expect(() => validate(payload)).toThrow(expect.objectContaining({
+          statusCode: 400, message: expect.stringMatching(/comment/),
+        }));
       });
     });
     it('leaves // inside quoted prose and links alone', () => {
