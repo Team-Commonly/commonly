@@ -1470,18 +1470,29 @@ const V2AgentBYO: React.FC = () => {
   // agent connection (name + lastUsedAt); the name match plus the
   // issuedAt time-fence means a pre-existing connected agent can never flip
   // the checkmark for the one just issued. 4s cadence sits well inside the
-  // endpoint's 60/min budget; polling stops on success, page leave, or after
-  // 15 minutes (the user has clearly walked away — leave a static hint).
+  // endpoint's 60/min budget; polling stops on success or page leave. After
+  // the watch window the page says it is still waiting and keeps checking
+  // every 30 s while the tab is visible (F569): before, it stopped there while
+  // its text said it would confirm, so an agent that connected late (Node
+  // installed, a harness signed in) never turned green.
   useEffect(() => {
-    if (!issued || listenState !== 'waiting') return undefined;
+    if (!issued || listenState === 'listening') return undefined;
     let cancelled = false;
+    const late = listenState === 'timeout';
     const startedAt = Date.now();
     // A connect code works for 30 minutes, so the page keeps watching at least
     // that long: an agent that connects late must never read as "ran out".
     const pollFor = Math.max(15 * 60 * 1000, (issued.connectCodeExpiresAt ?? 0) - startedAt + 60_000);
     const timer = setInterval(async () => {
       if (cancelled) return;
-      if (Date.now() - startedAt > pollFor) {
+      // A tab left open in the background costs nothing; the next tick after
+      // the person comes back checks again.
+      if (late && document.visibilityState === 'hidden') return;
+      if (!late && Date.now() - startedAt > pollFor) {
+        // Stop this interval now: ticks that bunch up before the re-render
+        // (a throttled background tab) would each record the timeout again.
+        cancelled = true;
+        clearInterval(timer);
         setListenState('timeout');
         byoStep('listen-timeout');
         return;
@@ -1517,7 +1528,7 @@ const V2AgentBYO: React.FC = () => {
         // Transient read failure — keep polling; the checkmark can only be
         // late, never wrong.
       }
-    }, 4000);
+    }, late ? 30_000 : 4000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [issued, listenState]);
 

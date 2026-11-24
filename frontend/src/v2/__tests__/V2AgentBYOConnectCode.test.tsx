@@ -108,7 +108,7 @@ describe('BYO one-line connect', () => {
 
   const expired = () => ({ token: 'cm_agent_test_token', connectCode: CODE, connectCodeExpiresAt: new Date(Date.now() - 1000).toISOString() });
 
-  test('an agent that connected after the page stopped watching is shown connected, and its key is not replaced', async () => {
+  test('asking for a new line after the agent connected shows it connected, and its key is not replaced', async () => {
     await issueWithCode(expired());
     await screen.findByTestId('byo-line-expired');
     const name = within(screen.getByTestId('byo-line-expired')).getByText(/ran out before/i).textContent.match(/before (\S+) connected/)[1];
@@ -158,13 +158,57 @@ describe('BYO one-line connect', () => {
       await issueWithCode({ token: 'cm_agent_test_token', connectCode: CODE, connectCodeExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
       const name = screen.getByTestId('byo-listen-waiting').textContent.match(/for (\S+) to check in/)[1];
       for (let i = 0; i < 20; i += 1) await act(async () => { jest.advanceTimersByTime(60_000); });
-      expect(screen.getByTestId('byo-listen-waiting')).not.toHaveTextContent(/still waiting/i);
+      expect(screen.getByTestId('byo-listen-waiting')).not.toHaveTextContent(/still no check-in/i);
       connection = { connected: true, connectedAgent: { agentName: name }, lastUsedAt: new Date().toISOString() };
       await act(async () => { jest.advanceTimersByTime(8_000); });
       await waitFor(() => expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument());
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// F569: past the watch window the page said "this page will confirm it" but had
+// stopped checking, so an agent that connected late never turned green.
+describe('BYO after the watch window', () => {
+  const { recordByoStep } = jest.requireMock('../utils/byoTelemetry');
+  const polls = () => axios.get.mock.calls.filter(([url]) => url === '/api/users/me/agent-connection').length;
+  const minutes = async (n) => { for (let i = 0; i < n; i += 1) await act(async () => { jest.advanceTimersByTime(60_000); }); };
+  const setVisibility = (state) => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  const agentName = () => screen.getByTestId('byo-listen-waiting').textContent.match(/for (\S+) to check in/)[1];
+
+  beforeEach(() => { jest.useFakeTimers(); recordByoStep.mockClear(); });
+  afterEach(() => { jest.useRealTimers(); setVisibility('visible'); });
+
+  test.each([
+    ['the four lines (no code)', { token: 'cm_agent_test_token' }, 16],
+    ['the one line (a code good for 30 minutes)', { token: 'cm_agent_test_token', connectCode: CODE, connectCodeExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }, 32],
+  ])('with %s, an agent that checks in after the window still turns green', async (_label, tokenData, past) => {
+    await issueWithCode(tokenData);
+    const name = agentName();
+    await minutes(past);
+    expect(screen.getByTestId('byo-listen-waiting')).toHaveTextContent(/still no check-in/i);
+    connection = { connected: true, connectedAgent: { agentName: name }, lastUsedAt: new Date().toISOString() };
+    await minutes(1);
+    await waitFor(() => expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument());
+    expect(recordByoStep.mock.calls.filter((c) => JSON.stringify(c).includes('listen-timeout'))).toHaveLength(1);
+  });
+
+  test('after the window it checks every 30 seconds, and not at all while the tab is hidden', async () => {
+    await issueWithCode({ token: 'cm_agent_test_token' });
+    const name = agentName();
+    await minutes(16);
+    const atTimeout = polls();
+    await minutes(5);
+    expect(polls() - atTimeout).toBe(10);
+    setVisibility('hidden');
+    const hiddenFrom = polls();
+    await minutes(10);
+    expect(polls()).toBe(hiddenFrom);
+    connection = { connected: true, connectedAgent: { agentName: name }, lastUsedAt: new Date().toISOString() };
+    setVisibility('visible');
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    await waitFor(() => expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument());
   });
 });
 
