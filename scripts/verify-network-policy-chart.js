@@ -183,6 +183,19 @@ const ingressLanes = {
     ],
     closed: [['app=commonly-bot', 'redis', 6379], ['app=cloud-codex', 'agent-computer-steel', 3000], ['edge', 'redis', 6379], ['app=frontend', 'litellm', 4000]],
   },
+  // The local data tier (in-cluster Mongo, Postgres and Redis) under every
+  // policy, as the kind isolation harness installs it
+  // (.github/workflows/kind-isolation.yml), so a store without an allow fails
+  // here before the harness's live probes run.
+  'local+isolation': {
+    files: [...lanes.default.files, `${chart}/values-local.yaml`, `${chart}/values-kind-isolation.yaml`],
+    on: ['backend', 'redis', 'mongodb', 'postgres', 'defaultDeny'],
+    flows: [
+      ...['backend', 'ops-runner'].flatMap((a) => [[`app=${a}`, 'mongodb', 27017], [`app=${a}`, 'postgres', 5432], [`app=${a}`, 'redis', 6379]]),
+      ['app=ops-runner', 'backend', 5000],
+    ],
+    closed: [['app=redis', 'postgres', 5432], ['app=redis', 'mongodb', 27017], ['app=postgres', 'redis', 6379], ['app=mongodb', 'backend', 5000]],
+  },
 };
 const peerLabels = (spec) => {
   if (spec === 'edge') return { ns: 'ingress-nginx', labels: { 'app.kubernetes.io/name': 'ingress-nginx', 'app.kubernetes.io/component': 'controller' } };

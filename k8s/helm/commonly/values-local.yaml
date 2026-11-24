@@ -43,7 +43,6 @@ backend:
     registrationInviteOnly: "0"           # open registration locally
     agentProvisionerK8s: "0"             # disable k8s agent provisioning
     agentProvisionerDocker: "0"
-    agentProvisionerNodePool: ""
     frontendUrl: "http://localhost:3000"
     backendUrl: "http://localhost:5000"
     commonlyApiUrl: ""

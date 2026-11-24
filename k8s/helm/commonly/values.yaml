@@ -133,6 +133,15 @@ agentProvisioning:
   # rbac.serviceAccount.name; nothing an agent runs gets that account.
   runtimeServiceAccount: agent-runtime
 
+# A RuntimeClass for sandboxed agent workloads, under gVisor. Off by default:
+# GKE Sandbox ships its own `gvisor` RuntimeClass, and any other cluster needs
+# runsc installed on its nodes first. values-kind-isolation.yaml turns it on.
+runtimeClass:
+  gvisor:
+    create: false
+    name: gvisor
+    handler: runsc
+
 # Backend service configuration
 backend:
   enabled: true
@@ -226,7 +235,6 @@ backend:
     embeddingProvider: ""
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
-    agentProvisionerNodePool: ""
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
     # Optional instance community Pod. Empty keeps self-hosted registration
@@ -801,6 +809,10 @@ networkPolicy:
     redis:
       enabled: false
     mongodb:
+      enabled: false
+    # An in-cluster Postgres (values-local, self-hosted installs); prod uses a
+    # managed one outside the cluster.
+    postgres:
       enabled: false
     emailSink:
       enabled: false

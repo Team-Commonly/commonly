@@ -10,8 +10,10 @@
 // agent-runtime account; the pod spec is checked by
 // backend/__tests__/unit/services/gatewayProvisionerServiceK8s.serviceAccount.test.js,
 // and this script checks the account itself: it renders in every lane, mounts
-// no token, no RoleBinding or ClusterRoleBinding names it, and the backend and
-// ops-runner are told its name.
+// no token, no RoleBinding or ClusterRoleBinding the chart renders names it
+// (as the ServiceAccount, its user name, or a system:serviceaccounts group
+// that holds it), and the backend, its worker and ops-runner are told its
+// name. Bindings made outside the chart are not visible here.
 // Renders the chart itself:
 //   node scripts/verify-service-account-tokens-chart.js
 const { execFileSync } = require('child_process');
@@ -77,14 +79,23 @@ for (const lane of Object.keys(lanes)) {
   } else if (runtimeAccount.automountServiceAccountToken !== false) {
     failures.push(`${lane}: ServiceAccount/${AGENT_RUNTIME} must set automountServiceAccountToken: false`);
   }
+  const runtimeNs = runtimeAccount?.metadata.namespace;
+  const namesRuntime = (s) => (s.kind === 'ServiceAccount' && s.name === AGENT_RUNTIME)
+    || (s.kind === 'User' && s.name === `system:serviceaccount:${runtimeNs}:${AGENT_RUNTIME}`)
+    || (s.kind === 'Group' && (s.name === 'system:serviceaccounts' || s.name === `system:serviceaccounts:${runtimeNs}`));
   for (const binding of docs.filter((d) => d.kind === 'RoleBinding' || d.kind === 'ClusterRoleBinding')) {
-    if ((binding.subjects || []).some((s) => s.kind === 'ServiceAccount' && s.name === AGENT_RUNTIME)) {
+    if ((binding.subjects || []).some(namesRuntime)) {
       failures.push(`${lane}: ${binding.kind}/${binding.metadata.name} binds ${AGENT_RUNTIME}; agent pods must hold no Role`);
     }
   }
-  for (const name of ['backend', 'ops-runner']) {
+  // Each renders in every lane (extraSets turns the worker on), so a missing
+  // one is a failure, never a skip.
+  for (const name of ['backend', 'backend-worker', 'ops-runner']) {
     const deployment = docs.find((d) => d.kind === 'Deployment' && d.metadata.name === name);
-    if (!deployment) continue;
+    if (!deployment) {
+      failures.push(`${lane}: Deployment/${name} does not render, so its AGENT_RUNTIME_SERVICE_ACCOUNT can't be checked`);
+      continue;
+    }
     const env = deployment.spec.template.spec.containers.flatMap((c) => c.env || []);
     const named = env.find((e) => e.name === 'AGENT_RUNTIME_SERVICE_ACCOUNT')?.value;
     if (named !== AGENT_RUNTIME) {

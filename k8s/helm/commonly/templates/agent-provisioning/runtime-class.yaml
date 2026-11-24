@@ -1,0 +1,17 @@
+{{- /*
+A RuntimeClass for sandboxed agent workloads (gVisor). Created only when
+runtimeClass.gvisor.create is on: GKE Sandbox ships its own `gvisor` class, and
+the handler (runsc) has to be installed on the nodes first. A RuntimeClass is
+cluster-scoped. Proven on a live cluster by .github/workflows/kind-isolation.yml.
+*/ -}}
+{{- $rc := .Values.runtimeClass.gvisor -}}
+{{- if $rc.create }}
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: {{ $rc.name }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+handler: {{ $rc.handler }}
+{{- end }}

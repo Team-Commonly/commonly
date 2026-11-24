@@ -121,7 +121,6 @@ backend:
     hostedEngine: "native"
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
-    agentProvisionerNodePool: "dev"
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
     communityPodId: "6a5fe677306155f677c26abf"

@@ -162,10 +162,14 @@ If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but 
 That Role belongs to the backend's own account (`rbac.serviceAccount.name`, default `agent-provisioner`), which
 the backend, its worker and ops-runner run as. A pod the backend provisions to run agent turns (today, a gateway
 from `gatewayProvisionerServiceK8s`) runs as a separate account, `agentProvisioning.runtimeServiceAccount`
-(default `agent-runtime`). The chart creates that account with no Role and no token, and passes its name to the
-backend as `AGENT_RUNTIME_SERVICE_ACCOUNT`. Code an agent runs therefore reaches nothing in the Kubernetes API, not
-even with a token mounted by mistake. `scripts/verify-service-account-tokens-chart.js` fails the build if the
-account is missing, mounts a token, or appears in any binding.
+(default `agent-runtime`). The chart grants that account no application RBAC and mounts no token for it, and
+passes its name to the backend as `AGENT_RUNTIME_SERVICE_ACCOUNT`. (A token mounted by mistake would still carry
+the cluster's default discovery permissions, so the token stays off.) `scripts/verify-service-account-tokens-chart.js`
+fails the build if the account is missing or mounts a token, or if a binding the chart renders names it, directly or
+through the `system:serviceaccounts` groups.
+
+[`kind-isolation-harness.md`](kind-isolation-harness.md) proves on a live cluster that the NetworkPolicies are
+enforced and that a gVisor RuntimeClass (`runtimeClass.gvisor`, off by default) isolates a sandboxed agent pod.
 
 ### CORS Configuration
 

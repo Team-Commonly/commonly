@@ -1,0 +1,181 @@
+name: kind isolation harness
+
+# Proves on a real cluster what the chart's isolation settings claim: the
+# NetworkPolicies are enforced (Calico, since the policies are the point), a
+# gVisor RuntimeClass isolates agent pods, and an agent-sandbox Sandbox (the
+# per-turn shape OpenShell's Kubernetes driver creates) is fenced off from the
+# stores. Runs scripts/kind-isolation/probe.sh against values-kind-isolation.yaml.
+# Everything outside this repo is pinned by version and checksum or digest.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'k8s/helm/commonly/templates/network/**'
+      - 'k8s/helm/commonly/templates/agent-provisioning/**'
+      - 'k8s/helm/commonly/values.yaml'
+      - 'k8s/helm/commonly/values-local.yaml'
+      - 'k8s/helm/commonly/values-kind-isolation.yaml'
+      - 'scripts/kind-isolation/**'
+      - '.github/workflows/kind-isolation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kind-isolation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLUSTER: commonly-isolation
+  NS: commonly-local
+  KIND_VERSION: v0.26.0
+  KIND_SHA256: d445b44c28297bc23fd67e51cc24bb294ae7b977712be2d4d312883d0835829b
+  # gVisor ships one tarball per release: runsc, its containerd shim, and
+  # gvisor-bin/, which runsc needs beside it.
+  GVISOR_RELEASE: '20261116'
+  GVISOR_SHA512: a34261504066142b6c1cc4d1813bb2d092761675416e350edc98c4cc66469b63b6f41acdeed09681b6c717c00e80e437f5f2f9c8d37705b8a9260632867c2b7d
+  # The Calico version OpenShell's own kind tests pin; images by digest.
+  CALICO_VERSION: v3.30.3
+  CALICO_SHA256: 9382d2b27a76f40c170454b408653e6d71e2205ef0aef069e942bb690e7381d0
+  CALICO_CNI_DIGEST: sha256:b32ac832411b188a8adc9e31b3e23cbbecd6d63c182a3802e947303f97c2f700
+  CALICO_NODE_DIGEST: sha256:92d8bcca3280cd27b9c98cb6e70c3af10ad6ff8accd288919b04ae0cd6021c2e
+  CALICO_KUBE_CONTROLLERS_DIGEST: sha256:b9df43a10ec4cc40ab95779f646d1f9c1675259b3baacf883f5247333bb6385d
+  # The agent-sandbox release OpenShell v0.1.9 tests against.
+  AGENT_SANDBOX_VERSION: v1.0.3
+  AGENT_SANDBOX_SHA256: 725fafdabe6aac202a89dc57f1cfe0e2e92f3164c8c2bd343fffca52f7039d96
+  AGENT_SANDBOX_CONTROLLER_DIGEST: sha256:8c8f5814c16bd68631af0496a5fa4eb9bedce4d032de88b956130a041d9f438e
+  AGNHOST: registry.k8s.io/e2e-test-images/agnhost:2.59@sha256:10ed98804c877e505e17bced991682b6fd50ab1da9cddcd19935b48d645da40a
+
+jobs:
+  isolation:
+    name: kind isolation harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install kind
+        run: |
+          curl -sSfL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64" -o ./kind
+          echo "${KIND_SHA256}  ./kind" | sha256sum --check --strict
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.17.0'
+
+      - name: Download gVisor
+        run: |
+          mkdir -p "$RUNNER_TEMP/gvisor"
+          curl -sSfL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 120 \
+            "https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/x86_64/gvisor.tar.zstd" \
+            -o "$RUNNER_TEMP/gvisor.tar.zstd"
+          echo "${GVISOR_SHA512}  $RUNNER_TEMP/gvisor.tar.zstd" | sha512sum --check --strict
+          tar --zstd -xf "$RUNNER_TEMP/gvisor.tar.zstd" -C "$RUNNER_TEMP/gvisor"
+          ls -la "$RUNNER_TEMP/gvisor"
+          test -x "$RUNNER_TEMP/gvisor/runsc" && test -x "$RUNNER_TEMP/gvisor/containerd-shim-runsc-v1"
+
+      - name: Create kind cluster (no default CNI; runsc registered with containerd)
+        run: |
+          cat > "$RUNNER_TEMP/kind.yaml" <<YAML
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          networking:
+            disableDefaultCNI: true
+            podSubnet: 10.244.0.0/16
+          nodes:
+            - role: control-plane
+              extraMounts:
+                - hostPath: $RUNNER_TEMP/gvisor/runsc
+                  containerPath: /usr/local/bin/runsc
+                - hostPath: $RUNNER_TEMP/gvisor/containerd-shim-runsc-v1
+                  containerPath: /usr/local/bin/containerd-shim-runsc-v1
+                - hostPath: $RUNNER_TEMP/gvisor/gvisor-bin
+                  containerPath: /usr/local/bin/gvisor-bin
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+                runtime_type = "io.containerd.runsc.v1"
+          YAML
+          kind create cluster --name "$CLUSTER" --config "$RUNNER_TEMP/kind.yaml" --wait 0s
+
+      - name: Install Calico (enforces NetworkPolicy)
+        run: |
+          curl -sSfL --retry 4 --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml" -o "$RUNNER_TEMP/calico.yaml"
+          echo "${CALICO_SHA256}  $RUNNER_TEMP/calico.yaml" | sha256sum --check --strict
+          # Pull each image by digest on the runner (verified), and load it into
+          # the node under the tag the manifest names, so the node never pulls.
+          for pair in "cni:${CALICO_CNI_DIGEST}" "node:${CALICO_NODE_DIGEST}" "kube-controllers:${CALICO_KUBE_CONTROLLERS_DIGEST}"; do
+            name=${pair%%:*}; digest=${pair#*:}
+            docker pull "docker.io/calico/${name}@${digest}"
+            docker tag "docker.io/calico/${name}@${digest}" "docker.io/calico/${name}:${CALICO_VERSION}"
+            kind load docker-image "docker.io/calico/${name}:${CALICO_VERSION}" --name "$CLUSTER"
+          done
+          sed 's@192.168.0.0/16@10.244.0.0/16@g' "$RUNNER_TEMP/calico.yaml" | kubectl apply -f -
+          kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
+          kubectl -n kube-system rollout status deployment/calico-kube-controllers --timeout=300s
+          kubectl wait nodes --all --for=condition=Ready --timeout=120s
+
+      - name: Install agent-sandbox (CRD and controller)
+        run: |
+          curl -sSfL --retry 4 --connect-timeout 10 --max-time 60 \
+            "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox.yaml" -o "$RUNNER_TEMP/sandbox.yaml"
+          echo "${AGENT_SANDBOX_SHA256}  $RUNNER_TEMP/sandbox.yaml" | sha256sum --check --strict
+          image="registry.k8s.io/agent-sandbox/agent-sandbox-controller:${AGENT_SANDBOX_VERSION}"
+          grep -qF "image: ${image}" "$RUNNER_TEMP/sandbox.yaml"
+          sed "s@image: ${image}\$@image: ${image}\@${AGENT_SANDBOX_CONTROLLER_DIGEST}@" "$RUNNER_TEMP/sandbox.yaml" | kubectl apply -f -
+          kubectl -n agent-sandbox-system wait --for=condition=Available deployment --all --timeout=300s
+          kubectl wait --for=condition=Established crd/sandboxes.agents.x-k8s.io --timeout=60s
+
+      - name: Start the egress canary beside the cluster
+        id: canary
+        run: |
+          subnet=$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
+          canary=$(python3 -c "import ipaddress,sys; n=ipaddress.ip_network(sys.argv[1]); print(n.network_address + 250)" "$subnet")
+          docker run -d --name isolation-canary --network kind --ip "$canary" "$AGNHOST" netexec --http-port=8080
+          echo "ip=$canary" >> "$GITHUB_OUTPUT"
+
+      - name: Build and load the backend image
+        run: |
+          docker build -t commonly-backend:isolation backend/
+          kind load docker-image commonly-backend:isolation --name "$CLUSTER"
+
+      - name: Install the chart with the isolation profile
+        run: |
+          helm upgrade --install commonly-isolation k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-local.yaml \
+            -f k8s/helm/commonly/values-kind-isolation.yaml \
+            --set backend.image.repository=commonly-backend \
+            --set backend.image.tag=isolation \
+            --set "networkPolicy.egress.restrict.exceptCidrs={169.254.169.254/32,${{ steps.canary.outputs.ip }}/32}" \
+            --namespace "$NS" --create-namespace --wait --timeout 420s
+
+      - name: Probe the fences
+        run: bash scripts/kind-isolation/probe.sh "$NS" "${{ steps.canary.outputs.ip }}"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get networkpolicy -n "$NS" || true
+          kubectl get runtimeclass || true
+          kubectl get sandbox -n "$NS" -o yaml || true
+          kubectl -n kube-system logs -l k8s-app=calico-node --tail=80 --prefix || true
+          for d in $(kubectl -n agent-sandbox-system get deploy -o name); do
+            kubectl -n agent-sandbox-system logs "$d" --all-containers --tail=80 --prefix || true
+          done
+          kubectl -n "$NS" logs deploy/backend --tail=80 || true
+          kubectl -n "$NS" describe pods | tail -80 || true

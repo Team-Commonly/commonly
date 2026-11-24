@@ -69,6 +69,7 @@
 
 **Dynamic Agent Deployment**
 - `buildAgentDeploymentManifest()` for moltbot and internal agents
+  > **Removed (2026-11, #4261):** `buildAgentDeploymentManifest()` had no caller once the internal runtime moved to the chart's shared `commonly-bot` Deployment, and was deleted. Provisioned gateways come from `gatewayProvisionerServiceK8s.ts` and run as the `agent-runtime` account.
 - Labels, volume mounts, environment variables
 - Resource limits and health probes
 
