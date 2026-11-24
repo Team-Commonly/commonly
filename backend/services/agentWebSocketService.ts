@@ -496,14 +496,16 @@ class AgentWebSocketService {
           if (firstLegacyListen) {
             // Every pod the agent is installed in, as on HTTP: the stamp has
             // landed, so a pod skipped here would keep its stale intro.
+            // The lookup runs inside the settlement's bound and failure
+            // boundary; token validation never depends on it.
             const legacyInstanceId = installation.instanceId || 'default';
-            const legacyInstalls = await AgentInstallation.find({
-              agentName: installation.agentName, instanceId: legacyInstanceId, status: 'active',
-            }).select('podId').lean() as Array<{ podId?: unknown }>;
             await settleInstallIntroOnFirstListen({
               agentName: installation.agentName,
               instanceId: legacyInstanceId,
-              podIds: [installation.podId, ...legacyInstalls.map((i) => i?.podId)],
+              podIds: [installation.podId],
+              morePodIds: async () => ((await AgentInstallation.find({
+                agentName: installation.agentName, instanceId: legacyInstanceId, status: 'active',
+              }).select('podId').lean()) as Array<{ podId?: unknown }>).map((i) => i?.podId),
             });
           }
           if (isFirstLegacyUse) {
