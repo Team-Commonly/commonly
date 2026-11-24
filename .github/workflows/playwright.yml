@@ -27,6 +27,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+# @openuidev/lang-core (backend and frontend) sends install telemetry from its
+# postinstall unless this is set; every npm install below inherits it.
+env:
+  OPENUI_TELEMETRY_DISABLED: '1'
+
 jobs:
   e2e:
     name: E2E Tests

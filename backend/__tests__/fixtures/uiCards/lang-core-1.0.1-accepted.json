@@ -1,0 +1,396 @@
+{
+  "about": "Cards that the backend accepted (or degraded to their text fallback) under @openuidev/lang-core 1.0.1, recorded by running services/uiCardValidation.ts against the published 1.0.1 package. uiCardLangCoreCompat.test.js holds every later lang-core to the same verdicts and the same stamped envelopes.",
+  "recordedWith": "@openuidev/lang-core@1.0.1",
+  "agent": [
+    {
+      "name": "text",
+      "catalogRev": 1,
+      "source": "root = Text(\"hello\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text",
+      "catalogRev": 2,
+      "source": "root = Text(\"hello\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-unicode",
+      "catalogRev": 1,
+      "source": "root = Text(\"# hello 🌍 — naïve café 日本語\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-unicode",
+      "catalogRev": 2,
+      "source": "root = Text(\"# hello 🌍 — naïve café 日本語\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-escapes",
+      "catalogRev": 1,
+      "source": "root = Text(\"say \\\"hi\\\" and a \\\\ backslash\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-escapes",
+      "catalogRev": 2,
+      "source": "root = Text(\"say \\\"hi\\\" and a \\\\ backslash\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-single-quotes",
+      "catalogRev": 1,
+      "source": "root = Text('single quoted, with \"double\" inside')",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-single-quotes",
+      "catalogRev": 2,
+      "source": "root = Text('single quoted, with \"double\" inside')",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-max-length",
+      "catalogRev": 1,
+      "source": "root = Text(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-max-length",
+      "catalogRev": 2,
+      "source": "root = Text(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-mixed-link",
+      "catalogRev": 1,
+      "source": "root = Text([\"Read \", Link(\"the docs\", \"https://commonly.me/docs\", \"text\"), \" first\"])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-mixed-link",
+      "catalogRev": 2,
+      "source": "root = Text([\"Read \", Link(\"the docs\", \"https://commonly.me/docs\", \"text\"), \" first\"])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-quoted-keywords",
+      "catalogRev": 1,
+      "source": "root = Text(\"Query Mutation @Run are just quoted text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "text-quoted-keywords",
+      "catalogRev": 2,
+      "source": "root = Text(\"Query Mutation @Run are just quoted text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "card-steps",
+      "catalogRev": 1,
+      "source": "root = Card(\"Plan\", [Text(\"Do it\"), Steps([Step(\"First\", \"active\"), Step(\"Second\", \"pending\")])])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "card-steps",
+      "catalogRev": 2,
+      "source": "root = Card(\"Plan\", [Text(\"Do it\"), Steps([Step(\"First\", \"active\"), Step(\"Second\", \"pending\")])])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "steps-all-states",
+      "catalogRev": 1,
+      "source": "root = Steps([Step(\"One\", \"done\"), Step(\"Two\", \"active\"), Step(\"Three\", \"pending\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "steps-all-states",
+      "catalogRev": 2,
+      "source": "root = Steps([Step(\"One\", \"done\"), Step(\"Two\", \"active\"), Step(\"Three\", \"pending\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "diff-summary",
+      "catalogRev": 1,
+      "source": "root = DiffSummary([File(\"src/main.ts\", 4, 2), File(\"README.md\", 0, 0)])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "diff-summary",
+      "catalogRev": 2,
+      "source": "root = DiffSummary([File(\"src/main.ts\", 4, 2), File(\"README.md\", 0, 0)])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "task-status",
+      "catalogRev": 1,
+      "source": "root = TaskStatus(\"TASK-497\", \"Read from the board\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "task-status",
+      "catalogRev": 2,
+      "source": "root = TaskStatus(\"TASK-497\", \"Read from the board\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "key-value",
+      "catalogRev": 1,
+      "source": "root = KeyValue([Pair(\"Checks\", 42), Pair(\"Ready\", true), Pair(\"Owner\", \"SRE\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "key-value",
+      "catalogRev": 2,
+      "source": "root = KeyValue([Pair(\"Checks\", 42), Pair(\"Ready\", true), Pair(\"Owner\", \"SRE\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "table",
+      "catalogRev": 1,
+      "source": "root = Table([Col(\"Name\"), Col(\"Count\", \"number\")], [[\"tests\", 42], [\"suites\", 7]])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "table",
+      "catalogRev": 2,
+      "source": "root = Table([Col(\"Name\"), Col(\"Count\", \"number\")], [[\"tests\", 42], [\"suites\", 7]])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "badge",
+      "catalogRev": 1,
+      "source": "root = Badge(\"Ready\", \"done\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "badge",
+      "catalogRev": 2,
+      "source": "root = Badge(\"Ready\", \"done\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "link-text",
+      "catalogRev": 1,
+      "source": "root = Link(\"Docs\", \"https://commonly.me/docs\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "link-text",
+      "catalogRev": 2,
+      "source": "root = Link(\"Docs\", \"https://commonly.me/docs\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "link-button",
+      "catalogRev": 1,
+      "source": "root = Link(\"Open\", \"https://linear.app/x\", \"button\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "link-button",
+      "catalogRev": 2,
+      "source": "root = Link(\"Open\", \"https://linear.app/x\", \"button\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "run-trace",
+      "catalogRev": 1,
+      "source": "root = RunTrace(3)",
+      "verdict": "accepted"
+    },
+    {
+      "name": "run-trace",
+      "catalogRev": 2,
+      "source": "root = RunTrace(3)",
+      "verdict": "accepted"
+    },
+    {
+      "name": "run-trace-empty",
+      "catalogRev": 1,
+      "source": "root = RunTrace()",
+      "verdict": "accepted"
+    },
+    {
+      "name": "run-trace-empty",
+      "catalogRev": 2,
+      "source": "root = RunTrace()",
+      "verdict": "accepted"
+    },
+    {
+      "name": "list-ordered",
+      "catalogRev": 1,
+      "source": "root = List([\"one\", \"two\", \"three\"], true)",
+      "verdict": "accepted"
+    },
+    {
+      "name": "list-ordered",
+      "catalogRev": 2,
+      "source": "root = List([\"one\", \"two\", \"three\"], true)",
+      "verdict": "accepted"
+    },
+    {
+      "name": "list-unordered",
+      "catalogRev": 1,
+      "source": "root = List([\"one\", \"two\"])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "list-unordered",
+      "catalogRev": 2,
+      "source": "root = List([\"one\", \"two\"])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "numbers",
+      "catalogRev": 1,
+      "source": "root = KeyValue([Pair(\"Neg\", -3), Pair(\"Float\", 2.5), Pair(\"Zero\", 0)])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "numbers",
+      "catalogRev": 2,
+      "source": "root = KeyValue([Pair(\"Neg\", -3), Pair(\"Float\", 2.5), Pair(\"Zero\", 0)])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "references",
+      "catalogRev": 1,
+      "source": "title = \"Release\"\nsteps = Steps([Step(\"Build\", \"done\"), Step(\"Ship\", \"active\")])\nroot = Card(title, [steps])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "references",
+      "catalogRev": 2,
+      "source": "title = \"Release\"\nsteps = Steps([Step(\"Build\", \"done\"), Step(\"Ship\", \"active\")])\nroot = Card(title, [steps])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "reused-reference",
+      "catalogRev": 1,
+      "source": "ok = Badge(\"ok\", \"done\")\nroot = Card(\"Twice\", [ok, ok])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "reused-reference",
+      "catalogRev": 2,
+      "source": "ok = Badge(\"ok\", \"done\")\nroot = Card(\"Twice\", [ok, ok])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "multiline-call",
+      "catalogRev": 1,
+      "source": "root = Card(\n  \"Plan\",\n  [\n    Text(\"Do it\")\n  ]\n)\n\n",
+      "verdict": "accepted"
+    },
+    {
+      "name": "multiline-call",
+      "catalogRev": 2,
+      "source": "root = Card(\n  \"Plan\",\n  [\n    Text(\"Do it\")\n  ]\n)\n\n",
+      "verdict": "accepted"
+    },
+    {
+      "name": "card-with-actions",
+      "catalogRev": 1,
+      "source": "root = Card(\"Links\", [Text(\"See\"), Link(\"Open\", \"https://commonly.me/v2\", \"primary\"), Link(\"Docs\", \"https://commonly.me/docs\", \"button\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "card-with-actions",
+      "catalogRev": 2,
+      "source": "root = Card(\"Links\", [Text(\"See\"), Link(\"Open\", \"https://commonly.me/v2\", \"primary\"), Link(\"Docs\", \"https://commonly.me/docs\", \"button\")])",
+      "verdict": "accepted"
+    },
+    {
+      "name": "unused-approved-action",
+      "catalogRev": 1,
+      "source": "root = Text(\"hello\")\nunused = Action(@OpenUrl(\"https://linear.app/x\"))",
+      "verdict": "accepted"
+    },
+    {
+      "name": "unused-approved-action",
+      "catalogRev": 2,
+      "source": "root = Text(\"hello\")\nunused = Action(@OpenUrl(\"https://linear.app/x\"))",
+      "verdict": "accepted"
+    },
+    {
+      "name": "sentry-subdomain-link",
+      "catalogRev": 1,
+      "source": "root = Link(\"Issue\", \"https://my-organization.sentry.io/issues/123/\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "sentry-subdomain-link",
+      "catalogRev": 2,
+      "source": "root = Link(\"Issue\", \"https://my-organization.sentry.io/issues/123/\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "atlassian-link",
+      "catalogRev": 1,
+      "source": "root = Link(\"Ticket\", \"https://acme.atlassian.net/browse/X-1\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "atlassian-link",
+      "catalogRev": 2,
+      "source": "root = Link(\"Ticket\", \"https://acme.atlassian.net/browse/X-1\", \"text\")",
+      "verdict": "accepted"
+    },
+    {
+      "name": "unapproved-link-degrades",
+      "catalogRev": 1,
+      "source": "root = Card(\"Links\", [Link(\"Open\", \"https://evil.example/x\", \"button\")])",
+      "verdict": "degraded"
+    },
+    {
+      "name": "unapproved-link-degrades",
+      "catalogRev": 2,
+      "source": "root = Card(\"Links\", [Link(\"Open\", \"https://evil.example/x\", \"button\")])",
+      "verdict": "degraded"
+    },
+    {
+      "name": "unapproved-action-degrades",
+      "catalogRev": 1,
+      "source": "root = Text(\"hello\")\nunused = Action(@OpenUrl(\"https://example.org/x\"))",
+      "verdict": "degraded"
+    },
+    {
+      "name": "unapproved-action-degrades",
+      "catalogRev": 2,
+      "source": "root = Text(\"hello\")\nunused = Action(@OpenUrl(\"https://example.org/x\"))",
+      "verdict": "degraded"
+    }
+  ],
+  "stamped": [
+    {
+      "name": "stamped-linear",
+      "source": "root = Card(\"LIN-12\", [Text(\"Fix the login bug\"), Badge(\"In progress\", \"pending\")])",
+      "connector": "linear",
+      "envelope": {
+        "kind": "ui",
+        "v": 1,
+        "lang": "openui@1",
+        "catalogId": "commonly.ui",
+        "catalogRev": 2,
+        "catalogHash": "sha256:1bbf106e81f08dde540996d53b32e8ac12f661ecdc1409e7ceb2c8a26655b7a1",
+        "source": "root = Card(\"LIN-12\", [Text(\"Fix the login bug\"), Badge(\"In progress\", \"pending\"), Source(\"linear\", \"2026-11-24T00:00:00.000Z\")])"
+      }
+    },
+    {
+      "name": "stamped-sentry",
+      "source": "root = Card(\"Error spike\", [KeyValue([Pair(\"Events\", 120), Pair(\"Users\", 9)])])",
+      "connector": "sentry",
+      "envelope": {
+        "kind": "ui",
+        "v": 1,
+        "lang": "openui@1",
+        "catalogId": "commonly.ui",
+        "catalogRev": 2,
+        "catalogHash": "sha256:1bbf106e81f08dde540996d53b32e8ac12f661ecdc1409e7ceb2c8a26655b7a1",
+        "source": "root = Card(\"Error spike\", [KeyValue([Pair(\"Events\", 120), Pair(\"Users\", 9)]), Source(\"sentry\", \"2026-11-24T00:00:00.000Z\")])"
+      }
+    }
+  ]
+}

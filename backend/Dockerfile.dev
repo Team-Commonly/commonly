@@ -5,6 +5,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+# @openuidev/lang-core's postinstall sends install telemetry unless this is set.
+ENV OPENUI_TELEMETRY_DISABLED=1
+
 # Install all dependencies including dev dependencies
 RUN npm install --include=dev
 
