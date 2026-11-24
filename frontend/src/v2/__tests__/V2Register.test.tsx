@@ -248,21 +248,38 @@ describe('V2Register', () => {
 
   // QA 2026-10-16: the field said the code "Unlocks hosted agents", but
   // "Run it here" works without one (hosted is capped per user, not gated), so
-  // a stranger with no code read hosting as locked. The code unlocks hiring from
-  // the catalog (the cloudAgents entitlement), and the copy says that, in both
-  // languages.
-  it('never tells a stranger the invitation code unlocks hosting', async () => {
+  // a stranger with no code read hosting as locked. F580: "hiring from the
+  // catalog" meant nothing to a first-time visitor either. The code grants the
+  // cloudAgents entitlement (adding the ready-made agents Commonly runs), and
+  // the copy says that in plain words, in both languages.
+  it('says in plain words what an optional invitation code gets you', async () => {
     renderRegister();
 
     const field = await screen.findByLabelText(/invitation code/i);
-    expect(field).toHaveAttribute('placeholder', 'Unlocks hiring from the catalog');
-    expect(field.getAttribute('placeholder')).not.toMatch(/host/i);
-    expect(screen.getByText(/you can still run an agent here or bring your own/i)).toBeInTheDocument();
+    expect(field).toHaveAttribute('placeholder', "Adds Commonly's ready-made agents");
+    expect(field).not.toBeRequired();
+    expect(screen.getByText('optional')).toBeInTheDocument();
+    expect(screen.getByText(
+      'A code lets you add ready-made agents that Commonly runs for you. No code? Leave it blank. '
+      + 'You can still start an agent here or connect your own, and add a code later on the Your team page.',
+    )).toBeInTheDocument();
 
     // eslint-disable-next-line global-require
+    const en = require('../../i18n/locales/en.json');
+    // eslint-disable-next-line global-require
     const zh = require('../../i18n/locales/zh-CN.json');
-    const { invitationPlaceholder, invitationHint } = zh.auth.register;
-    expect(`${invitationPlaceholder} ${invitationHint}`).not.toMatch(/托管/);
+    // Each key on its own, so one missing or drifted string fails by name.
+    ['invitationPlaceholder', 'invitationHint', 'invitationHintRequired'].forEach((key) => {
+      const enText = en.auth.register[key];
+      expect(typeof enText).toBe('string');
+      expect(enText.trim()).not.toBe('');
+      expect(enText).not.toMatch(/catalog|hiring|hosted|BYO|!/i);
+      const zhText = zh.auth.register[key];
+      expect(typeof zhText).toBe('string');
+      expect(zhText.trim()).not.toBe('');
+      expect(zhText).not.toMatch(/托管|应用市场|您|！/);
+      expect(zhText).toMatch(/智能体/);
+    });
     expect(zh.yourTeam.redeem.success).not.toMatch(/托管/);
   });
 });
@@ -342,10 +359,15 @@ describe('V2Register invite code handoff', () => {
   it('under invite-only, the code the visitor brought sits in a required field they can correct', async () => {
     renderAt('/v2/register#invite=CM-TYP0', true);
 
-    const field = await screen.findByLabelText(/^invitation code$/i);
+    const field = await screen.findByLabelText(/^invitation code/i);
     expect(field).toHaveValue('CM-TYP0');
     expect(field).toBeRequired();
+    expect(field).not.toHaveAttribute('placeholder');
     expect(screen.queryByText(/optional/i)).toBeNull();
+    expect(screen.getByText(
+      'You need a code to sign up here. It also lets you add ready-made agents that Commonly runs for you.',
+    )).toBeInTheDocument();
+    expect(screen.queryByText(/No code\? Leave it blank/)).toBeNull();
   });
 
   it('a rejected code says so in plain words, is forgotten, and can be fixed on the same form', async () => {
@@ -356,7 +378,7 @@ describe('V2Register invite code handoff', () => {
     expect(await screen.findByText("That invitation code didn't work. Check it and try again.")).toBeInTheDocument();
     expect(window.sessionStorage.getItem('commonly.pendingInvite')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText(/^invitation code$/i), { target: { value: 'CM-TYPO' } });
+    fireEvent.change(screen.getByLabelText(/^invitation code/i), { target: { value: 'CM-TYPO' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
     expect(axios.post.mock.calls[1][1].invitationCode).toBe('CM-TYPO');

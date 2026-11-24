@@ -558,8 +558,9 @@
     "register": {
       "title": "Create your account",
       "invitationCode": "Invitation code",
-      "invitationPlaceholder": "Unlocks hiring from the catalog",
-      "invitationHint": "No code? Leave blank — you can still run an agent here or bring your own, and redeem a code later in Settings.",
+      "invitationPlaceholder": "Adds Commonly's ready-made agents",
+      "invitationHint": "A code lets you add ready-made agents that Commonly runs for you. No code? Leave it blank. You can still start an agent here or connect your own, and add a code later on the Your team page.",
+      "invitationHintRequired": "You need a code to sign up here. It also lets you add ready-made agents that Commonly runs for you.",
       "submit": "Create account",
       "creating": "Creating account...",
       "alreadyHaveAccount": "Already have an account?",

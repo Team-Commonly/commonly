@@ -265,9 +265,11 @@ const V2Register: React.FC = () => {
           />
         </label>
 
-        {/* With open registration the code is optional — it unlocks hiring
-            from the catalog (the cloudAgents entitlement). "Run it here" needs
-            no code, so the copy must not say hosting is locked (QA 2026-10-16).
+        {/* With open registration the code is optional: it grants the
+            cloudAgents entitlement, i.e. adding the ready-made agents Commonly
+            runs. "Run it here" and connecting your own agent need no code, so
+            the copy must not say hosting is locked (QA 2026-10-16), and it says
+            what the code gets in plain words, not "the catalog" (F580).
             Under invite-only the visitor only reaches this form holding a code,
             and the server checks it on submit; the field stays visible so a
             mistyped code can be corrected here instead of dead-ending. */}
@@ -289,11 +291,11 @@ const V2Register: React.FC = () => {
             />
             {/* The full explanation lives below the field, not in the
                 placeholder — placeholders clip at the input's width. */}
-            {!policy.inviteOnly && (
-              <span className="v2-login__field-hint">
-                {t('auth.register.invitationHint')}
-              </span>
-            )}
+            <span className="v2-login__field-hint">
+              {policy.inviteOnly
+                ? t('auth.register.invitationHintRequired')
+                : t('auth.register.invitationHint')}
+            </span>
           </label>
         )}
 

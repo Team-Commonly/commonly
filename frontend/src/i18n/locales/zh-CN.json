@@ -556,8 +556,9 @@
     "register": {
       "title": "注册",
       "invitationCode": "邀请码",
-      "invitationPlaceholder": "解锁应用市场中的智能体",
-      "invitationHint": "没有邀请码？可以留空——你仍可选择「在这里运行」或接入自己的智能体，之后再到设置中兑换邀请码。",
+      "invitationPlaceholder": "可添加 Commonly 现成的智能体",
+      "invitationHint": "有邀请码，就能添加由 Commonly 替你运行的现成智能体。没有也没关系，留空就行：你仍可在这里启动智能体，或接入自己的智能体，之后再到「你的团队」填写邀请码。",
+      "invitationHintRequired": "注册需要邀请码。有了它，你还能添加由 Commonly 替你运行的现成智能体。",
       "submit": "注册",
       "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
