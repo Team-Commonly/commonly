@@ -7,12 +7,10 @@ const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { nextFreeByoName } = require('../../services/byoNameAllocator');
-const { listOpenClawBundledSkills } = require('../../services/agentProvisionerService');
 const {
   getUserId,
   normalizeInstanceId,
   parseVerifiedFilter,
-  resolveGatewayForRequest,
   userHasPodAccess,
 } = require('./helpers');
 
@@ -305,30 +303,6 @@ catalogRouter.get('/categories', catalogRateLimit, auth, async (req: any, res: a
   } catch (error) {
     console.error('Error listing categories:', error);
     res.status(500).json({ error: 'Failed to list categories' });
-  }
-});
-
-/**
- * GET /api/registry/openclaw/bundled-skills
- * List bundled gateway skills available under /app/skills.
- */
-catalogRouter.get('/openclaw/bundled-skills', catalogRateLimit, auth, async (req: any, res: any) => {
-  try {
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const gatewayId = String(req.query.gatewayId || '').trim();
-    const gateway = gatewayId ? await resolveGatewayForRequest({ gatewayId, userId }) : null;
-    const result = await listOpenClawBundledSkills({ gateway });
-    return res.json({
-      skills: result.skills || [],
-      gatewayId: gateway?._id?.toString?.() || null,
-      deployment: result.deployment || null,
-    });
-  } catch (error) {
-    console.error('Error listing bundled OpenClaw skills:', error);
-    return res.status(500).json({ error: 'Failed to list bundled skills' });
   }
 });
 

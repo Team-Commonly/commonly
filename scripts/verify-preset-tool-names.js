@@ -5,10 +5,10 @@
  *
  * WHAT IS LEFT. This is the half of the old moltbot tool contract that never
  * depended on the openclaw submodule. ADR-021 Part B retired that submodule, so
- * the checks against the pinned extension went with it. `internal` presets still
- * resolve against the native runtime's TOOLS array in this repo, and that check
- * still guards real prompts. `openclaw` presets are skipped: their tool set no
- * longer exists anywhere this repo can read.
+ * the checks against the pinned extension went with it, and the OpenClaw presets
+ * left with the backend driver. `internal` presets still resolve against the
+ * native runtime's TOOLS array in this repo, and that check still guards real
+ * prompts.
  *
  * EXIT CODES
  *   0  every checked name resolves
@@ -25,7 +25,6 @@ const path = require('path');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PRESETS_FILE = path.join(REPO_ROOT, 'backend', 'routes', 'registry', 'presets.ts');
 const NATIVE_RUNTIME = path.join(REPO_ROOT, 'backend', 'services', 'nativeRuntimeService.ts');
-const RETIRED_RUNTIMES = ['openclaw'];
 
 /**
  * Blank a comment out rather than deleting it, so every later offset and
@@ -119,19 +118,11 @@ const loadNativeTools = ({ read = fs.readFileSync } = {}) => {
 };
 
 /**
- * The one sentence presets.ts uses to say two tools are GONE. It is matched as
- * a sentence rather than exempting the names, so a prompt that tells an agent to
- * call `commonly_pr_diff` still fails. Self-checked below: an exemption for text
- * the file no longer holds has no remaining justification.
- */
-const REMOVAL_NOTICE = /\(The former [^()]*commonly_pr_diff[^()]*commonly_pr_review[^()]*tools were removed[^()]*\)/g;
-
-/**
  * presets.ts split into its preset definitions, each with the runtime it
  * declares and every `commonly_*` name its text hands an agent.
  *
- * Comments are stripped FIRST, and that is load-bearing rather than tidy. Three
- * of the file's twenty names live only in `//` comments — including
+ * Comments are stripped FIRST, and that is load-bearing rather than tidy. Some
+ * of the file's names live only in `//` comments — such as
  * `commonly_save_my_memory`, which appears in call-with-parens shape inside a
  * comment and nowhere else. So the "names in `name(` position" set is not a
  * subset of the agent-facing set; it both admits a comment and, more
@@ -154,18 +145,24 @@ const parsePresets = (source) => {
     starts.push(i);
   });
 
-  // Control, same shape as the empty-parse guard above: zero or a handful of
-  // blocks means the file's indentation or shape moved, and a check that looks
-  // at almost nothing passes almost everything.
-  if (starts.length < 20) {
+  // Control, same shape as the empty-parse guard above: zero blocks, or fewer
+  // than the four that survived the OpenClaw removal, means the file's
+  // indentation or shape moved, and a check that looks at almost nothing passes
+  // almost everything.
+  if (starts.length < 4) {
     throw new Error(
-      `parsed ${starts.length} preset definitions from presets.ts (expected 30+). `
+      `parsed ${starts.length} preset definitions from presets.ts (expected 4+). `
       + 'The block shape has changed; fix parsePresets before trusting a result.',
     );
   }
 
+  // The last block ends where the PRESET_DEFINITIONS array closes, not at the
+  // end of the file: the code after it (the cycle trailer) is not a preset.
+  const arrayClose = lines.findIndex((line, i) => i > starts[starts.length - 1] && /^\];/.test(line));
+  const lastEnd = arrayClose === -1 ? lines.length : arrayClose;
+
   return starts.map((start, k) => {
-    const end = k + 1 < starts.length ? starts[k + 1] : lines.length;
+    const end = k + 1 < starts.length ? starts[k + 1] : lastEnd;
     const body = lines.slice(start, end).join('\n');
     const id = body.match(BLOCK_ID)[2];
     const runtimes = [...new Set([...body.matchAll(/\bruntime: (['"`])([a-z-]+)\1/g)].map((m) => m[2]))];
@@ -180,8 +177,7 @@ const parsePresets = (source) => {
       id,
       line: start + 1,
       runtime: runtimes[0],
-      names: [...new Set(body.replace(REMOVAL_NOTICE, '').match(/commonly_[a-z_]+/g) || [])],
-      hasRemovalNotice: body.search(REMOVAL_NOTICE) !== -1,
+      names: [...new Set(body.match(/commonly_[a-z_]+/g) || [])],
     };
   });
 };
@@ -190,36 +186,25 @@ const parsePresets = (source) => {
  * Does every tool a preset teaches exist on the runtime that preset declares?
  *
  * This is the check the row TASK-087 was filed for. presets.ts ships heartbeat
- * and soul prompts to real seats, naming twenty distinct tools, and nothing read
+ * and soul prompts to real seats, and nothing read
  * them at the name level — this script read exactly one symbol out of the file
  * (CYCLES_REFLECTION_TRAILER) and nothing else.
  *
- * Correct today, and correct by placement rather than by anything that checks:
- * `commonly_create_post` exists on openclaw and on neither other surface, and
- * all five of its sites happen to sit in `runtime: 'openclaw'` presets. Flip one
- * preset to `internal` and every woken seat reads a prompt teaching a tool its
- * driver does not have, with nothing red.
+ * A preset moved to `internal` that still teaches another surface's tool name
+ * would hand every woken seat a prompt naming a tool its driver does not have,
+ * with nothing else red.
  *
  * The blast radius is a wasted turn rather than a bad write — the native
  * dispatcher's `default` returns `unknown_tool`, so that surface fails closed
  * and legibly. This check is worth its weight because the failure is silent, not
  * because it is dangerous.
  */
-const checkPresetToolNames = ({ presets, sets, retired = [] }) => {
-  if (!presets.some((p) => p.hasRemovalNotice)) {
-    throw new Error(
-      'presets.ts no longer mentions the removed tools. Delete REMOVAL_NOTICE rather than '
-      + 'leaving it to excuse a future use.',
-    );
-  }
-
+const checkPresetToolNames = ({ presets, sets }) => {
   const missing = [];
   const uncovered = [];
 
   presets.forEach((preset) => {
     const { names } = preset;
-    // Nothing to resolve against: the runtime's tool set left with its driver.
-    if (retired.includes(preset.runtime)) return;
     const set = sets[preset.runtime];
     if (!set) {
       // `claude-code` and `webhook` presets name no tools today. If one starts
@@ -231,8 +216,7 @@ const checkPresetToolNames = ({ presets, sets, retired = [] }) => {
     names.filter((n) => !set.has(n)).forEach((tool) => missing.push({ preset, tool }));
   });
 
-  const retiredCount = presets.filter((p) => retired.includes(p.runtime)).length;
-  return { missing, uncovered, presetCount: presets.length, retiredCount };
+  return { missing, uncovered, presetCount: presets.length };
 };
 
 const main = () => {
@@ -241,7 +225,6 @@ const main = () => {
     result = checkPresetToolNames({
       presets: parsePresets(fs.readFileSync(PRESETS_FILE, 'utf8')),
       sets: { internal: loadNativeTools() },
-      retired: RETIRED_RUNTIMES,
     });
   } catch (err) {
     console.error(
@@ -272,16 +255,12 @@ const main = () => {
   if (result.missing.length) process.exit(1);
   if (result.uncovered.length) process.exit(2);
 
-  const checked = result.presetCount - result.retiredCount;
-  console.log(
-    `[preset-tool-names] OK - ${checked} of ${result.presetCount} presets checked; `
-    + `${result.retiredCount} on a retired runtime (${RETIRED_RUNTIMES.join(', ')}) were skipped.`,
-  );
+  console.log(`[preset-tool-names] OK - ${result.presetCount} presets checked.`);
 };
 
 if (require.main === module) main();
 
 module.exports = {
   parsePresets, checkPresetToolNames, loadNativeTools, stripComments,
-  PRESETS_FILE, RETIRED_RUNTIMES,
+  PRESETS_FILE,
 };

@@ -1,76 +1,45 @@
 // Agent preset routes — extracted from registry.js (GH#112)
 // Handles: GET /presets
+//
+// Readiness here is env-only. Plugin, bundled-skill and Dockerfile detection
+// read the retired OpenClaw gateway and its source tree, so they left with it
+// (ADR-021); no surviving preset declares a plugin tool or a default skill.
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { hasAnyEnv } = require('./helpers');
-const {
-  detectGatewayPresetCapabilities,
-  detectBuiltInOpenClawSkills,
-  detectDockerfileCommonlyPackages,
-  binLooksInstalled,
-} = require('./detect');
 const { PRESET_DEFINITIONS } = require('./presets');
+const { manifests } = require('../../integrations/manifests');
 
 const presetsRouter = express.Router();
 
-const resolvePresetTool = (tool: any, capabilities: any) => {
-  if (tool.type === 'core') {
-    return { ...tool, available: true };
-  }
-  if (tool.type === 'plugin') {
-    const pluginSpecs = (capabilities.plugins || [])
-      .map((plugin: any) => `${plugin.name || ''} ${plugin.spec || ''}`.toLowerCase());
-    const available = (tool.matchAny || []).some((needle: any) => pluginSpecs.some((spec: any) => spec.includes(needle)));
-    return { ...tool, available };
-  }
-  return { ...tool, available: false };
+const isManifestReady = (id: string): boolean => {
+  const readiness = manifests?.[id]?.readiness;
+  return typeof readiness === 'function' && readiness().available === true;
 };
+
+const detectPresetCapabilities = () => ({
+  generatedAt: new Date().toISOString(),
+  llmProviders: {
+    google: hasAnyEnv(['GEMINI_API_KEY']),
+    openai: hasAnyEnv(['OPENAI_API_KEY']),
+    anthropic: hasAnyEnv(['ANTHROPIC_API_KEY']),
+    litellm: hasAnyEnv(['LITELLM_BASE_URL']),
+  },
+  integrations: {
+    discord: hasAnyEnv(['DISCORD_BOT_TOKEN']),
+    slack: isManifestReady('slack'),
+    telegram: hasAnyEnv(['TELEGRAM_BOT_TOKEN']),
+    x: hasAnyEnv(['X_API_BASE_URL']),
+    instagram: hasAnyEnv(['INSTAGRAM_GRAPH_API_BASE']),
+  },
+});
+
+const resolvePresetTool = (tool: any) => ({ ...tool, available: tool.type === 'core' });
 
 const resolvePresetApiRequirement = (requirement: any) => ({
   ...requirement,
   configured: hasAnyEnv(requirement.envAny || [requirement.key]),
 });
-
-const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }: { preset: any; builtInSkills: any; dockerCapabilities: any }) => {
-  const skillMap = new Map((builtInSkills.skills || []).map((skill: any) => [skill.id, skill]));
-  const defaultSkills = Array.isArray(preset.defaultSkills) ? preset.defaultSkills : [];
-  return defaultSkills.map((entry: any) => {
-    const builtIn = skillMap.get(entry.id) as any;
-    const requiresBins = Array.isArray(builtIn?.requiresBins) ? builtIn.requiresBins : [];
-    const requiresEnv = Array.isArray(builtIn?.requiresEnv) ? builtIn.requiresEnv : [];
-    const binsReady = requiresBins.every((bin: any) => binLooksInstalled(bin, dockerCapabilities));
-    const envReady = requiresEnv.every((envName: any) => hasAnyEnv([envName]));
-    const binStatus = requiresBins.map((bin: any) => ({
-      bin,
-      installed: binLooksInstalled(bin, dockerCapabilities),
-    }));
-    const envStatus = requiresEnv.map((envKey: any) => ({
-      key: envKey,
-      configured: hasAnyEnv([envKey]),
-    }));
-    let setupStatus = 'ready';
-    if (!builtIn) setupStatus = 'missing-skill';
-    else if (!binsReady) setupStatus = 'needs-package-install';
-    else if (!envReady) setupStatus = 'needs-api-env';
-    return {
-      id: entry.id,
-      reason: entry.reason || '',
-      available: Boolean(builtIn),
-      requirements: {
-        bins: requiresBins,
-        env: requiresEnv,
-      },
-      binStatus,
-      envStatus,
-      setupStatus,
-      readiness: {
-        binsReady,
-        envReady,
-        ready: Boolean(builtIn) && binsReady && envReady,
-      },
-    };
-  });
-};
 
 /**
  * GET /api/registry/presets
@@ -78,69 +47,34 @@ const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }: { pr
  */
 presetsRouter.get('/presets', auth, async (req: any, res: any) => {
   try {
-    const capabilities = await detectGatewayPresetCapabilities();
-    const builtInSkills = detectBuiltInOpenClawSkills();
-    const dockerCapabilities = detectDockerfileCommonlyPackages();
+    const capabilities = detectPresetCapabilities();
     const presets = PRESET_DEFINITIONS.map((preset: any) => {
-      const resolvedSkills = resolvePresetSkills({
-        preset,
-        builtInSkills,
-        dockerCapabilities,
-      });
+      const requiredTools = (preset.requiredTools || []).map(resolvePresetTool);
+      const apiRequirements = (preset.apiRequirements || []).map(resolvePresetApiRequirement);
       const recommendedEnvMap = new Map();
-      (preset.apiRequirements || []).forEach((requirement: any) => {
+      apiRequirements.forEach((requirement: any) => {
         const key = String(requirement.key || '').trim();
         if (!key) return;
         recommendedEnvMap.set(key, {
           key,
           purpose: requirement.purpose || '',
-          configured: hasAnyEnv(requirement.envAny || [key]),
+          configured: requirement.configured,
           source: 'preset-api',
         });
       });
-      resolvedSkills.forEach((skill: any) => {
-        (skill.envStatus || []).forEach((envEntry: any) => {
-          if (!envEntry?.key) return;
-          if (!recommendedEnvMap.has(envEntry.key)) {
-            recommendedEnvMap.set(envEntry.key, {
-              key: envEntry.key,
-              purpose: `Required by skill ${skill.id}`,
-              configured: Boolean(envEntry.configured),
-              source: 'skill',
-            });
-          }
-        });
-      });
+      const recommendedEnv = Array.from(recommendedEnvMap.values());
+      const toolsReady = requiredTools.every((tool: any) => tool.available);
+      const apisReady = apiRequirements.every((requirement: any) => requirement.configured);
       return {
         ...preset,
-        requiredTools: (preset.requiredTools || []).map(
-          (tool: any) => resolvePresetTool(tool, capabilities),
-        ),
-        apiRequirements: (preset.apiRequirements || []).map(resolvePresetApiRequirement),
-        defaultSkills: resolvedSkills,
-        recommendedEnv: Array.from(recommendedEnvMap.values()),
-        readiness: (() => {
-          const toolsReady = (preset.requiredTools || [])
-            .every((tool: any) => resolvePresetTool(tool, capabilities).available);
-          const apisReady = (preset.apiRequirements || [])
-            .every((requirement: any) => hasAnyEnv(requirement.envAny || [requirement.key]));
-          const skillsReady = resolvedSkills.every((skill: any) => skill.readiness.ready);
-          return {
-            toolsReady,
-            apisReady,
-            skillsReady,
-            ready: toolsReady && apisReady && skillsReady,
-          };
-        })(),
+        requiredTools,
+        apiRequirements,
+        recommendedEnv,
+        readiness: { toolsReady, apisReady, ready: toolsReady && apisReady },
       };
     });
 
-    return res.json({
-      presets,
-      capabilities,
-      runtimeSkills: builtInSkills,
-      dockerCapabilities,
-    });
+    return res.json({ presets, capabilities });
   } catch (error) {
     console.error('Error listing agent presets:', error);
     return res.status(500).json({ error: 'Failed to list agent presets' });
@@ -148,7 +82,5 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
 });
 
 module.exports = presetsRouter;
-// Exported for its unit test; no preset names a default skill today (F418).
-module.exports.resolvePresetSkills = resolvePresetSkills;
 
 export {};

@@ -216,8 +216,8 @@ async function enqueueReactionAcknowledgement({
         //
         // KNOWN DEBT, deliberately taken to ship on the deployed 0.1.11 fleet
         // without a wrapper change: `dmKind` is DM-named, and the moltbot
-        // system prompt (agentProvisionerServiceK8s.ts:416) documents it to
-        // agents as "a human just sent you a message". A reaction receipt is
+        // system prompt (the retired OpenClaw provisioner's, ADR-021) documented
+        // it to agents as "a human just sent you a message". A reaction receipt is
         // not a DM. Routing is unaffected — the DM conversational frame is
         // built in `enqueueDmEvent`, a different path that this never enters —
         // so the risk is an agent MISREADING the field, not mis-delivery. The

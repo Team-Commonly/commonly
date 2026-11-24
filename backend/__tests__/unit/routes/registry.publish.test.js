@@ -18,7 +18,6 @@ jest.mock('../../../models/AgentProfile', () => ({}));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/Pod', () => ({}));
 jest.mock('../../../models/User', () => ({}));
-jest.mock('../../../models/Gateway', () => ({}));
 jest.mock('../../../models/Integration', () => ({}));
 jest.mock('../../../models/AgentTemplate', () => ({}));
 
@@ -37,18 +36,6 @@ jest.mock('../../../services/agentProvisionerService', () => ({
   restartAgentRuntime: jest.fn(),
   getAgentRuntimeStatus: jest.fn(),
   getAgentRuntimeLogs: jest.fn(),
-  clearAgentRuntimeSessions: jest.fn(),
-  isK8sMode: jest.fn(),
-  listOpenClawPlugins: jest.fn(),
-  listOpenClawBundledSkills: jest.fn(),
-  installOpenClawPlugin: jest.fn(),
-  writeOpenClawHeartbeatFile: jest.fn(),
-  readOpenClawHeartbeatFile: jest.fn(),
-  readOpenClawIdentityFile: jest.fn(),
-  writeWorkspaceIdentityFile: jest.fn(),
-  ensureWorkspaceIdentityFile: jest.fn(),
-  syncOpenClawSkills: jest.fn(),
-  resolveOpenClawAccountId: jest.fn(),
 }));
 jest.mock('../../../utils/secret', () => ({
   hash: jest.fn(),

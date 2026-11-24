@@ -58,7 +58,6 @@ jest.mock('../../../models/AgentRegistry', () => ({
 }));
 
 jest.mock('../../../models/Integration', () => ({}));
-jest.mock('../../../models/Gateway', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(() => ({ runtime: 'moltbot' })),
 }));

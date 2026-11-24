@@ -18,7 +18,6 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/PodAsset', () => ({}));
-jest.mock('../../../models/Gateway', () => ({}));
 jest.mock('../../../models/SkillRating', () => ({}));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
 jest.mock('../../../services/podAssetService', () => ({ upsertImportedSkillAsset: jest.fn() }));

@@ -7,10 +7,6 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   next();
 });
 
-jest.mock('../../../services/agentProvisionerService', () => ({
-  writeOpenClawHeartbeatFile: jest.fn(),
-}));
-
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
 }));
@@ -19,6 +15,10 @@ jest.mock('../../../models/Pod', () => ({
 // one the installer check reads.
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ role: 'user' }) }) })),
+}));
+
+jest.mock('../../../models/AgentProfile', () => ({
+  findOne: jest.fn(),
 }));
 
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -31,77 +31,59 @@ jest.mock('../../../models/AgentRegistry', () => ({
 }));
 
 const Pod = require('../../../models/Pod');
+const AgentProfile = require('../../../models/AgentProfile');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
-const { writeOpenClawHeartbeatFile } = require('../../../services/agentProvisionerService');
+const { RUNTIME_RETIRED_BODY } = require('../../../services/retiredRuntime');
 const registryRoutes = require('../../../routes/registry');
 
 const app = express();
 app.use(express.json());
 app.use('/api/registry', registryRoutes);
 
-describe('registry heartbeat file updates', () => {
+const POD = '6a00000000000000000000a1';
+
+describe('registry heartbeat file', () => {
   const arrange = () => {
     Pod.findById.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: '6a00000000000000000000a1',
-        createdBy: 'user-1',
-        members: ['user-1'],
-      }),
+      lean: jest.fn().mockResolvedValue({ _id: POD, createdBy: 'user-1', members: ['user-1'] }),
     });
     AgentInstallation.findOne.mockResolvedValue({
-      _id: 'install-1',
-      agentName: 'openclaw',
-      podId: '6a00000000000000000000a1',
-      instanceId: 'default',
-      displayName: 'Cuz',
+      _id: 'install-1', agentName: 'codex', podId: POD, instanceId: 'default', displayName: 'Cody',
       installedBy: 'user-1',
     });
-    writeOpenClawHeartbeatFile.mockReturnValue('/tmp/HEARTBEAT.md');
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('writes heartbeat file for openclaw agents', async () => {
+  // The OpenClaw workspace copy left with that runtime (ADR-021); the read
+  // comes from the AgentProfile alone.
+  it('reads the heartbeat from the agent profile', async () => {
+    arrange();
+    const select = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ heartbeatContent: '- Check updates' }) });
+    AgentProfile.findOne.mockReturnValue({ select });
+
+    const res = await request(app)
+      .get(`/api/registry/pods/${POD}/agents/codex/heartbeat-file`)
+      .query({ instanceId: 'default' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ content: '- Check updates', accountId: 'default' });
+    expect(AgentProfile.findOne).toHaveBeenCalledWith({ podId: POD, agentName: 'codex', instanceId: 'default' });
+    expect(select).toHaveBeenCalledWith('heartbeatContent');
+  });
+
+  it('a write answers 410 runtime_retired and changes nothing', async () => {
     arrange();
 
     const res = await request(app)
-      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
+      .post(`/api/registry/pods/${POD}/agents/openclaw/heartbeat-file`)
       .send({ instanceId: 'default', content: '- Check updates' });
 
-    expect(res.status).toBe(200);
-    expect(writeOpenClawHeartbeatFile).toHaveBeenCalled();
-  });
-
-  // A hand-authored HEARTBEAT.md was invisible to the provisioner: this route
-  // wrote the file but never marked the installation customized, so
-  // `skipHeartbeat` stayed false and the next reprovision could overwrite the
-  // user's template. The flag has to be set where the customization happens.
-  it('marks the installation customized so reprovision cannot clobber the edit', async () => {
-    arrange();
-
-    await request(app)
-      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
-      .send({ instanceId: 'default', content: '- Check updates' });
-
-    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
-      { _id: 'install-1' },
-      { $set: { 'config.customizations.heartbeat': true } },
-    );
-  });
-
-  it('clears the flag on reset, handing the file back to the provisioner', async () => {
-    arrange();
-
-    await request(app)
-      .post('/api/registry/pods/6a00000000000000000000a1/agents/openclaw/heartbeat-file')
-      .send({ instanceId: 'default', content: '- Check updates', reset: true });
-
-    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
-      { _id: 'install-1' },
-      { $set: { 'config.customizations.heartbeat': false } },
-    );
+    expect(res.status).toBe(410);
+    expect(res.body).toEqual(RUNTIME_RETIRED_BODY);
+    expect(AgentInstallation.updateOne).not.toHaveBeenCalled();
   });
 });
 
@@ -135,8 +117,9 @@ describe('rate limiters run before auth', () => {
     return out;
   };
 
-  // Method matters: the heartbeat-file path is registered twice, and the GET
-  // has no limiter. Matching on path alone silently resolved to the read route.
+  // Method matters: the heartbeat-file path is registered twice (the GET read
+  // in files.ts, the POST 410 stub in plugins.ts), and the GET has no limiter.
+  // Matching on path alone silently resolved to the read route.
   const routeFor = (method, path) => {
     const match = collectRoutes(registryRoutes)
       .find((r) => r.path === path && r.methods[method]);

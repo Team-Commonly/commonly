@@ -283,42 +283,6 @@ describe('API token storage rollout', () => {
     expect((await get(minted[0].token)).status).toBe(200);
   });
 
-  it('bootstrap mints when the bot holds no token, and the printed token works', async () => {
-    const { spawnSync } = require('child_process');
-    const path = require('path');
-    const identity = require('../../services/agentIdentityService');
-    const bot = await identity.getOrCreateAgentUser('openclaw');
-    const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
-    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_'))), PG_HOST: '' };
-    const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
-      path.resolve(__dirname, '../../scripts/bootstrap-clawd-bot.js'),
-    ], { cwd: path.resolve(__dirname, '../..'), env: { ...env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 30000 });
-    expect(result.status).toBe(0);
-    const printed = (result.stdout.match(/cm_[0-9a-f]{64}/) || [])[0];
-    expect(printed).toBeTruthy();
-    expect((await users().findOne({ _id: bot._id })).apiTokenHash).toBe(hash(printed));
-  }, 40000);
-
-  it('bootstrap leaves a retired token for the backfill instead of minting over it', async () => {
-    const { spawnSync } = require('child_process');
-    const path = require('path');
-    const identity = require('../../services/agentIdentityService');
-    const bot = await identity.getOrCreateAgentUser('openclaw');
-    await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_bootstrap-leftover' } });
-    const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
-    // No Postgres mirror for the child: some CI jobs set PG_HOST, and dotenv
-    // would restore it from backend/.env unless the key is already present.
-    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_'))), PG_HOST: '' };
-    const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
-      path.resolve(__dirname, '../../scripts/bootstrap-clawd-bot.js'),
-    ], { cwd: path.resolve(__dirname, '../..'), env: { ...env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 30000 });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('API token already exists');
-    const stored = await users().findOne({ _id: bot._id });
-    expect(stored.apiToken).toBe('cm_bootstrap-leftover');
-    expect(stored).not.toHaveProperty('apiTokenHash');
-  }, 40000);
-
   it.each(['hashed', 'device'])('preserves pending-deletion refusal for %s credentials', async (kind) => {
     const user = await create(`deleting-${kind}`);
     const token = `cm_deleting-${kind}`;

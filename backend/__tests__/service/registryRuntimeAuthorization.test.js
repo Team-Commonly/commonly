@@ -4,7 +4,6 @@ const jwt = require('jsonwebtoken');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
-const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 
 // External runtime adapters are the side-effect boundary. Authentication,
@@ -15,8 +14,6 @@ jest.mock('../../services/agentProvisionerService', () => ({
   restartAgentRuntime: jest.fn(async () => ({})),
   getAgentRuntimeStatus: jest.fn(async () => ({})),
   getAgentRuntimeLogs: jest.fn(async () => ({ logs: 'runtime output' })),
-  clearAgentRuntimeSessions: jest.fn(async () => ({})),
-  resolveOpenClawAccountId: jest.fn(({ instanceId }) => instanceId),
 }));
 const adapters = require('../../services/agentProvisionerService');
 const runtimeRouter = require('../../routes/registry/runtime');
@@ -25,7 +22,6 @@ const operations = [
   ['post', 'runtime-start', 'startAgentRuntime'],
   ['post', 'runtime-stop', 'stopAgentRuntime'],
   ['post', 'runtime-restart', 'restartAgentRuntime'],
-  ['post', 'runtime-clear-sessions', 'clearAgentRuntimeSessions'],
   ['get', 'runtime-logs', 'getAgentRuntimeLogs'],
 ];
 const SECRET = 'runtime-route-authorization-test';
@@ -43,7 +39,7 @@ describe('registry runtime authorization', () => {
   let audit;
   const effects = () => Object.values(adapters).reduce((count, method) => count + method.mock.calls.length, 0);
   const call = (method, operation, user, { podId = pod._id, instanceId = 'curator' } = {}) => {
-    const url = `/api/registry/pods/${podId}/agents/openclaw/${operation}`;
+    const url = `/api/registry/pods/${podId}/agents/codex/${operation}`;
     const req = request(server)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`)
       .set('cf-connecting-ip', `192.0.2.${10 + operations.findIndex((entry) => entry[1] === operation)}`);
     return method === 'get' ? req.query({ instanceId }) : req.send({ instanceId });
@@ -62,7 +58,7 @@ describe('registry runtime authorization', () => {
     });
     ownPod = await Pod.create({ name: 'Personal controls', createdBy: member._id, members: [member._id] });
     installation = await AgentInstallation.create({
-      agentName: 'openclaw', instanceId: 'curator', podId: pod._id,
+      agentName: 'codex', instanceId: 'curator', podId: pod._id,
       version: '1', installedBy: owner._id,
     });
     app = express();
@@ -81,7 +77,7 @@ describe('registry runtime authorization', () => {
   });
 
   it('limits unauthenticated requests before authentication and dispatch', async () => {
-    const url = `/api/registry/pods/${pod._id}/agents/openclaw/runtime-status`;
+    const url = `/api/registry/pods/${pod._id}/agents/codex/runtime-status`;
     for (let count = 0; count < 120; count += 1) {
       const response = await request(server).get(url).set('cf-connecting-ip', '192.0.2.50');
       expect(response.status).toBe(401);
@@ -98,7 +94,7 @@ describe('registry runtime authorization', () => {
   it.each([[undefined, 200], ['NaN', 200], ['Infinity', 200], ['1000000', 1000], ['-1', 1], ['0', 1], ['2.9', 2]])(
     'bounds runtime log lines %s to %s', async (requested, expected) => {
       const query = { instanceId: 'curator', ...(requested === undefined ? {} : { lines: requested }) };
-      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/openclaw/runtime-logs`)
+      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/codex/runtime-logs`)
         .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`).query(query);
       expect(response.status).toBe(200);
       expect(adapters.getAgentRuntimeLogs.mock.calls[0][2]).toBe(expected);
@@ -110,19 +106,35 @@ describe('registry runtime authorization', () => {
     finally { await AgentInstallation.updateOne({ _id: installation._id }, { status: 'active' }); }
   });
 
-  it.each([['admin', 404], ['owner', 403]])('keeps string gateway selection policy for %s', async (actor, status) => {
-    const lookup = jest.spyOn(Gateway, 'findById');
-    const gatewayId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
-    try {
-      const user = actor === 'admin' ? admin : owner;
-      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/openclaw/runtime-status`)
-        .set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`)
-        .query({ instanceId: 'curator', gatewayId });
-      expect(response.status).toBe(status);
-      if (actor === 'admin') expect(lookup).toHaveBeenCalledWith(gatewayId);
-      else expect(lookup).not.toHaveBeenCalled();
+  // ADR-021: a stored OpenClaw (moltbot) row has no gateway left to act on.
+  describe('a stored OpenClaw row', () => {
+    let retiredRow;
+    beforeAll(async () => {
+      retiredRow = await AgentInstallation.create({
+        agentName: 'openclaw', instanceId: 'retired', podId: pod._id,
+        version: '1', installedBy: owner._id,
+      });
+    });
+    afterAll(async () => { await AgentInstallation.deleteOne({ _id: retiredRow._id }); });
+
+    it.each(operations)('%s %s answers 410 runtime_retired and dispatches nothing', async (method, operation) => {
+      const url = `/api/registry/pods/${pod._id}/agents/openclaw/${operation}`;
+      const req = request(server)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`);
+      const response = method === 'get' ? await req.query({ instanceId: 'retired' }) : await req.send({ instanceId: 'retired' });
+      expect(response.status).toBe(410);
+      expect(response.body).toEqual({
+        code: 'runtime_retired',
+        message: 'OpenClaw agents were retired. Use a native agent, or attach a local CLI.',
+      });
       expect(effects()).toBe(0);
-    } finally { lookup.mockRestore(); }
+    });
+
+    it('still refuses a non-installer before saying the runtime is retired', async () => {
+      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/openclaw/runtime-status`)
+        .set('Authorization', `Bearer ${jwt.sign({ id: String(member._id) }, SECRET)}`).query({ instanceId: 'retired' });
+      expect(response.status).toBe(403);
+      expect(effects()).toBe(0);
+    });
   });
 
   describe.each(operations)('%s %s', (method, operation, adapter) => {
@@ -151,8 +163,8 @@ describe('registry runtime authorization', () => {
     });
     it('allows the installer and dispatches the installed identity', async () => {
       expect((await call(method, operation, owner)).status).toBe(200);
-      expect(adapters[adapter]).toHaveBeenCalledWith('moltbot', 'curator', ...(
-        adapter === 'getAgentRuntimeLogs' ? [200, expect.any(Object)] : [expect.any(Object)]
+      expect(adapters[adapter]).toHaveBeenCalledWith('codex', 'curator', ...(
+        adapter === 'getAgentRuntimeLogs' ? [200] : []
       ));
     });
     it('allows a global admin without pod membership', async () => {
@@ -171,7 +183,7 @@ describe('registry runtime authorization', () => {
         expect(audit).toHaveBeenCalledTimes(1);
         expect(JSON.parse(audit.mock.calls[0][0])).toEqual({
           event: 'registry.runtime', route: `/pods/:podId/agents/:name/${operation}`,
-          podId: String(pod._id), agentName: 'openclaw',
+          podId: String(pod._id), agentName: 'codex',
           instanceId: actor === 'missing' ? 'missing' : 'curator',
           callerUserId: String(user._id), outcome,
         });
@@ -186,7 +198,7 @@ describe('registry runtime authorization', () => {
       } finally { await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'curator' }); }
     });
     it('audits the same method-specific instance used by authorization', async () => {
-      const req = request(server)[method](`/api/registry/pods/${pod._id}/agents/openclaw/${operation}`)
+      const req = request(server)[method](`/api/registry/pods/${pod._id}/agents/codex/${operation}`)
         .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`);
       if (method === 'post') await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'default' });
       try {
@@ -196,19 +208,6 @@ describe('registry runtime authorization', () => {
         expect(response.status).toBe(200);
         expect(JSON.parse(audit.mock.calls[0][0]).instanceId).toBe(method === 'get' ? 'curator' : 'default');
       } finally { await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'curator' }); }
-    });
-    it('refuses a non-string gateway selection before database lookup or dispatch', async () => {
-      const lookup = jest.spyOn(Gateway, 'findById');
-      try {
-        const req = request(server)[method](`/api/registry/pods/${pod._id}/agents/openclaw/${operation}`)
-          .set('Authorization', `Bearer ${jwt.sign({ id: String(admin._id) }, SECRET)}`);
-        const response = method === 'get'
-          ? await req.query({ instanceId: 'curator', 'gatewayId[$ne]': 'null' })
-          : await req.send({ instanceId: 'curator', gatewayId: { $ne: null } });
-        expect(response.status).toBe(400);
-        expect(lookup).not.toHaveBeenCalled();
-        expect(effects()).toBe(0);
-      } finally { lookup.mockRestore(); }
     });
     if (method === 'post') {
       it('returns 400 and safely audits a malformed instance object', async () => {

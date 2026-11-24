@@ -7,18 +7,12 @@ const AgentProfile = require('../../models/AgentProfile');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
-  readOpenClawIdentityFile,
-  writeWorkspaceIdentityFile,
-  syncOpenClawSkills,
-} = require('../../services/agentProvisionerService');
-const {
   getUserId,
   isGlobalAdminUser,
   normalizeInstanceId,
   normalizeConfigMap,
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
-  buildIdentityContent,
   userHasPodAccess,
   buildAgentProfileId,
 } = require('./helpers');
@@ -62,16 +56,13 @@ const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { isHostedInstallation, resumeCapRefusal } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
-// Serialize this route's IDENTITY.md read/modify/write operations per account.
-// This is process-local; it does not coordinate independent backend replicas.
-const identityWrites = new Map<string, Promise<void>>();
 
 /**
  * Every field this handler writes, and so every field the installer gate below
  * covers. The gate is deliberately the whole PATCH, not just `config`: the same
  * membership-gated handler writes the AgentProfile (`displayName`, `status`,
  * `instructions`, `persona`, `toolPolicy`, `contextPolicy`, `modelPreferences`)
- * and drives `config.skillSync`. A narrower gate leaves those open.
+ * and stores `config.skillSync`. A narrower gate leaves those open.
  */
 const HOSTED_ABOUT_MAX = 160;
 
@@ -607,40 +598,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           { runValidators: true },
         );
 
-        if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-          const previousWrite = identityWrites.get(normalizedInstanceId) || Promise.resolve();
-          let releaseWrite!: () => void;
-          const currentWrite = new Promise<void>((resolve) => { releaseWrite = resolve; });
-          identityWrites.set(normalizedInstanceId, currentWrite);
-          try {
-            await previousWrite;
-            const identityContent = await readOpenClawIdentityFile(normalizedInstanceId);
-            if (persona !== undefined) {
-              // Persona-only edits retain the runtime Name. A missing file uses
-              // the installation label instead of renaming it to the instance id.
-              const existingName = identityContent.match(/^- \*\*Name:\*\* ([^\r\n]*)/m)?.[1]?.trim();
-              const identityName = effectiveDisplayName || existingName || installation.displayName
-                || normalizedInstanceId;
-              await writeWorkspaceIdentityFile(
-                normalizedInstanceId, buildIdentityContent(identityName, persona),
-              );
-            } else {
-              // Keep manually edited persona content on a name-only save.
-              const renamed = identityContent.replace(
-                /^(- \*\*Name:\*\* )[^\r\n]*/m,
-                (_line: string, prefix: string) => `${prefix}${effectiveDisplayName || normalizedInstanceId}`,
-              );
-              if (renamed !== identityContent) {
-                await writeWorkspaceIdentityFile(normalizedInstanceId, renamed);
-              }
-            }
-          } finally {
-            releaseWrite();
-            if (identityWrites.get(normalizedInstanceId) === currentWrite) {
-              identityWrites.delete(normalizedInstanceId);
-            }
-          }
-        }
       }
     } catch (projectionError) {
       if (displayName !== undefined) {
@@ -655,37 +612,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         });
       }
       throw projectionError;
-    }
-
-    const skillSync = config?.skillSync || null;
-    if (skillSync && name.toLowerCase() === 'openclaw') {
-      const mode = skillSync.mode === 'selected' ? 'selected' : 'all';
-      const requestedPodIds = Array.isArray(skillSync.podIds)
-        ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
-        : [];
-      let podIdsToSync = requestedPodIds;
-      if (skillSync.allPods) {
-        const installations = await AgentInstallation.find({
-          agentName: name.toLowerCase(),
-          instanceId: normalizedInstanceId,
-          status: 'active',
-        }).lean();
-        podIdsToSync = installations.map((i: any) => i.podId?.toString?.()).filter(Boolean);
-      }
-      if (podIdsToSync.length) {
-        const pods = await Pod.find({ _id: { $in: podIdsToSync } })
-          .select('members createdBy')
-          .lean();
-        podIdsToSync = pods
-          .filter((p: any) => userHasPodAccess(p, userId))
-          .map((p: any) => p._id.toString());
-      }
-      await syncOpenClawSkills({
-        accountId: normalizedInstanceId,
-        podIds: podIdsToSync,
-        mode,
-        skillNames: Array.isArray(skillSync.skillNames) ? skillSync.skillNames : [],
-      });
     }
 
     if (renamedIdentity && !renamedIdentity.mirrorSynced) {

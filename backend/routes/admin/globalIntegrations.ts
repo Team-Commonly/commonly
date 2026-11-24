@@ -529,7 +529,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
 });
 
 /**
- * Save global model policy (backend llm + openclaw defaults)
+ * Save global model policy (backend llm)
  * POST /api/admin/integrations/global/model-policy
  */
 router.post('/model-policy', auth, adminAuth, async (req: any, res: any) => {

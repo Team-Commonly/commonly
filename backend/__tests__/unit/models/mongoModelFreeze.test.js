@@ -22,7 +22,7 @@ const MONGO_MODELS = [
   'AgentTemplate', 'Announcement', 'App', 'AppInstallation', 'ApprovalAction',
   'AttentionItem', 'AttributionVisit', 'AuditLog', 'BillingEvent', 'ChannelVerdict',
   'ConnectorSecret', 'DecisionRequest', 'DeviceAuthorization', 'DiscordIntegration', 'DiscordSummaryHistory',
-  'ExternalLink', 'File', 'Gateway', 'GithubGigBinding', 'GithubGigDelivery',
+  'ExternalLink', 'File', 'GithubGigBinding', 'GithubGigDelivery',
   'HookLedgerEvent', 'HostedMcpDcrRegistration', 'Installable', 'InstallableInstallation', 'Integration',
   'InvitationCode', 'Machine', 'MediaObject', 'Message', 'NeedsYouEmail',
   'NeedsYouEmailQuota', 'OAuthLoginState', 'OAuthState', 'OnboardingSilenceEpisode', 'Pod',

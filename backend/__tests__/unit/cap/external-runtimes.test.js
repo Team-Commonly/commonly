@@ -19,25 +19,19 @@ const {
 } = require('../../../services/agentProvisionerService');
 
 const tempDir = path.join(os.tmpdir(), 'cap-external-runtimes-tests');
-const openclawConfigPath = path.join(tempDir, 'moltbot.json');
 const commonlyConfigPath = path.join(tempDir, 'commonly-bot.json');
 
 beforeEach(() => {
   fs.mkdirSync(tempDir, { recursive: true });
-  if (fs.existsSync(openclawConfigPath)) fs.unlinkSync(openclawConfigPath);
   if (fs.existsSync(commonlyConfigPath)) fs.unlinkSync(commonlyConfigPath);
-  process.env.OPENCLAW_CONFIG_PATH = openclawConfigPath;
   process.env.COMMONLY_BOT_CONFIG_PATH = commonlyConfigPath;
-  process.env.OPENCLAW_WORKSPACE_ROOT = path.join(tempDir, 'workspaces');
   // Disable Docker and K8s so no real process calls occur
   process.env.AGENT_PROVISIONER_K8S = '0';
   process.env.AGENT_PROVISIONER_DOCKER = '0';
 });
 
 afterAll(() => {
-  delete process.env.OPENCLAW_CONFIG_PATH;
   delete process.env.COMMONLY_BOT_CONFIG_PATH;
-  delete process.env.OPENCLAW_WORKSPACE_ROOT;
   delete process.env.AGENT_PROVISIONER_K8S;
   delete process.env.AGENT_PROVISIONER_DOCKER;
 });

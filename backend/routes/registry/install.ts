@@ -27,7 +27,6 @@ const {
   AGENT_USERNAME_CONFLICT_CODE?: string;
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
-const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { loadPodMentionMap, routedMentionHandle } = require('../../services/agentMentionService');
 const { deriveAgentState, keyOnlyOnPage, runInstructionFor } = require('../../services/agentStateService');
@@ -49,11 +48,9 @@ const {
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
   sanitizeRuntimeConfig,
-  resolveGatewayForRequest,
   buildAgentProfileId,
   composeInstallIntro,
 } = require('./helpers');
-const { isDevTierGitHubIssueWriter } = require('../../services/githubIssueWriteCapability');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
   revokeRuntimeTokensAfterLastUninstall,
@@ -176,7 +173,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
   let handoffFinished = false;
   try {
     const {
-      agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
+      agentName, podId, version, config = {}, scopes = [], instanceId, displayName, description,
     } = req.body;
     // #1649: a hire may carry the seat's card sentence; it is the only thing that
     // can make botMetadata.description true, since the identity service no longer
@@ -577,11 +574,6 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     if (normalizedSkillEnv) {
       runtimeConfig.skillEnv = normalizedSkillEnv;
     }
-    let resolvedGateway = null;
-    if (gatewayId) {
-      resolvedGateway = await resolveGatewayForRequest({ gatewayId, userId });
-      runtimeConfig.gatewayId = resolvedGateway._id.toString();
-    }
     // Fall back to the registry manifest's declared runtimeType when the caller
     // didn't pick one. Without this, native first-party apps installed via the
     // v2 UI land with runtimeType=null → events route to the external queue
@@ -770,20 +762,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
 
     // GitHub issue writes spend a server-held credential, so this is a
     // server-owned per-installation capability rather than a caller-provided
-    // scope. The configured OpenClaw dev seats are its only initial grant.
-    // If configuration cannot be read, fail closed: the install still works,
-    // but it receives no GitHub write authority.
-    let githubIssueWrite = false;
-    try {
-      const modelConfig = await GlobalModelConfigService.getConfig();
-      githubIssueWrite = isDevTierGitHubIssueWriter({
-        instanceId: normalizedInstanceId,
-        runtimeType: effectiveRuntimeType,
-        devAgentIds: modelConfig?.openclaw?.devAgentIds,
-      });
-    } catch (err) {
-      console.warn('[install] could not resolve dev-tier GitHub issue capability:', (err as Error).message);
-    }
+    // scope. Its only grant went to the configured OpenClaw dev seats, a
+    // runtime install now refuses (ADR-021), so a new install gets none. A
+    // flag already stored on a row is still honoured (routes/github.ts).
+    const githubIssueWrite = false;
 
     const grantedScopes = Array.from(new Set([
       ...requiredScopes,

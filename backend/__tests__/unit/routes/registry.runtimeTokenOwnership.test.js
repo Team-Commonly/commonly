@@ -72,10 +72,7 @@ jest.mock('../../../routes/registry/helpers', () => ({
   normalizeConfigMap: jest.fn((c) => c),
   normalizeRuntimeAuthProfiles: jest.fn(),
   normalizeSkillEnvEntries: jest.fn(),
-  buildOpenClawIntegrationChannels: jest.fn(),
   userHasPodAccess: jest.fn(),
-  resolveGatewayForRequest: jest.fn(),
-  resolveGatewayForInstallation: jest.fn(),
 }));
 
 const mockRevoke = jest.fn().mockResolvedValue([]);

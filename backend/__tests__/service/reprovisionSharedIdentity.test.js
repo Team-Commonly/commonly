@@ -15,7 +15,6 @@ jest.mock('../../services/outsiderGrantAgentJoinPolicy', () => ({
   assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../services/hostedEngine', () => ({ hostedEngineInEffect: jest.fn(() => null) }));
-jest.mock('../../services/presetSkillsAutoImport', () => ({ applyPresetDefaultSkills: jest.fn() }));
 jest.mock('../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../services/agentProvisionerService'),
   provisionAgentRuntime: jest.fn().mockResolvedValue({ accountId: 'a', restartRequired: false }),
