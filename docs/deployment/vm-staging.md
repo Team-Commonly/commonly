@@ -37,7 +37,13 @@ port. Prod's containers, volumes and network are never named.
 - **Its own tunnel.** The connector joins only the tunnel its credentials file
   names: the override blanks `TUNNEL_TOKEN`, which would otherwise outrank the file.
 - **One verb at a time.** `staging.sh` holds `/run/commonly-staging.lock`, so a
-  merge's `down` waits for a walk's run to finish rather than cutting it off.
+  merge's `down` waits for a walk's run to finish rather than cutting it off. The CI
+  entry takes the same lock before its first git operation, so two overlapping `up`s
+  can't share a fetch.
+- **A status vouches only for what was tested.** The smokes run in separate ssh
+  sessions, so before posting `staging-smoke` the workflow reads `status` and posts
+  success only if staging is still at its tag. Its final `down <tag>` leaves staging
+  up if another run has moved it on.
 
 Measured on the first boot (2026-11-24): all services healthy in about 4 minutes,
 and VM memory available went from 5.7 GB to 4.6 GB while it ran.
@@ -47,8 +53,9 @@ and VM memory available went from 5.7 GB to 4.6 GB while it ran.
 ```bash
 sh staging/staging.sh up <8-char tag>   # pull, start, wait for health and /api/health/ready
 sh staging/staging.sh journey           # one stranger journey against api-staging, mail read from the sink
-sh staging/staging.sh status
-sh staging/staging.sh down              # stop and remove containers; volumes kept; prune old staging images
+sh staging/staging.sh status            # `tag <tag>`, then the containers
+sh staging/staging.sh down [<tag>]      # stop and remove containers; volumes kept; prune old staging images.
+                                        # With a tag, only if staging is still at it.
 ```
 
 A tag needs images for it: Deploy Staging builds `commonly-backend:<tag>`,
@@ -66,7 +73,7 @@ variables `STAGING_VM_INSTANCE` and `STAGING_VM_ZONE`.
 `staging-ci` can run one thing. Its `authorized_keys` line forces
 `sudo /usr/local/sbin/commonly-staging-ci`, sudoers allows only that file (keeping
 `SSH_ORIGINAL_COMMAND`), and the script accepts only `up <40-hex sha>`, `journey`,
-`down` and `status`. `up` fetches main and refuses a SHA that is not on it, so even
+`down [<tag>]` and `status`. `up` fetches main and refuses a SHA that is not on it, so even
 a leaked key can only put a main commit on staging. Note what that still means:
 `staging.sh` and the compose files come from the commit being deployed and run as
 root, so anything merged to main can run as root on the prod VM through this path.

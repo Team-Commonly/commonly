@@ -95,7 +95,32 @@ describe('staging on the prod VM', () => {
   test('the CI entry accepts four verbs and only SHAs on main', () => {
     expect(ciEntry).toMatch(/\^\[0-9a-f\]\{40\}\$/);
     expect(ciEntry).toMatch(/merge-base --is-ancestor "\$SHA" refs\/remotes\/origin\/main/);
-    expect(ciEntry).toMatch(/^ {2}journey\|down\|status\)$/m);
+    expect(ciEntry).toMatch(/^ {2}journey\|status\)$/m);
+    expect(ciEntry).toMatch(/^ {2}down\)$/m);
+  });
+
+  test('the CI entry holds the staging lock before its first git operation', () => {
+    // Two overlapping `up`s share FETCH_HEAD; without the lock one request's
+    // non-main fetch can become the other's origin/main.
+    const lock = ciEntry.search(/flock -w \d+ \/run\/commonly-staging\.lock/);
+    const firstGit = ciEntry.search(/git -C "\$CHECKOUT"/);
+    expect(lock).toBeGreaterThan(-1);
+    expect(firstGit).toBeGreaterThan(lock);
+    expect(stagingSh).toMatch(/if \[ -z "\$\{STAGING_LOCKED:-\}" \]/);
+  });
+
+  test('every service that reads the mail sink shares its network', () => {
+    const sinkNets = merged('email-sink').networks;
+    for (const name of allNames) {
+      const env = [].concat(merged(name).environment || []).join('\n');
+      if (name !== 'email-sink' && /email-sink:8080/.test(env)) {
+        for (const n of sinkNets) expect([name, merged(name).networks || []]).toEqual([name, expect.arrayContaining([n])]);
+      }
+    }
+  });
+
+  test('the readiness probe is bounded, so the lock is never held on a hung response', () => {
+    expect(stagingSh).toMatch(/curl -fsS --connect-timeout \d+ --max-time \d+ /);
   });
 
   test('Deploy Staging no longer touches the cluster and always stops staging', () => {
@@ -103,5 +128,8 @@ describe('staging on the prod VM', () => {
     expect(workflow).toMatch(/staging-ci@localhost "up \$SHA"/);
     expect(workflow).toMatch(/always\(\) && steps\.up\.outcome != 'skipped'/);
     expect(workflow).toMatch(/context="staging-smoke"/);
+    // Success only for the revision the smokes tested; a late stop never takes down another run's staging.
+    expect(workflow).toMatch(/\[ "\$LIVE" = "\$TAG" \]/);
+    expect(workflow).toMatch(/staging-ci@localhost "down \$TAG"/);
   });
 });

@@ -222,8 +222,14 @@ jobs:
         run: |
           set -uo pipefail
           STATE=failure
-          if [ "$UP" = success ] && [ "$TIER1" = success ] && [ "$JOURNEY" = success ]; then STATE=success; fi
-          DESC="VM staging: up=$UP tier1=$TIER1 journey=$JOURNEY ($TAG)"
+          # The smokes ran in separate ssh sessions, so confirm nothing else (a walk, a
+          # hand run) moved staging to another tag in between: the status must vouch
+          # for the revision the smokes actually tested.
+          LIVE=$(timeout 2m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes staging-ci@localhost status | sed -n 's/^tag //p' | head -1)
+          if [ "$UP" = success ] && [ "$TIER1" = success ] && [ "$JOURNEY" = success ] && [ "$LIVE" = "$TAG" ]; then STATE=success; fi
+          DESC="VM staging: up=$UP tier1=$TIER1 journey=$JOURNEY live=${LIVE:-unknown} ($TAG)"
           echo "staging-smoke = $STATE for $SHA: $DESC"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
             -f state="$STATE" -f context="staging-smoke" -f description="$DESC" >/dev/null || exit 1
@@ -231,10 +237,14 @@ jobs:
 
       # Stopped by default: always take staging down again, even after a failure,
       # so it holds no VM memory between runs. Volumes (its data) are kept.
+      # `down <tag>` stops staging only if it is still at this run's tag, so a late
+      # stop can never take down a staging another run has since started.
       - name: Stop staging
         if: ${{ always() && steps.up.outcome != 'skipped' }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           timeout 5m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes staging-ci@localhost down \
+            -o BatchMode=yes staging-ci@localhost "down $TAG" \
             || echo "::warning title=staging VM::down failed; staging may still be running. Run staging.sh down on the VM."

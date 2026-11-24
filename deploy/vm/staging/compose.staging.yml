@@ -140,6 +140,9 @@ services:
       - JOURNEY_INVITE_CODE=${STAGING_JOURNEY_INVITE_CODE:?set STAGING_JOURNEY_INVITE_CODE in .env}
       - JOURNEY_EMAIL_SINK_URL=http://email-sink:8080
       - JOURNEY_EMAIL_SINK_TOKEN=${STAGING_EMAIL_SINK_READ_TOKEN:?set STAGING_EMAIL_SINK_READ_TOKEN in .env}
+    # The sink is on `commonly` only; the base file leaves the journey on the default network.
+    networks:
+      - commonly
 
 volumes:
   mongo-data:

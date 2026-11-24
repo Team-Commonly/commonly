@@ -9,12 +9,21 @@
 #
 #   up <40-hex sha>   check out that commit in the staging checkout, but only if
 #                     it is on origin/main, then start staging at its image tag
-#   journey | down | status
+#   journey | status
+#   down [<8-hex tag>]   stop staging; with a tag, only if staging is still at it
 #
 # Because `up` refuses anything not on main, a leaked key can only put a main
 # commit on staging.
 set -eu
 umask 022
+
+# Hold the staging lock from before the first git operation through the whole
+# staging.sh run. Two overlapping `up`s would otherwise share FETCH_HEAD: one
+# request's fetch of a non-main SHA could become the other's origin/main and pass
+# its ancestry check. staging.sh skips its own lock when STAGING_LOCKED is set.
+if [ -z "${STAGING_LOCKED:-}" ]; then
+  exec env STAGING_LOCKED=1 flock -w 1800 /run/commonly-staging.lock sh "$0"
+fi
 
 CHECKOUT=/opt/commonly-staging
 REPO=https://github.com/Team-Commonly/commonly.git
@@ -39,12 +48,20 @@ case "${1:-}" in
     git -C "$CHECKOUT" checkout -q --detach "$SHA"
     exec "$CHECKOUT/deploy/vm/staging/staging.sh" up "$(printf '%s' "$SHA" | cut -c1-8)"
     ;;
-  journey|down|status)
+  journey|status)
     [ $# -eq 1 ] || { echo "usage: $1" >&2; exit 2; }
     exec "$CHECKOUT/deploy/vm/staging/staging.sh" "$1"
     ;;
+  down)
+    [ $# -le 2 ] || { echo "usage: down [<tag>]" >&2; exit 2; }
+    if [ $# -eq 2 ]; then
+      printf '%s' "$2" | grep -Eq '^[0-9a-f]{8}$' || { echo "down takes an 8-character tag" >&2; exit 2; }
+      exec "$CHECKOUT/deploy/vm/staging/staging.sh" down "$2"
+    fi
+    exec "$CHECKOUT/deploy/vm/staging/staging.sh" down
+    ;;
   *)
-    echo "allowed: up <sha> | journey | down | status" >&2
+    echo "allowed: up <sha> | journey | down [<tag>] | status" >&2
     exit 2
     ;;
 esac

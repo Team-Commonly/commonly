@@ -4,8 +4,9 @@
 #
 #   staging.sh up <tag>   pull and start staging at an image tag; wait for health
 #   staging.sh journey    run the stranger journey once against staging
-#   staging.sh down       stop and remove staging's containers (volumes kept)
-#   staging.sh status     list staging's containers
+#   staging.sh down [tag] stop and remove staging's containers (volumes kept);
+#                         with a tag, only if staging is still at that tag
+#   staging.sh status     print `tag <tag>`, then staging's containers
 #
 # Never touches the prod project: every compose call names the staging project
 # and both files explicitly.
@@ -54,8 +55,10 @@ case "${1:-}" in
     # --wait: every service with a healthcheck must report healthy. litellm's boot
     # check is the slow one under staging's CPU cap.
     compose up -d --wait --wait-timeout 600 --remove-orphans
+    # Each probe is bounded (3 s to connect, 10 s in all), so the loop ends within
+    # 30 x (10 + 5) s = 7.5 minutes and never holds the lock on a hung response.
     for i in $(seq 1 30); do
-      if compose exec -T backend curl -fsS -o /dev/null http://localhost:5000/api/health/ready; then
+      if compose exec -T backend curl -fsS --connect-timeout 3 --max-time 10 -o /dev/null http://localhost:5000/api/health/ready; then
         echo "staging up at $TAG"; compose ps --format '{{.Service}} {{.Status}}'; exit 0
       fi
       sleep 5
@@ -66,10 +69,15 @@ case "${1:-}" in
     compose --profile jobs run --rm --no-deps stranger-journey
     ;;
   down)
+    cur=$(sed -n 's/^COMMONLY_IMAGE_TAG=//p' .env)
+    if [ -n "${2:-}" ] && [ "$2" != "$cur" ]; then
+      echo "staging is at $cur, not $2: another run owns it; leaving it up"; exit 0
+    fi
     compose down --remove-orphans
     prune_images
     ;;
   status)
+    echo "tag $(sed -n 's/^COMMONLY_IMAGE_TAG=//p' .env)"
     compose ps --format '{{.Service}} {{.Status}}'
     ;;
   *)
