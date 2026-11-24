@@ -28,9 +28,19 @@ jest.mock('../../../services/turnSandboxService', () => ({
   TurnSandbox: jest.fn().mockImplementation(() => ({ run: mockRun, close: mockClose })),
 }));
 
+// D343 spike: the OpenShell flag, off unless a test turns it on.
+let mockOpenShellEnabled = false;
+const mockOpenShellRun = jest.fn();
+const mockOpenShellClose = jest.fn();
+jest.mock('../../../services/openshellTurnSandbox', () => ({
+  isOpenShellSandboxEnabled: () => mockOpenShellEnabled,
+  OpenShellTurnSandbox: jest.fn().mockImplementation(() => ({ run: mockOpenShellRun, close: mockOpenShellClose })),
+}));
+
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const { TurnSandbox } = require('../../../services/turnSandboxService');
+const { OpenShellTurnSandbox } = require('../../../services/openshellTurnSandbox');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 
 const install = {
@@ -70,6 +80,23 @@ describe('native turn with commonly_run_code', () => {
     });
     mockRun.mockResolvedValue({ ok: true, stdout: '1024\n', stderr: '' });
     mockClose.mockResolvedValue(7);
+    mockOpenShellEnabled = false;
+    mockOpenShellRun.mockResolvedValue({ ok: true, stdout: '1024\n', stderr: '' });
+    mockOpenShellClose.mockResolvedValue(0);
+  });
+
+  test('with the OpenShell flag on, the turn runs code there instead of E2B, and records no billed seconds', async () => {
+    mockOpenShellEnabled = true;
+    axios.post.mockResolvedValueOnce(toolCallReply).mockResolvedValueOnce(finalReply);
+
+    const result = await runAgent(install, mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(OpenShellTurnSandbox).toHaveBeenCalledTimes(1);
+    expect(TurnSandbox).not.toHaveBeenCalled();
+    expect(mockOpenShellRun).toHaveBeenCalledWith('python', 'print(2**10)');
+    expect(mockOpenShellClose).toHaveBeenCalledTimes(1);
+    expect(savedRun.sandboxSeconds).toBe(0);
   });
 
   test('runs the code, feeds the output back, closes the sandbox and records its seconds', async () => {

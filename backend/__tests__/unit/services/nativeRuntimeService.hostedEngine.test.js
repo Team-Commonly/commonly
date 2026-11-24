@@ -251,6 +251,26 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(prompt).toMatch(/for example, running code, searching the web or opening an attached file\)/);
     });
 
+    // D343 spike: the OpenShell flag offers code runs without an E2B key, and the prompt says so.
+    test('the OpenShell flag offers code runs and the prompt names them', async () => {
+      const saved = [process.env.OPENSHELL_SANDBOX_ENABLED, process.env.OPENSHELL_SANDBOX_IMAGE];
+      process.env.OPENSHELL_SANDBOX_ENABLED = 'true';
+      process.env.OPENSHELL_SANDBOX_IMAGE = 'commonly/runcode@sha256:abc';
+      try {
+        await runAgent(hostedInstall(), mention);
+
+        expect(offeredIn(0)).toEqual([...BASE_TOOLS, 'commonly_run_code'].sort());
+        const prompt = systemPromptIn(0);
+        expect(prompt).toMatch(/Use commonly_run_code to calculate/);
+        expect(prompt).not.toMatch(/running code/);
+      } finally {
+        if (saved[0] === undefined) delete process.env.OPENSHELL_SANDBOX_ENABLED;
+        else process.env.OPENSHELL_SANDBOX_ENABLED = saved[0];
+        if (saved[1] === undefined) delete process.env.OPENSHELL_SANDBOX_IMAGE;
+        else process.env.OPENSHELL_SANDBOX_IMAGE = saved[1];
+      }
+    });
+
     test('with one key, only that tool is offered and named', async () => {
       mockSearchConfigured = true;
 

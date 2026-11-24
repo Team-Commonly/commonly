@@ -5,8 +5,8 @@
  * check the calls the driver makes; docs/plans/openshell-spike.md has the live run.
  */
 const {
-  OpenShellTurnSandbox, MAX_RUNS_PER_TURN, SANDBOX_BUSY_MESSAGE, REFUSED_FRONT_PORTS,
-  isOpenShellSandboxEnabled, buildSandboxPolicy, cliEnv,
+  OpenShellTurnSandbox, MAX_RUNS_PER_TURN, SANDBOX_BUSY_MESSAGE,
+  isOpenShellSandboxEnabled, SANDBOX_POLICY, cliEnv,
 } = require('../../../services/openshellTurnSandbox');
 
 const ok = (stdout = '', stderr = '') => ({
@@ -112,6 +112,40 @@ describe('OpenShellTurnSandbox', () => {
     warn.mockRestore();
   });
 
+  test('a sandbox never Ready is the busy line within the create deadline', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const cli = fakeCli({ get: async () => ok('{"phase": "Provisioning"}') });
+    const sandbox = new OpenShellTurnSandbox({}, { cli, pollMs: 5, createTimeoutMs: 60 });
+    const started = Date.now();
+    expect((await sandbox.run('python', 'print(1)')).error).toBe(SANDBOX_BUSY_MESSAGE);
+    expect(Date.now() - started).toBeLessThan(1000);
+    // Each create step's own timeout is clamped to what is left of the deadline.
+    // The delete runs after the turn has its answer, so it is not counted.
+    cli.mock.calls
+      .filter(([args]) => args[1] !== 'delete')
+      .forEach(([, opts]) => expect(opts.timeoutMs).toBeLessThanOrEqual(60));
+    expect(verbs(cli)).toContain('delete');
+    warn.mockRestore();
+  });
+
+  test('a missing CLI is the busy line, on create and on exec', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const enoent = async () => ({
+      code: null, stdout: '', stderr: 'spawn openshell ENOENT', timedOut: false, 
+    });
+    const noCreate = await new OpenShellTurnSandbox({}, { cli: fakeCli({ create: enoent }), pollMs: 0 }).run('python', 'print(1)');
+    expect(noCreate.error).toBe(SANDBOX_BUSY_MESSAGE);
+    // An exec the CLI could not run: its stderr names the gateway, so the model never sees it.
+    const execFails = async () => ({
+      code: null, stdout: '', stderr: 'transport error: gateway.internal:8080', timedOut: false, 
+    });
+    const noExec = await new OpenShellTurnSandbox({}, { cli: fakeCli({ exec: execFails }), pollMs: 0 }).run('python', 'print(1)');
+    expect(noExec).toEqual({
+      ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE,
+    });
+    warn.mockRestore();
+  });
+
   test('a refused create is the busy line', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const cli = fakeCli({
@@ -186,6 +220,10 @@ describe('OpenShellTurnSandbox', () => {
     const cli = fakeCli();
     const sandbox = new OpenShellTurnSandbox({}, { cli, pollMs: 0 });
     expect((await sandbox.run('ruby', 'puts 1')).error).toMatch(/language must be one of/);
+    // Object-prototype names are not languages.
+    expect((await sandbox.run('constructor', 'x')).error).toMatch(/language must be one of/);
+    expect((await sandbox.run('__proto__', 'x')).error).toMatch(/language must be one of/);
+    expect((await sandbox.run('toString', 'x')).error).toMatch(/language must be one of/);
     expect((await sandbox.run('python', '   ')).error).toBe('code is empty');
     expect((await sandbox.run('python', 'x'.repeat(20001))).error).toMatch(/longer than/);
     expect(cli).not.toHaveBeenCalled();
@@ -197,22 +235,13 @@ describe('OpenShellTurnSandbox', () => {
   });
 });
 
-describe('buildSandboxPolicy', () => {
-  test('the run-code policy has no network rule', () => {
-    const policy = buildSandboxPolicy();
-    expect(policy).toContain('network_policies: {}');
-    expect(policy).not.toContain('host:');
-  });
-
-  test('front ports become host.openshell.internal rules, and host service ports are refused', () => {
-    const policy = buildSandboxPolicy({ frontPorts: [18100, 18102] });
-    expect(policy).toContain('{ host: host.openshell.internal, port: 18100 }');
-    expect(policy).toContain('{ host: host.openshell.internal, port: 18102 }');
-    REFUSED_FRONT_PORTS.forEach((port) => {
-      expect(() => buildSandboxPolicy({ frontPorts: [port] })).toThrow(/refused/);
-    });
-    expect(REFUSED_FRONT_PORTS).toEqual(expect.arrayContaining([5432, 27017, 8080]));
-    expect(() => buildSandboxPolicy({ frontPorts: [0] })).toThrow(/not a port/);
+describe('SANDBOX_POLICY', () => {
+  test('has no network rule and requires Landlock', () => {
+    expect(SANDBOX_POLICY).toContain('network_policies: {}');
+    expect(SANDBOX_POLICY).not.toContain('host:');
+    // best_effort would run unfenced on a kernel without Landlock ABI 3.
+    expect(SANDBOX_POLICY).toContain('compatibility: hard_requirement');
+    expect(SANDBOX_POLICY).not.toContain('best_effort');
   });
 });
 

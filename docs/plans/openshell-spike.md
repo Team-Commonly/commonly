@@ -14,7 +14,7 @@ Yes for both, on one Docker host, with two hazards and one gap:
 
 - A hosted turn's Python and JavaScript ran inside OpenShell's Docker driver. The fence held: outbound denied, writes outside the workdir denied, no environment.
 - Claude Code 2.1.331 and Codex 0.172.0 both ran inside and answered through our provider proxy. The stub model echoed the upstream key, and both agents received `[redacted]`.
-- **Hazard 1:** a policy rule for `host.openshell.internal` reaches services bound only to the gateway host's `127.0.0.1`. On a single VM, that includes Postgres and Mongo. The driver refuses those ports.
+- **Hazard 1:** a policy rule for `host.openshell.internal` reaches services bound only to the gateway host's `127.0.0.1`. On a single VM, that includes Postgres and Mongo. The run-code driver writes no network rule at all, and a later rule for the proxy or broker must be an allowlist of exactly those ports.
 - **Hazard 2:** user namespaces are refused inside the sandbox. An agent's own sandbox (Codex's bubblewrap, our CLI's `bwrap` mode) cannot start, so OpenShell is the only boundary, and the agent must run with its own sandbox off.
 - **Gap:** this ran on Docker Desktop's Linux VM (kernel 6.12.76, arm64), not on our VM. Whether the VM's kernel meets OpenShell's Landlock ABI 3 (Linux 6.2+) is unchecked.
 
@@ -36,7 +36,7 @@ Everything ran on this Mac with no paid infrastructure. It ran inside one dispos
 | Check | Result |
 |---|---|
 | Sandbox ready (image cached) | about 1 s |
-| Driver: create plus first Python run | 0.6 s; next run 0.1 s |
+| Driver: create plus first Python run | 0.6–1.1 s over two runs; next run about 0.1 s |
 | Python 3.12 and Node in the workload image | ran |
 | Workload identity | uid 1000, `NoNewPrivs: 1`, seccomp in filter mode |
 | Outbound to example.com | refused (`EACCES`) |
@@ -44,7 +44,7 @@ Everything ran on this Mac with no paid infrastructure. It ran inside one dispos
 | Gateway data path visible inside | no |
 | Secret-looking env vars inside (backend env held `JWT_SECRET`) | none |
 | Run past 30 s | OpenShell's `--timeout` ends it with exit 124; the sandbox stays usable |
-| Delete at turn end | no sandbox left behind |
+| Delete at turn end | no sandbox left behind (every run here; if a delete fails, the sandbox's 180 s lifetime ends it) |
 
 ### Claude Code and Codex inside, behind our proxy and broker
 
@@ -72,7 +72,7 @@ A model-issued tool call wasn't tested (the stub model returns text only). Codex
 ## Findings that shape the design
 
 1. **Our proxy has to stay in front.** OpenShell's own provider path injects credentials outbound but doesn't scrub a key echoed back (their docs say so). Ours does. In the run above, the agent saw `[redacted]` only because our proxy sat between OpenShell and the upstream.
-2. **`host.openshell.internal` reaches the gateway host's loopback.** With supervisor networking in host mode (the Docker driver's default), a rule naming `host.openshell.internal:<port>` connected to a service bound only to `127.0.0.1` on that host. So a front-port list must be an allowlist, and must never name a database or control-plane port. `REFUSED_FRONT_PORTS` in the driver holds 22, 2375, 2376, 4000, 5432, 6379, 8080, 8081 and 27017. Bridge mode wasn't tested.
+2. **`host.openshell.internal` reaches the gateway host's loopback.** With supervisor networking in host mode (the Docker driver's default), a rule naming `host.openshell.internal:<port>` connected to a service bound only to `127.0.0.1` on that host. So any rule that opens a way out must be an allowlist of exactly the proxy and broker ports, never a denylist: a denylist leaves every other loopback service reachable (the backend API, a kubelet, any published port). This PR's driver opens no way out at all. Bridge mode wasn't tested.
 3. **No nested sandboxes.** User namespaces are refused, so an agent's own sandbox can't start inside. Under OpenShell, ADR-008's local `bwrap` mode has to be off and OpenShell's policy is the boundary. That's acceptable for hosted agents, but it has to be decided on purpose, not discovered.
 4. **The workload image must name a non-root user and carry `/etc/passwd`.** The driver resolves the workload identity from the image. A scratch-style image fails with `IdentityResolutionFailed`, and so does the sandbox runtime image used as a workload image. A root-user image is refused unless the policy sets `run_as_user`.
 5. **CLI constraints the driver had to learn live** (the mocked tests passed before each fix):
@@ -87,7 +87,8 @@ A model-issued tool call wasn't tested (the stub model returns text only). Codex
 
 - **Flag:** `OPENSHELL_SANDBOX_ENABLED=true` plus `OPENSHELL_SANDBOX_IMAGE` (an image with python3 and node). With the flag on, `commonly_run_code` uses OpenShell instead of E2B. It's still offered only to installs that declare it.
 - **Gateway:** the `openshell` CLI (`OPENSHELL_BIN`), pointed by `OPENSHELL_GATEWAY_ENDPOINT` or `OPENSHELL_GATEWAY`. The CLI gets only those variables, plus `PATH`, `HOME` and `XDG_CONFIG_HOME`, never the backend's environment, because the CLI is outside code.
-- **Policy:** no network rule at all, written once to a 0600 temp file, or `OPENSHELL_SANDBOX_POLICY_FILE`. `buildSandboxPolicy({ frontPorts })` exists for a later hosted agent that needs the proxy or broker, and refuses the ports above. The run-code path passes none.
+- **Policy:** `SANDBOX_POLICY` has no network rule at all, and sets Landlock to `hard_requirement`, so on a kernel without Landlock ABI 3 the create fails and the model gets the busy line, instead of the code running without filesystem rules (`best_effort` would do that). It's written once to a 0600 temp file, or comes from `OPENSHELL_SANDBOX_POLICY_FILE`. `hard_requirement` passed live on kernel 6.12.
+- **Bounds:** every create step shares one 30 s deadline, so a refused create holds the turn no longer than E2B's bounded create. A refused sandbox is deleted without holding the turn. A CLI that fails outright (missing, or killed) gives the busy line, and its stderr, which names the gateway, stays in the server log.
 - **Backstop:** the sandbox's main process is `sleep 180` with `--no-keep`, so a failed delete still ends.
 - **Billing:** `close()` returns 0 seconds, because a self-hosted sandbox has no vendor bill and the spend alarm prices `sandboxSeconds` as E2B time.
 
