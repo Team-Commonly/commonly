@@ -76,6 +76,22 @@ describe('profile reads are scoped to the viewer', () => {
       expect(res.body.joinedPods).toEqual([]);
     });
 
+    it('does not list an agent DM the viewer is not in, though the DM fan-out would let them open it', async () => {
+      // The viewer shares a pod with the person, so the §3.7 read-only fan-out
+      // lets them open this agent-dm by id. A profile listing must not use
+      // that rule: it shows only pods the two of them are both in.
+      await makePod('Target and agent dm', 'agent-dm', [target, agent]);
+      const res = await activity(viewer, target);
+      expect(res.body.joinedPods.map((p) => p.name)).not.toContain('Target and agent dm');
+    });
+
+    it('lists an admin only the pods they share with the person', async () => {
+      const admin = await makeUser('admin-viewer', { role: 'admin' });
+      await makePod('Admin and target', 'team', [admin, target]);
+      const res = await activity(admin, target);
+      expect(res.body.joinedPods.map((p) => p.name)).toEqual(['Admin and target']);
+    });
+
     it('lists a person their own non-personal pods', async () => {
       const res = await activity(target, target);
       expect(res.body.joinedPods.map((p) => p.name).sort())
