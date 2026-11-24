@@ -15,6 +15,7 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 
@@ -168,7 +169,17 @@ describe('invariant 3: other adapters refuse it', () => {
 // ── the claude adapter ──────────────────────────────────────────────────────
 
 const HOST_KEY = 'sk-ant-host-only-microvm';
-const PROXY_PORT = 41661;
+// F614: the stub proxy below never listens, so a fixed port number was free
+// for the bridge's real listen(0) to be handed (CI drew 41661 twice). Hold a
+// real loopback listener on the proxy port for the whole file, as the real
+// provider proxy holds its own for the whole turn.
+const proxyPortHolder = net.createServer();
+await new Promise((resolve, reject) => {
+  proxyPortHolder.once('error', reject);
+  proxyPortHolder.listen(0, '127.0.0.1', resolve);
+});
+const PROXY_PORT = proxyPortHolder.address().port;
+afterAll(() => new Promise((resolve) => { proxyPortHolder.close(() => resolve()); }));
 const PROXY_TOKEN = 'per-turn-proxy-token-microvm';
 const MSB = path.join(os.tmpdir(), 'pretend-msb.exe');
 
@@ -262,6 +273,15 @@ describe('invariant 3: the claude adapter in a microVM', () => {
     _prepareMicrovmHost: async () => ({ msb: MSB }),
     _microvmHome: home,
     ...extra,
+  });
+
+  test('the stub proxy port is held, so the bridge cannot be handed it (F614)', async () => {
+    const probe = net.createServer();
+    const outcome = await new Promise((resolve) => {
+      probe.once('error', (error) => resolve(error.code));
+      probe.listen(PROXY_PORT, '127.0.0.1', () => probe.close(() => resolve('bound')));
+    });
+    expect(outcome).toBe('EADDRINUSE');
   });
 
   test('runs msb behind the fence, with the guest argv and env only in the turn folder', async () => {
