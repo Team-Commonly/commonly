@@ -38,6 +38,9 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
+  type StoredIssue, forgetIssue, forgetStoredIssues, readStoredIssue, saveIssue, sameKeyCreatedAt, storedIssueKey,
+} from '../utils/byoStoredIssue';
+import {
   FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, autoDetectedHarness, connectorGrantBlock, harnessDeviceDetail, harnessDeviceNote, harnessLabel, harnessSignedOut,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
@@ -415,6 +418,10 @@ const V2AgentBYO: React.FC = () => {
     token: string; agentName: string; podId: string; issuedAt: number; instanceId?: string | null;
     // A connect code for the one-line command, where the server issues one.
     connectCode?: string | null; connectCodeExpiresAt?: number | null;
+    // F572: shown again after a reload from the stored code. The key is gone
+    // (token ''), so what needs it waits for a new key. keyCreatedAt is the
+    // server's createdAt for this key, which a later existing:true is matched on.
+    restored?: boolean; keyCreatedAt?: string | null;
   } | null>(null);
   // The connect code ran out before the agent connected: the line can't work any more.
   const [connectCodeExpired, setConnectCodeExpired] = useState(false);
@@ -489,6 +496,26 @@ const V2AgentBYO: React.FC = () => {
     const timer = setTimeout(() => setConnectCodeExpired(true), left);
     return () => clearTimeout(timer);
   }, [issued?.connectCodeExpiresAt]);
+  // F572: the line is kept for this tab until the agent connects or its code
+  // runs out. A new key's issue overwrites the entry under the same key.
+  const userId = currentUser?._id ? String(currentUser._id) : null;
+  const issuedStoreKey = issued && userId
+    ? storedIssueKey(userId, issued.podId, issued.agentName, issued.instanceId) : null;
+  // Another user's lines, left in this tab, go when the page opens.
+  useEffect(() => { forgetStoredIssues(userId); }, [userId]);
+  useEffect(() => {
+    if (!issued || !issuedStoreKey || !issued.connectCode || !issued.connectCodeExpiresAt || !issued.keyCreatedAt) return;
+    if (listenState === 'listening' || connectCodeExpired) { forgetIssue(issuedStoreKey); return; }
+    const entry: StoredIssue = {
+      connectCode: issued.connectCode,
+      connectCodeExpiresAt: issued.connectCodeExpiresAt,
+      issuedAt: issued.issuedAt,
+      keyCreatedAt: issued.keyCreatedAt,
+      adapter: listenAdapter,
+      os: setupOs,
+    };
+    saveIssue(issuedStoreKey, entry);
+  }, [issued, issuedStoreKey, listenState, connectCodeExpired, listenAdapter, setupOs]);
   // F457: the issued agent's run stopped before checking in because its
   // harness wasn't on that computer. F515 adds a signed-out harness and an old
   // Node. Keyed to the issue, like stallReport.
@@ -1318,10 +1345,35 @@ const V2AgentBYO: React.FC = () => {
       }
       // An agent can have a token from another pod. A nonrotating issue
       // returns existing:true in that case, so no key is revoked here.
-      const tokenRes = await api.post<{ token?: string; existing?: boolean } & IssuedConnectCode>(
+      const tokenRes = await api.post<{ token?: string; existing?: boolean; createdAt?: string } & IssuedConnectCode>(
         `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}/runtime-tokens`,
         { label: 'BYO MCP — initial issue', connectCode: true, ...(secondInstance ? { instanceId: secondInstance } : {}) },
       );
+      // F572: the key this tab was issued before a reload, never used yet. Its
+      // stored line still works, so it shows again instead of a replace prompt.
+      // Only while the server's current key is the one the line was issued
+      // with: a key replaced from another tab or device made the line dead.
+      const storeKey = userId ? storedIssueKey(userId, podId, cleanName, secondInstance) : null;
+      let stored = tokenRes?.existing && storeKey ? readStoredIssue(storeKey) : null;
+      if (stored && storeKey && !sameKeyCreatedAt(stored.keyCreatedAt, tokenRes?.createdAt)) {
+        forgetIssue(storeKey);
+        stored = null;
+      }
+      if (stored) {
+        if (harnessCatalog.some((h) => h.id === stored.adapter)) setListenAdapter(stored.adapter);
+        if (SETUP_OS_OPTIONS.some(({ os }) => os === stored.os)) setSetupOs(stored.os as SetupOs);
+        setIssued({
+          token: '', restored: true, agentName: cleanName, podId, issuedAt: stored.issuedAt, instanceId: secondInstance,
+          connectCode: stored.connectCode, connectCodeExpiresAt: stored.connectCodeExpiresAt, keyCreatedAt: stored.keyCreatedAt,
+        });
+        setConnectCodeExpired(false);
+        setLineCheck(null);
+        setListenState('waiting');
+        setMemoryText('');
+        setMemoryDone(false);
+        setMemoryError(null);
+        return;
+      }
       if (tokenRes?.existing) {
         setPendingReplacement({ agentName: cleanName, podId, instanceId: linkInstance });
         // Its other way out is a new name, so the name field shows (F574).
@@ -1334,6 +1386,7 @@ const V2AgentBYO: React.FC = () => {
       } else {
         setIssued({
           token: tok, agentName: cleanName, podId, issuedAt: Date.now(), instanceId: secondInstance, ...connectCodeOf(tokenRes),
+          keyCreatedAt: typeof tokenRes.createdAt === 'string' ? tokenRes.createdAt : null,
         });
         setConnectCodeExpired(false);
         setLineCheck(null);
@@ -1370,7 +1423,7 @@ const V2AgentBYO: React.FC = () => {
       // agent is the default instance, never the link's, so a replacement
       // can't rotate another instance's key.
       const instanceId = target.instanceId || linkInstance;
-      const tokenRes = await api.post<{ token?: string } & IssuedConnectCode>(
+      const tokenRes = await api.post<{ token?: string; createdAt?: string } & IssuedConnectCode>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
         { label: 'BYO MCP — replacement', force: true, instanceId, connectCode: true },
       );
@@ -1378,9 +1431,12 @@ const V2AgentBYO: React.FC = () => {
         setError(t('agentByo.errors.tokenEmpty'));
         return;
       }
+      // The old key's line stops working with it.
+      if (userId) forgetIssue(storedIssueKey(userId, targetPodId, agentName, instanceId === 'default' ? null : instanceId));
       setIssued({
         token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now(), instanceId: instanceId === 'default' ? null : instanceId,
         ...connectCodeOf(tokenRes),
+        keyCreatedAt: typeof tokenRes.createdAt === 'string' ? tokenRes.createdAt : null,
       });
       setConnectCodeExpired(false);
       setLineCheck(null);
@@ -2920,9 +2976,32 @@ const V2AgentBYO: React.FC = () => {
               </p>
             )}
           </div>
-          <p data-testid="byo-key-once">{t(listenerAvailable ? lineCopy('agentByo.result.keyOnce') : 'agentByo.result.keyOnce', { name: issued?.agentName || '' })}</p>
+          {/* F572: a line shown again after a reload has no key on the page, so
+              the setups that need the key wait for a new one. A new key goes
+              through the same check as a new line: nothing is replaced while
+              the agent is connected, and a key in use asks twice. */}
+          {issued.restored ? (
+            <p className="v2-byo__listen-note" data-testid="byo-restored-note">
+              {lineCheck === 'inUse'
+                ? t('agentByo.listen.lineKeyInUse', { name: issued.agentName })
+                : t('agentByo.result.restored', { name: issued.agentName })}{' '}
+              <button
+                type="button"
+                className="v2-byo__link"
+                disabled={submitting}
+                data-testid="byo-restored-new-key"
+                onClick={() => { void getNewLine(lineCheck === 'inUse'); }}
+              >
+                {t(lineCheck === 'inUse' ? 'agentByo.listen.replaceKey' : 'agentByo.result.restoredNewKey')}
+              </button>
+              {lineCheck === 'failed' && <> {t('agentByo.listen.lineCheckFailed', { name: issued.agentName })}</>}
+              {error && <span className="v2-byo__error" role="alert"> {error}</span>}
+            </p>
+          ) : (
+            <p data-testid="byo-key-once">{t(listenerAvailable ? lineCopy('agentByo.result.keyOnce') : 'agentByo.result.keyOnce', { name: issued?.agentName || '' })}</p>
+          )}
 
-          {listenAdapter === 'claude' && (() => {
+          {listenAdapter === 'claude' && !issued.restored && (() => {
             const mcpBlock = (
   <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
                 <div className="v2-byo__snippet-head">
@@ -2973,6 +3052,8 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.mode.machine')}
               </button>
             )}
+            {/* Both carry the key, which a restored line doesn't have (F572). */}
+            {!issued.restored && (<>
             <div className="v2-byo__snippet">
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>
@@ -2997,10 +3078,13 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             </div>
+            </>)}
           </details>
 
 
 
+          {/* The import signs in with the key (F572). */}
+          {!issued.restored && (
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.memory')}</span>
@@ -3041,6 +3125,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
             )}
           </div>
+          )}
 
           <div className="v2-byo__cta-row">
             <button

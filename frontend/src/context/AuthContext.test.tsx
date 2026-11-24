@@ -69,6 +69,18 @@ test('logout clears token and user', () => {
   expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
 });
 
+// F572: the BYO page keeps an issued connect code per tab, and a connect code
+// can be redeemed for the agent's key. Signing out removes every one.
+test('logout clears every stored BYO connect code and nothing else', () => {
+  sessionStorage.setItem('byo-issued:u1:p1:sam-claude:default', '{}');
+  sessionStorage.setItem('byo-issued:u2:p1:alice-claude:nova', '{}');
+  sessionStorage.setItem('unrelated', 'kept');
+  act(() => { global.testAuth.logout(); });
+  expect(Object.keys(sessionStorage).filter((k) => k.startsWith('byo-issued:'))).toEqual([]);
+  expect(sessionStorage.getItem('unrelated')).toBe('kept');
+  sessionStorage.clear();
+});
+
 test('another tab signing out clears this tab without navigation', async () => {
   axios.get.mockResolvedValue({ data: { username: 'Alice' } });
   axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });

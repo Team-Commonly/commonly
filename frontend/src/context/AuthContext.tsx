@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { forgetInvite, forgetInviteOAuthStart } from '../v2/utils/pendingInvite';
+import { forgetStoredIssues } from '../v2/utils/byoStoredIssue';
 
 interface User {
   _id: string;
@@ -120,6 +121,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const restricted = isAccessRestricted(err);
             if (e.response?.status === 401 || restricted) {
               localStorage.removeItem('token');
+              forgetStoredIssues();
               setCurrentUser(null);
               setToken(null);
               if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -139,7 +141,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== 'token' || event.newValue === token) return;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      if (!event.newValue) setCurrentUser(null);
+      if (!event.newValue) { setCurrentUser(null); forgetStoredIssues(); }
       else setLoading(true);
       setToken(event.newValue);
     };
@@ -162,6 +164,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (active && (status === 401 || restricted) && localStorage.getItem('token') === token) {
           if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
           localStorage.removeItem('token');
+          forgetStoredIssues();
           setCurrentUser(null);
           setToken(null);
           if (restricted) setAccessRestricted(true);
@@ -242,6 +245,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('token');
     forgetInvite();
     forgetInviteOAuthStart();
+    // F572: a BYO connect code can be redeemed for its agent's key, so none
+    // outlives the session that was issued it.
+    forgetStoredIssues();
     setToken(null);
     setCurrentUser(null);
     setAccessRestricted(false);
