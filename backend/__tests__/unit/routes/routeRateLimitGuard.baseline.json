@@ -56,7 +56,6 @@
   "routes/discord.ts POST /interactions [unlimited]",
   "routes/discord.ts POST /register-all [unlimited]",
   "routes/discord.ts POST /register-commands/:integrationId [unlimited]",
-  "routes/docs.ts GET /backend [unlimited]",
   "routes/federation.ts GET /links/:linkId/audit [unlimited]",
   "routes/federation.ts GET /pods/:podId/accessible [unlimited]",
   "routes/federation.ts GET /pods/:podId/links [unlimited]",
