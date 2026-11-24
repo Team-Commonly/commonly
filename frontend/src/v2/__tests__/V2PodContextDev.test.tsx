@@ -128,6 +128,9 @@ test('index stats, rebuild and rebuild-all call the index API', async () => {
   await click('Reset and rebuild');
   expect(axios.post).toHaveBeenLastCalledWith('/api/v1/pods/pod-1/index/rebuild', { reset: true }, AUTH);
   expect(screen.getByText('Rebuilt index: 2 indexed, 0 errors.')).toBeInTheDocument();
+  // A rebuild re-reads the stats it changed.
+  expect(axios.get).toHaveBeenCalledTimes(3);
+  expect(axios.get).toHaveBeenLastCalledWith('/api/v1/pods/pod-1/index/stats', AUTH);
 
   await click('Reset and rebuild all pods');
   expect(axios.post).toHaveBeenLastCalledWith('/api/v1/index/rebuild-all', { reset: true }, AUTH);
@@ -167,6 +170,32 @@ test('searches pod memory and opens an excerpt', async () => {
   });
   expect(screen.getByText(/Line 1/)).toBeInTheDocument();
   expect(screen.getByText('lines 1-2')).toBeInTheDocument();
+});
+
+test('switching pods drops the previous pod\'s search results and excerpt', async () => {
+  axios.get
+    .mockResolvedValueOnce({ data: [{ _id: 'pod-1', name: 'Incident Pod' }, { _id: 'pod-2', name: 'Release Pod' }] })
+    .mockResolvedValueOnce({ data: { results: [{ assetId: 'asset-9', title: 'Incident Notes' }] } });
+  await renderPage();
+  await act(async () => { fireEvent.change(screen.getByPlaceholderText('Search pod memory…'), { target: { value: 'incident' } }); });
+  await click('Search memory');
+  expect(screen.getByText('Incident Notes')).toBeInTheDocument();
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Pod'), { target: { value: 'pod-2' } }); });
+  expect(screen.queryByText('Incident Notes')).toBeNull();
+  expect(screen.getByText('Select a search result to load an excerpt.')).toBeInTheDocument();
+});
+
+test('the inspector card radius is a token v2.css defines', () => {
+  // An undefined custom property computes border-radius to 0 and squares the card.
+  // eslint-disable-next-line global-require
+  const fs = require('fs');
+  // eslint-disable-next-line global-require
+  const path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+  const card = css.match(/\n\.v2-pod-context__card \{([^}]*)\}/)[1];
+  const token = card.match(/border-radius: var\((--v2-[a-z0-9-]+)\)/)[1];
+  expect(css).toMatch(new RegExp(`\\n\\s*${token}:`));
 });
 
 test('a failed context fetch shows the server message', async () => {

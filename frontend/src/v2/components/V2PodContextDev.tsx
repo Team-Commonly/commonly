@@ -271,6 +271,19 @@ const V2PodContextDev: React.FC = () => {
     return () => { live = false; };
   }, [headers, token]);
 
+  // Index, search and excerpt state belong to one pod: an excerpt request for
+  // the old pod's asset id under the new pod's path would miss.
+  useEffect(() => {
+    setIndexStats(null);
+    setIndexError(null);
+    setIndexDone(null);
+    setResults([]);
+    setSearchError(null);
+    setExcerptAssetId('');
+    setExcerpt(null);
+    setExcerptError(null);
+  }, [podId]);
+
   const assets = context?.assets || [];
   const summaryAssets = filterByScope(assets.filter((a) => SUMMARY_TYPES.has(a.type || '')), scope);
   const otherAssets = filterByScope(assets.filter((a) => !SUMMARY_TYPES.has(a.type || '')), scope);
@@ -597,7 +610,9 @@ const V2PodContextDev: React.FC = () => {
                 className="v2-pod-context__input"
                 value={memoryQuery}
                 onChange={(e) => setMemoryQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') searchMemory(); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !searching && !e.nativeEvent.isComposing) searchMemory();
+                }}
                 placeholder="Search pod memory…"
               />
             </Field>

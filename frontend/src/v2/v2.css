@@ -3607,7 +3607,6 @@ body.modern-ui.v2-canvas {
 
 }
 
-/* ============ Admin analytics (GH#662) ============ */
 /* Pod context inspector (/v2/dev/pod-context), an admin operator tool. */
 .v2-pod-context {
   display: flex;
@@ -3626,7 +3625,7 @@ body.modern-ui.v2-canvas {
 .v2-pod-context__card {
   padding: 16px;
   border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-md);
+  border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
 }
 
@@ -3847,6 +3846,7 @@ body.modern-ui.v2-canvas {
   }
 }
 
+/* ============ Admin analytics (GH#662) ============ */
 .v2-admin-analytics {
   display: flex;
   flex-direction: column;
