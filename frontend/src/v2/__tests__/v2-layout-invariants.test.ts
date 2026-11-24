@@ -259,7 +259,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const avatarCropDialog = read('../components/V2AvatarCropDialog.tsx');
   const avatar = read('../components/V2Avatar.tsx');
   const billingPanel = read('../components/V2BillingPanel.tsx');
-  const appsManagement = read('../../components/AppsManagement.tsx');
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
@@ -1599,9 +1598,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
-    expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
+    // Developer apps (the MUI AppsManagement) were retired unreleased.
+    expect(settingsPage).not.toContain('AppsManagement');
+    // The Delete account fold keeps the padded, ruled body its rule gives it;
+    // that rule once lived under the developer-apps class and nearly went with it.
+    expect(read('../components/V2DeleteAccount.tsx')).toContain('className="v2-settings__delete-account"');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('padding: 12px 16px');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('border-top: 1px solid var(--v2-border-soft)');
     expect(settingsPage).toContain('to="/v2/connectors"');
-    expect(settingsPage).toContain(`<summary>{t('settings.developerApps')}</summary>`);
     expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
     expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
@@ -1707,17 +1711,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The frame reads the plan as plain text in the row value, not a chip.
     expect(billingPanel).toContain('<span className="v2-settings__plan">');
     expect(billingPanel).not.toContain('v2-billing__badge');
-  });
-
-  test('Settings flattens connected apps and folds Developer Tips under the form', () => {
-    expect(appsManagement).toContain("const isSettingsVariant = variant === 'settings'");
-    expect(appsManagement).toContain('{!isSettingsVariant && <WebhookIcon color="primary" />}');
-    expect(appsManagement).toContain('{!isSettingsVariant && <SettingsIcon color="primary" />}');
-    expect(appsManagement).toContain('className="apps-management__developer-tips"');
-    expect(appsManagement).toContain('{!isSettingsVariant && (');
-    expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
-    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
   test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {

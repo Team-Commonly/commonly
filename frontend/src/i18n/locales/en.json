@@ -239,7 +239,6 @@
     },
     "accountActions": "Account actions",
     "connectorsDetail": "Manage connected services",
-    "developerApps": "Developer apps",
     "account": {
       "fallbackName": "Your account",
       "noChanges": "No account changes to save.",

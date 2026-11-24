@@ -21,9 +21,7 @@
 .v2-settings__edit--closed { display: none; }
 .v2-settings__token-detail { padding: 0 16px 12px; }
 .v2-settings__actions-list { margin-top: 14px; }
-.v2-settings__developer-disclosure { margin: 0; padding: 12px 16px; border-top: 1px solid var(--v2-border-soft); }
-.v2-settings__developer-disclosure > summary { color: var(--v2-text-primary); cursor: pointer; font: 600 13px/18px var(--v2-font); }
-.v2-settings__developer-disclosure[open] > summary { margin-bottom: 16px; }
+.v2-settings__delete-account { margin: 0; padding: 12px 16px; border-top: 1px solid var(--v2-border-soft); }
 
 /* disclosure rows: the frame's details.disc */
 .v2p-disc { border-top: 1px solid var(--v2-border-soft); }
@@ -535,66 +533,6 @@
 
 .v2-settings__message--error {
   color: var(--v2-text-primary);
-}
-
-/* Settings owns the connected-apps controls without inheriting the legacy
- * page chrome: its section label is the only page-level heading. */
-.v2-settings .apps-management--settings {
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font);
-}
-
-.v2-settings .apps-management--settings .MuiCardContent-root {
-  padding: 0;
-}
-
-.v2-settings .apps-management--settings .MuiCardActions-root {
-  padding: 8px 0 0;
-}
-
-.v2-settings .apps-management--settings .apps-management__section + .apps-management__section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--v2-border-soft);
-}
-
-.v2-settings .apps-management--settings .apps-management__integration {
-  height: 100%;
-  padding: 12px;
-  border: 1px solid var(--v2-border);
-}
-
-.v2-settings .apps-management--settings .apps-management__developer-tips {
-  margin: 14px 0 0;
-  color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-  font-size: var(--v2-fs-meta);
-  line-height: var(--v2-lh-meta);
-}
-
-.v2-settings .apps-management--settings .MuiTypography-root,
-.v2-settings .apps-management--settings .MuiInputBase-input,
-.v2-settings .apps-management--settings .MuiInputLabel-root,
-.v2-settings .apps-management--settings .MuiButton-root {
-  font-family: inherit;
-}
-
-.v2-settings .apps-management--settings .MuiSvgIcon-colorPrimary,
-.v2-settings .apps-management--settings .MuiButton-textPrimary {
-  color: var(--v2-ink);
-}
-
-/* Cobalt remains a mark; buttons that commit a change are ink. */
-.v2-settings .apps-management--settings .MuiButton-containedPrimary {
-  border: 1px solid var(--v2-ink);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-}
-
-.v2-settings .apps-management--settings .MuiButton-containedPrimary:hover {
-  border-color: var(--v2-ink-hover);
-  background: var(--v2-ink-hover);
 }
 
 @media (max-width: 560px) {
