@@ -450,6 +450,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(pane, '.v2-pod-header--direct .v2-pod-header__meta')).toContain('margin-right: auto');
   });
 
+  // F586: the art is the whole tile, so nothing may paint under it. With
+  // V2Avatar's gradient plate gone, `.v2-thread .v2-avatar--flat-agent` would
+  // put cobalt there instead, and the rounded clip's anti-aliased edge bleeds
+  // whatever sits underneath as a rim the figure's shoulders run over (measured
+  // in Chromium: 82 bleed px at DPR 1 across 10 faces). This rule must out-rank
+  // the 0,2,0 flat tints, hence the :has().
+  test('a character tile has no plate under its art, and the header stack overlaps by one even step (F586)', () => {
+    const v2 = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+    expect(ruleBody(v2, '.v2-avatar.v2-avatar--character:has(> img)')).toContain('background: transparent');
+    const pane = read('../chat/chat-pane.css');
+    expect(ruleBody(pane, '.v2-thread .v2-pod-header__stack .v2-avatar')).toContain('box-shadow: 0 0 0 2px var(--v2-surface)');
+    expect(ruleBody(pane, '.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar')).toContain('margin-left: -6px');
+  });
+
   test('the Get started bar holds its height outside the stream and wraps to full-width steps on a phone', () => {
     const pane = read('../chat/chat-pane.css');
     const bar = ruleBody(pane, '.v2-get-started');

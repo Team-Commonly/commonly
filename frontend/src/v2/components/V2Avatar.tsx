@@ -98,7 +98,10 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
     return (
       <span
         className={pickedCharacter ? `${classes} v2-avatar--character` : classes}
-        style={{ background: bg }}
+        // A photo keeps the gradient as a plate for transparent PNGs; a picked
+        // character is an opaque tile, so a plate would only bleed as a rim
+        // through the rounded clip's anti-aliased edge (F586).
+        style={pickedCharacter ? undefined : { background: bg }}
         title={display}
       >
         <img
@@ -118,7 +121,6 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
     return (
       <span
         className={`${classes} v2-avatar--character`}
-        style={{ background: bg }}
         title={display}
       >
         <img

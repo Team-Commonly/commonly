@@ -1993,6 +1993,15 @@ body.modern-ui.v2-canvas {
   box-shadow: 0 0 0 1px var(--v2-avatar-frame);
 }
 
+/* A character is an opaque 64x64 tile: the art is the whole frame, so nothing
+   paints under it (F586). Anything that did (the seeded gradient, or the
+   cobalt of `.v2-thread .v2-avatar--flat-agent`) bled through the rounded
+   clip's anti-aliased edge as a dark rim that the figure's ink shoulders ran
+   into at the bottom. The :has() out-ranks those 0,2,0 flat tints. */
+.v2-avatar.v2-avatar--character:has(> img) {
+  background: transparent;
+}
+
 .v2-avatar--lg {
   width: 34px;
   height: 34px;
