@@ -2,6 +2,17 @@
 // create a new identity under a chosen name, so a built-in agent's name is
 // refused for them (2026-10-14). Harness copied from
 // registry.cloud-entitlement-gate.test.js.
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantAgentJoinPolicy'),
+  assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
@@ -102,7 +113,7 @@ const installAs = async ({ role = 'user', agentName, runtimeType, recordRefusal 
   const req = {
     body: {
       agentName,
-      podId: 'pod-1',
+      podId: 'a0000000000000000000000a',
       version: '1.0.0',
       config: runtimeType ? { runtime: { runtimeType } } : {},
       scopes: [],
@@ -128,7 +139,7 @@ describe('registry install — built-in names are reserved for self-serve instal
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Pod.findById.mockReturnValue(buildLeanChain({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat' }));
+    Pod.findById.mockReturnValue(buildLeanChain({ _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1'], type: 'chat' }));
     AgentInstallation.findOne.mockResolvedValue(null);
     AgentInstallation.find.mockReturnValue(buildLeanChain([]));
     AgentInstallation.install.mockImplementation(async (_agentName, _podId, options) => ({

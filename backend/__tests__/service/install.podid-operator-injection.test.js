@@ -119,6 +119,31 @@ describe('Install endpoint rejects a query operator as podId', () => {
     expect(await AgentProfile.countDocuments({})).toBe(0);
   });
 
+  // F584: prod logged a 500 when a caller sent "POD=<24-hex>", a shell
+  // assignment pasted into the field. Mongoose's CastError reached the
+  // catch-all. A string that cannot be an id is the caller's error: 400.
+  it.each([
+    ['a shell assignment around a real id', () => `POD=${pod._id}`],
+    ['a placeholder', () => ':podId'],
+    ['an empty string', () => ''],
+  ])('400s with invalid_pod_id on %s, before any lookup or write', async (_label, value) => {
+    const res = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${installerToken}`)
+      .send({
+        agentName: 'openclaw',
+        instanceId: 'aria',
+        podId: value(),
+        version: '1.0.0',
+        scopes: ['context:read'],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'invalid_pod_id', error: 'Invalid pod ID' }));
+    expect(await AgentInstallation.countDocuments({})).toBe(0);
+    expect(await AgentProfile.countDocuments({})).toBe(0);
+  });
+
   it('still installs normally when podId is the ordinary id string', async () => {
     const res = await request(app)
       .post('/api/registry/install')

@@ -1,6 +1,17 @@
 // Gate test: cloud (hosted) agent installs require admin OR the cloudAgents
 // entitlement; BYO/webhook installs stay open. Mirrors the harness in
 // registry.install-runtime-type.test.js.
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantAgentJoinPolicy'),
+  assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   identityHoldsRuntimeToken: () => Promise.resolve(false),
@@ -92,7 +103,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
     jest.clearAllMocks();
 
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1',
+      _id: 'a0000000000000000000000a',
       createdBy: 'user-1',
       members: ['user-1'],
       type: 'chat',
@@ -133,7 +144,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -164,7 +175,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -190,7 +201,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'openclaw', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'openclaw', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'admin' },
       userId: 'user-1',
@@ -217,7 +228,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
     const req = {
       body: {
         agentName: 'my-bot',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: { runtime: { runtimeType: 'webhook' } },
         scopes: [],
@@ -264,7 +275,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     const req = {
       body: {
-        agentName: 'manifest-declared', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+        agentName: 'manifest-declared', podId: 'a0000000000000000000000a', version: '1.0.0', config: {}, scopes: [],
       },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
@@ -289,7 +300,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
     }));
     const res = makeRes();
     await installHandler({
-      body: { agentName: 'my-bot', podId: 'pod-1', version: '1.0.0', config, scopes: [] },
+      body: { agentName: 'my-bot', podId: 'a0000000000000000000000a', version: '1.0.0', config, scopes: [] },
       user: { id: 'user-1', username: 'installer' },
       userId: 'user-1',
     }, res);
@@ -330,7 +341,7 @@ describe('registry install — cloud-agent entitlement gate', () => {
     const req = {
       body: {
         agentName: 'manifest-declared',
-        podId: 'pod-1',
+        podId: 'a0000000000000000000000a',
         version: '1.0.0',
         config: { runtime: { runtimeType: 'webhook' } },
         scopes: [],

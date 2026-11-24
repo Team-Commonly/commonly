@@ -1,3 +1,14 @@
+// F584: a real pod id now reaches the route's outsider-grant checks, which
+// returned "clear" early for this suite's old non-id fixture. They stay clear
+// here; their own suites cover them.
+jest.mock('../../../services/outsiderGrantNarrowingPreview', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantNarrowingPreview'),
+  previewInstallNarrowing: jest.fn().mockResolvedValue({ status: 'clear' }),
+}));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  ...jest.requireActual('../../../services/outsiderGrantAgentJoinPolicy'),
+  assertAgentRuntimeMayJoinPod: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   identityHoldsRuntimeToken: () => Promise.resolve(false),
@@ -107,7 +118,7 @@ describe('registry install environment mcp shape (TASK-071)', () => {
   const installRequest = (environment) => ({
     body: {
       agentName: 'sample-agent',
-      podId: 'pod-1',
+      podId: 'a0000000000000000000000a',
       version: '1.0.0',
       config: environment === undefined ? {} : { environment },
       scopes: [],
@@ -133,7 +144,7 @@ describe('registry install environment mcp shape (TASK-071)', () => {
     });
 
     Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1',
+      _id: 'a0000000000000000000000a',
       createdBy: 'user-1',
       members: ['user-1'],
       type: 'chat',
