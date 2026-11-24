@@ -1,9 +1,9 @@
 /**
  * B1 leak matrix — Integration read routes, each as stranger / member / owner / admin:
  *   GET /api/integrations/catalog
- *   GET /api/integrations/:podId          (config.connectCode allowed to member/owner/admin here only)
+ *   GET /api/integrations/:podId
  *   GET /api/integrations/admin/all
- *   GET /api/integrations/user/all
+ *   GET /api/integrations/user/all        (config.connectCode allowed to the owner)
  *   GET /api/integrations/:id/ingest-tokens
  *   GET /api/discord/binding/:podId
  *   GET /api/admin/integrations/global
