@@ -156,13 +156,12 @@ jobs:
           kubectl -n agent-sandbox-system wait --for=condition=Available deployment --all --timeout=300s
           kubectl wait --for=condition=Established crd/sandboxes.agents.x-k8s.io --timeout=60s
 
-      - name: Start the egress canary beside the cluster
+      - name: Start the egress canary and an open listener beside the cluster
         id: canary
         run: |
-          subnet=$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
-          canary=$(python3 -c "import ipaddress,sys; n=ipaddress.ip_network(sys.argv[1]); print(n.network_address + 250)" "$subnet")
-          docker run -d --name isolation-canary --network kind --ip "$canary" "$AGNHOST" netexec --http-port=8080
-          echo "ip=$canary" >> "$GITHUB_OUTPUT"
+          eval "$(bash scripts/kind-isolation/listeners.sh start)"
+          echo "ip=$CANARY" >> "$GITHUB_OUTPUT"
+          echo "open=$OPEN" >> "$GITHUB_OUTPUT"
 
       - name: Build and load the backend image
         run: |
@@ -181,7 +180,7 @@ jobs:
             --namespace "$NS" --create-namespace --wait --timeout 420s
 
       - name: Probe the fences
-        run: bash scripts/kind-isolation/probe.sh "$NS" "${{ steps.canary.outputs.ip }}"
+        run: bash scripts/kind-isolation/probe.sh "$NS" "${{ steps.canary.outputs.ip }}" "${{ steps.canary.outputs.open }}"
 
       - name: Diagnostics on failure
         if: failure()

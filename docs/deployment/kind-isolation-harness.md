@@ -18,7 +18,7 @@ image registry.
 | Calico v3.30.3 | enforces NetworkPolicy (the version OpenShell's own kind tests use) | manifest sha256; every image it names rewritten to its digest, checked before apply |
 | gVisor `runsc` + `containerd-shim-runsc-v1` | the `runsc` handler, mounted into the node and registered with containerd | release tarball sha512 |
 | agent-sandbox v1.0.3 (`Sandbox` CRD + controller) | the per-turn pod shape OpenShell's Kubernetes driver creates | manifest sha256; controller image by digest |
-| a canary (`agnhost netexec`) on the kind Docker network | stands in for a metadata server: an address in `egress.restrict.exceptCidrs` | image by digest |
+| a canary and an open listener (`agnhost netexec`) on the kind Docker network | the canary stands in for a metadata server (an address in `egress.restrict.exceptCidrs`); the open one is an ordinary outside address | image by digest |
 | the chart, with `values.yaml` + `values-local.yaml` + `values-kind-isolation.yaml` | the backend, ops-runner and in-cluster Mongo, Postgres and Redis under every policy | backend built from the PR |
 
 `values-kind-isolation.yaml` contains nothing that works only on kind. The RuntimeClass
@@ -33,10 +33,11 @@ Every probe runs from a throwaway `agnhost` pod with no service-account token.
   drops an unlisted pod. An agent workload (`app=commonly-bot`) reaches the backend but not Mongo. The edge reaches
   the backend. The backup component reaches Mongo. A pod in another namespace that copies a client's label is
   dropped.
-- **Egress.** The canary is dropped for an ordinary pod and reachable from the exempt backup component.
-- **The sandboxed agent pod.** A pod under gVisor with a listed client label reaches Mongo, so gVisor's own
-  networking works. A `Sandbox` whose pod runs under gVisor is then dropped at every store, the backend and the
-  canary.
+- **Egress.** An ordinary pod reaches an outside listener that isn't excepted, and is dropped at the canary;
+  the exempt backup component reaches the canary.
+- **The sandboxed agent pod.** A pod under gVisor with a listed client label reaches Mongo and the open outside
+  listener, so gVisor's own networking works. A `Sandbox` whose pod runs under gVisor reaches the open listener
+  too, and is dropped at every store, the backend and the canary.
 - **gVisor.** The RuntimeClass uses the `runsc` handler. A pod under it, and the Sandbox's pod, report gVisor's
   own kernel string (`Linux version 4.19.0-gvisor` in the pinned release), not the node's.
 
@@ -61,7 +62,20 @@ allowed client, so a cluster that drops everything fails too.
 
 ## Running it on your own machine
 
-On an x86_64 Linux host with Docker, follow the workflow's steps in order (the gVisor tarball it pins is
-x86_64). The steps only need kind, kubectl, helm, curl, `sha256sum` and `sha512sum`, with the pins taken from
-the workflow's `env:` block. Tear down with `kind delete cluster --name commonly-isolation` and
-`docker rm -fv isolation-canary`.
+On an x86_64 Linux host with Docker (the gVisor tarball the workflow pins is x86_64), with kind, kubectl, helm,
+curl and python3 installed. The workflow's steps read three things a plain shell doesn't have: `RUNNER_TEMP`,
+`GITHUB_OUTPUT` and the canary step's outputs. Set them first, then run each step's `run:` block in order, from
+the repo root, with the pins from the workflow's `env:` block exported:
+
+```bash
+export RUNNER_TEMP=$(mktemp -d) GITHUB_OUTPUT=/dev/null
+export CLUSTER=commonly-isolation NS=commonly-local   # and the other env: pins
+# ... Install kind, Download gVisor, Create kind cluster, Install Calico, Install agent-sandbox ...
+eval "$(bash scripts/kind-isolation/listeners.sh start)"   # sets CANARY and OPEN
+# ... Build and load the backend image ...
+# The install step, with the canary from the line above:
+#   --set "networkPolicy.egress.restrict.exceptCidrs={169.254.169.254/32,$CANARY/32}"
+bash scripts/kind-isolation/probe.sh "$NS" "$CANARY" "$OPEN"
+```
+
+Tear down with `kind delete cluster --name commonly-isolation` and `bash scripts/kind-isolation/listeners.sh stop`.

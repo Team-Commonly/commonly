@@ -25,7 +25,11 @@ const lanes = {
   dev: [`${chart}/values.yaml`, `${chart}/values-dev.yaml`],
   // What deploy-staging.yml renders: no values-dev.yaml.
   staging: [`${chart}/values.yaml`, `${chart}/values-staging.yaml`],
+  // Both RBAC switches off: the backend is still told the runtime account's
+  // name, so the account must still render, tokenless.
+  'rbac-off': [`${chart}/values.yaml`],
 };
+const laneSets = { 'rbac-off': ['agentProvisioning.enabled=false', 'rbac.create=false'] };
 // Each lane also renders with the optional workloads on, so a workload that
 // ships disabled is still checked.
 const extraSets = [
@@ -44,7 +48,7 @@ const NEEDS_TOKEN = new Set(['Deployment/backend', 'Deployment/backend-worker'])
 const render = (lane) => {
   const args = ['template', `commonly-${lane}`, chart];
   for (const f of lanes[lane]) args.push('-f', f);
-  for (const s of extraSets) args.push('--set', s);
+  for (const s of [...extraSets, ...(laneSets[lane] || [])]) args.push('--set', s);
   return yaml.loadAll(execFileSync('helm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).filter(Boolean);
 };
 

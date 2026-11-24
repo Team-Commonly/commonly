@@ -4,7 +4,7 @@
 # .github/workflows/kind-isolation.yml against kind with Calico and runsc, after
 # the chart is installed with values-kind-isolation.yaml.
 #
-#   scripts/kind-isolation/probe.sh <namespace> <canary-ip>
+#   scripts/kind-isolation/probe.sh <namespace> <canary-ip> <open-ip>
 #
 # Every probe runs from a throwaway pod with no service-account token. A probe
 # expected closed passes only on a connect TIMEOUT, which is how a dropped
@@ -15,6 +15,7 @@ set -euo pipefail
 
 NS=${1:?namespace}
 CANARY=${2:?canary ip}
+OPEN=${3:?open listener ip}
 FOREIGN=isolation-foreign
 AGNHOST='registry.k8s.io/e2e-test-images/agnhost:2.59@sha256:10ed98804c877e505e17bced991682b6fd50ab1da9cddcd19935b48d645da40a'
 SVC=svc.cluster.local
@@ -23,6 +24,7 @@ REDIS="redis.$NS.$SVC:6379"
 POSTGRES="postgres.$NS.$SVC:5432"
 BACKEND="backend.$NS.$SVC:5000"
 CANARY_URL="$CANARY:8080"
+OPEN_URL="$OPEN:8080"
 
 passed=0
 failed=0
@@ -107,6 +109,10 @@ check "$NS" backup "$MONGO" open "the backup component reaches Mongo"
 check "$FOREIGN" spoof "$MONGO" closed "a client label in another namespace is dropped at Mongo"
 
 echo "== egress: an excepted address is unreachable except from an exempt component"
+# The open listener sits outside the cluster like the canary but outside
+# exceptCidrs, so a restricted pod reaching it shows the canary's drop is the
+# except, not a pod with no outside network at all.
+check "$NS" intruder "$OPEN_URL" open "an ordinary pod reaches an outside address that is not excepted"
 check "$NS" backup "$CANARY_URL" open "the exempt backup component reaches the canary"
 check "$NS" intruder "$CANARY_URL" closed "an ordinary pod is dropped on the way to the canary"
 
@@ -114,7 +120,9 @@ echo "== the sandboxed agent pod"
 # Network works under gVisor: the same runtime with a listed label connects, so
 # the drops below are the policies, not a broken sandbox network.
 check "$NS" gvisor-kernel "$MONGO" open "a listed client under gVisor reaches Mongo"
+check "$NS" gvisor-kernel "$OPEN_URL" open "a pod under gVisor reaches an outside address that is not excepted"
 check "$NS" gvisor-kernel "$CANARY_URL" closed "a pod under gVisor is dropped on the way to the canary"
+check "$NS" "$SANDBOX" "$OPEN_URL" open "the Sandbox pod reaches an outside address that is not excepted"
 for target in "$MONGO" "$REDIS" "$POSTGRES" "$BACKEND" "$CANARY_URL"; do
   check "$NS" "$SANDBOX" "$target" closed "the Sandbox pod is dropped at $target"
 done
