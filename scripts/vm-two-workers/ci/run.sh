@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The two-worker proof: the VM's own compose file (deploy/vm/), with a local
 # MongoDB and a stub model (compose.ci.yml), on a throwaway Linux Docker host.
-# Never a serving VM: it writes deploy/vm's git-ignored env files and starts
-# the stack under the project name `commonly`.
+# Never a serving VM: it refuses to run where deploy/vm already holds an env
+# file, writes throwaway ones, runs under its own project name (commonly-ci)
+# and removes its containers, volumes and env files when done.
 #
 #   IMAGE=<registry>/commonly-backend:<tag> bash scripts/vm-two-workers/ci/run.sh
 #
@@ -31,7 +32,14 @@ registry="${IMAGE%/commonly-backend:*}"
 tag="${IMAGE##*:}"
 [ "$registry/commonly-backend:$tag" = "$IMAGE" ] || { echo "IMAGE must look like <registry>/commonly-backend:<tag>" >&2; exit 1; }
 
-compose() { docker compose -f "$vm/docker-compose.yml" -f "$here/compose.ci.yml" "$@"; }
+for file in .env backend.env litellm.env commonly-bot.env backup.env; do
+  if [ -e "$vm/$file" ]; then
+    echo "deploy/vm/$file exists: this looks like a real install. The proof runs only on a throwaway checkout." >&2
+    exit 1
+  fi
+done
+project=commonly-ci
+compose() { docker compose -p "$project" -f "$vm/docker-compose.yml" -f "$here/compose.ci.yml" "$@"; }
 secret() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 
 cleanup() {
@@ -40,6 +48,7 @@ cleanup() {
   compose --profile two-workers down -v --remove-orphans >/dev/null 2>&1 || true
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "$summary" ]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
   [ -n "${KEEP_LOGS:-}" ] && cp "$state/stack.log" "$KEEP_LOGS" 2>/dev/null || true
+  rm -f "$vm/.env" "$vm/backend.env" "$vm/litellm.env" "$vm/commonly-bot.env" "$vm/backup.env"
   rm -rf "$state"
 }
 trap cleanup EXIT
@@ -77,7 +86,7 @@ EOF
 [ -e "$vm/litellm/config.yaml" ] || { mkdir -p "$vm/litellm"; : > "$vm/litellm/config.yaml"; }
 umask 022
 
-network=commonly_commonly
+network="${project}_commonly"
 gen() { # <tag> <api> <mode> <args...>
   local label="$1" api="$2"; shift 2
   docker run --rm --network "$network" -e "API=$api" -e "TAG=$label" -e STATE=/state \
@@ -97,7 +106,7 @@ sample() {
   done
 }
 cpu_between() { # <container-suffix> <from-epoch> <to-epoch> -> mean cpu%
-  awk -v n="commonly-$1-1" -v a="$2" -v b="$3" \
+  awk -v n="$project-$1-1" -v a="$2" -v b="$3" \
     '$2 == n && $1 >= a && $1 <= b { s += $3; c += 1 } END { if (c) printf "%.0f%%", s / c; else printf "-" }' "$state/cpu.log"
 }
 
@@ -169,7 +178,7 @@ check() { # <description> <command...>
 check "both processes count a limit in one shared window" node_check limiter-check.mjs shared
 check "through api-lb the limiter keys on the end user's address" node_check limiter-check.mjs via-lb
 
-backend_restarts() { docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' commonly-backend-1; }
+backend_restarts() { docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' "$project-backend-1"; }
 before="$(backend_restarts)"
 echo "== Redis stopped"
 compose stop redis

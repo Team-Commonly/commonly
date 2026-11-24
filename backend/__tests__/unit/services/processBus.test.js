@@ -79,6 +79,39 @@ describe('processBus', () => {
     expect(onB).toHaveBeenCalledWith({ n: 1 });
   });
 
+  test('a channel registered while the subscriber reconnects is subscribed on the next ready, once', async () => {
+    const broker = makeBroker();
+    const clients = [];
+    const factory = () => {
+      const client = broker.makeClient();
+      const { duplicate } = client;
+      client.duplicate = () => { const d = duplicate(); clients.push(d); return d; };
+      return client;
+    };
+    let bus;
+    jest.isolateModules(() => { bus = require('../../../services/processBus'); });
+    bus.setProcessBusForTests({ factory, enabled: true });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    bus.subscribe('early', jest.fn());
+    bus.startProcessBus();
+    await flush();
+    const [sub] = clients;
+    expect(sub.subscribe).toHaveBeenCalledTimes(1);
+
+    // A blip: not ready while the late channel registers.
+    sub.isReady = false;
+    bus.subscribe('late', jest.fn());
+    expect(sub.subscribe).toHaveBeenCalledTimes(1);
+    sub.isReady = true;
+    sub.emit('ready');
+    await flush();
+    expect(sub.subscribe.mock.calls.map(([channel]) => channel))
+      .toEqual(['commonly:bus:early', 'commonly:bus:late']);
+    // Another reconnect subscribes nothing twice (node-redis restores them).
+    sub.emit('ready');
+    expect(sub.subscribe).toHaveBeenCalledTimes(2);
+  });
+
   test('off: subscribe only registers and publish sends nothing, so no Redis client is made', async () => {
     const broker = makeBroker();
     const factory = jest.fn(broker.makeClient);

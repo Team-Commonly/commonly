@@ -554,8 +554,8 @@ describe('single-VM compose: two backend workers', () => {
       expect(directives).toContain('proxy_next_upstream error timeout http_502 http_503;');
       expect(has(/non_idempotent/)).toBe(false);
       expect(directives).toEqual(expect.arrayContaining([
-        'server backend:5000 resolve max_fails=1 fail_timeout=10s;',
-        'server backend-2:5000 resolve max_fails=1 fail_timeout=10s;',
+        'server backend:5000 resolve max_fails=3 fail_timeout=10s;',
+        'server backend-2:5000 resolve max_fails=3 fail_timeout=10s;',
       ]));
       expect(directives).toContain('resolver 127.0.0.11 valid=5s ipv6=off;');
     });

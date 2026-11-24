@@ -19,6 +19,7 @@ const { recordListenerCheckIn } = require('./agentListenerCheckIn');
 const { isFirstListen, settleInstallIntroOnFirstListen } = require('./installIntroOnListen');
 const { cloudRuntimeMayRun } = require('./cloudRuntimeOwnership');
 const { publish, subscribe } = require('./processBus');
+const { disconnectRoom } = require('../config/socketRooms');
 
 // Wakes for an agent socket another backend process holds (pushEvent).
 const PUSH_CHANNEL = 'agent-ws-push';
@@ -383,10 +384,10 @@ class AgentWebSocketService {
 
   disconnectIdentity(agentName: string, instanceId = 'default'): void {
     const agentKey = `${agentName.toLowerCase()}:${instanceId.toLowerCase()}`;
-    // Socket.IO broadcasts this room operation through its adapter, including
-    // sockets on other backend replicas. A revoked bearer must not keep an
+    // At once on this process, and through the adapter on the other backend
+    // processes (config/socketRooms). A revoked bearer must not keep an
     // already-connected transport after the last installation is removed.
-    this.agentNamespace?.to(`agent:${agentKey}`).disconnectSockets?.(true);
+    if (this.agentNamespace) disconnectRoom(this.agentNamespace, `agent:${agentKey}`);
   }
 
   async validateAgentToken(token: string): Promise<AgentTokenInfo | null> {

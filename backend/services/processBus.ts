@@ -83,10 +83,24 @@ const deliver = (channel: string, raw: string): void => {
   }
 };
 
-const listen = (client: BusClient, channel: string): void => {
-  client.subscribe(`${CHANNEL_PREFIX}${channel}`, (raw) => deliver(channel, raw)).catch((error) => {
-    console.error(`[process-bus] could not subscribe to ${channel}:`, (error as Error)?.message || error);
-  });
+// Channels this process's subscriber has subscribed. node-redis re-subscribes
+// them itself after a reconnect, so each is subscribed exactly once.
+const listened = new Set<string>();
+
+// Subscribes every registered channel not yet subscribed. Runs on each `ready`
+// (the first connect and every reconnect) and on subscribe() while ready, so a
+// channel registered during a connect or a Redis blip is never missed.
+const listenAll = (): void => {
+  const client = subClient;
+  if (!client?.isReady) return;
+  for (const channel of handlers.keys()) {
+    if (listened.has(channel)) continue;
+    listened.add(channel);
+    client.subscribe(`${CHANNEL_PREFIX}${channel}`, (raw) => deliver(channel, raw)).catch((error) => {
+      listened.delete(channel);
+      console.error(`[process-bus] could not subscribe to ${channel}:`, (error as Error)?.message || error);
+    });
+  }
 };
 
 const watch = (client: BusClient, role: string): void => {
@@ -118,12 +132,9 @@ export const startProcessBus = (): void => {
     subClient = pubClient.duplicate();
     watch(pubClient, 'publish');
     watch(subClient, 'subscribe');
+    subClient.on('ready', listenAll);
     pubClient.connect().catch((error) => sharedRedisLost('the process bus (publish)', error));
-    // node-redis keeps a subscriber's channels across reconnects, so each
-    // channel is subscribed once, here or in subscribe() below.
-    subClient.connect().then(() => {
-      for (const channel of handlers.keys()) listen(subClient as BusClient, channel);
-    }, (error) => sharedRedisLost('the process bus (subscribe)', error));
+    subClient.connect().catch((error) => sharedRedisLost('the process bus (subscribe)', error));
   } catch (error) {
     console.error('[process-bus] could not create the Redis clients:', (error as Error)?.message || error);
     sharedRedisLost('the process bus', error);
@@ -132,12 +143,10 @@ export const startProcessBus = (): void => {
 
 /** Every other process runs `handler` for each message published on `channel`. */
 export const subscribe = (channel: string, handler: Handler): void => {
-  const isNew = !handlers.has(channel);
-  if (isNew) handlers.set(channel, new Set());
+  if (!handlers.has(channel)) handlers.set(channel, new Set());
   (handlers.get(channel) as Set<Handler>).add(handler);
-  // Before the bus starts, or while it connects, startProcessBus() subscribes
-  // every registered channel once connected.
-  if (isNew && subClient?.isReady) listen(subClient, channel);
+  // Not connected yet (or reconnecting): the next `ready` subscribes it.
+  listenAll();
 };
 
 /** Tell every other process. Fire-and-forget; dropped while Redis is down. */
@@ -161,6 +170,7 @@ export const setProcessBusForTests = (
   createClient = factory || defaultCreateClient;
   enabledOverride = enabled ?? null;
   handlers.clear();
+  listened.clear();
   pubClient = null;
   subClient = null;
   started = false;

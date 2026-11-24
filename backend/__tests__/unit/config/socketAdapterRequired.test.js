@@ -42,7 +42,24 @@ const load = () => {
   return socket;
 };
 
-const fakeIo = () => ({ adapter: jest.fn(), disconnectSockets: jest.fn() });
+// disconnectSockets on the server itself is the cluster-wide call: through
+// the adapter it would drop every other process's sockets too.
+const fakeIo = () => {
+  const agents = { local: { disconnectSockets: jest.fn() }, disconnectSockets: jest.fn() };
+  return {
+    adapter: jest.fn(),
+    disconnectSockets: jest.fn(),
+    local: { disconnectSockets: jest.fn() },
+    agents,
+    of: (name) => (name === '/agents' ? agents : null),
+  };
+};
+const expectDroppedOwnSocketsOnly = (io) => {
+  expect(io.local.disconnectSockets).toHaveBeenCalledWith(true);
+  expect(io.agents.local.disconnectSockets).toHaveBeenCalledWith(true);
+  expect(io.disconnectSockets).not.toHaveBeenCalled();
+  expect(io.agents.disconnectSockets).not.toHaveBeenCalled();
+};
 
 describe('socket.io Redis adapter', () => {
   let saved;
@@ -113,7 +130,7 @@ describe('socket.io Redis adapter', () => {
     const io = fakeIo();
     await load().init(io);
     expect(io.adapter).not.toHaveBeenCalled();
-    expect(io.disconnectSockets).toHaveBeenCalledWith(true);
+    expectDroppedOwnSocketsOnly(io);
     expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
   });
 
@@ -132,7 +149,7 @@ describe('socket.io Redis adapter', () => {
     expect(kill).not.toHaveBeenCalled();
 
     mockClients[1].emit(event, new Error('ECONNRESET'));
-    expect(io.disconnectSockets).toHaveBeenCalledWith(true);
+    expectDroppedOwnSocketsOnly(io);
     expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
   });
 
@@ -142,6 +159,6 @@ describe('socket.io Redis adapter', () => {
     await load().init(io);
     mockClients[0].emit('error', new Error('ECONNRESET'));
     expect(kill).not.toHaveBeenCalled();
-    expect(io.disconnectSockets).not.toHaveBeenCalled();
+    expect(io.local.disconnectSockets).not.toHaveBeenCalled();
   });
 });

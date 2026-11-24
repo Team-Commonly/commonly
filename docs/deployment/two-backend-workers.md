@@ -50,6 +50,14 @@ in front of two stand-in backends and checks the last three behaviours live.
   `socketsLeave` and a `disconnectSockets` reach the sockets of every process.
   This covers revocations: a revoked session, a pod leave, a revoked agent
   token.
+
+  The adapter only *publishes* a `disconnectSockets` or `socketsLeave`. Every
+  process, the sender included, applies it when the request comes back from
+  Redis, and while Redis is down the publish waits in node-redis's queue. So
+  each revocation also runs on the sender's own sockets at once
+  (`backend/config/socketRooms.ts`), and `fetchSockets` (pod presence, the
+  pod-leave re-check) falls back to the process's own sockets after 2 s. A
+  remote socket carries only `socket.data`, so the user id lives there.
 - **The process bus** (`backend/services/processBus.ts`). These are
   cross-process hints for state each process keeps in memory. The process that
   changes the state applies the change locally and publishes it, and each
@@ -73,7 +81,7 @@ in front of two stand-in backends and checks the last three behaviours live.
 | | backend | backend-2 |
 |---|---|---|
 | Redis down at boot | Connects for up to 15 s, then serves alone: no adapter until it restarts, limits in memory | Stops (drops its sockets, SIGTERM drain), and compose restarts it; it stops again until Redis is back |
-| Redis lost later | Keeps serving; the adapter and bus reconnect on their own | Stops the same way |
+| Redis lost later | Keeps serving: revocations act on its own sockets at once, and the adapter and bus reconnect on their own | Stops the same way, dropping only its own sockets (`.local`) |
 
 While `backend-2` is stopped or draining, `api-lb` sends everything to
 `backend`. A refused or timed-out connection, a 502 or a 503 moves a request to
@@ -136,6 +144,13 @@ off on the VM.
   - the agent auth refusal counter shown to admins;
   - Discord webhook pacing;
   - first-boot seed upserts.
+- **A hung Redis** (connected, not answering) costs each request through a
+  shared limiter up to 500 ms per limiter before it counts in memory. On the
+  agent poll route that is three limiters. The auth limiters always worked
+  this way.
+- **During an outage, the adapter's publishes queue in memory** until Redis is
+  back (node-redis's offline queue). With a local Redis that restarts by
+  itself, that is seconds.
 - **The F597 long-poll waiter map** is per process. Its 2.5 s pending-wake
   recheck keeps it correct across processes, just slower. An
   `agent-event-wake` bus channel follows once that change lands.

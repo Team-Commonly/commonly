@@ -14,9 +14,14 @@ import { onSharedRedisLost, sharedRedisLost } from './sharedRedisRequired';
 
 const ADAPTER_CONNECT_DEADLINE_MS = Number(process.env.REDIS_ADAPTER_CONNECT_DEADLINE_MS) || 15_000;
 
+interface LocalOps {
+  disconnectSockets: (close?: boolean) => void;
+}
+
 interface SocketIO {
   adapter: (adapter: unknown) => void;
-  disconnectSockets?: (close?: boolean) => void;
+  local?: LocalOps;
+  of?: (namespace: string) => { local?: LocalOps };
   [key: string]: unknown;
 }
 
@@ -32,9 +37,15 @@ let io: SocketIO | null = null;
 module.exports = {
   init: async (socketInstance: SocketIO): Promise<void> => {
     io = socketInstance;
-    // A process that loses shared Redis drops its sockets before it stops,
-    // so their clients reconnect to a process that is still whole.
-    onSharedRedisLost(() => socketInstance.disconnectSockets?.(true));
+    // A process that loses shared Redis drops its own sockets, browsers' and
+    // agents', before it stops, so their clients reconnect to a process that
+    // is still whole. `.local`: through the adapter this would be published,
+    // queued while Redis is down and, once delivered, drop every other
+    // process's sockets too.
+    onSharedRedisLost(() => {
+      socketInstance.local?.disconnectSockets(true);
+      socketInstance.of?.('/agents').local?.disconnectSockets(true);
+    });
 
     if (process.env.AGENT_PROVISIONER_K8S === '1' || process.env.REDIS_HOST) {
       let pubClient: RedisClient | null = null;

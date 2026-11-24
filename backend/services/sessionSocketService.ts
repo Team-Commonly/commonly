@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 import Pod from '../models/Pod';
+import { disconnectRoom, fetchRoomSockets, leaveRoom } from '../config/socketRooms';
 
-// Every browser socket joins this room after its handshake. The Redis adapter
-// forwards disconnectSockets to the other backend pods as well.
+// Every browser socket joins this room after its handshake. Each operation
+// below applies to this process's sockets at once and reaches the other
+// backend processes through the Redis adapter (config/socketRooms).
 export const sessionSocketRoom = (userId: string): string => `session_user_${userId}`;
 
 const POD_ROOM_PREFIX = 'pod_';
@@ -22,7 +24,7 @@ const getIOOrNull = () => {
 export const disconnectUserSessionSockets = (userId: string): void => {
   const io = getIOOrNull();
   if (!io) return;
-  io.in(sessionSocketRoom(userId)).disconnectSockets(true);
+  disconnectRoom(io, sessionSocketRoom(userId));
 };
 
 // A browser socket is let into a pod room once, at joinPod, by canViewPod.
@@ -37,8 +39,8 @@ export const leaveUnviewablePodRooms = async (userId: string): Promise<void> => 
   const io = getIOOrNull();
   if (!io) return;
   try {
-    const session = io.in(sessionSocketRoom(userId));
-    const sockets: Array<{ rooms: Set<string> }> = await session.fetchSockets();
+    const room = sessionSocketRoom(userId);
+    const sockets = await fetchRoomSockets(io, room);
     const podIds = new Set<string>();
     sockets.forEach(({ rooms }) => rooms.forEach((room) => {
       if (room.startsWith(POD_ROOM_PREFIX)) podIds.add(room.slice(POD_ROOM_PREFIX.length));
@@ -51,7 +53,7 @@ export const leaveUnviewablePodRooms = async (userId: string): Promise<void> => 
         ? await Pod.findById(podId).select('type members').lean()
         : null;
       if (pod && await DMService.canViewPod(userId, pod)) return;
-      session.socketsLeave(`${POD_ROOM_PREFIX}${podId}`);
+      leaveRoom(io, room, `${POD_ROOM_PREFIX}${podId}`);
     }));
   } catch (err) {
     console.warn('[session-socket] pod room re-check failed:', (err as Error).message);

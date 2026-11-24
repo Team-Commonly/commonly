@@ -46,6 +46,8 @@ export const socketAuthMiddleware = async (socket: any, next: (err?: Error) => v
     }
 
     socket.userId = userId;
+    // What a socket on another backend process exposes (fetchSockets).
+    socket.data = { ...(socket.data || {}), userId };
     return next();
   } catch (err: any) {
     console.error('Socket auth error:', err.message);
