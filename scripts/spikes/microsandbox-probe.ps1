@@ -138,8 +138,9 @@ mkdir -p /tmp/ws
 `$B --ro-bind / / --bind /tmp/ws /tmp/ws --dev /dev --proc /proc --unshare-all --die-with-parent sh -c 'echo inside bwrap: uid `$(id -u); touch /tmp/ws/ok && echo workspace write ok; touch /etc/nested 2>/dev/null && echo "etc write ALLOWED" || echo "etc write refused"; node -e "require(\"net\").connect(53,\"1.1.1.1\").on(\"connect\",()=>{console.log(\"net ALLOWED\");process.exit()}).on(\"error\",e=>console.log(\"net refused:\",e.code))"'
 echo "bwrap exit `$?"
 echo '== nesting: Codex running a command under its own sandbox'
-codex sandbox linux -- sh -c 'touch /etc/codex-nested 2>/dev/null && echo "etc write ALLOWED" || echo "etc write refused"; echo codex-sandbox ran' 2>&1 | tail -5
-echo "codex sandbox exit `$?"
+mkdir -p /tmp/cx && cd /tmp/cx
+codex sandbox -- sh -c 'touch /etc/codex-nested 2>/dev/null && echo "etc write ALLOWED" || echo "etc write refused"; touch ./ok 2>/dev/null && echo "cwd write ALLOWED" || echo "cwd write refused"; echo codex-sandbox ran' > /tmp/cx.out 2>&1
+echo "codex sandbox exit `$?"; tail -5 /tmp/cx.out; cd /
 export HOME=/root ANTHROPIC_BASE_URL=http://${H}:18100 ANTHROPIC_API_KEY=$($cfg.anthropicProxyToken)
 export CODEX_HOME=/root/.codex COMMONLY_PROXY_TOKEN=$($cfg.openaiProxyToken)
 echo '== vendor hosts (should be refused)'
