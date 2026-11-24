@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 export const SCOPE = ['backend/', 'cli/src/', 'frontend/src/', 'packages/', 'docs/'];
 // Vendored third-party skills are copied in as they are.
-const SKIP = /(^|\/)node_modules\/|^backend\/commonly-bundled-skills\/|\.(png|jpe?g|gif|svg|ico|woff2?|lock)$|package-lock\.json$/;
+const SKIP = /(^|\/)node_modules\/|\.(png|jpe?g|gif|svg|ico|woff2?|lock)$|package-lock\.json$/;
 
 // Not inside a word, a hex colour ("#D215") or a cell reference ("A1:D40",
 // "D$54").

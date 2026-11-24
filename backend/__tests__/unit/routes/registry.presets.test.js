@@ -56,8 +56,6 @@ describe('registry presets', () => {
     // hands agents commands that fail (F413, F418). The catalog skills come
     // from ClawHub, so their needs are written down here from each SKILL.md.
     // A skill missing from this map fails the test until someone classifies it.
-    const fs = require('fs');
-    const path = require('path');
     const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
     const CATALOG_NEEDS = {
       weather: ['shell'], // curl wttr.in / open-meteo
@@ -71,15 +69,7 @@ describe('registry presets', () => {
     // The gateway (openclaw) is retired and the native runtime (internal) has
     // no shell. A runtime earns a capability here only once it really has it.
     const RUNTIME_HAS = { openclaw: [], internal: [], webhook: [], 'claude-code': [] };
-    const bundledDir = path.join(__dirname, '../../../commonly-bundled-skills');
-    const needsOf = (id) => {
-      const skillFile = path.join(bundledDir, id, 'SKILL.md');
-      if (fs.existsSync(skillFile)) {
-        return /"bins":\s*\[\s*"/.test(fs.readFileSync(skillFile, 'utf8')) ? ['shell'] : [];
-      }
-      return CATALOG_NEEDS[id] || null;
-    };
-    expect(needsOf('officecli')).toEqual(['shell']);
+    const needsOf = (id) => CATALOG_NEEDS[id] || null;
     const problemsIn = (presets) => presets.flatMap((preset) => {
       const has = RUNTIME_HAS[preset.installHints?.runtime] || [];
       return (preset.defaultSkills || []).flatMap((skill) => {

@@ -18,8 +18,6 @@
     "**/__tests__/**",
     "**/*.test.ts",
     "**/*.spec.ts",
-    // Vendored/authored elsewhere — not this package's source.
-    "commonly-bundled-skills",
     "docs"
   ]
 }
