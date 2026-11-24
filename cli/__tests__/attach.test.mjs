@@ -719,6 +719,60 @@ describe('performAttach', () => {
     }
   });
 
+  // Opt-in microVM (COMMONLY_SANDBOX_MICROVM=1): a public seat with no declared
+  // mode resolves to it on win32. Claude attaches only with WHP on; every other
+  // adapter refuses before anything is published.
+  const attachMicrovm = async ({ adapterName, whp }) => {
+    const before = process.env.COMMONLY_SANDBOX_MICROVM;
+    process.env.COMMONLY_SANDBOX_MICROVM = '1';
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-attach-'));
+    try {
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1, workspace: { path: path.join(root, 'workspace') }, sandbox: { trust: 'public' },
+      }));
+      const client = makeClient();
+      const logs = [];
+      const error = await performAttach({
+        client, adapterName, agentName: `${adapterName}-mv`, podId: 'pod-private', envPath,
+        platform: 'win32',
+        log: (line) => logs.push(line),
+        seatbelt: () => noSeatbelt,
+        bwrap: () => noBwrap,
+        whp: () => whp,
+        adapterRegistry: {
+          getAdapter: () => ({ name: adapterName, detect: async () => ({ path: `/bin/${adapterName}`, version: '1.0.0' }) }),
+          listAdapterNames: () => [adapterName],
+        },
+      }).then(() => null, (e) => e);
+      return { error, client, logs };
+    } finally {
+      if (before === undefined) delete process.env.COMMONLY_SANDBOX_MICROVM;
+      else process.env.COMMONLY_SANDBOX_MICROVM = before;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  test('on win32 with the microVM flag, a public Claude seat attaches when WHP is on', async () => {
+    const { error, logs } = await attachMicrovm({ adapterName: 'claude', whp: { available: true } });
+    expect(error).toBeNull();
+    expect(logs).toContain('sandbox: microVM via microsandbox (network fenced to the model proxy and the MCP bridge)');
+  });
+
+  test('on win32 with the microVM flag, WHP off refuses with the command to turn it on', async () => {
+    const { error, client } = await attachMicrovm({
+      adapterName: 'claude', whp: { available: false, error: 'WinHvPlatform.dll is missing' },
+    });
+    expect(error.message).toContain('Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform');
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test.each(['opencode', 'qwen'])('on win32 with the microVM flag, %s refuses before publishing', async (adapterName) => {
+    const { error, client } = await attachMicrovm({ adapterName, whp: { available: true } });
+    expect(error.message).toMatch(/only the claude adapter/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
   // CTO review of #3501: a Codex env file naming workspace or read-only took
   // the Codex-profile branch, which checked only the Codex version, and the
   // agent was published before `agent run` refused it.

@@ -22,7 +22,7 @@ import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
   liveInUsePids, mcpHomeDir, newestInstalledVersion, packageDirFor, pinShippedSpec, planMcpSpawn,
-  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, selectedMcpWritesReadyFile,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, selectedMcpWithholdsTools, selectedMcpWritesReadyFile,
   versionDirFor, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { exactVersion } from '../src/lib/mcp-server-version.js';
@@ -411,6 +411,20 @@ describe('prepareMcpSpawn — the warm is kicked when it is due, and only then',
     writeFileSync(pkgPath, '{not json');
     expect(selectedMcpWritesReadyFile(['node', bin], home)).toBe(false);
     expect(selectedMcpWritesReadyFile(['npx', '-y', '@commonlyai/mcp@latest'], home)).toBe(false);
+  });
+
+  // The microVM bridge runs our server outside Claude's deny list: only a release
+  // that says it withholds tools itself (F468) may run there.
+  test('selectedMcpWithholdsTools reads its own marker, apart from readyFile', () => {
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.13');
+    const pkgPath = join(home, '0.3.13', 'node_modules', '@commonlyai/mcp', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    writeFileSync(pkgPath, JSON.stringify({ ...pkg, commonly: { readyFile: true } }));
+    expect(selectedMcpWithholdsTools(['node', bin], home)).toBe(false);
+    writeFileSync(pkgPath, JSON.stringify({ ...pkg, commonly: { readyFile: true, withheldTools: true } }));
+    expect(selectedMcpWithholdsTools(['node', bin], home)).toBe(true);
+    expect(selectedMcpWithholdsTools(['npx', '-y', '@commonlyai/mcp@latest'], home)).toBe(false);
   });
 
   test('a failed home read cannot return a cold package runner to a public seat', () => {

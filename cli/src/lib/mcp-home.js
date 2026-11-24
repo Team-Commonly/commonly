@@ -361,18 +361,27 @@ export const selectedMcpVersionDir = (command, home = mcpHomeDir()) => {
  * Anything this cannot read or verify answers false, which keeps the turn as it
  * was before F421.
  */
-export const selectedMcpWritesReadyFile = (command, home = mcpHomeDir(), { readFile = defaultRead } = {}) => {
+const selectedMcpDeclares = (key) => (command, home = mcpHomeDir(), { readFile = defaultRead } = {}) => {
   if (!selectedMcpVersionDir(command, home)) return false;
   const version = relative(home, command[1]).split(sep)[0];
   const raw = readFile(join(packageDirFor(home, version), 'package.json'));
   if (typeof raw !== 'string') return false;
   try {
     const pkg = JSON.parse(raw);
-    return pkg?.name === MCP_PACKAGE && pkg?.commonly?.readyFile === true;
+    return pkg?.name === MCP_PACKAGE && pkg?.commonly?.[key] === true;
   } catch {
     return false;
   }
 };
+export const selectedMcpWritesReadyFile = selectedMcpDeclares('readyFile');
+
+/**
+ * Whether the warm build this spawn runs withholds the tools named in
+ * COMMONLY_MCP_WITHHELD_TOOLS itself (F468), as its package.json declares
+ * (`commonly.withheldTools`). The microVM sandbox runs the server on the host,
+ * outside Claude's deny list, so it needs a build that enforces them.
+ */
+export const selectedMcpWithholdsTools = selectedMcpDeclares('withheldTools');
 
 /**
  * The bin of an npm PREFIX dir, which is the shape the warm installs into:

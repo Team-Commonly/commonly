@@ -95,6 +95,10 @@ import { closeHeldPaths, openHeldPath } from '../sandbox/bind-fd.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
+  GUEST_CLAUDE, GUEST_HOME, GUEST_MCP_CONFIG, buildMicrovmRunArgs, checkMicrovmAttach, guestClaudeEnv,
+  microvmSeatHome, msbHostEnv, prepareMicrovmHost, probeWhp, startMicrovmTurn, writeMicrovmTurn,
+} from '../sandbox/microsandbox.js';
+import {
   HOST_READ_DOT_ALLOW,
   publicClaudeStateRoot,
   resolveHostReadDirectories,
@@ -109,6 +113,7 @@ import { workspaceGitAttachment, workspaceGitEnabled } from '../workspace-git.js
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
+  selectedMcpWithholdsTools,
 } from '../mcp-home.js';
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
@@ -662,6 +667,17 @@ const permissionPath = (path, platform) => (platform === 'win32'
 
 // The tools that read or write the seat's agent-wide memory.
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
+
+// The Commonly tools a confined seat's policy denies, by name, for an MCP
+// server that must withhold them itself: the microVM bridge runs it on the
+// host, outside Claude's deny list. The same sets buildPublicClaudePolicyArgs
+// denies below.
+const confinedWithheldTools = ({ trust, ownerWoken = false, memoryWithheld = false }) => [...new Set([
+  ...(trust === 'workspace'
+    ? ['commonly_self_install_into_pod', ...PUBLIC_WITHHELD_TOOLS]
+    : publicSeatWithheldTools({ ownerWoken })),
+  ...(memoryWithheld ? MEMORY_TOOLS : []),
+])];
 
 export const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   trust, allow = [], memoryWithheld = false, ownerWoken = false, platform = process.platform, home: homeOverride = null,
@@ -1305,6 +1321,21 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
       ctx.unavailableMcp?.push(server.name);
       continue;
     }
+    // The microVM bridge runs these servers on the host, outside the VM and
+    // outside Claude's deny list. Only our own server, from a verified warm
+    // build that withholds the seat's tools itself, may run there.
+    if (ctx.microvmBridge) {
+      const ours = Boolean(spawnCommand)
+        && (isShippedCommonlyMcpCommand(server.command) || Boolean(describeMcpCommand(spawnCommand)?.isCommonly));
+      if (!ours) {
+        throw new Error(`The microVM sandbox runs only the Commonly MCP server, on this computer, and ${server.name} `
+          + 'is another server: it would run outside the VM. Remove it to run this seat in the microVM.');
+      }
+      if (!(ctx._withholdsTools || selectedMcpWithholdsTools)(spawnCommand)) {
+        throw new Error(`The Commonly MCP build this seat would run for ${server.name} does not withhold a confined `
+          + "seat's tools itself, which the microVM sandbox needs; update @commonlyai/mcp.");
+      }
+    }
     const executed = spawnCommand ? { ...server, command: spawnCommand } : server;
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
@@ -1612,6 +1643,43 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...(ctx.publicSkillArgs || []),
     ];
     return { cmd: 'claude', args: innerArgv, env: claudeEnv };
+  }
+  // Native Windows, opt-in (sandbox/microsandbox.js): Claude runs inside a
+  // microVM, so the argv is the guest's, carried in the turn folder, and the
+  // host runs msb. Resolved but unprepared refuses: never a bare spawn.
+  if (isConfinedTrust(sandboxTrust)
+    && resolvePublicSandboxMode(env.sandbox, ctx._platform || process.platform) === 'microvm') {
+    if (!ctx.microvm?.turnDir) {
+      throw new Error(`${sandboxTrust} Claude agents in the microVM sandbox need a prepared microVM; refusing to run Claude outside it`);
+    }
+    const { microvm } = ctx;
+    await writeMicrovmTurn(microvm.turnDir, {
+      argv: [
+        GUEST_CLAUDE,
+        ...innerArgv,
+        // The VM is the jail, so the guest keeps the bwrap seat's policy.
+        ...buildPublicClaudePolicyArgs(allowedPatterns, {
+          ...(sandboxTrust === 'workspace' ? { trust: sandboxTrust, allow: grants } : {}),
+          memoryWithheld: ctx.memoryWithheld === true,
+          ownerWoken: ctx.ownerWoken,
+          platform: 'linux',
+          home: GUEST_HOME,
+        }),
+        ...(ctx.publicSkillArgs || []),
+      ],
+      env: microvm.guestEnv,
+      mcpConfig: microvm.mcpConfig,
+    });
+    return {
+      cmd: microvm.msb,
+      args: buildMicrovmRunArgs({
+        ports: microvm.ports,
+        turnDir: microvm.turnDir,
+        workspace: ctx.workspaceRealpath || ctx.cwd,
+        home: microvm.home,
+      }),
+      env: msbHostEnv(ctx.env || process.env),
+    };
   }
   // A public trust MUST resolve to an enforced mode. Absent mode is resolved
   // above; anything else that lands here (the literal 'none', a typo, a
@@ -2004,12 +2072,15 @@ export default {
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    const microvmSandbox = jailed && isConfinedTrust(ctx.environment?.sandbox?.trust)
+      && resolvePublicSandboxMode(ctx.environment?.sandbox, ctx._platform || process.platform) === 'microvm';
+    let microvm = null;
     // F200: a jailed workspace seat's folder must still resolve where it did
     // on the seat's first turn, or a link the seat left in its place would
     // carry this turn's grant elsewhere. The record sits beside the seat's
     // state folder, the one bwrapClaudeStatePath names for both jails.
     const heldWorkspace = ctx.environment?.sandbox?.trust === 'workspace' && Boolean(ctx.cwd)
-      && (publicNativeSandbox || workspaceBwrapSandbox);
+      && (publicNativeSandbox || workspaceBwrapSandbox || microvmSandbox);
     const workspacePinDirs = heldWorkspace ? [workspacePinDir(bwrapClaudeStatePath(ctx))] : [];
     let workspaceRealpath = null;
     // The proxy's address and per-turn token, never the host's key.
@@ -2034,7 +2105,46 @@ export default {
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
       // (#2247).
-      if (publicNativeSandbox) {
+      if (microvmSandbox) {
+        // Checked again at spawn, whatever attach saw: off Windows, without the
+        // flag or without WHP this refuses, and nothing falls through.
+        checkMicrovmAttach({
+          adapterName: 'claude', platform: ctx._platform || process.platform, probe: ctx._probeWhp || probeWhp,
+        });
+        for (const key of ['read-outside', 'write-outside']) {
+          if (ctx.environment?.sandbox?.filesystem?.[key]?.length) {
+            throw new Error(`Claude agents in the microVM sandbox do not allow sandbox.filesystem.${key}`);
+          }
+        }
+        // The workspace mounts read-only (its .git must never be the guest's to
+        // write), and the fence has no route to the web, so no grant applies yet.
+        if (workspaceGrants(ctx.environment?.sandbox).length) {
+          throw new Error('Claude agents in the microVM sandbox run read-only, with no web access, for now; '
+            + 'remove sandbox.allow to run this seat in it.');
+        }
+        // The guest reaches the model only through the host proxy: the fence
+        // opens its port and nothing else, so there is no login to carry.
+        const source = ctx.env || process.env;
+        if (!source.ANTHROPIC_API_KEY) {
+          throw new Error('Claude agents in the microVM sandbox need ANTHROPIC_API_KEY in the agent\'s environment; '
+            + 'the key stays on this computer and the VM gets a per-turn proxy token.');
+        }
+        const host = await (ctx._prepareMicrovmHost || prepareMicrovmHost)({
+          // eslint-disable-next-line no-console
+          log: (text) => console.warn(`[claude] ${text}`),
+        });
+        providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+          provider: { baseURL: source.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' },
+          keyMaterial: source.ANTHROPIC_API_KEY,
+          wire: 'anthropic-messages',
+          adapterLabel: 'Claude',
+        });
+        microvm = {
+          msb: host.msb,
+          home: ctx._microvmHome || microvmSeatHome(ctx.agentName || ctx.cwd, ctx.environment?.sandbox?.trust),
+        };
+        await mkdir(microvm.home, { recursive: true, mode: 0o700 });
+      } else if (publicNativeSandbox) {
         // F151: Seatbelt strips the environment to the safe list, so a seat
         // configured with an API key used to start with neither key nor login
         // ("Not logged in"). The key stays on the host behind a per-turn
@@ -2128,7 +2238,10 @@ export default {
         if (ctx.environment?.sandbox?.trust === 'public' && publicClaudeState?.statePath) {
           readyFileDir = join(publicClaudeState.statePath, 'mcp-ready');
           await mkdir(readyFileDir, { recursive: true, mode: 0o700 });
-        } else if (ctx.environment?.sandbox?.trust === 'public') {
+        } else if (ctx.environment?.sandbox?.trust === 'public' && !microvm) {
+          // (A microVM seat names no ready-file folder: its servers start only
+          // once the VM has booted, so the credential stays on the host for the
+          // turn and goes with the config folder.)
           // A policy-only host prepares no state folder and runs the MCP
           // children unjailed, so a folder of this turn's own serves.
           ownReadyDir = await mkdtemp(join(tmpdir(), 'commonly-claude-ready-'));
@@ -2136,6 +2249,8 @@ export default {
           readyFileDir = ownReadyDir;
         }
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
+          microvmBridge: Boolean(microvm),
+          _withholdsTools: ctx._mcpWithholdsTools,
           readyFileDir,
           readyFiles,
           runtimeToken: ctx.runtimeToken,
@@ -2166,9 +2281,28 @@ export default {
       if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
+      if (microvm) {
+        // The MCP servers stay on this computer behind the bridge, started
+        // with the env Claude would have given them; the guest gets shims.
+        Object.assign(microvm, await (ctx._startMicrovmTurn || startMicrovmTurn)({
+          proxyPort: proxyPort(providerProxy),
+          hostMcpConfig: mcpConfig?.file ? JSON.parse(await readFile(mcpConfig.file, 'utf8')) : null,
+          vars: claudeEnv,
+          baseEnv: claudeEnv,
+          cwd: workspaceRealpath || ctx.cwd,
+          serverEnv: {
+            COMMONLY_MCP_WITHHELD_TOOLS: confinedWithheldTools({
+              trust: ctx.environment?.sandbox?.trust,
+              ownerWoken: ctx.ownerWoken,
+              memoryWithheld: ctx.memoryWithheld === true,
+            }).join(','),
+          },
+        }), { guestEnv: guestClaudeEnv({ proxyBaseUrl: providerProxy.baseURL, proxyToken: providerProxy.token }) });
+      }
       const spawnCtx = {
         ...ctx,
-        mcpConfigPath: mcpConfig?.file || null,
+        microvm,
+        mcpConfigPath: microvm ? GUEST_MCP_CONFIG : (mcpConfig?.file || null),
         mcpConfigDir: mcpConfig?.dir || null,
         mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
         publicClaudeState,
@@ -2246,7 +2380,8 @@ export default {
         ...STREAM_ARGS, '--session-id', freshId, ...modelArgs];
         const retryCtx = {
           ...ctx,
-          mcpConfigPath: mcpConfig?.file || null,
+          microvm,
+          mcpConfigPath: microvm ? GUEST_MCP_CONFIG : (mcpConfig?.file || null),
           mcpConfigDir: mcpConfig?.dir || null,
           mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
@@ -2333,6 +2468,7 @@ export default {
         try { await rm(mcpConfig.dir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
       try { await providerProxy?.close(); } catch { /* ignore */ }
+      try { await microvm?.close?.(); } catch { /* ignore */ }
       // A public seat's login copy lives for its turns (F96): the last live
       // turn of the agent to finish removes it.
       if (publicBwrapSandbox && !workspaceBwrapSandbox && publicClaudeState?.loginPath) {

@@ -22,6 +22,7 @@ import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap, detectBwrapLoopback as defaultDetectBwrapLoopback } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 import { codexTrustedPerimeter } from './codex-perimeter.js';
+import { checkMicrovmAttach, probeWhp } from './microsandbox.js';
 import { CLI } from '../cli-hint.js';
 
 // The Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
@@ -227,6 +228,7 @@ export const hostSandboxRefusal = ({
   detectSeatbelt = defaultDetectSeatbelt,
   // F387: a cloud-codex pod declares itself here (codex-perimeter.js).
   env = process.env,
+  detectWhp = probeWhp,
 } = {}) => {
   if (adapterName === 'codex') {
     // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of its
@@ -263,12 +265,26 @@ export const hostSandboxRefusal = ({
     if (hostUnconfined === true) return null;
     return optedIn === true ? CODEX_WINDOWS_PUBLIC_MESSAGE : CODEX_WINDOWS_MESSAGE;
   }
-  if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   if (!sandbox || typeof sandbox !== 'object') return null;
   // Every host-confined trust (public, and workspace since TASK-294) derives its
   // mode here; any other trust gets back only the mode it declared.
-  const mode = sandbox.mode ?? resolvePublicSandboxMode(sandbox, platform);
+  const mode = sandbox.mode ?? resolvePublicSandboxMode(sandbox, platform, env);
+  // Native Windows, opt-in: the microVM, for claude only and only with WHP on.
+  // Checked for every adapter, labelled or not, so none runs a seat that
+  // resolved to it. The person's own --unsandboxed still runs a claude seat.
+  if (mode === 'microvm') {
+    if (hostUnconfined === true && adapterName === 'claude' && platform === 'win32') return null;
+    try {
+      checkMicrovmAttach({
+        adapterName, platform, env, probe: detectWhp,
+      });
+    } catch (error) {
+      return error.message;
+    }
+    return null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   if (mode !== 'bwrap' && !SEATBELT_MODES.has(mode)) return null;
 
   if (platform === 'win32') {

@@ -118,6 +118,7 @@ import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
+import { checkMicrovmAttach, probeWhp as defaultProbeWhp } from '../lib/sandbox/microsandbox.js';
 import {
   CODEX_OPTED_IN_PUBLIC_POD_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
 } from '../lib/sandbox/host-check.js';
@@ -1544,6 +1545,7 @@ export const performAttach = async ({
   adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
   bwrap: probeBwrap = detectBwrap,
+  whp: probeWhp = defaultProbeWhp,
   platform = process.platform,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
@@ -1662,6 +1664,11 @@ export const performAttach = async ({
           : `sandbox: public ${sandboxMode} via macOS Seatbelt `
             + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`);
       }
+    } else if (sandboxMode === 'microvm') {
+      // Host-resolved on native Windows with COMMONLY_SANDBOX_MICROVM=1, never
+      // stored: claude only, and only where WHP is on.
+      checkMicrovmAttach({ adapterName, platform, probe: probeWhp });
+      log('sandbox: microVM via microsandbox (network fenced to the model proxy and the MCP bridge)');
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `

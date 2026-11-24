@@ -28,22 +28,32 @@
  * host mechanism — its permission profiles run on both platforms — so its
  * derived default is 'workspace' everywhere.
  *
+ * Native Windows, opt-in: with COMMONLY_SANDBOX_MICROVM=1 in the host process,
+ * an undeclared mode on win32 resolves to 'microvm' (a microsandbox microVM,
+ * sandbox/microsandbox.js). This is the only place that reads the flag. Without
+ * it win32 resolves exactly as before, to 'bwrap', which attach then refuses.
+ * 'microvm' is host-resolved and never stored: environment.js does not accept it
+ * as a declared mode.
+ *
  * A `workspace` trust (TASK-294) resolves the same way: it is confined by the
  * same host mechanism and differs only in what the policy inside allows. The
  * grant-broker guard still reads the trust itself, not this mode, so resolving
  * it here does not make a workspace seat eligible for a room grant.
  */
 import { effectiveSandboxTrust } from '../environment.js';
+import { microvmFlagOn } from './microsandbox.js';
 
 export const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 
 const HOST_CONFINED_TRUSTS = new Set(['public', 'workspace']);
 
-export const resolvePublicSandboxMode = (sandbox, platform = process.platform) => {
+export const resolvePublicSandboxMode = (sandbox, platform = process.platform, env = process.env) => {
   const declared = sandbox?.mode;
   if (!HOST_CONFINED_TRUSTS.has(effectiveSandboxTrust(sandbox?.trust))) return declared;
   if (declared !== undefined && declared !== null) return declared;
-  return platform === 'darwin' ? 'workspace' : 'bwrap';
+  if (platform === 'darwin') return 'workspace';
+  if (platform === 'win32' && microvmFlagOn(env)) return 'microvm';
+  return 'bwrap';
 };
 
 export default { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode };

@@ -1,0 +1,55 @@
+name: CLI microVM sandbox (Windows)
+
+# The opt-in microVM sandbox for native Windows (cli/src/lib/sandbox/microsandbox.js,
+# docs/cli/microvm-sandbox.md). Its unit tests run on a Windows host, then a
+# smoke boots a real microVM through the CLI's own code on the runner's WHP and
+# checks the fence from inside it: the model proxy port is reachable, another
+# loopback service and the public internet are not, MCP crosses only through
+# the bridge, and the workspace is read-only. No secrets: every token is fake.
+# msb is downloaded by the code under test, pinned and SHA-256 checked there.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/sandbox/microsandbox.js'
+      - 'cli/src/lib/sandbox/microsandbox-mcp-bridge.js'
+      - 'cli/src/lib/sandbox/mode.js'
+      - 'cli/src/lib/sandbox/host-check.js'
+      - 'cli/src/lib/adapters/claude.js'
+      - 'cli/scripts/windows-microvm-smoke.mjs'
+      - 'cli/__tests__/sandbox.microsandbox*.test.mjs'
+      - 'cli/__tests__/sandbox.microvm-mode.test.mjs'
+      - 'cli/package-lock.json'
+      - '.github/workflows/cli-microsandbox-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  microvm:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci --prefix cli
+      - name: Unit tests on Windows
+        working-directory: cli
+        run: >-
+          node --experimental-vm-modules node_modules/jest/bin/jest.js
+          __tests__/sandbox.microsandbox.test.mjs
+          __tests__/sandbox.microsandbox-mcp-bridge.test.mjs
+          __tests__/sandbox.microvm-mode.test.mjs
+          --runInBand
+      - name: Boot a fenced microVM and probe it from inside
+        if: ${{ !cancelled() }}
+        working-directory: cli
+        timeout-minutes: 20
+        run: node scripts/windows-microvm-smoke.mjs
