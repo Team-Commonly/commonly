@@ -86,14 +86,25 @@ $t = Measure-Command { & $msb run node -- node -e "console.log('node', process.v
 "node run: $([int]$t.TotalMilliseconds) ms"
 & $msb rm --force cm-turn-1 2>&1 | Select-Object -First 3
 
-Section 'agents: Claude Code 2.1.331 and Codex 0.172.0 inside, proxy as the only way out'
-$fence = @('--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443,allow@host:tcp:18100,allow@host:tcp:18101')
-"fence: $($fence -join ' ')  (msb modify cannot change the network, so the sandbox starts with its final fence)"
-$t = Measure-Command {
-  & $msb create --name cm-agents --cpus 2 --memory 2G @fence node 2>&1 | Out-Host
-  GuestSh 'cm-agents' 'npm i -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -3; claude --version; codex --version'
+Section 'create: why "Access is denied"'
+$env:RUST_LOG = 'debug'
+& $msb create --name cm-dbg --no-net python 2>&1 | Select-Object -Last 25
+Remove-Item Env:RUST_LOG
+& $msb inspect cm-dbg 2>&1 | Select-String -Pattern 'net|rule|default|egress|status' | Select-Object -First 25
+& $msb rm --force cm-dbg 2>&1 | Select-Object -First 2
+
+Section 'fence: rules alone vs rules on --no-net, via msb run'
+$vendor = "fetch('https://api.anthropic.com/v1/models').then(r=>console.log('anthropic status',r.status)).catch(e=>console.log('anthropic refused:',e.cause?.code||e.message));fetch('https://registry.npmjs.org/-/ping').then(r=>console.log('registry status',r.status)).catch(e=>console.log('registry refused:',e.cause?.code||e.message))"
+foreach ($flags in @(
+    @('--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443'),
+    @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443'))) {
+  "-- [$($flags -join ' ')]"
+  & $msb run @flags node -- node -e $vendor
 }
-"install: $([int]$t.TotalSeconds) s"
+
+Section 'agents: Claude Code 2.1.331 and Codex 0.172.0 inside, proxy as the only way out'
+$fence = @('--no-net', '--net-rule', 'allow@dns,allow@registry.npmjs.org:tcp:443,allow@host:tcp:18100,allow@host:tcp:18101')
+"fence: $($fence -join ' ')  (one msb run: install, then the agents, under the same fence)"
 $codexCfg = @"
 model = "spike-model"
 model_provider = "commonly"
@@ -104,6 +115,9 @@ env_key = "COMMONLY_PROXY_TOKEN"
 wire_api = "responses"
 "@
 $agentScript = @"
+echo '== install'
+npm i -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.331 @openai/codex@0.172.0 2>&1 | tail -15
+claude --version; codex --version
 export HOME=/root ANTHROPIC_BASE_URL=http://${H}:18100 ANTHROPIC_API_KEY=$($cfg.anthropicProxyToken)
 export CODEX_HOME=/root/.codex COMMONLY_PROXY_TOKEN=$($cfg.openaiProxyToken)
 echo '== vendor hosts (should be refused)'
@@ -119,7 +133,7 @@ timeout 120 codex exec --skip-git-repo-check 'reply with OK'; echo "codex exit `
 echo '-- codex with its own sandbox off'
 timeout 120 codex exec --skip-git-repo-check --sandbox danger-full-access 'reply with OK'; echo "codex(off) exit `$?"
 "@
-GuestSh 'cm-agents' $agentScript
+$t = Measure-Command { & $msb run --cpus 2 --memory 2G @fence node -- sh -c "echo $(B64 $agentScript) | base64 -d | sh" | Out-Host }
+"agents run: $([int]$t.TotalSeconds) s (exit $LASTEXITCODE)"
 'front request log (after agents):'
 Get-Content "$front\requests.log" | Select-Object -Last 20
-& $msb rm --force cm-agents 2>&1 | Select-Object -First 3
