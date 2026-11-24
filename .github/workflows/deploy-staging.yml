@@ -1,22 +1,17 @@
 name: Deploy Staging
 
-# Second Helm release of the chart into namespace commonly-staging, on the SAME
-# GKE cluster as prod (commonly-dev). The reckless, fast lane: every merge to
-# main — on push, or via workflow_dispatch pinned to main — builds and deploys to
-# staging, runs the stranger + Tier-1 smokes, and records a `staging-smoke` commit
-# status that the prod promote path (deploy-dev.yml) gates on. A workflow_dispatch
-# from any OTHER ref fails WIF auth (the binding trusts only refs/heads/main), so
-# you cannot deploy a non-main SHA from a side branch — see
-# docs/deployment/GITHUB_DEPLOY_SETUP.md.
+# Staging is a second Compose project on the prod VM, stopped by default
+# (docs/deployment/vm-staging.md). The reckless, fast lane: every merge to main —
+# on push, or via workflow_dispatch pinned to main — builds the images, starts
+# staging at this SHA, runs the Tier-1 and stranger smokes against it, records the
+# `staging-smoke` commit status that Build VM Images gates prod on, and stops
+# staging again. A workflow_dispatch from any OTHER ref fails WIF auth (the
+# binding trusts only refs/heads/main), and the VM side refuses a SHA that is not
+# on main.
 #
-# Modelled on deploy-dev.yml: same WIF auth, same secret names, same private
-# values overlay pattern. Differences: namespace/release commonly-staging, a
-# staging-only private-values secret, a single staging frontend variant per SHA
-# (the shared prod tag is NOT pushed from staging — see the build step), and a
-# force_bad_tag rollback-rehearsal input.
-#
-# DRAFT until the Thursday-night staging install lands — unmerged, this workflow
-# never runs. It goes live once commonly-staging exists (secrets, WI, DBs, tunnel).
+# The runner reaches the VM over an IAP tunnel and logs in as a user whose key
+# can run exactly one root script (deploy/vm/staging/ci-entry.sh): up <sha>,
+# journey, down, status. It cannot run anything else on the VM.
 
 on:
   workflow_dispatch:
@@ -25,11 +20,6 @@ on:
         description: 'Git ref / SHA to build + deploy to staging (defaults to the triggering ref)'
         required: false
         default: ''
-      force_bad_tag:
-        description: 'REHEARSAL: deploy a nonexistent backend image tag so the rollout fails and the rollback step fires (staging only)'
-        type: boolean
-        required: false
-        default: false
   push:
     branches: [ main ]
 
@@ -40,30 +30,22 @@ permissions:
 
 concurrency:
   group: deploy-staging
-  # cancel-in-progress: false so a deploy always runs its verify-or-rollback to completion.
-  # With auto-deploy on every merge, a newer push used to cancel an in-flight staging deploy
-  # mid-rollout — and a cancelled run skips the rollback step (cancellation does not satisfy
-  # failure()), leaving an unverified image at helm status=deployed that the next rollback would
-  # wrongly treat as good. Newer pushes now QUEUE behind the in-flight deploy. (PR test
-  # workflows still cancel in-progress; this is the deploy lane only.)
+  # One staging on one VM: a newer push QUEUES behind the in-flight run, so a run is
+  # never cut off between `up` and its `down`.
   cancel-in-progress: false
 
 env:
   REGION: us-central1
   AR_REPO: docker
-  CLUSTER: commonly-dev        # same cluster; staging is a second release in its own namespace
-  NAMESPACE: commonly-staging
-  RELEASE: commonly-staging
 
 jobs:
   deploy:
-    name: Build + push + helm upgrade (staging)
+    name: Build + push + staging smoke on the VM
     runs-on: ubuntu-latest
     environment: staging
-    # 45, not 30: rollout verification can wait its full 8m per stuck workload and the
-    # rollback step needs its own window after; 30m risks GitHub cancelling mid-rollback
-    # (cancellation does not satisfy failure(), so rollback would not re-run).
-    timeout-minutes: 45
+    # Builds ~10m, up <= 20m (staging.sh bounds pull 5m + compose up 10m + ready
+    # 2.5m), Tier-1 <= 15m, journey <= 16m, down <= 5m.
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
@@ -93,21 +75,6 @@ jobs:
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
-
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.0
-
-      - name: Materialize staging private values overlay (runner-only)
-        # STAGING_HELM_VALUES_PRIVATE holds staging's project ID / Aiven + Atlas
-        # hosts / ESO WI SA email — never committed (R12). Set before the
-        # Thursday-night install. Auto-cleaned on runner teardown.
-        run: |
-          printf '%s\n' "${STAGING_HELM_VALUES_PRIVATE}" > "$RUNNER_TEMP/values-private.yaml"
-          echo "Wrote $(wc -l < "$RUNNER_TEMP/values-private.yaml") lines to the staging overlay"
-        env:
-          STAGING_HELM_VALUES_PRIVATE: ${{ secrets.STAGING_HELM_VALUES_PRIVATE }}
 
       # One frontend image per SHA: frontend:<sha8>-staging
       # (REACT_APP_API_URL=api-staging.commonly.me) — what commonly-staging runs.
@@ -155,139 +122,49 @@ jobs:
             -t "$REPO:$TAG-staging"
           docker push "$REPO:$TAG-staging"
 
-      - name: Get GKE credentials
-        uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: ${{ env.CLUSTER }}
-          location: ${{ env.REGION }}
-
-      # Record the revision Helm currently has as `deployed` (last known-good) BEFORE the
-      # upgrade, so the rollback step returns to exactly this revision instead of inferring
-      # one by arithmetic. 0 == no prior deploy (first install).
-      - name: Record the current good revision (for rollback)
-        id: prerev
-        run: |
-          set -uo pipefail
-          HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
-          PRE=$(printf '%s' "$HIST" | jq -r '[.[] | select(.status=="deployed")] | (sort_by(.revision) | last | .revision) // 0')
-          echo "prerev=$PRE" >> "$GITHUB_OUTPUT"
-          echo "Pre-upgrade good (deployed) revision: $PRE"
-
-      # --create-namespace: commonly-staging does not exist before the first
-      # install. NOTE: values-staging.yaml should set createNamespace:false
-      # (as values-local.yaml does) so the chart does not ALSO declare the
-      # Namespace and collide with the one helm creates here. Tracked against
-      # the staging chart PR.
-      - name: Helm upgrade commonly-staging
-        id: helm
+      # IAP tunnel to the VM's sshd; the VM has no external address.
+      - name: Open the tunnel to the VM
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          FORCE_BAD: ${{ inputs.force_bad_tag }}
+          VM: ${{ vars.STAGING_VM_INSTANCE }}
+          ZONE: ${{ vars.STAGING_VM_ZONE }}
+          SSH_KEY: ${{ secrets.STAGING_VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_VM_KNOWN_HOSTS }}
         run: |
-          # Rollback rehearsal (force_bad_tag): point the backend image at a tag that does not
-          # exist, so the pod never pulls, the rollout verify below fails, and the rollback step
-          # at the end of the job fires. Staging only; a normal run leaves BTAG = the real tag.
-          BTAG="$TAG"
-          if [ "$FORCE_BAD" = "true" ]; then
-            BTAG="rollback-rehearsal-nonexistent"
-            echo "::warning title=Rollback rehearsal::forcing a nonexistent backend image tag ($BTAG) to exercise the rollback step"
-          fi
-          helm upgrade --install "$RELEASE" k8s/helm/commonly -n "$NAMESPACE" --create-namespace \
-            -f k8s/helm/commonly/values.yaml \
-            -f k8s/helm/commonly/values-staging.yaml \
-            -f "$RUNNER_TEMP/values-private.yaml" \
-            --set backend.image.tag="$BTAG" \
-            --set frontend.image.tag="$TAG-staging" \
-            --set agents.commonlyBot.image.tag="$TAG" \
-            --timeout 10m \
-            --burst-limit 200 \
-            --qps 100
-
-      # Deployment LOOKUP in its own step before the rollout check, NOT in the rollback
-      # gate (see deploy-dev.yml): a transient `kubectl get deploy` failure after a good
-      # upgrade must fail the job for a human, not be read as a stuck rollout that demotes
-      # a healthy staging release. Retry rides out a blip.
-      - name: List the workloads to verify (lookup, not a rollout check)
-        id: deploylist
-        run: |
-          set -uo pipefail
-          MANAGED=" backend backend-worker frontend commonly-bot "
-          ALL=""
-          for attempt in 1 2 3; do
-            if ALL=$(kubectl get deploy -n "$NAMESPACE" -o name) && [ -n "$ALL" ]; then break; fi
-            echo "deploy lookup attempt $attempt returned nothing/failed; retrying in 5s"; ALL=""; sleep 5
+          set -euo pipefail
+          for v in VM ZONE SSH_KEY KNOWN_HOSTS; do
+            [ -n "${!v:-}" ] || { echo "::error title=staging VM::$v is not set (vars STAGING_VM_INSTANCE/ZONE, secrets STAGING_VM_SSH_KEY/KNOWN_HOSTS)"; exit 1; }
           done
-          if [ -z "$ALL" ]; then
-            echo "::error title=Deploy lookup failed::could not list deployments in $NAMESPACE after retries — cluster/API unreachable. NOT a rollout failure (no rollback)."
-            exit 1
-          fi
-          TARGETS=""
-          for d in $ALL; do
-            n=${d##*/}
-            case "$MANAGED" in *" $n "*) TARGETS="$TARGETS $d" ;; esac
+          umask 077
+          mkdir -p "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          nohup gcloud compute start-iap-tunnel "$VM" 22 --zone "$ZONE" --project "$PROJECT_ID" \
+            --local-host-port=localhost:2222 > "$RUNNER_TEMP/ssh/tunnel.log" 2>&1 &
+          # A listening port only proves gcloud is up; ssh-keyscan proves IAP let us through to sshd.
+          for _ in $(seq 1 30); do
+            if ssh-keyscan -T 5 -p 2222 -t ed25519 localhost 2>/dev/null | grep -q ssh-ed25519; then echo "tunnel open"; exit 0; fi
+            sleep 2
           done
-          if [ -z "$TARGETS" ]; then
-            echo "::error title=No managed workloads::none of the image-tagged workloads present in $NAMESPACE (cluster reachable); not auto-rolling back."
-            exit 1
-          fi
-          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
-          echo "will verify:$TARGETS"
+          echo "::error title=staging VM::the IAP tunnel did not open"; cat "$RUNNER_TEMP/ssh/tunnel.log"; exit 1
 
-      - name: Verify rollout of the deployed workloads
-        id: rollout
+      - name: Start staging at this SHA
+        id: up
         env:
-          TARGETS: ${{ steps.deploylist.outputs.targets }}
+          SHA: ${{ steps.tag.outputs.sha }}
         run: |
-          set -uo pipefail
-          # Short-circuit on the first stuck workload (see deploy-dev.yml): a bad tag fails
-          # all managed workloads, and waiting 8m x N could exceed the 45m job cap before
-          # rollback. One failure = the deploy is bad; stop and let failure() rollback run.
-          # The force_bad_tag rehearsal hits this on the first workload. Only THIS step's
-          # failure is eligible for rollback.
-          for d in $TARGETS; do
-            echo "::group::rollout status $d"
-            if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
-              echo "$d: rolled out"; echo "::endgroup::"
-            else
-              echo "::endgroup::"
-              echo "::error title=Rollout failed::$d did not become ready within 8m — stopping; rollback will run"
-              exit 1
-            fi
-          done
-          echo "Deployed workloads live:$TARGETS"
-
-      # Record THIS release as rollout-verified, so the rollback step below returns to a
-      # revision that actually passed the rollout gate — never merely "last deployed". With
-      # auto-deploy, a deploy cancelled mid-rollout by a newer push leaves an unverified image
-      # at helm status=deployed, and prerev (last deployed) would pick it as the rollback
-      # target. This ConfigMap is written ONLY after the rollout gate passed (if: success() =>
-      # no earlier step failed), so it always names a revision whose managed workloads became
-      # ready. The Tier-1 smoke runs after this and gates PROD promotion, not staging's own
-      # rollback — so rollout-verified is the right bar for the staging rollback target.
-      - name: Record this release as rollout-verified (rollback target)
-        if: success()
-        run: |
-          set -uo pipefail
-          CURREV=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
-          if [ "${CURREV:-0}" = "0" ]; then
-            echo "::warning title=No revision to record::helm reports no current revision for $RELEASE; leaving the verified pointer unchanged."
-            exit 0
-          fi
-          if kubectl create configmap deploy-verified-revision -n "$NAMESPACE" \
-               --from-literal=revision="$CURREV" \
-               --dry-run=client -o yaml | kubectl apply -f -; then
-            echo "Recorded rollout-verified revision $CURREV for $RELEASE rollback."
-          else
-            echo "::warning title=Record failed::could not write the verified-revision ConfigMap ($CURREV) for $RELEASE; the next rollback will fall back to last-deployed. Check the deploy service account's configmap RBAC."
-          fi
+          set -euo pipefail
+          timeout 20m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o BatchMode=yes \
+            staging-ci@localhost "up $SHA"
 
       # Tier-1 UI smoke (Playwright): health/ready, seeded non-admin login, /v2 home + a pod +
       # /v2/connectors + Bring-your-own render with no console errors, left rail no horizontal
-      # scroll at 1440 & 390px. It FAILS THE JOB on red, so the staging-smoke commit status step
-      # below (which requires JOB_STATUS=success) posts failure and the prod promote path is
-      # blocked. Richer than the stranger reachability probe; it caught the FRONTEND_URL/CORS
-      # regression on 2026-10-23. Skips the hosted-agent check until staging has an LLM key.
+      # scroll at 1440 & 390px. Its outcome is half of the staging-smoke status posted below, so
+      # a red run blocks the prod roll. It caught the FRONTEND_URL/CORS regression on 2026-10-23.
       - name: Tier-1 UI smoke (Playwright)
+        id: tier1
+        timeout-minutes: 15
         env:
           SMOKE_BASE: https://staging.commonly.me
           SMOKE_API: https://api-staging.commonly.me
@@ -318,153 +195,56 @@ jobs:
             mcr.microsoft.com/playwright:v1.48.2-noble@sha256:c43809dabac73ac46b136409daa0a7d5411fb3ccc1e7d0fad1be5383a7a0f6ef \
             sh -c 'want=$(node -p "require(\"./package.json\").dependencies.playwright"); if [ "$want" != "1.48.2" ]; then echo "::error::scripts/staging-smoke pins playwright $want but the smoke image is v1.48.2; bump the image tag and digest in deploy-staging.yml"; exit 1; fi; npm install --no-audit --no-fund --silent && node staging-smoke.mjs'
 
-      # The stranger-path smoke drives signup -> welcome -> question -> connect
-      # card against api-staging.commonly.me. Its pass/fail IS the staging-smoke
-      # gate the prod promote path reads, so — unlike the dev journey, which is a
-      # non-failing notice — this sets a commit status that must be truthful, and
-      # a failed smoke fails the staging deploy. A missing stranger-journey
-      # CronJob fails it too: the reachability-only fallback was removed once a
-      # full staging journey passed (F375, run 42961093417), because a health
-      # probe posting the same staging-smoke=success made the gate's name a claim
-      # it no longer earned (AX audit entry 127).
-      # `!cancelled()` rather than `always()`: a run superseded by cancel-in-progress
-      # reaches this step with job.status=cancelled, skips the smoke block below, and
-      # posts the default STATE=failure — a staging-smoke=failure on a SHA that was
-      # never deployed (observed 2026-10-23: runs 39897767827 and 39897776573 both
-      # posted one for 820b4938c before cac4d6570 actually deployed).
-      - name: Stranger smoke + staging-smoke commit status
+      # The stranger journey (signup -> welcome -> question -> connect card) against
+      # staging's public API, run on the VM so it can read staging's email sink. Its
+      # pass/fail is half of the staging-smoke gate.
+      - name: Stranger journey
+        id: journey
+        run: |
+          set -euo pipefail
+          timeout 16m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o BatchMode=yes \
+            staging-ci@localhost journey
+
+      # staging-smoke = success only when staging came up at this SHA and both smokes
+      # passed. `!cancelled()`: a cancelled run deployed nothing it can vouch for and
+      # posts nothing, which blocks the prod roll exactly like a red status would.
+      - name: Post the staging-smoke commit status
         if: ${{ !cancelled() }}
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           SHA: ${{ steps.tag.outputs.sha }}
-          JOB_STATUS: ${{ job.status }}
+          UP: ${{ steps.up.outcome }}
+          TIER1: ${{ steps.tier1.outcome }}
+          JOURNEY: ${{ steps.journey.outcome }}
           GH_TOKEN: ${{ github.token }}
-          FORCE_BAD: ${{ inputs.force_bad_tag }}
         run: |
           set -uo pipefail
-          # Rollback rehearsal (force_bad_tag): the rollout was failed deliberately, so this
-          # SHA's backend image was never actually tested. Posting staging-smoke=failure here
-          # would make deploy-dev.yml reject the SHA until a real staging run succeeds — a
-          # production-gating status from a drill. Post nothing; the rollout failure above
-          # already drives the rollback step (its gate reads steps.rollout.outcome).
-          if [ "${FORCE_BAD:-}" = "true" ]; then
-            echo "rollback rehearsal: not posting a production-gating staging-smoke status for $SHA ($TAG)"
-            exit 0
-          fi
-          # A cancelled job deployed nothing, so it has nothing truthful to say about
-          # this SHA. The step condition already skips a cancelled RUN; this covers a
-          # job cancelled while the run is not, where cancelled() is false and
-          # job.status is already 'cancelled'. Posting NOTHING is the correct outcome:
-          # the promote path requires staging-smoke=success, so an absent status blocks
-          # promotion exactly like a red one, without claiming the smoke ran and failed.
-          if [ "${JOB_STATUS:-}" = "cancelled" ]; then
-            echo "job cancelled; leaving staging-smoke unset for $SHA ($TAG)"
-            exit 0
-          fi
           STATE=failure
-          DESC="staging deploy + stranger smoke ($TAG)"
-          if [ "$JOB_STATUS" = "success" ]; then
-            # The stranger journey is the gate. Without its CronJob there is no
-            # smoke to run, so a NotFound fails closed like any other lookup error.
-            if ERR=$(kubectl get cronjob stranger-journey -n "$NAMESPACE" -o name 2>&1); then
-              # CronJob exists — run the real stranger smoke against STAGING. The CronJob
-              # defaults JOURNEY_API to production, so build the Job from it suspended,
-              # repoint JOURNEY_API at the staging API, `kubectl create` it (NOT apply),
-              # then resume. The name carries GITHUB_RUN_ID so it is unique per run: a
-              # repeat deploy at the same SHA (a push then a workflow_dispatch, both at
-              # attempt 1) gets its own Job, and `create` fails on any name collision
-              # rather than silently updating a prior run's completed Job — toggling
-              # suspend never reruns a finished Job, so a reused one would post a stale
-              # success.
-              JOB="staging-smoke-${TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-              kubectl create job --from=cronjob/stranger-journey "$JOB" -n "$NAMESPACE" --dry-run=client -o json \
-                | jq '.spec.suspend=true | .spec.template.spec.containers |= map(.env = ((.env // []) | map(select(.name!="JOURNEY_API"))) + [{name:"JOURNEY_API",value:"https://api-staging.commonly.me"}])' \
-                | kubectl create -n "$NAMESPACE" -f -
-              kubectl patch job "$JOB" -n "$NAMESPACE" --type merge -p '{"spec":{"suspend":false}}'
-              # The journey's step budgets add up to ~515 s plus pod start and
-              # cleanup; wait up to 850 s, inside its activeDeadlineSeconds: 900.
-              for _ in $(seq 1 85); do
-                DONE=$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}{.status.failed}')
-                [ -n "$DONE" ] && break
-                sleep 10
-              done
-              kubectl logs "job/$JOB" -n "$NAMESPACE" --tail=12 || true
-              [ "$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')" = "1" ] && STATE=success
-            elif printf '%s' "$ERR" | grep -qE 'NotFound.*cronjobs.*stranger-journey'; then
-              echo "::error title=staging-smoke::no stranger-journey CronJob in the staging release, so the stranger smoke cannot run. Check strangerJourney.enabled in values-staging.yaml."
-              DESC="staging deploy, no stranger-journey CronJob ($TAG)"
-            else
-              # Any other kubectl error (auth/API) — fail closed.
-              echo "::error title=staging-smoke::stranger-journey lookup failed: $ERR"
-            fi
-          fi
-          echo "staging-smoke = $STATE for $SHA ($TAG)"
+          # The smokes ran in separate ssh sessions, so confirm nothing else (a walk, a
+          # hand run) moved staging to another tag in between: the status must vouch
+          # for the revision the smokes actually tested.
+          LIVE=$(timeout 2m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes staging-ci@localhost status | sed -n 's/^tag //p' | head -1)
+          if [ "$UP" = success ] && [ "$TIER1" = success ] && [ "$JOURNEY" = success ] && [ "$LIVE" = "$TAG" ]; then STATE=success; fi
+          DESC="VM staging: up=$UP tier1=$TIER1 journey=$JOURNEY live=${LIVE:-unknown} ($TAG)"
+          echo "staging-smoke = $STATE for $SHA: $DESC"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-            -f state="$STATE" \
-            -f context="staging-smoke" \
-            -f description="$DESC" >/dev/null
-          [ "$STATE" = "success" ]
+            -f state="$STATE" -f context="staging-smoke" -f description="$DESC" >/dev/null || exit 1
+          [ "$STATE" = success ]
 
-      # Mirror of the prod rollback net. Roll this staging
-      # release back to the newest prior good revision when the helm upgrade or the rollout verify
-      # fails — NOT on a post-deploy infra flake (setup-node / npm / playwright-install), which
-      # would otherwise self-heal a healthy release. The `force_bad_tag` rehearsal input drives a
-      # failed rollout to exercise this path. The job still ends red.
-      - name: Roll back on a failed deploy
-        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure') }}
+      # Stopped by default: always take staging down again, even after a failure,
+      # so it holds no VM memory between runs. Volumes (its data) are kept.
+      # `down <tag>` stops staging only if it is still at this run's tag, so a late
+      # stop can never take down a staging another run has since started.
+      - name: Stop staging
+        if: ${{ always() && steps.up.outcome != 'skipped' }}
         env:
-          PRE: ${{ steps.prerev.outputs.prerev }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          set -uo pipefail
-          HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
-          CUR=$(printf '%s' "$HIST" | jq -r '.[-1].revision // 0')
-          # Roll back to the revision THIS workflow last recorded as rollout-verified (the
-          # deploy-verified-revision ConfigMap), never to "last deployed": a deploy cancelled
-          # mid-rollout by a newer push leaves an unverified image at helm status=deployed,
-          # which prerev would wrongly pick. Distinguish a genuinely-absent ConfigMap (first
-          # failed deploy after this change) from a read ERROR: absent -> fall back to prerev;
-          # any other kubectl/API error -> FAIL CLOSED, do NOT roll back to a possibly-unverified
-          # revision — leave the (red) release in place for a human.
-          if CMOUT=$(kubectl get configmap deploy-verified-revision -n "$NAMESPACE" -o jsonpath='{.data.revision}' 2>&1); then
-            GOOD="$CMOUT"
-          elif printf '%s' "$CMOUT" | grep -q 'NotFound'; then
-            GOOD=""
-            echo "no verified-revision ConfigMap yet (first failed deploy after this change); falling back to last-deployed."
-          else
-            echo "::error title=Rollback aborted::could not read $RELEASE's verified-revision ConfigMap (not a NotFound): $CMOUT — NOT rolling back to a possibly-unverified revision. Investigate and roll back by hand."
-            exit 1
-          fi
-          TARGET="$GOOD"
-          if [ -z "$TARGET" ] || [ "$TARGET" = "0" ]; then
-            echo "::warning title=No verified revision::no rollout-verified revision recorded for $RELEASE; falling back to last-deployed $PRE (may not have passed verification)."
-            TARGET="$PRE"
-          fi
-          # No-op when there is no target at all, or when CUR==TARGET (the upgrade failed before
-          # Helm created a revision, or the live release already is the verified one — either
-          # way the release is unchanged).
-          if [ "${CUR:-0}" = "0" ] || [ "${TARGET:-0}" = "0" ] || [ -z "${TARGET:-}" ]; then
-            echo "::warning title=No rollback target::$RELEASE has no good revision to roll back to (CUR=${CUR:-0} TARGET=${TARGET:-0})."
-            exit 0
-          fi
-          if [ "$CUR" = "$TARGET" ]; then
-            echo "::warning title=No rollback needed::the live release already is the verified revision (CUR==TARGET==$TARGET); the release is unchanged."
-            exit 0
-          fi
-          echo "Rolling $RELEASE back: revision $CUR -> $TARGET (last rollout-verified)"
-          # No `--wait` (see the upgrade above): a release-wide wait can hang on an unrelated
-          # workload and record the rollback as failed. Apply, then verify only managed workloads.
-          # Check the exit explicitly: a swallowed failure (e.g. $TARGET aged out of helm history
-          # after a streak of failed deploys) would otherwise print the "rolled back" line below
-          # while the bad release stays live.
-          if ! helm rollback "$RELEASE" "$TARGET" -n "$NAMESPACE" --timeout 8m; then
-            echo "::error title=Rollback FAILED::helm could not roll back $RELEASE to $TARGET (aged out of history?); the bad release is STILL LIVE — manual intervention required."
-            exit 1
-          fi
-          MANAGED=" backend backend-worker frontend commonly-bot "
-          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
-            n=${d##*/}
-            case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
-            kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m \
-              || echo "::warning title=Rollback not yet ready::$d did not report ready within 8m after rollback to $TARGET; check the cluster."
-          done
-          echo "::error title=Deploy rolled back::$RELEASE rolled back to revision $TARGET after a failed deploy. Investigate before the next deploy."
+          timeout 5m ssh -i "$RUNNER_TEMP/ssh/key" -p 2222 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes staging-ci@localhost "down $TAG" \
+            || echo "::warning title=staging VM::down failed; staging may still be running. Run staging.sh down on the VM."

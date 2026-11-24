@@ -1,0 +1,148 @@
+# Staging on the prod VM, as a second Compose project (docs/deployment/vm-staging.md).
+#
+# Used only with the prod file underneath it, from a separate checkout:
+#   docker compose -p commonly-staging -f docker-compose.yml -f staging/compose.staging.yml ...
+# so staging runs the same compose file prod runs, and every staging smoke tests it.
+#
+# What this file changes:
+# - Caps on every service. Staging can never starve prod: hard memory and CPU
+#   ceilings, a quarter of prod's CPU weight under contention, and a high OOM
+#   score so the kernel kills staging first.
+# - Its own databases: MongoDB as a container here (prod's Mongo is Atlas), and
+#   the prod file's Postgres, in this project's own volume.
+# - An in-project email sink in place of SMTP2GO, so no staging mail leaves the VM.
+# - The staging frontend variant (<tag>-staging, with the staging API built in).
+# - No backups (pg-backup is switched off): staging data is disposable.
+#
+# Stopped by default. staging.sh brings it up for a smoke, a walk or a GIF, then
+# down again (volumes kept).
+x-staging-caps: &caps
+  cpu_shares: 256
+  oom_score_adj: 500
+  # Never comes back by itself: a VM or Docker restart leaves staging down.
+  restart: "no"
+  # Anchors don't cross files, so the prod file's log cap is repeated here for the
+  # services this file adds (prod's disk is staging's disk).
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+      labels: "com.docker.compose.service"
+
+services:
+  postgres:
+    <<: *caps
+    mem_limit: 384m
+    cpus: 0.25
+
+  backend:
+    <<: *caps
+    mem_limit: 900m
+    cpus: 0.5
+    depends_on:
+      mongo:
+        condition: service_healthy
+      email-sink:
+        condition: service_started
+    environment:
+      - MONGO_URI=mongodb://${STAGING_MONGO_USER:?set STAGING_MONGO_USER in .env}:${STAGING_MONGO_PASSWORD:?set STAGING_MONGO_PASSWORD in .env}@mongo:27017/${STAGING_MONGO_DB:?set STAGING_MONGO_DB in .env}?authSource=admin
+      - SMTP2GO_API_KEY=email-sink
+      - SMTP2GO_FROM_EMAIL=noreply@staging.commonly.me
+      - SMTP2GO_FROM_NAME=Commonly (staging)
+      - SMTP2GO_BASE_URL=http://email-sink:8080/v3
+
+  redis:
+    <<: *caps
+    mem_limit: 96m
+    cpus: 0.1
+
+  frontend:
+    <<: *caps
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-frontend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}-staging
+    mem_limit: 64m
+    cpus: 0.1
+
+  litellm:
+    <<: *caps
+    mem_limit: 1g
+    cpus: 0.4
+
+  # Staging's own tunnel (never prod's). Its ingress (staging.commonly.me and
+  # api-staging.commonly.me to this project's frontend and backend) lives in a local
+  # config file next to the tunnel credentials, in the untracked staging-secrets/.
+  cloudflared:
+    <<: *caps
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # A token outranks the credentials file and decides which tunnel the connector
+    # joins, so blank the one the prod file passes: staging joins only the tunnel
+    # its credentials file names, even if .env ever carried prod's token.
+    environment:
+      - TUNNEL_TOKEN=
+    volumes:
+      - ./staging-secrets/cloudflared.yml:/etc/cloudflared/config.yml:ro
+      - ./staging-secrets/cloudflared-credentials.json:/etc/cloudflared/credentials.json:ro
+    mem_limit: 96m
+    cpus: 0.1
+
+  # Off on staging: no backups of disposable data, and no commonly-bot (staging never
+  # ran one).
+  pg-backup:
+    profiles: ["disabled-on-staging"]
+
+  commonly-bot:
+    profiles: ["disabled-on-staging"]
+
+  mongo:
+    <<: *caps
+    image: mongo:7.0.28
+    command: ["--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${STAGING_MONGO_USER:?set STAGING_MONGO_USER in .env}
+      - MONGO_INITDB_ROOT_PASSWORD=${STAGING_MONGO_PASSWORD:?set STAGING_MONGO_PASSWORD in .env}
+    volumes:
+      - mongo-data:/data/db
+    mem_limit: 640m
+    cpus: 0.25
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # The backend image carries the compiled sink (as the chart's email-sink does).
+  email-sink:
+    <<: *caps
+    image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-backend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}
+    working_dir: /app
+    command: ["node", "dist/services/stagingEmailSink.js"]
+    user: "1000:1000"
+    environment:
+      - PORT=8080
+      - EMAIL_SINK_READ_TOKEN=${STAGING_EMAIL_SINK_READ_TOKEN:?set STAGING_EMAIL_SINK_READ_TOKEN in .env}
+    mem_limit: 128m
+    cpus: 0.1
+    networks:
+      - commonly
+
+  # The stranger journey against staging's public API, reading its verification
+  # mail from the sink above. staging.sh journey runs it once.
+  stranger-journey:
+    <<: *caps
+    cpus: 0.1
+    environment:
+      - JOURNEY_API=https://api-staging.commonly.me
+      - JOURNEY_TRIGGER=${JOURNEY_TRIGGER:-staging-smoke}
+      - JOURNEY_EMAIL_DOMAIN=seed.staging.commonly.me
+      - JOURNEY_INVITE_CODE=${STAGING_JOURNEY_INVITE_CODE:?set STAGING_JOURNEY_INVITE_CODE in .env}
+      - JOURNEY_EMAIL_SINK_URL=http://email-sink:8080
+      - JOURNEY_EMAIL_SINK_TOKEN=${STAGING_EMAIL_SINK_READ_TOKEN:?set STAGING_EMAIL_SINK_READ_TOKEN in .env}
+    # The sink is on `commonly` only; the base file leaves the journey on the default network.
+    networks:
+      - commonly
+
+volumes:
+  mongo-data:
