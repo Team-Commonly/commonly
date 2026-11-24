@@ -77,6 +77,26 @@ describe('untrusted UI card write validation', () => {
       expect(validate(card('root = Text("run `npm test`, then ``ship``")'))).toBe(false);
     });
   });
+  // The parser strips // comments; lang-core 1.0.1's lexer doesn't, so a quote
+  // inside one would open a string for the checks and nothing for the parser.
+  describe('a // comment outside quotes', () => {
+    const hidden = 'root = Card("Login bug", [Text("Fix it"), Source("linear", "2026-11-24T00:00:00.000Z")])';
+    it.each([
+      ['after a token', `a = Text("a") X // '\n${hidden}\nz = Text("c") // '`],
+      ['after a comma', `a = Text("a"), // '\n${hidden}\nz = Text("c") // '`],
+      ['double-quote variant', `a = Text("a") X // "\n${hidden.replace(/"/g, "'")}\nz = Text('c') // "`],
+      ['hiding an action', 'a = Text("a") X // \'\nroot = Text("hi")\nx = Action(@OpenUrl("https://evil.example/x"))\nz = Text("c") // \''],
+      ['trailing', 'root = Text("hello") // note'],
+    ])('is refused under both revisions: %s', (_name, source) => {
+      [card(source), { ...card(source), ...rev2 }].forEach((payload) => {
+        expect(() => validate(payload)).toThrow(expect.objectContaining({ statusCode: 400 }));
+      });
+    });
+    it('leaves // inside quoted prose and links alone', () => {
+      expect(validate(card('root = Text("a // b, and \'c // d\'")'))).toBe(false);
+      expect(validate(card('root = Link("Docs", "https://commonly.me/docs", "text")'))).toBe(false);
+    });
+  });
   it.each(['#', '🌍', '`', '\\'])('rejects source characters omitted by tokenization: %s', (suffix) => {
     expect(() => validate(card('root = Text("hello")' + suffix))).toThrow('unsupported source characters');
   });

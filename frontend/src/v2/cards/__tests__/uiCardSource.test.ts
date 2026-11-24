@@ -25,6 +25,19 @@ test('refuses a ``` fence anywhere in the source, quoted or not', () => {
   }
   expect(parseCard('root = Text("run `npm test` first")')?.typeName).toBe('Text');
 });
+// The parser strips // comments; a lexer that doesn't would read a quote inside
+// one as opening a string, so the checks and the parser would differ.
+test('refuses a // comment outside quotes, and leaves // in prose alone', () => {
+  const hidden = 'root = Card("Hidden", [Text("x")])';
+  for (const source of [
+    `a = Text("a") X // '\n${hidden}\nz = Text("c") // '`,
+    `a = Text("a"), // '\n${hidden}\nz = Text("c") // '`,
+    'root = Text("hello") // note',
+  ]) {
+    expect(parseCard(source)).toBeNull();
+  }
+  expect(parseCard('root = Text("a // b")')?.typeName).toBe('Text');
+});
 test('permits only exact approved HTTPS hosts without credentials or ports', () => {
   expect(cardHref('https://github.com/org/repo')?.hostname).toBe('github.com');
   for (const url of ['javascript:alert(1)', 'http://github.com', 'https://github.com.evil.test/', 'https://github.com@evil.test/', 'https://user:pass@github.com', 'https://github.com:444']) {

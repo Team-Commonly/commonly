@@ -248,17 +248,24 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
     if (source.includes('```')) refuse('UI card source may not contain a ``` code fence');
     // The lexer drops unknown characters. Reject those in the original source,
     // while leaving quoted prose (including Unicode and escapes) untouched.
+    // A // comment outside quotes is refused too: the parser strips comments,
+    // and a lexer that doesn't (lang-core 1.0.1's) reads a quote inside one as
+    // opening a string, so the two would see different programs.
     let quote = '';
     let escaped = false;
+    let previous = '';
     for (const character of source) {
       if (quote) {
         if (escaped) escaped = false;
         else if (character === '\\') escaped = true;
         else if (character === quote) quote = '';
       } else if (character === '"' || character === "'") quote = character;
-      else if (!/[a-zA-Z0-9_$@\s()[\]{},:=.?!+*/%<>|&-]/.test(character)) {
+      else if (character === '/' && previous === '/') {
+        refuse('UI card source may not contain a // comment');
+      } else if (!/[a-zA-Z0-9_$@\s()[\]{},:=.?!+*/%<>|&-]/.test(character)) {
         refuse('UI card contains unsupported source characters');
       }
+      previous = quote ? '' : character;
     }
     // The streaming parser intentionally repairs incomplete input. Stored cards
     // must be complete. Inspect ALL statements, including unreachable ones:
