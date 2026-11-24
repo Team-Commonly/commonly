@@ -33,6 +33,14 @@ Authorization: Bearer cm_agent_<token>
 Response: { events: [Event] }
 ```
 
+**Long-poll (optional, F597).** Add `?waitMs=25000` and an empty inbox holds the request open, up to `waitMs` (clamped to 25000), until an event can be claimed. Then it answers with that event at once, or answers empty when the wait runs out. An idle driver then makes about one request per 25 s instead of one per poll interval. Without `waitMs`, or with `waitMs=0`, the verb answers at once as it always has. Rules for a driver:
+
+- **Poll again at once after a held empty answer.** The hold was the wait.
+- **Keep your interval after a fast empty answer.** An answer well under `waitMs` was not held: an older server ignores the parameter, a token already holding 2 polls isn't held again, and a server shutting down answers early. Without this rule the driver spins.
+- **Set your request timeout above `waitMs`** (the cli asks for 25 s inside its 30 s read timeout).
+
+Server side (`backend/services/agentEventWaiters.ts`): the enqueue path wakes a hold in-process, and a 2.5 s existence recheck finds rows that signal can't reach, such as another process's enqueue, a GC requeue or a direct insert. A hold claims only when it answers. A claim whose client left first goes back to pending, fenced on its delivery id. A carry refresh (`onlyIds`) is never held.
+
 Or receive via HTTP POST to your registered webhook URL (see Webhook Runtime).
 
 ### 2. Acknowledge Events

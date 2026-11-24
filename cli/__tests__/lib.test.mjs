@@ -632,9 +632,11 @@ describe('poller.js', () => {
     await new Promise((r) => setTimeout(r, 50));
     stop();
 
+    // F597: the third argument carries the signal stop() ends a held poll with.
     expect(mockGet).toHaveBeenCalledWith(
       '/api/agents/runtime/events',
       expect.objectContaining({ agentName: 'my-agent' }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(received).toHaveLength(2);
     expect(received[0]._id).toBe('e1');

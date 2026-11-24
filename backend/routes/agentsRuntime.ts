@@ -52,6 +52,10 @@ const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const { settleIntroOnRequestCheckIn } = require('../services/installIntroOnListen');
+const {
+  clampWaitMs, acquireWaiterSlot, waitForAgentEvent, waitsEnded,
+} = require('../services/agentEventWaiters');
+const { recheckHeldRuntimeAuth } = require('../middleware/agentRuntimeAuthRecheck');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -943,14 +947,79 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       }
     }
 
-    const { events, inboxCount } = await AgentEventService.listInboxPage({
+    const inboxOptions = {
       agentName,
       instanceId,
       podId: fallbackPodId,
       podIds,
       limit,
       ...(onlyIds.length ? { onlyIds } : {}),
-    });
+    };
+    let { events, inboxCount } = await AgentEventService.listInboxPage(inboxOptions);
+
+    // F597: `?waitMs=` holds an empty answer open (agentEventWaiters.ts). A
+    // carry refresh (onlyIds) is never held: it asks about rows it already has.
+    const waitMs = onlyIds.length ? 0 : clampWaitMs(req.query.waitMs);
+    if (waitMs > 0 && events.length === 0 && !inboxCount) {
+      const releaseSlot = acquireWaiterSlot(req.agentTokenHash || `${agentName}\u0000${instanceId}`);
+      if (releaseSlot) {
+        // One listener for the whole hold, so a disconnect during the claim
+        // below is seen too. `res` closes on a finished answer as well; only
+        // an unfinished one is a client that went away.
+        let clientGone = false;
+        let wakeOnClose: (() => void) | null = null;
+        const closeListener = () => {
+          if (res.writableFinished) return;
+          clientGone = true;
+          wakeOnClose?.();
+        };
+        res.on('close', closeListener);
+        const onClose = (cb: () => void) => {
+          wakeOnClose = cb;
+          if (clientGone) cb();
+          return () => { wakeOnClose = null; };
+        };
+        let refused = false;
+        try {
+          const deadline = Date.now() + waitMs;
+          for (;;) {
+            const remaining = deadline - Date.now();
+            // Shutdown can land while this hold was claiming after a wake.
+            if (remaining <= 0 || waitsEnded()) break;
+            // eslint-disable-next-line no-await-in-loop
+            const outcome = await waitForAgentEvent({
+              agentName,
+              instanceId,
+              timeoutMs: remaining,
+              hasPending: () => AgentEventService.hasPendingWake(inboxOptions),
+              onClose,
+            });
+            if (outcome === 'timeout' || outcome === 'closed' || clientGone) break;
+            // The credential was checked up to 25 s ago: a token revoked or an
+            // agent uninstalled since must not claim (answers 401 here).
+            // eslint-disable-next-line no-await-in-loop
+            if (!await recheckHeldRuntimeAuth(req, res)) {
+              refused = true;
+              break;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            ({ events, inboxCount } = await AgentEventService.listInboxPage(inboxOptions));
+            // A sibling poll can win the row; then this one keeps waiting.
+            if (events.length > 0 || inboxCount) break;
+          }
+        } finally {
+          res.off('close', closeListener);
+          releaseSlot();
+        }
+        if (refused) return undefined;
+        if (clientGone) {
+          // Nobody is there to receive what the last claim took: put it back,
+          // so a long-poll never leaves a row delivered that it did not return.
+          if (events.length > 0) await AgentEventService.unclaimUnsent(events);
+          return undefined;
+        }
+      }
+    }
 
     // Fire the typing indicator now — at gateway-fetch time, not
     // backend-enqueue time. The chat header shows "X is thinking…"

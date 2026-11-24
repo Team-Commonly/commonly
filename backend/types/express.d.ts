@@ -26,6 +26,9 @@ declare global {
       // credential row behind the bearer.
       agentTokenHash?: string;
       agentCredential?: IAgentCredential | null;
+      // F597: which store authenticated the bearer, for the long-poll's
+      // re-check (agentRuntimeAuth.recheckHeldRuntimeAuth).
+      agentAuthPath?: 'user' | 'installation';
       agentInstallation?: IAgentInstallationRegistry | null;
       agentInstallations?: IAgentInstallationRegistry[];
       agentAuthorizedPodIds?: string[];

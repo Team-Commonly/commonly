@@ -66,7 +66,7 @@ const extractToken = (req: Request): string | undefined => agentRuntimeCredentia
 
 // Every 401 goes through here, so each refusal is logged and counted with its
 // reason (TASK-712). The response is unchanged: same status, same message.
-const refuse = (
+export const refuse = (
   req: Request,
   res: Response,
   reason: AgentAuthRefusalReason,
@@ -205,6 +205,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       const authorizedPodIds = Array.from(new Set([...installationPodIds, ...dmPodIds]));
 
       req.agentUser = agentUser;
+      req.agentAuthPath = 'user';
       req.agentInstallations = installations as never[];
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
@@ -278,6 +279,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       ? allActiveInstallations : [installation, ...allActiveInstallations];
 
     req.agentInstallation = installation as never;
+    req.agentAuthPath = 'installation';
     req.agentInstallations = identityInstallations as never[];
     req.agentAuthorizedPodIds = identityInstallations
       .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())

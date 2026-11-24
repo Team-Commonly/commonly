@@ -11,6 +11,7 @@ import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
 import { createPollLiveness, formatStall, resolvePollLivenessMs } from './poll-liveness.js';
 import { CLI } from './cli-hint.js';
+import { longPollWaitMs as defaultLongPollWaitMs, wasHeld } from './long-poll.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -44,6 +45,9 @@ export const startPoller = ({
   pollLivenessMs,   // TASK-338: see lib/poll-liveness.js
   pollLivenessCheckMs,
   onPollStalled,    // ({ stalledMs }) => void; the connect command exits on it
+  // F597: how long an empty poll asks the server to hold it (lib/long-poll.js).
+  // Undefined derives it from the read timeout; 0 turns the long-poll off.
+  longPollWaitMs,
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -55,6 +59,9 @@ export const startPoller = ({
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
   let pollStalled = false;
+  const holdMs = longPollWaitMs ?? defaultLongPollWaitMs();
+  // The poll in flight, so stop() ends a held one instead of waiting it out.
+  let pollAbort = null;
   const pollLiveness = createPollLiveness({
     limitMs: resolvePollLivenessMs(pollLivenessMs),
     checkEveryMs: pollLivenessCheckMs,
@@ -68,21 +75,41 @@ export const startPoller = ({
     },
   });
 
+  let nextDelayMs = intervalMs;
   const poll = async () => {
     if (!running) return;
+    nextDelayMs = intervalMs;
 
     try {
       // Same clock as `agent run`: running from here to the scheduled wait,
       // paused while the local handler takes the event.
       pollLiveness.arm();
-      const page = await client.get('/api/agents/runtime/events', {
-        agentName,
-        instanceId,
-        limit: 10,
-      });
+      pollAbort = new AbortController();
+      const pollStartedAt = Date.now();
+      let page;
+      try {
+        page = await client.get('/api/agents/runtime/events', {
+          agentName,
+          instanceId,
+          limit: 10,
+          ...(holdMs > 0 ? { waitMs: holdMs } : {}),
+        }, { signal: pollAbort.signal });
+      } catch (pollErr) {
+        // stop() ended a held poll: not a failure, and nothing was claimed.
+        if (!running && pollAbort.signal.aborted) return;
+        throw pollErr;
+      } finally {
+        pollAbort = null;
+      }
       pollLiveness.arm();
       if (pollStalled) return;
       const { events = [] } = page;
+      // An empty answer the server held (F597): poll again at once, the hold
+      // was the wait. A fast empty answer (an older server ignores waitMs)
+      // keeps the ordinary interval, so the loop never spins.
+      nextDelayMs = !events.length && wasHeld({ requestedMs: holdMs, elapsedMs: Date.now() - pollStartedAt })
+        ? 0
+        : intervalMs;
 
       // A digest is received context, not a webhook invocation. The runtime
       // inbox claims it only alongside a wake from the same pod.
@@ -185,7 +212,7 @@ export const startPoller = ({
     }
 
     pollLiveness.pause();
-    if (running) setTimeout(poll, intervalMs);
+    if (running) setTimeout(poll, nextDelayMs);
   };
 
   // Start immediately
@@ -195,6 +222,7 @@ export const startPoller = ({
     stop: () => {
       running = false;
       pollLiveness.stop();
+      pollAbort?.abort();
     },
   };
 };

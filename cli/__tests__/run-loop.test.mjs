@@ -319,9 +319,11 @@ describe('performRun', () => {
     await drainMicrotasks();
     stop();
 
+    // F597: the third argument carries the signal stop() ends a held poll with.
     expect(mockGet).toHaveBeenCalledWith(
       '/api/agents/runtime/events',
       expect.objectContaining({ agentName: 'my-stub', instanceId: 'default' }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
 
     // ADR-024 D3: the server now chooses one pod before claiming this page,
