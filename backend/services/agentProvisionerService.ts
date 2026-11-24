@@ -93,8 +93,6 @@ const provisionCommonlyBotAccount = ({
 
 // The runtimes a provision hands a token to, here and in the K8s provisioner.
 // Any other seat runs outside Commonly and keeps the token it was given.
-// The runtimes a provision hands a token to, here and in the K8s provisioner.
-// Any other seat runs outside Commonly and keeps the token it was given.
 // 'moltbot' stays although that runtime is retired: reprovision skips a stored
 // moltbot row as runtime_retired only after this set says it receives a token,
 // so dropping it would relabel those rows keeps_its_own_token.

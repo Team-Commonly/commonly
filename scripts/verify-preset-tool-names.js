@@ -152,7 +152,8 @@ const parsePresets = (source) => {
   if (starts.length < 4) {
     throw new Error(
       `parsed ${starts.length} preset definitions from presets.ts (expected 4+). `
-      + 'The block shape has changed; fix parsePresets before trusting a result.',
+      + 'Either the block shape changed (fix parsePresets before trusting a result), '
+      + 'or presets were removed on purpose (lower this floor to match).',
     );
   }
 
