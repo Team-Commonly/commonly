@@ -129,7 +129,6 @@ export default defineConfig({
     // the guarded dynamic import, keeping the SDK out of self-hosted bundles.
     'process.env.REACT_APP_SENTRY_DSN': JSON.stringify(process.env.REACT_APP_SENTRY_DSN || ''),
     // Developer apps flag (TASK-674). Unset in CI and deploy, so prod stays off.
-    'process.env.REACT_APP_DEVELOPER_APPS': JSON.stringify(process.env.REACT_APP_DEVELOPER_APPS || ''),
     'process.env': {},
   },
 });

@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { getAvatarSrc } from '../../utils/avatarUtils';
 import { useAuth } from '../../context/AuthContext';
-import AppsManagement from '../../components/AppsManagement';
 import '../primitives/primitives.css';
 import './V2SettingsPage.css';
 import V2BillingPanel from './V2BillingPanel';
@@ -48,10 +47,6 @@ interface SettingsSectionProps {
 
 // (TASK-688): three groups on one screen, no jump nav. Language and theme
 // sit under Look; sign-out-everywhere and delete account fold into Account actions.
-
-// Custom "Developer apps" (AppsManagement) stays hidden until every path
-// (create, edit, delete, use) is walked live. Default off (TASK-674).
-const developerAppsEnabled = () => process.env.REACT_APP_DEVELOPER_APPS === 'true';
 
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
@@ -682,12 +677,6 @@ const V2SettingsPage: React.FC = () => {
               <span className="vl"><span className="mu">{t('settings.connectorsDetail')}</span></span>
               <span className="ac"><span className="v2p-b v2p-b-g v2p-ib v2p-b-sm" aria-hidden="true"><Next /></span></span>
             </Link>
-            {developerAppsEnabled() && (
-              <details className="v2-settings__developer-disclosure">
-                <summary>{t('settings.developerApps')}</summary>
-                <AppsManagement variant="settings" showIntegrations={false} />
-              </details>
-            )}
           </SettingsSection>
           <SettingsSection id="look" title={t('settings.sections.look')}><V2LanguageSection /></SettingsSection>
           <SettingsSection id="privacy" title={t('settings.sections.privacy')}><V2UsageSection /></SettingsSection>

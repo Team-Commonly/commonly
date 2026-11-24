@@ -239,7 +239,6 @@
     },
     "accountActions": "账号操作",
     "connectorsDetail": "管理已连接的服务",
-    "developerApps": "开发者应用",
     "account": {
       "fallbackName": "你的账号",
       "noChanges": "账号没有更改。",
