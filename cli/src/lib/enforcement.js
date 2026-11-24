@@ -89,6 +89,29 @@ export const classifyTrigger = (event, recentMessages) => {
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
+// A board wake about a row this seat owns: it is the assignee or holds the
+// claim, and someone else created or changed that row (F592). It rides
+// message.posted, but it names this seat as surely as a mention does, so the
+// cascade governor gives it the addressed grace. It still counts toward the
+// streak, so two seats editing each other's rows stop at cap + grace per
+// window. Wakes about a seat's previous or dependent rows stay broadcasts.
+const OWNED_WORK_WAKE_REASONS = new Set(['assignee', 'claimant']);
+export const isOwnedWorkWake = (payload) => (
+  payload?.boardWake === true && OWNED_WORK_WAKE_REASONS.has(payload?.wakeReason)
+);
+
+// The inbox batch prices one cascade admission for its whole page, on this
+// entry: an addressed one if the page has it, else the first. Without the
+// owned-work case a broadcast sibling decided the page and the assignment
+// was refused along with it.
+export const pickAdmissionEntry = (wakingEntries) => (
+  wakingEntries.find((entry) => (
+    ADDRESSED_EVENT_TYPES.has(entry.event.type)
+    || entry.event.payload?.addressed === true
+    || isOwnedWorkWake(entry.event.payload)
+  )) || wakingEntries[0]
+);
+
 /**
  * A person @-mentioned this seat in a pod (ADR-018 D9.2): the one wake that
  * carries unread message bodies. `trigger` is classifyTrigger's verdict, so an
@@ -270,7 +293,7 @@ export const createCascadeGovernor = ({
     admit(podId, trigger, eventType, payload = {}) {
       if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
-      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
+      const addressed = ADDRESSED_EVENT_TYPES.has(eventType) || isOwnedWorkWake(payload);
       if (MENTION_EVENT_TYPES.has(eventType) && !payload?.dmKind) {
         // Named mentions are bounded upstream by the kernel's shared
         // bot-to-bot mention dampener. A DM emits chat.mention too, but its

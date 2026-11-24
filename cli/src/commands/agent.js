@@ -170,6 +170,7 @@ import {
 import { missingHarnessHint, reportMissingHarness } from '../lib/missing-harness.js';
 import {
   ADDRESSED_EVENT_TYPES,
+  pickAdmissionEntry,
   isPersonMention,
   CASCADE_DEFAULTS,
   CASCADE_ENV_VARS,
@@ -4315,10 +4316,7 @@ export const performRun = ({
       }
       return { entries };
     }
-    const admissionEvent = wakingEntries.find((entry) => (
-      ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
-    ))
-      || wakingEntries[0];
+    const admissionEvent = pickAdmissionEntry(wakingEntries);
     if (admissionEvent) {
       const admission = cascadeGovernor.admit(
         eventPodId,
