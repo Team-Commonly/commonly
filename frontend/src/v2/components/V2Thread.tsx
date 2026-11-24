@@ -566,7 +566,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       const openByo: V2Start = {
         id: 'open-byo',
         label: t('podChat.starts.openByo'),
-        href: `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`,
+        // ?mode=own: the person asked to connect their own agent, so the page
+        // opens on "Use my own agent" instead of asking again (F575).
+        href: `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}&mode=own`,
       };
       messages.forEach((message) => {
         if (message.user_id !== viewerId || (message.content || '').trim() !== CONNECT_START_LABEL) return;

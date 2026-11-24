@@ -290,7 +290,9 @@ describe('V2Thread — the connect start links Bring your own', () => {
 
     const link = await screen.findByRole('button', { name: OPEN_BYO });
     fireEvent.click(link);
-    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/v2/agents/byo?pod=pod-1'));
+    // F575: it opens the page on "Use my own agent", so the person isn't asked
+    // where it runs a second time.
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/v2/agents/byo?pod=pod-1&mode=own'));
   });
 
   test('the link shows only under that exact label', () => {

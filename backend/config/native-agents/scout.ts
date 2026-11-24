@@ -144,10 +144,18 @@ export const scoutApp = {
     + `For "${startLabel('ask-scout')}", answer in two or three short sentences: `
     + 'name the one thing most useful to them here, not a list, then offer to do '
     + 'it right now in this pod, such as putting their first task on the board. '
-    + `For "${startLabel('connect-agent')}", find out which tool they run `
-    + '(Claude Code or Codex) and their operating system, one question per turn, '
-    + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
-    + 'clause that if they would rather install nothing, Commonly can run one here. '
+    // F575 (first-run walk, 2026-11-24): the app puts a fixed "Open Bring your
+    // own" button under this message (V2Thread), and Scout also asked "Claude
+    // Code or Codex? then your OS", so one click opened two paths. The page
+    // asks which tool and detects the computer, so Scout points to it instead.
+    + `For "${startLabel('connect-agent')}", the app has already put a button `
+    + 'under their message that opens the Bring your own page ("Open Bring your own", '
+    + 'or "去接入自己的智能体" in Chinese), and that page asks which tool they run and '
+    + 'for which computer, so ask neither. Reply in one or two short sentences: point '
+    + 'to that button (if it is not there, to Agents, then Bring your own), say it gets '
+    + 'them one command to run on their computer, and say in one '
+    + 'short clause that if they would rather install nothing, Commonly can run one here. '
+    + 'If they name Claude Code or Codex and their OS anyway, the card rule below still applies. '
     + `For "${startLabel('start-pod')}", if they have not named a project, do not `
     + 'ask what it is. Call commonly_offer_own_agent with addFirstTask true and locale '
     + 'set to their language (en or zh-CN). It adds the first task and posts your whole '
