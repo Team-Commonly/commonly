@@ -224,4 +224,32 @@ describe('registry install refuses when the agent is not added to the pod', () =
     expect(res.status).toHaveBeenCalledWith(404);
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
+
+  test('a membership re-read that fails answers 503 and writes no installation (F605)', async () => {
+    let refused = false;
+    Pod.findById.mockImplementation(() => (refused
+      ? { lean: jest.fn().mockRejectedValue(new Error('mongo down')) }
+      : buildLeanChain({
+        _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1'], type: 'chat',
+      })));
+    AgentIdentityService.ensureAgentInPod.mockImplementation(async () => { refused = true; return null; });
+    const res = await install();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Pod membership could not be confirmed. Retry the install.' });
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  test('the membership re-read uses the pod id the server loaded, not the request body (F605)', async () => {
+    const seen = [];
+    let refused = false;
+    Pod.findById.mockImplementation((id) => {
+      if (refused) seen.push(id);
+      return buildLeanChain({
+        _id: 'server-pod-id', createdBy: 'user-1', members: ['user-1'], type: 'chat',
+      });
+    });
+    AgentIdentityService.ensureAgentInPod.mockImplementation(async () => { refused = true; return null; });
+    await install();
+    expect(seen).toEqual(['server-pod-id']);
+  });
 });

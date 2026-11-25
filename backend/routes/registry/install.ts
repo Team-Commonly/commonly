@@ -929,7 +929,15 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       if (!joined) {
         // Answer from the pod as it is now: it may have become a DM, or gone,
         // between the read above and ensureAgentInPod's atomic add (F605).
-        const current = await Pod.findById(podId).lean();
+        // Read by the id the server loaded, not the request body. A failed
+        // read stops here: the identity catch below would log and go on to
+        // write an installation for an agent that was just refused.
+        let current;
+        try {
+          current = await Pod.findById(pod._id).lean();
+        } catch {
+          return res.status(503).json({ error: 'Pod membership could not be confirmed. Retry the install.' });
+        }
         return current && isPersonalPodType(current.type)
           ? res.status(403).json({
             code: 'dm_membership_refused',
