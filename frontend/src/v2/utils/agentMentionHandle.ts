@@ -1,5 +1,5 @@
 import type { V2Agent } from '../hooks/useV2PodDetail';
-import { rawAgentName } from './threadAgentIdentity';
+import { buildAgentUsername, isOpaqueInstanceToken, rawAgentName } from './threadAgentIdentity';
 
 // The handle shape the backend's extractMentions reads out of a message.
 const MENTIONABLE_HANDLE = /^[a-z0-9_-]{2,}$/;
@@ -20,7 +20,17 @@ const instanceOf = (agent: V2Agent): string => (agent.instanceId || 'default').t
  */
 export const mentionHandleFor = (agent: V2Agent, podAgents: V2Agent[] = []): string | null => {
   const name = rawAgentName(agent).toLowerCase();
-  if (!name || instanceOf(agent) !== 'default') return null;
+  if (!name) return null;
+  // F622. An opaque-token install with no display name has no handle of its
+  // own: its slug is the bare agentName, a loose key either install can win.
+  // Its canonical username is claimed at the top rank for exactly that install.
+  if (isOpaqueInstanceToken(agent.instanceId) && !agent.displayName && !agent.profile?.displayName) {
+    const canonical = buildAgentUsername(name, agent.instanceId);
+    const hasOther = podAgents.some((other) => other !== agent
+      && rawAgentName(other).toLowerCase() === name);
+    return hasOther && MENTIONABLE_HANDLE.test(canonical) ? canonical : null;
+  }
+  if (instanceOf(agent) !== 'default') return null;
   const explicit = `${name}-default`;
   // A name the backend can't read as a handle (a scoped package) is reached by
   // its canonical username instead, which a sibling never shares.
