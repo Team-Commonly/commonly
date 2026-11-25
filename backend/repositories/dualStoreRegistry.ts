@@ -12,6 +12,8 @@ export const DUAL_STORED_MODELS: Record<string, () => DualStore> = {
   AgentPodReadCursor: () => require('./agentPodReadCursorRepository').readCursorStore,
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   AgentFirstContact: () => require('./agentFirstContactRepository').firstContactStore(),
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  AgentDigestState: () => require('./agentDigestStateRepository').digestStateStore(),
 };
 
 type RepairCounts = Awaited<ReturnType<DualStore['repair']>>;

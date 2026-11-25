@@ -59,6 +59,28 @@ const fakePg = () => {
     scan: (after, limit) => run('scan', () => [...rows.keys()]
       .filter((id) => after == null || id > after).sort().slice(0, limit)
       .map((id) => ({ id, row: { ...rows.get(id).row }, version: rows.get(id).version }))),
+    // pgTableAdapter's filtered read: equality (null is IS NULL) and ranges,
+    // ANDed, in id order. A range never matches NULL, as in SQL. The real
+    // adapter's column and operator refusals are tested against its SQL.
+    findWhere: (where, limit) => run('findWhere', () => {
+      const scalar = (value) => (value instanceof Date ? value.getTime() : value);
+      const ranges = {
+        $gt: (a, b) => a > b, $gte: (a, b) => a >= b, $lt: (a, b) => a < b, $lte: (a, b) => a <= b,
+      };
+      const matches = (row) => Object.entries(where).every(([column, condition]) => {
+        const stored = row[column] ?? null;
+        if (condition !== null && typeof condition === 'object' && !(condition instanceof Date)) {
+          return stored !== null && Object.entries(condition).every(([op, value]) => {
+            if (!ranges[op]) throw new Error(`fake findWhere: unsupported operator ${op}`);
+            return ranges[op](scalar(stored), scalar(value));
+          });
+        }
+        return condition === null ? stored === null : scalar(stored) === scalar(condition);
+      });
+      return [...rows.keys()].sort().filter((id) => matches(rows.get(id).row))
+        .slice(0, limit ?? Infinity)
+        .map((id) => ({ row: { ...rows.get(id).row }, version: rows.get(id).version }));
+    }),
     /** The next call to `method` waits until the returned release() runs. */
     hold(method) {
       let release;

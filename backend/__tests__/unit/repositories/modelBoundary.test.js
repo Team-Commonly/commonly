@@ -7,6 +7,8 @@ it.each([
   ["const Cursor = require('../models/AgentPodReadCursor');", 'no-restricted-modules'],
   ["import AgentFirstContact from '../models/AgentFirstContact';", 'no-restricted-imports'],
   ["const AgentFirstContact = require('../models/AgentFirstContact');", 'no-restricted-modules'],
+  ["import AgentDigestState from '../models/AgentDigestState';", 'no-restricted-imports'],
+  ["const AgentDigestState = require('../models/AgentDigestState');", 'no-restricted-modules'],
 ])('blocks production model access: %s', async (source, rule) => {
   const [service] = await eslint.lintText(source, { filePath: 'services/boundaryProbe.ts' });
   expect(service.messages.map((message) => message.ruleId)).toContain(rule);

@@ -17,8 +17,9 @@ const externalFeedService = require('./externalFeedService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
-// eslint-disable-next-line global-require
-const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { listDueForWake } = require('../repositories/agentDigestStateRepository') as
+  typeof import('../repositories/agentDigestStateRepository');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { isHostedInstallation, readRuntimeConfig } = require('./hostedRuntimeService') as {
   isHostedInstallation: (installation: unknown) => boolean;
@@ -1318,10 +1319,7 @@ class SchedulerService {
         oldestAt: { $min: '$createdAt' },
       } },
     ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>;
-    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
-      .select('agentName instanceId podId unreadSince').lean() as Array<{
-        agentName: string; instanceId: string; podId: unknown; unreadSince: Date;
-      }>;
+    const foldedGroups = await listDueForWake(threshold);
     const groups = new Map<string, { scope: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>();
     const addGroup = (scope: { agentName: string; instanceId: string; podId: unknown }, at: Date) => {
       const key = `${scope.agentName}:${scope.instanceId}:${scope.podId}`;

@@ -78,12 +78,16 @@ module.exports = {
           }, {
             group: ['**/models/AgentFirstContact', '**/models/AgentFirstContact.*'],
             message: 'Use repositories/agentFirstContactRepository.',
+          }, {
+            group: ['**/models/AgentDigestState', '**/models/AgentDigestState.*'],
+            message: 'Use repositories/agentDigestStateRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
           patterns: [
             '**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*',
             '**/models/AgentFirstContact', '**/models/AgentFirstContact.*',
+            '**/models/AgentDigestState', '**/models/AgentDigestState.*',
           ],
         }],
       },

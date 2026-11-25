@@ -89,6 +89,41 @@ and `pg-read` they go through the helper's `insertIfAbsent` and `setWhere`, and 
 claim takes a version and is copied.
 `pg` mode refuses both until step 4.
 
+## Third model: AgentDigestState
+
+`AgentDigestState` (the per-seat count of unread ambient events folded out of
+the AgentEvent retention window) follows the same template. Its table is
+`agent_digest_states` (`0018`): the Mongo `_id` as `id`, the natural key
+`(agent_name, instance_id, pod_id)` under a unique index, an index on
+`(unread_count, unread_since)` for the wake scan, `conversations` and
+`last_event_ids` as JSONB, and nullable `unread_since`, `folded_through_id`,
+`created_at` and `updated_at`. `STORE_MODE_AGENT_DIGEST_STATE` selects the
+store. Production callers (`services/agentDigestFoldService.ts`,
+`services/schedulerService.ts`) import `repositories/agentDigestStateRepository`;
+ESLint fences the model. Settling zeroes the row; nothing deletes one.
+
+- `getFoldState(scope)` returns `{foldedThroughId, unreadCount, conversations,
+  otherCount}` or null.
+- `startFoldState(scope, fields)` resolves true when it created the state and
+  false on a duplicate key (another worker created it first).
+- `advanceFold(scope, expected, change)` resolves true only if the state was
+  still at `expected` (its cursor and unread count) and took the fold step.
+- `readUnreadDigest(scope)` returns the unread summary or null.
+- `settleDigest(scope, revision)` clears the summary only at that revision.
+- `listDueForWake(threshold)` lists the scopes unread since `threshold` or
+  earlier, for the unread-digest wake.
+
+In `mongo` every operation makes the pre-step-2 Mongoose call, without the
+helper. In `dual` and `pg-read` the two conditional updates go through the
+helper's `updateWhere`: the operator update rewritten as pipeline stages (`$inc`
+as `$add`, the capped `$push` as `$slice` over `$concatArrays`), with the
+version and marker in the same write. The three reads go through `findOneWhere`
+and `findWhere`, which read Mongo in `dual` and Postgres in `pg-read` (Mongo
+while anything is flagged). Their Postgres filter accepts only equality and
+`$gt`/`$gte`/`$lt`/`$lte` on declared columns, bound as parameters; anything
+else throws before a query, in `dual` too. `pg` mode refuses the writes until
+step 4.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

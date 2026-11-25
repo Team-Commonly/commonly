@@ -45,7 +45,30 @@ interface PgAdapter {
   get(id: string): Promise<{ row: Row; version: number } | null>;
   /** Rows with an id above `after` (null: from the start), in id byte order, at most `limit`. */
   scan(after: string | null, limit: number): Promise<Array<{ id: string; row: Row; version: number }>>;
+  /**
+   * Rows matching `where` (see PgWhere), in id byte order, at most `limit`
+   * when given. An undeclared or JSON column, an unsupported operator or a
+   * value that is not a scalar throws before any query runs.
+   */
+  findWhere(where: PgWhere, limit?: number): Promise<Array<{ row: Row; version: number }>>;
 }
+
+/** The range operators a filtered read may use, and their SQL. */
+const RANGE_OPS: Record<string, string> = {
+  $gt: '>', $gte: '>=', $lt: '<', $lte: '<=',
+};
+type PgValue = string | number | boolean | Date | null;
+/**
+ * A filtered read's conditions by column, ANDed: a scalar is equality (null is
+ * IS NULL), and an object whose keys are all RANGE_OPS is a range. Nothing else
+ * is accepted.
+ */
+export type PgWhere = Record<string, PgValue | Record<string, PgValue>>;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => value !== null
+  && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+const isPgValue = (value: unknown): value is PgValue => value === null || value instanceof Date
+  || ['string', 'number', 'boolean'].includes(typeof value);
 
 interface PgQueryable {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Row[]; rowCount: number | null }>;
@@ -155,6 +178,51 @@ export function pgTableAdapter(
       const { pg_version: version, ...row } = rows[0];
       return { row: read(row), version: Number(version) };
     },
+    async findWhere(where, limit) {
+      // Everything is checked before the query is built: an identifier is only
+      // ever a declared column, and every value is a parameter.
+      const params: unknown[] = [];
+      const clauses: string[] = [];
+      Object.entries(where).forEach(([column, condition]) => {
+        if (column !== id && !cols.includes(column)) {
+          throw new Error(`dual-store: ${t} has no column ${JSON.stringify(column)} to filter on`);
+        }
+        if (json.has(column)) throw new Error(`dual-store: ${t}.${column} is JSON and cannot be filtered on`);
+        if (isPlainObject(condition)) {
+          const ops = Object.entries(condition);
+          if (!ops.length) throw new Error(`dual-store: ${t}.${column} has an empty condition`);
+          ops.forEach(([op, value]) => {
+            if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
+              throw new Error(`dual-store: operator ${JSON.stringify(op)} is not supported on ${t}.${column}`);
+            }
+            if (value === null || !isPgValue(value)) {
+              throw new Error(`dual-store: ${t}.${column} ${op} needs a string, number, boolean or Date`);
+            }
+            params.push(value);
+            clauses.push(`${column} ${RANGE_OPS[op]} $${params.length}`);
+          });
+        } else if (condition === null) {
+          clauses.push(`${column} IS NULL`);
+        } else if (isPgValue(condition)) {
+          params.push(condition);
+          clauses.push(`${column} = $${params.length}`);
+        } else {
+          throw new Error(`dual-store: ${t}.${column} needs a scalar or a range, not ${typeof condition}`);
+        }
+      });
+      let limitSql = '';
+      if (limit !== undefined) {
+        checkBatchSize(limit);
+        params.push(limit);
+        limitSql = ` LIMIT $${params.length}`;
+      }
+      const whereSql = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+      const { rows } = await pool.query(
+        `SELECT ${all.join(', ')}, pg_version FROM ${t}${whereSql} ORDER BY ${id} COLLATE "C"${limitSql}`,
+        params,
+      );
+      return rows.map(({ pg_version: version, ...row }) => ({ row: read(row), version: Number(version) }));
+    },
     async scan(after, limit) {
       // COLLATE "C" pages by byte order whatever the database collation is, so
       // keyset paging never skips or repeats a row.
@@ -251,6 +319,11 @@ interface DualStoreOptions {
    * `remove` run in dual, pg-read and pg. Off by default, so `remove` throws there.
    */
   allowDeletes?: boolean;
+  /**
+   * The document fields `findOneWhere` and `findWhere` may filter on, and the
+   * column each is in. A filter on any other field throws outside mongo.
+   */
+  filterColumns?: Record<string, string>;
 }
 
 export interface DualStore {
@@ -290,6 +363,26 @@ export interface DualStore {
    * mode until step 4.
    */
   setWhere(filter: Doc, fields: Doc): Promise<boolean>;
+  /**
+   * Atomic conditional change of the one document `filter` matches, never an
+   * insert, where the change is the caller's own update-pipeline stages (an
+   * `$inc` as `$add`, a capped `$push` as `$slice` over `$concatArrays`). In
+   * dual and pg-read the helper appends the version and the marker to the same
+   * write and copies the document when it matched. True when a document
+   * matched. Pipeline values are not cast by the schema and a caller-supplied
+   * value belongs in `$literal`. Refused in pg mode until step 4.
+   */
+  updateWhere(filter: Doc, pipeline: Doc[]): Promise<boolean>;
+  /**
+   * Filtered reads. `filter` is equality and `$gt`/`$gte`/`$lt`/`$lte` on the
+   * fields the store declares in `filterColumns`, ANDed. mongo and dual read
+   * Mongo; pg-read reads Postgres unless a document is flagged (as `findById`);
+   * pg reads Postgres. Either way the result is the plain Mongo shape,
+   * narrowed to `fields` (and `_id`) when given. Outside mongo a filter
+   * Postgres could not run throws first, so dual rehearses pg-read's filters.
+   */
+  findOneWhere(filter: Doc, options?: { fields?: string[] }): Promise<Doc | null>;
+  findWhere(filter: Doc, options?: { fields?: string[] }): Promise<Doc[]>;
   repair(options?: { limit?: number }): Promise<{ scanned: number; copied: number; deleted: number; failed: number }>;
   /** Step 2's history copy. Dual or pg-read only. */
   backfill(options?: { dryRun?: boolean; batchSize?: number }): Promise<BackfillCounts>;
@@ -309,7 +402,7 @@ export interface VerifyCounts {
 
 export function createDualStore(
   {
-    name, model: Model, pg, toRow, fromRow, sampleRate = 0.1, allowDeletes = false,
+    name, model: Model, pg, toRow, fromRow, sampleRate = 0.1, allowDeletes = false, filterColumns,
   }: DualStoreOptions,
 ): DualStore {
   // Without the plugin, strict mode drops pgVersion and pgPending on write, so a
@@ -366,7 +459,11 @@ export function createDualStore(
     // from here on must not fail the caller: the marker stays set, pg-read stays
     // on Mongo for it, and the repair job clears it on its next pass.
     try {
-      const cleared = await Model.updateOne({ _id: id, pgPending: version }, { $unset: { pgPending: 1 } });
+      // timestamps: false, or a model with `timestamps` would bump updatedAt
+      // here, after the copy, and its row would differ from the document.
+      const cleared = await Model.updateOne(
+        { _id: id, pgPending: version }, { $unset: { pgPending: 1 } }, { timestamps: false },
+      );
       if (cleared.matchedCount === 0) {
         const now = await Model.findById(id, { pgDeleted: 1 }).lean() as Doc | null;
         if (!now || now.pgDeleted) {
@@ -383,21 +480,93 @@ export function createDualStore(
     return true;
   };
 
+  /** The sampled compare of one settled Mongo read against its row. Never fails the read. */
+  const compareSample = async (doc: Doc): Promise<void> => {
+    if (doc.pgPending != null || Math.random() >= sampleRate) return;
+    try {
+      const got = await pg.get(String(doc._id));
+      if (!got) mismatch(name, doc._id, 'missing');
+      else {
+        const fields = differingFields(toRow(doc), got.row);
+        if (fields.length) mismatch(name, doc._id, 'differs', fields);
+      }
+    } catch (error) {
+      console.warn(`[dual-store] compare read failed model=${name}:`, (error as Error).message);
+    }
+  };
+
   const readMongo = async (id: Id, compare: boolean): Promise<Doc | null> => {
     const doc = await Model.findOne(alive(id)).lean() as Doc | null;
-    if (doc && compare && doc.pgPending == null && Math.random() < sampleRate) {
-      try {
-        const got = await pg.get(String(id));
-        if (!got) mismatch(name, id, 'missing');
-        else {
-          const fields = differingFields(toRow(doc), got.row);
-          if (fields.length) mismatch(name, id, 'differs', fields);
-        }
-      } catch (error) {
-        console.warn(`[dual-store] compare read failed model=${name}:`, (error as Error).message);
-      }
-    }
+    if (doc && compare) await compareSample(doc);
     return plain(doc);
+  };
+
+  /** pg-read reads Mongo while anything is flagged, and Postgres otherwise. */
+  const pgReadUsesMongo = async (): Promise<boolean> => {
+    try {
+      return await anyFlagged();
+    } catch (error) {
+      // The flag check is Mongo's. With Mongo down a pg-read still reads its
+      // row, which is as current as the last copy that reached it.
+      console.warn(`[dual-store] flag check failed model=${name}; reading Postgres:`, (error as Error).message);
+      return false;
+    }
+  };
+
+  /**
+   * A Mongo filter as the adapter's PgWhere: each field through its declared
+   * column, each value through the schema's setters and cast (a lowercase
+   * field compares lowercased, as the Mongo query does), an ObjectId as its
+   * hex string. Throws on an undeclared field or an unsupported operator.
+   */
+  const toPgWhere = (filter: Doc): PgWhere => {
+    if (!filterColumns) throw new Error(`dual-store: ${name} declares no filterColumns to filter on`);
+    const scalar = (field: string, value: unknown): PgValue => {
+      if (value === null || value === undefined) return null;
+      const path = Model.schema.path(field) as { applySetters?: (v: unknown, scope: null, init: boolean) => unknown };
+      const cast = path?.applySetters ? path.applySetters(value, null, false) : value;
+      const hex = (cast as { toHexString?: () => string })?.toHexString;
+      if (typeof hex === 'function') return hex.call(cast);
+      if (!isPgValue(cast)) throw new Error(`dual-store: ${name} cannot filter ${field} on a non-scalar value`);
+      return cast;
+    };
+    return Object.fromEntries(Object.entries(filter).map(([field, value]) => {
+      const column = Object.prototype.hasOwnProperty.call(filterColumns, field) ? filterColumns[field] : undefined;
+      if (!column) throw new Error(`dual-store: ${name} cannot filter on ${JSON.stringify(field)} in Postgres`);
+      if (isPlainObject(value)) {
+        return [column, Object.fromEntries(Object.entries(value).map(([op, operand]) => {
+          if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
+            throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} in Postgres`);
+          }
+          // Checked after the cast too: a Date setter turns '' into null.
+          const cast = operand === null || operand === undefined ? null : scalar(field, operand);
+          if (cast === null) {
+            throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} against null in Postgres`);
+          }
+          return [op, cast];
+        }))];
+      }
+      return [column, scalar(field, value)];
+    }));
+  };
+
+  const pick = (doc: Doc, fields?: string[]): Doc => (fields
+    ? Object.fromEntries(['_id', ...fields].filter((key) => key in doc).map((key) => [key, doc[key]]))
+    : doc);
+
+  const readWhere = async (filter: Doc, limit: number | undefined, fields?: string[]): Promise<Doc[]> => {
+    const mode = storeMode(name);
+    // Translated in every mode but mongo, so a filter pg-read could not run fails in dual first.
+    const where = mode === 'mongo' ? null : toPgWhere(filter);
+    if (mode === 'mongo' || mode === 'dual' || (mode === 'pg-read' && await pgReadUsesMongo())) {
+      const query = Model.find({ ...filter, pgDeleted: { $ne: true } });
+      if (limit !== undefined) query.limit(limit);
+      const docs = await query.lean() as Doc[];
+      if (mode !== 'mongo') await Promise.all(docs.map(compareSample));
+      return docs.map((doc) => pick(plain(doc) as Doc, fields));
+    }
+    const rows = await pg.findWhere(where as PgWhere, limit);
+    return rows.map(({ row }) => pick(fromRow(row), fields));
   };
 
   // Step 4 gives these a single-statement Postgres form; until then pg mode refuses them.
@@ -611,19 +780,38 @@ export function createDualStore(
       const mode = storeMode(name);
       if (mode === 'mongo') return readMongo(id, false);
       if (mode === 'dual') return readMongo(id, true);
-      if (mode === 'pg-read') {
-        let mongoFirst = false;
-        try {
-          mongoFirst = await anyFlagged();
-        } catch (error) {
-          // The flag check is Mongo's. With Mongo down a pg-read still reads its
-          // row, which is as current as the last copy that reached it.
-          console.warn(`[dual-store] flag check failed model=${name}; reading Postgres:`, (error as Error).message);
-        }
-        if (mongoFirst) return readMongo(id, true);
-      }
+      if (mode === 'pg-read' && await pgReadUsesMongo()) return readMongo(id, true);
       const got = await pg.get(String(id));
       return got ? fromRow(got.row) : null;
+    },
+
+    async updateWhere(filter, pipeline) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('updateWhere');
+      if (!Array.isArray(pipeline) || !pipeline.length) {
+        throw new Error(`dual-store: ${name} updateWhere needs pipeline stages`);
+      }
+      if (mode === 'mongo') {
+        const result = await Model.findOneAndUpdate(
+          filter, pipeline, { new: false, includeResultMetadata: true },
+        ) as unknown as RawResult;
+        return result?.value != null;
+      }
+      // One atomic pipeline update: the caller's change, the version and the marker.
+      const doc = await Model.findOneAndUpdate(
+        { ...filter, pgDeleted: { $ne: true } }, [...pipeline, { $set: bump }, markPending], { new: true },
+      ).lean() as Doc | null;
+      if (!doc) return false;
+      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      return true;
+    },
+
+    async findOneWhere(filter, { fields } = {}) {
+      return (await readWhere(filter, 1, fields))[0] ?? null;
+    },
+
+    async findWhere(filter, { fields } = {}) {
+      return readWhere(filter, undefined, fields);
     },
 
     async repair({ limit = 100 } = {}) {
