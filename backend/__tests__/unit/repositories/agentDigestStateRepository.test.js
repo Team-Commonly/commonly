@@ -322,15 +322,29 @@ describe('digest state repository (ADR-034 step 2)', () => {
       mockPg.current.rows.get(String((await raw())._id)).row.other_count = 7;
       mockPg.current.calls.length = 0;
 
-      expect(await getFoldState(scope)).toEqual({
-        foldedThroughId: eventIds[1], unreadCount: 2,
-        conversations: [{ label: 'pod conversation', count: 1 }, { label: 'thread 1', count: 1 }], otherCount: 7,
-      });
       // The schema's lowercase applies to the Postgres filter as to the Mongo query.
       expect(await readUnreadDigest({ ...scope, agentName: 'FLINT' })).toMatchObject({ unreadCount: 2, otherCount: 7 });
       expect(await listDueForWake(at(30))).toEqual([{ ...scope, unreadSince: at(0) }]);
       expect(await listDueForWake(new Date(at(0).getTime() - 1))).toEqual([]);
-      expect(mockPg.current.calls).toEqual(['findWhere', 'findWhere', 'findWhere', 'findWhere']);
+      expect(mockPg.current.calls).toEqual(['findWhere', 'findWhere', 'findWhere']);
+    });
+
+    it('the fold read stays on Mongo, which its compare-and-set runs against, even past a lagging row', async () => {
+      await firstFold();
+      expect(await foldStep(scope, 1)).toBe(true);
+      // Another instance's fold landed in Mongo with its copy still pending,
+      // and this instance's flag cache says nothing is flagged.
+      await readUnreadDigest(scope);
+      const { _id } = await raw();
+      await AgentDigestState.collection.updateOne({ _id }, { $set: { otherCount: 5, pgPending: 9 } });
+      mockPg.current.rows.get(String(_id)).row.other_count = 7;
+      mockPg.current.calls.length = 0;
+
+      expect(await getFoldState(scope)).toEqual({
+        foldedThroughId: eventIds[1], unreadCount: 2,
+        conversations: [{ label: 'pod conversation', count: 1 }, { label: 'thread 1', count: 1 }], otherCount: 5,
+      });
+      expect(mockPg.current.calls).toEqual([]);
     });
 
     it('fall back to Mongo while a document is flagged', async () => {

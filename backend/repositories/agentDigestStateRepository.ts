@@ -134,7 +134,11 @@ const refuseInPg = (operation: string): void => {
 
 /** The fold's read of a scope's state, or null when the scope has none. */
 export async function getFoldState(scope: DigestScope): Promise<FoldState | null> {
-  const state = storeMode(NAME) === 'mongo'
+  // Mongo in every mode but pg, pg-read included: this read feeds advanceFold's
+  // compare-and-set on Mongo, so a Postgres row that lags (another instance's
+  // copy in flight or failed, unseen by this instance's flag cache) could only
+  // make the CAS miss and defer the scope. It gains nothing from Postgres.
+  const state = storeMode(NAME) !== 'pg'
     ? await AgentDigestState.findOne(scope)
       .select('foldedThroughId unreadCount conversations otherCount').lean() as Doc | null
     : await digestStateStore().findOneWhere(scope);
