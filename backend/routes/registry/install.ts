@@ -2,6 +2,12 @@
 // Handles: POST /install
 const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
+const { logOutboundFailure, ownErrorMessage } = require('../../utils/safeErrorLog');
+
+// Thrown on purpose by AgentInstallation.install. A page tells "already
+// installed" from a failure by this text (V2AgentBYO, V2Thread), so it reaches
+// the caller even when it lands in the catch-all as a 500.
+const INSTALL_OWN_MESSAGES = ['Agent already installed'];
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
@@ -1344,16 +1350,22 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         });
       }
     }
-    console.error('Error installing agent:', error);
+    logOutboundFailure('Error installing agent:', error);
     const status = (error as { status?: number }).status;
     // A memory-handoff refusal names its kind, so a page can say it in the
     // person's language. Only these string codes: a driver's numeric code
     // (Mongo's 11000) is not a reason.
     const code = (error as { code?: unknown }).code;
-    res.status(status === 400 || status === 403 || status === 409 ? status : 500)
+    // A 400/403/409 is a refusal we wrote for the person to read. Anything else
+    // is unexpected and answers fixed text.
+    const refusal = status === 400 || status === 403 || status === 409;
+    // safe-5xx: our own message (only a 400/403/409 refusal carries its text)
+    res.status(refusal ? status : 500)
       .json({
         ...(typeof code === 'string' && code.startsWith('memory_handoff_') ? { code } : {}),
-        error: (error as Error).message || 'Failed to install agent',
+        error: refusal
+          ? ((error as Error).message || 'Failed to install agent')
+          : ownErrorMessage(error, INSTALL_OWN_MESSAGES, 'Failed to install agent'),
       });
   }
 };

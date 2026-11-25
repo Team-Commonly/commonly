@@ -1367,6 +1367,12 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
+const HOSTED_REMOVAL_MESSAGES: Record<string, string> = {
+  provider_revoke_failed: 'The provider did not confirm the revoke, so it may still list this app; try removing it again.',
+  provider_revoked_removal_incomplete: 'The provider revoke went through but removal did not finish; try removing it again.',
+  removal_busy: 'This connection changed while it was being removed; try again.',
+};
+
 router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
@@ -1402,9 +1408,13 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
         // `removal_busy` is not a provider failure: nothing was sent, and the
         // retry finishes it. 409 keeps it out of the page's provider-refusal
         // handling, which would hide the row and point at the vendor's page.
+        // The service's message comes from caught errors (a Mongo timeout, a
+        // transport error), so the body says one fixed sentence per code and the
+        // cause is logged. `code` and `providerRevoked` are what the page keys on.
+        logOutboundFailure('[integrations] hosted removal did not finish:', new Error(String(result.message)));
         return res.status(result.code === 'removal_busy' ? 409 : 502).json({
           code: result.code,
-          message: result.message,
+          message: HOSTED_REMOVAL_MESSAGES[result.code] || 'Removing this connection did not finish; try again.',
           ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
           ...(typeof result.providerRevoked === 'boolean' ? { providerRevoked: result.providerRevoked } : {}),
         });

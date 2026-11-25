@@ -6,6 +6,21 @@ const auth = require('../middleware/auth');
 const PodLink = require('../models/PodLink');
 // eslint-disable-next-line global-require
 const FederationService = require('../services/federationService');
+const { logOutboundFailure, ownErrorMessage } = require('../utils/safeErrorLog');
+
+// Messages PodLink and FederationService throw on purpose (a refused state
+// change, not a driver failure). Anything else a catch sees is unexpected and
+// can carry a remote's response text, so it answers fixed text.
+const FEDERATION_OWN_MESSAGES = [
+  'Link already exists',
+  'Link request already pending',
+  'Can only approve pending links',
+  'Can only revoke active links',
+  'No active link to target pod',
+];
+// `Query exceeds granted scopes: <scope>` and `Unknown query type: <queryType>` echo
+// the caller's own input (not a closed set); harmless to hand back to the caller.
+const FEDERATION_OWN_PREFIXES = ['Query exceeds granted scopes: ', 'Unknown query type: '];
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -77,9 +92,8 @@ router.post('/links', auth, async (req: Req, res: Res) => {
     const link = await PodLink.requestLink({ sourcePodId, targetPodId, scopes, requestedBy: userId, message }) as Record<string, unknown>;
     return res.json({ success: true, link: { id: (link._id as { toString: () => string }).toString(), status: link.status, scopes: link.scopes } });
   } catch (error) {
-    const e = error as { message?: string };
-    console.error('Error requesting link:', error);
-    return res.status(500).json({ error: e.message || 'Failed to request link' });
+    logOutboundFailure('Error requesting link:', error);
+    return res.status(500).json({ error: ownErrorMessage(error, FEDERATION_OWN_MESSAGES, 'Failed to request link') });
   }
 });
 
@@ -95,9 +109,8 @@ router.post('/links/:linkId/approve', auth, async (req: Req, res: Res) => {
     await link.approve(userId);
     return res.json({ success: true, link: { id: link._id.toString(), status: link.status } });
   } catch (error) {
-    const e = error as { message?: string };
-    console.error('Error approving link:', error);
-    return res.status(500).json({ error: e.message || 'Failed to approve link' });
+    logOutboundFailure('Error approving link:', error);
+    return res.status(500).json({ error: ownErrorMessage(error, FEDERATION_OWN_MESSAGES, 'Failed to approve link') });
   }
 });
 
@@ -114,9 +127,8 @@ router.post('/links/:linkId/revoke', auth, async (req: Req, res: Res) => {
     await link.revoke(userId, reason);
     return res.json({ success: true, link: { id: link._id.toString(), status: link.status } });
   } catch (error) {
-    const e = error as { message?: string };
-    console.error('Error revoking link:', error);
-    return res.status(500).json({ error: e.message || 'Failed to revoke link' });
+    logOutboundFailure('Error revoking link:', error);
+    return res.status(500).json({ error: ownErrorMessage(error, FEDERATION_OWN_MESSAGES, 'Failed to revoke link') });
   }
 });
 
@@ -132,9 +144,8 @@ router.post('/query', auth, async (req: Req, res: Res) => {
     const result = await FederationService.queryLinkedPod({ sourcePodId, targetPodId, queryType, filters, actorId: userId, actorType: 'human', limit });
     return res.json(result);
   } catch (error) {
-    const e = error as { message?: string };
-    console.error('Error querying linked pod:', error);
-    return res.status(500).json({ error: e.message || 'Failed to query linked pod' });
+    logOutboundFailure('Error querying linked pod:', error);
+    return res.status(500).json({ error: ownErrorMessage(error, FEDERATION_OWN_MESSAGES, 'Failed to query linked pod', FEDERATION_OWN_PREFIXES) });
   }
 });
 

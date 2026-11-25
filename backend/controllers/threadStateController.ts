@@ -23,6 +23,7 @@ const ThreadUserState = require('../models/pg/ThreadUserState');
 const PGMessage = require('../models/pg/Message');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 const {
   THREADING_BACKFILL_MIGRATION: MIGRATION_NAME,
   READ_POINT_MIGRATION,
@@ -168,7 +169,8 @@ export async function followThread(req: Req, res: Res): Promise<void> {
     // a double-click look like a failure for no gain to any caller.
     res.status(200).json({ threadRootId: ctx.rootId, podId: ctx.podId, following: true, followedAt: row?.followed_at });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to follow thread', error: err?.message });
+    logOutboundFailure('followThread failed:', err);
+    res.status(500).json({ msg: 'failed to follow thread', error: 'Internal server error' });
   }
 }
 
@@ -181,7 +183,8 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
     // asked for, so it is a 200 and not a 404.
     res.status(200).json({ threadRootId: ctx.rootId, following: false });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to unfollow thread', error: err?.message });
+    logOutboundFailure('unfollowThread failed:', err);
+    res.status(500).json({ msg: 'failed to unfollow thread', error: 'Internal server error' });
   }
 }
 
@@ -251,7 +254,8 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       })),
     });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to list thread state', error: err?.message });
+    logOutboundFailure('listThreadState failed:', err);
+    res.status(500).json({ msg: 'failed to list thread state', error: 'Internal server error' });
   }
 }
 
@@ -274,7 +278,8 @@ export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
     await ThreadUserState.setCollapsed(ctx.rootId, ctx.userId, ctx.podId, collapsedRaw);
     res.status(200).json({ threadRootId: ctx.rootId, collapsed: collapsedRaw });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to set collapse state', error: err?.message });
+    logOutboundFailure('setThreadCollapsed failed:', err);
+    res.status(500).json({ msg: 'failed to set collapse state', error: 'Internal server error' });
   }
 }
 
@@ -325,7 +330,8 @@ export async function setThreadRead(req: Req, res: Res): Promise<void> {
     const lastReadAt = await ThreadUserState.markRead(ctx.rootId, ctx.userId, ctx.podId, at);
     res.status(200).json({ threadRootId: ctx.rootId, lastReadAt });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to set read point', error: err?.message });
+    logOutboundFailure('setThreadRead failed:', err);
+    res.status(500).json({ msg: 'failed to set read point', error: 'Internal server error' });
   }
 }
 

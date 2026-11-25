@@ -2077,7 +2077,7 @@ router.post(
         });
       }
       logOutboundFailure('Error posting bot message:', error);
-      return res.status(500).json({ message: err.message || 'Failed to post message' });
+      return res.status(500).json({ message: 'Failed to post message' });
     }
   },
 );
@@ -2140,7 +2140,7 @@ router.post(
       return res.json(result);
     } catch (error: any) {
       logOutboundFailure('Error posting bot thread comment:', error);
-      return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
+      return res.status(500).json({ message: 'Failed to post comment' });
     }
   },
 );
@@ -2304,8 +2304,11 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
     else if ((error as any).code === 'NOT_A_MEMBER') statusCode = 403;
     logOutboundFailure(`Error fetching agent pod context [${statusCode}]:`, error);
     return res.status(statusCode).json({
-      message: (error as Error).message || 'Failed to fetch pod context',
-      code: (error as any).code || 'INTERNAL_ERROR',
+      // A 5xx is unexpected: fixed text. A refusal carrying its own status or
+      // POD_NOT_FOUND / NOT_A_MEMBER is ours to say.
+      message: statusCode >= 500 ? 'Failed to fetch pod context' : ((error as Error).message || 'Failed to fetch pod context'),
+      // A driver's code (Mongo's numeric 11000) is not a reason to hand an agent.
+      code: statusCode >= 500 ? 'INTERNAL_ERROR' : ((error as any).code || 'INTERNAL_ERROR'),
     });
   }
 });
@@ -2907,7 +2910,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       });
     }
     logOutboundFailure('Error posting agent message:', error);
-    return res.status(500).json({ message: err.message || 'Failed to post message' });
+    return res.status(500).json({ message: 'Failed to post message' });
   }
 });
 
@@ -2961,7 +2964,7 @@ router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, as
       });
     }
     logOutboundFailure('Error proposing agent action:', error);
-    return res.status(500).json({ message: err.message || 'Failed to propose action' });
+    return res.status(500).json({ message: 'Failed to propose action' });
   }
 });
 
@@ -3034,7 +3037,7 @@ router.post('/pods/:podId/summaries', phase4RateLimit, agentRuntimeAuth, async (
     });
   } catch (error: any) {
     logOutboundFailure('Error persisting agent summary:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to persist summary' });
+    return res.status(500).json({ message: 'Failed to persist summary' });
   }
 });
 
@@ -3084,7 +3087,7 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
     return res.json(result);
   } catch (error: any) {
     logOutboundFailure('Error posting agent thread comment:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
+    return res.status(500).json({ message: 'Failed to post comment' });
   }
 });
 
@@ -3700,8 +3703,8 @@ router.post('/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
 
     return res.status(201).json(post);
   } catch (error: any) {
-    console.error('Error creating agent post:', error); // safe-log: no outbound call
-    return res.status(500).json({ message: (error as Error).message || 'Failed to create post' });
+    logOutboundFailure('Error creating agent post:', error);
+    return res.status(500).json({ message: 'Failed to create post' });
   }
 });
 
@@ -4078,7 +4081,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     return res.status(201).json(pod);
   } catch (error: any) {
     logOutboundFailure('Error creating agent pod:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to create pod' });
+    return res.status(500).json({ message: 'Failed to create pod' });
   }
 });
 
@@ -4183,7 +4186,7 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
     return res.status(201).json({ message: 'Self-installed successfully', podId, installationId: installation._id });
   } catch (error: any) {
     logOutboundFailure('Error in agent self-install:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to self-install' });
+    return res.status(500).json({ message: 'Failed to self-install' });
   }
 });
 
@@ -4344,10 +4347,10 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    // The message only: a provider's HTTP error object carries its request
-    // config, which holds the credential (a query param or an auth header).
-    console.error('Error fetching messages for agent:', (error as Error)?.message);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
+    // logOutboundFailure keeps the message only: a provider's HTTP error object
+    // carries its request config, which holds the credential.
+    logOutboundFailure('Error fetching messages for agent:', error);
+    return res.status(500).json({ message: 'Failed to fetch messages' });
   }
 });
 
@@ -4524,7 +4527,7 @@ router.post('/pods/:podId/integrations/:integrationId/publish', phase4RateLimit,
     return res.json({ success: true, result });
   } catch (error: any) {
     logOutboundFailure('Error publishing via integration for agent:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to publish via integration' });
+    return res.status(500).json({ message: 'Failed to publish via integration' });
   }
 });
 

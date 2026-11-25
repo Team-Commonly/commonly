@@ -125,7 +125,7 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
       });
     }
     logOutboundFailure('Error publishing agent:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to publish agent' });
+    res.status(500).json({ error: 'Failed to publish agent' });
   }
 });
 
@@ -301,7 +301,7 @@ publishRouter.post('/generate-avatar', avatarRateLimit, auth, async (req: any, r
     });
   } catch (error) {
     logOutboundFailure('Avatar generation failed:', error);
-    res.status(500).json({ error: 'Failed to generate avatar', details: (error as any).message });
+    res.status(500).json({ error: 'Failed to generate avatar' });
   }
 });
 

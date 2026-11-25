@@ -993,7 +993,8 @@ exports.getProfile = async (req: any, res: any) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logOutboundFailure('getProfile failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -1010,7 +1011,8 @@ exports.getCurrentUser = async (req: any, res: any) => {
     }
     res.json(user);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logOutboundFailure('getCurrentUser failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -1044,7 +1046,8 @@ exports.updateProfile = async (req: any, res: any) => {
     const updatedUser = await User.findById(userId).select('-password -deviceTokens -agentRuntimeTokens');
     res.json(updatedUser);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logOutboundFailure('updateProfile failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
