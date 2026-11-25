@@ -17,6 +17,58 @@ interface Res {
 // eslint-disable-next-line global-require
 const { sharedRedisRequired } = require('../config/sharedRedisRequired');
 
+// /api/health answers unauthenticated callers, and a driver's error text can
+// carry an internal host, IP:port, database name or user (F624). The response
+// gets one of these fixed reasons; the full message goes to the server log.
+type HealthReason = 'timeout' | 'connection_refused' | 'host_not_found' | 'auth_failed' | 'unavailable';
+
+type DriverError = { code?: unknown; name?: unknown; message?: unknown; cause?: unknown };
+
+const reasonFromOne = (err: DriverError): HealthReason | null => {
+  const code = String(err.code ?? '');
+  const message = String(err.message ?? '');
+  // pg: 28P01 invalid_password, 28000 invalid_authorization_specification.
+  // Mongo: 18 AuthenticationFailed, 13 Unauthorized.
+  if (['28P01', '28000', '18', '13'].includes(code)
+    || /WRONGPASS|NOAUTH|NOPERM|authentication failed|auth failed|password authentication/i.test(message)) return 'auth_failed';
+  if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(message)) return 'connection_refused';
+  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code) || /ENOTFOUND|EAI_AGAIN/.test(message)) return 'host_not_found';
+  if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code)
+    || /TimeoutError$/.test(String(err.name ?? ''))
+    || /ETIMEDOUT|timed out|timeout|did not answer within|exceeded \d+ms/i.test(message)) return 'timeout';
+  return null;
+};
+
+const publicHealthReason = (error: unknown): HealthReason => {
+  const err = (error && typeof error === 'object' ? error : { message: String(error) }) as DriverError;
+  const direct = reasonFromOne(err);
+  if (direct) return direct;
+  if (err.cause && typeof err.cause === 'object') return reasonFromOne(err.cause as DriverError) || 'unavailable';
+  return 'unavailable';
+};
+
+// One log line per state change, not per request: this endpoint is
+// unauthenticated and can be hammered. A check logs when its reason differs
+// from the last one it logged, and forgets that state on its next success so a
+// recurrence logs again. Credentials are scrubbed before the text is written:
+// everything between scheme:// and the last @ of that token (a password may
+// hold / or @), then a bare user:pass@host. A plain a@b, with no colon before
+// the @, is left alone.
+const scrubCredentials = (text: string): string => text
+  .replace(/([a-z][a-z0-9+.-]*:\/\/)\S*@/gi, '$1***@')
+  .replace(/(^|[\s(['"=])[^\s:@/'"]+:(?!\/\/)[^\s@]*@(?=[^\s@])/g, '$1***@');
+const lastLoggedReason = new Map<string, HealthReason>();
+const logHealthFailure = (check: string, error: unknown): HealthReason => {
+  const reason = publicHealthReason(error);
+  if (lastLoggedReason.get(check) !== reason) {
+    lastLoggedReason.set(check, reason);
+    const raw = String((error as { message?: unknown } | null)?.message ?? error);
+    console.warn(`health: ${check} check failed (${reason}):`, scrubCredentials(raw));
+  }
+  return reason;
+};
+const clearHealthFailure = (check: string): void => { lastLoggedReason.delete(check); };
+
 const REDIS_PROBE_CONNECT_TIMEOUT_MS = 1000;
 // The overall deadline for connect plus PING. It sits past the socket's own
 // connectTimeout, but that does not make the socket time out first (Node
@@ -100,11 +152,12 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
       }),
     ]);
     if (pong === 'PONG') {
+      clearHealthFailure('redis');
       return { ok: true, check: { status: 'healthy', latency: `${Date.now() - redisStart}ms` } };
     }
     return { ok: false, check: { status: 'unhealthy', error: 'Ping failed' } };
   } catch (error) {
-    return { ok: false, check: { status: 'unhealthy', error: (error as { message?: string }).message } };
+    return { ok: false, check: { status: 'unhealthy', error: logHealthFailure('redis', error) } };
   } finally {
     state.finished = true;
     clearTimeout(timer);
@@ -129,7 +182,7 @@ const probeRedis = (): Promise<RedisProbe> => {
   return redisProbeInFlight;
 };
 
-const router: ReturnType<typeof express.Router> & { resetRedisProbeForTests?: () => void; closeOnLateSocket?: typeof closeOnLateSocket } = express.Router();
+const router: ReturnType<typeof express.Router> & { resetRedisProbeForTests?: () => void; closeOnLateSocket?: typeof closeOnLateSocket; publicHealthReason?: typeof publicHealthReason } = express.Router();
 
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
@@ -147,14 +200,14 @@ router.get('/', async (_req: unknown, res: Res) => {
     const mongoStates: Record<number, string> = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
     if (mongoState === 1) {
       await mongoose.connection.db.admin().ping();
+      clearHealthFailure('mongodb');
       (health.checks as Record<string, unknown>).mongodb = { status: 'healthy', state: mongoStates[mongoState], latency: `${Date.now() - startTime}ms` };
     } else {
       (health.checks as Record<string, unknown>).mongodb = { status: 'unhealthy', state: mongoStates[mongoState] || 'unknown', error: 'Not connected' };
       health.status = 'degraded';
     }
   } catch (error) {
-    const e = error as { message?: string };
-    (health.checks as Record<string, unknown>).mongodb = { status: 'unhealthy', error: e.message };
+    (health.checks as Record<string, unknown>).mongodb = { status: 'unhealthy', error: logHealthFailure('mongodb', error) };
     health.status = 'degraded';
   }
 
@@ -163,6 +216,7 @@ router.get('/', async (_req: unknown, res: Res) => {
       const pgStart = Date.now();
       const result = await (pgPool as { query: (q: string) => Promise<{ rows: Array<{ ok: number }> }> }).query('SELECT 1 as ok');
       if (result.rows[0]?.ok === 1) {
+        clearHealthFailure('postgresql');
         (health.checks as Record<string, unknown>).postgresql = { status: 'healthy', latency: `${Date.now() - pgStart}ms` };
       } else {
         (health.checks as Record<string, unknown>).postgresql = { status: 'unhealthy', error: 'Query failed' };
@@ -172,8 +226,7 @@ router.get('/', async (_req: unknown, res: Res) => {
       (health.checks as Record<string, unknown>).postgresql = { status: 'not_configured', message: 'PostgreSQL not configured (PG_HOST not set)' };
     }
   } catch (error) {
-    const e = error as { message?: string };
-    (health.checks as Record<string, unknown>).postgresql = { status: 'unhealthy', error: e.message };
+    (health.checks as Record<string, unknown>).postgresql = { status: 'unhealthy', error: logHealthFailure('postgresql', error) };
     health.status = 'degraded';
   }
 
@@ -331,6 +384,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ status: 'not_ready', reason: 'MongoDB not connected' });
     }
+    clearHealthFailure('ready');
 
     // The gate that was missing on 2026-09-25 (TASK-168). A pod whose boot
     // connect timed out has no PG routes at all: /api/pg/messages 404s, so chat
@@ -370,9 +424,10 @@ router.get('/ready', async (_req: unknown, res: Res) => {
             );
           }),
         ]);
+        clearHealthFailure('postgresql-ready');
       } catch (error) {
-        const e = error as { message?: string };
-        console.warn('health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:', e.message);
+        // Public and polled by the kubelet: logged once per change, scrubbed.
+        logHealthFailure('postgresql-ready', error);
         return res.status(200).json({
           status: 'ready',
           degraded: ['postgresql'],
@@ -385,14 +440,15 @@ router.get('/ready', async (_req: unknown, res: Res) => {
 
     return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
   } catch (error) {
-    const e = error as { message?: string };
-    return res.status(503).json({ status: 'not_ready', error: e.message });
+    return res.status(503).json({ status: 'not_ready', error: logHealthFailure('ready', error) });
   }
 });
 
 // Tests only: forget the cached Redis probe.
 router.closeOnLateSocket = closeOnLateSocket;
+router.publicHealthReason = publicHealthReason;
 router.resetRedisProbeForTests = (): void => {
+  lastLoggedReason.clear();
   redisProbeInFlight = null;
   redisProbeCached = null;
 };

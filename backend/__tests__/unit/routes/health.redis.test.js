@@ -122,7 +122,7 @@ describe('GET /api/health redis check', () => {
     process.env.REDIS_HOST = 'cache.internal';
     mockClient = makeClient({ ping: jest.fn().mockRejectedValue(new Error('connection lost')) });
     const res = await request(buildApp()).get('/api/health');
-    expect(res.body.checks.redis).toEqual({ status: 'unhealthy', error: 'connection lost' });
+    expect(res.body.checks.redis).toEqual({ status: 'unhealthy', error: 'unavailable' });
     expect(res.body.status).toBe('healthy');
     expect(res.status).toBe(200);
   });
@@ -250,7 +250,7 @@ describe('GET /api/health redis check', () => {
       await jest.advanceTimersByTimeAsync(1600);
       const res = await pending;
       expect(res.body.checks.redis.status).toBe('unhealthy');
-      expect(res.body.checks.redis.error).toMatch(/did not answer/);
+      expect(res.body.checks.redis.error).toBe('timeout');
       expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1);
     });
 
@@ -289,7 +289,7 @@ describe('GET /api/health redis check', () => {
       process.env.REDIS_HOST = 'cache.internal';
       mockClient = makeClient({ connectError: new Error('ECONNREFUSED') });
       const res = await (await startProbe()).pending;
-      expect(res.body.checks.redis).toEqual({ status: 'unhealthy', error: 'ECONNREFUSED' });
+      expect(res.body.checks.redis).toEqual({ status: 'unhealthy', error: 'connection_refused' });
       expect(mockClient.disconnect).not.toHaveBeenCalled();
       await new Promise((resolve) => setImmediate(resolve));
       expect(unhandled).toEqual([]);

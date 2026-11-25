@@ -56,6 +56,7 @@ const buildApp = () => {
 
 describe('GET /api/health/ready', () => {
   beforeEach(() => {
+    healthRoutes.resetRedisProbeForTests(); // also forgets the logged health reasons
     mockIsDraining.mockReturnValue(false);
     mockMongoose.connection.readyState = 1;
     mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
@@ -107,7 +108,7 @@ describe('GET /api/health/ready', () => {
       degraded: ['postgresql'],
     }));
     expect(console.warn).toHaveBeenCalledWith(
-      'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
+      'health: postgresql-ready check failed (unavailable):',
       'connection refused',
     );
     expect(mockCreateClient).not.toHaveBeenCalled();
@@ -130,7 +131,7 @@ describe('GET /api/health/ready', () => {
       degraded: ['postgresql'],
     }));
     expect(console.warn).toHaveBeenCalledWith(
-      'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
+      'health: postgresql-ready check failed (timeout):',
       expect.stringMatching(/did not answer within \d+ms/),
     );
     // The handler keeps one probe in flight per pod; let it settle so the
