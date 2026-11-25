@@ -529,7 +529,8 @@ class SchedulerService {
           const r = await sweepRegistryDrift({ dryRun: false });
           console.log(
             `[registry-reconciler] pass scanned=${r.scanned} inserted=${r.inserted} existing=${r.existing} `
-            + `errors=${r.errors} statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}`,
+            + `skipped=${r.skipped} errors=${r.errors} `
+            + `statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}`,
           );
         } catch (error) {
           console.error('[registry-reconciler] scheduled sweep failed:', error);

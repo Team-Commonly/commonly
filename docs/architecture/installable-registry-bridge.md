@@ -78,6 +78,14 @@ skips marked rows anyway; the flag is for the read switch, which reads
   validation is counted in `errors` and skipped.
 - Status and install-count drift on existing rows is counted in `mismatches`,
   not fixed.
+- A registry row with no usable `agentName` (null, missing or blank) is
+  counted in `skipped` and never written. `registryKeyOf` is the one place a
+  row's key is computed. `String(null)` once keyed a January seed row as the
+  Installable `"null"` on the first prod sweep. The registry's unique
+  `agentName` index admits at most one null-or-missing row, so only one such
+  row can exist. Mirrors skip these rows the same way, and the deploy-time
+  bootstrap writes through a mirror, which is why a roll can add rows while
+  the flag is off.
 - **Off by default.** The hourly job (:39, no lease, because every write is
   idempotent) sweeps only when `INSTALLABLE_REGISTRY_SWEEP=1`; unset, each tick
   logs that it skipped. Turn it on only after a fresh backup. Run it by hand with
