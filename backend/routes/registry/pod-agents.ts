@@ -19,6 +19,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const { outsiderGrantPodCounts } = require('../../services/nativeOutsiderGrantPolicy');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const { limitConcurrency } = require('../../utils/concurrencyLimit');
+const { readRegistryDisplay, readRegistryDisplayOne } = require('../../services/installable/registryReader');
 const {
   getUserId,
   adminMayActOnPod,
@@ -244,9 +245,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       return lastHeartbeatPerInstall(installations) as Promise<Map<string, Date>>;
     });
 
-    const registryRead = read(() => AgentRegistry.find({
-      agentName: { $in: agentNames },
-    }).select('agentName iconUrl').lean());
+    // Only iconUrl is projected, so only iconUrl goes through the read path.
+    const registryRead = read(async () => readRegistryDisplay(
+      await AgentRegistry.find({ agentName: { $in: agentNames } }).select('agentName iconUrl').lean(),
+      'pod-agents.list',
+      ['iconUrl'],
+    ));
     const installationDisplayNames = Array.from(new Set(
       installations.map((i: any) => i.displayName).filter(Boolean),
     ));
@@ -578,7 +582,11 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
     }
 
     const [registryEntry, profile, templateCandidates] = await Promise.all([
-      AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean(),
+      // The projection stays iconUrl-only; the key comes from the installation.
+      Promise.resolve(AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean())
+        .then((row: any) => (row
+          ? readRegistryDisplayOne({ agentName: installation.agentName, ...row }, 'pod-agents.one', ['iconUrl'])
+          : row)),
       AgentProfile.findOne({
         podId,
         agentName: installation.agentName,

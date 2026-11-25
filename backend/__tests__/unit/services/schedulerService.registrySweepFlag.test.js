@@ -28,6 +28,7 @@ const runRegistryJob = async () => {
 
 describe('registry drift sweep flag', () => {
   const saved = process.env.INSTALLABLE_REGISTRY_SWEEP;
+  const savedReadPath = process.env.INSTALLABLE_READ_PATH;
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     sweepRegistryDrift.mockClear();
@@ -35,7 +36,28 @@ describe('registry drift sweep flag', () => {
   afterEach(() => {
     if (saved === undefined) delete process.env.INSTALLABLE_REGISTRY_SWEEP;
     else process.env.INSTALLABLE_REGISTRY_SWEEP = saved;
+    if (savedReadPath === undefined) delete process.env.INSTALLABLE_READ_PATH;
+    else process.env.INSTALLABLE_READ_PATH = savedReadPath;
     jest.restoreAllMocks();
+  });
+
+  // The read-path counters (ADR-001 Phase 3 PR B) ride the hourly line, so
+  // ops can read shadow mismatches without a new route.
+  it('carries the read-path counters while the read path is on or shadowing', async () => {
+    delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    process.env.INSTALLABLE_READ_PATH = 'shadow';
+    await runRegistryJob();
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler]'));
+    expect(line).toContain('readPath=shadow');
+    expect(line).toContain('mismatchedRows=0');
+  });
+
+  it('adds nothing to the line while the read path is off', async () => {
+    delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    delete process.env.INSTALLABLE_READ_PATH;
+    await runRegistryJob();
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler]'));
+    expect(line).toBe('[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1');
   });
 
   it('does not sweep when the flag is unset, and logs that it skipped', async () => {
