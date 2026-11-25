@@ -51,6 +51,8 @@ interface PgAdapter {
    * value that is not a scalar throws before any query runs.
    */
   findWhere(where: PgWhere, limit?: number): Promise<Array<{ row: Row; version: number }>>;
+  /** The columns `$exists` may test (see pgTableAdapter's `presenceColumns`). None when absent. */
+  readonly presenceColumns?: readonly string[];
 }
 
 /** The range operators a filtered read may use, and their SQL. */
@@ -60,10 +62,19 @@ const RANGE_OPS: Record<string, string> = {
 type PgValue = string | number | boolean | Date | null;
 /**
  * A filtered read's conditions by column, ANDed: a scalar is equality (null is
- * IS NULL), and an object whose keys are all RANGE_OPS is a range. Nothing else
- * is accepted.
+ * IS NULL), and an object whose keys are all RANGE_OPS is a range. Two more
+ * operators each stand alone in their object: `{ $in: [scalars] }`, a
+ * non-empty list with no null, and `{ $exists: boolean }`, only on a column
+ * the adapter declares in `presenceColumns`. Nothing else is accepted.
  */
-export type PgWhere = Record<string, PgValue | Record<string, PgValue>>;
+export type PgWhere = Record<string, PgValue | Record<string, PgValue | PgValue[]>>;
+
+/** Operators that must be the only key of their condition object. */
+const LONE_OPS = ['$in', '$exists'];
+const loneOpMixed = (condition: Record<string, unknown>): string | undefined => {
+  const keys = Object.keys(condition);
+  return keys.length > 1 ? keys.find((op) => LONE_OPS.includes(op)) : undefined;
+};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => value !== null
   && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
@@ -116,13 +127,20 @@ const identifier = (value: string): string => {
  * `bigintColumns` come back from node-postgres as strings (BIGINT exceeds a
  * 32-bit int); they are read back as numbers, so every caller and the compare
  * see one type, and a value past Number.MAX_SAFE_INTEGER throws, never rounds.
+ * `presenceColumns` are the columns a filtered read may test with `$exists`.
+ * Mongo tells a missing field from one stored as null, and `$exists: false`
+ * matches only the missing one; a Postgres row holds both as NULL, so the two
+ * stores agree on `$exists` only for a field that is never written as an
+ * explicit null while present. Only the store's author can promise that of a
+ * field (its writers set it to a value or leave it out), so it is declared
+ * here, column by column, and `$exists` on any other column throws.
  */
 export function pgTableAdapter(
   {
-    pool, table, idColumn, columns, jsonColumns = [], bigintColumns = [],
+    pool, table, idColumn, columns, jsonColumns = [], bigintColumns = [], presenceColumns = [],
   }: {
     pool: PgQueryable; table: string; idColumn: string; columns: string[];
-    jsonColumns?: string[]; bigintColumns?: string[];
+    jsonColumns?: string[]; bigintColumns?: string[]; presenceColumns?: string[];
   },
 ): PgAdapter {
   const t = identifier(table);
@@ -132,6 +150,10 @@ export function pgTableAdapter(
   if ([...json].some((c) => !cols.includes(c))) throw new Error('dual-store: jsonColumns must be listed in columns');
   const bigint = bigintColumns.map(identifier);
   if (bigint.some((c) => !cols.includes(c))) throw new Error('dual-store: bigintColumns must be listed in columns');
+  const presence = presenceColumns.map(identifier);
+  if (presence.some((c) => !cols.includes(c) || json.has(c))) {
+    throw new Error('dual-store: presenceColumns must be listed in columns and not be JSON');
+  }
   const read = (raw: Row): Row => {
     const row = { ...raw };
     bigint.forEach((c) => {
@@ -157,6 +179,7 @@ export function pgTableAdapter(
   const replaceSql = `UPDATE ${t} SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')},
     pg_version = $${cols.length + 2} + 1 WHERE ${id} = $1 AND pg_version = $${cols.length + 2}`;
   return {
+    presenceColumns: presence,
     async upsert(row, version) {
       const result = await pool.query(upsertSql, [...all.map((c) => bind(row, c)), version]);
       return (result.rowCount ?? 0) > 0;
@@ -191,7 +214,33 @@ export function pgTableAdapter(
         if (isPlainObject(condition)) {
           const ops = Object.entries(condition);
           if (!ops.length) throw new Error(`dual-store: ${t}.${column} has an empty condition`);
+          const lone = loneOpMixed(condition);
+          if (lone) throw new Error(`dual-store: ${t}.${column} ${lone} cannot be combined with another operator`);
           ops.forEach(([op, value]) => {
+            if (op === '$in') {
+              // An empty list is refused, never sent: no caller's "none of
+              // these" may ever turn into "all of them" downstream.
+              if (!Array.isArray(value) || !value.length) {
+                throw new Error(`dual-store: ${t}.${column} $in needs a non-empty array`);
+              }
+              if (value.some((element) => element === null || !isPgValue(element))) {
+                throw new Error(`dual-store: ${t}.${column} $in needs strings, numbers, booleans or Dates, never null`);
+              }
+              // One array parameter; each element is bound as an equality's
+              // value is, and Postgres types the array from the column.
+              params.push([...value]);
+              clauses.push(`${column} = ANY($${params.length})`);
+              return;
+            }
+            if (op === '$exists') {
+              if (!presence.includes(column)) {
+                throw new Error(`dual-store: $exists is not allowed on ${t}.${column}: Postgres stores a missing`
+                  + ' field and an explicit null alike, so only a declared presence column can be tested');
+              }
+              if (typeof value !== 'boolean') throw new Error(`dual-store: ${t}.${column} $exists needs true or false`);
+              clauses.push(`${column} IS ${value ? 'NOT NULL' : 'NULL'}`);
+              return;
+            }
             if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
               throw new Error(`dual-store: operator ${JSON.stringify(op)} is not supported on ${t}.${column}`);
             }
@@ -376,8 +425,23 @@ export interface DualStore {
    */
   updateWhere(filter: Doc, pipeline: Doc[]): Promise<boolean>;
   /**
+   * `updateWhere` for every document `filter` matches: Mongo's `updateMany`,
+   * returning how many documents matched and changed. In dual and pg-read the
+   * matching ids are read from Mongo, then each is changed by its own
+   * `updateWhere` on the filter and its id, so the filter is checked again
+   * per document and each takes its own version, marker and copy. A document
+   * that stops matching between the read and its write is skipped, and a
+   * copy that fails leaves its marker for `repair`, as `updateWhere`'s does.
+   * Mongo's `updateMany` is not isolated across documents either. One round
+   * trip and one copy per document, so it is for small sets. mongo makes one
+   * `updateMany`. Refused in pg mode until step 4.
+   */
+  updateManyWhere(filter: Doc, pipeline: Doc[]): Promise<number>;
+  /**
    * Filtered reads. `filter` is equality and `$gt`/`$gte`/`$lt`/`$lte` on the
-   * fields the store declares in `filterColumns`, ANDed. mongo and dual read
+   * fields the store declares in `filterColumns`, ANDed; `$in` takes a
+   * non-empty list without null, and `$exists` only a field whose column the
+   * adapter declares in `presenceColumns`. mongo and dual read
    * Mongo; pg-read reads Postgres unless a document is flagged (as `findById`);
    * pg reads Postgres. Either way the result is the plain Mongo shape,
    * narrowed to `fields` (and `_id`) when given. Outside mongo a filter
@@ -538,7 +602,35 @@ export function createDualStore(
       const column = Object.prototype.hasOwnProperty.call(filterColumns, field) ? filterColumns[field] : undefined;
       if (!column) throw new Error(`dual-store: ${name} cannot filter on ${JSON.stringify(field)} in Postgres`);
       if (isPlainObject(value)) {
+        const lone = loneOpMixed(value);
+        if (lone) {
+          throw new Error(`dual-store: ${name} cannot combine ${lone} with another operator on ${field} in Postgres`);
+        }
         return [column, Object.fromEntries(Object.entries(value).map(([op, operand]) => {
+          if (op === '$in') {
+            if (!Array.isArray(operand) || !operand.length) {
+              throw new Error(`dual-store: ${name} cannot filter ${field} with $in on anything but a non-empty array`);
+            }
+            // Each element is cast as an equality's value is, and checked after the cast too.
+            return [op, operand.map((element) => {
+              const cast = element === null || element === undefined ? null : scalar(field, element);
+              if (cast === null) {
+                throw new Error(`dual-store: ${name} cannot filter ${field} with $in holding null in Postgres`);
+              }
+              return cast;
+            })];
+          }
+          if (op === '$exists') {
+            // See pgTableAdapter's presenceColumns: only there do the stores agree.
+            if (!pg.presenceColumns?.includes(column)) {
+              throw new Error(`dual-store: ${name} cannot filter ${field} with $exists in Postgres:`
+                + ' its column is not a declared presence column');
+            }
+            if (typeof operand !== 'boolean') {
+              throw new Error(`dual-store: ${name} $exists on ${field} needs true or false`);
+            }
+            return [op, operand];
+          }
           if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
             throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} in Postgres`);
           }
@@ -625,7 +717,7 @@ export function createDualStore(
     },
   };
 
-  return {
+  const api: DualStore = {
     async create(doc) {
       const mode = storeMode(name);
       if (mode === 'pg') return pgOnly.create(doc);
@@ -822,6 +914,25 @@ export function createDualStore(
       return true;
     },
 
+    async updateManyWhere(filter, pipeline) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('updateManyWhere');
+      if (!Array.isArray(pipeline) || !pipeline.length) {
+        throw new Error(`dual-store: ${name} updateManyWhere needs pipeline stages`);
+      }
+      if (mode === 'mongo') return (await Model.updateMany(filter, pipeline)).matchedCount;
+      const matched = await Model.find({ ...filter, pgDeleted: { $ne: true } }, { _id: 1 })
+        .sort({ _id: 1 }).lean() as Doc[];
+      let updated = 0;
+      for (const { _id: id } of matched) {
+        // $and keeps any _id condition of the caller's own, and checks the
+        // whole filter again against the document as it is now.
+        // eslint-disable-next-line no-await-in-loop -- one versioned write and copy at a time
+        if (await api.updateWhere({ $and: [filter, { _id: id }] }, pipeline)) updated += 1;
+      }
+      return updated;
+    },
+
     async findOneWhere(filter, { fields } = {}) {
       return (await readWhere(filter, 1, fields))[0] ?? null;
     },
@@ -982,4 +1093,5 @@ export function createDualStore(
       };
     },
   };
+  return api;
 }

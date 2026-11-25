@@ -410,7 +410,7 @@ describe('digest state repository (ADR-034 step 2)', () => {
       ['an identifier that is not a column', { 'id; DROP TABLE x': 1 }, /no column/],
       ['a JSON column', { last_event_ids: 'x' }, /is JSON/],
       ['$ne', { unread_count: { $ne: 0 } }, /operator "\$ne"/],
-      ['$in', { unread_count: { $in: [1] } }, /operator "\$in"/],
+      ['$nin', { unread_count: { $nin: [1] } }, /operator "\$nin"/],
       ['an empty condition', { unread_count: {} }, /empty condition/],
       ['a null range', { unread_since: { $lte: null } }, /needs a string/],
       ['an array value', { agent_name: ['flint'] }, /scalar or a range/],

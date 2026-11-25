@@ -7,7 +7,7 @@
  */
 const mongoose = require('mongoose');
 const {
-  createDualStore, dualStorePlugin, storeMode, dualStoreStats, resetDualStoreStats,
+  createDualStore, dualStorePlugin, storeMode, dualStoreStats, resetDualStoreStats, pgTableAdapter,
 } = require('../../../repositories/dualStore');
 const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
 const { fakePg } = require('../../utils/fakePgAdapter');
@@ -1024,6 +1024,231 @@ describe('dual-store helper (ADR-034 D3)', () => {
       await expect(s.setWhere(key, { 'seen.p1': at(1) })).rejects.toThrow(/not supported in pg mode until step 4/);
       expect(await Pair.countDocuments({})).toBe(0);
       expect(pg.calls).toEqual([]);
+    });
+  });
+
+  describe('18. $in, $exists and updateManyWhere', () => {
+    const FILTERS = {
+      _id: 'id', title: 'title', count: 'count', note: 'note',
+    };
+    // note is never written as an explicit null, so it may be tested with $exists.
+    const filtered = (pg) => store(pg, { filterColumns: FILTERS, sampleRate: 0 });
+    const presencePg = () => fakePg({ presenceColumns: ['note'] });
+    const seed = async (s) => {
+      const a = await s.create({ title: 'a', count: 1 });
+      const b = await s.create({ title: 'b', count: 2, note: 'held' });
+      const c = await s.create({ title: 'c', count: 3 });
+      return { a, b, c };
+    };
+    const titles = (docs) => docs.map((doc) => doc.title).sort();
+
+    it('pg-read: $in reads Postgres, each element cast as equality casts it', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = presencePg();
+      const s = filtered(pg);
+      const { a, c } = await seed(s);
+      pg.calls.length = 0;
+      // ObjectIds and their hex strings both cast to the id column's hex.
+      expect(titles(await s.findWhere({ _id: { $in: [a._id, String(c._id)] } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ title: { $in: ['b', 'c', 'zz'] }, count: { $gte: 3 } }))).toEqual(['c']);
+      expect(pg.calls).toEqual(['findWhere', 'findWhere']);
+    });
+
+    it('pg-read: $exists false is a missing field and true a present one, on a presence column', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = presencePg();
+      const s = filtered(pg);
+      await seed(s);
+      pg.calls.length = 0;
+      expect(titles(await s.findWhere({ note: { $exists: false } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ note: { $exists: true } }))).toEqual(['b']);
+      expect(pg.calls).toEqual(['findWhere', 'findWhere']);
+      // Mongo answers the same in dual.
+      process.env[ENV] = 'dual';
+      expect(titles(await s.findWhere({ note: { $exists: false } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ note: { $exists: true } }))).toEqual(['b']);
+    });
+
+    it.each(['dual', 'pg-read'])('%s: refuses a $in or $exists Postgres could not run the same, before any read',
+      async (mode) => {
+        process.env[ENV] = mode;
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        pg.calls.length = 0;
+        const find = jest.spyOn(Widget, 'find');
+        await expect(s.findWhere({ title: { $in: [] } })).rejects.toThrow(/non-empty array/);
+        await expect(s.findWhere({ title: { $in: 'a' } })).rejects.toThrow(/non-empty array/);
+        await expect(s.findWhere({ title: { $in: ['a', null] } })).rejects.toThrow(/holding null/);
+        await expect(s.findWhere({ count: { $in: [1], $gt: 0 } })).rejects.toThrow(/cannot combine \$in/);
+        // title can be written as null, so Postgres could not tell it from missing.
+        await expect(s.findWhere({ title: { $exists: false } })).rejects.toThrow(/not a declared presence column/);
+        await expect(s.findWhere({ note: { $exists: 0 } })).rejects.toThrow(/true or false/);
+        await expect(s.findOneWhere({ note: { $exists: true, $gt: 'a' } })).rejects.toThrow(/cannot combine \$exists/);
+        expect(find).not.toHaveBeenCalled();
+        expect(pg.calls).toEqual([]);
+      });
+
+    it('refuses $exists on every column of a store that declares no presence columns', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = fakePg();
+      const s = filtered(pg);
+      await expect(s.findWhere({ note: { $exists: false } })).rejects.toThrow(/not a declared presence column/);
+      expect(pg.calls).toEqual([]);
+    });
+
+    describe("the Postgres adapter's $in and $exists", () => {
+      const recordingPool = () => {
+        const queries = [];
+        return {
+          queries,
+          query: async (sql, params) => {
+            queries.push({ sql, params });
+            return { rows: [], rowCount: 0 };
+          },
+        };
+      };
+      const adapter = (pool) => pgTableAdapter({
+        pool,
+        table: 'widgets',
+        idColumn: 'id',
+        columns: ['title', 'seen_at', 'payload'],
+        jsonColumns: ['payload'],
+        presenceColumns: ['seen_at'],
+      });
+
+      it('binds a $in list as one array parameter and $exists as IS [NOT] NULL', async () => {
+        const pool = recordingPool();
+        const since = new Date('2026-01-01T00:00:00Z');
+        await adapter(pool).findWhere({
+          title: { $in: ["a'; DROP TABLE x; --", 'b'] }, id: { $in: ['x1'] }, seen_at: { $exists: false },
+        });
+        await adapter(pool).findWhere({ seen_at: { $exists: true }, title: { $in: [since] } }, 2);
+        const [first, second] = pool.queries;
+        expect(first.sql).toContain('WHERE title = ANY($1) AND id = ANY($2) AND seen_at IS NULL ORDER BY');
+        expect(first.params).toEqual([["a'; DROP TABLE x; --", 'b'], ['x1']]);
+        expect(first.sql).not.toContain('DROP');
+        expect(second.sql).toContain('WHERE seen_at IS NOT NULL AND title = ANY($1) ORDER BY id COLLATE "C" LIMIT $2');
+        expect(second.params).toEqual([[since], 2]);
+        expect(adapter(pool).presenceColumns).toEqual(['seen_at']);
+      });
+
+      it.each([
+        ['an empty $in', { title: { $in: [] } }, /\$in needs a non-empty array/],
+        ['a $in that is not an array', { title: { $in: 'a' } }, /\$in needs a non-empty array/],
+        ['a null $in element', { title: { $in: ['a', null] } }, /never null/],
+        ['an object $in element', { title: { $in: [{ $literal: 'a' }] } }, /never null/],
+        ['$in on a JSON column', { payload: { $in: ['a'] } }, /is JSON/],
+        ['$in mixed with a range', { title: { $in: ['a'], $gt: 'a' } }, /\$in cannot be combined/],
+        ['$exists on an undeclared presence column', { title: { $exists: false } },
+          /\$exists is not allowed on widgets.title/],
+        ['$exists on the id column', { id: { $exists: true } }, /\$exists is not allowed/],
+        ['a $exists that is not a boolean', { seen_at: { $exists: 1 } }, /true or false/],
+        ['$exists mixed with a range', { seen_at: { $exists: true, $lt: new Date() } }, /\$exists cannot be combined/],
+      ])('refuses %s before any query', async (_, where, message) => {
+        const pool = recordingPool();
+        await expect(adapter(pool).findWhere(where)).rejects.toThrow(message);
+        expect(pool.queries).toEqual([]);
+      });
+
+      it('refuses a presence column that is not a plain declared column', () => {
+        const pool = recordingPool();
+        const base = {
+          pool, table: 'widgets', idColumn: 'id', columns: ['title', 'payload'], jsonColumns: ['payload'],
+        };
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['missing'] })).toThrow(/presenceColumns/);
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['payload'] })).toThrow(/presenceColumns/);
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['id'] })).toThrow(/presenceColumns/);
+      });
+    });
+
+    describe('updateManyWhere', () => {
+      const tag = [{ $set: { note: { $literal: 'tagged' } } }];
+
+      it('mongo: one updateMany, no markers and no Postgres call', async () => {
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        const updateMany = jest.spyOn(Widget, 'updateMany');
+        expect(await s.updateManyWhere({ count: { $gte: 2 }, note: { $exists: false } }, tag)).toBe(1);
+        expect(updateMany).toHaveBeenCalledTimes(1);
+        expect((await Widget.findOne({ title: 'c' }).lean())).toMatchObject({ note: 'tagged' });
+        expect((await Widget.findOne({ title: 'c' }).lean()).pgVersion).toBeUndefined();
+        expect(pg.calls).toEqual([]);
+      });
+
+      it.each(['dual', 'pg-read'])('%s: changes only matching documents, each with its own version and one copy',
+        async (mode) => {
+          process.env[ENV] = mode;
+          const pg = presencePg();
+          const s = filtered(pg);
+          const { a, b, c } = await seed(s);
+          pg.calls.length = 0;
+          expect(await s.updateManyWhere(
+            { _id: { $in: [a._id, b._id, c._id] }, note: { $exists: false } }, tag,
+          )).toBe(2);
+          expect(pg.calls.filter((call) => call === 'upsert')).toHaveLength(2);
+          for (const doc of [a, c]) {
+            // eslint-disable-next-line no-await-in-loop
+            const raw = await Widget.findById(doc._id).lean();
+            expect(raw).toMatchObject({ note: 'tagged', pgVersion: 2 });
+            expect(raw.pgPending).toBeUndefined();
+            expect(pg.rows.get(String(doc._id))).toEqual({ row: toRow(raw), version: 2 });
+          }
+          const untouched = await Widget.findById(b._id).lean();
+          expect(untouched).toMatchObject({ note: 'held', pgVersion: 1 });
+          expect(pg.rows.get(String(b._id)).version).toBe(1);
+          // A second pass matches nothing and writes nothing.
+          pg.calls.length = 0;
+          expect(await s.updateManyWhere({ _id: { $in: [a._id, c._id] }, note: { $exists: false } }, tag)).toBe(0);
+          expect(pg.calls).toEqual([]);
+        });
+
+      it('dual: a document that stops matching between the find and its write is skipped', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        const { a, c } = await seed(s);
+        // Hold a's copy; c changes under the loop before its own write.
+        const hold = pg.hold('upsert');
+        const running = s.updateManyWhere({ title: { $in: ['a', 'c'] }, note: { $exists: false } }, tag);
+        await hold.arrived;
+        await s.update(c._id, { note: 'someone else' });
+        hold.release();
+        expect(await running).toBe(1);
+        expect(await Widget.findById(a._id).lean()).toMatchObject({ note: 'tagged', pgVersion: 2 });
+        const raw = await Widget.findById(c._id).lean();
+        expect(raw).toMatchObject({ note: 'someone else', pgVersion: 2 });
+        expect(pg.rows.get(String(c._id))).toEqual({ row: toRow(raw), version: 2 });
+      });
+
+      it('dual: a failed copy counts the write and leaves its marker for repair', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        const { a, c } = await seed(s);
+        pg.failNext('upsert');
+        expect(await s.updateManyWhere({ note: { $exists: false } }, tag)).toBe(2);
+        expect((await Widget.findById(a._id).lean()).pgPending).toBe(2);
+        expect(pg.rows.get(String(a._id)).version).toBe(1);
+        expect((await Widget.findById(c._id).lean()).pgPending).toBeUndefined();
+        expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+        const raw = await Widget.findById(a._id).lean();
+        expect(pg.rows.get(String(a._id))).toEqual({ row: toRow(raw), version: 2 });
+      });
+
+      it('refuses empty stages, and pg mode before any write', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        await expect(s.updateManyWhere({ title: 'a' }, [])).rejects.toThrow(/needs pipeline stages/);
+        process.env[ENV] = 'pg';
+        pg.calls.length = 0;
+        await expect(s.updateManyWhere({ title: 'a' }, tag)).rejects.toThrow(/not supported in pg mode until step 4/);
+        expect(pg.calls).toEqual([]);
+        expect(await Widget.countDocuments({ note: 'tagged' })).toBe(0);
+      });
     });
   });
 });

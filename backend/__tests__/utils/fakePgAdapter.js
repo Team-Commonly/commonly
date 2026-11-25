@@ -6,7 +6,7 @@
  * ignores the guard's `ON CONFLICT ... DO UPDATE ... WHERE`.
  */
 /** Mirrors pgTableAdapter's SQL: an upsert applies only above the stored version. */
-const fakePg = () => {
+const fakePg = ({ presenceColumns = [] } = {}) => {
   const rows = new Map();
   const calls = [];
   const holds = {};
@@ -28,6 +28,8 @@ const fakePg = () => {
   return {
     rows,
     calls,
+    // The columns the store may test with $exists, as pgTableAdapter declares them.
+    presenceColumns,
     upsert: (row, version) => run('upsert', () => {
       const current = rows.get(row.id);
       if (current && current.version >= version) return false;
@@ -59,7 +61,7 @@ const fakePg = () => {
     scan: (after, limit) => run('scan', () => [...rows.keys()]
       .filter((id) => after == null || id > after).sort().slice(0, limit)
       .map((id) => ({ id, row: { ...rows.get(id).row }, version: rows.get(id).version }))),
-    // pgTableAdapter's filtered read: equality (null is IS NULL) and ranges,
+    // pgTableAdapter's filtered read: equality (null is IS NULL), ranges, $in and $exists,
     // ANDed, in id order. A range never matches NULL, as in SQL. The real
     // adapter's column and operator refusals are tested against its SQL.
     findWhere: (where, limit) => run('findWhere', () => {
@@ -70,6 +72,11 @@ const fakePg = () => {
       const matches = (row) => Object.entries(where).every(([column, condition]) => {
         const stored = row[column] ?? null;
         if (condition !== null && typeof condition === 'object' && !(condition instanceof Date)) {
+          // $exists is IS [NOT] NULL; $in never matches NULL, as `= ANY` doesn't.
+          if ('$exists' in condition) return (stored !== null) === condition.$exists;
+          if ('$in' in condition) {
+            return stored !== null && condition.$in.some((value) => scalar(value) === scalar(stored));
+          }
           return stored !== null && Object.entries(condition).every(([op, value]) => {
             if (!ranges[op]) throw new Error(`fake findWhere: unsupported operator ${op}`);
             return ranges[op](scalar(stored), scalar(value));

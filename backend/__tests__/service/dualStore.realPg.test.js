@@ -100,6 +100,54 @@ real('pgTableAdapter on real PostgreSQL', () => {
     });
   });
 
+  describe('$in and $exists in a filtered read', () => {
+    let marks;
+    const at = (minute) => new Date(Date.UTC(2026, 0, 1, 0, minute));
+    beforeEach(async () => {
+      await database.pool.query(`CREATE TABLE marks (
+        id TEXT PRIMARY KEY, title TEXT, n INTEGER, seen_at TIMESTAMPTZ, pg_version INTEGER NOT NULL)`);
+      marks = pgTableAdapter({
+        pool: database.pool,
+        table: 'marks',
+        idColumn: 'id',
+        columns: ['title', 'n', 'seen_at'],
+        presenceColumns: ['seen_at'],
+      });
+      await marks.upsert({ id: 'a', title: 'one', n: 1, seen_at: null }, 1);
+      await marks.upsert({ id: 'b', title: "it's", n: 2, seen_at: at(5) }, 1);
+      await marks.upsert({ id: 'c', title: 'three', n: 3, seen_at: at(10) }, 1);
+      await marks.upsert({ id: 'd', title: null, n: null, seen_at: null }, 1);
+    });
+    const ids = (rows) => rows.map(({ row }) => row.id);
+
+    it('binds $in as one array parameter, typed by each column, and never matches NULL', async () => {
+      expect(ids(await marks.findWhere({ title: { $in: ["it's", 'three', 'none'] } }))).toEqual(['b', 'c']);
+      expect(ids(await marks.findWhere({ n: { $in: [1, 3] } }))).toEqual(['a', 'c']);
+      expect(ids(await marks.findWhere({ seen_at: { $in: [at(10), at(99)] } }))).toEqual(['c']);
+      expect(ids(await marks.findWhere({ id: { $in: ['d', 'a'] }, n: { $gte: 1 } }))).toEqual(['a']);
+      // A string that looks like SQL is one value of the list.
+      expect(ids(await marks.findWhere({ title: { $in: ["one') OR true --"] } }))).toEqual([]);
+      expect(await marks.findWhere({ title: { $in: ['one', 'three'] } }, 1)).toEqual([
+        { row: { id: 'a', title: 'one', n: 1, seen_at: null }, version: 1 },
+      ]);
+    });
+
+    it('maps $exists to IS NULL and IS NOT NULL on a presence column', async () => {
+      expect(ids(await marks.findWhere({ seen_at: { $exists: false } }))).toEqual(['a', 'd']);
+      expect(ids(await marks.findWhere({ seen_at: { $exists: true } }))).toEqual(['b', 'c']);
+      expect(ids(await marks.findWhere({ seen_at: { $exists: true }, n: { $in: [3] } }))).toEqual(['c']);
+    });
+
+    it('refuses an empty $in, a null element and $exists off a presence column, before any query', async () => {
+      const query = jest.spyOn(database.pool, 'query');
+      await expect(marks.findWhere({ title: { $in: [] } })).rejects.toThrow(/non-empty array/);
+      await expect(marks.findWhere({ title: { $in: [null] } })).rejects.toThrow(/never null/);
+      await expect(marks.findWhere({ title: { $exists: false } })).rejects.toThrow(/\$exists is not allowed/);
+      expect(query).not.toHaveBeenCalled();
+      query.mockRestore();
+    });
+  });
+
   it('rejects an identifier it would have to interpolate unsafely', () => {
     const { pool } = database;
     expect(() => pgTableAdapter({
