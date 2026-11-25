@@ -11,6 +11,8 @@ jest.mock('../../../models/AgentTemplate', () => ({
   create: jest.fn(),
   deleteOne: jest.fn(),
 }));
+// The icon's upload references are looked up (F615); none has a File row here.
+jest.mock('../../../models/File', () => ({ findByFileName: jest.fn().mockResolvedValue(null) }));
 
 const { AgentRegistry } = require('../../../models/AgentRegistry');
 const AgentTemplate = require('../../../models/AgentTemplate');

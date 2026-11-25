@@ -4,9 +4,18 @@ const auth = require('../../middleware/auth');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentTemplate = require('../../models/AgentTemplate');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { referencesOthersPodUpload } = require('../../services/attachmentAccess');
 const { getUserId, escapeRegExp } = require('./helpers');
 
 const templatesRouter = express.Router();
+
+// A template's icon becomes the bot's profilePicture on install, so it follows
+// the agent-avatar rule (F609), checked as the caller: a pod-scoped upload has
+// to be one the caller made (F615).
+const ICON_NOT_OWN_UPLOAD = {
+  error: 'A profile picture has to be your own upload.',
+  code: 'avatar_not_own_upload',
+};
 
 /**
  * GET /api/registry/templates
@@ -88,11 +97,16 @@ templatesRouter.post('/templates', auth, async (req: any, res: any) => {
       return res.status(400).json({ error: 'Agent name already exists' });
     }
 
+    const normalizedIcon = normalizeAvatarUrl(iconUrl) || '';
+    if (await referencesOthersPodUpload(normalizedIcon, String(userId))) {
+      return res.status(400).json(ICON_NOT_OWN_UPLOAD);
+    }
+
     const template = await AgentTemplate.create({
       agentName: agentName.toLowerCase(),
       displayName: trimmedDisplayName,
       description,
-      iconUrl: normalizeAvatarUrl(iconUrl) || '',
+      iconUrl: normalizedIcon,
       visibility,
       createdBy: userId,
     });
@@ -141,6 +155,11 @@ templatesRouter.patch('/templates/:id', auth, async (req: any, res: any) => {
       iconUrl,
     } = req.body || {};
 
+    const normalizedIcon = iconUrl !== undefined ? (normalizeAvatarUrl(iconUrl) || '') : undefined;
+    if (normalizedIcon && await referencesOthersPodUpload(normalizedIcon, String(userId))) {
+      return res.status(400).json(ICON_NOT_OWN_UPLOAD);
+    }
+
     if (displayName !== undefined) {
       const trimmed = String(displayName).trim();
       if (!trimmed) {
@@ -160,8 +179,8 @@ templatesRouter.patch('/templates/:id', auth, async (req: any, res: any) => {
       template.visibility = visibility;
     }
 
-    if (iconUrl !== undefined) {
-      template.iconUrl = normalizeAvatarUrl(iconUrl) || '';
+    if (normalizedIcon !== undefined) {
+      template.iconUrl = normalizedIcon;
     }
 
     await template.save();

@@ -36,6 +36,7 @@ const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { referencesOthersPodUpload } = require('../../services/attachmentAccess');
 const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
@@ -899,7 +900,16 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         const template = matchingTemplates.find(
           (candidate: any) => String(candidate.createdBy || '') === String(userId),
         ) || matchingTemplates.find((candidate: any) => candidate.visibility === 'public');
-        avatarSeed = normalizeAvatarUrl(template?.iconUrl) || avatarSeed;
+        // A template saved before its icon was checked (F615) can still name a
+        // pod upload someone else made. Drop that icon, as if no template had
+        // matched, rather than fail the install; checked as the installer, the
+        // same key F609 uses for a direct avatar write. A failed lookup drops
+        // the icon too, so it can never fail the identity step below.
+        const templateIcon = normalizeAvatarUrl(template?.iconUrl);
+        const iconRefused = templateIcon
+          ? await referencesOthersPodUpload(templateIcon, String(userId)).catch(() => true)
+          : true;
+        if (!iconRefused) avatarSeed = templateIcon;
       }
       agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
