@@ -183,6 +183,13 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   23505, not 11000, and fail instead of reading as a duplicate. Until then, don't set it to `pg`. Every
   webhook would answer 500, and an event Stripe stops retrying after three days would never be applied.
 
-  **Before `pg` for this model, also check that `repair` reports nothing pending for it.** An event whose
-  Mongo claim landed but whose copy failed is absent from the table, so in `pg` a retry of it would claim
-  again and be processed twice.
+  **The switch to `pg` for this model is stop-the-world, never rolling.** Mongo's unique `eventId` and
+  Postgres's unique `event_id` don't coordinate. If a replica still in `dual` makes a Mongo claim and a
+  replica already in `pg` claims the same event before that claim's copy lands, both process it. A single
+  `repair` check beforehand doesn't close that window, because a claim can land after the check. So:
+  1. Stop every replica that still claims in Mongo. While none is up, webhooks get no 2xx and Stripe
+     retries them.
+  2. Run `repair` until it reports nothing pending for this model, then `--verify` until missing is 0.
+     Now no Mongo-only claim is left uncopied.
+  3. Only then start replicas in `pg`. Never run a `dual` or `pg-read` replica alongside a `pg` one for
+     this model.
