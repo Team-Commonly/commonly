@@ -165,6 +165,9 @@ export const FIVE_MINUTE_PASS_SCHEDULES = {
 // SchedulerService instance cannot start a duplicate job set in this process.
 let activeScheduler: SchedulerService | null = null;
 
+// F628: shorter than the hourly cadence, so the next cron tick is never skipped.
+const STARTUP_SUMMARIZER_SKIP_WINDOW_MINUTES = 45;
+
 class SchedulerService {
   isRunning: boolean;
 
@@ -797,7 +800,7 @@ class SchedulerService {
     );
 
     this.startupTimers.push(setTimeout(() => {
-      SchedulerService.runSummarizer().catch((error) => {
+      SchedulerService.runStartupSummarizer().catch((error) => {
         logOutboundFailure('Error in initial summarizer run:', error);
       });
     }, 5000));
@@ -869,6 +872,33 @@ class SchedulerService {
     this.isRunning = false;
     activeScheduler = null;
     console.log('Scheduler stopped');
+  }
+
+  // F628: the startup run is skipped when the newest hourly summary.request is
+  // younger than the window, so restarts do not re-send every pod a request.
+  // The signal is that event row itself: the sweep writes it, it survives a
+  // restart, and the check is one query. A failed check runs the sweep.
+  static startupSummarizerSkipWindowMs(): number {
+    const minutes = Number(process.env.SUMMARIZER_STARTUP_SKIP_WINDOW_MINUTES);
+    return (Number.isFinite(minutes) && minutes > 0 ? minutes : STARTUP_SUMMARIZER_SKIP_WINDOW_MINUTES) * 60 * 1000;
+  }
+
+  static async runStartupSummarizer(): Promise<SummarizeResult | null> {
+    try {
+      const newest: { createdAt?: Date } | null = await AgentEvent.findOne({
+        agentName: 'commonly-bot',
+        type: 'summary.request',
+        'payload.trigger': 'scheduled-hourly',
+      }).sort({ createdAt: -1 }).select('createdAt').lean();
+      const ageMs = newest?.createdAt ? Date.now() - new Date(newest.createdAt).getTime() : null;
+      if (ageMs !== null && ageMs < SchedulerService.startupSummarizerSkipWindowMs()) {
+        console.log(`Skipping startup summarizer: last sweep ran ${Math.round(ageMs / 60000)} min ago`);
+        return null;
+      }
+    } catch (error) {
+      logOutboundFailure('Startup summarizer recency check failed, running the sweep:', error);
+    }
+    return SchedulerService.runSummarizer();
   }
 
   static async runSummarizer(): Promise<SummarizeResult> {
