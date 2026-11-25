@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 const GROUPME_API_BASE = 'https://api.groupme.com/v3';
 
@@ -65,7 +66,7 @@ async function sendMessage(botId: string, text: string): Promise<SendResult> {
     return { success: response.status === 202 };
   } catch (error) {
     const err = error as { response?: { data: unknown }; message: string };
-    console.error('Error sending GroupMe message:', err.response?.data || err.message);
+    logOutboundFailure('Error sending GroupMe message:', err, err.response?.data);
     return { success: false, error: err.message };
   }
 }

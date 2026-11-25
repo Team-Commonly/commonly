@@ -2,6 +2,7 @@
 const PodAssetService = require('./podAssetService');
 // eslint-disable-next-line global-require
 const { generateText } = require('./llmService');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 const MAX_REFERENCES = 14;
 
@@ -333,13 +334,13 @@ class PodSkillService {
       // and log once; a key fix + restart re-enables it.
       if (isPermanentAuthError(error)) {
         this.available = false;
-        console.error(
+        logOutboundFailure(
           'Pod-skill synthesis LLM rejected its credential (401/403) — disabling synthesis until restart:',
           error,
         );
         return { skills: [], warnings: ['LLM skill synthesis disabled: credential rejected (401/403).'] };
       }
-      console.error('Failed to synthesize pod skills with LLM:', error);
+      logOutboundFailure('Failed to synthesize pod skills with LLM:', error);
       return { skills: [], warnings: ['LLM skill synthesis failed.'] };
     }
   }

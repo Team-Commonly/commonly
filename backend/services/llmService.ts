@@ -49,6 +49,37 @@ interface LLMProviderError extends Error {
   providerType?: string;
 }
 
+// An AxiosError carries `config` (the Authorization header and request body) and
+// `request` (a ClientRequest whose `_header` holds the raw Authorization line).
+// Callers log, rethrow and match on what the LLM call throws, so it throws this
+// instead: same message, name, code and status, plus the provider's response
+// status and data, and nothing of the request.
+const sanitizeHttpError = (error: unknown): Error => {
+  const e = error as {
+    message?: unknown; name?: unknown; code?: unknown; status?: unknown;
+    response?: { status?: unknown; data?: unknown };
+  } | null;
+  const safe = new Error(typeof e?.message === 'string' ? e.message : 'LLM request failed') as Error & {
+    code?: unknown; status?: unknown; response?: { status: unknown; data: unknown };
+  };
+  if (typeof e?.name === 'string') safe.name = e.name;
+  if (e?.code !== undefined) safe.code = e.code;
+  const status = e?.response?.status ?? e?.status;
+  if (status !== undefined) safe.status = status;
+  if (e?.response) safe.response = { status: e.response.status, data: e.response.data };
+  return safe;
+};
+
+const postSanitized = async (
+  ...args: Parameters<typeof axios.post>
+): Promise<{ data: unknown }> => {
+  try {
+    return await axios.post(...args);
+  } catch (error) {
+    throw sanitizeHttpError(error);
+  }
+};
+
 let geminiClient: GoogleGenerativeAI | null = null;
 let geminiModel: GenerativeModel | null = null;
 let geminiModelName: string | null = null;
@@ -163,7 +194,7 @@ const generateViaLiteLLM = async (
   }
   const model = options.model || config.model;
   const claude = /^claude-/i.test(model);
-  const response = await axios.post(
+  const response = await postSanitized(
     `${config.baseUrl}/chat/completions`,
     {
       model,
@@ -228,7 +259,7 @@ const generateViaOpenRouter = async (
 ): Promise<string> => {
   const config = getOpenRouterConfig(globalConfig);
   const selectedModel = parseOpenRouterModel(options.model || config.model);
-  const response = await axios.post(
+  const response = await postSanitized(
     `${config.baseUrl}/chat/completions`,
     {
       model: selectedModel,

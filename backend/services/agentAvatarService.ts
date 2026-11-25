@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { generateText } = require('./llmService');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 const {
   generateImage: openaiGenerateImage,
   isOpenAIImageAvailable,
@@ -169,7 +170,7 @@ class AgentAvatarService {
         },
       };
     } catch (error: any) {
-      console.error('Error generating avatar:', error);
+      logOutboundFailure('Error generating avatar:', error);
       // Fallback to default avatar
       return {
         avatar: this.getFallbackAvatar(agentName),
@@ -230,7 +231,7 @@ class AgentAvatarService {
       if (error instanceof OpenAIImageError) {
         throw error;
       }
-      console.error('Error in generateOpenAIAvatar:', error);
+      logOutboundFailure('Error in generateOpenAIAvatar:', error);
       throw error;
     }
   }
@@ -312,7 +313,7 @@ class AgentAvatarService {
 
       return this.parseDesignDescription(designDescription);
     } catch (error) {
-      console.error('Error generating avatar design:', error);
+      logOutboundFailure('Error generating avatar design:', error);
       return { ...this.getDefaultDesign(style, colorScheme), fallbackReason: 'design-generation-failed' };
     }
   }

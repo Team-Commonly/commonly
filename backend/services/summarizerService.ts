@@ -8,6 +8,7 @@ const Post = require('../models/Post');
 const { generateText } = require('./llmService');
 // eslint-disable-next-line global-require
 const { FEED_POSTS_SOURCE } = require('./summaryScope');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 // Add fetch polyfill for Node.js
 if (!(global as Record<string, unknown>).fetch) {
@@ -86,7 +87,7 @@ class SummarizerService {
       );
       return summaryText;
     } catch (error) {
-      console.error('Error generating summary with LLM:', error);
+      logOutboundFailure('Error generating summary with LLM:', error);
       throw error;
     }
   }
@@ -203,7 +204,7 @@ Focus on what people are actually talking about rather than just activity levels
         metadata: { totalItems: posts.length, topTags, topUsers, source: FEED_POSTS_SOURCE },
       });
     } catch (error) {
-      console.error('Error summarizing posts:', error);
+      logOutboundFailure('Error summarizing posts:', error);
       throw error;
     }
   }
@@ -266,7 +267,7 @@ Focus on what people are actually talking about rather than just activity levels
         metadata: { totalItems: totalMessages, topTags: topPods, topUsers },
       });
     } catch (error) {
-      console.error('Error summarizing chats:', error);
+      logOutboundFailure('Error summarizing chats:', error);
       throw error;
     }
   }
@@ -328,7 +329,7 @@ Focus on what people are actually talking about rather than just activity levels
 
       return summaries;
     } catch (error) {
-      console.error('Error fetching recent summaries:', error);
+      console.error('Error fetching recent summaries:', error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -367,7 +368,7 @@ Focus on what people are actually talking about rather than just activity levels
         cutoffDate,
       };
     } catch (error) {
-      console.error('Error during garbage collection:', error);
+      console.error('Error during garbage collection:', error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -472,7 +473,7 @@ This is for new visitors to understand what the community is all about. Focus on
       };
       return summary;
     } catch (error) {
-      console.error('Error summarizing all posts:', error);
+      logOutboundFailure('Error summarizing all posts:', error);
 
       const errMsg = String((error as Error)?.message || '');
       if (errMsg.includes('429') || errMsg.includes('Resource exhausted')) {

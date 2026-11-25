@@ -20,6 +20,7 @@ const { resolveDiscordWebhookUrl, hasDiscordWebhookUrl } = require('../utils/dis
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line global-require
 const { DISCORD_WEBHOOK_URL } = require('./connectorSecretKinds');
+const { logOutboundFailure, warnOutboundFailure } = require('../utils/safeErrorLog');
 // eslint-disable-next-line global-require
 const DISCORD_APPLICATION_COMMANDS = require('../config/discordApplicationCommands.json') as Array<{ name: string }>;
 
@@ -214,10 +215,10 @@ class DiscordService {
 
     this.clientReady = false;
     (this.client as { on: (event: string, cb: (err: unknown) => void) => void }).on('error', (error) => {
-      console.error('Discord client error:', error);
+      logOutboundFailure('Discord client error:', error);
     });
     (this.client as { on: (event: string, cb: (err: unknown) => void) => void }).on('shardError', (error) => {
-      console.error('Discord shard error:', error);
+      logOutboundFailure('Discord shard error:', error);
     });
 
     this.commandService = null;
@@ -238,7 +239,7 @@ class DiscordService {
       this.clientReady = true;
       return true;
     } catch (error) {
-      console.error('Error logging in Discord client:', error);
+      logOutboundFailure('Error logging in Discord client:', error);
       throw error;
     }
   }
@@ -274,7 +275,7 @@ class DiscordService {
 
       return true;
     } catch (error) {
-      console.error('Error initializing Discord service:', error);
+      logOutboundFailure('Error initializing Discord service:', error);
       return false;
     }
   }
@@ -305,7 +306,7 @@ class DiscordService {
 
       return webhook;
     } catch (error) {
-      console.error('Error creating webhook:', error);
+      logOutboundFailure('Error creating webhook:', error);
       throw error;
     }
   }
@@ -365,7 +366,7 @@ class DiscordService {
       return true;
     } catch (error) {
       const err = error as { message?: string };
-      console.error('Error connecting to Discord:', error);
+      logOutboundFailure('Error connecting to Discord:', error);
 
       await Integration.findByIdAndUpdate(this.integrationId, {
         status: 'error',
@@ -395,7 +396,7 @@ class DiscordService {
             await webhook.delete();
           }
         } catch (error) {
-          console.warn('Error removing webhook:', error);
+          warnOutboundFailure('Error removing webhook:', error);
         }
       }
 
@@ -406,7 +407,7 @@ class DiscordService {
 
       return true;
     } catch (error) {
-      console.error('Error disconnecting from Discord:', error);
+      logOutboundFailure('Error disconnecting from Discord:', error);
       return false;
     }
   }
@@ -466,7 +467,7 @@ class DiscordService {
 
       return true;
     } catch (error) {
-      console.error('Error sending message:', error);
+      logOutboundFailure('Error sending message:', error);
       throw error;
     }
   }
@@ -489,7 +490,7 @@ class DiscordService {
 
       return (stats as unknown[])[0];
     } catch (error) {
-      console.error('Error getting stats:', error);
+      logOutboundFailure('Error getting stats:', error);
       return null;
     }
   }
@@ -502,7 +503,7 @@ class DiscordService {
         ...options,
       });
     } catch (error) {
-      console.error('Error fetching Discord messages:', error);
+      logOutboundFailure('Error fetching Discord messages:', error);
       throw error;
     }
   }
@@ -528,7 +529,7 @@ class DiscordService {
           position: channel.position,
         })));
     } catch (error) {
-      console.error('Error fetching Discord channels:', error);
+      logOutboundFailure('Error fetching Discord channels:', error);
       throw error;
     }
   }
@@ -554,7 +555,7 @@ class DiscordService {
 
       return botResponse.status === 200;
     } catch (error) {
-      console.error('Error testing Discord connection:', error);
+      logOutboundFailure('Error testing Discord connection:', error);
       return false;
     }
   }
@@ -598,7 +599,7 @@ class DiscordService {
           console.log('Unhandled Discord event type:', event.type);
       }
     } catch (error) {
-      console.error('Error handling Discord webhook:', error);
+      logOutboundFailure('Error handling Discord webhook:', error);
       throw error;
     }
   }
@@ -631,7 +632,7 @@ class DiscordService {
 
       await this.triggerSummarization();
     } catch (error) {
-      console.error('Error handling message creation:', error);
+      logOutboundFailure('Error handling message creation:', error);
     }
   }
 
@@ -659,7 +660,7 @@ class DiscordService {
         await (discordIntegration as unknown as { save: () => Promise<void> }).save();
       }
     } catch (error) {
-      console.error('Error handling message update:', error);
+      logOutboundFailure('Error handling message update:', error);
     }
   }
 
@@ -677,7 +678,7 @@ class DiscordService {
 
       await (discordIntegration as unknown as { save: () => Promise<void> }).save();
     } catch (error) {
-      console.error('Error handling message deletion:', error);
+      logOutboundFailure('Error handling message deletion:', error);
     }
   }
 
@@ -793,7 +794,7 @@ class DiscordService {
       }
     } catch (error) {
       const err = error as { message?: string };
-      console.error('Error syncing Discord messages:', error);
+      logOutboundFailure('Error syncing Discord messages:', error);
       return {
         success: false,
         messageCount: 0,
@@ -823,7 +824,7 @@ class DiscordService {
         console.log('Discord summary generated:', summary);
       }
     } catch (error) {
-      console.error('Error triggering summarization:', error);
+      logOutboundFailure('Error triggering summarization:', error);
     }
   }
 
@@ -872,7 +873,7 @@ class DiscordService {
           };
       }
     } catch (error) {
-      console.error('Error handling slash command:', error);
+      logOutboundFailure('Error handling slash command:', error);
       return {
         success: false,
         content: '❌ An error occurred while processing the command.',
@@ -1058,7 +1059,7 @@ class DiscordService {
       };
     } catch (error) {
       const err = error as { message?: string };
-      console.error('❌ Error in bulk command registration:', error);
+      logOutboundFailure('❌ Error in bulk command registration:', error);
       return { success: false, error: err.message };
     }
   }
@@ -1130,7 +1131,7 @@ class DiscordService {
 
       return null;
     } catch (error) {
-      console.error('Error handling interaction:', error);
+      logOutboundFailure('Error handling interaction:', error);
       return {
         type: 4,
         data: {
@@ -1170,7 +1171,7 @@ class DiscordService {
 
       return response.data;
     } catch (error) {
-      console.error('Error sending followup message:', error);
+      logOutboundFailure('Error sending followup message:', error);
       throw error;
     }
   }
@@ -1203,7 +1204,7 @@ class DiscordService {
 
       return response.data;
     } catch (error) {
-      console.error('Error editing original response:', error);
+      logOutboundFailure('Error editing original response:', error);
       throw error;
     }
   }
@@ -1215,7 +1216,7 @@ class DiscordService {
       );
       return true;
     } catch (error) {
-      console.error('Error deleting original response:', error);
+      logOutboundFailure('Error deleting original response:', error);
       throw error;
     }
   }
@@ -1241,7 +1242,7 @@ class DiscordService {
 
       return response.data;
     } catch (error) {
-      console.error('Error deferring response:', error);
+      logOutboundFailure('Error deferring response:', error);
       throw error;
     }
   }

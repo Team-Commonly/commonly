@@ -25,6 +25,7 @@
 // for its pre-auth limiters, and the reason those are clean.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
+import { logOutboundFailure } from '../../utils/safeErrorLog';
 const { createHash } = require('crypto');
 
 // Per-caller key that works BEFORE `auth` has run. Hashing the raw header
@@ -156,7 +157,7 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req:
       exampleInstructions: generated.exampleInstructions || '',
     });
   } catch (error) {
-    console.error('Error generating agent persona:', error);
+    logOutboundFailure('Error generating agent persona:', error);
     return res.status(500).json({ error: 'Failed to generate persona' });
   }
 });
@@ -183,7 +184,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
 
     return res.json({ content, accountId });
   } catch (error) {
-    console.error('Error reading heartbeat file:', error);
+    logOutboundFailure('Error reading heartbeat file:', error);
     return res.status(500).json({ error: 'Failed to read heartbeat file' });
   }
 });
@@ -298,7 +299,7 @@ filesRouter.get('/pods/:podId/agents/:name/a2a-dms', inspectorRateLimit, auth, a
 
     return res.json({ a2aDms });
   } catch (error) {
-    console.error('Error listing a2a-dms:', error);
+    logOutboundFailure('Error listing a2a-dms:', error);
     return res.status(500).json({ error: 'Failed to list agent-DM pods' });
   }
 });

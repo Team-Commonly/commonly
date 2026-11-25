@@ -53,6 +53,7 @@ const chatSummarizerService = require('./chatSummarizerService');
 const dailyDigestService = require('./dailyDigestService');
 // eslint-disable-next-line global-require
 const digestEmailService = require('./digestEmailService');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 interface CronJob {
   start(): void;
@@ -194,7 +195,7 @@ class SchedulerService {
         try {
           await SchedulerService.runSummarizer();
         } catch (error) {
-          console.error('Error in scheduled summarizer:', error);
+          logOutboundFailure('Error in scheduled summarizer:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -207,7 +208,7 @@ class SchedulerService {
         try {
           await externalFeedService.syncExternalFeeds();
         } catch (error) {
-          console.error('Error syncing external feeds:', error);
+          logOutboundFailure('Error syncing external feeds:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -229,7 +230,7 @@ class SchedulerService {
             console.log(`Agent event GC marked ${result.expiredPending} unclaimed pending event(s) expired`);
           }
         } catch (error) {
-          console.error('Error in scheduled agent event GC:', error);
+          logOutboundFailure('Error in scheduled agent event GC:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -248,7 +249,7 @@ class SchedulerService {
           const digestResults = await dailyDigestService.generateAllDailyDigests();
           await digestEmailService.sendDigestEmails(digestResults);
         } catch (error) {
-          console.error('Error in scheduled daily digest generation:', error);
+          logOutboundFailure('Error in scheduled daily digest generation:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -261,7 +262,7 @@ class SchedulerService {
         try {
           await SummarizerService.cleanOldSummaries(30);
         } catch (error) {
-          console.error('Error in scheduled cleanup:', error);
+          logOutboundFailure('Error in scheduled cleanup:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -278,7 +279,7 @@ class SchedulerService {
             + `Triggered: ${result.triggeredPods?.length || 0}`,
           );
         } catch (error) {
-          console.error('Error in themed pod autonomy scheduler:', error);
+          logOutboundFailure('Error in themed pod autonomy scheduler:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -292,7 +293,7 @@ class SchedulerService {
           const result = await AgentAutoJoinService.runAutoJoinAgentOwnedPods({ source: 'scheduled-autojoin' });
           console.log(`Agent auto-join complete. Installed: ${result.installed}, Sources: ${result.scannedSources}`);
         } catch (error) {
-          console.error('Error in agent auto-join scheduler:', error);
+          logOutboundFailure('Error in agent auto-join scheduler:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -310,7 +311,7 @@ class SchedulerService {
           const leaseSuffix = result.skippedByLease ? ' (another scheduler holds the lease)' : '';
           console.log(`Agent heartbeats enqueued: ${result.enqueued}${leaseSuffix}`);
         } catch (error) {
-          console.error('Error dispatching agent heartbeats:', error);
+          logOutboundFailure('Error dispatching agent heartbeats:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -331,7 +332,7 @@ class SchedulerService {
             + `errors=${result.errors.length} duration=${result.durationMs}ms`,
           );
         } catch (error) {
-          console.error('[skills-refresh] Unhandled error:', error);
+          logOutboundFailure('[skills-refresh] Unhandled error:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -362,7 +363,7 @@ class SchedulerService {
             );
           }
         } catch (error) {
-          console.error('[onboarding-silence] Unhandled error:', error);
+          logOutboundFailure('[onboarding-silence] Unhandled error:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -386,7 +387,7 @@ class SchedulerService {
           const r = await sweepMissedAgentMentions();
           console.log(`[attention] missed-mention pass scanned=${r.scanned} eligible=${r.eligible} missed=${r.missed}`);
         } catch (error) {
-          console.error('[attention] missed-mention pass failed:', error);
+          logOutboundFailure('[attention] missed-mention pass failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -406,7 +407,7 @@ class SchedulerService {
             console.log(`[mention-email] pass scanned=${r.scanned} sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
           }
         } catch (error) {
-          console.error('[mention-email] pass failed:', error);
+          logOutboundFailure('[mention-email] pass failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -425,7 +426,7 @@ class SchedulerService {
             console.log(`[waiting-email] pass scanned=${r.scanned} sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
           }
         } catch (error) {
-          console.error('[waiting-email] pass failed:', error);
+          logOutboundFailure('[waiting-email] pass failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -448,7 +449,7 @@ class SchedulerService {
             + `noListener=${r.skippedNoListener}`,
           );
         } catch (error) {
-          console.error('[stalled-connect] Unhandled error:', error);
+          logOutboundFailure('[stalled-connect] Unhandled error:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -468,7 +469,7 @@ class SchedulerService {
           const KernelWorkSweepService = require('./kernelWorkSweepService');
           await KernelWorkSweepService.sweep();
         } catch (error) {
-          console.error('[kernel-sweep] pass failed:', error);
+          logOutboundFailure('[kernel-sweep] pass failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -485,7 +486,7 @@ class SchedulerService {
           const result = await dispatchAssignedTaskWakes();
           if (result.eligible) console.log('[assigned-task-wake]', result);
         } catch (error) {
-          console.error('[assigned-task-wake] dispatch failed:', error);
+          logOutboundFailure('[assigned-task-wake] dispatch failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -504,7 +505,7 @@ class SchedulerService {
           const reconciler = require('./installable/installableReconciler');
           await reconciler.sweep();
         } catch (error) {
-          console.error('[installable-reconciler] scheduled sweep failed:', error);
+          logOutboundFailure('[installable-reconciler] scheduled sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -538,7 +539,7 @@ class SchedulerService {
             + `statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}${readPath}`,
           );
         } catch (error) {
-          console.error('[registry-reconciler] scheduled sweep failed:', error);
+          logOutboundFailure('[registry-reconciler] scheduled sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -558,7 +559,7 @@ class SchedulerService {
             console.log(`[decision-card] sweep stamped=${result.stamped} removed=${result.removed}`);
           }
         } catch (error) {
-          console.error('[decision-card] scheduled sweep failed:', error);
+          logOutboundFailure('[decision-card] scheduled sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -576,7 +577,7 @@ class SchedulerService {
           const { repairDualStoredModels } = require('../repositories/dualStoreRegistry');
           await repairDualStoredModels();
         } catch (error) {
-          console.error('[dual-store] scheduled repair failed:', error);
+          logOutboundFailure('[dual-store] scheduled repair failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -597,14 +598,14 @@ class SchedulerService {
           const expired = await sweepExpiredToolCallApprovals();
           if (expired) console.log(`[approval] expired tool calls=${expired}`);
         } catch (error) {
-          console.error('[approval] tool-call expiry sweep failed:', error);
+          logOutboundFailure('[approval] tool-call expiry sweep failed:', error);
         }
         try {
           // F184: a row whose card never posted holds a seat's open slot.
           const mooted = await sweepCardlessToolCallApprovals();
           if (mooted) console.log(`[approval] mooted cardless tool calls=${mooted}`);
         } catch (error) {
-          console.error('[approval] tool-call cardless sweep failed:', error);
+          logOutboundFailure('[approval] tool-call cardless sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -638,7 +639,7 @@ class SchedulerService {
           const removed = await reapSpawnCredentials();
           if (removed) console.log(`[spawn-credentials] reaped=${removed}`);
         } catch (error) {
-          console.error('[spawn-credentials] reap failed:', error);
+          logOutboundFailure('[spawn-credentials] reap failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -660,7 +661,7 @@ class SchedulerService {
             + `refused=${refused.length} counts=${JSON.stringify(report.counts)}`);
           refused.forEach((a: { username: string; refused?: string }) => console.warn(`[synthetic-purge] refused ${a.username}: ${a.refused}`));
         } catch (error) {
-          console.error('[synthetic-purge] failed:', error);
+          logOutboundFailure('[synthetic-purge] failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -677,7 +678,7 @@ class SchedulerService {
           const { checkSpend } = require('./spendAlarmService');
           await checkSpend();
         } catch (error) {
-          console.error('[spend-alarm] check failed:', error);
+          logOutboundFailure('[spend-alarm] check failed:', error);
         }
         // TASK-555: warn at 80% of any LiteLLM key budget (litellmBudgetAlarmService).
         try {
@@ -703,7 +704,7 @@ class SchedulerService {
           console.log(`[run-content] redacted=${report.redacted} matched=${report.matched} `
             + `cutoff=${report.cutoff.toISOString()}`);
         } catch (error) {
-          console.error('[run-content] redaction failed:', error);
+          logOutboundFailure('[run-content] redaction failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -722,7 +723,7 @@ class SchedulerService {
           const { runPgMirrorRepair } = require('./pgMirrorRepairService');
           await runPgMirrorRepair();
         } catch (error) {
-          console.error('[pg-mirror-repair] run failed:', error);
+          logOutboundFailure('[pg-mirror-repair] run failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -797,25 +798,25 @@ class SchedulerService {
 
     this.startupTimers.push(setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {
-        console.error('Error in initial summarizer run:', error);
+        logOutboundFailure('Error in initial summarizer run:', error);
       });
     }, 5000));
 
     this.startupTimers.push(setTimeout(() => {
       externalFeedService.syncExternalFeeds().catch((error: unknown) => {
-        console.error('Error in initial external feed sync:', error);
+        logOutboundFailure('Error in initial external feed sync:', error);
       });
     }, 7000));
 
     this.startupTimers.push(setTimeout(() => {
       AgentEventService.garbageCollect().catch((error: unknown) => {
-        console.error('Error in initial agent event GC:', error);
+        logOutboundFailure('Error in initial agent event GC:', error);
       });
     }, 8000));
 
     this.startupTimers.push(setTimeout(() => {
       PodCurationService.runThemedPodAutonomy({ hours: 12, minMatches: 4 }).catch((error: unknown) => {
-        console.error('Error in initial themed pod autonomy run:', error);
+        logOutboundFailure('Error in initial themed pod autonomy run:', error);
       });
     }, 9000));
 
@@ -824,13 +825,13 @@ class SchedulerService {
         trigger: 'startup',
         respectIntervals: true,
       }).catch((error: unknown) => {
-        console.error('Error in initial heartbeat dispatch:', error);
+        logOutboundFailure('Error in initial heartbeat dispatch:', error);
       });
     }, 11000));
 
     this.startupTimers.push(setTimeout(() => {
       AgentAutoJoinService.runAutoJoinAgentOwnedPods({ source: 'startup-autojoin' }).catch((error: unknown) => {
-        console.error('Error in initial auto-join run:', error);
+        logOutboundFailure('Error in initial auto-join run:', error);
       });
     }, 13000));
 
@@ -845,7 +846,7 @@ class SchedulerService {
           );
         })
         .catch((error: unknown) => {
-          console.error('[skills-refresh] Startup refresh failed:', error);
+          logOutboundFailure('[skills-refresh] Startup refresh failed:', error);
         });
     }, 30000));
   }
@@ -918,7 +919,7 @@ class SchedulerService {
       console.log('Summarizer completed successfully');
       return result;
     } catch (error) {
-      console.error('Summarization process failed:', error);
+      logOutboundFailure('Summarization process failed:', error);
       throw error;
     }
   }
@@ -956,7 +957,7 @@ class SchedulerService {
             return result;
           } catch (error) {
             const err = error as { message?: string };
-            console.error(`Error syncing Discord integration ${integration._id}:`, error);
+            logOutboundFailure(`Error syncing Discord integration ${integration._id}:`, error);
             return {
               integrationId: integration._id,
               success: false,
@@ -969,7 +970,7 @@ class SchedulerService {
 
       return results;
     } catch (error) {
-      console.error('Error in Discord integration sync:', error);
+      logOutboundFailure('Error in Discord integration sync:', error);
       return [];
     }
   }
@@ -1076,7 +1077,7 @@ class SchedulerService {
 
       return results;
     } catch (error) {
-      console.error('Error summarizing integration buffers:', error);
+      logOutboundFailure('Error summarizing integration buffers:', error);
       return [];
     }
   }

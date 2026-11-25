@@ -11,6 +11,7 @@ const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { mirrorRegistryRow, refreshBridgeRow } = require('../../services/installable/registryReconciler');
 const { getUserId, resolveUsername } = require('./helpers');
+const { logOutboundFailure } = require('../../utils/safeErrorLog');
 const {
   ManifestValidationError,
   normalizePublishPayload,
@@ -123,7 +124,7 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
         details: (error as any).details,
       });
     }
-    console.error('Error publishing agent:', error);
+    logOutboundFailure('Error publishing agent:', error);
     res.status(500).json({ error: (error as any).message || 'Failed to publish agent' });
   }
 });
@@ -225,7 +226,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
       total: defaultAgents.length,
     });
   } catch (error) {
-    console.error('Error seeding agents:', error);
+    logOutboundFailure('Error seeding agents:', error);
     res.status(500).json({ error: 'Failed to seed agents' });
   }
 });
@@ -299,7 +300,7 @@ publishRouter.post('/generate-avatar', avatarRateLimit, auth, async (req: any, r
       },
     });
   } catch (error) {
-    console.error('Avatar generation failed:', error);
+    logOutboundFailure('Avatar generation failed:', error);
     res.status(500).json({ error: 'Failed to generate avatar', details: (error as any).message });
   }
 });

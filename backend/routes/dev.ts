@@ -14,6 +14,7 @@ const AgentEventService = require('../services/agentEventService');
 const { requireDevRoutes } = require('../config/devRoutes');
 // eslint-disable-next-line global-require
 const { defaultChatModel } = require('../config/agentDefaultModel');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 interface AuthReq {
   user?: { id?: string; _id?: unknown };
@@ -82,7 +83,7 @@ router.get('/llm/status', auth, async (req: AuthReq, res: Res) => {
 
     return res.json({ litellm: litellmStatus, gemini: { enabled: Boolean(process.env.GEMINI_API_KEY) } });
   } catch (error) {
-    console.error('Error getting LLM status:', error);
+    logOutboundFailure('Error getting LLM status:', error);
     return res.status(500).json({ error: 'Failed to fetch LLM status' });
   }
 });
@@ -112,7 +113,7 @@ router.post('/agents/events', auth, async (req: AuthReq, res: Res) => {
     const event = await AgentEventService.enqueue({ agentName, podId, type, payload: payload || {} });
     return res.json({ success: true, eventId: event._id });
   } catch (error) {
-    console.error('Error enqueuing dev agent event:', error);
+    console.error('Error enqueuing dev agent event:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to enqueue agent event' });
   }
 });

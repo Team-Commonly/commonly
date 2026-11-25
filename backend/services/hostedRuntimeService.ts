@@ -219,7 +219,7 @@ export const resumeCapRefusal = async (
     cap: agentsPerUser,
     holders: await listHostedInstallationsForUser(userId).catch((error: any) => {
       // Keep the cap response authoritative if diagnostics are unavailable.
-      console.warn('[hosted] cap holder lookup failed:', error?.message || error);
+      console.warn('[hosted] cap holder lookup failed:', error?.message || error); // safe-log: no outbound call
       return [];
     }),
   };

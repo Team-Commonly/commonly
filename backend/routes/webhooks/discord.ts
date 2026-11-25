@@ -11,6 +11,7 @@ const {
 } = require('../../services/webhookDeliveryService');
 const { verifyDiscordSignature } = require('../../services/webhookVerificationService');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+const { logOutboundFailure } = require('../../utils/safeErrorLog');
 
 // webhook_id is supplied by the caller before signature verification, so keep
 // a coarse Cloudflare-aware IP ceiling ahead of the per-webhook bucket.
@@ -123,7 +124,7 @@ router.post('/', discordWebhookIpRateLimit, requireDiscordSignature, discordWebh
     res.json({ success: true });
   } catch (error) {
     if (deliveryId) await releaseDelivery('discord', deliveryId);
-    console.error('Error handling Discord webhook:', error);
+    logOutboundFailure('Error handling Discord webhook:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

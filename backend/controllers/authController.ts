@@ -15,6 +15,7 @@ const { normalizeAvatarUrl } = require('../services/avatarService');
 const { referencesOthersPodUpload } = require('../services/attachmentAccess');
 const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
+const { logOutboundFailure, smtp2goReason } = require('../utils/safeErrorLog');
 const { deriveUsernameFromEmail, isValidUsername, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
@@ -128,7 +129,7 @@ const sendVerificationEmailInBackground = (user: any) => {
         console.log('SMTP2GO send response:', smtpRes?.data);
         return;
       } catch (sendError: any) {
-        const reason = sendError?.response?.data || sendError?.message;
+        const reason = smtp2goReason(sendError) || sendError?.message;
         if (attempt === 2) {
           console.error(
             `[register] verification email failed for user ${user._id} after ${attempt} attempts:`,
@@ -719,7 +720,7 @@ exports.requestWaitlist = async (req: any, res: any) => {
       requestId: created._id,
     });
   } catch (err: any) {
-    console.error('Failed to submit waitlist request:', err);
+    console.error('Failed to submit waitlist request:', err); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to submit waitlist request' });
   }
 };
@@ -765,7 +766,8 @@ exports.forgotPassword = async (req: any, res: any) => {
         htmlBody: `<p>Reset your Commonly password (link valid for 1 hour):</p><a href="${resetUrl}">Reset password</a><p>If you didn't request this, ignore this email — your password is unchanged.</p>`,
       });
     } catch (sendError: any) {
-      console.error('SMTP2GO error during password reset:', sendError?.response?.data || sendError.message);
+      const reason = smtp2goReason(sendError);
+      logOutboundFailure('SMTP2GO error during password reset:', sendError, ...(reason ? [reason] : []));
     }
     return res.json(genericResponse);
   } catch (err: any) {
@@ -793,7 +795,8 @@ exports.resendVerification = async (req: any, res: any) => {
     } catch (sendError: any) {
       // Keep the response generic, but make delivery failure observable to the
       // operator rather than presenting a false promise as success.
-      console.error('SMTP2GO error during verification resend:', sendError?.response?.data || sendError.message);
+      const reason = smtp2goReason(sendError);
+      logOutboundFailure('SMTP2GO error during verification resend:', sendError, ...(reason ? [reason] : []));
     }
     return res.json(genericResponse);
   } catch (err: any) {
