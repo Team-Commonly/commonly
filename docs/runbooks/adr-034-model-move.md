@@ -148,4 +148,6 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   runs in `pg`, the claim needs a single-statement Postgres form with the same answer, bumping `pg_version`
   and tested on real Postgres with racing claims on a fresh and a partly used day: `INSERT … (count = 1)
   ON CONFLICT (recipient_user_id, day) DO UPDATE SET count = needs_you_email_quotas.count + 1 WHERE
-  needs_you_email_quotas.count < $limit RETURNING id` (a slot taken when a row comes back).
+  needs_you_email_quotas.count < $limit RETURNING id` (a slot taken when a row comes back). Until then,
+  don't set it to `pg`. The refusal comes after `sendNeedsYouEmail` has saved its claim, so each email
+  would be marked failed and silently dropped.
