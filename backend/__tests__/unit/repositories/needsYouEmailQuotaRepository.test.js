@@ -101,7 +101,8 @@ describe('needs-you email quota repository (ADR-034 step 2)', () => {
         [{ recipientUserId: id, day: DAY, count: { $lt: LIMIT } }, { $inc: { count: 1 } }, { new: true }],
       ]);
 
-      expect(await claims(LIMIT)).toEqual([true, true, false]);
+      // Concurrent: any one of the three may be the one that finds the day full.
+      expect((await claims(LIMIT)).sort()).toEqual([false, true, true]);
       const doc = await raw();
       expect(doc.count).toBe(LIMIT);
       expect(doc.pgVersion).toBeUndefined();
