@@ -98,6 +98,16 @@ describe('safeErrorLog', () => {
     errSpy.mockRestore();
   });
 
+  it('warnOutboundFailure also prints a label with format specifiers literally', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    warnOutboundFailure('pod %o %s failed:', fakeAxiosError());
+    const [format, label, summary] = warnSpy.mock.calls[0];
+    expect(format).toBe('%s');
+    expect(label).toBe('pod %o %s failed:');
+    expect(summary.status).toBe(401);
+    warnSpy.mockRestore();
+  });
+
   it('smtp2goReason keeps the error code and text, never the echoed body', () => {
     const err = fakeAxiosError();
     err.response.data = { request_id: 'r', data: { error_code: 'E_ApiResponseCode', error: 'bad', api_key: 'fake-body-secret' } };
