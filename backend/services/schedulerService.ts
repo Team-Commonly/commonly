@@ -55,6 +55,8 @@ const dailyDigestService = require('./dailyDigestService');
 // eslint-disable-next-line global-require
 const digestEmailService = require('./digestEmailService');
 const { logOutboundFailure } = require('../utils/safeErrorLog');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { performance } = require('perf_hooks') as typeof import('perf_hooks');
 
 interface CronJob {
   start(): void;
@@ -108,7 +110,41 @@ interface DispatchHeartbeatsOptions {
   trigger?: string;
   respectIntervals?: boolean;
   now?: Date;
+  /**
+   * Filled with how long each step took (F633). The scheduled wrapper passes
+   * one, so a manual dispatch keeps its result shape.
+   */
+  timings?: HeartbeatStepTimings;
 }
+
+/** Milliseconds per step of one heartbeat dispatch, plus installs checked. */
+interface HeartbeatStepTimings {
+  installs?: number;
+  aggregate?: number;
+  globalPick?: number;
+  perInstall?: number;
+  /** Installs that passed the opt-in gates and reached the per-install checks. */
+  checked?: number;
+}
+
+interface HeartbeatDispatchTimingsMs {
+  total: number;
+  lease: number;
+  schedules?: number;
+  heartbeats?: number;
+  installs?: number;
+  aggregate?: number;
+  globalPick?: number;
+  perInstall?: number;
+  unread?: number;
+}
+
+// The order the cron line prints them in. Fixed, so the line stays greppable.
+const HEARTBEAT_TIMING_KEYS: Array<keyof HeartbeatDispatchTimingsMs> = [
+  'total', 'lease', 'schedules', 'heartbeats', 'installs', 'aggregate', 'globalPick', 'perInstall', 'unread',
+];
+
+const elapsedMs = (since: number): number => performance.now() - since;
 
 interface DispatchHeartbeatsResult {
   scanned: number;
@@ -120,6 +156,10 @@ interface DispatchHeartbeatsResult {
 
 interface ScheduledDispatchHeartbeatsResult extends DispatchHeartbeatsResult {
   skippedByLease: boolean;
+  /** How long each step of this run took (F633). */
+  timingsMs?: HeartbeatDispatchTimingsMs;
+  /** Installs that reached the per-install checks. */
+  checked?: number;
 }
 
 interface DispatchPodSummaryOptions {
@@ -315,8 +355,7 @@ class SchedulerService {
             trigger: 'scheduled-interval',
             respectIntervals: true,
           });
-          const leaseSuffix = result.skippedByLease ? ' (another scheduler holds the lease)' : '';
-          console.log(`Agent heartbeats enqueued: ${result.enqueued}${leaseSuffix}`);
+          console.log(SchedulerService.formatHeartbeatDispatchLine(result));
         } catch (error) {
           logOutboundFailure('Error dispatching agent heartbeats:', error);
         }
@@ -1319,26 +1358,70 @@ class SchedulerService {
   static async dispatchScheduledAgentHeartbeats(
     options: DispatchHeartbeatsOptions = {},
   ): Promise<ScheduledDispatchHeartbeatsResult> {
+    const startedAt = performance.now();
     const now = options.now || new Date();
+    let stepAt = performance.now();
     const acquired = await SchedulerService.tryAcquireHeartbeatDispatchLease(now);
+    const lease = elapsedMs(stepAt);
     if (!acquired) {
       return {
         scanned: 0,
         enqueued: 0,
         skippedByInterval: 0,
         skippedByLease: true,
+        timingsMs: { total: elapsedMs(startedAt), lease },
       };
     }
 
     // First and on its own: a daily wake that misses its hour is lost, where a
     // heartbeat just comes round again.
+    stepAt = performance.now();
     const scheduledWakes = await dispatchSchedules(now).catch((error: Error) => {
       console.error('Scheduled agent wakes failed:', error.message);
       return 0;
     });
-    const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
+    const schedules = elapsedMs(stepAt);
+    const steps: HeartbeatStepTimings = {};
+    stepAt = performance.now();
+    const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now, timings: steps });
+    const heartbeats = elapsedMs(stepAt);
+    stepAt = performance.now();
     const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
-    return { ...result, enqueued: result.enqueued + unreadWakes + scheduledWakes, skippedByLease: false };
+    const unread = elapsedMs(stepAt);
+    return {
+      ...result,
+      enqueued: result.enqueued + unreadWakes + scheduledWakes,
+      skippedByLease: false,
+      checked: steps.checked ?? 0,
+      timingsMs: {
+        total: elapsedMs(startedAt),
+        lease,
+        schedules,
+        heartbeats,
+        installs: steps.installs ?? 0,
+        aggregate: steps.aggregate ?? 0,
+        globalPick: steps.globalPick ?? 0,
+        perInstall: steps.perInstall ?? 0,
+        unread,
+      },
+    };
+  }
+
+  /**
+   * The cron's one line per run. It starts with `Agent heartbeats enqueued: <n>`
+   * exactly, because ops greps that prefix; the step timings follow as whole
+   * milliseconds in a fixed order, numbers only (F633).
+   */
+  static formatHeartbeatDispatchLine(result: ScheduledDispatchHeartbeatsResult): string {
+    const leaseSuffix = result.skippedByLease ? ' (another scheduler holds the lease)' : '';
+    const line = `Agent heartbeats enqueued: ${result.enqueued}${leaseSuffix}`;
+    const timings = result.timingsMs;
+    if (!timings) return line;
+    const parts = HEARTBEAT_TIMING_KEYS
+      .filter((key) => typeof timings[key] === 'number')
+      .map((key) => `${key}=${Math.round(timings[key] as number)}`);
+    const checked = typeof result.checked === 'number' ? `; checked=${result.checked}` : '';
+    return `${line} (ms ${parts.join(' ')}${checked})`;
   }
 
   /**
@@ -1453,17 +1536,22 @@ class SchedulerService {
   static async dispatchAgentHeartbeats(
     options: DispatchHeartbeatsOptions = {},
   ): Promise<DispatchHeartbeatsResult> {
-    const { trigger = 'scheduled-hourly', respectIntervals = false, now = new Date() } = options;
+    const {
+      trigger = 'scheduled-hourly', respectIntervals = false, now = new Date(), timings = {},
+    } = options;
 
+    let stepAt = performance.now();
     const installations: InstallationDoc[] = await AgentInstallation.find({
       status: 'active',
     }).select('agentName instanceId podId config.autonomy config.heartbeat').lean();
+    timings.installs = elapsedMs(stepAt);
 
     if (!installations.length) {
       return { scanned: 0, enqueued: 0, skippedByInterval: 0 };
     }
 
     const lastHeartbeatByKey = new Map<string, Date>();
+    stepAt = performance.now();
     if (respectIntervals) {
       const latestHeartbeats: Array<{
         _id: { agentName?: string; instanceId?: string; podId?: string };
@@ -1484,6 +1572,8 @@ class SchedulerService {
         }
       });
     }
+
+    timings.aggregate = elapsedMs(stepAt);
 
     const lastHeartbeatByAgentKey = new Map<string, Date>();
     for (const [key, ts] of lastHeartbeatByKey) {
@@ -1525,6 +1615,7 @@ class SchedulerService {
         }),
     )];
 
+    stepAt = performance.now();
     if (globalKeys.length > 0) {
       const hintWindowMs = SchedulerService.resolveHeartbeatHintWindowMinutes() * 60 * 1000;
       const orClauses = globalKeys.map((key) => {
@@ -1598,6 +1689,10 @@ class SchedulerService {
       }
     }
 
+    timings.globalPick = elapsedMs(stepAt);
+
+    let checked = 0;
+    stepAt = performance.now();
     const enqueueResults = await Promise.all(
       toProcess.map(async ({ installation, isGlobal }) => {
         // Opt-in, not opt-out. `undefined` must NOT fire: an install that never
@@ -1611,6 +1706,7 @@ class SchedulerService {
         if (heartbeatEnabled !== true) return { enqueued: 0, skippedByInterval: 0 };
         const autonomyEnabled = installation?.config?.autonomy?.enabled;
         if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
+        checked += 1;
 
         const {
           agentName,
@@ -1690,6 +1786,8 @@ class SchedulerService {
         return { enqueued: 1, skippedByInterval: 0 };
       }),
     );
+    timings.perInstall = elapsedMs(stepAt);
+    timings.checked = checked;
 
     const enqueued = enqueueResults.reduce(
       (sum, value) => sum + ((value as { enqueued?: number })?.enqueued || 0),

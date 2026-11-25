@@ -671,5 +671,7 @@ if (require.main === module) {
   require('./services/hostedShutdownService').installHostedShutdown(app.locals.httpServer);
   // Logs any 10s window in which the loop stalled for 1s or more.
   require('./services/eventLoopLagMonitor').startEventLoopLagMonitor();
+  // CPU_PROFILE_ON_SIGNAL=1 only: SIGUSR2 writes a CPU profile (docs/runbooks/cpu-profile-on-signal.md).
+  require('./services/cpuProfileOnSignal').startCpuProfileOnSignal();
   app.locals.httpServer.listen(port, () => console.log(`Server running on port ${port}`));
 }
