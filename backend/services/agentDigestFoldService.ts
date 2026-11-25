@@ -1,5 +1,7 @@
 import AgentEvent from '../models/AgentEvent';
-import AgentDigestState from '../models/AgentDigestState';
+import {
+  advanceFold, getFoldState, readUnreadDigest, settleDigest, startFoldState,
+} from '../repositories/agentDigestStateRepository';
 
 const FOLD_BATCH_SIZE = 100;
 const FOLD_TIME_BUDGET_MS = 10_000;
@@ -89,25 +91,20 @@ export async function foldExpiredDigests(threshold: Date, now: () => number = Da
       let recorded = false;
       for (let attempt = 0; attempt < 5 && !recorded; attempt += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const state = await AgentDigestState.findOne(scope)
-          .select('foldedThroughId unreadCount conversations otherCount').lean();
+        const state = await getFoldState(scope);
         const cursor = state?.foldedThroughId;
         if (cursor && String(cursor) >= idString) {
           recorded = true;
           break;
         }
         if (!state) {
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await AgentDigestState.create({
-              ...scope, unreadCount: 1, revision: 1, lastEventIds: [idString],
-              conversations: [{ label, count: 1 }], otherCount: 0,
-              unreadSince: candidate.createdAt || new Date(), foldedThroughId: id,
-            });
-            recorded = true;
-          } catch (err) {
-            if ((err as { code?: number }).code !== 11000) throw err;
-          }
+          // A duplicate key means another worker created it first: read again.
+          // eslint-disable-next-line no-await-in-loop
+          recorded = await startFoldState(scope, {
+            unreadCount: 1, revision: 1, lastEventIds: [idString],
+            conversations: [{ label, count: 1 }], otherCount: 0,
+            unreadSince: candidate.createdAt || new Date(), foldedThroughId: id,
+          });
         } else {
           const conversations = [...(state.conversations || [])].map((item) => ({
             label: item.label, count: item.count,
@@ -119,20 +116,18 @@ export async function foldExpiredDigests(threshold: Date, now: () => number = Da
           else if (conversations.length < CONVERSATION_LIMIT) conversations.push({ label, count: 1 });
           else otherCount += 1;
           // eslint-disable-next-line no-await-in-loop
-          const result = await AgentDigestState.updateOne(
-            { ...scope, foldedThroughId: cursor ?? null, unreadCount: state.unreadCount },
+          recorded = await advanceFold(
+            scope,
+            { foldedThroughId: cursor ?? null, unreadCount: state.unreadCount },
             {
-              $inc: { unreadCount: 1, revision: 1 },
-              $set: {
-                foldedThroughId: id,
-                conversations,
-                otherCount,
-                ...(state.unreadCount === 0 ? { unreadSince: candidate.createdAt || new Date() } : {}),
-              },
-              $push: { lastEventIds: { $each: [idString], $slice: -LAST_IDS_LIMIT } },
+              foldedThroughId: id,
+              eventId: idString,
+              conversations,
+              otherCount,
+              ...(state.unreadCount === 0 ? { unreadSince: candidate.createdAt || new Date() } : {}),
+              keepLastIds: LAST_IDS_LIMIT,
             },
           );
-          recorded = result.modifiedCount === 1;
         }
       }
       if (!recorded) {
@@ -157,8 +152,7 @@ export async function readFoldedDigest(scope: {
   agentName: string; instanceId: string; podId: unknown;
 }): Promise<{ unreadCount: number; lastEventIds: string[]; revision: number;
   conversations: Array<{ label: string; count: number }>; otherCount: number } | null> {
-  const state = await AgentDigestState.findOne({ ...scope, unreadCount: { $gt: 0 } })
-    .select('unreadCount lastEventIds revision conversations otherCount').lean();
+  const state = await readUnreadDigest(scope);
   if (!state) return null;
   return {
     unreadCount: state.unreadCount,
@@ -176,11 +170,7 @@ export async function settleFoldedDigest(
 ): Promise<void> {
   // A newer fold increments revision. In that race leave the old count in place:
   // the next turn may see some IDs twice, but never loses an unseen event.
-  await AgentDigestState.updateOne(
-    { ...scope, revision },
-    { $set: { unreadCount: 0, lastEventIds: [], conversations: [], otherCount: 0, unreadSince: null },
-      $inc: { revision: 1 } },
-  );
+  await settleDigest(scope, revision);
 }
 
 export default { foldExpiredDigests, readFoldedDigest, settleFoldedDigest };

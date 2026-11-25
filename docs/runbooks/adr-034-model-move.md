@@ -11,14 +11,16 @@ schema; its table in a numbered migration that has run; and an entry in
 `backend/repositories/dualStoreRegistry.ts`. The first model done this way is `AgentPodReadCursor`
 (table `agent_pod_read_cursors`, migration `0016`). The second is `AgentFirstContact` (table
 `agent_first_contacts`, migration `0017`, `STORE_MODE_AGENT_FIRST_CONTACT`), whose two atomic claims use
-the helper's `insertIfAbsent` and `setWhere`.
+the helper's `insertIfAbsent` and `setWhere`. The third is `AgentDigestState` (table
+`agent_digest_states`, migration `0018`, `STORE_MODE_AGENT_DIGEST_STATE`), whose fold and settle use the
+helper's `updateWhere` and whose reads by filter use `findOneWhere` and `findWhere`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
 compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
-Neither `AgentPodReadCursor` nor `AgentFirstContact` has a delete path.
+None of `AgentPodReadCursor`, `AgentFirstContact` and `AgentDigestState` has a delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -114,3 +116,11 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   `UPDATE … SET greeted_at_by_pod = jsonb_set(…) WHERE … AND (greeted_at_by_pod->>$pod IS NULL OR
   (greeted_at_by_pod->>$pod)::timestamptz < $expiredBefore) RETURNING id` for the second, both bumping
   `pg_version`, and both tested on real Postgres with concurrent claims.
+- **`AgentDigestState` cannot run in `pg` yet.** Its first fold (`startFoldState`, a create that loses on the
+  unique `(agentName, instanceId, podId)`) refuses in `pg`, and its fold step and settle go through the
+  helper's `updateWhere`, which throws `not supported in pg mode until step 4`. Before this model runs in `pg`,
+  each needs a single-statement Postgres form with the same answer: `INSERT … ON CONFLICT (agent_name,
+  instance_id, pod_id) DO NOTHING RETURNING id` for the first fold, and a conditional `UPDATE … WHERE … AND
+  folded_through_id IS NOT DISTINCT FROM $cursor AND unread_count = $expected RETURNING id` (and `AND revision =
+  $revision` for the settle) that recomputes `last_event_ids` with its cap, all bumping `pg_version`, and
+  tested on real Postgres with concurrent folds. Its reads by filter already run on Postgres in `pg-read`.

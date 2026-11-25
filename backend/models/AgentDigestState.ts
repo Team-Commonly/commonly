@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 /** Unread ambient events folded out of the full AgentEvent retention window. */
 interface IAgentDigestState extends Document {
@@ -30,6 +31,8 @@ const schema = new Schema<IAgentDigestState>({
 
 schema.index({ agentName: 1, instanceId: 1, podId: 1 }, { unique: true });
 schema.index({ unreadCount: 1, unreadSince: 1 });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(schema);
 
 const AgentDigestState: Model<IAgentDigestState> = mongoose.model<IAgentDigestState>('AgentDigestState', schema);
 export default AgentDigestState;
