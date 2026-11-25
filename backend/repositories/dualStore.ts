@@ -437,9 +437,11 @@ export function createDualStore(
    * matches nothing lost to a later write, or to a delete; after a delete the
    * late upsert may have re-created the row, so its own version is removed.
    */
-  const finishCopy = async (id: Id, version: number, row: Row, countFailure = true): Promise<boolean> => {
+  const finishCopy = async (id: Id, version: number, doc: Doc, countFailure = true): Promise<boolean> => {
     try {
-      if (!await pg.upsert(row, version)) {
+      // toRow runs inside the try: the caller's Mongo write is committed, so a
+      // document toRow cannot map is a failed copy for repair, never a failed write.
+      if (!await pg.upsert(toRow(doc), version)) {
         // Postgres already holds this version or a newer one. A newer Mongo
         // write explains that. Postgres read first, so a version above Mongo's
         // latest is one Mongo never wrote: keep the marker, so pg-read stays
@@ -629,7 +631,7 @@ export function createDualStore(
       if (mode === 'pg') return pgOnly.create(doc);
       if (mode === 'mongo') return plain((await Model.create(doc)).toObject() as Doc) as Doc;
       const created = (await Model.create({ ...doc, pgVersion: 1, pgPending: 1 })).toObject() as Doc;
-      await finishCopy(created._id, 1, toRow(created));
+      await finishCopy(created._id, 1, created);
       return plain(created) as Doc;
     },
 
@@ -649,7 +651,7 @@ export function createDualStore(
       if (unset.length) pipeline.push({ $unset: unset });
       const doc = await Model.findOneAndUpdate(alive(id), pipeline, { new: true }).lean() as Doc | null;
       if (!doc) return null;
-      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      await finishCopy(doc._id, doc.pgVersion as number, doc);
       return plain(doc);
     },
 
@@ -713,7 +715,7 @@ export function createDualStore(
         }
       }
       if (!doc) throw new Error(`dual-store: ${name} upsert lost ${UPSERT_ATTEMPTS} races in a row`);
-      if (mode !== 'mongo') await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      if (mode !== 'mongo') await finishCopy(doc._id, doc.pgVersion as number, doc);
       return plain(doc) as Doc;
     },
 
@@ -763,7 +765,7 @@ export function createDualStore(
       if (result?.lastErrorObject?.updatedExisting !== false || !result.value) return { inserted: false };
       // The plain shape a lean read returns (a Map as an object), which toRow expects.
       const doc = (result.value as { toObject: (o: object) => Doc }).toObject({ flattenMaps: true });
-      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      await finishCopy(doc._id, doc.pgVersion as number, doc);
       return { inserted: true };
     },
 
@@ -786,7 +788,7 @@ export function createDualStore(
         { ...filter, pgDeleted: { $ne: true } }, [{ $set: { ...literal, ...bump } }, markPending], { new: true },
       ).lean() as Doc | null;
       if (!doc) return false;
-      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      await finishCopy(doc._id, doc.pgVersion as number, doc);
       return true;
     },
 
@@ -816,7 +818,7 @@ export function createDualStore(
         { ...filter, pgDeleted: { $ne: true } }, [...pipeline, { $set: bump }, markPending], { new: true },
       ).lean() as Doc | null;
       if (!doc) return false;
-      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      await finishCopy(doc._id, doc.pgVersion as number, doc);
       return true;
     },
 
@@ -849,7 +851,7 @@ export function createDualStore(
             counts.failed += 1;
           }
         // eslint-disable-next-line no-await-in-loop
-        } else if (await finishCopy(doc._id, version, toRow(doc), false)) {
+        } else if (await finishCopy(doc._id, version, doc, false)) {
           counts.copied += 1;
         } else {
           counts.failed += 1;

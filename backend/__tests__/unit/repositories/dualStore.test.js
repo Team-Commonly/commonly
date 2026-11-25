@@ -193,6 +193,35 @@ describe('dual-store helper (ADR-034 D3)', () => {
     });
   });
 
+  it('4b. a toRow that throws after the Mongo write is a failed copy, never a failed write; repair goes on past it', async () => {
+    process.env[ENV] = 'dual';
+    const pg = fakePg();
+    let refuse = 'poison';
+    const s = store(pg, {
+      toRow: (doc) => {
+        if (doc.title === refuse) throw new Error('unmappable');
+        return toRow(doc);
+      },
+    });
+    const bad = await s.create({ title: 'poison', count: 1 });
+    expect(bad).toMatchObject({ title: 'poison' });
+    expect(await s.update(bad._id, { count: 2 })).toMatchObject({ count: 2 });
+    expect((await Widget.findById(bad._id).lean())).toMatchObject({ count: 2, pgVersion: 2, pgPending: 2 });
+    expect(dualStoreStats(NAME)['pg-write-failed']).toBe(2);
+    const good = await s.create({ title: 'fine', count: 1 });
+    await Widget.updateOne({ _id: good._id }, { $set: { pgPending: 1 } });
+
+    expect(await s.repair({ limit: 10 })).toEqual({
+      scanned: 2, copied: 1, deleted: 0, failed: 1,
+    });
+    expect(pg.rows.has(String(bad._id))).toBe(false);
+    refuse = null;
+    expect(await s.repair({ limit: 10 })).toEqual({
+      scanned: 1, copied: 1, deleted: 0, failed: 0,
+    });
+    expect(pg.rows.get(String(bad._id))).toMatchObject({ row: { title: 'poison', count: 2 }, version: 2 });
+  });
+
   describe('5. a delete crashing at each step', () => {
     const setup = async () => {
       process.env[ENV] = 'dual';
