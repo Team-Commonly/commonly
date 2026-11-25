@@ -7,6 +7,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+import { daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 
 // Keep setup request assertions independent of funnel telemetry.
 jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
@@ -144,6 +145,33 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(screen.getByTestId('byo-add-computer')).toHaveTextContent(/--unsandboxed/);
     expect(screen.getByTestId('byo-add-computer-windows')).toBeInTheDocument();
     expect(screen.getByTestId('byo-add-computer-os-windows')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // F629: at 390px the browser broke the Windows line at a hyphen, showing
+  // `--` on one line and `unsandboxed` on the next. Each space-separated token
+  // is its own span, so the line breaks only at a space; the copied text is
+  // still the command exactly, with nothing added between the tokens.
+  test('the add-computer command is one span per token, and its text is the command exactly, on both systems', async () => {
+    setUserAgent(MAC);
+    process.env.REACT_APP_API_URL = 'https://api-dev.example.test/';
+    mockPage({ machines: [] });
+    renderPage();
+    const expectTokens = (os) => {
+      const expected = daemonSetupCommandFor(os, 'https://api-dev.example.test/');
+      const code = screen.getByTestId('byo-add-computer').querySelector('.v2-byo__add-computer-row code');
+      expect(code.textContent).toBe(expected);
+      const spans = Array.from(code.querySelectorAll('.v2-byo__token'));
+      expect(spans.map((s) => s.textContent)).toEqual(expected.split(' '));
+      // Only the spans and single-space text nodes between them, nothing else.
+      expect(Array.from(code.childNodes).map((n) => (n.nodeType === 3 ? n.textContent : n.className)))
+        .toEqual(expected.split(' ').flatMap((_, i) => (i === 0 ? ['v2-byo__token'] : [' ', 'v2-byo__token'])));
+    };
+    await screen.findByTestId('byo-add-computer');
+    expectTokens('unix');
+    fireEvent.click(screen.getByTestId('byo-add-computer-os-windows'));
+    expectTokens('windows');
+    expect(screen.getByTestId('byo-add-computer').querySelector('.v2-byo__add-computer-row code').textContent)
+      .toContain(' --unsandboxed');
   });
 
   test('result page with a computer on file: the add-computer block is not offered again', async () => {

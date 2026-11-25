@@ -1962,7 +1962,17 @@ const V2AgentBYO: React.FC = () => {
         ))}
       </p>
       <div className="v2-byo__add-computer-row">
-        <code>{daemonCommand}</code>
+        {/* One span per space-separated token, so a phone breaks the line only
+            at a space and never inside `--unsandboxed` (F629). The single-space
+            text nodes keep the selected text equal to the command. */}
+        <code>
+          {daemonCommand.split(' ').map((token, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && ' '}
+              <span className="v2-byo__token">{token}</span>
+            </React.Fragment>
+          ))}
+        </code>
         <button
           type="button"
           className="v2-byo__copy"

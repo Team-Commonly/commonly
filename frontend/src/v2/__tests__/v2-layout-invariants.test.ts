@@ -5402,6 +5402,18 @@ describe('BYO command boxes wrap at spaces', () => {
     expect(rule).not.toContain('word-break: break-all');
   });
 
+  // F629: the add-computer line broke `--unsandboxed` at its hyphen on a
+  // phone. Each token is an inline-block, so it moves to the next line whole
+  // when it fits there; max-width lets a token longer than the line (a long
+  // self-hosted URL) still wrap inside itself rather than push the box wider.
+  test('the add-computer command keeps each token whole and breaks only at its spaces', () => {
+    const token = ruleBody(byoCss, '.v2-byo__add-computer-row code .v2-byo__token');
+    expect(token).toContain('display: inline-block');
+    expect(token).toContain('max-width: 100%');
+    expect(ruleBody(byoCss, '.v2-byo__add-computer-row code')).toContain('overflow-wrap: anywhere');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('<span className="v2-byo__token">');
+  });
+
   test('a mention item highlights on arrow-key and hover past the button reset', () => {
     // The prefixed rules keep the interaction states explicit. The reset is
     // intentionally low-specificity, so bare component rules can own their
