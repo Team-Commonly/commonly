@@ -33,24 +33,39 @@ type RedisProbe = { ok: boolean; check: Record<string, unknown> };
 let redisProbeInFlight: Promise<RedisProbe> | null = null;
 let redisProbeCached: { at: number; result: RedisProbe } | null = null;
 
+type RedisProbeClient = { disconnect: () => Promise<unknown>; on: (event: string, listener: () => void) => unknown };
+type ProbeState = { finished: boolean; socketStored: boolean };
+
+const closeRedisProbeClient = async (client: Pick<RedisProbeClient, 'disconnect'>): Promise<void> => {
+  try {
+    await client.disconnect();
+  } catch { /* already closed */ }
+};
+
+// The client stores its socket only once TCP connects, and emits 'connect' at
+// that moment (@redis/client socket.js). Before that, disconnect() would flip
+// the client closed and destroy nothing, stranding the socket that arrives
+// later. So the probe closes only once the socket exists: right away if it
+// does, else from this listener when 'connect' fires after the probe finished.
+// A connect that never yields a socket (timeout, DNS, refused) is destroyed by
+// the library itself.
+//
+// The close is deferred one turn on purpose. The client runs its startup
+// (AUTH, CLIENT SETINFO) synchronously right after emitting 'connect' and only
+// then attaches Promise.all to those commands. Closing inside the event makes
+// the startup's write throw before that, and the commands' promises reject
+// with nobody listening: an unhandledRejection, which ends the process.
+const closeOnLateSocket = (client: Pick<RedisProbeClient, 'disconnect' | 'on'>, state: ProbeState): void => {
+  client.on('connect', () => {
+    state.socketStored = true;
+    if (state.finished) setImmediate(() => { closeRedisProbeClient(client).catch(() => undefined); });
+  });
+};
+
 const runRedisProbe = async (): Promise<RedisProbe> => {
-  type ProbeClient = { disconnect: () => Promise<unknown> };
-  let redisClient: ProbeClient | undefined;
+  let redisClient: RedisProbeClient | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // The client stores its socket only once TCP connects, and emits 'connect'
-  // at that moment (@redis/client socket.js). Before that, disconnect() would
-  // flip the client closed and destroy nothing, stranding the socket that then
-  // arrives, and a second disconnect() would throw. So close only once the
-  // socket exists: now if it does, else when 'connect' fires after the probe
-  // has finished. A connect that never yields a socket (timeout, DNS, refused)
-  // is destroyed by the library itself.
-  let finished = false;
-  let socketStored = false;
-  const close = async (client: ProbeClient): Promise<void> => {
-    try {
-      await client.disconnect();
-    } catch { /* already closed */ }
-  };
+  const state: ProbeState = { finished: false, socketStored: false };
   const redisStart = Date.now();
   try {
     // eslint-disable-next-line global-require
@@ -68,10 +83,7 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
     redisClient = client;
     // An unheard 'error' event would end the process.
     client.on('error', () => undefined);
-    client.on('connect', () => {
-      socketStored = true;
-      if (finished) close(client).catch(() => undefined);
-    });
+    closeOnLateSocket(client, state);
     const attempt = (async () => {
       await client.connect();
       return client.ping();
@@ -94,9 +106,11 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
   } catch (error) {
     return { ok: false, check: { status: 'unhealthy', error: (error as { message?: string }).message } };
   } finally {
-    finished = true;
+    state.finished = true;
     clearTimeout(timer);
-    if (redisClient && socketStored) await close(redisClient);
+    // Socket already stored: the client's startup has its Promise.all attached
+    // by now (it ran synchronously at 'connect'), so closing here is safe.
+    if (redisClient && state.socketStored) await closeRedisProbeClient(redisClient);
   }
 };
 
@@ -115,7 +129,7 @@ const probeRedis = (): Promise<RedisProbe> => {
   return redisProbeInFlight;
 };
 
-const router: ReturnType<typeof express.Router> & { resetRedisProbeForTests?: () => void } = express.Router();
+const router: ReturnType<typeof express.Router> & { resetRedisProbeForTests?: () => void; closeOnLateSocket?: typeof closeOnLateSocket } = express.Router();
 
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
@@ -377,6 +391,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
 });
 
 // Tests only: forget the cached Redis probe.
+router.closeOnLateSocket = closeOnLateSocket;
 router.resetRedisProbeForTests = (): void => {
   redisProbeInFlight = null;
   redisProbeCached = null;

@@ -145,33 +145,79 @@ describe('GET /api/health redis check', () => {
     expect(res.body.status).toBe('degraded');
   });
 
-  it('with the real client, a server that never replies sees its connection closed at the deadline', async () => {
-    // eslint-disable-next-line global-require
-    const net = require('net');
-    const sockets = [];
-    const server = net.createServer((socket) => {
-      sockets.push(socket);
-      socket.on('error', () => {});
-      socket.resume(); // read, or the client's FIN is never seen
+  // The mock above cannot model the client's own startup, which is what made a
+  // synchronous late close reject unhandled. These run the real @redis/client
+  // against a local server that accepts and never replies.
+  describe('with the real client', () => {
+    const net = require('net'); // eslint-disable-line global-require
+    let server;
+    let sockets;
+    let unhandled;
+    const onUnhandled = (reason) => { unhandled.push(reason); };
+    const realClient = (extra = {}) => jest.requireActual('redis').createClient({
+      url: `redis://127.0.0.1:${server.address().port}`,
+      password: 'probe-test', // makes the client's startup queue AUTH and CLIENT SETINFO
+      socket: { connectTimeout: 1000, reconnectStrategy: false },
+      ...extra,
     });
-    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
-    try {
+    const serverSawClose = (index) => new Promise((resolve) => {
+      const watch = setInterval(() => {
+        if (sockets[index]) {
+          clearInterval(watch);
+          if (sockets[index].destroyed || sockets[index].readableEnded) resolve();
+          else sockets[index].on('close', resolve);
+        }
+      }, 10);
+    });
+    const letRejectionsSurface = async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    };
+
+    beforeEach(async () => {
+      sockets = [];
+      unhandled = [];
+      process.on('unhandledRejection', onUnhandled);
+      server = net.createServer((socket) => {
+        sockets.push(socket);
+        socket.on('error', () => {});
+        socket.resume(); // read, or the client's FIN is never seen
+      });
+      await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    });
+    afterEach(async () => {
+      process.off('unhandledRejection', onUnhandled);
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise((resolve) => { server.close(resolve); });
+    });
+
+    it('closes a late socket, as the probe attaches it, with no unhandled rejection', async () => {
+      const client = realClient();
+      client.on('error', () => undefined);
+      const state = { finished: true, socketStored: false }; // the deadline already passed
+      healthRoutes.closeOnLateSocket(client, state);
+      client.connect().catch(() => undefined);
+      await serverSawClose(0);
+      await letRejectionsSurface();
+      expect(state.socketStored).toBe(true);
+      expect(unhandled).toEqual([]);
+    }, 6000);
+
+    it('a server that never replies sees its connection closed at the deadline, with no unhandled rejection', async () => {
       process.env.REDIS_HOST = '127.0.0.1';
       process.env.REDIS_PORT = String(server.address().port);
+      process.env.REDIS_PASSWORD = 'probe-test';
       mockCreateClient.mockImplementationOnce((...args) => jest.requireActual('redis').createClient(...args));
-      const closed = new Promise((resolve) => {
-        const watch = setInterval(() => {
-          if (sockets[0]) { sockets[0].on('close', resolve); clearInterval(watch); }
-        }, 10);
-      });
+      const closed = serverSawClose(0);
       const res = await request(buildApp()).get('/api/health');
       expect(res.body.checks.redis.status).toBe('unhealthy');
       await closed;
-    } finally {
-      sockets.forEach((socket) => socket.destroy());
-      await new Promise((resolve) => { server.close(resolve); });
-    }
-  }, 6000);
+      await letRejectionsSurface();
+      expect(unhandled).toEqual([]);
+    }, 6000);
+  });
+
 
   describe('bounded probes, on fake timers', () => {
     beforeEach(() => {
@@ -235,7 +281,6 @@ describe('GET /api/health redis check', () => {
       await until(() => mockClient.sockets[0].destroy.mock.calls.length > 0);
       expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1);
       expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
-      expect(mockClient.ping).not.toHaveBeenCalled();
       await new Promise((resolve) => setImmediate(resolve));
       expect(unhandled).toEqual([]);
     });
