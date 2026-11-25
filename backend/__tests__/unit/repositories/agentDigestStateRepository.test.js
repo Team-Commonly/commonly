@@ -306,6 +306,7 @@ describe('digest state repository (ADR-034 step 2)', () => {
       await expect(digestStateStore().findWhere({ lastEventIds: 'x' })).rejects.toThrow(/cannot filter on/);
       await expect(digestStateStore().findWhere({ unreadCount: { $ne: 0 } })).rejects.toThrow(/\$ne/);
       await expect(digestStateStore().findOneWhere({ agentName: { $regex: 'fl' } })).rejects.toThrow(/\$regex/);
+      await expect(digestStateStore().findWhere({ unreadSince: { $lte: null } })).rejects.toThrow(/against null/);
       expect(mockPg.current.calls).toEqual([]);
     });
   });

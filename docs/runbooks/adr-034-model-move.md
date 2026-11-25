@@ -119,8 +119,13 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
 - **`AgentDigestState` cannot run in `pg` yet.** Its first fold (`startFoldState`, a create that loses on the
   unique `(agentName, instanceId, podId)`) refuses in `pg`, and its fold step and settle go through the
   helper's `updateWhere`, which throws `not supported in pg mode until step 4`. Before this model runs in `pg`,
-  each needs a single-statement Postgres form with the same answer: `INSERT … ON CONFLICT (agent_name,
-  instance_id, pod_id) DO NOTHING RETURNING id` for the first fold, and a conditional `UPDATE … WHERE … AND
-  folded_through_id IS NOT DISTINCT FROM $cursor AND unread_count = $expected RETURNING id` (and `AND revision =
-  $revision` for the settle) that recomputes `last_event_ids` with its cap, all bumping `pg_version`, and
-  tested on real Postgres with concurrent folds. Its reads by filter already run on Postgres in `pg-read`.
+  each needs a single-statement Postgres form with the same answer, all bumping `pg_version` and tested on
+  real Postgres with concurrent folds:
+  - the first fold: `INSERT … ON CONFLICT (agent_name, instance_id, pod_id) DO NOTHING RETURNING id`;
+  - a fold step: `UPDATE … WHERE <scope> AND folded_through_id IS NOT DISTINCT FROM $cursor AND unread_count =
+    $expected RETURNING id`, incrementing `unread_count` and `revision` and appending to `last_event_ids`
+    under its cap;
+  - the settle: `UPDATE … WHERE <scope> AND revision = $revision RETURNING id`, clearing `unread_count`,
+    `last_event_ids`, `conversations`, `other_count` and `unread_since`, and incrementing `revision`.
+
+  Its reads by filter already run on Postgres in `pg-read`.
