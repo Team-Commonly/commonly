@@ -2,7 +2,8 @@
  * Publish and fork claim an installableId across the AgentRegistry write and
  * the Installable write, so two concurrent requests for one id cannot leave
  * AgentRegistry holding one request's doc and Installable the other's
- * (CodeRabbit on #4301).
+ * (CodeRabbit on #4301). The claim is re-confirmed before each write, so a
+ * holder whose claim expired writes nothing.
  */
 const express = require('express');
 const request = require('supertest');
@@ -37,6 +38,18 @@ const deferred = () => {
   return { promise, resolve };
 };
 
+const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+
+// Resolves 'barrier' if `entered` fires first, or throws if the request
+// answered without ever reaching it, so a broken hook fails instead of hanging.
+const reachBarrier = async (entered, response, what) => {
+  const reached = await Promise.race([
+    entered.then(() => 'barrier'),
+    response.then(() => 'responded', () => 'responded'),
+  ]);
+  if (reached !== 'barrier') throw new Error(`${what} responded before reaching its barrier`);
+};
+
 describe('marketplace installableId claim', () => {
   let app;
   let bob;
@@ -46,42 +59,71 @@ describe('marketplace installableId claim', () => {
 
   const post = (path, authHeader, body) => request(app).post(`/api/marketplace${path}`)
     .set('Authorization', authHeader).send(body);
+  // A real promise, started once (a supertest Test sends again on each then).
+  const send = (path, authHeader, body) => Promise.resolve(post(path, authHeader, body));
 
-  // Holds the first AgentRegistry write for `agentName` until released, so the
-  // second request deterministically arrives while the first is mid-write.
-  const holdFirstRegistryWrite = (agentName) => {
+  // Holds the first call of `obj[method]` that `match` accepts until released.
+  // With `after`, the original call runs first and the hold is on its result.
+  const holdFirst = (obj, method, match, { after = false } = {}) => {
     const entered = deferred();
-    const release = deferred();
-    const original = AgentRegistry.findOneAndUpdate.bind(AgentRegistry);
+    const gate = deferred();
+    const original = obj[method].bind(obj);
     let held = false;
-    const spy = jest.spyOn(AgentRegistry, 'findOneAndUpdate').mockImplementation((filter, ...rest) => {
-      if (!held && filter?.agentName === agentName) {
-        held = true;
-        entered.resolve();
-        return release.promise.then(() => original(filter, ...rest));
+    const spy = jest.spyOn(obj, method).mockImplementation((...args) => {
+      if (held || !match(...args)) return original(...args);
+      held = true;
+      if (after) {
+        return Promise.resolve(original(...args)).then(async (result) => {
+          entered.resolve();
+          await gate.promise;
+          return result;
+        });
       }
-      return original(filter, ...rest);
+      entered.resolve();
+      return gate.promise.then(() => original(...args));
     });
-    return { entered: entered.promise, release: release.resolve, spy };
+    return { entered: entered.promise, release: gate.resolve, spy };
   };
 
-  // Runs `first` until it is inside its registry write, then `second`, then
-  // lets `first` finish. Both settle through Promise.all.
-  const race = async (agentName, first, second) => {
+  const holdFirstRegistryWrite = (agentName) => holdFirst(
+    AgentRegistry, 'findOneAndUpdate', (filter) => filter?.agentName === agentName,
+  );
+
+  // Starts `first`, holds it inside its registry write, runs `second` to the
+  // end, calls `whilePaused` while `first` is still held, then lets it finish.
+  const race = async (agentName, first, second, whilePaused) => {
     const hold = holdFirstRegistryWrite(agentName);
-    const firstDone = first().then((r) => r);
-    await hold.entered;
-    const [a, b] = await Promise.all([
-      firstDone,
-      second().then((r) => { hold.release(); return r; }),
-    ]);
-    hold.spy.mockRestore();
-    return [a, b];
+    const started = [];
+    try {
+      const firstDone = first();
+      started.push(firstDone);
+      await reachBarrier(hold.entered, firstDone, 'the first request');
+      const secondDone = second();
+      started.push(secondDone);
+      const b = await secondDone;
+      await whilePaused(b);
+      hold.release();
+      return [await firstDone, b];
+    } finally {
+      hold.release();
+      await Promise.allSettled(started);
+      hold.spy.mockRestore();
+    }
   };
 
   const expectBusy = (res) => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('installable_id_busy');
+  };
+
+  const rawRows = async (id) => ({
+    ar: await AgentRegistry.collection.findOne({ agentName: id }),
+    installable: await Installable.collection.findOne({ installableId: id }),
+  });
+
+  const expectLoserWroteNothing = (id, before = { ar: null, installable: null }) => async (loser) => {
+    expectBusy(loser);
+    expect(await rawRows(id)).toEqual(before);
   };
 
   const expectNoClaim = async (id) => {
@@ -112,8 +154,9 @@ describe('marketplace installableId claim', () => {
   test('two concurrent forks onto one new id: one 201, one 409, both tables hold the winner', async () => {
     const [first, second] = await race(
       '@alice/fork',
-      () => post('/fork', aliceAuth, { sourceInstallableId: '@bob/helper', newInstallableId: '@alice/fork' }),
-      () => post('/fork', aliceAuth, { sourceInstallableId: '@bob/other', newInstallableId: '@alice/fork' }),
+      () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork')),
+      () => send('/fork', aliceAuth, forkBody('@bob/other', '@alice/fork')),
+      expectLoserWroteNothing('@alice/fork'),
     );
     expect(first.status).toBe(201);
     expect(first.body.warnings).toBeUndefined();
@@ -134,8 +177,9 @@ describe('marketplace installableId claim', () => {
   test('two concurrent publishes of one new id: one 201, one 409, both tables hold the winner', async () => {
     const [first, second] = await race(
       '@alice/new',
-      () => post('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' })),
-      () => post('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' })),
+      () => send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' })),
+      () => send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' })),
+      expectLoserWroteNothing('@alice/new'),
     );
     expect(first.status).toBe(201);
     expect(first.body.warnings).toBeUndefined();
@@ -148,11 +192,30 @@ describe('marketplace installableId claim', () => {
     await expectNoClaim('@alice/new');
   });
 
+  test('two concurrent version publishes to a listing: the loser leaves the pre-race rows untouched', async () => {
+    await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+    const before = await rawRows('@alice/x');
+    const [first, second] = await race(
+      '@alice/x',
+      () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+      () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+      expectLoserWroteNothing('@alice/x', before),
+    );
+    expect(first.status).toBe(200);
+    expectBusy(second);
+    const row = await Installable.findOne({ installableId: '@alice/x' }).lean();
+    const ar = await AgentRegistry.findOne({ agentName: '@alice/x' }).lean();
+    expect(row).toMatchObject({ description: 'Two.', version: '2.0.0' });
+    expect(row.versions.map((v) => v.version)).toEqual(['1.0.0', '2.0.0']);
+    expect(ar).toMatchObject({ description: 'Two.', latestVersion: '2.0.0' });
+  });
+
   test('a publish racing a fork of the same id: the fork wins and the publish gets 409', async () => {
     const [fork, publish] = await race(
       '@alice/x',
-      () => post('/fork', aliceAuth, { sourceInstallableId: '@bob/helper', newInstallableId: '@alice/x' }),
-      () => post('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+      () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x')),
+      () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+      expectLoserWroteNothing('@alice/x'),
     );
     expect(fork.status).toBe(201);
     expect(fork.body.warnings).toBeUndefined();
@@ -167,8 +230,9 @@ describe('marketplace installableId claim', () => {
   test('a fork racing a publish of the same id: the publish wins and the fork gets 409', async () => {
     const [publish, fork] = await race(
       '@alice/x',
-      () => post('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
-      () => post('/fork', aliceAuth, { sourceInstallableId: '@bob/helper', newInstallableId: '@alice/x' }),
+      () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+      () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x')),
+      expectLoserWroteNothing('@alice/x'),
     );
     expect(publish.status).toBe(201);
     expectBusy(fork);
@@ -179,23 +243,83 @@ describe('marketplace installableId claim', () => {
     expect(ar.description).toBe('Published.');
   });
 
+  test('a holder whose claim expired before its registry write answers 409 and writes nothing', async () => {
+    // Hold fork A just after its admission read (the id-taken check).
+    const hold = holdFirst(
+      Installable,
+      'findOne',
+      (filter) => filter && Object.keys(filter).length === 1 && filter.installableId === '@alice/x',
+      { after: true },
+    );
+    const started = [];
+    try {
+      const forkA = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x'));
+      started.push(forkA);
+      await reachBarrier(hold.entered, forkA, 'fork A');
+      // A stalls past its claim; B takes the id over and commits.
+      await SchedulerHeartbeatLease.updateOne(
+        { _id: CLAIM_ID('@alice/x') }, { $set: { expiresAt: new Date(Date.now() - 1000) } },
+      );
+      const publishB = send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' }));
+      started.push(publishB);
+      const b = await publishB;
+      expect(b.status).toBe(201);
+      const afterB = await rawRows('@alice/x');
+
+      hold.release();
+      const a = await forkA;
+      expectBusy(a);
+      expect(a.body.error).toMatch(/expired/);
+      expect(await rawRows('@alice/x')).toEqual(afterB);
+      expect(afterB.ar.description).toBe('Published.');
+      expect(afterB.installable.description).toBe('Published.');
+      expect(afterB.installable.forkedFrom).toBeUndefined();
+      expect((await Installable.findOne({ installableId: '@bob/helper' }).lean()).stats.forkCount).toBe(0);
+    } finally {
+      hold.release();
+      await Promise.allSettled(started);
+      hold.spy.mockRestore();
+    }
+  });
+
   test('a request after the winner finished sees its row and answers as before', async () => {
-    await post('/fork', aliceAuth, { sourceInstallableId: '@bob/helper', newInstallableId: '@alice/fork' })
-      .expect(201);
+    await post('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork')).expect(201);
     const again = await post('/fork', aliceAuth, forkBody('@bob/other', '@alice/fork'));
     expect(again.status).toBe(409);
     expect(again.body.code).toBeUndefined();
     await expectNoClaim('@alice/fork');
   });
 
-  test('an expired claim left by a crashed holder does not block the id', async () => {
-    await SchedulerHeartbeatLease.create({
-      _id: CLAIM_ID('@alice/fork'), ownerId: 'crashed', expiresAt: new Date(Date.now() - 1000),
+  test('an expired claim left by a crashed holder is taken over in place, not re-inserted', async () => {
+    const seededAt = new Date(Date.now() - 3600_000);
+    await SchedulerHeartbeatLease.collection.insertOne({
+      _id: CLAIM_ID('@alice/fork'),
+      ownerId: 'crashed',
+      expiresAt: new Date(Date.now() - 1000),
+      createdAt: seededAt,
+      updatedAt: seededAt,
     });
-    const res = await post('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork'));
-    expect(res.status).toBe(201);
-    expect(res.body.warnings).toBeUndefined();
-    await expectNoClaim('@alice/fork');
+    const hold = holdFirstRegistryWrite('@alice/fork');
+    const started = [];
+    try {
+      const res = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork'));
+      started.push(res);
+      await reachBarrier(hold.entered, res, 'the fork');
+      const claim = await SchedulerHeartbeatLease.collection.findOne({ _id: CLAIM_ID('@alice/fork') });
+      expect(claim._id).toBe(CLAIM_ID('@alice/fork'));
+      expect(claim.createdAt).toEqual(seededAt);
+      expect(claim.ownerId).not.toBe('crashed');
+      expect(claim.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      hold.release();
+      const done = await res;
+      expect(done.status).toBe(201);
+      expect(done.body.warnings).toBeUndefined();
+      await expectNoClaim('@alice/fork');
+    } finally {
+      hold.release();
+      await Promise.allSettled(started);
+      hold.spy.mockRestore();
+    }
   });
 
   test('a live claim held by another request answers 409 and writes nothing', async () => {
@@ -242,6 +366,48 @@ describe('marketplace installableId claim', () => {
       spy.mockRestore();
       expect(res.status).toBe(500);
       await expectNoClaim('@alice/new');
+    });
+
+    test('before the drift-warning response goes out', async () => {
+      const createSpy = jest.spyOn(Installable, 'create').mockRejectedValueOnce(new Error('catalog down'));
+      const hold = holdFirst(SchedulerHeartbeatLease, 'deleteOne', (filter) => filter?._id === CLAIM_ID('@alice/fork'));
+      const started = [];
+      try {
+        const res = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork'));
+        started.push(res);
+        await reachBarrier(hold.entered, res, 'the fork');
+        const state = await Promise.race([res.then(() => 'sent'), sleep(150).then(() => 'pending')]);
+        expect(state).toBe('pending');
+        hold.release();
+        const done = await res;
+        expect(done.status).toBe(201);
+        expect(done.body.warnings).toEqual([expect.stringMatching(/not yet browsable/)]);
+        await expectNoClaim('@alice/fork');
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+        createSpy.mockRestore();
+      }
+    });
+
+    test('a failed delete is retried, then the warning tells the client to wait', async () => {
+      const createSpy = jest.spyOn(Installable, 'create').mockRejectedValueOnce(new Error('catalog down'));
+      const delSpy = jest.spyOn(SchedulerHeartbeatLease, 'deleteOne').mockRejectedValue(new Error('mongo down'));
+      try {
+        const res = await post('/fork', aliceAuth, forkBody('@bob/helper', '@alice/fork'));
+        expect(res.status).toBe(201);
+        expect(res.body.warnings).toEqual([
+          expect.stringMatching(/not yet browsable/),
+          expect.stringMatching(/wait about 30 seconds/),
+        ]);
+        expect(delSpy).toHaveBeenCalledTimes(3);
+      } finally {
+        delSpy.mockRestore();
+        createSpy.mockRestore();
+      }
+      // The leftover claim is this request's own; expiry frees it.
+      expect(await SchedulerHeartbeatLease.countDocuments({ _id: CLAIM_ID('@alice/fork') })).toBe(1);
     });
   });
 });

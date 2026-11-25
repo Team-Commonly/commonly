@@ -75,17 +75,60 @@ const acquireInstallableClaim = async (installableId: string): Promise<string | 
   }
 };
 
-// Deletes only this request's claim document; the TTL index covers a failure.
-const releaseInstallableClaim = async (installableId: string, ownerId: string) => {
-  try {
-    await SchedulerHeartbeatLease.deleteOne({ _id: installableClaimId(installableId), ownerId });
-  } catch (error) {
-    console.warn('[marketplace] installableId claim release failed:', (error as any).message);
-  }
+// Re-checks, right before a write, that this request still holds the id, and
+// extends the claim. A holder that stalled past expiry gets false and must not
+// write: another request may have taken the id over and committed since. A
+// stall inside a single write is not fenced; that needs conditional writes in
+// both collections.
+const confirmInstallableClaim = async (installableId: string, ownerId: string): Promise<boolean> => {
+  const now = new Date();
+  const claim = await SchedulerHeartbeatLease.findOneAndUpdate(
+    { _id: installableClaimId(installableId), ownerId, expiresAt: { $gt: now } },
+    { $set: { expiresAt: new Date(now.getTime() + INSTALLABLE_CLAIM_MS) } },
+    { new: true },
+  );
+  return Boolean(claim);
 };
 
+const CLAIM_RELEASE_ATTEMPTS = 3;
+const CLAIM_RELEASE_WAIT_WARNING = 'The installableId claim could not be released; '
+  + 'wait about 30 seconds before retrying, when it expires.';
+
+// Deletes only this request's claim document, retrying a few times. Returns
+// whether the delete went through (deletedCount 0 counts: the claim is gone).
+// On false the TTL expiry still frees the id.
+const releaseInstallableClaim = async (installableId: string, ownerId: string): Promise<boolean> => {
+  for (let attempt = 1; attempt <= CLAIM_RELEASE_ATTEMPTS; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await SchedulerHeartbeatLease.deleteOne({ _id: installableClaimId(installableId), ownerId });
+      return true;
+    } catch (error) {
+      console.warn(
+        `[marketplace] installableId claim release failed (attempt ${attempt}):`,
+        (error as any).message,
+      );
+      if (attempt < CLAIM_RELEASE_ATTEMPTS) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => { setTimeout(r, 10 * attempt); });
+      }
+    }
+  }
+  return false;
+};
+
+const claimExpired = (res: any) => res.status(409).json({
+  error: 'installableId claim expired before the write, retry',
+  code: 'installable_id_busy',
+});
+
 // Runs `work` (admission check included) while holding the id, or answers 409.
-const withInstallableClaim = async (res: any, installableId: string, work: () => Promise<any>) => {
+// `work` gets `confirm`, which it calls immediately before each write.
+const withInstallableClaim = async (
+  res: any,
+  installableId: string,
+  work: (confirm: () => Promise<boolean>) => Promise<any>,
+) => {
   const ownerId = await acquireInstallableClaim(installableId);
   if (!ownerId) {
     return res.status(409).json({
@@ -95,7 +138,7 @@ const withInstallableClaim = async (res: any, installableId: string, work: () =>
   }
   // Release before the answer goes out: a client that retries as soon as it
   // reads it (the drift warning asks it to) must find the id free, not busy.
-  let releasing: Promise<void> | null = null;
+  let releasing: Promise<boolean> | null = null;
   const release = () => {
     releasing ??= releaseInstallableClaim(installableId, ownerId);
     return releasing;
@@ -103,14 +146,20 @@ const withInstallableClaim = async (res: any, installableId: string, work: () =>
   const originalJson = res.json;
   res.json = (body: any) => {
     release()
-      .finally(() => originalJson.call(res, body))
+      .then((released) => {
+        // A client told to retry would hit the leftover claim; say how long.
+        const out = !released && Array.isArray(body?.warnings)
+          ? { ...body, warnings: [...body.warnings, CLAIM_RELEASE_WAIT_WARNING] }
+          : body;
+        originalJson.call(res, out);
+      })
       // Nothing awaits this chain; a throwing send must not become an
       // unhandled rejection that takes the process down.
       .catch((error) => console.error('[marketplace] response send failed: %s', (error as Error)?.message));
     return res;
   };
   try {
-    return await work();
+    return await work(() => confirmInstallableClaim(installableId, ownerId));
   } finally {
     await release();
     res.json = originalJson;
@@ -379,7 +428,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
 
     // The claim covers the admission check, so a request that acquires after
     // the winner finished sees the winner's row.
-    return await withInstallableClaim(res, installableId.toLowerCase(), async () => {
+    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm) => {
       // A backfilled row is invisible here and is taken over on the create path.
       const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
 
@@ -424,6 +473,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
 
         // Write AR first (load-bearing table), then Installable — same
         // ordering rationale as new-manifest path (§6c.1).
+        if (!(await confirm())) return claimExpired(res);
         try {
           await syncToAgentRegistry(existing, 'publish');
         } catch (arError) {
@@ -440,6 +490,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
           });
         }
 
+        if (!(await confirm())) return claimExpired(res);
         try {
           await existing.save();
         } catch (saveError) {
@@ -503,6 +554,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
       };
 
       // Write AR first
+      if (!(await confirm())) return claimExpired(res);
       try {
         await syncToAgentRegistry(installableDoc, 'publish');
       } catch (arError) {
@@ -511,6 +563,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
       }
 
       // Then Installable
+      if (!(await confirm())) return claimExpired(res);
       let created;
       try {
         created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
@@ -519,6 +572,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
         console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
         // The hourly backfill can insert between the read above and create.
         if ((installableError as any)?.code === 11000) {
+          if (!(await confirm())) return claimExpired(res);
           try {
             created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
           } catch (takeoverError) {
@@ -680,7 +734,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
 
     // The id check runs under the claim, like publish's admission check.
     const forkId = newInstallableId.toLowerCase();
-    return await withInstallableClaim(res, forkId, async () => {
+    return await withInstallableClaim(res, forkId, async (confirm) => {
       // A backfilled row in the caller's own namespace (checked above) is not a
       // claim on the id: an interrupted fork's retry finds the row the sweep
       // inserted from its AgentRegistry write, and takes it over like publish.
@@ -722,6 +776,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
       };
 
       // Write AR first, then Installable
+      if (!(await confirm())) return claimExpired(res);
       try {
         await syncToAgentRegistry(forkDoc, 'publish');
       } catch (arError) {
@@ -729,6 +784,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
         return res.status(500).json({ error: 'Failed to fork manifest' });
       }
 
+      if (!(await confirm())) return claimExpired(res);
       let created;
       try {
         created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
@@ -740,6 +796,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
         );
         // The hourly backfill can insert between the check above and create.
         if ((installableError as any)?.code === 11000) {
+          if (!(await confirm())) return claimExpired(res);
           try {
             created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
           } catch (takeoverError) {
