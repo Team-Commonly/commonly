@@ -118,12 +118,13 @@ export const redeemPodInvite = async (token: unknown, userId: unknown): Promise<
   // member by the time it wrote: it gives its use back and reports so. Pod's
   // save hook only acts on a new pod, so skipping save() skips nothing.
   // A pod deleted since the lookup matches nothing too; that refuses as the
-  // lookup would have.
+  // lookup would have. F619: the `__v` bump makes a stale whole-array save
+  // (leavePod, removeAgentFromPod) fail instead of undoing this add.
   let joined = false;
   try {
     const added = await Pod.updateOne(
       { _id: pod._id, members: { $ne: userId } },
-      { $push: { members: userId }, $set: { updatedAt: new Date() } },
+      { $push: { members: userId }, $set: { updatedAt: new Date() }, $inc: { __v: 1 } },
     );
     joined = added.modifiedCount > 0;
   } catch (joinError) {

@@ -361,16 +361,34 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
     if (!isMember) {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { DM_POD_TYPES_GUARD } = require('../../services/agentIdentityService');
+      const DM_ATTACH_REFUSED = 'DM pods are 1:1 — cannot attach a third agent. Use a chat pod or create a new DM.';
       if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
-        return res.status(403).json({
-          error: 'DM pods are 1:1 — cannot attach a third agent. Use a chat pod or create a new DM.',
-        });
+        return res.status(403).json({ error: DM_ATTACH_REFUSED });
       }
-      pod.members.push(agentUser._id);
-      await pod.save();
-      // F183: best-effort PG mirror write; never fails the attach.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      await require('../../services/pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(agentUser._id));
+      // F619: one conditional write, as in ensureAgentInPod (F605), so the
+      // DM check above and the not-yet-a-member read both hold at the write.
+      // agent-admin is not in the guard set and stays attachable. The `__v`
+      // bump makes a stale whole-array save fail instead of undoing the add.
+      const added = await Pod.updateOne(
+        {
+          _id: pod._id,
+          members: { $ne: agentUser._id },
+          type: { $nin: Array.from(DM_POD_TYPES_GUARD) },
+        },
+        { $addToSet: { members: agentUser._id }, $inc: { __v: 1 } },
+      );
+      if (!added.modifiedCount) {
+        // Lost the race, or the pod changed under us. Re-read to say which.
+        const current = await Pod.findById(pod._id).select('type members').lean();
+        if (!current) return res.status(404).json({ error: 'Pod not found' });
+        const nowMember = (current.members || []).some((m: any) => String(m) === String(agentUser._id));
+        if (!nowMember) return res.status(403).json({ error: DM_ATTACH_REFUSED });
+        // Someone else added the agent meanwhile and mirrored their own add.
+      } else {
+        // F183: best-effort PG mirror write; never fails the attach.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        await require('../../services/pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(agentUser._id));
+      }
     }
 
     // Upsert AgentInstallation so agentRuntimeAuth authorizes this pod for the token

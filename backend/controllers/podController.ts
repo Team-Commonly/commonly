@@ -724,6 +724,9 @@ exports.joinPod = async (req: any, res: any) => {
         {
           $addToSet: { members: userId },
           $set: { updatedAt: new Date() },
+          // F619: bump the version so a stale whole-array save (leavePod,
+          // removeAgentFromPod) gets VersionError instead of undoing this add.
+          $inc: { __v: 1 },
         },
       );
       // F183: mirror into PG `pod_members` after the Mongo write. Best-effort;
