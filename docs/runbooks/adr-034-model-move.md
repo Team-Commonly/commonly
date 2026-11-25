@@ -164,3 +164,9 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   RETURNING id` (and the same for `target_id`, inserting `active = false`). No row back means another owner
   holds the id, and it must fail as Mongo's duplicate key does, never write. Until then, don't set it to
   `pg`: every takeover request and target bind would fail.
+
+  **Before `pg-read` for this model,** check that `repair` reports nothing pending for it. A takeover read
+  is consulted only when a person's browser state is rebuilt or a new tab opens. A copy of
+  `setTakeover(true)` that failed, read from Postgres by another process within the 5-second flag cache
+  (or with Mongo down), would show the takeover as inactive and let the agent act during the person's
+  takeover. A stale "active" fails safe: it only holds the agent back.

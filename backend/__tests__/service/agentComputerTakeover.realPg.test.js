@@ -104,4 +104,39 @@ real('AgentComputerTakeover on real PostgreSQL (ADR-034 step 2)', () => {
     expect(await listBindings(owner)).toEqual([{ installationId: install, targetId: 'target-1' }]);
     expect(await listBindings(other)).toEqual([]);
   });
+
+  it('pg-read: owner-filtered reads run on the table, and another owner sees nothing', async () => {
+    process.env[ENV] = 'dual';
+    const owner = String(new Types.ObjectId());
+    const other = String(new Types.ObjectId());
+    const install = String(new Types.ObjectId());
+    await setTakeover(owner, install, true);
+    await bindTarget(owner, install, 'target-1');
+    // Moved in Mongo only: a Postgres read still sees the copied values.
+    await AgentComputerTakeover.collection.updateOne(
+      { _id: new Types.ObjectId(install) }, { $set: { active: false, targetId: 'mongo-only' } },
+    );
+    process.env[ENV] = 'pg-read';
+    expect(await isTakeoverActive(owner, install)).toBe(true);
+    expect(await isTakeoverActive(other, install)).toBe(false);
+    expect(await listBindings(owner)).toEqual([{ installationId: install, targetId: 'target-1' }]);
+    expect(await listBindings(other)).toEqual([]);
+  });
+
+  it('dual: another owner racing the first write on a fresh id loses with 11000, and the winner is intact', async () => {
+    process.env[ENV] = 'dual';
+    const owners = [String(new Types.ObjectId()), String(new Types.ObjectId())];
+    const install = String(new Types.ObjectId());
+    const outcomes = await Promise.allSettled(owners.map((owner) => setTakeover(owner, install, true)));
+    const won = outcomes.findIndex((o) => o.status === 'fulfilled');
+    expect(won).toBeGreaterThanOrEqual(0);
+    const lost = outcomes.filter((o) => o.status === 'rejected');
+    expect(lost).toHaveLength(1);
+    expect(lost[0].reason).toMatchObject({ code: 11000 });
+    const doc = await AgentComputerTakeover.findById(install).lean();
+    expect(String(doc.ownerId)).toBe(owners[won]);
+    const { rows } = await database.pool.query('SELECT owner_id, active FROM agent_computer_takeovers');
+    expect(rows).toEqual([{ owner_id: owners[won], active: true }]);
+    expect(await computerTakeoverStore().verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+  });
 });
