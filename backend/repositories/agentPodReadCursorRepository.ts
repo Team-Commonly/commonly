@@ -31,6 +31,7 @@ export const readCursorStore = createDualStore({
     table: 'agent_pod_read_cursors',
     idColumn: 'id',
     columns: ['agent_user_id', 'pod_id', 'read_at', 'read_revision'],
+    bigintColumns: ['read_revision'],
   }),
   toRow: (doc) => ({
     id: String(doc._id),

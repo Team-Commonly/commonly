@@ -598,6 +598,31 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(await s.backfill({ dryRun: false })).toMatchObject({ inserted: 0, alreadyCurrent: 3 });
     });
 
+    it('copies a document that was pending when scanned and has settled by the end, which repair would never see', async () => {
+      // B's dual write copied its row, then the table was emptied, and B's
+      // marker clears while the backfill is still running: an unflagged
+      // document with no row.
+      const b = await seed({ title: 'B', pgVersion: 2, pgPending: 2 });
+      const a = await seed({ title: 'A' });
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const hold = pg.hold('upsert');
+      const copying = s.backfill({ dryRun: false });
+      await hold.arrived; // B scanned and skipped; A's copy is in flight
+      await Widget.updateOne({ _id: b.insertedId, pgPending: 2 }, { $unset: { pgPending: 1 } });
+      hold.release();
+      expect(await copying).toEqual({
+        scanned: 2, inserted: 2, alreadyCurrent: 0, skippedPending: 0,
+      });
+      expect(pg.rows.get(String(b.insertedId))).toMatchObject({ row: { title: 'B' }, version: 2 });
+      expect(pg.rows.has(String(a.insertedId))).toBe(true);
+      expect(await s.verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+      // One still pending at the end stays repair's, and is counted.
+      await Widget.updateOne({ _id: b.insertedId }, { $set: { pgVersion: 3, pgPending: 3 } });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ skippedPending: 1 });
+    });
+
     it('a dual write racing the copy always wins, whichever lands first', async () => {
       const { insertedId } = await seed({ title: 'v0' });
       process.env[ENV] = 'dual';

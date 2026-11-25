@@ -7,7 +7,8 @@
 -- is the helper's per-document version: a copy applies only above the stored
 -- one, so a late write never overwrites a newer row. Reads are by primary key
 -- only (getReadWatermark), and the backfill/verify scan pages by id, so no
--- secondary index is needed.
+-- secondary index is needed. read_revision is BIGINT like its source,
+-- pod_message_revisions.revision.
 --
 -- Self-contained, and a no-op where the table already exists.
 CREATE TABLE IF NOT EXISTS agent_pod_read_cursors (
@@ -15,6 +16,6 @@ CREATE TABLE IF NOT EXISTS agent_pod_read_cursors (
   agent_user_id TEXT NOT NULL,
   pod_id TEXT NOT NULL,
   read_at TIMESTAMPTZ NOT NULL,
-  read_revision INTEGER,
+  read_revision BIGINT,
   pg_version INTEGER NOT NULL
 );

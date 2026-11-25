@@ -52,7 +52,7 @@ real('AgentPodReadCursor on real PostgreSQL (ADR-034 step 2)', () => {
       { column_name: 'agent_user_id', data_type: 'text', is_nullable: 'NO' },
       { column_name: 'pod_id', data_type: 'text', is_nullable: 'NO' },
       { column_name: 'read_at', data_type: 'timestamp with time zone', is_nullable: 'NO' },
-      { column_name: 'read_revision', data_type: 'integer', is_nullable: 'YES' },
+      { column_name: 'read_revision', data_type: 'bigint', is_nullable: 'YES' },
       { column_name: 'pg_version', data_type: 'integer', is_nullable: 'NO' },
     ]);
   });
@@ -66,11 +66,37 @@ real('AgentPodReadCursor on real PostgreSQL (ADR-034 step 2)', () => {
     await advanceReadWatermark(agent, pod, { readAt: at(9) });
     const { rows } = await database.pool.query('SELECT * FROM agent_pod_read_cursors');
     expect(rows).toEqual([{
-      id: `${agent}:${pod}`, agent_user_id: String(agent), pod_id: String(pod), read_at: at(9), read_revision: 7, pg_version: 3,
+      id: `${agent}:${pod}`, agent_user_id: String(agent), pod_id: String(pod), read_at: at(9), read_revision: '7', pg_version: 3,
     }]);
     expect(await readCursorStore.verify()).toMatchObject({
       mongo: 1, pg: 1, missing: 0, differs: 0, extra: 0,
     });
+  });
+
+  it('a revision past 2^31 round-trips as a number in dual and pg, and verify finds no difference', async () => {
+    const big = 2 ** 31 + 7;
+    const agent = new mongoose.Types.ObjectId();
+    const pod = new mongoose.Types.ObjectId();
+    process.env[ENV] = 'dual';
+    await advanceReadWatermark(agent, pod, { readAt: at(1), readRevision: big });
+    // node-postgres returns BIGINT as a string; the adapter reads it back as a number.
+    expect((await database.pool.query('SELECT read_revision FROM agent_pod_read_cursors')).rows)
+      .toEqual([{ read_revision: String(big) }]);
+    expect(await readCursorStore.verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+    const verified = await readCursorStore.verify();
+    expect(verified.checksumPg).toBe(verified.checksumMongo);
+    process.env[ENV] = 'pg';
+    expect(await getReadWatermark(agent, pod)).toEqual({ readAt: at(1), readRevision: big });
+    await advanceReadWatermark(agent, pod, { readAt: at(2), readRevision: big + 1 });
+    expect(await getReadWatermark(agent, pod)).toEqual({ readAt: at(2), readRevision: big + 1 });
+    expect(typeof (await readCursorStore.findById(`${agent}:${pod}`)).readRevision).toBe('number');
+  });
+
+  it('a revision past the safe integer range throws on read instead of rounding', async () => {
+    await database.pool.query(`INSERT INTO agent_pod_read_cursors
+      (id, agent_user_id, pod_id, read_at, read_revision, pg_version) VALUES ('a:b', 'a', 'b', now(), 9007199254740993, 1)`);
+    process.env[ENV] = 'pg';
+    await expect(readCursorStore.findById('a:b')).rejects.toThrow(/safe integer range/);
   });
 
   it('backfill copies history at its version, and a dual write after it wins', async () => {

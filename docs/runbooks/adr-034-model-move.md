@@ -66,7 +66,25 @@ itself, and the backfill copies everything else. The backfill refuses to run unl
   `differs` is a row whose fields differ (normalised the same way as the sampled compare), and `extra` is a
   row with no live document. A document marked deleted counts as absent.
 
+**A `differs` or `missing` on a live system can be a write in flight**, caught between its Mongo commit and
+its copy. Run `--verify` again; only a difference that stays across runs needs explaining. The backfill
+itself re-reads every document it skipped as pending and copies any that has settled by the end, so a write
+that finished around the `TRUNCATE` is not left without a row.
+
+**Rolling back to mongo leaves markers behind**: `pgVersion`, a `pgPending` that is never cleared, and
+`pgDeleted` documents from deletes that had not finished. They are harmless. Every mongo-mode read and write
+treats a `pgDeleted` document as absent, and a write onto one starts from an empty document. Going back to
+dual, the repair job finishes the flagged ones.
+
 A failed Postgres write never fails the caller. It leaves the document flagged (`pgPending`), and the
 repair job copies it on its next pass. While any document of the model is flagged, `pg-read` reads Mongo,
 including after a restart. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
 only a rollback from `pg` can produce. That case is out of scope until step 4 is lifted.
+
+## Before step 4 (held until after 2026-11-30)
+
+- **`AgentPodReadCursor` needs a single-statement upsert in pg mode.** The helper's pg-mode `upsert` is
+  optimistic: it reads, merges, and writes at the version it read, retrying 5 times. More than 5 writers
+  racing on one id can exhaust the retries and fail the write (the unit suite shows 20 do). Before this model
+  runs in `pg`, its write becomes one `INSERT … ON CONFLICT (id) DO UPDATE SET read_at = GREATEST(…),
+  read_revision = GREATEST(…)`, tested on real Postgres with the same race.

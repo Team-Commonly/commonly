@@ -88,8 +88,8 @@ describe('read cursor table wiring', () => {
     const fs = require('fs');
     const path = require('path');
     const sql = fs.readFileSync(path.join(__dirname, '../../../config/migrations/0016_agent_pod_read_cursors.sql'), 'utf8');
-    const created = [...sql.matchAll(/^\s+([a-z_]+) (?:TEXT|TIMESTAMPTZ|INTEGER)/gm)].map((m) => m[1]);
-    expect(mockPg.options).toMatchObject({ table: 'agent_pod_read_cursors', idColumn: 'id' });
+    const created = [...sql.matchAll(/^\s+([a-z_]+) (?:TEXT|TIMESTAMPTZ|INTEGER|BIGINT)/gm)].map((m) => m[1]);
+    expect(mockPg.options).toMatchObject({ table: 'agent_pod_read_cursors', idColumn: 'id', bigintColumns: ['read_revision'] });
     expect([mockPg.options.idColumn, ...mockPg.options.columns, 'pg_version'].sort()).toEqual(created.sort());
   });
 });

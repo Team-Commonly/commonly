@@ -83,17 +83,35 @@ const identifier = (value: string): string => {
  * `jsonColumns` are bound as JSON text: node-postgres binds a JavaScript array
  * as a Postgres array literal, which a json or jsonb column rejects (or, for an
  * empty array, stores as `{}`).
+ * `bigintColumns` come back from node-postgres as strings (BIGINT exceeds a
+ * 32-bit int); they are read back as numbers, so every caller and the compare
+ * see one type, and a value past Number.MAX_SAFE_INTEGER throws, never rounds.
  */
 export function pgTableAdapter(
   {
-    pool, table, idColumn, columns, jsonColumns = [],
-  }: { pool: PgQueryable; table: string; idColumn: string; columns: string[]; jsonColumns?: string[] },
+    pool, table, idColumn, columns, jsonColumns = [], bigintColumns = [],
+  }: {
+    pool: PgQueryable; table: string; idColumn: string; columns: string[];
+    jsonColumns?: string[]; bigintColumns?: string[];
+  },
 ): PgAdapter {
   const t = identifier(table);
   const id = identifier(idColumn);
   const cols = columns.map(identifier);
   const json = new Set(jsonColumns.map(identifier));
   if ([...json].some((c) => !cols.includes(c))) throw new Error('dual-store: jsonColumns must be listed in columns');
+  const bigint = bigintColumns.map(identifier);
+  if (bigint.some((c) => !cols.includes(c))) throw new Error('dual-store: bigintColumns must be listed in columns');
+  const read = (raw: Row): Row => {
+    const row = { ...raw };
+    bigint.forEach((c) => {
+      if (row[c] == null) return;
+      const value = Number(row[c]);
+      if (!Number.isSafeInteger(value)) throw new Error(`dual-store: ${t}.${c} is past the safe integer range`);
+      row[c] = value;
+    });
+    return row;
+  };
   const bind = (row: Row, c: string): unknown => {
     const value = row[c] ?? null;
     return json.has(c) && value !== null ? JSON.stringify(value) : value;
@@ -128,7 +146,7 @@ export function pgTableAdapter(
       const { rows } = await pool.query(`SELECT ${all.join(', ')}, pg_version FROM ${t} WHERE ${id} = $1`, [rowId]);
       if (!rows[0]) return null;
       const { pg_version: version, ...row } = rows[0];
-      return { row, version: Number(version) };
+      return { row: read(row), version: Number(version) };
     },
     async scan(after, limit) {
       // COLLATE "C" pages by byte order whatever the database collation is, so
@@ -139,7 +157,7 @@ export function pgTableAdapter(
           ORDER BY ${id} COLLATE "C" LIMIT $2`,
         [after, limit],
       );
-      return rows.map(({ pg_version: version, ...row }) => ({ id: String(row[id]), row, version: Number(version) }));
+      return rows.map(({ pg_version: version, ...row }) => ({ id: String(row[id]), row: read(row), version: Number(version) }));
     },
   };
 }
@@ -521,23 +539,36 @@ export function createDualStore(
         scanned: 0, inserted: 0, alreadyCurrent: 0, skippedPending: 0,
       };
       const cursor = Model.find({ pgDeleted: { $ne: true } }).sort({ _id: 1 }).lean().cursor({ batchSize });
+      const copy = async (doc: Doc) => {
+        const version = Number(doc.pgVersion ?? 0);
+        let applied: boolean;
+        if (dryRun) {
+          const got = await pg.get(String(doc._id));
+          applied = !got || got.version < version;
+        } else {
+          applied = await pg.upsert(toRow(doc), version);
+        }
+        if (applied) counts.inserted += 1;
+        else counts.alreadyCurrent += 1;
+      };
+      const pending: Id[] = [];
       for await (const doc of cursor as AsyncIterable<Doc>) {
         counts.scanned += 1;
         // A flagged document is repair's: its own copy is in flight or failed.
-        if (doc.pgPending != null) {
-          counts.skippedPending += 1;
-        } else {
-          const version = Number(doc.pgVersion ?? 0);
-          let applied: boolean;
-          if (dryRun) {
-            const got = await pg.get(String(doc._id));
-            applied = !got || got.version < version;
-          } else {
-            applied = await pg.upsert(toRow(doc), version);
-          }
-          if (applied) counts.inserted += 1;
-          else counts.alreadyCurrent += 1;
-        }
+        if (doc.pgPending != null) pending.push(doc._id);
+        else await copy(doc);
+      }
+      // A write in flight when the scan passed it may have copied its row
+      // before the table was emptied and cleared its marker after, which leaves
+      // an unflagged document with no row that repair never sees. So each one
+      // skipped is read again: copied now if it has settled, at its own
+      // version, which a newer dual write still beats.
+      for (const docId of pending) {
+        // eslint-disable-next-line no-await-in-loop -- a handful, in order
+        const doc = await Model.findOne(alive(docId)).lean() as Doc | null;
+        if (doc?.pgPending != null) counts.skippedPending += 1;
+        // eslint-disable-next-line no-await-in-loop
+        else if (doc) await copy(doc);
       }
       return counts;
     },

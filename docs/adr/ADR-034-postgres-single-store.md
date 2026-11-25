@@ -13,10 +13,11 @@ was measured and walked, and the founder dropped it the same day: FerretDB's las
 below as the record, and its outcome stands. What already shipped stays enforced: the D4 freeze on
 new Mongo models fails CI, and `requirePgConfigured` stands.
 
-**Amended 2026-11-25: the migration is reopened, and step 4 is held.** The founder reopened the
-move to Postgres only on 2026-11-05 ("how about fullspeed migrate to postgres"), so the waves in D6
-are work in progress again. Models move through D3's steps 1 to 3. **Step 4 for any model, and
-dropping Mongo, are held until after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
+**Amended 2026-11-25: the migration is reopened, and step 4 is held.** On 2026-11-05 the migration
+was first paused, when D7 was dropped. Later that same day the founder reopened the move to Postgres
+only ("how about fullspeed migrate to postgres"), so the waves in D6 are work in progress again.
+Models move through D3's steps 1 to 3. **Step 4 for any model, and dropping Mongo, are held until
+after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
 (migration `0016`); the per-model procedure is
 [`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md).
 
