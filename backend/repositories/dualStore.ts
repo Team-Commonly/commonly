@@ -273,10 +273,11 @@ export interface DualStore {
    * Atomic insert-if-absent: Mongo's `$setOnInsert` upsert. `filter` is a key
    * a unique index enforces; `fields` is the new document. Only an insert
    * writes, so only an insert takes a version (1) and is copied, and a call
-   * that finds the document changes nothing. Two inserts racing past the
-   * unique index can make the loser throw a duplicate-key error (code 11000):
-   * it propagates, because losing that race is the caller's to read. A
-   * document marked deleted is not replaced; the insert fails the same way.
+   * that finds the document changes nothing. In dual and pg-read a loser of
+   * two inserts racing past the unique index is retried once and reads as
+   * found, as Mongo's own retry does in mongo mode; a duplicate-key error
+   * (code 11000) that survives the retry propagates. A document marked
+   * deleted is not replaced; the insert fails that way.
    * Refused in pg mode until step 4.
    */
   insertIfAbsent(filter: Doc, fields: Doc): Promise<{ inserted: boolean }>;
@@ -552,11 +553,22 @@ export function createDualStore(
       // The version and the marker ride in $setOnInsert, so a call that finds
       // the document writes nothing and bumps nothing. Not lean: a lean query
       // drops the result metadata that says whether this call inserted.
-      const result = await Model.findOneAndUpdate(
+      const claim = () => Model.findOneAndUpdate(
         { ...filter, pgDeleted: { $ne: true } },
         { $setOnInsert: { ...fields, pgVersion: 1, pgPending: 1 } },
         { ...options, new: true },
-      ) as unknown as RawResult;
+      ) as unknown as Promise<RawResult>;
+      // The server retries a duplicate-key upsert only when the filter is pure
+      // equality on the unique key, which the pgDeleted clause rules out. One
+      // retry here restores that: the winner has committed, so it matches and
+      // this call reads as found. A document marked deleted still throws.
+      let result: RawResult;
+      try {
+        result = await claim();
+      } catch (error) {
+        if (!isDuplicateKey(error)) throw error;
+        result = await claim();
+      }
       if (result?.lastErrorObject?.updatedExisting !== false || !result.value) return { inserted: false };
       // The plain shape a lean read returns (a Map as an object), which toRow expects.
       const doc = (result.value as { toObject: (o: object) => Doc }).toObject({ flattenMaps: true });

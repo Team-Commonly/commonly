@@ -860,15 +860,41 @@ describe('dual-store helper (ADR-034 D3)', () => {
       process.env[PAIR_ENV] = 'dual';
       const pg = fakePg();
       const s = pairs(pg);
-      const outcomes = await Promise.all(Array.from({ length: 8 }, () => s.insertIfAbsent(key, { ...key })
-        .catch((error) => (error.code === 11000 ? 'duplicate' : Promise.reject(error)))));
+      const outcomes = await Promise.all(Array.from({ length: 8 }, () => s.insertIfAbsent(key, { ...key })));
       expect(outcomes.filter((o) => o.inserted === true)).toHaveLength(1);
-      expect(outcomes.every((o) => o === 'duplicate' || typeof o.inserted === 'boolean')).toBe(true);
+      expect(outcomes.every((o) => typeof o.inserted === 'boolean')).toBe(true);
       expect(await s.insertIfAbsent(key, { ...key })).toEqual({ inserted: false });
       const raw = await Pair.findOne(key).lean();
       expect(raw.pgVersion).toBe(1);
       expect(pg.calls.filter((c) => c === 'upsert')).toHaveLength(1);
       expect(pg.rows.get(String(raw._id)).version).toBe(1);
+    });
+
+    it('dual: a loser of the unique-key race is retried once and reads as found', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      await s.insertIfAbsent(key, { ...key });
+      const callsBefore = pg.calls.length;
+      // The insert lost the race: the winner committed between its miss and its insert.
+      const update = jest.spyOn(Pair, 'findOneAndUpdate')
+        .mockImplementationOnce(() => Promise.reject(Object.assign(new Error('E11000'), { code: 11000 })));
+      expect(await s.insertIfAbsent(key, { ...key })).toEqual({ inserted: false });
+      expect(update).toHaveBeenCalledTimes(2);
+      update.mockRestore();
+      expect((await Pair.findOne(key).lean()).pgVersion).toBe(1);
+      expect(pg.calls.length).toBe(callsBefore);
+    });
+
+    it('dual: a duplicate key that survives the retry propagates', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const s = pairs(fakePg());
+      const duplicate = () => Promise.reject(Object.assign(new Error('E11000'), { code: 11000 }));
+      const update = jest.spyOn(Pair, 'findOneAndUpdate')
+        .mockImplementationOnce(duplicate).mockImplementationOnce(duplicate);
+      await expect(s.insertIfAbsent(key, { ...key })).rejects.toMatchObject({ code: 11000 });
+      expect(update).toHaveBeenCalledTimes(2);
+      update.mockRestore();
     });
 
     it('dual: setWhere bumps and copies only when its filter matches', async () => {
