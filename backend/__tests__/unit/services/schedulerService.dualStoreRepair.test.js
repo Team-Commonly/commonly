@@ -43,6 +43,6 @@ describe('scheduler: dual-store repair', () => {
     expect(repairDualStoredModels).toHaveBeenCalledWith();
     repairDualStoredModels.mockRejectedValueOnce(new Error('boom'));
     await expect(job.task()).resolves.toBeUndefined();
-    expect(err).toHaveBeenCalledWith('[dual-store] scheduled repair failed:', expect.objectContaining({ message: 'boom' }));
+    expect(err).toHaveBeenCalledWith('%s', '[dual-store] scheduled repair failed:', expect.objectContaining({ message: 'boom' }));
   });
 });

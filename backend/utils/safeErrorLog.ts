@@ -47,11 +47,11 @@ export const describeError = (err: unknown): ErrorSummary => {
 };
 
 export const logOutboundFailure = (label: string, err: unknown, ...extra: unknown[]): void => {
-  console.error(label, describeError(err), ...extra);
+  console.error('%s', label, describeError(err), ...extra);
 };
 
 export const warnOutboundFailure = (label: string, err: unknown, ...extra: unknown[]): void => {
-  console.warn(label, describeError(err), ...extra);
+  console.warn('%s', label, describeError(err), ...extra);
 };
 
 /**

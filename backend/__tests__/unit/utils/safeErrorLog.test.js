@@ -77,11 +77,35 @@ describe('safeErrorLog', () => {
   it('passes a caller-chosen extra argument through after the summary', () => {
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     logOutboundFailure('label:', fakeAxiosError(), { detail: 'provider says bad request' });
-    const [label, summary, extra] = errSpy.mock.calls[0];
+    const [format, label, summary, extra] = errSpy.mock.calls[0];
+    expect(format).toBe('%s');
     expect(label).toBe('label:');
     expect(summary.status).toBe(401);
     expect(extra).toEqual({ detail: 'provider says bad request' });
     errSpy.mockRestore();
+  });
+
+  it('a label with format specifiers prints literally and leaves the summary alone', () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    logOutboundFailure('pod %o %s failed:', fakeAxiosError());
+    const [format, label, summary] = errSpy.mock.calls[0];
+    expect(format).toBe('%s');
+    expect(label).toBe('pod %o %s failed:');
+    expect(summary.status).toBe(401);
+    const printed = util.format(...errSpy.mock.calls[0]);
+    expect(printed.startsWith('pod %o %s failed: ')).toBe(true);
+    expect(printed).toContain('Request failed with status code 401');
+    errSpy.mockRestore();
+  });
+
+  it('warnOutboundFailure also prints a label with format specifiers literally', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    warnOutboundFailure('pod %o %s failed:', fakeAxiosError());
+    const [format, label, summary] = warnSpy.mock.calls[0];
+    expect(format).toBe('%s');
+    expect(label).toBe('pod %o %s failed:');
+    expect(summary.status).toBe(401);
+    warnSpy.mockRestore();
   });
 
   it('smtp2goReason keeps the error code and text, never the echoed body', () => {
