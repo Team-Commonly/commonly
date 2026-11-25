@@ -11,6 +11,13 @@ schema; its table in a numbered migration that has run; and an entry in
 `backend/repositories/dualStoreRegistry.ts`. The first model done this way is `AgentPodReadCursor`
 (table `agent_pod_read_cursors`, migration `0016`).
 
+**A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
+row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
+compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
+in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
+store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
+`AgentPodReadCursor` has no delete path.
+
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
 Postgres call at all.
@@ -63,13 +70,16 @@ itself, and the backfill copies everything else. The backfill refuses to run unl
   copy. `alreadyCurrent` means Postgres already held that version or a newer one. `skippedPending` counts
   documents whose own copy is in flight or failed; the repair job copies those.
 - **Verify:** `mongo` and `pg` are the row counts on each side. `missing` is a live document with no row,
-  `differs` is a row whose fields differ (normalised the same way as the sampled compare), and `extra` is a
-  row with no live document. A document marked deleted counts as absent.
+  `differs` is a row whose fields differ (normalised the same way as the sampled compare) or whose version
+  is not the document's (`fields=pgVersion`), and `extra` is a row with no live document. A document marked
+  deleted counts as absent. `--verify` runs only in dual or pg-read.
 
 **A `differs` or `missing` on a live system can be a write in flight**, caught between its Mongo commit and
 its copy. Run `--verify` again; only a difference that stays across runs needs explaining. The backfill
 itself re-reads every document it skipped as pending and copies any that has settled by the end, so a write
-that finished around the `TRUNCATE` is not left without a row.
+that finished around the `TRUNCATE` is not left without a row. **One window remains:** a write whose copy
+landed before the `TRUNCATE` and whose marker cleared only after the backfill's re-read is left with no row
+and no flag. `--verify` reports it as `missing`, and running `--apply` again copies it.
 
 **Rolling back to mongo leaves markers behind**: `pgVersion`, a `pgPending` that is never cleared, and
 `pgDeleted` documents from deletes that had not finished. They are harmless. Every mongo-mode read and write

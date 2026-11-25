@@ -28,8 +28,10 @@ const fromRow = (row) => ({
   ...(row.note != null && { note: row.note }),
 });
 
+// These tests exercise the helper's delete path, so they opt in to it; a
+// store without the opt-in refuses remove outside mongo (test 14).
 const store = (pg, extra = {}) => createDualStore({
-  name: NAME, model: Widget, pg, toRow, fromRow, ...extra,
+  name: NAME, model: Widget, pg, toRow, fromRow, allowDeletes: true, ...extra,
 });
 
 describe('dual-store helper (ADR-034 D3)', () => {
@@ -43,6 +45,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
   });
   afterEach(() => {
     warn.mockRestore();
+    jest.restoreAllMocks();
     delete process.env[ENV];
   });
 
@@ -446,9 +449,20 @@ describe('dual-store helper (ADR-034 D3)', () => {
       const pg = fakePg();
       const s = store(pg);
       const key = id();
+      // Every Mongo write path the helper could use, so a second write before the copy shows.
+      const writes = ['findOneAndUpdate', 'updateOne', 'updateMany', 'bulkWrite', 'create', 'replaceOne']
+        .map((method) => [method, jest.spyOn(Widget, method)]);
       const hold = pg.hold('upsert');
       const writing = s.upsert(key, raise(2));
       await hold.arrived;
+      const called = writes.flatMap(([method, spy]) => spy.mock.calls.map((args) => [method, args]));
+      writes.forEach(([, spy]) => spy.mockRestore());
+      // Exactly one Mongo write before the copy, carrying the payload, the version and the marker.
+      expect(called.map(([method]) => method)).toEqual(['findOneAndUpdate']);
+      const stages = JSON.stringify(called[0][1][1]);
+      expect(stages).toContain('"count"');
+      expect(stages).toContain('"pgVersion"');
+      expect(stages).toContain('"pgPending":"$pgVersion"');
       expect(await Widget.findById(key).lean()).toMatchObject({ count: 2, pgVersion: 1, pgPending: 1 });
       hold.release();
       expect(await writing).toEqual({ _id: key, count: 2, title: 'first' });
@@ -686,5 +700,81 @@ describe('dual-store helper (ADR-034 D3)', () => {
       pg.rows.delete(String(doc._id));
       expect(await s.verify()).toMatchObject({ mongo: 0, pg: 0, missing: 0 });
     });
+  });
+
+  describe('14. deletes need an explicit opt-in outside mongo', () => {
+    const bare = (pg) => createDualStore({
+      name: NAME, model: Widget, pg, toRow, fromRow,
+    });
+
+    it.each(['dual', 'pg-read', 'pg'])('%s: remove throws and writes nothing to either store', async (mode) => {
+      const doc = await Widget.create({ title: 'kept', pgVersion: 1 });
+      const pg = fakePg();
+      pg.rows.set(String(doc._id), { row: toRow(doc), version: 1 });
+      process.env[ENV] = mode;
+      const writes = ['findOneAndUpdate', 'updateOne', 'deleteOne', 'deleteMany']
+        .map((method) => jest.spyOn(Widget, method));
+      await expect(bare(pg).remove(doc._id)).rejects.toThrow(/refuses remove in .*tombstones/);
+      writes.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+      expect(pg.calls).toEqual([]);
+      expect(await Widget.findById(doc._id).lean()).toMatchObject({ title: 'kept', pgVersion: 1 });
+      expect(pg.rows.has(String(doc._id))).toBe(true);
+    });
+
+    it('mongo: remove works without the opt-in', async () => {
+      const doc = await Widget.create({ title: 'gone' });
+      const pg = fakePg();
+      expect(await bare(pg).remove(doc._id)).toBe(true);
+      expect(await Widget.findById(doc._id).lean()).toBeNull();
+      expect(pg.calls).toEqual([]);
+    });
+  });
+
+  describe('15. verify and backfill arguments and modes', () => {
+    it.each([0, -1, 1.5, Number.NaN])('reject batchSize %p before opening either side', async (batchSize) => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const find = jest.spyOn(Widget, 'find');
+      await expect(store(pg).verify({ batchSize })).rejects.toThrow(/batchSize must be a positive integer/);
+      await expect(store(pg).backfill({ batchSize })).rejects.toThrow(/batchSize must be a positive integer/);
+      expect(find).not.toHaveBeenCalled();
+      expect(pg.calls).toEqual([]);
+    });
+
+    it.each([undefined, 'mongo', 'pg'])('verify refuses in mode %p without calling Postgres', async (mode) => {
+      if (mode) process.env[ENV] = mode;
+      const pg = fakePg();
+      await expect(store(pg).verify()).rejects.toThrow(/verify needs STORE_MODE_DUAL_STORE_TEST_WIDGET=dual or pg-read/);
+      expect(pg.calls).toEqual([]);
+    });
+
+    it.each(['dual', 'pg-read'])('verify runs in %s', async (mode) => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      await store(pg).create({ title: 'x' });
+      process.env[ENV] = mode;
+      expect(await store(pg).verify()).toMatchObject({ mongo: 1, pg: 1, differs: 0 });
+    });
+
+    it('verify counts equal payloads at different versions as differs, naming pgVersion', async () => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const doc = await s.create({ title: 'same' });
+      pg.rows.get(String(doc._id)).version = 5;
+      expect(await s.verify()).toMatchObject({ differs: 1, missing: 0, extra: 0 });
+      expect(logged()).toMatch(/kind=differs fields=pgVersion$/m);
+    });
+  });
+
+  it('16. pg-read: a failing flag check falls back to the Postgres row and warns without ids', async () => {
+    process.env[ENV] = 'dual';
+    const pg = fakePg();
+    const doc = await store(pg).create({ title: 'in pg' });
+    process.env[ENV] = 'pg-read';
+    jest.spyOn(Widget, 'exists').mockImplementation(() => Promise.reject(new Error('mongo down')));
+    expect(await store(pg).findById(doc._id)).toMatchObject({ title: 'in pg' });
+    expect(logged()).toContain('[dual-store] flag check failed model=DualStoreTestWidget');
+    expect(logged()).not.toContain(String(doc._id));
   });
 });

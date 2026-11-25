@@ -91,7 +91,7 @@ boundary holds.
 | Step | What | Rollback |
 |---|---|---|
 | 1. Extract | Callers move to the repository, which still reads and writes Mongo. No behaviour change. | Revert the PR. |
-| 2. Dual | Writes go to both stores. Reads stay on Mongo, and a sample is read from Postgres too, compared, and any mismatch logged. A per-model mode (`mongo`, `dual`, `pg-read`, `pg`; default `mongo`) selects the step. A backfill copies history. | Mode to `mongo`. The next backfill discards the Postgres rows. |
+| 2. Dual | Writes go to both stores. Reads stay on Mongo, and a sample is read from Postgres too, compared, and any mismatch logged. A per-model mode (`mongo`, `dual`, `pg-read`, `pg`; default `mongo`) selects the step. A backfill copies history. | Mode to `mongo`. Mongo is complete. The Postgres rows go stale and stay; `TRUNCATE` the table before the next backfill, which never discards rows itself (runbook). |
 | 3. Read cut | Reads come from Postgres; writes still go to both. | Mode to `dual`. Mongo is still complete. |
 | 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill that carries each row's `pg_version` into the document's version. After: restore from backup. |
 
@@ -103,7 +103,11 @@ conditional update that matches that version, so an earlier write finishing late
 write's marker. A crash between the two leaves the marker set, so nothing depends on recording the
 failure after the fact. **A delete is two-phase:** it first marks the document deleted and pending in
 Mongo, then deletes the Postgres row, and only then removes the Mongo document. A delete that crashes
-halfway is therefore still a flagged document. A sparse index on `pgPending` makes the repair a cheap
+halfway is therefore still a flagged document. **That is not yet enough for a model whose callers
+delete:** a completed delete removes the version with the document and the row, so a recreated id starts
+again at version 1, under any late copy of the old one. Until deletes are tombstones in both stores that
+keep the version, the helper refuses `remove` outside `mongo` unless a store opts in, and such a model
+stays in `mongo`. A sparse index on `pgPending` makes the repair a cheap
 scan: it re-copies each flagged document, or deletes its Postgres row if it is marked deleted, then
 clears the marker the same conditional way. The dual-store helper's tests cover two writes interleaving,
 and a delete crashing at each step. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while

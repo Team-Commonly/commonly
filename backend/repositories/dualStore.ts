@@ -14,6 +14,13 @@
  * is cleared only by an update that matches that version. A crash anywhere
  * therefore leaves a flagged document that `repair` finishes, and nothing
  * depends on recording a failure after the fact.
+ *
+ * Deletes are refused outside mongo unless a store opts in with `allowDeletes`.
+ * A completed delete removes the document and its row, and with them the
+ * version, so a recreated id restarts at version 1 and a late copy, a pg-mode
+ * compare-and-set or a backfill of the old document can land on it. Deletes
+ * become safe with tombstones in both stores that keep the version; until then
+ * a model whose callers delete stays in mongo (docs/runbooks/adr-034-model-move.md).
  */
 import { createHash } from 'crypto';
 import type { Model, Schema } from 'mongoose';
@@ -218,6 +225,12 @@ const FLAG_CACHE_MS = 5000;
 const PG_UPDATE_ATTEMPTS = 5;
 const UPSERT_ATTEMPTS = 5;
 
+const checkBatchSize = (batchSize: number): void => {
+  if (!Number.isInteger(batchSize) || batchSize < 1) {
+    throw new Error(`dual-store: batchSize must be a positive integer, got ${String(batchSize)}`);
+  }
+};
+
 const isDuplicateKey = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 interface DualStoreOptions {
@@ -230,6 +243,11 @@ interface DualStoreOptions {
   fromRow: (row: Row) => Doc;
   /** Share of dual reads also compared against Postgres. */
   sampleRate?: number;
+  /**
+   * UNSAFE until deletes are tombstones in both stores (see the header): lets
+   * `remove` run in dual, pg-read and pg. Off by default, so `remove` throws there.
+   */
+  allowDeletes?: boolean;
 }
 
 export interface DualStore {
@@ -264,7 +282,9 @@ export interface VerifyCounts {
 }
 
 export function createDualStore(
-  { name, model: Model, pg, toRow, fromRow, sampleRate = 0.1 }: DualStoreOptions,
+  {
+    name, model: Model, pg, toRow, fromRow, sampleRate = 0.1, allowDeletes = false,
+  }: DualStoreOptions,
 ): DualStore {
   // Without the plugin, strict mode drops pgVersion and pgPending on write, so a
   // failed copy would never be flagged and repair would never see it.
@@ -426,8 +446,12 @@ export function createDualStore(
 
     async remove(id) {
       const mode = storeMode(name);
-      if (mode === 'pg') return pgOnly.remove(id);
       if (mode === 'mongo') return (await Model.deleteOne(alive(id))).deletedCount > 0;
+      if (!allowDeletes) {
+        throw new Error(`dual-store: ${name} refuses remove in ${mode}: deletes need tombstones in both stores`
+          + ' (docs/runbooks/adr-034-model-move.md)');
+      }
+      if (mode === 'pg') return pgOnly.remove(id);
       // Two-phase: mark, remove the row, then the document. A crash between
       // any two steps leaves a flagged pgDeleted document for repair.
       const marked = await Model.findOneAndUpdate(
@@ -488,7 +512,17 @@ export function createDualStore(
       const mode = storeMode(name);
       if (mode === 'mongo') return readMongo(id, false);
       if (mode === 'dual') return readMongo(id, true);
-      if (mode === 'pg-read' && await anyFlagged()) return readMongo(id, true);
+      if (mode === 'pg-read') {
+        let mongoFirst = false;
+        try {
+          mongoFirst = await anyFlagged();
+        } catch (error) {
+          // The flag check is Mongo's. With Mongo down a pg-read still reads its
+          // row, which is as current as the last copy that reached it.
+          console.warn(`[dual-store] flag check failed model=${name}; reading Postgres:`, (error as Error).message);
+        }
+        if (mongoFirst) return readMongo(id, true);
+      }
       const got = await pg.get(String(id));
       return got ? fromRow(got.row) : null;
     },
@@ -525,6 +559,7 @@ export function createDualStore(
     },
 
     async backfill({ dryRun = true, batchSize = 500 } = {}) {
+      checkBatchSize(batchSize);
       const mode = storeMode(name);
       // Dual must already be on, on every replica, before this runs. A mongo-mode
       // write changes a document without bumping pgVersion or touching
@@ -574,14 +609,23 @@ export function createDualStore(
     },
 
     async verify({ batchSize = 500 } = {}) {
+      checkBatchSize(batchSize);
+      const mode = storeMode(name);
+      if (mode !== 'dual' && mode !== 'pg-read') {
+        throw new Error(`dual-store: verify needs ${modeEnvName(name)}=dual or pg-read, not ${mode}`);
+      }
       // Holds one normalised row per document, so it is sized for the small
       // models moved first; a large model would page both sides in id order.
       // `toRow` must emit exactly the table's columns, or the checksums differ
       // even where the field compare (the sampled compare's) finds nothing.
       const line = (row: Row) => JSON.stringify(normalize(row));
       const mongoRows = new Map<string, Row>();
+      const mongoVersions = new Map<string, number>();
       const cursor = Model.find({ pgDeleted: { $ne: true } }).lean().cursor({ batchSize });
-      for await (const doc of cursor as AsyncIterable<Doc>) mongoRows.set(String(doc._id), toRow(doc));
+      for await (const doc of cursor as AsyncIterable<Doc>) {
+        mongoRows.set(String(doc._id), toRow(doc));
+        mongoVersions.set(String(doc._id), Number(doc.pgVersion ?? 0));
+      }
       const counts = {
         mongo: mongoRows.size, pg: 0, missing: 0, differs: 0, extra: 0,
       };
@@ -596,7 +640,7 @@ export function createDualStore(
         // eslint-disable-next-line no-await-in-loop -- keyset paging
         const page = await pg.scan(after, batchSize);
         if (!page.length) break;
-        for (const { id: rowId, row } of page) {
+        for (const { id: rowId, row, version } of page) {
           counts.pg += 1;
           pgLines.push(line(row));
           const expected = mongoRows.get(rowId);
@@ -606,6 +650,9 @@ export function createDualStore(
           } else {
             seen.add(rowId);
             const fields = differingFields(expected, row);
+            // Equal payloads at different versions still differ: the next
+            // copy's version guard would then keep or drop the wrong row.
+            if (version !== mongoVersions.get(rowId)) fields.push('pgVersion');
             if (fields.length) {
               counts.differs += 1;
               report(rowId, 'differs', fields);

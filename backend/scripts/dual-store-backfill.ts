@@ -27,14 +27,20 @@ export interface DualStoreBackfillArgs { model: string; action: 'dry-run' | 'app
 /** Reads the flags after `node script`. Any other argument throws, so a typo cannot pick an action. */
 export const parseArgs = (argv: string[], models: string[]): DualStoreBackfillArgs => {
   let model: string | undefined;
+  const setModel = (value: string | undefined) => {
+    // A flag is never a model name: `--model --apply` would otherwise read --apply as the model.
+    if (!value || value.startsWith('--')) throw new Error('--model needs a model name');
+    if (model !== undefined) throw new Error('--model given more than once');
+    model = value;
+  };
   const actions = new Set<DualStoreBackfillArgs['action']>();
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
     if (arg === '--model') {
-      model = rest[i + 1];
+      setModel(rest[i + 1]);
       i += 1;
-    } else if (arg.startsWith('--model=')) model = arg.slice('--model='.length);
+    } else if (arg.startsWith('--model=')) setModel(arg.slice('--model='.length));
     else if (arg === '--dry-run') actions.add('dry-run');
     else if (arg === '--apply') actions.add('apply');
     else if (arg === '--verify') actions.add('verify');

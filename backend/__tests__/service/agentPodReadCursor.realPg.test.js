@@ -126,7 +126,7 @@ real('AgentPodReadCursor on real PostgreSQL (ADR-034 step 2)', () => {
     const trace = {};
     for (const mode of ['mongo', 'pg']) {
       await Cursor.deleteMany({});
-      if (mode === 'pg') process.env[ENV] = 'pg';
+      process.env[ENV] = mode;
       trace[mode] = [];
       for (const step of steps) {
         await advanceReadWatermark(agent, pod, step);

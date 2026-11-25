@@ -37,6 +37,10 @@ describe('dual-store-backfill arguments', () => {
     [['--model', 'Pod'], /got "Pod"/],
     [['--model', 'AgentPodReadCursor', '--apply', '--verify'], /exclusive/],
     [['--model', 'AgentPodReadCursor', '--aply'], /unknown argument "--aply"/],
+    [['--model'], /--model needs a model name/],
+    [['--model='], /--model needs a model name/],
+    [['--model', '--dry-run', '--model', 'AgentPodReadCursor', '--apply'], /--model needs a model name/],
+    [['--model', 'AgentPodReadCursor', '--model', 'AgentPodReadCursor'], /more than once/],
   ])('refuses %p', (args, message) => {
     expect(() => parseArgs(argv(...args), MODELS)).toThrow(message);
   });

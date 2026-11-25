@@ -227,3 +227,38 @@ describe('read cursor parity: the Mongo pipeline and the JS merge agree', () => 
     expect(trace.pg).toEqual(trace.mongo);
   });
 });
+
+describe('read cursor in pg mode: two writers on the version they both read', () => {
+  beforeAll(setupMongoDb);
+  afterAll(closeMongoDb);
+  afterEach(() => { delete process.env[ENV]; });
+
+  it('keeps both maxima: the loser of the compare-and-set re-reads and merges onto the winner', async () => {
+    process.env[ENV] = 'pg';
+    const pg = fakePg();
+    mockPg.current = pg;
+    const agent = new mongoose.Types.ObjectId();
+    const pod = new mongoose.Types.ObjectId();
+    await advanceReadWatermark(agent, pod, { readAt: at(0), readRevision: 0 });
+    // A barrier: neither replacement applies until both have read version 1.
+    const { replace } = pg;
+    let release;
+    const barrier = new Promise((resolve) => { release = resolve; });
+    const versionsRead = [];
+    pg.replace = async (row, version) => {
+      if (versionsRead.length < 2) {
+        versionsRead.push(version);
+        if (versionsRead.length === 2) release();
+        await barrier;
+      }
+      return replace(row, version);
+    };
+    await Promise.all([
+      advanceReadWatermark(agent, pod, { readAt: at(9), readRevision: 1 }),
+      advanceReadWatermark(agent, pod, { readAt: at(1), readRevision: 9 }),
+    ]);
+    expect(versionsRead).toEqual([1, 1]);
+    expect(await getReadWatermark(agent, pod)).toEqual({ readAt: at(9), readRevision: 9 });
+    expect(pg.rows.get(`${agent}:${pod}`).version).toBe(3);
+  });
+});
