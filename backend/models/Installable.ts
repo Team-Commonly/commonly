@@ -327,6 +327,11 @@ export interface IInstallable extends Document {
   // Stats
   stats: IInstallableStats;
 
+  // Fencing token of the marketplace publish or fork that last wrote this row
+  // (routes/marketplace-api.ts, the installableId claim). Missing on rows
+  // written before the fence, which counts as lowest.
+  claimFence?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -583,6 +588,9 @@ const InstallableSchema = new Schema<IInstallable>(
       forkCount: { type: Number, default: 0 },
       lastActivity: { type: Date },
     },
+
+    // Declared so strict mode keeps it in writes and filters; see the interface.
+    claimFence: { type: Number },
   },
   { timestamps: true },
 );

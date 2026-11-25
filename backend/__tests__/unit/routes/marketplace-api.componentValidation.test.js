@@ -24,11 +24,19 @@ jest.mock('../../../models/Installable', () => ({
 jest.mock('../../../models/SchedulerHeartbeatLease', () => ({
   findOneAndUpdate: jest.fn().mockResolvedValue({}),
   deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+  findOne: jest.fn().mockResolvedValue(null),
+}));
+
+// The claim's fencing-token counter.
+jest.mock('../../../models/SystemSetting', () => ({
+  findOneAndUpdate: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ value: { seq: 1 } }) })),
+  updateOne: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     findOneAndUpdate: jest.fn(),
+    findOne: jest.fn().mockResolvedValue(null),
     deleteOne: jest.fn(),
     updateOne: jest.fn(),
   },
@@ -175,9 +183,10 @@ describe('marketplace publish validates inside the components array', () => {
       status: 'active',
       versions: [],
       components: [],
-      save: jest.fn().mockResolvedValue(undefined),
+      toObject() { return { components: this.components, versions: this.versions }; },
     };
     Installable.findOne.mockResolvedValue(existing);
+    Installable.updateOne.mockResolvedValue({ matchedCount: 1 });
     const res = await publish([{
       name: 'Calendar',
       type: 'mcp-server',
@@ -188,6 +197,8 @@ describe('marketplace publish validates inside the components array', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     expect(existing.components[0].source.spec).toBe('https://github.com/acme/calendar');
+    const [, update] = Installable.updateOne.mock.calls[0];
+    expect(update.$set.components[0].source.spec).toBe('https://github.com/acme/calendar');
   });
 
   it.each([

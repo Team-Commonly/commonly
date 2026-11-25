@@ -3,7 +3,9 @@
  * the Installable write, so two concurrent requests for one id cannot leave
  * AgentRegistry holding one request's doc and Installable the other's
  * (CodeRabbit on #4301). The claim is re-confirmed before each write, so a
- * holder whose claim expired writes nothing.
+ * holder whose claim expired writes nothing, and each write carries a fencing
+ * token in its filter, so a write stalled past expiry cannot land on the rows a
+ * newer holder wrote (CodeRabbit on #4306).
  */
 const express = require('express');
 const request = require('supertest');
@@ -13,6 +15,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 const User = require('../../models/User');
 const Installable = require('../../models/Installable');
 const SchedulerHeartbeatLease = require('../../models/SchedulerHeartbeatLease');
+const SystemSetting = require('../../models/SystemSetting');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 
 const JWT_SECRET = 'test-jwt-secret-marketplace-id-claim';
@@ -332,6 +335,372 @@ describe('marketplace installableId claim', () => {
     expect(await Installable.countDocuments({ installableId: '@alice/fork' })).toBe(0);
     // The other holder's claim stays; only an owner releases its own.
     expect(await SchedulerHeartbeatLease.countDocuments({ _id: CLAIM_ID('@alice/fork') })).toBe(1);
+  });
+
+  // The claim is a 30s lease, so a holder can confirm it and then stall inside
+  // a write until another request has taken the id over and committed. Each
+  // write carries the holder's fencing token in its own filter, so the stale
+  // write cannot land on the winner's rows (CodeRabbit on #4306).
+  describe('the fencing token', () => {
+    beforeAll(async () => {
+      // The fenced registry upsert relies on the unique agentName index, and
+      // the counter on the unique settings key.
+      await AgentRegistry.init();
+      await SystemSetting.init();
+    });
+
+    const expireClaim = (id) => SchedulerHeartbeatLease.updateOne(
+      { _id: CLAIM_ID(id) }, { $set: { expiresAt: new Date(Date.now() - 1000) } },
+    );
+
+    // Holds A at `hold`, expires its claim, runs B to the end, then lets A go.
+    const staleRace = async (id, hold, first, second) => {
+      const started = [];
+      try {
+        const a = first();
+        started.push(a);
+        await reachBarrier(hold.entered, a, 'request A');
+        await expireClaim(id);
+        const b = second();
+        started.push(b);
+        const bDone = await b;
+        const afterB = await rawRows(id);
+        hold.release();
+        return { a: await a, b: bDone, afterB };
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+      }
+    };
+
+    const expectWinnerKept = async (id, a, afterB) => {
+      expectBusy(a);
+      expect(await rawRows(id)).toEqual(afterB);
+      expect(afterB.ar.claimFence).toBe(afterB.installable.claimFence);
+    };
+
+    test('fork A stalled inside its registry write after its confirm: publish B wins, A gets 409', async () => {
+      const { a, b, afterB } = await staleRace(
+        '@alice/x',
+        holdFirstRegistryWrite('@alice/x'),
+        () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x')),
+        () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+      );
+      expect(b.status).toBe(201);
+      expect(b.body.warnings).toBeUndefined();
+      await expectWinnerKept('@alice/x', a, afterB);
+      expect(afterB.ar).toMatchObject({ description: 'Published.', latestVersion: '3.0.0' });
+      expect(afterB.installable).toMatchObject({ description: 'Published.', version: '3.0.0' });
+      expect(afterB.installable.forkedFrom).toBeUndefined();
+      expect((await Installable.findOne({ installableId: '@bob/helper' }).lean()).stats.forkCount).toBe(0);
+      await expectNoClaim('@alice/x');
+    });
+
+    test('publish A stalled inside its catalog write on an existing listing: publish B wins, A gets 409', async () => {
+      await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+      const { a, b, afterB } = await staleRace(
+        '@alice/x',
+        holdFirst(Installable, 'updateOne', (filter, update) => filter?.installableId === '@alice/x' && update?.$set),
+        () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+        () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+      );
+      expect(b.status).toBe(200);
+      await expectWinnerKept('@alice/x', a, afterB);
+      expect(afterB.installable).toMatchObject({ description: 'Three.', version: '3.0.0' });
+      expect(afterB.installable.versions.map((v) => v.version)).toEqual(['1.0.0', '3.0.0']);
+      expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
+    });
+
+    test('a brand-new id, A stalled at its first write: B wins both rows, A gets 409', async () => {
+      const { a, b, afterB } = await staleRace(
+        '@alice/new',
+        holdFirstRegistryWrite('@alice/new'),
+        () => send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' })),
+        () => send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' })),
+      );
+      expect(b.status).toBe(201);
+      expect(b.body.warnings).toBeUndefined();
+      await expectWinnerKept('@alice/new', a, afterB);
+      expect(afterB.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+      expect(afterB.installable).toMatchObject({ description: 'Second.', version: '2.0.0' });
+    });
+
+    test('a stale insert landing after B\'s admission is replaced by B, and A gets 409', async () => {
+      const holdA = holdFirst(Installable, 'create', (doc) => doc?.installableId === '@alice/new');
+      let holdB = null;
+      const started = [];
+      try {
+        const a = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/new'));
+        started.push(a);
+        await reachBarrier(holdA.entered, a, 'fork A');
+        await expireClaim('@alice/new');
+        // B passes admission (no listing yet) and stops at its registry write.
+        holdB = holdFirstRegistryWrite('@alice/new');
+        const b = send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' }));
+        started.push(b);
+        await reachBarrier(holdB.entered, b, 'publish B');
+        // A's insert lands first; its claim is gone, so it does not answer success.
+        holdA.release();
+        expectBusy(await a);
+        expect((await rawRows('@alice/new')).installable.forkedFrom.installableId).toBe('@bob/helper');
+
+        holdB.release();
+        const bDone = await b;
+        expect(bDone.status).toBe(201);
+        expect(bDone.body.warnings).toBeUndefined();
+        const rows = await rawRows('@alice/new');
+        expect(rows.installable).toMatchObject({ description: 'Second.', version: '2.0.0' });
+        expect(rows.installable.forkedFrom).toBeUndefined();
+        expect(rows.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+        expect(rows.installable.claimFence).toBe(rows.ar.claimFence);
+        expect(await Installable.countDocuments({ installableId: '@alice/new' })).toBe(1);
+        expect((await Installable.findOne({ installableId: '@bob/helper' }).lean()).stats.forkCount).toBe(0);
+      } finally {
+        holdA.release();
+        holdB?.release();
+        await Promise.allSettled(started);
+        holdA.spy.mockRestore();
+        holdB?.spy.mockRestore();
+      }
+    });
+
+    test('tokens follow claim order: B stalled at its acquire still outranks A, whose claim it follows', async () => {
+      // B stops at its acquire; A then acquires, confirms and stalls inside its
+      // registry write. A's claim lapses, B acquires and commits; A's write must
+      // not land on B's rows. A token drawn before the acquire would give B the
+      // lower one, and A's write would overwrite B's registry row.
+      const holdB = holdFirst(
+        SchedulerHeartbeatLease,
+        'findOneAndUpdate',
+        (filter) => filter?._id === CLAIM_ID('@alice/new') && filter.expiresAt?.$lte,
+      );
+      let holdA = null;
+      const started = [];
+      try {
+        const b = send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' }));
+        started.push(b);
+        await reachBarrier(holdB.entered, b, 'publish B');
+        holdA = holdFirstRegistryWrite('@alice/new');
+        const a = send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' }));
+        started.push(a);
+        await reachBarrier(holdA.entered, a, 'publish A');
+        await expireClaim('@alice/new');
+        holdB.release();
+        const bDone = await b;
+        expect(bDone.status).toBe(201);
+        expect(bDone.body.warnings).toBeUndefined();
+        const afterB = await rawRows('@alice/new');
+        holdA.release();
+        await expectWinnerKept('@alice/new', await a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+        expect(afterB.installable).toMatchObject({ description: 'Second.', version: '2.0.0' });
+      } finally {
+        holdB.release();
+        holdA?.release();
+        await Promise.allSettled(started);
+        holdB.spy.mockRestore();
+        holdA?.spy.mockRestore();
+      }
+    });
+
+    // Holds the first matching call of `obj[method]`; once released it rejects
+    // with a generic (non-E11000) error instead of running.
+    const holdThenFail = (obj, method, match) => {
+      const entered = deferred();
+      const gate = deferred();
+      const original = obj[method].bind(obj);
+      let held = false;
+      const spy = jest.spyOn(obj, method).mockImplementation((...args) => {
+        if (held || !match(...args)) return original(...args);
+        held = true;
+        entered.resolve();
+        return gate.promise.then(() => { throw new Error('catalog down'); });
+      });
+      return { entered: entered.promise, release: gate.resolve, spy };
+    };
+
+    describe('a superseded holder whose catalog write then fails answers 409, not a drift warning', () => {
+      test('fork', async () => {
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(Installable, 'create', (doc) => doc?.installableId === '@alice/x'),
+          () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x')),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+        );
+        expect(b.status).toBe(201);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Published.', latestVersion: '3.0.0' });
+        expect(afterB.installable.forkedFrom).toBeUndefined();
+      });
+
+      test('publish, create path', async () => {
+        const { a, b, afterB } = await staleRace(
+          '@alice/new',
+          holdThenFail(Installable, 'create', (doc) => doc?.installableId === '@alice/new'),
+          () => send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' })),
+        );
+        expect(b.status).toBe(201);
+        await expectWinnerKept('@alice/new', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+      });
+
+      test('publish, update path', async () => {
+        await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(Installable, 'updateOne', (f, u) => f?.installableId === '@alice/x' && u?.$set),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+        );
+        expect(b.status).toBe(200);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
+      });
+
+      test('publish, update path, registry write failing', async () => {
+        await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(AgentRegistry, 'findOneAndUpdate', (filter) => filter?.agentName === '@alice/x'),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+        );
+        expect(b.status).toBe(200);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.installable).toMatchObject({ description: 'Three.', version: '3.0.0' });
+        expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
+      });
+    });
+
+    test('a successor that writes and releases during the supersession check still makes A answer 409', async () => {
+      // A finishes both writes, then reads its claim in the check and stops
+      // there. B takes the lapsed id over, publishes and releases. A's row
+      // reads come after its claim read, so they see B's tokens.
+      const hold = holdFirst(
+        SchedulerHeartbeatLease,
+        'findOne',
+        (filter) => filter?._id === CLAIM_ID('@alice/new'),
+        { after: true },
+      );
+      const started = [];
+      try {
+        const a = send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' }));
+        started.push(a);
+        await reachBarrier(hold.entered, a, 'publish A');
+        const afterA = await rawRows('@alice/new');
+        await expireClaim('@alice/new');
+        const b = await send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' }));
+        expect(b.status).toBe(200);
+        await expectNoClaim('@alice/new');
+        const afterB = await rawRows('@alice/new');
+        expect(afterB.ar.claimFence).toBeGreaterThan(afterA.ar.claimFence);
+        hold.release();
+        await expectWinnerKept('@alice/new', await a, afterB);
+        expect(afterB.ar).toMatchObject({ latestVersion: '2.0.0', description: 'Second.' });
+        expect(afterB.installable).toMatchObject({ version: '2.0.0', description: 'Second.' });
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+      }
+    });
+
+    test('an uncontested registry failure on a version publish still answers 201 with the warning', async () => {
+      await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0')).expect(201);
+      const before = await rawRows('@alice/x');
+      const spy = jest.spyOn(AgentRegistry, 'findOneAndUpdate').mockRejectedValueOnce(new Error('registry down'));
+      try {
+        const res = await post('/publish', aliceAuth, publishBody('@alice/x', '2.0.0'));
+        expect(res.status).toBe(201);
+        expect(res.body.warnings).toEqual([expect.stringMatching(/AgentRegistry sync failed/)]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await rawRows('@alice/x')).toEqual(before);
+      await expectNoClaim('@alice/x');
+    });
+
+    test('a slow holder with no competitor, whose claim lapsed after both writes, gets 201', async () => {
+      const hold = holdFirst(Installable, 'create', (doc) => doc?.installableId === '@alice/slow', { after: true });
+      const started = [];
+      try {
+        const a = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/slow'));
+        started.push(a);
+        await reachBarrier(hold.entered, a, 'fork A');
+        await expireClaim('@alice/slow');
+        hold.release();
+        const done = await a;
+        expect(done.status).toBe(201);
+        expect(done.body.warnings).toBeUndefined();
+        const rows = await rawRows('@alice/slow');
+        expect(rows.installable.forkedFrom.installableId).toBe('@bob/helper');
+        expect(rows.installable.claimFence).toBe(rows.ar.claimFence);
+        expect((await Installable.findOne({ installableId: '@bob/helper' }).lean()).stats.forkCount).toBe(1);
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+      }
+    });
+
+    test('no marketplace response carries the token', async () => {
+      const text = (r) => JSON.stringify(r.body);
+      const detail = await request(app).get('/api/marketplace/manifests/@bob/helper');
+      expect(detail.status).toBe(200);
+      expect(detail.body.installableId).toBe('@bob/helper');
+      expect(detail.body).not.toHaveProperty('claimFence');
+      const fork = await post('/fork', aliceAuth, forkBody('@bob/helper', '@alice/f'));
+      const publish = await post('/publish', aliceAuth, publishBody('@alice/p'));
+      const responses = [
+        detail, fork, publish,
+        await request(app).get('/api/marketplace/mine').set('Authorization', bobAuth),
+        await request(app).get('/api/marketplace/browse?limit=100'),
+        await request(app).get('/api/marketplace/manifests/@bob/helper/forks'),
+      ];
+      expect(responses.map((r) => r.status)).toEqual([200, 201, 201, 200, 200, 200]);
+      expect(responses[3].body.items.length).toBeGreaterThan(0);
+      expect(responses[5].body.items.length).toBeGreaterThan(0);
+      responses.forEach((r) => expect(text(r)).not.toMatch(/claimFence/));
+    });
+
+    test('rows written before the fence (no token) take an uncontested publish, which stamps one', async () => {
+      await post('/publish', aliceAuth, publishBody('@alice/old', '1.0.0')).expect(201);
+      await AgentRegistry.collection.updateOne({ agentName: '@alice/old' }, { $unset: { claimFence: '' } });
+      await Installable.collection.updateOne({ installableId: '@alice/old' }, { $unset: { claimFence: '' } });
+      const before = await rawRows('@alice/old');
+      expect(before.ar.claimFence).toBeUndefined();
+      expect(before.installable.claimFence).toBeUndefined();
+
+      const res = await post('/publish', aliceAuth, publishBody('@alice/old', '2.0.0', { description: 'Two.' }));
+      expect(res.status).toBe(200);
+      expect(res.body.warnings).toBeUndefined();
+      const after = await rawRows('@alice/old');
+      expect(typeof after.ar.claimFence).toBe('number');
+      expect(after.installable.claimFence).toBe(after.ar.claimFence);
+      expect(after.installable.versions.map((v) => v.version)).toEqual(['1.0.0', '2.0.0']);
+      expect(after.ar).toMatchObject({ description: 'Two.', latestVersion: '2.0.0' });
+    });
+
+    test('the token rises across release, re-acquire and a claim the TTL removed', async () => {
+      await post('/publish', aliceAuth, publishBody('@alice/m', '1.0.0')).expect(201);
+      await expectNoClaim('@alice/m');
+      const first = await rawRows('@alice/m');
+      expect(first.installable.claimFence).toBe(first.ar.claimFence);
+
+      await post('/publish', aliceAuth, publishBody('@alice/m', '2.0.0')).expect(200);
+      await expectNoClaim('@alice/m');
+      const second = await rawRows('@alice/m');
+      expect(second.ar.claimFence).toBeGreaterThan(first.ar.claimFence);
+      expect(second.installable.claimFence).toBe(second.ar.claimFence);
+
+      // An expired claim the TTL monitor has already deleted starts no new count.
+      await SchedulerHeartbeatLease.deleteMany({});
+      await post('/publish', aliceAuth, publishBody('@alice/m', '3.0.0')).expect(200);
+      const third = await rawRows('@alice/m');
+      expect(third.ar.claimFence).toBeGreaterThan(second.ar.claimFence);
+    });
   });
 
   describe('the claim is released', () => {

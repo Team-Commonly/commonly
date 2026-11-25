@@ -6,6 +6,7 @@ const InstallableModel = require('../models/Installable');
 const { REGISTRY_BACKFILL_ORIGIN } = require('../services/installable/registryBackfillOrigin');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
+const SystemSetting = require('../models/SystemSetting');
 const { validateMcpComponent } = require('../utils/pluginManifestParser');
 
 const router = express.Router();
@@ -23,7 +24,7 @@ const listings = {
   find: (filter: any) => InstallableModel.find(listingFilter(filter)),
   findOne: (filter: any) => InstallableModel.findOne(listingFilter(filter)),
   countDocuments: (filter: any) => InstallableModel.countDocuments(listingFilter(filter)),
-  updateOne: (filter: any, update: any) => InstallableModel.updateOne(listingFilter(filter), update),
+  updateOne: (filter: any, update: any, opts?: any) => InstallableModel.updateOne(listingFilter(filter), update, opts),
   deleteOne: (filter: any) => InstallableModel.deleteOne(listingFilter(filter)),
   create: (doc: any) => InstallableModel.create(doc),
 };
@@ -38,15 +39,6 @@ const findBackfillForTakeover = (installableId: string) => InstallableModel.find
 const installableIdTaken = async (installableId: string): Promise<boolean> => (
   Boolean(await InstallableModel.findOne({ installableId }))
 );
-
-// Replaces a backfilled row with the publish doc, clearing the mark. Only
-// Installable is written; identity tables are untouched.
-const takeOverBackfill = async (installableId: string, publishDoc: any, userId: any) => {
-  const doc = await findBackfillForTakeover(installableId);
-  if (!doc) return null;
-  doc.overwrite({ ...publishDoc, owner: userId, createdAt: doc.createdAt });
-  return doc.save();
-};
 
 // Publish and fork write AgentRegistry, then Installable. Without an exclusive
 // claim, two requests for one id both pass admission, the last AgentRegistry
@@ -78,8 +70,7 @@ const acquireInstallableClaim = async (installableId: string): Promise<string | 
 // Re-checks, right before a write, that this request still holds the id, and
 // extends the claim. A holder that stalled past expiry gets false and must not
 // write: another request may have taken the id over and committed since. A
-// stall inside a single write is not fenced; that needs conditional writes in
-// both collections.
+// stall inside a write, after this check, is caught by the fencing token below.
 const confirmInstallableClaim = async (installableId: string, ownerId: string): Promise<boolean> => {
   const now = new Date();
   const claim = await SchedulerHeartbeatLease.findOneAndUpdate(
@@ -122,12 +113,167 @@ const claimExpired = (res: any) => res.status(409).json({
   code: 'installable_id_busy',
 });
 
+// Fencing token. The claim is a lease, so a holder can pass its confirm, stall
+// inside the write that follows (a slow round trip, a GC pause) past expiry,
+// and have that write land after another request took the id over and
+// committed both rows. So every request draws a token once it holds the
+// claim, and every AgentRegistry and Installable write it makes carries
+// "stored token <= mine" in its own filter and stamps its token on the row in
+// that same write. A later holder's token is higher, so once it has written a
+// row, the stale write to that row matches nothing and the stale holder
+// answers 409.
+//
+// The token comes from one counter, `$inc` on a SystemSetting row, not from
+// the claim document: that one is deleted on release and by the TTL monitor
+// after expiry, so a count kept on it would restart. One counter shared by
+// every id is still monotonic per id, needs no new model (ADR-034 D4) and no
+// clock. It is drawn after the claim is acquired and before the first
+// confirm, so tokens follow claim order: A's draw precedes A's confirm, which
+// precedes A's expiry, B's acquire and B's draw. A holder that stalls between
+// acquire and draw may draw above its successor, but then fails the confirm
+// that precedes every write and writes nothing. (Drawn before the acquire, a
+// request that stalled there would acquire later holding a lower token than
+// the holder it followed, whose in-flight write would then overwrite it.) A row
+// with no token (every row written before the fence) counts as lowest, hence
+// `$not: { $gt }` rather than `$lte`, which a missing field fails.
+const CLAIM_FENCE_KEY = 'marketplace.installableClaimFence';
+
+class InstallableClaimFenced extends Error {}
+
+const nextClaimFence = async (): Promise<number> => {
+  const draw = () => SystemSetting.findOneAndUpdate(
+    { key: CLAIM_FENCE_KEY },
+    { $inc: { 'value.seq': 1 } },
+    // The schema default for `value` would conflict with the $inc on insert.
+    { upsert: true, new: true, setDefaultsOnInsert: false },
+  ).lean();
+  let row;
+  try {
+    row = await draw();
+  } catch (error) {
+    // Two first-ever upserts race on the unique key; the retry updates.
+    if ((error as any)?.code !== 11000) throw error;
+    row = await draw();
+  }
+  return row.value.seq;
+};
+
+const notNewerThan = (fence: number) => ({ claimFence: { $not: { $gt: fence } } });
+
+// A write was refused by a newer token. If the counter were ever reset (its
+// settings row lost), stored tokens would sit above every new one and refuse
+// every write for good; raising the counter to the stored token lets the
+// client's retry draw a higher one. In a real race it is a no-op.
+const fencedBy = async (stored: unknown) => {
+  if (typeof stored === 'number') {
+    try {
+      await SystemSetting.updateOne({ key: CLAIM_FENCE_KEY }, { $max: { 'value.seq': stored } });
+    } catch (error) {
+      console.warn('[marketplace] claim fence counter repair failed:', (error as any).message);
+    }
+  }
+  return new InstallableClaimFenced('installableId taken over by a newer claim');
+};
+
+// What a fenced doc.save() throws when its filter matches nothing. VersionError
+// comes instead when the save also checks the version key (an array was set).
+const SAVE_MISSES = new Set(['DocumentNotFoundError', 'VersionError']);
+const TAKEOVER_ATTEMPTS = 3;
+
+// The create path's Installable write onto a row that already exists. Two
+// kinds qualify: a backfilled row, and one an older holder wrote after this
+// request's admission check (admission found no listing, and only a claim
+// holder writes one). Either is replaced whole by the publish or fork doc,
+// which clears the mark, under the fence; a row a newer holder wrote refuses
+// it. A save that missed because an older holder's write changed the row
+// under it re-reads and tries again. Returns null when there is no row (the
+// caller creates). Only Installable is written; identity tables are untouched.
+const takeOverRow = async (installableId: string, publishDoc: any, userId: any, fence: number) => {
+  for (let attempt = 1; attempt <= TAKEOVER_ATTEMPTS; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const doc = (await findBackfillForTakeover(installableId)) || (await listings.findOne({ installableId }));
+    if (!doc) return null;
+    // eslint-disable-next-line no-await-in-loop
+    if (typeof doc.claimFence === 'number' && doc.claimFence > fence) throw await fencedBy(doc.claimFence);
+    doc.overwrite({
+      ...publishDoc, owner: userId, createdAt: doc.createdAt, claimFence: fence,
+    });
+    // Mongoose adds `$where` to the filter of the update save() sends.
+    doc.$where = notNewerThan(fence);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await doc.save();
+    } catch (error) {
+      if (!SAVE_MISSES.has((error as any)?.name)) throw error;
+    }
+  }
+  throw new Error('installableId row kept changing during takeover');
+};
+
+// The fields a version publish sets, which are also all the AgentRegistry row
+// is derived from. The update path writes every one, so an older holder's
+// write that landed first is replaced on all of them and the two rows agree.
+// Stats and the rest stay with their own writers.
+const MANIFEST_FIELDS = [
+  'name', 'description', 'version', 'versions', 'components', 'requires',
+  'readme', 'marketplace', 'publisher', 'status',
+];
+
+// The update path's Installable write. A conditional updateOne, not save():
+// save() puts the version key in its filter when an array changed, so an
+// older holder's write that landed first would make this newer one fail.
+const updateListingFenced = async (existing: any, fence: number) => {
+  const current = existing.toObject();
+  const $set: any = { claimFence: fence };
+  MANIFEST_FIELDS.forEach((field) => {
+    if (current[field] !== undefined) $set[field] = current[field];
+  });
+  const result = await listings.updateOne(
+    { installableId: existing.installableId, ...notNewerThan(fence) },
+    { $set },
+    { runValidators: true },
+  );
+  if (!result.matchedCount) {
+    const row = await listings.findOne({ installableId: existing.installableId }).lean();
+    throw await fencedBy(row?.claimFence);
+  }
+};
+
+// Also run before a drift-warning 201, where the Installable write failed: a
+// missing row is not a newer token, so it alone never reads as superseded.
+// After both writes landed: did a newer holder take the id over? Not merely
+// "did my claim lapse": a slow holder with no competitor has won, and a 409
+// would leave a fork uncounted and its retry told the id is taken. Superseded
+// means a row now carries a newer token (the newer holder already wrote), or
+// another request holds the claim document. Every acquire after ours rewrites
+// that document with its own owner, so a different owner is a later holder,
+// one that will overwrite our rows once it writes; it may not have yet.
+//
+// The claim is read first and the rows after it, not all three at once. A
+// holder releases its claim only after its writes have settled
+// (withInstallableClaim releases in the response wrapper and in `finally`,
+// both after `work`'s awaited writes). So a claim gone at our read means any
+// successor has already written, and the row reads that follow see its newer
+// tokens. Read in parallel, a successor could write and release between the
+// row reads and the claim read, and both would look clean.
+const supersededAfterWrites = async (installableId: string, ownerId: string, fence: number) => {
+  const claim = await SchedulerHeartbeatLease.findOne({ _id: installableClaimId(installableId) });
+  const [ar, row] = await Promise.all([
+    AgentRegistry.findOne({ agentName: installableId }, 'claimFence'),
+    listings.findOne({ installableId }),
+  ]);
+  const newer = (doc: any) => typeof doc?.claimFence === 'number' && doc.claimFence > fence;
+  return newer(ar) || newer(row) || Boolean(claim && claim.ownerId !== ownerId);
+};
+
 // Runs `work` (admission check included) while holding the id, or answers 409.
-// `work` gets `confirm`, which it calls immediately before each write.
+// `work` gets `confirm`, which it calls immediately before each write; `fence`,
+// which each write carries; and `superseded`, which it checks after both writes
+// before answering success. A write the fence refused answers 409 too.
 const withInstallableClaim = async (
   res: any,
   installableId: string,
-  work: (confirm: () => Promise<boolean>) => Promise<any>,
+  work: (confirm: () => Promise<boolean>, fence: number, superseded: () => Promise<boolean>) => Promise<any>,
 ) => {
   const ownerId = await acquireInstallableClaim(installableId);
   if (!ownerId) {
@@ -159,7 +305,16 @@ const withInstallableClaim = async (
     return res;
   };
   try {
-    return await work(() => confirmInstallableClaim(installableId, ownerId));
+    // After the acquire, before the first confirm: see the fencing-token note.
+    const fence = await nextClaimFence();
+    return await work(
+      () => confirmInstallableClaim(installableId, ownerId),
+      fence,
+      () => supersededAfterWrites(installableId, ownerId, fence),
+    );
+  } catch (error) {
+    if (error instanceof InstallableClaimFenced) return claimExpired(res);
+    throw error;
   } finally {
     await release();
     res.json = originalJson;
@@ -319,7 +474,16 @@ const RUNTIME_MAP: Record<string, string> = {
   'local-cli': 'standalone', // ADR-005 local CLI wrapper driver
 };
 
-const syncToAgentRegistry = async (installable: any, action: 'publish' | 'unpublish' | 'delete' | 'deprecate') => {
+// With `fence` (publish and fork, under the claim) the upsert matches only a
+// row whose token is not newer, and stamps the token. Against a newer row the
+// upsert tries an insert, which the unique agentName index refuses (E11000):
+// that is the fence, not an error. E11000 against an older or tokenless row
+// is two upserts of a new name colliding, and the retry matches it.
+const syncToAgentRegistry = async (
+  installable: any,
+  action: 'publish' | 'unpublish' | 'delete' | 'deprecate',
+  fence?: number,
+) => {
   const agentName = installable.installableId;
 
   if (action === 'delete') {
@@ -369,11 +533,28 @@ const syncToAgentRegistry = async (installable: any, action: 'publish' | 'unpubl
     status: installable.status,
   };
 
-  await AgentRegistry.findOneAndUpdate(
-    { agentName },
-    { $set: arPayload },
-    { upsert: true, new: true },
-  );
+  if (fence === undefined) {
+    await AgentRegistry.findOneAndUpdate({ agentName }, { $set: arPayload }, { upsert: true, new: true });
+    return;
+  }
+  arPayload.claimFence = fence;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await AgentRegistry.findOneAndUpdate(
+        { agentName, ...notNewerThan(fence) },
+        { $set: arPayload },
+        { upsert: true, new: true },
+      );
+      return;
+    } catch (error) {
+      if ((error as any)?.code !== 11000 || attempt === 2) throw error;
+      // eslint-disable-next-line no-await-in-loop
+      const stored = (await AgentRegistry.findOne({ agentName }).select('claimFence').lean())?.claimFence;
+      // eslint-disable-next-line no-await-in-loop
+      if (typeof stored === 'number' && stored > fence) throw await fencedBy(stored);
+    }
+  }
 };
 
 /**
@@ -428,7 +609,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
 
     // The claim covers the admission check, so a request that acquires after
     // the winner finished sees the winner's row.
-    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm) => {
+    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm, fence, superseded) => {
       // A backfilled row is invisible here and is taken over on the create path.
       const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
 
@@ -475,9 +656,12 @@ router.post('/publish', auth, async (req: any, res: any) => {
         // ordering rationale as new-manifest path (§6c.1).
         if (!(await confirm())) return claimExpired(res);
         try {
-          await syncToAgentRegistry(existing, 'publish');
+          await syncToAgentRegistry(existing, 'publish', fence);
         } catch (arError) {
+          if (arError instanceof InstallableClaimFenced) throw arError;
           console.warn('[marketplace] AgentRegistry sync failed on update:', (arError as any).message);
+          // A superseded holder lost; only a holder still in the race retries.
+          if (await superseded()) return claimExpired(res);
           return res.status(201).json({
             success: true,
             warnings: ['AgentRegistry sync failed; retrying publish will fix.'],
@@ -492,8 +676,9 @@ router.post('/publish', auth, async (req: any, res: any) => {
 
         if (!(await confirm())) return claimExpired(res);
         try {
-          await existing.save();
+          await updateListingFenced(existing, fence);
         } catch (saveError) {
+          if (saveError instanceof InstallableClaimFenced) throw saveError;
           // AR succeeded but Installable save failed. Mirror the new-manifest
           // drift-warning path so the caller knows to retry rather than
           // assuming publish fully succeeded.
@@ -501,6 +686,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
             '[marketplace] Installable save failed on update (AR succeeded):',
             (saveError as any).message,
           );
+          // A superseded holder lost; only a holder still in the race retries.
+          if (await superseded()) return claimExpired(res);
           return res.status(201).json({
             success: true,
             warnings: [
@@ -515,6 +702,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
           });
         }
 
+        if (await superseded()) return claimExpired(res);
         return res.json({
           success: true,
           manifest: {
@@ -556,8 +744,9 @@ router.post('/publish', auth, async (req: any, res: any) => {
       // Write AR first
       if (!(await confirm())) return claimExpired(res);
       try {
-        await syncToAgentRegistry(installableDoc, 'publish');
+        await syncToAgentRegistry(installableDoc, 'publish', fence);
       } catch (arError) {
+        if (arError instanceof InstallableClaimFenced) throw arError;
         console.error('[marketplace] AgentRegistry write failed:', (arError as any).message);
         return res.status(500).json({ error: 'Failed to publish manifest' });
       }
@@ -565,22 +754,29 @@ router.post('/publish', auth, async (req: any, res: any) => {
       // Then Installable
       if (!(await confirm())) return claimExpired(res);
       let created;
+      // The insert is fenced by the unique index: a newer holder's row makes
+      // it fail, and the takeover after it refuses to replace that row.
+      const fencedDoc = { ...installableDoc, claimFence: fence };
       try {
-        created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
-        if (!created) created = await listings.create(installableDoc);
+        created = await takeOverRow(installableDoc.installableId, fencedDoc, userId, fence);
+        if (!created) created = await listings.create(fencedDoc);
       } catch (installableError) {
+        if (installableError instanceof InstallableClaimFenced) throw installableError;
         console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
-        // The hourly backfill can insert between the read above and create.
+        // The hourly backfill, or an older holder, can insert between the read above and create.
         if ((installableError as any)?.code === 11000) {
           if (!(await confirm())) return claimExpired(res);
           try {
-            created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
+            created = await takeOverRow(installableDoc.installableId, fencedDoc, userId, fence);
           } catch (takeoverError) {
+            if (takeoverError instanceof InstallableClaimFenced) throw takeoverError;
             console.warn('[marketplace] backfill takeover failed:', (takeoverError as any).message);
           }
         }
       }
       if (!created) {
+        // A superseded holder lost; only a holder still in the race retries.
+        if (await superseded()) return claimExpired(res);
         return res.status(201).json({
           success: true,
           warnings: [
@@ -595,6 +791,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
         });
       }
 
+      if (await superseded()) return claimExpired(res);
       console.log(`[marketplace] action=publish user=${userId} manifest=${created.installableId} version=${version}`);
 
       return res.status(201).json({
@@ -734,7 +931,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
 
     // The id check runs under the claim, like publish's admission check.
     const forkId = newInstallableId.toLowerCase();
-    return await withInstallableClaim(res, forkId, async (confirm) => {
+    return await withInstallableClaim(res, forkId, async (confirm, fence, superseded) => {
       // A backfilled row in the caller's own namespace (checked above) is not a
       // claim on the id: an interrupted fork's retry finds the row the sweep
       // inserted from its AgentRegistry write, and takes it over like publish.
@@ -778,18 +975,21 @@ router.post('/fork', auth, async (req: any, res: any) => {
       // Write AR first, then Installable
       if (!(await confirm())) return claimExpired(res);
       try {
-        await syncToAgentRegistry(forkDoc, 'publish');
+        await syncToAgentRegistry(forkDoc, 'publish', fence);
       } catch (arError) {
+        if (arError instanceof InstallableClaimFenced) throw arError;
         console.error('[marketplace] AR write failed on fork:', (arError as any).message);
         return res.status(500).json({ error: 'Failed to fork manifest' });
       }
 
       if (!(await confirm())) return claimExpired(res);
       let created;
+      const fencedDoc = { ...forkDoc, claimFence: fence };
       try {
-        created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
-        if (!created) created = await listings.create(forkDoc);
+        created = await takeOverRow(forkDoc.installableId, fencedDoc, userId, fence);
+        if (!created) created = await listings.create(fencedDoc);
       } catch (installableError) {
+        if (installableError instanceof InstallableClaimFenced) throw installableError;
         console.warn(
           '[marketplace] Installable create failed on fork (AR succeeded):',
           (installableError as any).message,
@@ -798,8 +998,9 @@ router.post('/fork', auth, async (req: any, res: any) => {
         if ((installableError as any)?.code === 11000) {
           if (!(await confirm())) return claimExpired(res);
           try {
-            created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
+            created = await takeOverRow(forkDoc.installableId, fencedDoc, userId, fence);
           } catch (takeoverError) {
+            if (takeoverError instanceof InstallableClaimFenced) throw takeoverError;
             console.warn('[marketplace] backfill takeover failed on fork:', (takeoverError as any).message);
           }
         }
@@ -809,6 +1010,8 @@ router.post('/fork', auth, async (req: any, res: any) => {
         // path: return 201 with a drift warning so the caller knows to retry.
         // Skip the source forkCount increment — we'll bump it on the retry
         // that actually creates the Installable row.
+        // A superseded holder lost; only a holder still in the race retries.
+        if (await superseded()) return claimExpired(res);
         return res.status(201).json({
           success: true,
           warnings: [
@@ -821,6 +1024,10 @@ router.post('/fork', auth, async (req: any, res: any) => {
           },
         });
       }
+
+      // A newer holder took the id over after both writes: the fork lost
+      // and is not counted.
+      if (await superseded()) return claimExpired(res);
 
       // Increment fork count on source (atomic)
       await listings.updateOne(
@@ -923,7 +1130,7 @@ router.get('/browse', marketplaceReadLimit, async (req: any, res: any) => {
 
     const [items, total] = await Promise.all([
       listings.find(filter)
-        .select('-readme -components -versions')
+        .select('-readme -components -versions -claimFence')
         .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
@@ -956,7 +1163,7 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
 
     const [items, total] = await Promise.all([
       listings.find(filter)
-        .select('-readme -components -versions')
+        .select('-readme -components -versions -claimFence')
         .sort({ 'stats.totalInstalls': -1 })
         .skip(skip)
         .limit(limit)
@@ -977,7 +1184,7 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
 router.get('/manifests/:installableId(*)', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const { installableId } = req.params;
-    const doc = await listings.findOne({ installableId: installableId.toLowerCase() }).lean();
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() }).select('-claimFence').lean();
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     res.json(doc);
   } catch (error) {
@@ -995,6 +1202,7 @@ router.get('/mine', auth, async (req: any, res: any) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const items = await listings.find({ 'publisher.userId': userId })
+      .select('-claimFence')
       .sort({ updatedAt: -1 })
       .lean();
 

@@ -71,11 +71,84 @@ What is guaranteed: the claim is re-confirmed (and extended) immediately before
 each write, the AgentRegistry write and each Installable write, by a
 conditional update on `{ _id, ownerId, expiresAt > now }`. A holder whose claim
 expired, for example after a stall, gets 409 and writes nothing more, so it
-can't overwrite rows another request committed after taking the id over. The
-one window left runs from a confirm until its write commits: a stall there (a
-slow Mongo round trip, a long GC pause) lets a write confirmed under a live
-claim land after the claim expired. Closing that needs
-conditional writes in both collections, which the routes don't do.
+can't overwrite rows another request committed after taking the id over.
+
+A confirm can't cover a stall inside the write that follows it (a slow Mongo
+round trip, a long GC pause), so each write is also fenced. Once it holds the
+claim, and before its first confirm, a request draws a fencing token: `$inc` on one counter, the
+`system_settings` row `marketplace.installableClaimFence`. Each AgentRegistry
+and Installable write the request makes carries `claimFence: { $not: { $gt:
+token } }` in its own filter and stamps `claimFence: token` on the row in that
+same write. The guarantees:
+
+- **A stale write doesn't land on a newer holder's row.** Once a request with a
+  higher token has written a row, a write from an older holder matches nothing:
+  the AgentRegistry upsert falls through to an insert that the unique
+  `agentName` index refuses (E11000, read as fenced, not as an error), the
+  update path's conditional `updateOne` matches zero rows, and a takeover's
+  `save()` (with the fence in `doc.$where`) misses. The stale holder answers
+  409 `installable_id_busy`, and both rows stay exactly as the newer holder
+  wrote them.
+- **A stale write that lands first is replaced.** If the older holder's write
+  reaches a row before the newer holder's does, the newer write matches it
+  (lower token) and overwrites it. For a brand-new id, the stale Installable
+  insert makes the newer insert hit E11000, and the newer holder takes that row
+  over the same way it takes over a backfilled one. The update path writes
+  every manifest field rather than only what changed, so the two rows agree.
+  Before answering success, a holder checks whether it was superseded: a row
+  now carries a newer token, or another request holds the claim document
+  (every later acquire rewrites it with its own owner, so that request will
+  overwrite these rows even if it hasn't written yet). Superseded answers 409.
+  The check reads the claim document first and the two rows after it. A
+  holder releases its claim only after its writes settle, so a claim already
+  gone means any successor has written, and the row reads see its newer
+  tokens. Reading all three at once would let a successor write and release
+  between them, and the check would pass. The same check runs before every
+  drift-warning 201.
+  A lapsed claim alone doesn't: a slow holder with no competitor has won, and
+  answers 201 (a 409 there would leave a fork uncounted and its retry told the
+  id is taken).
+- **Rows written before the fence have no token, which counts as lowest**, so
+  they need no migration (`$not: { $gt }` matches a missing field; `$lte`
+  wouldn't). The first fenced write stamps one.
+
+Why a single counter: the claim document is deleted on release and by the TTL
+monitor once expired, so a count kept on it would restart below a stalled
+holder's token. Taken from one persistent row, the tokens rise across release,
+re-acquire and TTL removal, need no clock, and need no new model (ADR-034 D4).
+The token is drawn after the acquire and before the first confirm, so tokens
+follow claim order: A's draw precedes A's confirm, which precedes A's expiry,
+B's acquire and B's draw. A holder that stalls between acquire and draw may
+draw above its successor, but it then fails the confirm before every write and
+writes nothing. Drawing before the acquire inverts this: a request that stalls
+there acquires later with a lower token than the holder it follows, and that
+holder's in-flight write overwrites it. If the counter
+row were ever lost, stored tokens would sit above every new one; a fenced write
+raises the counter to the token that refused it (`$max`), so the client's retry
+succeeds. Rejected alternatives: a token kept on the claim document (it
+resets); a non-TTL counter document in the lease collection (it misuses a lease
+model for a permanent row, and would need a far-future `expiresAt`);
+clock-based tokens (they depend on host clocks agreeing); multi-document
+transactions (they need a replica set, which self-host doesn't promise).
+
+What isn't covered: a writer that doesn't stamp, such as a pod still running
+the pre-fence code during a rolling deploy, or a `deprecate` or `unpublish`
+call, which doesn't take the claim. Because the update path rewrites every
+manifest field, a `deprecate` that lands during a version publish can have its
+deprecation flag overwritten by the publish's copy of `versions`. Two
+leftovers need a holder that stalled past its claim and was then superseded.
+A superseded fork answers 409, so the source's `forkCount` isn't bumped. What
+happens to its row depends on how the newer publish wrote it. A publish that
+found the fork row at admission updates it in place, and the update path writes
+only manifest fields, so `forkedFrom` stays and the count is one short. A
+publish whose create met the fork row (E11000) replaces it through
+`takeOverRow`, which clears `forkedFrom`, and then the count is right.
+And an optional AgentRegistry field the newer publish omits, such as `readme`,
+keeps the older holder's value, since `syncToAgentRegistry` only `$set`s the
+fields it is given. That omission rule is older than the fence: a plain
+re-publish without `readme` keeps the old one too. The fenced
+AgentRegistry write also relies on the unique `agentName` index existing. The
+token is internal: marketplace responses leave `claimFence` out.
 
 The holder deletes only its own claim document (`{ _id, ownerId }`), up to three
 attempts, and does so before the response goes out, so a client that retries
