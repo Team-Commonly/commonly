@@ -9,10 +9,16 @@ too strict for models with clock-derived fields).
 
 **Amended 2026-11-05 (D7: considered, not adopted).** Running self-host's Mongo layer on FerretDB
 was measured and walked, and the founder dropped it the same day: FerretDB's last release is v2.7.0
-(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. The
-migration to Postgres only is paused until the founder reopens it, so the open waves in D6 are not
-work in progress. What already shipped stays enforced: the D4 freeze on new Mongo models fails CI,
-and `requirePgConfigured` stands. D7 stays below as the record.
+(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. D7 stays
+below as the record, and its outcome stands. What already shipped stays enforced: the D4 freeze on
+new Mongo models fails CI, and `requirePgConfigured` stands.
+
+**Amended 2026-11-25: the migration is reopened, and step 4 is held.** The founder reopened the
+move to Postgres only on 2026-11-05 ("how about fullspeed migrate to postgres"), so the waves in D6
+are work in progress again. Models move through D3's steps 1 to 3. **Step 4 for any model, and
+dropping Mongo, are held until after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
+(migration `0016`); the per-model procedure is
+[`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md).
 
 **Deciders:** founder (direction), eng lead (plan).
 
@@ -112,6 +118,12 @@ keeps the document flagged, so reads stay on Mongo instead of serving the row.
 Step 4 is the only one-way door, and it is taken per model. **A model reaches step 3 when the
 `commonly verify` scenarios pass against both stores and the compare log shows zero unexplained
 mismatches**, not after a fixed number of days.
+
+**How a model moves** (backup, mode, backfill, verify, watch, read cut, and the rollback for each):
+[`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md). A model whose write is an
+atomic upsert (a `$max` watermark, a counter) goes through the helper's `upsert`, which takes the change
+twice: as a Mongo update pipeline, and as the same change in JS for where Postgres is the store. A
+parity test holds the two together.
 
 ### D4. No new Mongo model
 Every collection added from now on is a Postgres table: a numbered file in `backend/config/migrations/`

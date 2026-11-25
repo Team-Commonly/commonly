@@ -77,6 +77,24 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(await adapter.get(ID)).toBeNull();
   });
 
+  it('scans in id byte order, a page at a time, whatever the collation', async () => {
+    const ids = ['b', 'B', 'a:1', 'a', '6a692a1be833c668acdb84cf', 'Z'];
+    for (const [i, id] of ids.entries()) await adapter.upsert({ id, title: `t${i}`, payload: null }, i);
+    const seen = [];
+    let after = null;
+    for (;;) {
+      const page = await adapter.scan(after, 2);
+      if (!page.length) break;
+      expect(page.length).toBeLessThanOrEqual(2);
+      seen.push(...page.map((entry) => entry.id));
+      after = page[page.length - 1].id;
+    }
+    expect(seen).toEqual([...ids].sort());
+    expect((await adapter.scan(null, 1))[0]).toEqual({
+      id: '6a692a1be833c668acdb84cf', row: { id: '6a692a1be833c668acdb84cf', title: 't4', payload: null }, version: 4,
+    });
+  });
+
   it('rejects an identifier it would have to interpolate unsafely', () => {
     const { pool } = database;
     expect(() => pgTableAdapter({

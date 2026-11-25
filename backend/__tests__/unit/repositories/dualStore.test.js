@@ -10,6 +10,7 @@ const {
   createDualStore, dualStorePlugin, storeMode, dualStoreStats, resetDualStoreStats,
 } = require('../../../repositories/dualStore');
 const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
+const { fakePg } = require('../../utils/fakePgAdapter');
 
 const schema = new mongoose.Schema({ title: String, count: Number, note: String });
 dualStorePlugin(schema);
@@ -26,69 +27,6 @@ const fromRow = (row) => ({
   ...(row.count != null && { count: row.count }),
   ...(row.note != null && { note: row.note }),
 });
-
-/** Mirrors pgTableAdapter's SQL: an upsert applies only above the stored version. */
-const fakePg = () => {
-  const rows = new Map();
-  const calls = [];
-  const holds = {};
-  const fails = {};
-  const run = async (method, apply) => {
-    calls.push(method);
-    if (holds[method]) {
-      const hold = holds[method];
-      delete holds[method];
-      hold.reached();
-      await hold.gate;
-    }
-    if (fails[method] > 0) {
-      fails[method] -= 1;
-      throw new Error(`fake ${method} failed`);
-    }
-    return apply();
-  };
-  return {
-    rows,
-    calls,
-    upsert: (row, version) => run('upsert', () => {
-      const current = rows.get(row.id);
-      if (current && current.version >= version) return false;
-      rows.set(row.id, { row: { ...row }, version });
-      return true;
-    }),
-    remove: (id, version) => run('remove', () => {
-      const current = rows.get(id);
-      if (current && current.version < version) rows.delete(id);
-    }),
-    // pg mode's compare-and-set: applies only to the row still at `version`.
-    replace: (row, version) => run('replace', () => {
-      const current = rows.get(row.id);
-      if (!current || current.version !== version) return false;
-      rows.set(row.id, { row: { ...row }, version: version + 1 });
-      return true;
-    }),
-    removeAt: (id, version) => run('removeAt', () => {
-      const current = rows.get(id);
-      if (!current || current.version !== version) return false;
-      rows.delete(id);
-      return true;
-    }),
-    get: (id) => run('get', () => {
-      const current = rows.get(id);
-      return current ? { row: { ...current.row }, version: current.version } : null;
-    }),
-    /** The next call to `method` waits until the returned release() runs. */
-    hold(method) {
-      let release;
-      let reached;
-      const gate = new Promise((resolve) => { release = resolve; });
-      const arrived = new Promise((resolve) => { reached = resolve; });
-      holds[method] = { gate, reached };
-      return { release, arrived };
-    },
-    failNext(method, times = 1) { fails[method] = times; },
-  };
-};
 
 const store = (pg, extra = {}) => createDualStore({
   name: NAME, model: Widget, pg, toRow, fromRow, ...extra,
@@ -441,5 +379,287 @@ describe('dual-store helper (ADR-034 D3)', () => {
     expect(() => createDualStore({
       name: 'DualStoreBare', model: bare, pg: fakePg(), toRow, fromRow,
     })).toThrow(/dualStorePlugin/);
+  });
+
+  describe('11. upsert: one atomic create-or-change', () => {
+    // The change in both languages: count only rises, title is set on the first write only.
+    const raise = (n, title = 'first') => ({
+      pipeline: [{
+        $set: {
+          count: { $max: ['$count', { $literal: n }] },
+          title: { $ifNull: ['$title', { $literal: title }] },
+        },
+      }],
+      merge: (current) => ({
+        ...(current || {}),
+        count: Math.max(current?.count ?? -Infinity, n),
+        title: current?.title ?? title,
+      }),
+    });
+    const id = () => new mongoose.Types.ObjectId();
+
+    it('mongo: creates, then applies the pipeline, with no Postgres call and no markers', async () => {
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      expect(await s.upsert(key, raise(3))).toEqual({ _id: key, count: 3, title: 'first' });
+      expect(await s.upsert(key, raise(1, 'second'))).toEqual({ _id: key, count: 3, title: 'first' });
+      expect(await s.upsert(key, raise(5))).toMatchObject({ count: 5 });
+      const raw = await Widget.findById(key).lean();
+      expect(raw.pgVersion).toBeUndefined();
+      expect(raw.pgPending).toBeUndefined();
+      expect(pg.calls).toEqual([]);
+    });
+
+    it.each(['mongo', 'dual'])('%s: twenty racing first writes converge on one document at the maximum', async (mode) => {
+      if (mode !== 'mongo') process.env[ENV] = mode;
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      await Promise.all(Array.from({ length: 20 }, (_, i) => s.upsert(key, raise(i))));
+      expect(await Widget.countDocuments({ _id: key })).toBe(1);
+      const raw = await Widget.findById(key).lean();
+      expect(raw.count).toBe(19);
+      if (mode === 'dual') {
+        expect(raw.pgVersion).toBe(20);
+        expect(raw.pgPending).toBeUndefined();
+        expect(pg.rows.get(String(key))).toEqual({ row: toRow(raw), version: 20 });
+      }
+    });
+
+    it('retries a duplicate-key first write without the upsert, and propagates any other error', async () => {
+      const s = store(fakePg());
+      const key = id();
+      await s.upsert(key, raise(1));
+      const spy = jest.spyOn(Widget, 'findOneAndUpdate');
+      spy.mockImplementationOnce(() => ({ lean: () => Promise.reject(Object.assign(new Error('dup'), { code: 11000 })) }));
+      expect(await s.upsert(key, raise(4))).toMatchObject({ count: 4 });
+      expect(spy.mock.calls[1][2]).toEqual({ new: true });
+      spy.mockImplementationOnce(() => ({ lean: () => Promise.reject(new Error('down')) }));
+      await expect(s.upsert(key, raise(9))).rejects.toThrow('down');
+      spy.mockRestore();
+      expect((await Widget.findById(key).lean()).count).toBe(4);
+    });
+
+    it('dual: commits the change, version and marker in one write, then copies and clears', async () => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      const hold = pg.hold('upsert');
+      const writing = s.upsert(key, raise(2));
+      await hold.arrived;
+      expect(await Widget.findById(key).lean()).toMatchObject({ count: 2, pgVersion: 1, pgPending: 1 });
+      hold.release();
+      expect(await writing).toEqual({ _id: key, count: 2, title: 'first' });
+      await s.upsert(key, raise(7));
+      const raw = await Widget.findById(key).lean();
+      expect(raw).toMatchObject({ count: 7, pgVersion: 2 });
+      expect(raw.pgPending).toBeUndefined();
+      expect(pg.rows.get(String(key))).toEqual({ row: toRow(raw), version: 2 });
+    });
+
+    it('dual: a failed copy leaves the marker for repair', async () => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      pg.failNext('upsert');
+      expect(await s.upsert(key, raise(6))).toMatchObject({ count: 6 });
+      expect((await Widget.findById(key).lean()).pgPending).toBe(1);
+      expect(dualStoreStats(NAME)['pg-write-failed']).toBe(1);
+      expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+      expect(pg.rows.get(String(key))).toMatchObject({ row: { count: 6 }, version: 1 });
+    });
+
+    it('pg: inserts at version 1, then replaces onto the version it read', async () => {
+      process.env[ENV] = 'pg';
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      expect(await s.upsert(key, raise(3))).toEqual({ _id: key, count: 3, title: 'first' });
+      expect(pg.rows.get(String(key)).version).toBe(1);
+      expect(await s.upsert(key, raise(1, 'second'))).toEqual({ _id: key, count: 3, title: 'first' });
+      expect(pg.rows.get(String(key))).toMatchObject({ row: { count: 3, title: 'first' }, version: 2 });
+      expect(await Widget.countDocuments({})).toBe(0);
+    });
+
+    it('pg: a first write that loses the insert race re-reads and applies onto the winner', async () => {
+      process.env[ENV] = 'pg';
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      const hold = pg.hold('upsert');
+      const loser = s.upsert(key, raise(2, 'loser'));
+      await hold.arrived;
+      await s.upsert(key, raise(5, 'winner'));
+      hold.release();
+      expect(await loser).toMatchObject({ count: 5, title: 'winner' });
+      expect(pg.rows.get(String(key))).toMatchObject({ row: { count: 5, title: 'winner' }, version: 2 });
+    });
+
+    it('pg: an update that lost to a concurrent one re-reads instead of overwriting it', async () => {
+      process.env[ENV] = 'pg';
+      const pg = fakePg();
+      const s = store(pg);
+      const key = id();
+      await s.upsert(key, raise(1));
+      const hold = pg.hold('replace');
+      const slow = s.upsert(key, raise(4));
+      await hold.arrived;
+      await s.upsert(key, raise(9));
+      hold.release();
+      expect(await slow).toMatchObject({ count: 9 });
+      expect(pg.rows.get(String(key))).toMatchObject({ row: { count: 9 }, version: 3 });
+    });
+
+    describe('onto a document marked deleted', () => {
+      const midDelete = async () => {
+        process.env[ENV] = 'dual';
+        const pg = fakePg();
+        const s = store(pg);
+        const key = id();
+        await s.upsert(key, raise(8, 'old'));
+        await s.update(key, { note: 'old note' });
+        pg.failNext('remove');
+        expect(await s.remove(key)).toBe(true);
+        expect(await Widget.findById(key).lean()).toMatchObject({ pgDeleted: true, pgPending: 3 });
+        return { pg, s, key };
+      };
+
+      it('starts from an empty document: nothing of the deleted one comes back', async () => {
+        const { pg, s, key } = await midDelete();
+        expect(await s.upsert(key, raise(2, 'new'))).toEqual({ _id: key, count: 2, title: 'new' });
+        const raw = await Widget.findById(key).lean();
+        expect(raw).toEqual({
+          _id: key, count: 2, title: 'new', pgVersion: 4,
+        });
+        expect(pg.rows.get(String(key))).toEqual({ row: toRow(raw), version: 4 });
+      });
+
+      it("the delete's own late steps cannot take the new document or its row", async () => {
+        const { pg, s, key } = await midDelete();
+        await s.upsert(key, raise(2, 'new'));
+        expect(await s.repair()).toEqual({
+          scanned: 0, copied: 0, deleted: 0, failed: 0,
+        });
+        // What the delete, or a repair that read it earlier, does next:
+        // remove the row at its version, then the document by its marker.
+        await pg.remove(String(key), 3);
+        await Widget.deleteOne({ _id: key, pgPending: 3 });
+        expect(await s.findById(key)).toMatchObject({ count: 2, title: 'new' });
+        expect(pg.rows.get(String(key))).toMatchObject({ row: { count: 2, title: 'new' }, version: 4 });
+      });
+
+      it('mongo mode after a rollback: the same fresh start, without markers', async () => {
+        const { s, key } = await midDelete();
+        delete process.env[ENV];
+        expect(await s.upsert(key, raise(1, 'new'))).toEqual({ _id: key, count: 1, title: 'new' });
+        expect(await Widget.findById(key).lean()).toEqual({
+          _id: key, count: 1, title: 'new', pgVersion: 3,
+        });
+      });
+    });
+  });
+
+  describe('12. backfill', () => {
+    const seed = (fields) => Widget.collection.insertOne({ _id: new mongoose.Types.ObjectId(), ...fields });
+
+    it.each([undefined, 'mongo', 'pg'])('refuses outside dual and pg-read (mode %p)', async (mode) => {
+      if (mode) process.env[ENV] = mode;
+      const pg = fakePg();
+      await expect(store(pg).backfill({ dryRun: false })).rejects.toThrow(/STORE_MODE_DUAL_STORE_TEST_WIDGET=dual/);
+      expect(pg.calls).toEqual([]);
+    });
+
+    it('a dry run counts without writing, --apply copies, and a second run finds everything current', async () => {
+      await seed({ title: 'history', count: 1 });
+      await seed({ title: 'history2' });
+      await seed({ title: 'gone', pgDeleted: true, pgVersion: 2 });
+      await seed({ title: 'in flight', pgVersion: 4, pgPending: 4 });
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const current = await s.create({ title: 'dual-written' });
+
+      expect(await s.backfill({ dryRun: true, batchSize: 2 })).toEqual({
+        scanned: 4, inserted: 2, alreadyCurrent: 1, skippedPending: 1,
+      });
+      expect(pg.calls.filter((c) => c === 'upsert')).toHaveLength(1);
+      expect(pg.rows.size).toBe(1);
+
+      expect(await s.backfill({ dryRun: false, batchSize: 2 })).toEqual({
+        scanned: 4, inserted: 2, alreadyCurrent: 1, skippedPending: 1,
+      });
+      expect(pg.rows.size).toBe(3);
+      const history = await Widget.findOne({ title: 'history' }).lean();
+      expect(pg.rows.get(String(history._id))).toEqual({ row: toRow(history), version: 0 });
+      expect(pg.rows.get(String(current._id)).version).toBe(1);
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ inserted: 0, alreadyCurrent: 3 });
+    });
+
+    it('a dual write racing the copy always wins, whichever lands first', async () => {
+      const { insertedId } = await seed({ title: 'v0' });
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      // The copy read v0 and is held while the dual write lands.
+      const hold = pg.hold('upsert');
+      const copying = s.backfill({ dryRun: false });
+      await hold.arrived;
+      await s.update(insertedId, { title: 'v1' });
+      hold.release();
+      expect(await copying).toMatchObject({ scanned: 1, alreadyCurrent: 1 });
+      expect(pg.rows.get(String(insertedId))).toMatchObject({ row: { title: 'v1' }, version: 1 });
+      // Copied first, then written: the write's higher version replaces the copy.
+      await s.update(insertedId, { title: 'v2' });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ alreadyCurrent: 1 });
+      expect(pg.rows.get(String(insertedId))).toMatchObject({ row: { title: 'v2' }, version: 2 });
+    });
+  });
+
+  describe('13. verify', () => {
+    it('matches on a clean copy, and counts missing, differing and extra rows with hashed ids only', async () => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const a = await s.create({ title: 'a', note: 'SECRET-A' });
+      const b = await s.create({ title: 'b' });
+      const c = await s.create({ title: 'c' });
+      const clean = await s.verify({ batchSize: 2 });
+      expect(clean).toMatchObject({
+        mongo: 3, pg: 3, missing: 0, differs: 0, extra: 0,
+      });
+      expect(clean.checksumMongo).toMatch(/^[0-9a-f]{64}$/);
+      expect(clean.checksumPg).toBe(clean.checksumMongo);
+      expect(warn).not.toHaveBeenCalled();
+
+      pg.rows.get(String(a._id)).row.note = 'SECRET-DRIFT';
+      pg.rows.delete(String(b._id));
+      const ghost = new mongoose.Types.ObjectId();
+      pg.rows.set(String(ghost), { row: toRow({ _id: ghost, title: 'ghost' }), version: 1 });
+      const drift = await s.verify({ batchSize: 2 });
+      expect(drift).toMatchObject({
+        mongo: 3, pg: 3, missing: 1, differs: 1, extra: 1,
+      });
+      expect(drift.checksumPg).not.toBe(drift.checksumMongo);
+      expect(logged()).toMatch(/verify model=DualStoreTestWidget id=[0-9a-f]{12} kind=differs fields=note$/m);
+      expect(logged()).toContain('kind=missing');
+      expect(logged()).toContain('kind=extra');
+      [a, b, c].forEach((doc) => expect(logged()).not.toContain(String(doc._id)));
+      expect(logged()).not.toContain(String(ghost));
+      expect(logged()).not.toMatch(/SECRET/);
+    });
+
+    it('leaves out a document marked deleted', async () => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      const doc = await s.create({ title: 'doomed' });
+      pg.failNext('remove');
+      await s.remove(doc._id);
+      pg.rows.delete(String(doc._id));
+      expect(await s.verify()).toMatchObject({ mongo: 0, pg: 0, missing: 0 });
+    });
   });
 });

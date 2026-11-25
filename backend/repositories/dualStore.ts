@@ -36,6 +36,8 @@ interface PgAdapter {
   /** pg mode: deletes the row only if it is still at `version`; true when deleted. */
   removeAt(id: string, version: number): Promise<boolean>;
   get(id: string): Promise<{ row: Row; version: number } | null>;
+  /** Rows with an id above `after` (null: from the start), in id byte order, at most `limit`. */
+  scan(after: string | null, limit: number): Promise<Array<{ id: string; row: Row; version: number }>>;
 }
 
 interface PgQueryable {
@@ -128,6 +130,17 @@ export function pgTableAdapter(
       const { pg_version: version, ...row } = rows[0];
       return { row, version: Number(version) };
     },
+    async scan(after, limit) {
+      // COLLATE "C" pages by byte order whatever the database collation is, so
+      // keyset paging never skips or repeats a row.
+      const { rows } = await pool.query(
+        `SELECT ${all.join(', ')}, pg_version FROM ${t}
+          WHERE $1::text IS NULL OR ${id} COLLATE "C" > $1::text
+          ORDER BY ${id} COLLATE "C" LIMIT $2`,
+        [after, limit],
+      );
+      return rows.map(({ pg_version: version, ...row }) => ({ id: String(row[id]), row, version: Number(version) }));
+    },
   };
 }
 
@@ -147,12 +160,14 @@ export function resetDualStoreStats(): void {
   stats.clear();
 }
 
+const hashId = (id: Id): string => createHash('sha256').update(String(id)).digest('hex').slice(0, 12);
+
 /** Never logs a value or a raw id: only the model, a hashed id, and field names. */
 function mismatch(name: string, id: Id, kind: MismatchKind, fields: string[] = []): void {
   const current = dualStoreStats(name);
   current[kind] += 1;
   stats.set(name, current);
-  const hashed = createHash('sha256').update(String(id)).digest('hex').slice(0, 12);
+  const hashed = hashId(id);
   const listed = fields.length ? ` fields=${fields.join(',')}` : '';
   console.warn(`[dual-store] mismatch model=${name} id=${hashed} kind=${kind}${listed}`);
 }
@@ -183,6 +198,9 @@ const plain = (doc: Doc | null): Doc | null => {
 
 const FLAG_CACHE_MS = 5000;
 const PG_UPDATE_ATTEMPTS = 5;
+const UPSERT_ATTEMPTS = 5;
+
+const isDuplicateKey = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 interface DualStoreOptions {
   name: string;
@@ -196,14 +214,35 @@ interface DualStoreOptions {
   sampleRate?: number;
 }
 
-interface DualStore {
+export interface DualStore {
   create(doc: Doc): Promise<Doc>;
   /** `undefined` unsets a field. Null when there is no such document. */
   update(id: Id, fields: Doc): Promise<Doc | null>;
   /** False when there was no such document. */
   remove(id: Id): Promise<boolean>;
   findById(id: Id): Promise<Doc | null>;
+  /**
+   * Atomic create-or-change of one document. `pipeline` is the change as Mongo
+   * update-pipeline stages, applied to the stored document or, on a first
+   * write, to `{ _id }` alone; `merge` is the same change in JS, applied to
+   * the plain current document or null, and used where Postgres is the store.
+   * The two must agree; a model that adopts this tests that they do. Values
+   * inside `pipeline` are not cast by the schema, so the caller casts them.
+   */
+  upsert(id: Id, change: { pipeline: Doc[]; merge: (current: Doc | null) => Doc }): Promise<Doc>;
   repair(options?: { limit?: number }): Promise<{ scanned: number; copied: number; deleted: number; failed: number }>;
+  /** Step 2's history copy. Dual or pg-read only. */
+  backfill(options?: { dryRun?: boolean; batchSize?: number }): Promise<BackfillCounts>;
+  /** Every live document against its row. Dual or pg-read only. */
+  verify(options?: { batchSize?: number }): Promise<VerifyCounts>;
+}
+
+export interface BackfillCounts {
+  scanned: number; inserted: number; alreadyCurrent: number; skippedPending: number;
+}
+export interface VerifyCounts {
+  mongo: number; pg: number; missing: number; differs: number; extra: number;
+  checksumMongo: string; checksumPg: string;
 }
 
 export function createDualStore(
@@ -322,6 +361,19 @@ export function createDualStore(
       }
       throw new Error(`dual-store: ${name} delete lost ${PG_UPDATE_ATTEMPTS} races in a row`);
     },
+    async upsert(id: Id, merge: (current: Doc | null) => Doc): Promise<Doc> {
+      for (let attempt = 0; attempt < PG_UPDATE_ATTEMPTS; attempt += 1) {
+        // eslint-disable-next-line no-await-in-loop -- read-modify-write, retried on a lost race
+        const got = await pg.get(String(id));
+        const row = toRow({ ...merge(got ? fromRow(got.row) : null), _id: id });
+        // A first write inserts at version 1 and loses to any row that appeared
+        // since the read; a later one applies only onto the version it read.
+        // Either way a lost race reads again.
+        // eslint-disable-next-line no-await-in-loop
+        if (got ? await pg.replace(row, got.version) : await pg.upsert(row, 1)) return fromRow(row);
+      }
+      throw new Error(`dual-store: ${name} upsert lost ${PG_UPDATE_ATTEMPTS} races in a row`);
+    },
   };
 
   return {
@@ -376,6 +428,44 @@ export function createDualStore(
       return true;
     },
 
+    async upsert(id, { pipeline, merge }) {
+      const mode = storeMode(name);
+      if (mode === 'pg') return pgOnly.upsert(id, merge);
+      // dual and pg-read: the change, the version and the marker in one atomic write.
+      const stages = mode === 'mongo' ? pipeline : [...pipeline, { $set: bump }, markPending];
+      let doc: Doc | null = null;
+      for (let attempt = 0; attempt < UPSERT_ATTEMPTS && !doc; attempt += 1) {
+        try {
+          // eslint-disable-next-line no-await-in-loop -- retried only on a lost first-write race
+          doc = await Model.findOneAndUpdate(alive(id), stages, { upsert: true, new: true }).lean() as Doc | null;
+        } catch (error) {
+          if (!isDuplicateKey(error)) throw error;
+          // The _id exists, but the alive filter did not match it on the way in.
+          // Either two first writes raced, and the loser applies onto the
+          // winner without an upsert, or the document is marked deleted.
+          // eslint-disable-next-line no-await-in-loop
+          doc = await Model.findOneAndUpdate(alive(id), stages, { new: true }).lean() as Doc | null;
+          if (!doc) {
+            // A write onto a document mid-delete is ordered after the delete:
+            // it starts from an empty document, exactly as a first write does,
+            // and nothing of the deleted one comes back. Its version continues
+            // above the delete's, so the delete's late Postgres remove cannot
+            // take the new row, and the delete's final conditional deleteOne
+            // no longer matches. pgVersion is kept only for that ordering.
+            // eslint-disable-next-line no-await-in-loop
+            doc = await Model.findOneAndUpdate(
+              { _id: id, pgDeleted: true },
+              [{ $replaceWith: { _id: '$_id', pgVersion: '$pgVersion' } }, ...stages],
+              { new: true },
+            ).lean() as Doc | null;
+          }
+        }
+      }
+      if (!doc) throw new Error(`dual-store: ${name} upsert lost ${UPSERT_ATTEMPTS} races in a row`);
+      if (mode !== 'mongo') await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      return plain(doc) as Doc;
+    },
+
     async findById(id) {
       const mode = storeMode(name);
       if (mode === 'mongo') return readMongo(id, false);
@@ -414,6 +504,97 @@ export function createDualStore(
       }
       flagged = null;
       return counts;
+    },
+
+    async backfill({ dryRun = true, batchSize = 500 } = {}) {
+      const mode = storeMode(name);
+      // Dual must already be on, on every replica, before this runs. A mongo-mode
+      // write changes a document without bumping pgVersion or touching
+      // Postgres, so a row this copies at version v would go stale under it,
+      // and no later copy at the same v could fix it (the adapter refuses a
+      // version it already holds). In dual, every write bumps the version and
+      // copies itself, so it always beats this copy, whichever lands first.
+      if (mode !== 'dual' && mode !== 'pg-read') {
+        throw new Error(`dual-store: backfill needs ${modeEnvName(name)}=dual or pg-read, not ${mode}`);
+      }
+      const counts: BackfillCounts = {
+        scanned: 0, inserted: 0, alreadyCurrent: 0, skippedPending: 0,
+      };
+      const cursor = Model.find({ pgDeleted: { $ne: true } }).sort({ _id: 1 }).lean().cursor({ batchSize });
+      for await (const doc of cursor as AsyncIterable<Doc>) {
+        counts.scanned += 1;
+        // A flagged document is repair's: its own copy is in flight or failed.
+        if (doc.pgPending != null) {
+          counts.skippedPending += 1;
+        } else {
+          const version = Number(doc.pgVersion ?? 0);
+          let applied: boolean;
+          if (dryRun) {
+            const got = await pg.get(String(doc._id));
+            applied = !got || got.version < version;
+          } else {
+            applied = await pg.upsert(toRow(doc), version);
+          }
+          if (applied) counts.inserted += 1;
+          else counts.alreadyCurrent += 1;
+        }
+      }
+      return counts;
+    },
+
+    async verify({ batchSize = 500 } = {}) {
+      // Holds one normalised row per document, so it is sized for the small
+      // models moved first; a large model would page both sides in id order.
+      // `toRow` must emit exactly the table's columns, or the checksums differ
+      // even where the field compare (the sampled compare's) finds nothing.
+      const line = (row: Row) => JSON.stringify(normalize(row));
+      const mongoRows = new Map<string, Row>();
+      const cursor = Model.find({ pgDeleted: { $ne: true } }).lean().cursor({ batchSize });
+      for await (const doc of cursor as AsyncIterable<Doc>) mongoRows.set(String(doc._id), toRow(doc));
+      const counts = {
+        mongo: mongoRows.size, pg: 0, missing: 0, differs: 0, extra: 0,
+      };
+      const report = (rowId: string, kind: string, fields: string[] = []) => {
+        const listed = fields.length ? ` fields=${fields.join(',')}` : '';
+        console.warn(`[dual-store] verify model=${name} id=${hashId(rowId)} kind=${kind}${listed}`);
+      };
+      const pgLines: string[] = [];
+      const seen = new Set<string>();
+      let after: string | null = null;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- keyset paging
+        const page = await pg.scan(after, batchSize);
+        if (!page.length) break;
+        for (const { id: rowId, row } of page) {
+          counts.pg += 1;
+          pgLines.push(line(row));
+          const expected = mongoRows.get(rowId);
+          if (!expected) {
+            counts.extra += 1;
+            report(rowId, 'extra');
+          } else {
+            seen.add(rowId);
+            const fields = differingFields(expected, row);
+            if (fields.length) {
+              counts.differs += 1;
+              report(rowId, 'differs', fields);
+            }
+          }
+        }
+        after = page[page.length - 1].id;
+      }
+      mongoRows.forEach((_, docId) => {
+        if (!seen.has(docId)) {
+          counts.missing += 1;
+          report(docId, 'missing');
+        }
+      });
+      const checksum = (lines: string[]) => createHash('sha256').update(lines.sort().join('\n')).digest('hex');
+      return {
+        ...counts,
+        checksumMongo: checksum([...mongoRows.values()].map(line)),
+        checksumPg: checksum(pgLines),
+      };
     },
   };
 }

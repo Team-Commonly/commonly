@@ -564,6 +564,24 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // ADR-034 D3: re-copy (or finish deleting) every flagged document of each
+    // model in dual or pg-read. A model in mongo or pg costs nothing here; in
+    // dual it is one query on the sparse pgPending index. Lease-free: each
+    // repair step is version-conditional in both stores (dualStoreRegistry.ts).
+    const dualStoreRepairJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { repairDualStoredModels } = require('../repositories/dualStoreRegistry');
+          await repairDualStoredModels();
+        } catch (error) {
+          console.error('[dual-store] scheduled repair failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // Parked broker calls own their expiry: unlike legacy approval actions,
     // an abandoned tool_call must be terminal and have its canonical args
     // scrubbed. The decide path also checks the deadline for sweep races.
@@ -730,6 +748,7 @@ class SchedulerService {
       installableReconcileJob,
       registryDriftJob,
       decisionCardReconcileJob,
+      dualStoreRepairJob,
       approvalToolCallSweepJob,
       spawnCredentialReapJob,
       accountDeletionUploadJob,
