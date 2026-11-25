@@ -2652,6 +2652,16 @@ describe('performRun', () => {
       expect(prompt).toContain('Question: "ship?"');
     });
 
+    test('a handle that ends in a hyphen is a different user and is kept whole', async () => {
+      const prompt = await ruledWith({ question: '@sam- ship?', ruledBy: { userId: 'h', username: 'sam' } });
+      expect(prompt).toContain('Question: "@sam- ship?"');
+    });
+
+    test('a full stop right after the ruler\'s mention still ends the handle', async () => {
+      const prompt = await ruledWith({ question: '@sam. ship?', ruledBy: { userId: 'h', username: 'sam' } });
+      expect(prompt).toContain('Question: ". ship?"');
+    });
+
     test('a minus sign that opens the question is kept', async () => {
       const prompt = await ruledWith({ question: '@sam -1 or +1?', ruledBy: { userId: 'h', username: 'sam' } });
       expect(prompt).toContain('Question: "-1 or +1?"');

@@ -2057,7 +2057,7 @@ const withoutLeadingMention = (text, handle) => {
   // A dash separates only when whitespace sits on both sides, so `@sam -1 or
   // +1?` keeps its minus sign.
   const separator = '(?:\\s*[,:;]\\s*|\\s+[-–—]+\\s+|\\s+)?';
-  const stripped = text.replace(new RegExp(`^\\s*@${escaped}(?![\\w.-]*\\w)${separator}`, 'i'), '');
+  const stripped = text.replace(new RegExp(`^\\s*@${escaped}(?![\\w.-]*[\\w-])${separator}`, 'i'), '');
   return stripped.trim() ? stripped : text;
 };
 
