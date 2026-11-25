@@ -12,6 +12,8 @@ const Pod = require('../models/Pod');
 const VectorSearchService = require('../services/vectorSearchService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
+// eslint-disable-next-line global-require
+const { acquirePod, acquireUserAll, IN_PROGRESS_CODE } = require('../services/indexRebuildGuard');
 
 interface AuthReq {
   userId?: string;
@@ -133,9 +135,16 @@ router.post('/pods/:podId/index/rebuild', auth, async (req: AuthReq, res: Res) =
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (!isMember(pod, userId)) return res.status(403).json({ error: 'Access denied' });
     if (pod.createdBy?.toString() !== (userId as { toString: () => string })?.toString()) return res.status(403).json({ error: 'Admin access required' });
-    if (reset) await VectorSearchService.resetIndex(podId);
-    const result = await VectorSearchService.rebuildIndex(podId);
-    return res.json({ podId, reset: Boolean(reset), ...result });
+    // Auth and creator checks above run first, so only an allowed caller sees 409.
+    const release = acquirePod(podId);
+    if (!release) return res.status(409).json({ error: 'An index rebuild is already running for this pod.', code: IN_PROGRESS_CODE });
+    try {
+      if (reset) await VectorSearchService.resetIndex(podId);
+      const result = await VectorSearchService.rebuildIndex(podId);
+      return res.json({ podId, reset: Boolean(reset), ...result });
+    } finally {
+      release();
+    }
   } catch (error) {
     console.error('Error rebuilding vector index:', error);
     return res.status(500).json({ error: 'Failed to rebuild vector index' });
@@ -147,14 +156,27 @@ router.post('/index/rebuild-all', auth, async (req: AuthReq, res: Res) => {
     const userId = getUid(req);
     const { reset } = req.body || {};
     const pods = await Pod.find({ createdBy: userId }).lean() as Array<{ _id: unknown }>;
-    if (!pods.length) return res.json({ pods: 0, indexed: 0, errors: 0, total: 0, reset: Boolean(reset) });
-    let indexed = 0; let errors = 0; let total = 0;
-    for (const pod of pods) {
-      if (reset) await VectorSearchService.resetIndex(pod._id);
-      const result = await VectorSearchService.rebuildIndex(pod._id) as { indexed?: number; errors?: number; total?: number };
-      indexed += result.indexed || 0; errors += result.errors || 0; total += result.total || 0;
+    if (!pods.length) return res.json({ pods: 0, indexed: 0, errors: 0, total: 0, skipped: 0, reset: Boolean(reset) });
+    const releaseUser = acquireUserAll(userId);
+    if (!releaseUser) return res.status(409).json({ error: 'An index rebuild-all is already running for this user.', code: IN_PROGRESS_CODE });
+    let indexed = 0; let errors = 0; let total = 0; let skipped = 0;
+    try {
+      for (const pod of pods) {
+        // A pod whose single rebuild is already running is skipped, not failed.
+        const release = acquirePod(pod._id);
+        if (!release) { skipped += 1; continue; }
+        try {
+          if (reset) await VectorSearchService.resetIndex(pod._id);
+          const result = await VectorSearchService.rebuildIndex(pod._id) as { indexed?: number; errors?: number; total?: number };
+          indexed += result.indexed || 0; errors += result.errors || 0; total += result.total || 0;
+        } finally {
+          release();
+        }
+      }
+    } finally {
+      releaseUser();
     }
-    return res.json({ pods: pods.length, indexed, errors, total, reset: Boolean(reset) });
+    return res.json({ pods: pods.length, indexed, errors, total, skipped, reset: Boolean(reset) });
   } catch (error) {
     console.error('Error rebuilding vector indices:', error);
     return res.status(500).json({ error: 'Failed to rebuild vector indices' });
