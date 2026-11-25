@@ -519,8 +519,12 @@ class SchedulerService {
     const registryDriftJob: CronJob = cron.schedule(
       '39 * * * *',
       async () => {
+        // Read-path counters ride this line (ADR-001 Phase 3 PR B): '' while off and unused.
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { formatReadPathCounters } = require('./installable/registryReader');
+        const readPath = formatReadPathCounters();
         if (process.env.INSTALLABLE_REGISTRY_SWEEP !== '1') {
-          console.log('[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1');
+          console.log(`[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1${readPath}`);
           return;
         }
         try {
@@ -530,7 +534,7 @@ class SchedulerService {
           console.log(
             `[registry-reconciler] pass scanned=${r.scanned} inserted=${r.inserted} existing=${r.existing} `
             + `skipped=${r.skipped} errors=${r.errors} `
-            + `statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}`,
+            + `statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}${readPath}`,
           );
         } catch (error) {
           console.error('[registry-reconciler] scheduled sweep failed:', error);
