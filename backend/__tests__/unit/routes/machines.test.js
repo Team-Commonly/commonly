@@ -182,6 +182,15 @@ describe('machine lifecycle routes', () => {
     }), [], undefined, undefined, host);
   });
 
+  it('F623: a machine removed between the read and the write answers 403, not 500', async () => {
+    mockRecordMachineHeartbeat.mockResolvedValue(null);
+    const res = await request(app)
+      .post('/api/machines/0123456789abcdef01234567/heartbeat')
+      .send({ agents: [] });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ message: 'Access denied' });
+  });
+
   it('returns only the credential-bound machine through daemon status', async () => {
     mockGetMachineForDaemon.mockResolvedValue({ id: 'm1', name: 'Sam’s Mac', status: 'online' });
 
