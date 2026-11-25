@@ -67,8 +67,9 @@ itself, and the backfill copies everything else. The backfill refuses to run unl
 ### What the counts mean
 
 - **Backfill:** `scanned` counts the live documents. `inserted` is what was copied, or what a dry run would
-  copy. `alreadyCurrent` means Postgres already held that version or a newer one. `skippedPending` counts
-  documents whose own copy is in flight or failed; the repair job copies those.
+  copy. `alreadyCurrent` means Postgres already held that version or a newer one. `deferredPending` counts
+  documents that carried a pending marker when scanned. They are copied in a final pass at their current
+  version, pending or not, and that copy's outcome is counted in `inserted` or `alreadyCurrent`.
 - **Verify:** `mongo` and `pg` are the row counts on each side. `missing` is a live document with no row,
   `differs` is a row whose fields differ (normalised the same way as the sampled compare) or whose version
   is not the document's (`fields=pgVersion`), and `extra` is a row with no live document. A document marked
@@ -76,10 +77,8 @@ itself, and the backfill copies everything else. The backfill refuses to run unl
 
 **A `differs` or `missing` on a live system can be a write in flight**, caught between its Mongo commit and
 its copy. Run `--verify` again; only a difference that stays across runs needs explaining. The backfill
-itself re-reads every document it skipped as pending and copies any that has settled by the end, so a write
-that finished around the `TRUNCATE` is not left without a row. **One window remains:** a write whose copy
-landed before the `TRUNCATE` and whose marker cleared only after the backfill's re-read is left with no row
-and no flag. `--verify` reports it as `missing`, and running `--apply` again copies it.
+itself re-reads every document that was pending when scanned and copies it at its current version, so a write
+whose copy landed before the `TRUNCATE` is not left without a row, whenever its marker clears.
 
 **Rolling back to mongo leaves markers behind**: `pgVersion`, a `pgPending` that is never cleared, and
 `pgDeleted` documents from deletes that had not finished. They are harmless. Every mongo-mode read and write
@@ -88,7 +87,10 @@ dual, the repair job finishes the flagged ones.
 
 A failed Postgres write never fails the caller. It leaves the document flagged (`pgPending`), and the
 repair job copies it on its next pass. While any document of the model is flagged, `pg-read` reads Mongo,
-including after a restart. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
+including after a restart. **The exception is a Mongo outage:** that flag check is a Mongo query, and when
+it fails, `pg-read` reads the Postgres row rather than fail the read, logging
+`[dual-store] flag check failed`. That row can predate a pending write, so reads may be stale until Mongo is
+back. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
 only a rollback from `pg` can produce. That case is out of scope until step 4 is lifted.
 
 ## Before step 4 (held until after 2026-11-30)

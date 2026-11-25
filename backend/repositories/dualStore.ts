@@ -274,7 +274,9 @@ export interface DualStore {
 }
 
 export interface BackfillCounts {
-  scanned: number; inserted: number; alreadyCurrent: number; skippedPending: number;
+  scanned: number; inserted: number; alreadyCurrent: number;
+  /** Pending when scanned, so copied in the final pass; their outcomes are in inserted and alreadyCurrent. */
+  deferredPending: number;
 }
 export interface VerifyCounts {
   mongo: number; pg: number; missing: number; differs: number; extra: number;
@@ -571,7 +573,7 @@ export function createDualStore(
         throw new Error(`dual-store: backfill needs ${modeEnvName(name)}=dual or pg-read, not ${mode}`);
       }
       const counts: BackfillCounts = {
-        scanned: 0, inserted: 0, alreadyCurrent: 0, skippedPending: 0,
+        scanned: 0, inserted: 0, alreadyCurrent: 0, deferredPending: 0,
       };
       const cursor = Model.find({ pgDeleted: { $ne: true } }).sort({ _id: 1 }).lean().cursor({ batchSize });
       const copy = async (doc: Doc) => {
@@ -589,21 +591,25 @@ export function createDualStore(
       const pending: Id[] = [];
       for await (const doc of cursor as AsyncIterable<Doc>) {
         counts.scanned += 1;
-        // A flagged document is repair's: its own copy is in flight or failed.
+        // A flagged document's own copy is in flight or failed: deferred to the end.
         if (doc.pgPending != null) pending.push(doc._id);
         else await copy(doc);
       }
       // A write in flight when the scan passed it may have copied its row
-      // before the table was emptied and cleared its marker after, which leaves
-      // an unflagged document with no row that repair never sees. So each one
-      // skipped is read again: copied now if it has settled, at its own
-      // version, which a newer dual write still beats.
+      // before the table was emptied and clear its marker at any point after,
+      // even after this pass, which would leave an unflagged document with no
+      // row that repair never sees. So each deferred document is read again and
+      // copied now, pending or not, at its current version: the copy is
+      // version-guarded, so a newer write still wins, and the in-flight copy
+      // lands at the same version or is a no-op.
       for (const docId of pending) {
         // eslint-disable-next-line no-await-in-loop -- a handful, in order
         const doc = await Model.findOne(alive(docId)).lean() as Doc | null;
-        if (doc?.pgPending != null) counts.skippedPending += 1;
-        // eslint-disable-next-line no-await-in-loop
-        else if (doc) await copy(doc);
+        if (doc) {
+          counts.deferredPending += 1;
+          // eslint-disable-next-line no-await-in-loop
+          await copy(doc);
+        }
       }
       return counts;
     },

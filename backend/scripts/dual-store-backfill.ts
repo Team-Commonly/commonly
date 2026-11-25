@@ -102,8 +102,9 @@ export async function main(
     const counts = await store.backfill({ dryRun: action === 'dry-run' });
     console.log(`[dual-store-backfill] ${action} model=${model} ${JSON.stringify(counts)}`);
     if (action === 'dry-run') console.log('DRY RUN — nothing written. Re-run with --apply.');
-    if (counts.skippedPending) {
-      console.log(`${counts.skippedPending} document(s) carry a pending marker; the repair job copies those.`);
+    if (counts.deferredPending) {
+      console.log(`${counts.deferredPending} document(s) were pending when scanned and were copied in a final pass`
+        + ' at their current version (included in inserted/alreadyCurrent).');
     }
     process.exitCode = 0;
     return 0;

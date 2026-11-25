@@ -88,7 +88,7 @@ describe('dual-store-backfill main', () => {
     const id = await seedHistory();
     process.env[ENV] = 'dual';
     expect(await main(argv('--model', 'AgentPodReadCursor'), open, MODELS)).toBe(0);
-    expect(printed()).toContain('dry-run model=AgentPodReadCursor {"scanned":1,"inserted":1,"alreadyCurrent":0,"skippedPending":0}');
+    expect(printed()).toContain('dry-run model=AgentPodReadCursor {"scanned":1,"inserted":1,"alreadyCurrent":0,"deferredPending":0}');
     expect(mockPg.current.rows.size).toBe(0);
 
     expect(await main(argv('--model', 'AgentPodReadCursor', '--apply'), open, MODELS)).toBe(0);

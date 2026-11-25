@@ -105,7 +105,7 @@ real('AgentPodReadCursor on real PostgreSQL (ADR-034 step 2)', () => {
     for (const pod of pods) await advanceReadWatermark(agent, pod, { readAt: at(1) });
     process.env[ENV] = 'dual';
     expect(await readCursorStore.backfill({ dryRun: false, batchSize: 2 })).toEqual({
-      scanned: 5, inserted: 5, alreadyCurrent: 0, skippedPending: 0,
+      scanned: 5, inserted: 5, alreadyCurrent: 0, deferredPending: 0,
     });
     await advanceReadWatermark(agent, pods[0], { readAt: at(8) });
     expect(await readCursorStore.backfill({ dryRun: false })).toMatchObject({ inserted: 0, alreadyCurrent: 5 });

@@ -597,19 +597,21 @@ describe('dual-store helper (ADR-034 D3)', () => {
       const current = await s.create({ title: 'dual-written' });
 
       expect(await s.backfill({ dryRun: true, batchSize: 2 })).toEqual({
-        scanned: 4, inserted: 2, alreadyCurrent: 1, skippedPending: 1,
+        scanned: 4, inserted: 3, alreadyCurrent: 1, deferredPending: 1,
       });
       expect(pg.calls.filter((c) => c === 'upsert')).toHaveLength(1);
       expect(pg.rows.size).toBe(1);
 
       expect(await s.backfill({ dryRun: false, batchSize: 2 })).toEqual({
-        scanned: 4, inserted: 2, alreadyCurrent: 1, skippedPending: 1,
+        scanned: 4, inserted: 3, alreadyCurrent: 1, deferredPending: 1,
       });
-      expect(pg.rows.size).toBe(3);
+      expect(pg.rows.size).toBe(4);
+      const inFlight = await Widget.findOne({ title: 'in flight' }).lean();
+      expect(pg.rows.get(String(inFlight._id)).version).toBe(4);
       const history = await Widget.findOne({ title: 'history' }).lean();
       expect(pg.rows.get(String(history._id))).toEqual({ row: toRow(history), version: 0 });
       expect(pg.rows.get(String(current._id)).version).toBe(1);
-      expect(await s.backfill({ dryRun: false })).toMatchObject({ inserted: 0, alreadyCurrent: 3 });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ inserted: 0, alreadyCurrent: 4 });
     });
 
     it('copies a document that was pending when scanned and has settled by the end, which repair would never see', async () => {
@@ -627,14 +629,32 @@ describe('dual-store helper (ADR-034 D3)', () => {
       await Widget.updateOne({ _id: b.insertedId, pgPending: 2 }, { $unset: { pgPending: 1 } });
       hold.release();
       expect(await copying).toEqual({
-        scanned: 2, inserted: 2, alreadyCurrent: 0, skippedPending: 0,
+        scanned: 2, inserted: 2, alreadyCurrent: 0, deferredPending: 1,
       });
       expect(pg.rows.get(String(b.insertedId))).toMatchObject({ row: { title: 'B' }, version: 2 });
       expect(pg.rows.has(String(a.insertedId))).toBe(true);
       expect(await s.verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
-      // One still pending at the end stays repair's, and is counted.
-      await Widget.updateOne({ _id: b.insertedId }, { $set: { pgVersion: 3, pgPending: 3 } });
-      expect(await s.backfill({ dryRun: false })).toMatchObject({ skippedPending: 1 });
+    });
+
+    it('copies a document still pending through the whole run, whose marker clears only afterwards', async () => {
+      // B's dual write copied its row, then the table was emptied; B stays
+      // pending through the scan and the final pass, and its in-flight copy
+      // clears the marker only after the backfill ends. Without the final
+      // pass's copy that leaves no row and no flag, which repair never sees.
+      const b = await seed({ title: 'B', pgVersion: 2, pgPending: 2 });
+      process.env[ENV] = 'dual';
+      const pg = fakePg();
+      const s = store(pg);
+      expect(await s.backfill({ dryRun: false })).toEqual({
+        scanned: 1, inserted: 1, alreadyCurrent: 0, deferredPending: 1,
+      });
+      await Widget.updateOne({ _id: b.insertedId, pgPending: 2 }, { $unset: { pgPending: 1 } });
+      expect(pg.rows.get(String(b.insertedId))).toMatchObject({ row: { title: 'B' }, version: 2 });
+      expect(await s.verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+      // A newer write still wins over the final pass's copy.
+      await s.update(b.insertedId, { title: 'B2' });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ alreadyCurrent: 1 });
+      expect(pg.rows.get(String(b.insertedId))).toMatchObject({ row: { title: 'B2' }, version: 3 });
     });
 
     it('a dual write racing the copy always wins, whichever lands first', async () => {
