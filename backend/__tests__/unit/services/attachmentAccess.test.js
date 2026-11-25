@@ -245,3 +245,37 @@ describe('canReadAttachment', () => {
     expect(File.findByFileName).not.toHaveBeenCalled();
   });
 });
+
+describe('referencesOthersPodUpload', () => {
+  it("flags a pod upload someone else made, and passes the caller's own", async () => {
+    const File = { findByFileName: jest.fn(async (name) => (
+      name === 'theirs.png'
+        ? { uploadedBy: 'other', podId: 'pod-1' }
+        : { uploadedBy: 'me', podId: 'pod-1' }
+    )) };
+    const svc = load({ File });
+    await expect(svc.referencesOthersPodUpload('/api/uploads/theirs.png', 'me')).resolves.toBe(true);
+    await expect(svc.referencesOthersPodUpload('/api/uploads/mine.png', 'me')).resolves.toBe(false);
+  });
+
+  // F615 nit: only the first five refs used to be looked up, so a sixth rode
+  // along unchecked. A value carrying more than five is refused outright,
+  // without any lookup, which keeps the work bounded.
+  it('refuses a value with more than five upload refs without looking any up', async () => {
+    const File = { findByFileName: jest.fn().mockResolvedValue(null) };
+    const svc = load({ File });
+    const value = [1, 2, 3, 4, 5, 6].map((n) => `/api/uploads/f${n}.png`).join(' ');
+    await expect(svc.referencesOthersPodUpload(value, 'me')).resolves.toBe(true);
+    expect(File.findByFileName).not.toHaveBeenCalled();
+  });
+
+  it('still checks every ref of a value with exactly five', async () => {
+    const File = { findByFileName: jest.fn(async (name) => (
+      name === 'f5.png' ? { uploadedBy: 'other', podId: 'pod-1' } : null
+    )) };
+    const svc = load({ File });
+    const value = [1, 2, 3, 4, 5].map((n) => `/api/uploads/f${n}.png`).join(' ');
+    await expect(svc.referencesOthersPodUpload(value, 'me')).resolves.toBe(true);
+    expect(File.findByFileName).toHaveBeenCalledTimes(5);
+  });
+});

@@ -213,15 +213,18 @@ const MAX_PROFILE_PICTURE_REFS = 5;
  * Un-scoped uploads and files with no File row are left alone — they are
  * already publicly served, and agent avatars legitimately point at a file
  * their installer uploaded.
+ *
+ * A value with more than MAX_PROFILE_PICTURE_REFS upload references is
+ * flagged outright, with no lookup: no avatar needs that many, and checking
+ * only a prefix would let the rest through unchecked (F615).
  */
 export async function referencesOthersPodUpload(
   profilePicture: unknown,
   userId: string,
 ): Promise<boolean> {
   if (typeof profilePicture !== 'string' || !profilePicture.includes('/api/uploads/')) return false;
-  const names = [...profilePicture.matchAll(UPLOAD_REF_RE)]
-    .map((m) => m[1])
-    .slice(0, MAX_PROFILE_PICTURE_REFS);
+  const names = [...profilePicture.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
+  if (names.length > MAX_PROFILE_PICTURE_REFS) return true;
   for (const name of names) {
     // eslint-disable-next-line no-await-in-loop
     const fileDoc = await File.findByFileName(name);
