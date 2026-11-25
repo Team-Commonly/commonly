@@ -82,6 +82,16 @@ describe('health public reasons (F624)', () => {
       expect(reason(new Error('NOAUTH Authentication required.'))).toBe('auth_failed');
       expect(reason(withCode('Authentication failed.', 18, 'MongoServerError'))).toBe('auth_failed');
     });
+    it('a recognized code decides before any message text', () => {
+      expect(reason(withCode('getaddrinfo ENOTFOUND noauth.internal', 'ENOTFOUND'))).toBe('host_not_found');
+      expect(reason(withCode('connect ECONNREFUSED wrongpass.internal:6379', 'ECONNREFUSED'))).toBe('connection_refused');
+      expect(reason(Object.assign(new Error('wrapped NOAUTH.internal'), { cause: withCode('x', 'ETIMEDOUT') }))).toBe('timeout');
+    });
+    it('message-only errors still map, and hostname fragments do not trigger auth', () => {
+      expect(reason(new Error('WRONGPASS invalid username-password pair'))).toBe('auth_failed');
+      expect(reason(new Error('getaddrinfo ENOTFOUND noauth-db.internal'))).toBe('host_not_found');
+      expect(reason(new Error('something odd at wrongpass-cache.internal'))).toBe('unavailable');
+    });
     it('anything else gives unavailable', () => {
       expect(reason(new Error('something odd at 10.0.0.5'))).toBe('unavailable');
       expect(reason(undefined)).toBe('unavailable');

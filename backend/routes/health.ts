@@ -24,27 +24,48 @@ type HealthReason = 'timeout' | 'connection_refused' | 'host_not_found' | 'auth_
 
 type DriverError = { code?: unknown; name?: unknown; message?: unknown; cause?: unknown };
 
-const reasonFromOne = (err: DriverError): HealthReason | null => {
-  const code = String(err.code ?? '');
+// A recognized code decides first: a hostname in the message (noauth.internal)
+// must not outvote the errno that says what happened. pg: 28P01 invalid_password,
+// 28000 invalid_authorization_specification. Mongo: 18 AuthenticationFailed,
+// 13 Unauthorized.
+const REASON_BY_CODE: Record<string, HealthReason> = {
+  ECONNREFUSED: 'connection_refused',
+  ENOTFOUND: 'host_not_found',
+  EAI_AGAIN: 'host_not_found',
+  ETIMEDOUT: 'timeout',
+  ESOCKETTIMEDOUT: 'timeout',
+  '28P01': 'auth_failed',
+  28000: 'auth_failed',
+  18: 'auth_failed',
+  13: 'auth_failed',
+};
+
+const reasonFromCode = (err: DriverError): HealthReason | null => {
+  const code = err.code === undefined || err.code === null ? '' : String(err.code);
+  return Object.prototype.hasOwnProperty.call(REASON_BY_CODE, code) ? REASON_BY_CODE[code] : null;
+};
+
+// Only when no code decides. Errno tokens go before auth words, and the Redis
+// reply words are whole, upper-case words (node-redis ErrorReply has no code).
+const reasonFromMessage = (err: DriverError): HealthReason | null => {
   const message = String(err.message ?? '');
-  // pg: 28P01 invalid_password, 28000 invalid_authorization_specification.
-  // Mongo: 18 AuthenticationFailed, 13 Unauthorized.
-  if (['28P01', '28000', '18', '13'].includes(code)
-    || /WRONGPASS|NOAUTH|NOPERM|authentication failed|auth failed|password authentication/i.test(message)) return 'auth_failed';
-  if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(message)) return 'connection_refused';
-  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code) || /ENOTFOUND|EAI_AGAIN/.test(message)) return 'host_not_found';
-  if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code)
-    || /TimeoutError$/.test(String(err.name ?? ''))
-    || /ETIMEDOUT|timed out|timeout|did not answer within|exceeded \d+ms/i.test(message)) return 'timeout';
+  if (/\bECONNREFUSED\b/.test(message)) return 'connection_refused';
+  if (/\b(?:ENOTFOUND|EAI_AGAIN)\b/.test(message)) return 'host_not_found';
+  if (/\b(?:WRONGPASS|NOAUTH|NOPERM)\b/.test(message)
+    || /authentication failed|auth failed|password authentication/i.test(message)) return 'auth_failed';
+  if (/TimeoutError$/.test(String(err.name ?? ''))
+    || /\bETIMEDOUT\b|timed out|timeout|did not answer within|exceeded \d+ms/i.test(message)) return 'timeout';
   return null;
 };
 
 const publicHealthReason = (error: unknown): HealthReason => {
   const err = (error && typeof error === 'object' ? error : { message: String(error) }) as DriverError;
-  const direct = reasonFromOne(err);
-  if (direct) return direct;
-  if (err.cause && typeof err.cause === 'object') return reasonFromOne(err.cause as DriverError) || 'unavailable';
-  return 'unavailable';
+  const cause = err.cause && typeof err.cause === 'object' ? err.cause as DriverError : null;
+  return reasonFromCode(err)
+    || (cause && reasonFromCode(cause))
+    || reasonFromMessage(err)
+    || (cause && reasonFromMessage(cause))
+    || 'unavailable';
 };
 
 // One log line per state change, not per request: this endpoint is
