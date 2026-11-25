@@ -538,10 +538,12 @@ export function createDualStore(
           if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
             throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} in Postgres`);
           }
-          if (operand === null || operand === undefined) {
+          // Checked after the cast too: a Date setter turns '' into null.
+          const cast = operand === null || operand === undefined ? null : scalar(field, operand);
+          if (cast === null) {
             throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} against null in Postgres`);
           }
-          return [op, scalar(field, operand)];
+          return [op, cast];
         }))];
       }
       return [column, scalar(field, value)];
