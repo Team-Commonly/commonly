@@ -129,7 +129,14 @@ What isn't covered: a writer that doesn't stamp, such as a pod still running
 the pre-fence code during a rolling deploy, or a `deprecate` or `unpublish`
 call, which doesn't take the claim. Because the update path rewrites every
 manifest field, a `deprecate` that lands during a version publish can have its
-deprecation flag overwritten by the publish's copy of `versions`. The fenced
+deprecation flag overwritten by the publish's copy of `versions`. Two
+leftovers need a holder that stalled past its claim and was then superseded.
+A superseded fork's row keeps `forkedFrom` (a later publish doesn't rewrite
+it), but the source's `forkCount` isn't bumped, because the fork answered 409.
+And an optional AgentRegistry field the newer publish omits, such as `readme`,
+keeps the older holder's value, since `syncToAgentRegistry` only `$set`s the
+fields it is given. That omission rule is older than the fence: a plain
+re-publish without `readme` keeps the old one too. The fenced
 AgentRegistry write also relies on the unique `agentName` index existing. The
 token is internal: marketplace responses leave `claimFence` out.
 
