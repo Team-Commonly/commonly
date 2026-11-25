@@ -3945,11 +3945,37 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       }
 
       if (!isMember) {
+        // F619: one conditional write, as in ensureAgentInPod (F605). The
+        // filter holds the two rules read above at the write itself: a join
+        // landing during the policy check must not leave the agent in
+        // `members` twice, and a pod that became a 1:1 DM is refused. The
+        // `__v` bump makes a stale whole-array save (removeAgentFromPod) fail
+        // with VersionError instead of silently dropping this add.
+        const added = await Pod.updateOne(
+          {
+            _id: existingPod._id,
+            members: { $ne: agentUser._id },
+            type: { $nin: Array.from(DM_POD_TYPES_GUARD) },
+          },
+          { $addToSet: { members: agentUser._id }, $inc: { __v: 1 } },
+        );
+        if (!added.modifiedCount) {
+          // Lost the race, or the pod changed under us. Re-read to say which.
+          const current = await Pod.findById(existingPod._id).select('type members').lean();
+          if (!current) return res.status(404).json({ message: 'Pod not found' });
+          const nowMember = (current.members || []).some((m: any) => String(m) === String(agentUser._id));
+          if (!nowMember) {
+            return refusePodNameCollision(`became type=${current.type} (1:1 DM) before the join (ADR-001 §3.10)`);
+          }
+          // Someone else added the agent meanwhile and mirrored their own add.
+        }
+        // The response reads the pod as joined, so it includes the agent.
         existingPod.members.push(agentUser._id);
-        await existingPod.save();
-        // F183: best-effort PG mirror write; never fails the join.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-        await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
+        if (added.modifiedCount) {
+          // F183: best-effort PG mirror write; never fails the join.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+          await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
+        }
         await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section

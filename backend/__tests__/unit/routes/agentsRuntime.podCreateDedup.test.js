@@ -38,12 +38,14 @@ jest.mock('../../../middleware/apiTokenScopes', () => ({
 const podSave = jest.fn().mockResolvedValue(undefined);
 const podPopulate = jest.fn().mockResolvedValue(undefined);
 const mockFoundPod = { value: null };
+const mockPodUpdateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
 
 jest.mock('../../../models/Pod', () => {
   const findOne = jest.fn(() => ({
     populate: () => ({ populate: async () => mockFoundPod.value }),
   }));
-  return { findOne, find: jest.fn() };
+  // F619: the dedup join is one conditional updateOne, not push + save.
+  return { findOne, find: jest.fn(), updateOne: mockPodUpdateOne, findById: jest.fn() };
 });
 
 const mockInstall = jest.fn().mockResolvedValue({});
@@ -126,6 +128,7 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     test('does not add the caller as a third member', async () => {
       await createPod();
       expect(podSave).not.toHaveBeenCalled();
+      expect(mockPodUpdateOne).not.toHaveBeenCalled();
       expect(mockFoundPod.value.members).toHaveLength(2);
     });
 
@@ -167,6 +170,7 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('outsider_grant_non_native_agent_join');
     expect(podSave).not.toHaveBeenCalled();
+    expect(mockPodUpdateOne).not.toHaveBeenCalled();
     expect(mockInstall).not.toHaveBeenCalled();
   });
 
@@ -212,6 +216,7 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
       mockFoundPod.value = existing('chat', undefined, flags);
       await createPod();
       expect(podSave).not.toHaveBeenCalled();
+      expect(mockPodUpdateOne).not.toHaveBeenCalled();
       expect(mockFoundPod.value.members).toHaveLength(2);
       expect(mockInstall).not.toHaveBeenCalled();
     });
@@ -221,7 +226,10 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     mockFoundPod.value = existing('chat', undefined, LISTED_OPEN);
     const res = await createPod();
     expect(res.status).toBe(200);
-    expect(podSave).toHaveBeenCalled();
+    expect(mockPodUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'pod-chat', members: { $ne: 'bot-1' } }),
+      { $addToSet: { members: 'bot-1' }, $inc: { __v: 1 } },
+    );
     expect(mockFoundPod.value.members).toContain('bot-1');
   });
 
@@ -265,6 +273,7 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     expect(res.body._id).toBe('pod-chat');
     // Already a member → no membership write at all. Dedup is idempotent.
     expect(podSave).not.toHaveBeenCalled();
+    expect(mockPodUpdateOne).not.toHaveBeenCalled();
     // ...but the branch does run to completion: the install still happens,
     // so this is a real pass through the dedup path, not an early return.
     expect(mockInstall).toHaveBeenCalled();
@@ -291,6 +300,7 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     const res = await createPod();
     expect(res.status).toBe(403);
     expect(podSave).not.toHaveBeenCalled();
+    expect(mockPodUpdateOne).not.toHaveBeenCalled();
     expect(mockInstall).not.toHaveBeenCalled();
   });
 
