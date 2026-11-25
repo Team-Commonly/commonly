@@ -376,6 +376,11 @@ interface DualStoreOptions {
 }
 
 export interface DualStore {
+  /**
+   * Returns the created document, hidden (`select: false`) paths included, as
+   * Mongoose's own `create` does. Every other read and write returns a
+   * document without them unless a read names them in `fields`.
+   */
   create(doc: Doc): Promise<Doc>;
   /** `undefined` unsets a field. Null when there is no such document. */
   update(id: Id, fields: Doc): Promise<Doc | null>;
@@ -480,6 +485,31 @@ export function createDualStore(
   const alive = (id: Id) => ({ _id: id, pgDeleted: { $ne: true } });
   let flagged: { value: boolean; at: number } | null = null;
 
+  // Paths the schema hides (`select: false`). Mongo leaves them out of every
+  // read that does not name them, so a copy, a compare or a backfill mapped
+  // from such a read would write them as missing. Every internal read whose
+  // result feeds toRow therefore names them (`reveal`), and every document
+  // handed back to a caller drops them again (`conceal`) unless the caller
+  // named them in `fields`, so a caller sees what Mongo would have returned.
+  // A model with no hidden path gets back the very query and document it
+  // passed in: both are the identity when `hidden` is empty.
+  const hidden: string[] = [];
+  Model.schema.eachPath((path: string, type: { options?: { select?: unknown } }) => {
+    if (type.options?.select === false) hidden.push(path);
+  });
+  if (hidden.some((path) => path.includes('.'))) {
+    throw new Error(`dual-store: ${name} hides a nested path with select: false, which the helper cannot strip`);
+  }
+  const revealed = hidden.map((path) => `+${path}`).join(' ');
+  const reveal = <Q>(query: Q): Q => (hidden.length
+    ? (query as unknown as { select: (projection: string) => Q }).select(revealed) : query);
+  const conceal = (doc: Doc | null, fields?: string[]): Doc | null => {
+    if (!doc || !hidden.length) return doc;
+    const out = { ...doc };
+    hidden.forEach((path) => { if (!fields?.includes(path)) delete out[path]; });
+    return out;
+  };
+
   const splitFields = (fields: Doc) => {
     const unset = Object.keys(fields).filter((key) => fields[key] === undefined);
     const toSet = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
@@ -564,9 +594,9 @@ export function createDualStore(
   };
 
   const readMongo = async (id: Id, compare: boolean): Promise<Doc | null> => {
-    const doc = await Model.findOne(alive(id)).lean() as Doc | null;
+    const doc = await reveal(Model.findOne(alive(id))).lean() as Doc | null;
     if (doc && compare) await compareSample(doc);
-    return plain(doc);
+    return conceal(plain(doc));
   };
 
   /** pg-read reads Mongo while anything is flagged, and Postgres otherwise. */
@@ -655,14 +685,14 @@ export function createDualStore(
     // Translated in every mode but mongo, so a filter pg-read could not run fails in dual first.
     const where = mode === 'mongo' ? null : toPgWhere(filter);
     if (mode === 'mongo' || mode === 'dual' || (mode === 'pg-read' && await pgReadUsesMongo())) {
-      const query = Model.find({ ...filter, pgDeleted: { $ne: true } });
+      const query = reveal(Model.find({ ...filter, pgDeleted: { $ne: true } }));
       if (limit !== undefined) query.limit(limit);
       const docs = await query.lean() as Doc[];
       if (mode !== 'mongo') await Promise.all(docs.map(compareSample));
-      return docs.map((doc) => pick(plain(doc) as Doc, fields));
+      return docs.map((doc) => pick(conceal(plain(doc), fields) as Doc, fields));
     }
     const rows = await pg.findWhere(where as PgWhere, limit);
-    return rows.map(({ row }) => pick(fromRow(row), fields));
+    return rows.map(({ row }) => pick(conceal(fromRow(row), fields) as Doc, fields));
   };
 
   // Step 4 gives these a single-statement Postgres form; until then pg mode refuses them.
@@ -688,7 +718,7 @@ export function createDualStore(
         // Only onto the version just read: a row deleted or rewritten since is
         // read again, so an update never re-creates a deleted row.
         // eslint-disable-next-line no-await-in-loop
-        if (await pg.replace(row, got.version)) return fromRow(row);
+        if (await pg.replace(row, got.version)) return conceal(fromRow(row));
       }
       throw new Error(`dual-store: ${name} update lost ${PG_UPDATE_ATTEMPTS} races in a row`);
     },
@@ -711,7 +741,7 @@ export function createDualStore(
         // since the read; a later one applies only onto the version it read.
         // Either way a lost race reads again.
         // eslint-disable-next-line no-await-in-loop
-        if (got ? await pg.replace(row, got.version) : await pg.upsert(row, 1)) return fromRow(row);
+        if (got ? await pg.replace(row, got.version) : await pg.upsert(row, 1)) return conceal(fromRow(row)) as Doc;
       }
       throw new Error(`dual-store: ${name} upsert lost ${PG_UPDATE_ATTEMPTS} races in a row`);
     },
@@ -741,10 +771,10 @@ export function createDualStore(
       const literal = Object.fromEntries(Object.entries(set).map(([key, value]) => [key, { $literal: value }]));
       const pipeline: Doc[] = [{ $set: { ...literal, ...bump } }, markPending];
       if (unset.length) pipeline.push({ $unset: unset });
-      const doc = await Model.findOneAndUpdate(alive(id), pipeline, { new: true }).lean() as Doc | null;
+      const doc = await reveal(Model.findOneAndUpdate(alive(id), pipeline, { new: true })).lean() as Doc | null;
       if (!doc) return null;
       await finishCopy(doc._id, doc.pgVersion as number, doc);
-      return plain(doc);
+      return conceal(plain(doc));
     },
 
     async remove(id) {
@@ -778,18 +808,20 @@ export function createDualStore(
       if (mode === 'pg') return pgOnly.upsert(id, merge);
       // dual and pg-read: the change, the version and the marker in one atomic write.
       const stages = mode === 'mongo' ? pipeline : [...pipeline, { $set: bump }, markPending];
+      // Hidden paths are named only where the result is copied.
+      const read = <Q>(query: Q): Q => (mode === 'mongo' ? query : reveal(query));
       let doc: Doc | null = null;
       for (let attempt = 0; attempt < UPSERT_ATTEMPTS && !doc; attempt += 1) {
         try {
           // eslint-disable-next-line no-await-in-loop -- retried only on a lost first-write race
-          doc = await Model.findOneAndUpdate(alive(id), stages, { upsert: true, new: true }).lean() as Doc | null;
+          doc = await read(Model.findOneAndUpdate(alive(id), stages, { upsert: true, new: true })).lean() as Doc | null;
         } catch (error) {
           if (!isDuplicateKey(error)) throw error;
           // The _id exists, but the alive filter did not match it on the way in.
           // Either two first writes raced, and the loser applies onto the
           // winner without an upsert, or the document is marked deleted.
           // eslint-disable-next-line no-await-in-loop
-          doc = await Model.findOneAndUpdate(alive(id), stages, { new: true }).lean() as Doc | null;
+          doc = await read(Model.findOneAndUpdate(alive(id), stages, { new: true })).lean() as Doc | null;
           if (!doc) {
             // A write onto a document mid-delete is ordered after the delete:
             // it starts from an empty document, exactly as a first write does,
@@ -798,17 +830,17 @@ export function createDualStore(
             // take the new row, and the delete's final conditional deleteOne
             // no longer matches. pgVersion is kept only for that ordering.
             // eslint-disable-next-line no-await-in-loop
-            doc = await Model.findOneAndUpdate(
+            doc = await read(Model.findOneAndUpdate(
               { _id: id, pgDeleted: true },
               [{ $replaceWith: { _id: '$_id', pgVersion: '$pgVersion' } }, ...stages],
               { new: true },
-            ).lean() as Doc | null;
+            )).lean() as Doc | null;
           }
         }
       }
       if (!doc) throw new Error(`dual-store: ${name} upsert lost ${UPSERT_ATTEMPTS} races in a row`);
       if (mode !== 'mongo') await finishCopy(doc._id, doc.pgVersion as number, doc);
-      return plain(doc) as Doc;
+      return conceal(plain(doc)) as Doc;
     },
 
     async insertIfAbsent(filter, fields) {
@@ -835,13 +867,13 @@ export function createDualStore(
         const at = (Model.base as { now?: () => Date }).now?.() ?? new Date();
         const stamped = Object.fromEntries([stamps?.createdAt, stamps?.updatedAt]
           .filter((path): path is string => Boolean(path)).map((path) => [path, at]));
-        return Model.findOneAndUpdate(
+        return reveal(Model.findOneAndUpdate(
           { ...filter, pgDeleted: { $ne: true } },
           // The stamp wins over a caller's own createdAt, as Mongoose's upsert
           // timestamps do in mongo mode (applyTimestampsToUpdate).
           { $setOnInsert: { ...fields, ...stamped, pgVersion: 1, pgPending: 1 } },
           { ...options, new: true, timestamps: false },
-        ) as unknown as Promise<RawResult>;
+        )) as unknown as Promise<RawResult>;
       };
       // The server retries a duplicate-key upsert only when the filter is pure
       // equality on the unique key, which the pgDeleted clause rules out. One
@@ -876,9 +908,9 @@ export function createDualStore(
       }
       // One atomic pipeline update: the fields, the version and the marker.
       const literal = Object.fromEntries(paths.map((path) => [path, { $literal: fields[path] }]));
-      const doc = await Model.findOneAndUpdate(
+      const doc = await reveal(Model.findOneAndUpdate(
         { ...filter, pgDeleted: { $ne: true } }, [{ $set: { ...literal, ...bump } }, markPending], { new: true },
-      ).lean() as Doc | null;
+      )).lean() as Doc | null;
       if (!doc) return false;
       await finishCopy(doc._id, doc.pgVersion as number, doc);
       return true;
@@ -890,7 +922,7 @@ export function createDualStore(
       if (mode === 'dual') return readMongo(id, true);
       if (mode === 'pg-read' && await pgReadUsesMongo()) return readMongo(id, true);
       const got = await pg.get(String(id));
-      return got ? fromRow(got.row) : null;
+      return got ? conceal(fromRow(got.row)) : null;
     },
 
     async updateWhere(filter, pipeline) {
@@ -906,9 +938,9 @@ export function createDualStore(
         return result?.value != null;
       }
       // One atomic pipeline update: the caller's change, the version and the marker.
-      const doc = await Model.findOneAndUpdate(
+      const doc = await reveal(Model.findOneAndUpdate(
         { ...filter, pgDeleted: { $ne: true } }, [...pipeline, { $set: bump }, markPending], { new: true },
-      ).lean() as Doc | null;
+      )).lean() as Doc | null;
       if (!doc) return false;
       await finishCopy(doc._id, doc.pgVersion as number, doc);
       return true;
@@ -947,7 +979,7 @@ export function createDualStore(
       };
       const mode = storeMode(name);
       if (mode === 'mongo' || mode === 'pg') return counts;
-      const docs = await Model.find({ pgPending: { $exists: true } }).limit(limit).lean() as Doc[];
+      const docs = await reveal(Model.find({ pgPending: { $exists: true } })).limit(limit).lean() as Doc[];
       for (const doc of docs) {
         counts.scanned += 1;
         const version = doc.pgPending as number;
@@ -987,7 +1019,7 @@ export function createDualStore(
       const counts: BackfillCounts = {
         scanned: 0, inserted: 0, alreadyCurrent: 0, deferredPending: 0,
       };
-      const cursor = Model.find({ pgDeleted: { $ne: true } }).sort({ _id: 1 }).lean().cursor({ batchSize });
+      const cursor = reveal(Model.find({ pgDeleted: { $ne: true } })).sort({ _id: 1 }).lean().cursor({ batchSize });
       const copy = async (doc: Doc) => {
         const version = Number(doc.pgVersion ?? 0);
         let applied: boolean;
@@ -1016,7 +1048,7 @@ export function createDualStore(
       // lands at the same version or is a no-op.
       for (const docId of pending) {
         // eslint-disable-next-line no-await-in-loop -- a handful, in order
-        const doc = await Model.findOne(alive(docId)).lean() as Doc | null;
+        const doc = await reveal(Model.findOne(alive(docId))).lean() as Doc | null;
         if (doc) {
           counts.deferredPending += 1;
           // eslint-disable-next-line no-await-in-loop
@@ -1039,7 +1071,7 @@ export function createDualStore(
       const line = (row: Row) => JSON.stringify(normalize(row));
       const mongoRows = new Map<string, Row>();
       const mongoVersions = new Map<string, number>();
-      const cursor = Model.find({ pgDeleted: { $ne: true } }).lean().cursor({ batchSize });
+      const cursor = reveal(Model.find({ pgDeleted: { $ne: true } })).lean().cursor({ batchSize });
       for await (const doc of cursor as AsyncIterable<Doc>) {
         mongoRows.set(String(doc._id), toRow(doc));
         mongoVersions.set(String(doc._id), Number(doc.pgVersion ?? 0));

@@ -1251,4 +1251,193 @@ describe('dual-store helper (ADR-034 D3)', () => {
       });
     });
   });
+
+  describe('19. fields the schema hides with select: false', () => {
+    const hiddenSchema = new mongoose.Schema({
+      title: String, secret: { type: String, select: false }, note: String,
+    }, { timestamps: true });
+    dualStorePlugin(hiddenSchema);
+    const Locker = mongoose.models.DualStoreTestLocker || mongoose.model('DualStoreTestLocker', hiddenSchema);
+    const LOCKER_ENV = 'STORE_MODE_DUAL_STORE_TEST_LOCKER';
+    const lockerRow = (doc) => ({
+      id: String(doc._id),
+      title: doc.title ?? null,
+      secret: doc.secret ?? null,
+      note: doc.note ?? null,
+      created_at: doc.createdAt ?? null,
+      updated_at: doc.updatedAt ?? null,
+    });
+    const lockerFromRow = (row) => ({
+      _id: new mongoose.Types.ObjectId(row.id),
+      ...(row.title != null && { title: row.title }),
+      ...(row.secret != null && { secret: row.secret }),
+      ...(row.note != null && { note: row.note }),
+      ...(row.created_at != null && { createdAt: new Date(row.created_at) }),
+      ...(row.updated_at != null && { updatedAt: new Date(row.updated_at) }),
+    });
+    const lockers = (pg) => createDualStore({
+      name: 'DualStoreTestLocker',
+      model: Locker,
+      pg,
+      toRow: lockerRow,
+      fromRow: lockerFromRow,
+      sampleRate: 1,
+      filterColumns: { _id: 'id', title: 'title', note: 'note' },
+    });
+    // Obviously fake secrets.
+    const SECRET = 'fake-secret-0001';
+    const rawWithSecret = (id) => Locker.findById(id).select('+secret').lean();
+    const secretOf = (pg, id) => pg.rows.get(String(id))?.row.secret;
+
+    beforeEach(async () => { await Locker.deleteMany({}); });
+    afterEach(() => { delete process.env[LOCKER_ENV]; });
+
+    it.each(['dual', 'pg-read'])('%s: every copy keeps the hidden field, and no write hands it back', async (mode) => {
+      process.env[LOCKER_ENV] = mode;
+      const pg = fakePg();
+      const s = lockers(pg);
+      const created = await s.create({ title: 'a', secret: SECRET });
+      // create answers as Mongoose's create does: with what the caller just wrote.
+      expect(created.secret).toBe(SECRET);
+      expect(secretOf(pg, created._id)).toBe(SECRET);
+
+      const updated = await s.update(created._id, { title: 'b' });
+      expect(updated).toMatchObject({ title: 'b' });
+      expect('secret' in updated).toBe(false);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 2 });
+
+      expect(await s.updateWhere({ _id: created._id }, [{ $set: { note: { $literal: 'n' } } }])).toBe(true);
+      expect(await s.setWhere({ _id: created._id }, { title: 'c' })).toBe(true);
+      const upserted = await s.upsert(created._id, {
+        pipeline: [{ $set: { note: { $literal: 'u' } } }], merge: (current) => ({ ...current, note: 'u' }),
+      });
+      expect('secret' in upserted).toBe(false);
+      const other = await s.create({ title: 'z', secret: 'fake-secret-0002' });
+      expect(await s.updateManyWhere({ title: { $in: ['c', 'z'] } }, [{ $set: { note: { $literal: 'm' } } }])).toBe(2);
+      expect(secretOf(pg, created._id)).toBe(SECRET);
+      expect(secretOf(pg, other._id)).toBe('fake-secret-0002');
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 6 });
+      expect(await s.insertIfAbsent({ title: 'fresh' }, { secret: 'fake-secret-0003' })).toEqual({ inserted: true });
+      const fresh = await Locker.findOne({ title: 'fresh' }).lean();
+      expect(secretOf(pg, fresh._id)).toBe('fake-secret-0003');
+      expect(dualStoreStats('DualStoreTestLocker')).toMatchObject({ differs: 0, missing: 0, 'pg-write-failed': 0 });
+    });
+
+    it('dual: repair and backfill, its deferred re-read included, copy the hidden field', async () => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      pg.failNext('upsert');
+      await s.update(doc._id, { title: 'b' });
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      expect(pg.rows.get(String(doc._id)).version).toBe(1);
+      expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+      expect(pg.rows.get(String(doc._id))).toEqual({ row: lockerRow(await rawWithSecret(doc._id)), version: 2 });
+
+      // Written before dual, one of them still flagged, so backfill defers and re-reads it.
+      const plainOne = await Locker.collection.insertOne({ title: 'old', secret: 'fake-secret-0004' });
+      const pendingOne = await Locker.collection.insertOne({
+        title: 'pending', secret: 'fake-secret-0005', pgVersion: 1, pgPending: 1,
+      });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ scanned: 3, deferredPending: 1 });
+      expect(secretOf(pg, plainOne.insertedId)).toBe('fake-secret-0004');
+      expect(secretOf(pg, pendingOne.insertedId)).toBe('fake-secret-0005');
+    });
+
+    it('dual: verify compares the hidden field: equal stores equal, a changed secret different', async () => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      await s.create({ title: 'b', secret: 'fake-secret-0006' });
+      const equal = await s.verify();
+      expect(equal).toMatchObject({
+        mongo: 2, pg: 2, missing: 0, differs: 0, extra: 0,
+      });
+      expect(equal.checksumMongo).toBe(equal.checksumPg);
+      pg.rows.get(String(doc._id)).row.secret = 'fake-secret-tampered';
+      const changed = await s.verify();
+      expect(changed).toMatchObject({ differs: 1 });
+      expect(changed.checksumMongo).not.toBe(changed.checksumPg);
+      expect(logged()).toContain('fields=secret');
+    });
+
+    it.each(['mongo', 'dual', 'pg-read'])('%s: reads leave the hidden field out unless named', async (mode) => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET, note: 'n' });
+      if (mode === 'mongo') delete process.env[LOCKER_ENV];
+      else process.env[LOCKER_ENV] = mode;
+      pg.calls.length = 0;
+      const byId = await s.findById(doc._id);
+      expect(byId).toMatchObject({ title: 'a', note: 'n' });
+      expect('secret' in byId).toBe(false);
+      const one = await s.findOneWhere({ title: 'a' });
+      expect(one).toMatchObject({ title: 'a' });
+      expect('secret' in one).toBe(false);
+      const [listed] = await s.findWhere({ note: 'n' });
+      expect('secret' in listed).toBe(false);
+      expect(await s.findOneWhere({ title: 'a' }, { fields: ['note'] })).toEqual({ _id: doc._id, note: 'n' });
+      expect(await s.findOneWhere({ title: 'a' }, { fields: ['secret'] })).toEqual({ _id: doc._id, secret: SECRET });
+      expect(pg.calls.includes('findWhere')).toBe(mode === 'pg-read');
+    });
+
+    it('pg: writes and reads from Postgres leave the hidden field out too', async () => {
+      process.env[LOCKER_ENV] = 'pg';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      const updated = await s.update(doc._id, { title: 'b' });
+      expect('secret' in updated).toBe(false);
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      expect('secret' in await s.findById(doc._id)).toBe(false);
+    });
+
+    it('refuses a nested hidden path, which it could not strip', () => {
+      const nested = new mongoose.Schema({ inner: { key: { type: String, select: false } } });
+      dualStorePlugin(nested);
+      const Nested = mongoose.models.DualStoreTestNested || mongoose.model('DualStoreTestNested', nested);
+      expect(() => createDualStore({
+        name: 'DualStoreTestNested', model: Nested, pg: fakePg(), toRow, fromRow,
+      })).toThrow(/nested path/);
+    });
+
+    it('a model with no hidden path never adds a projection: the old query runs unchanged', async () => {
+      // The seven live models have no select: false path, so this is their path.
+      process.env[ENV] = 'dual';
+      const select = jest.spyOn(mongoose.Query.prototype, 'select');
+      const pg = fakePg();
+      const s = store(pg, { sampleRate: 1, filterColumns: { _id: 'id', title: 'title' } });
+      const doc = await s.create({ title: 'a' });
+      await s.update(doc._id, { count: 1 });
+      await s.updateWhere({ _id: doc._id }, [{ $set: { note: { $literal: 'x' } } }]);
+      await s.setWhere({ _id: doc._id }, { title: 'b' });
+      await s.upsert(doc._id, { pipeline: [{ $set: { count: 2 } }], merge: (c) => ({ ...c, count: 2 }) });
+      await s.insertIfAbsent({ title: 'c' }, {});
+      await s.updateManyWhere({ title: { $in: ['b', 'c'] } }, [{ $set: { note: { $literal: 'y' } } }]);
+      await s.findById(doc._id);
+      await s.findWhere({ title: 'b' });
+      pg.failNext('upsert');
+      await s.update(doc._id, { count: 3 });
+      await s.repair();
+      await s.backfill({ dryRun: false });
+      await s.verify();
+      process.env[ENV] = 'pg-read';
+      await s.findOneWhere({ title: 'b' });
+      await s.findById(doc._id);
+      // Mongoose calls select itself for a projection argument; the helper's
+      // reveal is the only caller that passes a +path.
+      const reveals = select.mock.calls.filter(([projection]) => typeof projection === 'string'
+        && projection.includes('+'));
+      expect(reveals).toEqual([]);
+      // Positive control: the spy does see a reveal on a model with a hidden path.
+      await lockers(fakePg()).findById(new mongoose.Types.ObjectId());
+      expect(select.mock.calls.filter(([projection]) => projection === '+secret')).toHaveLength(1);
+    });
+  });
 });
