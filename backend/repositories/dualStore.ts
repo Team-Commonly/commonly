@@ -362,15 +362,23 @@ export function createDualStore(
       flagged = { value: true, at: Date.now() };
       return false;
     }
-    const cleared = await Model.updateOne({ _id: id, pgPending: version }, { $unset: { pgPending: 1 } });
-    if (cleared.matchedCount === 0) {
-      const now = await Model.findById(id, { pgDeleted: 1 }).lean() as Doc | null;
-      if (!now || now.pgDeleted) {
-        // A still-flagged delete is finished by repair; a finished one leaves only this log line.
-        await pg.remove(String(id), version + 1).catch((error: Error) => {
-          console.warn(`[dual-store] late-row cleanup failed model=${name}:`, error.message);
-        });
+    // The copy landed and the caller's Mongo write is committed, so a failure
+    // from here on must not fail the caller: the marker stays set, pg-read stays
+    // on Mongo for it, and the repair job clears it on its next pass.
+    try {
+      const cleared = await Model.updateOne({ _id: id, pgPending: version }, { $unset: { pgPending: 1 } });
+      if (cleared.matchedCount === 0) {
+        const now = await Model.findById(id, { pgDeleted: 1 }).lean() as Doc | null;
+        if (!now || now.pgDeleted) {
+          // A still-flagged delete is finished by repair; a finished one leaves only this log line.
+          await pg.remove(String(id), version + 1).catch((error: Error) => {
+            console.warn(`[dual-store] late-row cleanup failed model=${name}:`, error.message);
+          });
+        }
       }
+    } catch (error) {
+      flagged = { value: true, at: Date.now() };
+      console.warn(`[dual-store] marker clear failed model=${name}; repair finishes it:`, (error as Error)?.message);
     }
     return true;
   };

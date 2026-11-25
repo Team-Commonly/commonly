@@ -159,6 +159,31 @@ describe('first-contact repository (ADR-034 step 2)', () => {
       expect(await store.verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
     });
 
+    it('a failed marker clear after a landed copy keeps the first claim won, for repair to finish', async () => {
+      const clear = jest.spyOn(AgentFirstContact, 'updateOne')
+        .mockImplementationOnce(() => Promise.reject(new Error('mongo blip')));
+      expect(await claimFirstContact(identity, firstFields())).toEqual({ inserted: true });
+      expect(clear).toHaveBeenCalledTimes(1);
+      clear.mockRestore();
+      expect((await raw()).pgPending).toBe(1);
+      expect((await rowOf()).version).toBe(1);
+      expect(await firstContactStore().repair()).toMatchObject({ failed: 0 });
+      expect((await raw()).pgPending).toBeUndefined();
+    });
+
+    it('a failed marker clear after a landed copy keeps the greeting claim won, for repair to finish', async () => {
+      await claimFirstContact(identity, firstFields());
+      const clear = jest.spyOn(AgentFirstContact, 'updateOne')
+        .mockImplementationOnce(() => Promise.reject(new Error('mongo blip')));
+      expect(await greet(at(2))).toBe(true);
+      expect(clear).toHaveBeenCalledTimes(1);
+      clear.mockRestore();
+      expect((await raw())).toMatchObject({ pgVersion: 2, pgPending: 2 });
+      expect((await rowOf()).version).toBe(2);
+      expect(await firstContactStore().repair()).toMatchObject({ failed: 0 });
+      expect((await raw()).pgPending).toBeUndefined();
+    });
+
     it('a failed copy leaves the claim won and the marker for the repair job', async () => {
       mockPg.current.failNext('upsert');
       expect(await claimFirstContact(identity, firstFields())).toEqual({ inserted: true });

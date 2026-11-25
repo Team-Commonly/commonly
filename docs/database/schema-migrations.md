@@ -83,8 +83,10 @@ the cursor.
   for the call that stamped `greetedAtByPod.<podId>` (absent, or older than
   `expiredBefore`).
 
-Both claims run in Mongo in `mongo`, `dual` and `pg-read`, through the helper's
-`insertIfAbsent` and `setWhere`; only a won claim takes a version and is copied.
+Both claims run in Mongo in `mongo`, `dual` and `pg-read`. In `mongo` they call
+`AgentFirstContact.findOneAndUpdate` directly, as before, without the helper. In `dual`
+and `pg-read` they go through the helper's `insertIfAbsent` and `setWhere`, and only a won
+claim takes a version and is copied.
 `pg` mode refuses both until step 4.
 
 For the next aggregate, expose its domain operations, keep Mongoose queries
