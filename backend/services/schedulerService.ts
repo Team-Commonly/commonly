@@ -125,6 +125,9 @@ interface ScheduledDispatchHeartbeatsResult extends DispatchHeartbeatsResult {
 interface DispatchPodSummaryOptions {
   trigger?: string;
   windowMinutes?: number;
+  // Installs ("podId:instanceId") that already got an hourly request; the
+  // startup top-up passes it, the cron and manual paths never do.
+  skipInstallKeys?: Set<string>;
 }
 
 interface SummarizeResult {
@@ -165,6 +168,9 @@ export const FIVE_MINUTE_PASS_SCHEDULES = {
 // Cron jobs are process-local. Keep one module-private owner so a second
 // SchedulerService instance cannot start a duplicate job set in this process.
 let activeScheduler: SchedulerService | null = null;
+
+// F628: shorter than the hourly cadence, so the next cron tick is never skipped.
+const STARTUP_SUMMARIZER_SKIP_WINDOW_MINUTES = 45;
 
 class SchedulerService {
   isRunning: boolean;
@@ -798,7 +804,7 @@ class SchedulerService {
     );
 
     this.startupTimers.push(setTimeout(() => {
-      SchedulerService.runSummarizer().catch((error) => {
+      SchedulerService.runStartupSummarizer().catch((error) => {
         logOutboundFailure('Error in initial summarizer run:', error);
       });
     }, 5000));
@@ -872,7 +878,58 @@ class SchedulerService {
     console.log('Scheduler stopped');
   }
 
-  static async runSummarizer(): Promise<SummarizeResult> {
+  // F628: the startup run tops up per install. An install that already got a
+  // scheduled-hourly summary.request inside the window is left out, so a
+  // restart does not re-send every pod a request, and a restart mid-sweep
+  // still reaches the pods the first sweep never got to. The signal is the
+  // event rows themselves: the sweep writes them, they survive a restart, and
+  // the read is bounded (about one row per install per hour). A failed read
+  // runs the full sweep.
+  static startupSummarizerSkipWindowMs(): number {
+    const minutes = Number(process.env.SUMMARIZER_STARTUP_SKIP_WINDOW_MINUTES);
+    return (Number.isFinite(minutes) && minutes > 0 ? minutes : STARTUP_SUMMARIZER_SKIP_WINDOW_MINUTES) * 60 * 1000;
+  }
+
+  static summaryInstallKey(podId: unknown, instanceId?: string | null): string {
+    return `${String(podId)}:${instanceId || 'default'}`;
+  }
+
+  static async runStartupSummarizer(): Promise<SummarizeResult | null> {
+    let skipInstallKeys: Set<string> | undefined;
+    try {
+      const since = new Date(Date.now() - SchedulerService.startupSummarizerSkipWindowMs());
+      const recent: Array<{ podId: unknown; instanceId?: string }> = await AgentEvent.find({
+        agentName: 'commonly-bot',
+        type: 'summary.request',
+        'payload.trigger': 'scheduled-hourly',
+        createdAt: { $gte: since },
+      }).select('podId instanceId').lean();
+      if (recent.length) {
+        const keys = new Set(recent.map((row) => SchedulerService.summaryInstallKey(row.podId, row.instanceId)));
+        const installations: Array<{ podId: unknown; instanceId?: string }> = await AgentInstallation.find({
+          agentName: 'commonly-bot',
+          status: 'active',
+        }).select('podId instanceId').lean();
+        const uncovered = installations.filter(
+          (i) => !keys.has(SchedulerService.summaryInstallKey(i.podId, i.instanceId)),
+        ).length;
+        if (!uncovered) {
+          console.log(
+            `Skipping startup summarizer: all ${installations.length} installs were requested within the last `
+            + `${Math.round(SchedulerService.startupSummarizerSkipWindowMs() / 60000)} min`,
+          );
+          return null;
+        }
+        skipInstallKeys = keys;
+      }
+    } catch (error) {
+      skipInstallKeys = undefined;
+      logOutboundFailure('Startup summarizer recency check failed, running the sweep:', error);
+    }
+    return SchedulerService.runSummarizer(skipInstallKeys ? { skipInstallKeys } : {});
+  }
+
+  static async runSummarizer(options: { skipInstallKeys?: Set<string> } = {}): Promise<SummarizeResult> {
     const startTime = Date.now();
     console.log('Starting summarization process...');
 
@@ -884,7 +941,9 @@ class SchedulerService {
       await SchedulerService.summarizeIntegrationBuffers();
 
       console.log('Step 2: Dispatching pod summary requests to commonly-bot...');
-      const podSummaryDispatch = await SchedulerService.dispatchPodSummaryRequests();
+      const podSummaryDispatch = await SchedulerService.dispatchPodSummaryRequests(
+        options.skipInstallKeys ? { skipInstallKeys: options.skipInstallKeys } : {},
+      );
 
       let chatRoomSummaries: unknown[] = [];
       let postSummary: unknown = { status: 'skipped', reason: 'legacy summarizer disabled' };
@@ -1086,12 +1145,20 @@ class SchedulerService {
   static async dispatchPodSummaryRequests(
     options: DispatchPodSummaryOptions = {},
   ): Promise<{ enqueued: number }> {
-    const { trigger = 'scheduled-hourly', windowMinutes = 60 } = options;
+    const { trigger = 'scheduled-hourly', windowMinutes = 60, skipInstallKeys } = options;
 
-    const installations: Array<{ podId: unknown; instanceId?: string }> = await AgentInstallation.find({
+    let installations: Array<{ podId: unknown; instanceId?: string }> = await AgentInstallation.find({
       agentName: 'commonly-bot',
       status: 'active',
     }).select('podId instanceId').lean();
+
+    if (skipInstallKeys?.size) {
+      const all = installations.length;
+      installations = installations.filter(
+        (i) => !skipInstallKeys.has(SchedulerService.summaryInstallKey(i.podId, i.instanceId)),
+      );
+      console.log(`Summary dispatch: skipped ${all - installations.length} installs recently requested`);
+    }
 
     if (!installations.length) {
       return { enqueued: 0 };
