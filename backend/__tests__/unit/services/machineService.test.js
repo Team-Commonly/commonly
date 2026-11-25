@@ -142,12 +142,18 @@ describe('ADR-026 machine lifecycle service', () => {
     await machineService.recordMachineHeartbeat(await Machine.findById(machine.id));
     expect((await Machine.findById(machine.id).lean()).inventoryAt || null).toBeNull();
 
+    // Loaded before the inventory heartbeat, so it holds no inventory: the
+    // route's shape when two check-ins overlap.
+    const stale = await Machine.findById(machine.id);
     await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), undefined, [row]);
     const withInv = await Machine.findById(machine.id).lean();
     expect(withInv.inventoryAt).toBeInstanceOf(Date);
     expect(withInv.runtimeInventory).toHaveLength(1);
 
-    await machineService.recordMachineHeartbeat(await Machine.findById(machine.id));
+    const returned = await machineService.recordMachineHeartbeat(stale);
+    // The view is the stored row, not the stale copy's.
+    expect(returned.runtimeInventory).toHaveLength(1);
+    expect(returned.inventoryAt).toEqual(withInv.inventoryAt);
     const kept = await Machine.findById(machine.id).lean();
     expect(kept.inventoryAt).toEqual(withInv.inventoryAt);
     expect(kept.runtimeInventory).toHaveLength(1);
