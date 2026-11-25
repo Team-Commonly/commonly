@@ -1,3 +1,4 @@
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 const { randomUUID } = require('crypto');
 const express = require('express');
 const auth = require('../middleware/auth');
@@ -805,8 +806,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
       });
     });
   } catch (error) {
-    console.error('[marketplace] publish error:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to publish' });
+    logOutboundFailure('[marketplace] publish error:', error);
+    res.status(500).json({ error: 'Failed to publish' });
   }
 });
 
@@ -1047,8 +1048,8 @@ router.post('/fork', auth, async (req: any, res: any) => {
       });
     });
   } catch (error) {
-    console.error('[marketplace] fork error:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to fork' });
+    logOutboundFailure('[marketplace] fork error:', error);
+    res.status(500).json({ error: 'Failed to fork' });
   }
 });
 

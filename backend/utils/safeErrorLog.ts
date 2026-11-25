@@ -74,3 +74,22 @@ export const smtp2goReason = (err: unknown): { error_code?: unknown; error?: unk
     return undefined;
   }
 };
+
+/**
+ * The text of an error we threw on purpose, or a fixed fallback for anything
+ * else. A route that answers 500 from a catch-all must never echo a driver or
+ * a remote message (hosts, SQL, constraint names, a provider response text),
+ * but a few of its own throws are written for the person to read. Those are
+ * named exactly, or by a prefix for the few that embed a value we validated
+ * (`Unknown query type: <type>`). Anything else gets the fallback.
+ */
+export const ownErrorMessage = (
+  err: unknown,
+  ownMessages: readonly string[],
+  fallback: string,
+  ownPrefixes: readonly string[] = [],
+): string => {
+  const message = describeError(err).message;
+  const own = ownMessages.includes(message) || ownPrefixes.some((prefix) => message.startsWith(prefix));
+  return own ? message : fallback;
+};

@@ -20,15 +20,17 @@ const upstream = (status, headers = {}) => ({
 
 describe('mapGitHubUpstreamError', () => {
   it('maps an upstream 401 to a non-retryable 502, not a 500', () => {
-    const { status, body } = mapGitHubUpstreamError(upstream(401), LABELS);
+    const { status, body, detail } = mapGitHubUpstreamError(upstream(401), LABELS);
     // The whole finding: this used to be 500, which instructs a retry.
     expect(status).toBe(502);
     expect(body.code).toBe('github_credential_rejected');
     expect(body.upstreamStatus).toBe(401);
     expect(body.retryable).toBe(false);
     // The upstream status survives in a machine-readable field rather than
-    // only inside the human-readable detail string.
-    expect(body.detail).toBe('Request failed with status code 401');
+    // only inside the human-readable detail string. A 5xx body never carries
+    // that string (F626); the result carries it beside the body for the log.
+    expect(body.detail).toBeUndefined();
+    expect(detail).toBe('Request failed with status code 401');
   });
 
   it('reports a credential rejection as 502 and does not pass the 401 through', () => {
@@ -106,18 +108,19 @@ describe('mapGitHubUpstreamError', () => {
     });
   });
 
-  it('carries detail on every branch, including 404', () => {
-    // Every call site logs `mapped.body.detail`. The 404 branch used to omit
-    // it, so the commonest failure logged `github_not_found undefined`
-    // (@sprint-review) — the diagnostic went blank exactly where it is read
-    // most. Asserted across the whole taxonomy rather than on 404 alone, so a
-    // future branch cannot reintroduce the hole somewhere else.
+  it('carries detail on every branch for the log, and in the body only on a 4xx (F626)', () => {
+    // Every call site logs `mapped.detail`. The 404 branch used to omit it, so
+    // the commonest failure logged `github_not_found undefined`. Asserted across
+    // the whole taxonomy so a future branch cannot reintroduce the hole.
     [404, 429, 401, 403, 500, 503].forEach((s) => {
-      const { body } = mapGitHubUpstreamError(upstream(s), LABELS);
-      expect(body.detail).toBe(`Request failed with status code ${s}`);
+      const mapped = mapGitHubUpstreamError(upstream(s), LABELS);
+      expect(mapped.detail).toBe(`Request failed with status code ${s}`);
+      if (mapped.status >= 500) expect(mapped.body.detail).toBeUndefined();
+      else expect(mapped.body.detail).toBe(`Request failed with status code ${s}`);
     });
     // The no-upstream-response case has only our own message to report.
-    expect(mapGitHubUpstreamError(new Error('socket hang up'), LABELS).body.detail)
-      .toBe('socket hang up');
+    const noResponse = mapGitHubUpstreamError(new Error('socket hang up'), LABELS);
+    expect(noResponse.detail).toBe('socket hang up');
+    expect(noResponse.body.detail).toBeUndefined();
   });
 });

@@ -741,7 +741,7 @@ router.post('/x/test', auth, adminAuth, async (req: any, res: any) => {
     res.json({ success: true, message: 'X connection successful' });
   } catch (error: unknown) {
     logOutboundFailure('X connection test failed:', error);
-    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
+    res.status(500).json({ error: 'Connection test failed' });
   }
 });
 
@@ -759,7 +759,7 @@ router.post('/sync', auth, adminAuth, async (req: any, res: any) => {
     });
   } catch (error: unknown) {
     logOutboundFailure('Manual external feed sync failed:', error);
-    return res.status(500).json({ error: (error as Error).message || 'Failed to sync external feeds' });
+    return res.status(500).json({ error: 'Failed to sync external feeds' });
   }
 });
 
@@ -814,12 +814,17 @@ router.get('/x/following', auth, adminAuth, async (req: any, res: any) => {
     const err = error as any;
     logOutboundFailure('Failed to fetch X following list:', err, err?.response?.data);
     const status = err?.response?.status;
+    // The provider's own 4xx detail is shown. At 5xx, or with no response at all
+    // (a network error), the text is a driver's or a host's: fixed text.
+    if (!(typeof status === 'number' && status >= 400 && status < 500)) {
+      return res.status(typeof status === 'number' && status >= 500 ? status : 500)
+        .json({ error: 'Failed to fetch X following list' });
+    }
     const detail = err?.response?.data?.detail
       || err?.response?.data?.title
       || err?.response?.data?.error
-      || err?.message
       || 'Failed to fetch following list from X';
-    return res.status(status && status >= 400 ? status : 500).json({ error: detail });
+    return res.status(status).json({ error: detail });
   }
 });
 
@@ -849,7 +854,7 @@ router.post('/instagram/test', auth, adminAuth, async (req: any, res: any) => {
     res.json({ success: true, message: 'Instagram connection successful' });
   } catch (error: unknown) {
     logOutboundFailure('Instagram connection test failed:', error);
-    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
+    res.status(500).json({ error: 'Connection test failed' });
   }
 });
 

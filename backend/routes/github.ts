@@ -1,6 +1,7 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 import rateLimit from 'express-rate-limit';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const dualAuth = require('../middleware/dualAuth');
@@ -68,7 +69,7 @@ const PINNED_REPO = 'commonly';
 function mapGitHubUpstreamError(
   err: unknown,
   labels: { fallback: string; notFound: string },
-): { status: number; body: Record<string, unknown> } {
+): { status: number; body: Record<string, unknown>; detail: string | undefined } {
   const e = err as {
     response?: { status?: number; headers?: Record<string, string> };
     message?: string;
@@ -76,7 +77,9 @@ function mapGitHubUpstreamError(
   const upstreamStatus = e.response?.status;
   const detail = e.message;
 
-  // `detail` rides on every branch including this one. Omitting it here made
+  // `detail` is the error's message. The 4xx bodies we map keep it; a 5xx body
+  // never does (F626), so it also rides on the result beside the body, where the
+  // callers' log lines read it. It rides on every branch including this one. Omitting it here made
   // the callers' log line read `github_not_found undefined` on the commonest
   // failure there is (@sprint-review) — a diagnostic that goes blank exactly
   // where it is most often read.
@@ -86,6 +89,7 @@ function mapGitHubUpstreamError(
       body: {
         error: labels.notFound, code: 'github_not_found', retryable: false, detail,
       },
+      detail,
     };
   }
 
@@ -98,6 +102,7 @@ function mapGitHubUpstreamError(
       body: {
         error: 'GitHub rate limit exceeded', code: 'github_rate_limited', upstreamStatus, retryable: true, detail,
       },
+      detail,
     };
   }
 
@@ -109,8 +114,8 @@ function mapGitHubUpstreamError(
         code: 'github_credential_rejected',
         upstreamStatus,
         retryable: false,
-        detail,
       },
+      detail,
     };
   }
 
@@ -118,14 +123,15 @@ function mapGitHubUpstreamError(
     return {
       status: 502,
       body: {
-        error: 'GitHub is failing upstream', code: 'github_upstream_error', upstreamStatus, retryable: true, detail,
+        error: 'GitHub is failing upstream', code: 'github_upstream_error', upstreamStatus, retryable: true,
       },
+      detail,
     };
   }
 
   // No upstream response at all: our own bug, our own 500. This is the only
   // branch where 500 is the honest answer.
-  return { status: 500, body: { error: labels.fallback, code: 'github_proxy_error', retryable: false, detail } };
+  return { status: 500, body: { error: labels.fallback, code: 'github_proxy_error', retryable: false }, detail };
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
@@ -182,8 +188,8 @@ router.get('/status', auth, async (req: AuthReq, res: Res) => {
     const appJWT = GitHubAppService.generateAppJWT();
     return res.json({ mode: 'app', configured: true, appId: process.env.GITHUB_APP_ID, installationId: process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY, jwtGenerated: !!appJWT });
   } catch (err) {
-    const e = err as { message?: string };
-    return res.status(500).json({ configured: false, error: e.message });
+    logOutboundFailure('GitHub App status check failed:', err);
+    return res.status(500).json({ configured: false, error: 'Failed to check GitHub App status' });
   }
 });
 
@@ -197,7 +203,7 @@ router.get('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res
     return res.json({ issues: issues.map((i: { number: number; title: string; body: string; html_url: string; labels?: Array<{ name: string }>; milestone?: { title?: string } }) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name), milestone: i.milestone?.title || null })) });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to list issues', notFound: 'Repository not found' });
-    console.error('GET /github/issues error:', mapped.body.code, mapped.body.detail);
+    console.error('GET /github/issues error:', mapped.body.code, mapped.detail);
     return res.status(mapped.status).json(mapped.body);
   }
 });
@@ -214,7 +220,7 @@ router.post('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Re
     return res.status(201).json({ number: issue.number, title: issue.title, url: issue.html_url });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to create issue', notFound: 'Repository not found' });
-    console.error('POST /github/issues error:', mapped.body.code, mapped.body.detail);
+    console.error('POST /github/issues error:', mapped.body.code, mapped.detail);
     return res.status(mapped.status).json(mapped.body);
   }
 });
@@ -229,7 +235,7 @@ router.post('/issues/:number/comment', githubIpRateLimit, dualAuth, async (req: 
     return res.json({ ok: true });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to comment', notFound: 'Issue not found' });
-    console.error('POST /github/issues/comment error:', mapped.body.code, mapped.body.detail);
+    console.error('POST /github/issues/comment error:', mapped.body.code, mapped.detail);
     return res.status(mapped.status).json(mapped.body);
   }
 });
@@ -243,7 +249,7 @@ router.post('/issues/:number/close', githubIpRateLimit, dualAuth, async (req: Au
     return res.json({ ok: true, closed: issueNumber });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to close issue', notFound: 'Issue not found' });
-    console.error('POST /github/issues/close error:', mapped.body.code, mapped.body.detail);
+    console.error('POST /github/issues/close error:', mapped.body.code, mapped.detail);
     return res.status(mapped.status).json(mapped.body);
   }
 });

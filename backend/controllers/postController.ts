@@ -1,4 +1,5 @@
 import { escapeRegExp } from '../utils/escape';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 const mongoose = require('mongoose');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
@@ -465,7 +466,8 @@ exports.deletePost = async (req: any, res: any) => {
     await Post.findByIdAndDelete(req.params.id);
     res.json({ message: 'Post deleted successfully' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logOutboundFailure('deletePost failed:', err);
+    res.status(500).json({ error: 'Failed to delete post' });
   }
 };
 
@@ -501,7 +503,8 @@ exports.deleteComment = async (req: any, res: any) => {
 
     res.json({ message: 'Comment deleted successfully' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    logOutboundFailure('deleteComment failed:', err);
+    res.status(500).json({ error: 'Failed to delete comment' });
   }
 };
 

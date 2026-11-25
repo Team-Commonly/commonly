@@ -6,6 +6,7 @@ const PodReadPoint = require('../models/pg/PodReadPoint');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { parseReadAt } = require('./threadStateController');
 const { seedPodReadPoint } = require('../services/podReadPointSeed');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 interface Req {
   params: { id?: string };
@@ -54,7 +55,8 @@ export async function getPodReadPoint(req: Req, res: Res): Promise<void> {
     }
     res.status(200).json({ podId: ctx.podId, lastReadAt });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to read the read point', error: err?.message });
+    logOutboundFailure('getPodReadPoint failed:', err);
+    res.status(500).json({ msg: 'failed to read the read point', error: 'Internal server error' });
   }
 }
 
@@ -70,7 +72,8 @@ export async function setPodReadPoint(req: Req, res: Res): Promise<void> {
     const lastReadAt = await PodReadPoint.markRead(ctx.podId, ctx.userId, at);
     res.status(200).json({ podId: ctx.podId, lastReadAt });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to set the read point', error: err?.message });
+    logOutboundFailure('setPodReadPoint failed:', err);
+    res.status(500).json({ msg: 'failed to set the read point', error: 'Internal server error' });
   }
 }
 

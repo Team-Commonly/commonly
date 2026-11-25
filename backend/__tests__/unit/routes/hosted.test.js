@@ -462,6 +462,25 @@ describe('/api/hosted', () => {
     expect(mockHosted.provisionAgent).toHaveBeenCalledWith(expect.objectContaining({ runtimeToken: 'cm_agent_fresh' }));
   });
 
+  it('a worker failure answers fixed text per status and logs the worker detail (F626)', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockFindOne.mockResolvedValue(makeInstallation());
+    mockHosted.provisionAgent.mockRejectedValue(new mockHosted.HostedRuntimeError(
+      'Hosted runtime responded 500: connect ECONNREFUSED db.internal.example:5432 relation "secret_table" does not exist', 502,
+    ));
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe('hosted_runtime_unreachable');
+    expect(res.text).not.toContain('db.internal.example');
+    expect(res.text).not.toContain('secret_table');
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain('db.internal.example');
+    mockHosted.provisionAgent.mockRejectedValue(new mockHosted.HostedRuntimeError('Hosted runtime is not configured', 503));
+    const unconfigured = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(unconfigured.status).toBe(503);
+    expect(unconfigured.body.code).toBe('hosted_runtime_unconfigured');
+    errorSpy.mockRestore();
+  });
+
   it('relays a worker failure as 502 and does not record a provision', async () => {
     const installation = makeInstallation();
     mockFindOne.mockResolvedValue(installation);

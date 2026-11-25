@@ -208,7 +208,7 @@ router.post('/debug', summariesTriggerRateLimit, auth, async (req: AuthReq, res:
     res.json({ message: 'Debug summarizer triggered successfully', result, timestamp: new Date().toISOString() });
   } catch (error) {
     logOutboundFailure('Error in debug summarizer:', error);
-    res.status(500).json({ error: 'Failed to trigger debug summarizer', details: (error as Error).message });
+    res.status(500).json({ error: 'Failed to trigger debug summarizer' });
   }
 });
 
