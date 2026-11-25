@@ -34,16 +34,16 @@ export const KindGlyph: React.FC<{ kind: AskKind | string; size?: number }> = ({
 type ActName = 'handled' | 'deny' | 'open' | 'manage';
 
 /** Secondary acts: the word lives in aria-label and title; the button shows the glyph. */
-export const ActGlyph: React.FC<{ name: ActName; size?: number }> = ({ name, size }) => {
+export const ActGlyph: React.FC<{ name: ActName; size?: number; className?: string }> = ({ name, size, className }) => {
   switch (name) {
     case 'handled':
-      return <G size={size}><path d="M20 6 9 17l-5-5" /></G>;
+      return <G size={size} className={className}><path d="M20 6 9 17l-5-5" /></G>;
     case 'deny':
-      return <G size={size}><path d="M18 6 6 18M6 6l12 12" /></G>;
+      return <G size={size} className={className}><path d="M18 6 6 18M6 6l12 12" /></G>;
     case 'manage':
-      return <G size={size}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></G>;
+      return <G size={size} className={className}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></G>;
     default:
-      return <G size={size}><path d="M7 17 17 7M8 7h9v9" /></G>;
+      return <G size={size} className={className}><path d="M7 17 17 7M8 7h9v9" /></G>;
   }
 };
 
@@ -59,7 +59,7 @@ export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number; classNa
     case 'people':
       return <G size={size} className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" /></G>;
     case 'gear':
-      return <ActGlyph name="manage" size={size} />;
+      return <ActGlyph name="manage" size={size} className={className} />;
     case 'board':
       return <G size={size} className={className}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 7v7M12 7v4M16 7v9" /></G>;
     case 'pin':

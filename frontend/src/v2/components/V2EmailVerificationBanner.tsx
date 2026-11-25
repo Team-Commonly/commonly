@@ -62,7 +62,7 @@ const V2EmailVerificationBanner: React.FC = () => {
         onClick={dismiss}
         aria-label={t('auth.verificationBanner.dismiss')}
       >
-        <ShellGlyph name="close" />
+        <ShellGlyph name="close" size={17} />
       </button>
     </div>
   );

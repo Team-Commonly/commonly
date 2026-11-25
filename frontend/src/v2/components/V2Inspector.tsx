@@ -383,7 +383,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               aria-label={t('inspector.workspace.close')}
               title={t('inspector.workspace.close')}
             >
-              <ShellGlyph name="close" />
+              <ShellGlyph name="close" size={17} />
             </button>
           )}
         </div>
