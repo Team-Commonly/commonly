@@ -1,18 +1,7 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Container,
-  Divider,
-  Link,
-  Stack,
-  Typography,
-} from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import guides from '../../content/guides.json';
-import { guidePalette, guideTextButtonSx, useGuideCanvas } from './guideShell';
+import { ForwardArrow, GuideTop, useGuideCanvas } from './guideShell';
 
 interface GuideStrongParagraph {
   strong: string;
@@ -94,167 +83,133 @@ const GuidePage: React.FC = () => {
 
   if (!guide) {
     return (
-      <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary, py: 10 }}>
-        <Container maxWidth="md">
-          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
-            Back to landing
-          </Button>
-          <Typography variant="h4" sx={{ mt: 3, mb: 1, color: guidePalette.textPrimary, fontWeight: 700 }}>
-            Guide not found
-          </Typography>
-          <Typography color={guidePalette.textSecondary}>
-            This guide does not exist yet. Return to the landing page to explore Commonly.
-          </Typography>
-        </Container>
-      </Box>
+      <div className="guide-page guide-page--missing">
+        <div className="guide-container">
+          <GuideTop onBack={() => navigate('/')} />
+          <h1 className="guide-missing-title">Guide not found</h1>
+          <p className="guide-lede">This guide does not exist yet. Return to the landing page to explore Commonly.</p>
+        </div>
+      </div>
     );
   }
   const modified = guide.revised || guide.provenance.dateModified;
 
   return (
-    <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary }}>
-      <Container maxWidth="md" sx={{ pt: 5, pb: 10 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 6 }}>
-          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
-            Back to landing
-          </Button>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <img src="/favicon.svg" alt="Commonly Logo" width={26} height={26} />
-            <Typography sx={{ color: guidePalette.textPrimary, fontWeight: 700, letterSpacing: '-0.02em' }}>Commonly</Typography>
-          </Stack>
-        </Stack>
+    <div className="guide-page">
+      <div className="guide-container">
+        <GuideTop onBack={() => navigate('/')} />
 
-        <Typography sx={{ color: guidePalette.accentText, fontWeight: 700, letterSpacing: '0.08em', mb: 1 }}>
-          {guide.eyebrow.toUpperCase()}
-        </Typography>
-        <Typography component="h1" variant="h2" sx={{ color: guidePalette.textPrimary, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.03em', mb: 2 }}>
-          {guide.title}
-        </Typography>
-        <Typography sx={{ color: guidePalette.textSecondary, fontSize: '1.125rem', lineHeight: 1.7, mb: 5 }}>
-          {guide.description}
-        </Typography>
-        <Typography sx={{ color: guidePalette.textTertiary, fontSize: '0.875rem', lineHeight: 1.7, mb: 5 }}>
+        <p className="guide-eyebrow">{guide.eyebrow.toUpperCase()}</p>
+        <h1 className="guide-title">{guide.title}</h1>
+        <p className="guide-lede">{guide.description}</p>
+        <p className="guide-byline">
           By {guide.revised
-            ? <Link href={GUIDE_AUTHOR.url} rel="author" sx={{ color: 'inherit' }}>{GUIDE_AUTHOR.name}</Link>
+            ? <a href={GUIDE_AUTHOR.url} rel="author">{GUIDE_AUTHOR.name}</a>
             : guide.provenance.author} · Reviewed by {guide.provenance.reviewer}
           <br />
           {guide.provenance.datePublished === modified
             ? `Published and updated ${formatGuideDate(guide.provenance.datePublished)}`
             : `Published ${formatGuideDate(guide.provenance.datePublished)} · Updated ${formatGuideDate(modified)}`}
-        </Typography>
+        </p>
 
         {guide.answer && (
-          <Typography sx={{ color: guidePalette.textPrimary, fontSize: '1.05rem', lineHeight: 1.75, mb: 3 }}>
-            <strong>Short answer.</strong> {guide.answer}
-          </Typography>
+          <p className="guide-answer"><strong>Short answer.</strong> {guide.answer}</p>
         )}
 
-        <Stack spacing={2} sx={{ color: guidePalette.textSecondary, fontSize: '1.05rem', lineHeight: 1.75, mb: 7 }}>
-          {guide.intro.map((paragraph) => <Typography key={paragraph}>{paragraph}</Typography>)}
-        </Stack>
+        <div className="guide-prose guide-prose--intro">
+          {guide.intro.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+        </div>
 
-        <Stack spacing={7}>
+        <div className="guide-sections">
           {guide.sections.map((section) => (
-            <Box component="section" key={section.title}>
-              <Typography component="h2" variant="h4" sx={{ color: guidePalette.textPrimary, fontWeight: 750, lineHeight: 1.2, mb: 2.5 }}>
-                {section.title}
-              </Typography>
-              <Stack spacing={2} sx={{ color: guidePalette.textSecondary, lineHeight: 1.75 }}>
+            <section key={section.title}>
+              <h2 className="guide-h2">{section.title}</h2>
+              <div className="guide-prose">
                 {section.paragraphs?.map((paragraph) => (
-                  <Typography key={typeof paragraph === 'string' ? paragraph : paragraph.strong}>
+                  <p key={typeof paragraph === 'string' ? paragraph : paragraph.strong}>
                     {typeof paragraph === 'string' ? paragraph : <strong>{paragraph.strong}</strong>}
-                  </Typography>
+                  </p>
                 ))}
-              </Stack>
+              </div>
               {section.bullets && (
-                <Box component="ul" sx={{ color: guidePalette.textSecondary, lineHeight: 1.75, pl: 3, my: 2.5 }}>
-                  {section.bullets.map((item) => <li key={item}><Typography component="span">{item}</Typography></li>)}
-                </Box>
+                <ul className="guide-list">{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>
               )}
               {section.orderedItems && (
-                <Box component="ol" sx={{ color: guidePalette.textSecondary, lineHeight: 1.75, pl: 3, my: 2.5 }}>
-                  {section.orderedItems.map((item) => <li key={item}><Typography component="span">{item}</Typography></li>)}
-                </Box>
+                <ol className="guide-list">{section.orderedItems.map((item) => <li key={item}>{item}</li>)}</ol>
               )}
               {section.tables?.map((table) => (
-                <Box key={table.headers.join('|')} sx={{ overflowX: 'auto', mt: 2.5 }}>
-                  <Box component="table" sx={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', color: guidePalette.textSecondary }}>
-                    <Box component="thead" sx={{ backgroundColor: guidePalette.surfaceTint }}>
-                      <Box component="tr">{table.headers.map((header) => <Box component="th" key={header} scope="col" sx={{ p: 1.5, textAlign: 'left', color: guidePalette.textPrimary, border: `1px solid ${guidePalette.borderSoft}` }}>{header}</Box>)}</Box>
-                    </Box>
-                    <Box component="tbody">{table.rows.map((row) => <Box component="tr" key={row.join('|')}>{row.map((cell) => <Box component="td" key={cell} sx={{ p: 1.5, verticalAlign: 'top', border: `1px solid ${guidePalette.borderSoft}` }}>{cell}</Box>)}</Box>)}</Box>
-                  </Box>
-                </Box>
+                <div className="guide-table-wrap" key={table.headers.join('|')}>
+                  <table className="guide-table">
+                    <thead>
+                      <tr>{table.headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((row) => <tr key={row.join('|')}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}
+                    </tbody>
+                  </table>
+                </div>
               ))}
               {section.codeBlocks?.map((block) => (
-                <Box
-                  component="pre"
-                  key={block.code}
-                  sx={{
-                    overflowX: 'auto',
-                    m: 0,
-                    mt: 2.5,
-                    p: 2,
-                    border: `1px solid ${guidePalette.borderSoft}`,
-                    borderRadius: 2,
-                    backgroundColor: guidePalette.surfaceTint,
-                    color: guidePalette.textPrimary,
-                    fontSize: '0.875rem',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  <Box component="code" className={block.language ? `language-${block.language}` : undefined}>
-                    {block.code}
-                  </Box>
-                </Box>
+                <pre className="guide-code" key={block.code}>
+                  <code className={block.language ? `language-${block.language}` : undefined}>{block.code}</code>
+                </pre>
               ))}
               {section.links && (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
-                  {section.links.map((link) => <Button key={link.path} component="a" href={link.path} target={link.external ? '_blank' : undefined} rel={link.external ? 'noreferrer' : undefined} sx={{ ...guideTextButtonSx, alignSelf: 'flex-start' }}>{link.label}</Button>)}
-                </Stack>
+                <div className="guide-actions">
+                  {section.links.map((link) => (
+                    <a
+                      key={link.path}
+                      className="guide-btn"
+                      href={link.path}
+                      target={link.external ? '_blank' : undefined}
+                      rel={link.external ? 'noreferrer' : undefined}
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
               )}
-            </Box>
+            </section>
           ))}
-        </Stack>
+        </div>
 
-        <Divider sx={{ borderColor: guidePalette.border, my: 7 }} />
+        <hr className="guide-rule" />
 
         {guide.faq.length > 0 && (
-        <Box component="section">
-          <Typography component="h2" variant="h4" sx={{ color: guidePalette.textPrimary, fontWeight: 750, mb: 3 }}>
-            Frequently asked questions
-          </Typography>
-          <Stack spacing={3}>
-            {guide.faq.map((item) => (
-              <Box key={item.question} sx={{ p: 3, border: `1px solid ${guidePalette.borderSoft}`, borderRadius: 3, backgroundColor: guidePalette.surface }}>
-                <Typography component="h3" sx={{ color: guidePalette.textPrimary, fontWeight: 700, mb: 1 }}>{item.question}</Typography>
-                <Typography sx={{ color: guidePalette.textSecondary, lineHeight: 1.75 }}>{item.answer}</Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Box>
+          <section>
+            <h2 className="guide-h2">Frequently asked questions</h2>
+            <div className="guide-cards">
+              {guide.faq.map((item) => (
+                <div className="guide-card" key={item.question}>
+                  <h3 className="guide-h3">{item.question}</h3>
+                  <p>{item.answer}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
-        <Box component="section" sx={{ mt: 7, p: { xs: 3, sm: 5 }, borderRadius: 4, background: guidePalette.accentSoft }}>
-          <Typography component="h2" variant="h4" sx={{ color: guidePalette.accentDeep, fontWeight: 750, mb: 1.5 }}>{guide.cta.title}</Typography>
-          <Typography sx={{ color: guidePalette.accentDeep, lineHeight: 1.75, mb: 3 }}>{guide.cta.body}</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <Button variant="contained" sx={{ backgroundColor: guidePalette.accent, '&:hover': { backgroundColor: guidePalette.accentStrong } }} endIcon={<ArrowForwardIcon />} onClick={() => navigate(guide.cta.primary.path)}>
+        <section className="guide-cta">
+          <h2 className="guide-h2">{guide.cta.title}</h2>
+          <p>{guide.cta.body}</p>
+          <div className="guide-actions">
+            <button type="button" className="guide-btn guide-btn--filled" onClick={() => navigate(guide.cta.primary.path)}>
               {guide.cta.primary.label}
-            </Button>
-            <Button variant="outlined" sx={{ borderColor: guidePalette.accent, color: guidePalette.accentText, '&:hover': { borderColor: guidePalette.accentStrong, backgroundColor: guidePalette.surface } }} onClick={() => navigate(guide.cta.secondary.path)}>
+              <ForwardArrow />
+            </button>
+            <button type="button" className="guide-btn guide-btn--outlined" onClick={() => navigate(guide.cta.secondary.path)}>
               {guide.cta.secondary.label}
-            </Button>
-          </Stack>
-        </Box>
+            </button>
+          </div>
+        </section>
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 4 }}>
+        <div className="guide-actions guide-related">
           {guide.relatedLinks.map((link) => (
-            <Button key={link.path} variant="text" sx={guideTextButtonSx} onClick={() => navigate(link.path)}>{link.label}</Button>
+            <button type="button" key={link.path} className="guide-btn" onClick={() => navigate(link.path)}>{link.label}</button>
           ))}
-        </Stack>
-      </Container>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 };
 
