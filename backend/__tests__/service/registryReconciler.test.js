@@ -192,6 +192,8 @@ describe('sweepRegistryDrift', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await mirrorRegistryRow({ agentName: null, displayName: 'Nameless', registry: 'commonly-official' }, 'test');
     await mirrorRegistryRow({ agentName: '  ', displayName: 'Blank', registry: 'commonly-official' }, 'test');
+    // An early return, not a caught mapper error: nothing reached the warn path.
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
     expect(await Installable.countDocuments({ installableId: { $in: ['null', '', '  '] } })).toBe(0);
   });
