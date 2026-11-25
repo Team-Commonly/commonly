@@ -67,6 +67,9 @@ interface IAgentRegistry extends Document {
   status: RegistryStatus;
   iconUrl?: string;
   ephemeral?: boolean;
+  // Fencing token of the marketplace publish or fork that last wrote this row
+  // (routes/marketplace-api.ts). Missing counts as lowest.
+  claimFence?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -158,6 +161,8 @@ const AgentRegistrySchema = new Schema<IAgentRegistry>(
     // (search() filters by default), still resolvable by name for install/
     // uninstall flows. GC of orphan ephemerals is deferred (ADR-006 OQ #1).
     ephemeral: { type: Boolean, default: false },
+    // Declared so strict mode keeps it in writes and filters; see the interface.
+    claimFence: { type: Number },
   },
   { timestamps: true },
 );

@@ -1,6 +1,6 @@
 // Dual-write drift-warning paths in backend/routes/marketplace-api.ts.
 // Covers the two review-comment fixes from PR #215: update path
-// (existing.save failure after AR succeeded) and fork path
+// (Installable write failure after AR succeeded) and fork path
 // (Installable.create failure after AR succeeded).
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
@@ -21,6 +21,12 @@ jest.mock('../../../models/Installable', () => ({
 jest.mock('../../../models/SchedulerHeartbeatLease', () => ({
   findOneAndUpdate: jest.fn().mockResolvedValue({}),
   deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+}));
+
+// The claim's fencing-token counter.
+jest.mock('../../../models/SystemSetting', () => ({
+  findOneAndUpdate: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ value: { seq: 1 } }) })),
+  updateOne: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -53,11 +59,11 @@ describe('marketplace-api dual-write drift warnings', () => {
     jest.clearAllMocks();
   });
 
-  it('update path: returns drift warning when AR sync succeeds but Installable.save throws', async () => {
+  it('update path: returns drift warning when AR sync succeeds but the Installable write throws', async () => {
     const handler = getRouteHandler('/publish', 'post');
 
-    // Existing manifest owned by the requesting user. save() rejects to
-    // simulate a transient mongo error after AR sync has already committed.
+    // Existing manifest owned by the requesting user. The fenced updateOne
+    // rejects to simulate a transient mongo error after AR sync committed.
     const saveError = new Error('duplicate key on versions.version index');
     const existing = {
       installableId: '@nova/my-agent',
@@ -65,10 +71,11 @@ describe('marketplace-api dual-write drift warnings', () => {
       status: 'active',
       versions: [{ version: '1.0.0' }],
       components: [],
-      save: jest.fn().mockRejectedValue(saveError),
+      toObject() { return { versions: this.versions, components: this.components }; },
     };
 
     Installable.findOne.mockResolvedValue(existing);
+    Installable.updateOne.mockRejectedValue(saveError);
     AgentRegistry.findOneAndUpdate.mockResolvedValue({ agentName: '@nova/my-agent' });
 
     const req = {
@@ -88,7 +95,7 @@ describe('marketplace-api dual-write drift warnings', () => {
 
     // AR sync fired, save was attempted
     expect(AgentRegistry.findOneAndUpdate).toHaveBeenCalledTimes(1);
-    expect(existing.save).toHaveBeenCalledTimes(1);
+    expect(Installable.updateOne).toHaveBeenCalledTimes(1);
 
     // Drift warning path: 201 with an explicit warnings array so the client
     // doesn't assume full success when the catalog is behind the registry.
@@ -124,9 +131,11 @@ describe('marketplace-api dual-write drift warnings', () => {
 
     // First Installable.findOne: source lookup → returns the source.
     // Second: existence check on newInstallableId → returns null (no collision).
-    // Third: the backfill-takeover lookup → null (no backfilled row to take over).
+    // Third and fourth: the takeover lookups (a backfilled row, then a row an
+    // older claim holder wrote) → null, nothing to take over.
     Installable.findOne
       .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
     AgentRegistry.findOneAndUpdate.mockResolvedValue({ agentName: '@nova/legal-fork' });
