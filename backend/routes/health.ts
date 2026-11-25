@@ -45,16 +45,17 @@ const reasonFromCode = (err: DriverError): HealthReason | null => {
   return Object.prototype.hasOwnProperty.call(REASON_BY_CODE, code) ? REASON_BY_CODE[code] : null;
 };
 
-// Only when no code decides. Errno tokens go before auth words, and the Redis
+// Only when no code decides. Every errno token goes before the auth words, and the Redis
 // reply words are whole, upper-case words (node-redis ErrorReply has no code).
 const reasonFromMessage = (err: DriverError): HealthReason | null => {
   const message = String(err.message ?? '');
   if (/\bECONNREFUSED\b/.test(message)) return 'connection_refused';
   if (/\b(?:ENOTFOUND|EAI_AGAIN)\b/.test(message)) return 'host_not_found';
+  if (/\b(?:ETIMEDOUT|ESOCKETTIMEDOUT)\b/.test(message)) return 'timeout';
   if (/\b(?:WRONGPASS|NOAUTH|NOPERM)\b/.test(message)
     || /authentication failed|auth failed|password authentication/i.test(message)) return 'auth_failed';
   if (/TimeoutError$/.test(String(err.name ?? ''))
-    || /\bETIMEDOUT\b|timed out|timeout|did not answer within|exceeded \d+ms/i.test(message)) return 'timeout';
+    || /timed out|timeout|did not answer within|exceeded \d+ms/i.test(message)) return 'timeout';
   return null;
 };
 

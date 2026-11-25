@@ -87,6 +87,15 @@ describe('health public reasons (F624)', () => {
       expect(reason(withCode('connect ECONNREFUSED wrongpass.internal:6379', 'ECONNREFUSED'))).toBe('connection_refused');
       expect(reason(Object.assign(new Error('wrapped NOAUTH.internal'), { cause: withCode('x', 'ETIMEDOUT') }))).toBe('timeout');
     });
+    it('the own code fires on an opaque message, and outranks a message that maps elsewhere', () => {
+      expect(reason(withCode('connection failed', 'ECONNREFUSED'))).toBe('connection_refused');
+      expect(reason(withCode('WRONGPASS invalid username-password pair', 'ETIMEDOUT'))).toBe('timeout');
+    });
+    it('every errno token in a message outranks the auth words', () => {
+      expect(reason(new Error('connect ETIMEDOUT NOAUTH.internal:6379'))).toBe('timeout');
+      expect(reason(new Error('connect ESOCKETTIMEDOUT WRONGPASS.internal:6379'))).toBe('timeout');
+      expect(reason(new Error('NOAUTH Authentication required.'))).toBe('auth_failed');
+    });
     it('message-only errors still map, and hostname fragments do not trigger auth', () => {
       expect(reason(new Error('WRONGPASS invalid username-password pair'))).toBe('auth_failed');
       expect(reason(new Error('getaddrinfo ENOTFOUND noauth-db.internal'))).toBe('host_not_found');
