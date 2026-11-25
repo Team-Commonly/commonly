@@ -149,6 +149,28 @@ release is `updateWhere` with `$unset`. `pg` mode refuses both until step 4.
 In dual and pg-read the helper's `insertIfAbsent` sets the timestamps on the
 insert only, so a reserve that finds a held slot writes nothing.
 
+## Fifth model: NeedsYouEmailQuota
+
+`NeedsYouEmailQuota` (the per-recipient daily cap on needs-you emails) follows
+the same template. Its table is `needs_you_email_quotas` (`0020`): the Mongo
+`_id` as `id`, `recipient_user_id` (hex), `day` (`YYYY-MM-DD` text, as Mongo
+stores it) and `count`, with `(recipient_user_id, day)` unique as in Mongo.
+`STORE_MODE_NEEDS_YOU_EMAIL_QUOTA` selects the store. Its only caller,
+`services/needsYouEmailService.ts`, imports
+`repositories/needsYouEmailQuotaRepository`; ESLint fences the model.
+
+- `claimEmailSlot(recipientUserId, day, limit)` resolves true when this call
+  took one of the day's `limit` slots, and false when they are all taken. The
+  limit (3) stays in the service.
+
+In `mongo` it makes the pre-step-2 Mongoose calls: the `$setOnInsert` upsert,
+whose duplicate-key loser goes on, then the conditional `$inc` below the limit.
+In `dual` and `pg-read` the same two writes are the helper's `insertIfAbsent`
+on `(recipientUserId, day)` and `updateWhere` with `count < limit` and a
+pipeline `$add`; each slot is one atomic Mongo write, so racing claims take
+exactly `limit`, and a full day writes and copies nothing. `pg` mode refuses
+until step 4, before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

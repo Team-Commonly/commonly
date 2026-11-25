@@ -1,12 +1,11 @@
 import { escapeHtml } from '../utils/escape';
 import crypto from 'crypto';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
+import { claimEmailSlot } from '../repositories/needsYouEmailQuotaRepository';
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const NeedsYouEmail = require('../models/NeedsYouEmail');
-// eslint-disable-next-line global-require
-const NeedsYouEmailQuota = require('../models/NeedsYouEmailQuota');
 // eslint-disable-next-line global-require
 const { sendEmail } = require('./emailService');
 // eslint-disable-next-line global-require
@@ -55,20 +54,8 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
     claimedId = claim._id;
 
     const day = now.toISOString().slice(0, 10);
-    try {
-      await NeedsYouEmailQuota.updateOne(
-        { recipientUserId: item.recipientUserId, day },
-        { $setOnInsert: { count: 0 } }, { upsert: true },
-      );
-    } catch (error) {
-      // Another worker won the day's unique row. Both can contend for one of
-      // its three slots below; no fourth email can be claimed.
-      if ((error as { code?: number }).code !== 11000) throw error;
-    }
-    const slot = await NeedsYouEmailQuota.findOneAndUpdate(
-      { recipientUserId: item.recipientUserId, day, count: { $lt: 3 } },
-      { $inc: { count: 1 } }, { new: true },
-    );
+    // At most three per recipient per UTC day; racing workers never claim a fourth.
+    const slot = await claimEmailSlot(item.recipientUserId, day, 3);
     if (!slot) {
       await NeedsYouEmail.updateOne({ _id: claim._id }, { $set: { status: 'overflow' } });
       return;
