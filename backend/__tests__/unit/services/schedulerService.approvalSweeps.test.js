@@ -41,13 +41,13 @@ describe('scheduler: parked tool-call sweeps', () => {
     mockSweepExpired.mockRejectedValue(new Error('expiry down'));
     await approvalSweepJob().fn();
     expect(mockSweepCardless).toHaveBeenCalledTimes(1);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/expiry sweep failed/), expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/expiry sweep failed/), expect.objectContaining({ message: expect.any(String) }));
   });
 
   it('runs the expiry sweep when the cardless sweep throws, and logs it under its own name', async () => {
     mockSweepCardless.mockRejectedValue(new Error('cardless down'));
     await approvalSweepJob().fn();
     expect(mockSweepExpired).toHaveBeenCalledTimes(1);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/cardless sweep failed/), expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/cardless sweep failed/), expect.objectContaining({ message: expect.any(String) }));
   });
 });

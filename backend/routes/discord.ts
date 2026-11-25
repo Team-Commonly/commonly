@@ -71,7 +71,7 @@ function verifySignature(req: { headers: Record<string, string | undefined>; bod
     const message = Buffer.from(timestamp + body, 'utf8');
     return nacl.sign.detached.verify(message, signatureBytes, publicKeyBytes);
   } catch (error) {
-    console.error('Error verifying signature:', error);
+    console.error('Error verifying signature:', error); // safe-log: no outbound call
     return false;
   }
 }
@@ -119,7 +119,7 @@ async function handleInstallationEvent(interaction: { id?: string; guild_id?: st
     console.log('Installation event received - pod binding will be handled by frontend flow');
     return { success: true, message: 'Installation event received' };
   } catch (error) {
-    console.error('Error handling installation event:', error);
+    console.error('Error handling installation event:', error); // safe-log: no outbound call
     return { success: false, error: (error as Error).message };
   }
 }
@@ -309,7 +309,7 @@ router.get('/binding/:podId', auth, async (req: AuthReq, res: Res) => {
     const discordIntegration = await DiscordIntegration.findOne({ integrationId: integration._id });
     res.json({ integration, discordIntegration });
   } catch (error) {
-    console.error('Error getting Discord binding:', error);
+    console.error('Error getting Discord binding:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to get Discord binding' });
   }
 });
@@ -329,7 +329,7 @@ router.delete('/uninstall/:installationId', writeIntegrationsRateLimit, auth, as
     await Integration.findByIdAndDelete(integration._id);
     res.json({ message: 'Discord integration removed successfully' });
   } catch (error) {
-    console.error('Error removing Discord integration:', error);
+    console.error('Error removing Discord integration:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to remove Discord integration' });
   }
 });

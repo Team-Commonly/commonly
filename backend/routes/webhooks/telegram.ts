@@ -8,6 +8,7 @@ const Summary = require('../../models/Summary');
 const registry = require('../../integrations');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
 const AgentEventService = require('../../services/agentEventService');
+const { logOutboundFailure } = require('../../utils/safeErrorLog');
 const telegramService = require('../../services/telegramService');
 const { escapeHtml } = telegramService;
 const deliveryFailures = require('../../services/connectorDeliveryFailureService');
@@ -584,7 +585,7 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
     // survive to swallow Telegram's redelivery.
     return await events(req, res);
   } catch (error) {
-    console.error('Telegram webhook error', error);
+    logOutboundFailure('Telegram webhook error', error);
     // Forget-on-error: the 500 makes Telegram redeliver this update_id; the
     // claim must not survive to swallow that retry. (Per the liveRelay comment
     // above, anything that threw did so before the pod write persisted.)

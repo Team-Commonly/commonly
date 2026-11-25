@@ -76,6 +76,7 @@ import {
   ingestIngressRateLimit,
   ingestIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
+import { logOutboundFailure, warnOutboundFailure } from '../utils/safeErrorLog';
 
 // F90: the instance bot is in many guilds, so a request naming a guild proves
 // nothing. The caller has authority over a guild when they themselves bound it
@@ -292,7 +293,7 @@ router.get('/catalog', listIntegrationsRateLimit, auth, async (req: AuthReq, res
     const entries = await buildCatalogEntries({ userId: req.user?.id });
     res.json({ entries });
   } catch (error) {
-    console.error('Error fetching integration catalog:', error);
+    console.error('Error fetching integration catalog:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -388,7 +389,7 @@ router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (r
     }
     return res.status(201).json({ integration });
   } catch (error) {
-    console.error('Error creating GitHub App integration:', error);
+    logOutboundFailure('Error creating GitHub App integration:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -511,7 +512,7 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
     }
     return res.status(201).json({ integration });
   } catch (error) {
-    console.error('Error creating Commonly Connect repository connection:', error);
+    logOutboundFailure('Error creating Commonly Connect repository connection:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -545,7 +546,7 @@ router.get('/github-app/repositories', githubRepositoryListRateLimit, auth, asyn
           ? { connect: `/api/integrations/connect/hosted-mcp/${GITHUB_MCP_ENTRY_ID}/start` } : {}),
       });
     }
-    console.error('Error listing Commonly Connect repositories:', error);
+    logOutboundFailure('Error listing Commonly Connect repositories:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -626,7 +627,7 @@ router.post('/ingest', ingestIngressRateLimit, ingestIntegrationsRateLimit, inge
     await Integration.findByIdAndUpdate(integration._id, { $push: { 'config.messageBuffer': { $each: bufferMessages, $slice: -1 * maxBufferSize } } });
     res.json({ success: true, count: bufferMessages.length });
   } catch (error) {
-    console.error('Error ingesting integration event:', error);
+    logOutboundFailure('Error ingesting integration event:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -646,7 +647,7 @@ router.post('/:id/ingest-tokens', writeIntegrationsRateLimit, auth, async (req: 
     await integration.save();
     res.json({ token });
   } catch (error) {
-    console.error('Error issuing ingest token:', error);
+    console.error('Error issuing ingest token:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -661,7 +662,7 @@ router.get('/:id/ingest-tokens', listIntegrationsRateLimit, auth, async (req: Au
     const tokens = (integration.ingestTokens || []).map((token) => ({ id: token._id.toString(), label: token.label, createdAt: token.createdAt, lastUsedAt: token.lastUsedAt, createdBy: token.createdBy }));
     res.json({ tokens });
   } catch (error) {
-    console.error('Error listing ingest tokens:', error);
+    console.error('Error listing ingest tokens:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -679,7 +680,7 @@ router.delete('/:id/ingest-tokens/:tokenId', writeIntegrationsRateLimit, auth, a
     await integration.save();
     res.json({ success: true });
   } catch (error) {
-    console.error('Error revoking ingest token:', error);
+    console.error('Error revoking ingest token:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -713,7 +714,7 @@ router.get('/:podId', listIntegrationsRateLimit, auth, requireObjectIdParam('pod
     const viewer = await resolveConnectorViewer(req.user?.id);
     return res.json(integrations.map((integration: unknown) => withoutConnectCode(projectIntegrationForViewer(integration, viewer))));
   } catch (error) {
-    console.error('Error fetching integrations:', error);
+    console.error('Error fetching integrations:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -930,7 +931,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
     if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
-    console.error('Error creating integration:', error);
+    logOutboundFailure('Error creating integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -950,7 +951,7 @@ router.post('/:id/connect', writeIntegrationsRateLimit, auth, async (req: AuthRe
     if (connected) res.json({ message: 'Integration connected successfully' });
     else res.status(500).json({ message: 'Failed to connect integration' });
   } catch (error) {
-    console.error('Error connecting integration:', error);
+    logOutboundFailure('Error connecting integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -969,7 +970,7 @@ router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: Aut
     if (disconnected) res.json({ message: 'Integration disconnected successfully' });
     else res.status(500).json({ message: 'Failed to disconnect integration' });
   } catch (error) {
-    console.error('Error disconnecting integration:', error);
+    logOutboundFailure('Error disconnecting integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -988,7 +989,7 @@ router.get('/:id/stats', listIntegrationsRateLimit, auth, async (req: AuthReq, r
     const stats = service ? await service.getStats() : { connected: true };
     res.json(stats);
   } catch (error) {
-    console.error('Error getting integration stats:', error);
+    logOutboundFailure('Error getting integration stats:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1010,7 +1011,7 @@ router.get('/:id/messages', listIntegrationsRateLimit, auth, async (req: AuthReq
     if (integration.type === 'slack') return res.json({ messages: [] });
     return res.status(400).json({ message: 'Unsupported integration type' });
   } catch (error) {
-    console.error('Error fetching integration messages:', error);
+    logOutboundFailure('Error fetching integration messages:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1032,7 +1033,7 @@ router.post('/:id/send', writeIntegrationsRateLimit, auth, async (req: AuthReq, 
     if (integration.type === 'slack') return res.json({ success: true, result: 'not-implemented' });
     return res.status(400).json({ message: 'Unsupported integration type' });
   } catch (error) {
-    console.error('Error sending message through integration:', error);
+    logOutboundFailure('Error sending message through integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1043,7 +1044,7 @@ router.get('/admin/all', listIntegrationsRateLimit, auth, adminAuth, async (_req
     // The connect code is a member's one-time enable code; the admin list has no reader for it.
     res.json(integrations.map((integration: { toJSON: () => Record<string, unknown> }) => withoutConnectCode(integration.toJSON())));
   } catch (error) {
-    console.error('Error fetching all integrations:', error);
+    console.error('Error fetching all integrations:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1053,7 +1054,7 @@ router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, re
     const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').sort({ createdAt: -1 });
     res.json(integrations);
   } catch (error) {
-    console.error('Error fetching user integrations:', error);
+    console.error('Error fetching user integrations:', error); // safe-log: no outbound call
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1076,7 +1077,7 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
     // code itself is not routing state and is what the caller came for).
     return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
-    console.error('Error minting connect code:', error);
+    console.error('Error minting connect code:', error); // safe-log: no outbound call
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1361,7 +1362,7 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
-    console.error('Error updating integration:', error);
+    logOutboundFailure('Error updating integration:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -1433,12 +1434,12 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     }
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
-    try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
+    try { if (service) await service.disconnect(); } catch (error) { warnOutboundFailure('Error disconnecting service during deletion:', error); }
     if (integration.type === 'discord') await DiscordIntegration.findOneAndDelete({ integrationId: id });
     await Integration.findByIdAndDelete(id);
     res.json({ message: 'Integration deleted successfully' });
   } catch (error) {
-    console.error('Error deleting integration:', error);
+    logOutboundFailure('Error deleting integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

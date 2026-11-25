@@ -55,6 +55,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // casts it, instead of a CastError the catch-all turns into a 500 (F568).
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 router.param('podId', requireObjectIdParam('podId', INVALID_POD_ID));
 
@@ -161,7 +162,7 @@ router.get('/', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => 
     const summaries = await SummarizerService.getRecentSummaries(type, cappedLimit);
     res.json(await filterSummariesToViewable(userId, summaries));
   } catch (error) {
-    console.error('Error fetching summaries:', error);
+    logOutboundFailure('Error fetching summaries:', error);
     res.status(500).json({ error: 'Failed to fetch summaries' });
   }
 });
@@ -179,7 +180,7 @@ router.get('/latest', summariesReadRateLimit, auth, async (req: AuthReq, res: Re
     const viewableChats = await filterSummariesToViewable(userId, chatSummaries);
     res.json({ posts, chats: viewableChats[0] || null });
   } catch (error) {
-    console.error('Error fetching latest summaries:', error);
+    logOutboundFailure('Error fetching latest summaries:', error);
     res.status(500).json({ error: 'Failed to fetch latest summaries' });
   }
 });
@@ -192,7 +193,7 @@ router.post('/trigger', summariesTriggerRateLimit, auth, async (req: AuthReq, re
     const [integrationResults, podSummaryDispatch] = await Promise.all([SchedulerService.summarizeIntegrationBuffers(), SchedulerService.dispatchPodSummaryRequests({ trigger: 'manual-refresh', windowMinutes: 60 })]);
     res.json({ message: 'Agent summary refresh triggered successfully', result: { mode: 'agent-event-only', integrationResultsCount: (integrationResults as unknown[]).length, podSummaryDispatch } });
   } catch (error) {
-    console.error('Error triggering summarizer:', error);
+    logOutboundFailure('Error triggering summarizer:', error);
     res.status(500).json({ error: 'Failed to trigger summarizer' });
   }
 });
@@ -206,7 +207,7 @@ router.post('/debug', summariesTriggerRateLimit, auth, async (req: AuthReq, res:
     const result = await SchedulerService.triggerSummarizer();
     res.json({ message: 'Debug summarizer triggered successfully', result, timestamp: new Date().toISOString() });
   } catch (error) {
-    console.error('Error in debug summarizer:', error);
+    logOutboundFailure('Error in debug summarizer:', error);
     res.status(500).json({ error: 'Failed to trigger debug summarizer', details: (error as Error).message });
   }
 });
@@ -216,7 +217,7 @@ router.get('/status', summariesReadRateLimit, auth, (_req: AuthReq, res: Res) =>
     const status = schedulerService.getStatus();
     res.json(status);
   } catch (error) {
-    console.error('Error getting scheduler status:', error);
+    logOutboundFailure('Error getting scheduler status:', error);
     res.status(500).json({ error: 'Failed to get scheduler status' });
   }
 });
@@ -228,7 +229,7 @@ router.get('/chat-rooms', summariesReadRateLimit, auth, async (req: AuthReq, res
     const chatRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('chat', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
     res.json(await filterSummariesToViewable(userId, chatRoomSummaries));
   } catch (error) {
-    console.error('Error fetching chat room summaries:', error);
+    logOutboundFailure('Error fetching chat room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch chat room summaries' });
   }
 });
@@ -240,7 +241,7 @@ router.get('/chat-rooms/latest', summariesReadRateLimit, auth, async (req: AuthR
     const viewable = await filterSummariesToViewable(userId, recentChatSummaries);
     res.json(viewable[0] || null);
   } catch (error) {
-    console.error('Error fetching latest chat room summary:', error);
+    logOutboundFailure('Error fetching latest chat room summary:', error);
     res.status(500).json({ error: 'Failed to fetch latest chat room summary' });
   }
 });
@@ -252,7 +253,7 @@ router.get('/study-rooms', summariesReadRateLimit, auth, async (req: AuthReq, re
     const studyRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('study', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
     res.json(await filterSummariesToViewable(userId, studyRoomSummaries));
   } catch (error) {
-    console.error('Error fetching study room summaries:', error);
+    logOutboundFailure('Error fetching study room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch study room summaries' });
   }
 });
@@ -264,7 +265,7 @@ router.get('/game-rooms', summariesReadRateLimit, auth, async (req: AuthReq, res
     const gameRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('games', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
     res.json(await filterSummariesToViewable(userId, gameRoomSummaries));
   } catch (error) {
-    console.error('Error fetching game room summaries:', error);
+    logOutboundFailure('Error fetching game room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch game room summaries' });
   }
 });
@@ -289,7 +290,7 @@ router.get('/all-posts', summariesReadRateLimit, auth, async (_req: AuthReq, res
       res.status(503).json({ error: 'summary_unavailable' });
       return;
     }
-    console.error('Error generating all posts summary:', error);
+    logOutboundFailure('Error generating all posts summary:', error);
     res.status(500).json({ error: 'Failed to generate all posts summary' });
   }
 });
@@ -309,7 +310,7 @@ router.get('/pod/:podId', summariesReadRateLimit, auth, async (req: AuthReq, res
     const podSummary = await ChatSummarizerService.getLatestPodSummary(podId);
     res.json(podSummary);
   } catch (error) {
-    console.error('Error fetching pod summary:', error);
+    logOutboundFailure('Error fetching pod summary:', error);
     res.status(500).json({ error: 'Failed to fetch pod summary' });
   }
 });
@@ -332,7 +333,7 @@ router.get('/pods', summariesReadRateLimit, auth, async (req: AuthReq, res: Res)
     const podSummaries = await chatSummarizerService.getMultiplePodSummaries(viewablePodIds);
     res.json(podSummaries);
   } catch (error) {
-    console.error('Error fetching pod summaries:', error);
+    logOutboundFailure('Error fetching pod summaries:', error);
     res.status(500).json({ error: 'Failed to fetch pod summaries' });
   }
 });
@@ -370,7 +371,7 @@ router.post('/pod/:podId/refresh', summariesTriggerRateLimit, auth, async (req: 
     }
     res.json({ message: 'Summary refreshed successfully (agent-generated)', summary, queued: false });
   } catch (error) {
-    console.error('Error refreshing pod summary:', error);
+    logOutboundFailure('Error refreshing pod summary:', error);
     res.status(500).json({ error: 'Failed to refresh pod summary' });
   }
 });
@@ -382,7 +383,7 @@ router.get('/daily-digest', summariesReadRateLimit, auth, async (req: AuthReq, r
     if (!dailyDigest) return res.status(404).json({ error: 'No daily digest found. Daily digests are generated every morning at 6 AM UTC.' });
     res.json(dailyDigest);
   } catch (error) {
-    console.error('Error fetching daily digest:', error);
+    console.error('Error fetching daily digest:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to fetch daily digest' });
   }
 });
@@ -394,7 +395,7 @@ router.post('/daily-digest/generate', summariesTriggerRateLimit, auth, async (re
     const digest = await dailyDigestService.generateUserDailyDigest(userId);
     res.json({ message: 'Daily digest generated successfully', digest });
   } catch (error) {
-    console.error('Error generating daily digest:', error);
+    logOutboundFailure('Error generating daily digest:', error);
     res.status(500).json({ error: 'Failed to generate daily digest' });
   }
 });
@@ -406,7 +407,7 @@ router.get('/daily-digest/history', summariesReadRateLimit, auth, async (req: Au
     const digestHistory = await Summary.find({ type: 'daily-digest', 'metadata.userId': userId }).sort({ createdAt: -1 }).limit(parseInt(limit, 10)).select('title content createdAt timeRange metadata.totalItems metadata.subscribedPods').lean();
     res.json(digestHistory);
   } catch (error) {
-    console.error('Error fetching daily digest history:', error);
+    console.error('Error fetching daily digest history:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to fetch daily digest history' });
   }
 });
@@ -421,7 +422,7 @@ router.post('/daily-digest/trigger-all', summariesTriggerRateLimit, auth, async 
     const failed = results.filter((r) => !r.success).length;
     res.json({ message: 'Daily digest generation completed', results: { total: results.length, successful, failed, details: results } });
   } catch (error) {
-    console.error('Error triggering daily digest generation for all users:', error);
+    logOutboundFailure('Error triggering daily digest generation for all users:', error);
     res.status(500).json({ error: 'Failed to trigger daily digest generation' });
   }
 });

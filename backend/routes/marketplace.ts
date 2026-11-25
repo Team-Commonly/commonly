@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 // eslint-disable-next-line global-require
 const express = require('express');
@@ -83,7 +84,7 @@ router.get('/official', marketplaceReadLimit, (_req: unknown, res: { json: (d: u
   loadManifest()
     .then((manifest) => res.json(manifest))
     .catch((error) => {
-      console.error('Error loading marketplace manifest:', error);
+      logOutboundFailure('Error loading marketplace manifest:', error);
       res.status(500).json({ error: 'Failed to load marketplace manifest' });
     });
 });
