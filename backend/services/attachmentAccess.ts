@@ -161,15 +161,28 @@ export async function canReadAttachment(
   // That author rule is part of each query, so the bounded window holds only
   // references that can grant: references from authors who don't qualify
   // cannot fill the window and crowd out the one that does (F610).
+  //
+  // The viewer's side is part of each query too: a post counts only if it is
+  // public or in a pod the viewer is a member of, and a message only if its
+  // pod is one of the viewer's. Otherwise an eligible author's references in
+  // pods the viewer can't read fill the window and crowd out the one the
+  // viewer can (F618). The membership checks below still run on every row.
   const scopedFile = fileDoc?.podId ? fileDoc : null;
   const eligibleAuthors = scopedFile ? await fileReaderIds(scopedFile) : null;
   if (eligibleAuthors && eligibleAuthors.length === 0) return false;
 
+  const viewerPodIds: unknown[] = await Pod.distinct('_id', { members: userId });
+
   const postQuery: Record<string, unknown> = {
-    $or: [
-      { image: urlFragment },
-      { image: fileName },
-      { content: { $regex: urlRegex } },
+    $and: [
+      {
+        $or: [
+          { image: urlFragment },
+          { image: fileName },
+          { content: { $regex: urlRegex } },
+        ],
+      },
+      { $or: [{ podId: null }, { podId: { $in: viewerPodIds } }] },
     ],
   };
   if (eligibleAuthors) postQuery.userId = { $in: eligibleAuthors };
@@ -177,7 +190,10 @@ export async function canReadAttachment(
     .select('_id podId')
     .limit(POST_SCAN_LIMIT)
     .lean();
-  const messagePodIdList = await findMessagePodsReferencingFile(urlFragment, eligibleAuthors);
+  const viewerPodKeys = viewerPodIds.map(String).filter((id) => OBJECT_ID_RE.test(id));
+  const messagePodIdList = viewerPodKeys.length > 0
+    ? await findMessagePodsReferencingFile(urlFragment, eligibleAuthors, viewerPodKeys)
+    : [];
 
   if (posts.length > 0) {
     if (posts.some((p: { podId?: unknown }) => !p.podId)) return true;
@@ -264,13 +280,14 @@ function isPlausibleFileName(fileName: string): boolean {
  * reference the file, so the caller can check pod membership against the
  * whole set in one query — picking a single pod with `LIMIT 1` could return
  * a pod the viewer isn't in, even when a different referencing pod would
- * grant access. With `authorIds`, only messages written by one of them count,
- * and the bound applies after that filter. Returns `[]` when no match exists
- * or the PG pool is unavailable.
+ * grant access. With `authorIds`, only messages written by one of them count;
+ * only messages in one of `viewerPodIds` count; the bound applies after both
+ * filters. Returns `[]` when no match exists or the PG pool is unavailable.
  */
 async function findMessagePodsReferencingFile(
   urlFragment: string,
   authorIds: string[] | null,
+  viewerPodIds: string[],
 ): Promise<string[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -281,12 +298,13 @@ async function findMessagePodsReferencingFile(
     const needle = `%${urlFragment}%`;
     const { rows } = authorIds
       ? await pool.query(
-        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 AND user_id = ANY($2::text[]) LIMIT $3',
-        [needle, authorIds, MESSAGE_SCAN_LIMIT],
+        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 AND user_id = ANY($2::text[])'
+          + ' AND pod_id = ANY($3::text[]) LIMIT $4',
+        [needle, authorIds, viewerPodIds, MESSAGE_SCAN_LIMIT],
       )
       : await pool.query(
-        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 LIMIT $2',
-        [needle, MESSAGE_SCAN_LIMIT],
+        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 AND pod_id = ANY($2::text[]) LIMIT $3',
+        [needle, viewerPodIds, MESSAGE_SCAN_LIMIT],
       );
     return rows.map((r) => r.pod_id).filter(Boolean);
   } catch {
