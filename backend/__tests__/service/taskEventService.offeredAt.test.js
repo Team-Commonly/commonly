@@ -121,26 +121,24 @@ afterAll(async () => {
 });
 
 describe('kernel sweep offeredAt filter', () => {
-  it('leaves the row due when the eligible-seat read fails, and offers it on the next pass (F632)', async () => {
+  it('still wakes the seat when the batched install read fails: the pod reads its own', async () => {
     const row = await createTask({ taskId: 'TASK-FALLBACK', updatedAt: new Date(NOW.getTime() - 30000) });
-    // F632: no per-pod fallback. A failed read skips this pass; the row stays
-    // due and the next pass offers it.
+    // First read is the sweep's one eligible-seat read for every pod; it fails.
+    // The next is notifyFoundWork's own per-pod read, which the fallback relies on.
     AgentInstallation.find.mockReturnValueOnce({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const skipped = await KernelWorkSweepService.wakeForFoundWork(NOW);
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
 
-    expect(skipped).toEqual({ woken: 0, skippedNoWork: 0, scannedPods: 0 });
-    expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
-    expect((await Task.findById(row._id).lean()).offeredAt).toBeUndefined();
-    error.mockRestore();
-
-    const next = await KernelWorkSweepService.wakeForFoundWork(NOW);
-    expect(next.woken).toBe(1);
+    expect(AgentInstallation.find.mock.calls[0][0])
+      .toEqual(expect.objectContaining({ 'config.workDiscovery.role': 'implementer' }));
+    expect(AgentInstallation.find.mock.calls[1][0]).toEqual({ podId: POD_ID.toString(), status: 'active' });
+    expect(AgentInstallation.find).toHaveBeenCalledTimes(2);
+    expect(sweep.woken).toBe(1);
     expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('TASK-FALLBACK');
     const after = await Task.findById(row._id).lean();
     expect(after.offeredAt).toEqual(after.updatedAt);
+    console.error.mockRestore();
   });
 
   it('names a late P0 before lower priorities when the discovery wake is truncated', async () => {

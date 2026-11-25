@@ -180,35 +180,39 @@ describe('F632 — the sweep reads only seats that can be woken', () => {
     expect(row.offeredAt).toEqual(row.updatedAt);
   });
 
-  it('(e) the eligible-install read throws: no wake, logged once, nothing stamped, the sweep returns', async () => {
+  it('(e) the eligible-install read throws: logged once, each pod reads its own installs', async () => {
+    // Review-checklist rule 19: a failed lookup fails toward over-delivery.
     const pod = new mongoose.Types.ObjectId();
-    await Task.create(dueTask(pod, 'TASK-1'));
+    const other = new mongoose.Types.ObjectId();
+    await Task.insertMany([dueTask(pod, 'TASK-1'), dueTask(other, 'TASK-OTHER')]);
     await addInstall(pod, 'impl', { boardWake: { enabled: true }, workDiscovery: IMPLEMENTER });
+    await addInstall(other, 'chatty', { wakeOnMessage: { enabled: true } });
     const find = jest.spyOn(AgentInstallation, 'find').mockImplementationOnce(() => ({
       lean: () => Promise.reject(new Error('pool closed')),
     }));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const aggregate = jest.spyOn(Task, 'aggregate');
 
     const result = await KernelWorkSweepService.sweep(NOW);
 
-    expect(result).toMatchObject({ woken: 0, scannedPods: 0, skippedNoWork: 0 });
-    // One read, no per-pod fallback, no aggregate.
-    expect(find).toHaveBeenCalledTimes(1);
-    expect(aggregate).not.toHaveBeenCalled();
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    // The old pass: every pod with due work scanned, each reading its own
+    // installs (one failed read plus one per pod), the eligible seat woken.
+    expect(result).toMatchObject({ woken: 1, scannedPods: 2, skippedNoWork: 1 });
+    expect(find).toHaveBeenCalledTimes(3);
+    expect(find.mock.calls.slice(1).map(([filter]) => String(filter.podId)).sort())
+      .toEqual([String(pod), String(other)].sort());
     const logged = error.mock.calls.filter((call) => call.some((arg) => String(arg).includes('[kernel-sweep]')));
     expect(logged).toHaveLength(1);
     expect(JSON.stringify(logged[0])).toContain('pool closed');
-    expect((await Task.findOne({ podId: pod }).lean()).offeredAt).toBeUndefined();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    const [event] = AgentEventService.enqueue.mock.calls[0];
+    expect(event).toMatchObject({ agentName: 'impl', podId: String(pod), payload: { triggerAuthor: 'kernel' } });
+    expect(event.payload.content).toContain('- TASK-1 — [P2] TASK-1');
+    const woken = await Task.findOne({ podId: pod }).lean();
+    expect(woken.offeredAt).toEqual(woken.updatedAt);
+    expect((await Task.findOne({ podId: other }).lean()).offeredAt).toBeUndefined();
 
     find.mockRestore();
     error.mockRestore();
-    aggregate.mockRestore();
-
-    // The rows stayed due: the next pass wakes the seat.
-    const next = await KernelWorkSweepService.wakeForFoundWork(NOW);
-    expect(next.woken).toBe(1);
   });
 
   it('reads only the fields the wake path uses, never the whole config', async () => {

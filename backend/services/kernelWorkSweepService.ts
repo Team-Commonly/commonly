@@ -329,7 +329,7 @@ class KernelWorkSweepService {
     // against a real mongod in __tests__/service/kernelWorkSweep.eligibleSeats.test.js).
     // notifyFoundWork's own filter stays the final check (boardWake, and the
     // exact `=== true` and role comparison).
-    let eligible: Array<Record<string, unknown>>;
+    let eligible: Array<Record<string, unknown>> | null;
     try {
       eligible = await AgentInstallation.find(
         {
@@ -350,24 +350,32 @@ class KernelWorkSweepService {
         },
       ).lean() as Array<Record<string, unknown>>;
     } catch (error) {
-      // No per-pod fallback: that is one read per pod with due work, the load
-      // this exists to remove. The rows stay due; the next pass retries.
-      logOutboundFailure('[kernel-sweep] eligible-seat read failed; work discovery skipped this pass:', error);
-      return { woken: 0, skippedNoWork: 0, scannedPods: 0 };
+      // Fail toward over-delivery (review-checklist rule 19): run the pass as
+      // it ran before F632, every pod with due work reading its own installs.
+      // Slower, not wrong.
+      logOutboundFailure('[kernel-sweep] eligible-seat read failed; each pod reads its own installs:', error);
+      eligible = null;
     }
-    if (!eligible.length) return { woken: 0, skippedNoWork: 0, scannedPods: 0 };
+    if (eligible && !eligible.length) return { woken: 0, skippedNoWork: 0, scannedPods: 0 };
 
-    const installsByPod = new Map<string, Array<Record<string, unknown>>>();
-    for (const install of eligible) {
-      const key = String(install.podId);
-      const forPod = installsByPod.get(key);
-      if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
+    // null when the eligible-seat read failed: notifyFoundWork then gets
+    // undefined and reads the pod's installs itself.
+    let installsByPod: Map<string, Array<Record<string, unknown>>> | null = null;
+    let podFilter: Record<string, unknown> = {};
+    if (eligible) {
+      installsByPod = new Map();
+      for (const install of eligible) {
+        const key = String(install.podId);
+        const forPod = installsByPod.get(key);
+        if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
+      }
+      // An aggregate $match is not cast by Mongoose, and Task.podId is an
+      // ObjectId, so cast here: a string id would silently match nothing.
+      const eligiblePods = Array.from(installsByPod.keys())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      podFilter = { podId: { $in: eligiblePods } };
     }
-    // An aggregate $match is not cast by Mongoose, and Task.podId is an
-    // ObjectId, so cast here: a string id would silently match nothing.
-    const eligiblePods = Array.from(installsByPod.keys())
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
 
     // Rows in pods with no eligible seat are not read at all. They stay due,
     // and the first pass after an eligible seat is installed there finds them.
@@ -378,7 +386,7 @@ class KernelWorkSweepService {
     const actionable = await Task.aggregate([
       {
         $match: {
-          podId: { $in: eligiblePods },
+          ...podFilter,
           status: 'pending',
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
@@ -423,7 +431,7 @@ class KernelWorkSweepService {
     for (const pod of actionable) {
       // eslint-disable-next-line no-await-in-loop
       const result = await notifyFoundWork(
-        pod._id, pod.tasks, pod.count, now, installsByPod.get(String(pod._id)) || [],
+        pod._id, pod.tasks, pod.count, now, installsByPod ? installsByPod.get(String(pod._id)) || [] : undefined,
       );
       if (result.woken > 0) woken += result.woken; else skippedNoWork += 1;
       // Let request handlers run between pods.

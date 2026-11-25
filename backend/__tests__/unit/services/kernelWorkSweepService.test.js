@@ -372,18 +372,23 @@ describe('wakeForFoundWork reads only eligible seats, once per pass (F632)', () 
     expect(mockNotifyFoundWork).not.toHaveBeenCalled();
   });
 
-  it('skips the pass, logged once, when the eligible-seat read fails: no per-pod fallback', async () => {
+  it('lets each pod read its own installs when the eligible-seat read fails', async () => {
+    // Review-checklist rule 19: a failed lookup fails toward over-delivery.
+    // The fallback is the pre-F632 pass: the unrestricted aggregate, and each
+    // pod reading its own installs ("slower, not wrong").
     Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: [{ taskId: 'TASK-A' }], count: 1 }]);
     AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
 
-    expect(result).toEqual({ woken: 0, skippedNoWork: 0, scannedPods: 0 });
     expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
-    expect(Task.aggregate).not.toHaveBeenCalled();
-    expect(mockNotifyFoundWork).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledTimes(1);
+    const match = Task.aggregate.mock.calls[0][0][0].$match;
+    expect(match).not.toHaveProperty('podId');
+    // Only the failure hands over undefined, so notifyFoundWork reads its own.
+    expect(mockNotifyFoundWork.mock.calls[0][4]).toBeUndefined();
+    expect(result).toEqual({ woken: 1, skippedNoWork: 0, scannedPods: 1 });
     error.mockRestore();
   });
 });
