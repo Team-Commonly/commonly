@@ -30,7 +30,7 @@ const Stripe = require('stripe');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const BillingEvent = require('../models/BillingEvent');
+const { claimBillingEvent, recordBillingOutcome } = require('../repositories/billingEventRepository');
 
 export const STRIPE_ENABLED = (): boolean => Boolean(process.env.STRIPE_SECRET_KEY);
 
@@ -150,17 +150,7 @@ export const applySubscriptionState = async ({
 export const handleEvent = async (event: any): Promise<{ outcome: string; detail?: string }> => {
   // Idempotency gate. The insert is the lock: a duplicate delivery loses the
   // unique index and returns without touching the user.
-  try {
-    await BillingEvent.create({
-      eventId: event.id,
-      type: event.type,
-      outcome: 'ignored',
-      detail: 'claimed',
-    });
-  } catch (err: any) {
-    if (err?.code === 11000) return { outcome: 'duplicate' };
-    throw err;
-  }
+  if (!await claimBillingEvent(event.id, event.type)) return { outcome: 'duplicate' };
 
   const obj = event?.data?.object || {};
   let result: { outcome: string; detail?: string; userId?: string } = { outcome: 'ignored' };
@@ -204,17 +194,14 @@ export const handleEvent = async (event: any): Promise<{ outcome: string; detail
       result = { outcome: 'ignored', detail: 'unhandled type' };
   }
 
-  await BillingEvent.updateOne(
-    { eventId: event.id },
-    {
-      $set: {
-        outcome: result.outcome === 'duplicate' ? 'ignored' : result.outcome,
-        detail: result.detail,
-        customerId: obj.customer || undefined,
-        ...(result.userId ? { userId: result.userId } : {}),
-      },
-    },
-  );
+  // An undefined value writes nothing (Mongoose drops it from $set), so an
+  // absent customer never overwrites the field with null.
+  await recordBillingOutcome(event.id, {
+    outcome: result.outcome === 'duplicate' ? 'ignored' : result.outcome,
+    detail: result.detail,
+    customerId: obj.customer || undefined,
+    ...(result.userId ? { userId: result.userId } : {}),
+  });
 
   return result;
 };

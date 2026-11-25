@@ -203,6 +203,31 @@ stands. The reads are `findOneWhere` and `findWhere` on `_id`, `ownerId` and
 Postgres filter has no `$exists`. `pg` mode refuses the writes until step 4,
 before any write.
 
+## Seventh model: BillingEvent
+
+`BillingEvent` (the Stripe webhook idempotency marker) follows the same
+template. Its table is `billing_events` (`0022`): the Mongo `_id` (hex) as
+`id`, `event_id` (unique, as in Mongo), `type`, nullable `customer_id` and
+`user_id` (hex), `outcome`, a nullable `detail`, and a nullable `created_at`
+(the model has no `updatedAt`). `STORE_MODE_BILLING_EVENT` selects the store.
+Its only caller, `services/billingService.ts` (`handleEvent`), imports
+`repositories/billingEventRepository`; ESLint fences the model.
+
+- `claimBillingEvent(eventId, type)` takes the lock: true when this call
+  claimed the event, false when it was already claimed (a duplicate delivery,
+  which `handleEvent` returns as `{ outcome: 'duplicate' }`).
+- `recordBillingOutcome(eventId, fields)` sets the outcome. A field whose value
+  is `undefined` writes nothing, so an absent `customerId` never becomes null.
+
+In `mongo` both make the pre-step-2 Mongoose calls (`create`, and `updateOne`
+with the fields as passed). In `dual` and `pg-read` the claim is the helper's
+`create`: Mongo's duplicate key propagates before any copy and reads as
+`false`, and a copy that fails after the insert still returns `true`, with the
+marker left for `repair`. So a Postgres error never loses or doubles a claim.
+The record is `updateWhere({ eventId })` with the defined fields as
+`$literal`s and `userId` cast to an ObjectId. `pg` mode refuses both until
+step 4, before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

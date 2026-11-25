@@ -20,6 +20,8 @@ export const DUAL_STORED_MODELS: Record<string, () => DualStore> = {
   NeedsYouEmailQuota: () => require('./needsYouEmailQuotaRepository').emailQuotaStore(),
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   AgentComputerTakeover: () => require('./agentComputerTakeoverRepository').computerTakeoverStore(),
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  BillingEvent: () => require('./billingEventRepository').billingEventStore(),
 };
 
 type RepairCounts = Awaited<ReturnType<DualStore['repair']>>;

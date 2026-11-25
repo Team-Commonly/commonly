@@ -62,7 +62,7 @@ real('message contract columns on real PostgreSQL', () => {
       '0011_thread_read_point.sql', '0012_mention_email.sql', '0013_email_sends.sql', '0014_pod_read_point.sql',
       '0015_agent_connect_codes.sql', '0016_agent_pod_read_cursors.sql',
       '0017_agent_first_contacts.sql', '0018_agent_digest_states.sql', '0019_agent_task_wake_states.sql',
-      '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql']);
+      '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql', '0022_billing_events.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,
