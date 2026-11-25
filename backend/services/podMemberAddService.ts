@@ -81,7 +81,8 @@ export const addPodMemberByUsername = async (
 
   const written = await Pod.updateOne(
     { _id: pod._id },
-    { $addToSet: { members: target._id }, $set: { updatedAt: new Date() } },
+    // F621: bump the version so a stale whole-array save can't undo this add.
+    { $addToSet: { members: target._id }, $set: { updatedAt: new Date() }, $inc: { __v: 1 } },
   );
   // Deleted since the read: report it, and never mirror, since the mirror
   // copies a pod it can't find into Postgres.

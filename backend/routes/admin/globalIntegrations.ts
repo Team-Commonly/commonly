@@ -133,7 +133,8 @@ const ensureGlobalSocialFeedPod = async (userId: any) => {
     // the predicate reads and what the pod's own write paths enforce; the PG
     // mirror follows below. `createdBy` is deliberately untouched — it is the
     // row's owner, not a membership record.
-    await Pod.updateOne({ _id: globalPod._id }, { $addToSet: { members: userId } });
+    // F621: bump the version so a stale whole-array save can't undo this add.
+    await Pod.updateOne({ _id: globalPod._id }, { $addToSet: { members: userId }, $inc: { __v: 1 } });
     globalPod = await Pod.findById(globalPod._id);
   }
 
@@ -853,5 +854,6 @@ router.post('/instagram/test', auth, adminAuth, async (req: any, res: any) => {
 
 module.exports = router;
 module.exports.ensureGlobalPodPostgresSync = ensureGlobalPodPostgresSync;
+module.exports.ensureGlobalSocialFeedPod = ensureGlobalSocialFeedPod;
 
 export {};
