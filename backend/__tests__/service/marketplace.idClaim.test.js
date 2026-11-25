@@ -558,6 +558,35 @@ describe('marketplace installableId claim', () => {
         await expectWinnerKept('@alice/x', a, afterB);
         expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
       });
+
+      test('publish, update path, registry write failing', async () => {
+        await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(AgentRegistry, 'findOneAndUpdate', (filter) => filter?.agentName === '@alice/x'),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+        );
+        expect(b.status).toBe(200);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.installable).toMatchObject({ description: 'Three.', version: '3.0.0' });
+        expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
+      });
+    });
+
+    test('an uncontested registry failure on a version publish still answers 201 with the warning', async () => {
+      await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0')).expect(201);
+      const before = await rawRows('@alice/x');
+      const spy = jest.spyOn(AgentRegistry, 'findOneAndUpdate').mockRejectedValueOnce(new Error('registry down'));
+      try {
+        const res = await post('/publish', aliceAuth, publishBody('@alice/x', '2.0.0'));
+        expect(res.status).toBe(201);
+        expect(res.body.warnings).toEqual([expect.stringMatching(/AgentRegistry sync failed/)]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await rawRows('@alice/x')).toEqual(before);
+      await expectNoClaim('@alice/x');
     });
 
     test('a slow holder with no competitor, whose claim lapsed after both writes, gets 201', async () => {

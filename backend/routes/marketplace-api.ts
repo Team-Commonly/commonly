@@ -652,6 +652,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
         } catch (arError) {
           if (arError instanceof InstallableClaimFenced) throw arError;
           console.warn('[marketplace] AgentRegistry sync failed on update:', (arError as any).message);
+          // A superseded holder lost; only a holder still in the race retries.
+          if (await superseded()) return claimExpired(res);
           return res.status(201).json({
             success: true,
             warnings: ['AgentRegistry sync failed; retrying publish will fix.'],
