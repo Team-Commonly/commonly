@@ -13,9 +13,11 @@ fail, suspect the outbound NAT, not the database.
 ## Why it happens
 
 A VM without an external IP reaches the internet through Cloud NAT. Cloud NAT
-gives each VM a fixed number of source ports **per destination IP and port**,
-and the default `minPortsPerVm` is **64**. Every connection the VM holds to a
-given Mongo member uses one of those ports.
+gives each VM a number of source ports **per destination IP and port**. With
+static port allocation (the default) that number is fixed, and an unset
+`minPortsPerVm` means **64**. With dynamic port allocation, an unset minimum
+means 32 and the allocation can grow toward the configured maximum. Every
+connection the VM holds to a given Mongo member uses one of those ports.
 
 The driver opens most of its pool against the primary. One backend process
 with a busy pool can hold 64 connections to the primary alone. The next new
@@ -39,10 +41,18 @@ P=$(docker inspect -f '{{.State.Pid}}' <backend-container>)
 nsenter -t "$P" -n ss -tnH state established '( dport = :27017 )' \
   | awk '{print $4}' | sed 's/:27017$//' | sort | uniq -c
 
-# every container on the host (the conntrack tool may be absent; the proc file is not)
+# every container on the host, with the conntrack tool
+conntrack -L -p tcp --dport 27017 --state ESTABLISHED 2>/dev/null \
+  | grep -o 'dst=[0-9.]*' | awk 'NR%2==1' | sort | uniq -c
+
+# without the tool, from the proc file (only if /proc/net/nf_conntrack exists)
 grep 'dport=27017 ' /proc/net/nf_conntrack | grep ESTABLISHED \
   | grep -o 'dst=[0-9.]*' | awk 'NR%2==1' | sort | uniq -c
 ```
+
+Empty output from either means the source was unavailable, not zero
+connections. Check that the command can read connection tracking before you
+trust a blank.
 
 If one member sits at or near the NAT's per-VM port count while the others hold
 a handful, this is the cause.
@@ -51,15 +61,28 @@ Then confirm the NAT's settings:
 
 ```bash
 gcloud compute routers nats describe <nat> --router=<router> --region=<region> \
-  --format='value(minPortsPerVm,enableDynamicPortAllocation,logConfig.enable)'
+  --format='value(minPortsPerVm,enableDynamicPortAllocation,maxPortsPerVm,natIpAllocateOption,logConfig.enable)'
 ```
 
-An empty `minPortsPerVm` means the default of 64.
+With static allocation, an empty `minPortsPerVm` means 64. With dynamic
+allocation it means 32, and the ports actually allocated can be higher, so
+compare your counts against the allocation, not the minimum.
 
 ## Fix
 
 Raise the per-VM port allocation. Nothing restarts, and the change takes effect
-in seconds:
+in seconds. Check two things first:
+
+- **Only raise it.** Read the current `minPortsPerVm` above. Lowering a static
+  minimum breaks established NAT connections at once. If the current value is
+  already at or above what you need, enable dynamic port allocation instead.
+- **NAT addresses.** More ports per VM can need more NAT IP addresses. With
+  automatic allocation (`AUTO_ONLY`), Cloud NAT may add addresses on its own:
+  if the database restricts clients by IP, add the new addresses to its access
+  list before the change, or connections from them are refused and look like
+  the same timeouts. With manual allocation, assign enough addresses first. The
+  Cloud NAT "ports and addresses" documentation gives the count a minimum
+  needs. One VM at 1024 ports fits in a single address.
 
 ```bash
 gcloud compute routers nats update <nat> --router=<router> --region=<region> \
@@ -69,8 +92,10 @@ gcloud compute routers nats update <nat> --router=<router> --region=<region> \
 Size it above the most connections the VM can open to one member: the driver's
 `maxPoolSize` (100 by default) times the number of backend processes, plus
 backups and one-off clients. Dynamic port allocation also works. Turn on
-error logging either way, so a future exhaustion shows up as
-`OUT_OF_RESOURCES` drops in Cloud Logging instead of as silent timeouts.
+error logging either way: dropped connections then appear in Cloud Logging as
+NAT log entries with allocation status `DROPPED`, and the gateway's
+dropped-sent-packets metric reports them with reason `OUT_OF_RESOURCES`,
+instead of showing up only as silent timeouts.
 
 Verify with a fresh client, such as a one-off container that connects and runs
 `ping`, and a TCP connect to every member.
