@@ -163,7 +163,8 @@ serve the name or description the row had on the day it was backfilled.
   reads categories from there first). The values come from
   `registryToInstallable(row)`. A cleared `description` is written as the
   display name and a cleared `displayName` as the agent name, so neither is
-  stored as `''`; other cleared values become `''` or `[]`. Refresh never
+  stored as `''`. A cleared `latestVersion` falls back to `manifest.version`,
+  then to `'1.0.0'`. Other cleared values become `''` or `[]`. Refresh never
   writes `$unset`.
 - It never changes `origin`, `source`, `owner`, `status` or
   `marketplace.published`, and never touches an identity table. **Status is
