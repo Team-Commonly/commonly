@@ -20,8 +20,8 @@ const { sharedRedisRequired } = require('../config/sharedRedisRequired');
 const REDIS_PROBE_CONNECT_TIMEOUT_MS = 1000;
 // The overall deadline for connect plus PING. It sits past the socket's own
 // connectTimeout, but that does not make the socket time out first (Node
-// refreshes the connect timeout after DNS resolves), so a connect that lands
-// after the deadline is closed explicitly in runRedisProbe.
+// refreshes the connect timeout after DNS resolves), so a socket that
+// connects after the deadline is closed when it appears (see runRedisProbe).
 const REDIS_PROBE_DEADLINE_MS = 1500;
 // /api/health is unauthenticated and unlimited, so a burst must not become a
 // burst of Redis connections: one probe in flight per process (callers await
@@ -37,11 +37,21 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
   type ProbeClient = { disconnect: () => Promise<unknown> };
   let redisClient: ProbeClient | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // The client stores its socket only once TCP connects, and emits 'connect'
+  // at that moment (@redis/client socket.js). Before that, disconnect() would
+  // flip the client closed and destroy nothing, stranding the socket that then
+  // arrives, and a second disconnect() would throw. So close only once the
+  // socket exists: now if it does, else when 'connect' fires after the probe
+  // has finished. A connect that never yields a socket (timeout, DNS, refused)
+  // is destroyed by the library itself.
   let finished = false;
+  let socketStored = false;
+  const close = async (client: ProbeClient): Promise<void> => {
+    try {
+      await client.disconnect();
+    } catch { /* already closed */ }
+  };
   const redisStart = Date.now();
-  const close = (client: ProbeClient): Promise<unknown> => (
-    Promise.resolve().then(() => client.disconnect()).catch(() => undefined)
-  );
   try {
     // eslint-disable-next-line global-require
     const { createClient } = require('redis');
@@ -58,15 +68,12 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
     redisClient = client;
     // An unheard 'error' event would end the process.
     client.on('error', () => undefined);
+    client.on('connect', () => {
+      socketStored = true;
+      if (finished) close(client).catch(() => undefined);
+    });
     const attempt = (async () => {
       await client.connect();
-      // The deadline already won and its cleanup found nothing to close: the
-      // client keeps its socket only once connected, so disconnect() cannot
-      // cancel a pending connect. Close the late socket here.
-      if (finished) {
-        await close(client);
-        return undefined;
-      }
       return client.ping();
     })();
     // The race may be lost; a later rejection is then nobody else's to handle.
@@ -89,7 +96,7 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
   } finally {
     finished = true;
     clearTimeout(timer);
-    if (redisClient) await close(redisClient);
+    if (redisClient && socketStored) await close(redisClient);
   }
 };
 

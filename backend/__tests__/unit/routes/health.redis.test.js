@@ -26,24 +26,63 @@ const buildApp = () => {
   return app;
 };
 
-// Real I/O is not faked: spin the event loop until a request has reached the probe.
+// Real I/O is not faked: spin the event loop until a condition holds. It throws
+// when the rounds run out, so a barrier that can never open fails loudly.
 const until = async (condition, rounds = 5000) => {
-  for (let i = 0; i < rounds && !condition(); i += 1) {
+  for (let i = 0; i < rounds; i += 1) {
+    if (condition()) return;
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setImmediate(resolve));
   }
+  throw new Error('until: the condition never held');
 };
 
-const makeClient = (overrides = {}) => ({
-  on: jest.fn(),
-  connect: jest.fn().mockResolvedValue(undefined),
-  ping: jest.fn().mockResolvedValue('PONG'),
-  disconnect: jest.fn().mockResolvedValue(undefined),
-  ...overrides,
-});
+class ClientClosedError extends Error {}
+
+// A client that models @redis/client 1.6.1's socket.js: connect() sets isOpen;
+// the socket is stored, and 'connect' emitted, only when createSocket resolves
+// (the test releases it with `releaseSocket` when `holdSocket` is set);
+// disconnect() throws ClientClosedError when !isOpen and otherwise destroys
+// only a socket that is already stored. A disconnect during the 'connect' emit
+// makes the initiator fail, as in the library.
+const makeClient = ({
+  ping = async () => 'PONG', connectError, holdSocket = false, initiatorHangs = false,
+} = {}) => {
+  const handlers = {};
+  const c = {
+    isOpen: false,
+    socket: undefined,
+    sockets: [],
+    releaseSocket: undefined,
+    on: jest.fn((event, fn) => { (handlers[event] = handlers[event] || []).push(fn); return c; }),
+    connect: jest.fn(async () => {
+      c.isOpen = true;
+      if (connectError) {
+        c.isOpen = false; // a failed connect with no retry closes the client
+        throw connectError;
+      }
+      if (holdSocket) await new Promise((resolve) => { c.releaseSocket = resolve; });
+      c.socket = { destroy: jest.fn() };
+      c.sockets.push(c.socket);
+      (handlers.connect || []).forEach((fn) => fn());
+      if (!c.socket) throw new ClientClosedError('closed during connect');
+      if (initiatorHangs) await new Promise(() => {});
+    }),
+    disconnect: jest.fn(() => {
+      if (!c.isOpen) throw new ClientClosedError('The client is closed');
+      c.isOpen = false;
+      if (c.socket) {
+        c.socket.destroy();
+        c.socket = undefined;
+      }
+    }),
+    ping: jest.fn(ping),
+  };
+  return c;
+};
 
 describe('GET /api/health redis check', () => {
-  const ENV = ['AGENT_PROVISIONER_K8S', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REQUIRE_SHARED_REDIS'];
+  const ENV = ['AGENT_PROVISIONER_K8S', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REQUIRE_SHARED_REDIS', 'PG_HOST'];
   const saved = {};
   beforeEach(() => {
     jest.clearAllMocks();
@@ -69,7 +108,7 @@ describe('GET /api/health redis check', () => {
     expect(res.body.checks.redis.status).toBe('healthy');
     expect(res.status).toBe(200);
     expect(mockCreateClient).toHaveBeenCalledWith(expect.objectContaining({ url: 'redis://cache.internal:6380' }));
-    expect(mockClient.disconnect).toHaveBeenCalled();
+    expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1); // a normal success closes its socket
   });
 
   it('still probes on Kubernetes without REDIS_HOST (the default host)', async () => {
@@ -91,7 +130,7 @@ describe('GET /api/health redis check', () => {
   it('degrades the overall status on a Redis failure when REQUIRE_SHARED_REDIS=1', async () => {
     process.env.REDIS_HOST = 'cache.internal';
     process.env.REQUIRE_SHARED_REDIS = '1';
-    mockClient = makeClient({ connect: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) });
+    mockClient = makeClient({ connectError: new Error('ECONNREFUSED') });
     const res = await request(buildApp()).get('/api/health');
     expect(res.body.checks.redis.status).toBe('unhealthy');
     expect(res.body.status).toBe('degraded');
@@ -106,6 +145,34 @@ describe('GET /api/health redis check', () => {
     expect(res.body.status).toBe('degraded');
   });
 
+  it('with the real client, a server that never replies sees its connection closed at the deadline', async () => {
+    // eslint-disable-next-line global-require
+    const net = require('net');
+    const sockets = [];
+    const server = net.createServer((socket) => {
+      sockets.push(socket);
+      socket.on('error', () => {});
+      socket.resume(); // read, or the client's FIN is never seen
+    });
+    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    try {
+      process.env.REDIS_HOST = '127.0.0.1';
+      process.env.REDIS_PORT = String(server.address().port);
+      mockCreateClient.mockImplementationOnce((...args) => jest.requireActual('redis').createClient(...args));
+      const closed = new Promise((resolve) => {
+        const watch = setInterval(() => {
+          if (sockets[0]) { sockets[0].on('close', resolve); clearInterval(watch); }
+        }, 10);
+      });
+      const res = await request(buildApp()).get('/api/health');
+      expect(res.body.checks.redis.status).toBe('unhealthy');
+      await closed;
+    } finally {
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise((resolve) => { server.close(resolve); });
+    }
+  }, 6000);
+
   describe('bounded probes, on fake timers', () => {
     beforeEach(() => {
       jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'performance'] });
@@ -114,44 +181,73 @@ describe('GET /api/health redis check', () => {
       jest.useRealTimers();
     });
 
-    it('bounds a PING that never answers, and does not hang the endpoint', async () => {
-      process.env.REDIS_HOST = 'cache.internal';
-      mockClient = makeClient({ ping: jest.fn(() => new Promise(() => {})) });
+    const unhandled = [];
+    const onUnhandled = (reason) => { unhandled.push(reason); };
+    beforeEach(() => {
+      unhandled.length = 0;
+      process.on('unhandledRejection', onUnhandled);
+    });
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandled);
+    });
+
+    const startProbe = async () => {
       const pending = request(buildApp()).get('/api/health').then((r) => r);
-      await until(() => mockCreateClient.mock.calls.length > 0 && mockClient.connect.mock.calls.length > 0);
+      await until(() => mockClient.connect.mock.calls.length > 0);
+      return { pending };
+    };
+
+    it('bounds a PING that never answers, and destroys the socket at the deadline', async () => {
+      process.env.REDIS_HOST = 'cache.internal';
+      mockClient = makeClient({ ping: () => new Promise(() => {}) });
+      const { pending } = await startProbe();
       await jest.advanceTimersByTimeAsync(1600);
       const res = await pending;
       expect(res.body.checks.redis.status).toBe('unhealthy');
       expect(res.body.checks.redis.error).toMatch(/did not answer/);
-      expect(mockClient.disconnect).toHaveBeenCalled();
+      expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1);
     });
 
-    it('bounds a connect that never settles, and closes the client', async () => {
+    it('destroys the socket at the deadline when the initiator hangs after the socket is stored', async () => {
       process.env.REDIS_HOST = 'cache.internal';
-      mockClient = makeClient({ connect: jest.fn(() => new Promise(() => {})) });
-      const pending = request(buildApp()).get('/api/health').then((r) => r);
-      await until(() => mockCreateClient.mock.calls.length > 0 && mockClient.connect.mock.calls.length > 0);
+      mockClient = makeClient({ initiatorHangs: true });
+      const { pending } = await startProbe();
       await jest.advanceTimersByTimeAsync(1600);
       const res = await pending;
       expect(res.body.checks.redis.status).toBe('unhealthy');
-      expect(mockClient.disconnect).toHaveBeenCalled();
-    });
-
-    it('closes a client whose connect lands after the deadline, without pinging or an unhandled rejection', async () => {
-      process.env.REDIS_HOST = 'cache.internal';
-      let connectLate;
-      mockClient = makeClient({ connect: jest.fn(() => new Promise((resolve) => { connectLate = resolve; })) });
-      const pending = request(buildApp()).get('/api/health').then((r) => r);
-      await until(() => mockClient.connect.mock.calls.length > 0);
-      await jest.advanceTimersByTimeAsync(1600);
-      const res = await pending;
-      expect(res.body.checks.redis.status).toBe('unhealthy');
-      // The deadline's own cleanup found no socket yet to close.
+      expect(mockClient.sockets).toHaveLength(1);
+      expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1);
       expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
-      connectLate();
-      await until(() => mockClient.disconnect.mock.calls.length > 1);
-      expect(mockClient.disconnect).toHaveBeenCalledTimes(2);
+    });
+
+    it('closes nothing while no socket exists, then destroys the late socket once it is stored', async () => {
+      process.env.REDIS_HOST = 'cache.internal';
+      mockClient = makeClient({ holdSocket: true });
+      const { pending } = await startProbe();
+      await jest.advanceTimersByTimeAsync(1600);
+      const res = await pending;
+      expect(res.body.checks.redis.status).toBe('unhealthy');
+      // A disconnect() now would flip the client closed and strand the socket.
+      expect(mockClient.disconnect).not.toHaveBeenCalled();
+      expect(mockClient.isOpen).toBe(true);
+      mockClient.releaseSocket();
+      await until(() => mockClient.sockets.length === 1);
+      await until(() => mockClient.sockets[0].destroy.mock.calls.length > 0);
+      expect(mockClient.sockets[0].destroy).toHaveBeenCalledTimes(1);
+      expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
       expect(mockClient.ping).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    });
+
+    it('a connect that fails with no socket closes nothing and rejects nothing unhandled', async () => {
+      process.env.REDIS_HOST = 'cache.internal';
+      mockClient = makeClient({ connectError: new Error('ECONNREFUSED') });
+      const res = await (await startProbe()).pending;
+      expect(res.body.checks.redis).toEqual({ status: 'unhealthy', error: 'ECONNREFUSED' });
+      expect(mockClient.disconnect).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
     });
   });
 
@@ -167,7 +263,8 @@ describe('GET /api/health redis check', () => {
 
     it('shares one probe between concurrent calls', async () => {
       let release;
-      mockClient = makeClient({ ping: jest.fn(() => new Promise((resolve) => { release = () => resolve('PONG'); })) });
+      process.env.PG_HOST = 'pg.internal'; // the route queries PG only when this is set
+      mockClient = makeClient({ ping: () => new Promise((resolve) => { release = () => resolve('PONG'); }) });
       const app = buildApp();
       const first = request(app).get('/api/health').then((r) => r);
       const second = request(app).get('/api/health').then((r) => r);
@@ -176,6 +273,7 @@ describe('GET /api/health redis check', () => {
       // the loop has passed, both requests have called the probe.
       await until(() => mockPgPool.query.mock.calls.length >= 2);
       await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPgPool.query).toHaveBeenCalledTimes(2);
       expect(mockClient.ping).toHaveBeenCalledTimes(1);
       release();
       const [a, b] = await Promise.all([first, second]);
