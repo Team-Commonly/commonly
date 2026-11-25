@@ -84,6 +84,9 @@ module.exports = {
           }, {
             group: ['**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*'],
             message: 'Use repositories/agentTaskWakeStateRepository.',
+          }, {
+            group: ['**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*'],
+            message: 'Use repositories/needsYouEmailQuotaRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -92,6 +95,7 @@ module.exports = {
             '**/models/AgentFirstContact', '**/models/AgentFirstContact.*',
             '**/models/AgentDigestState', '**/models/AgentDigestState.*',
             '**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*',
+            '**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*',
           ],
         }],
       },
