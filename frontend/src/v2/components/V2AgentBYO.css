@@ -442,6 +442,10 @@
   overflow-wrap: anywhere;
   overflow: visible;
 }
+/* Each token of the command moves to the next line whole when it fits there,
+   so a flag never splits at its hyphens (F629); a token longer than the line,
+   such as a long self-hosted URL, still wraps inside itself. */
+.v2-byo__add-computer-row code .v2-byo__token { display: inline-block; max-width: 100%; }
 .v2-byo__footnote code {
   font-family: var(--v2-font-mono);
   font-weight: 500;
