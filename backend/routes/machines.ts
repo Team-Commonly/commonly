@@ -11,6 +11,7 @@ import {
   removeMachine,
 } from '../services/machineService';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
+import { createRateLimitRejectionLog } from '../utils/rateLimitLog';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -27,6 +28,9 @@ const router = express.Router();
 
 // Keep every machine lifecycle endpoint bounded. Importing rateLimit directly
 // makes this route family visible to CodeQL's missing-rate-limit check.
+// F631: a rejection names its client in the log, once per key per minute.
+const logMachineRejection = createRateLimitRejectionLog('machine');
+
 const machineRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
@@ -39,7 +43,8 @@ const machineRateLimit = rateLimit({
     }
     return cloudflareIpRateLimitKeyGenerator(req as never);
   },
-  handler: (_req: unknown, res: express.Response) => {
+  handler: (req: express.Request, res: express.Response) => {
+    logMachineRejection(req);
     res.status(429).json({ message: 'rate limit exceeded: 60 machine requests per 60s' });
   },
 });
