@@ -161,8 +161,10 @@ serve the name or description the row had on the day it was backfilled.
   `requires`, `marketplace.category`, `marketplace.tags`, and on the agent
   component `persona.avatar` and `metadata.registryRow.categories` (the view
   reads categories from there first). The values come from
-  `registryToInstallable(row)`. A value the registry cleared becomes `''` or
-  `[]`, never `$unset`.
+  `registryToInstallable(row)`. A cleared `description` is written as the
+  display name and a cleared `displayName` as the agent name, so neither is
+  stored as `''`; other cleared values become `''` or `[]`. Refresh never
+  writes `$unset`.
 - It never changes `origin`, `source`, `owner`, `status` or
   `marketplace.published`, and never touches an identity table. **Status is
   not mirrored**: the reader takes it from AgentRegistry as a gate, and

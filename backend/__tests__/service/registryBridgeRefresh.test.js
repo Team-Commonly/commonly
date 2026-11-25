@@ -180,9 +180,12 @@ describe('refreshBridgeRow and the sweep refresh', () => {
     expect(await shadowDrift(MARKED)).toBe(0);
   });
 
-  test('a retire leaves display fields in step and writes no unmarked row', async () => {
+  // Retire and restore change only status, which the refresh never copies. The
+  // marked name is made stale first, so each passes only if that call refreshes.
+  test('a retire refreshes stale display fields, keeps the row status, and writes no unmarked row', async () => {
     const before = await raw(MARKED);
     const others = await unmarked();
+    await Installable.collection.updateOne({ installableId: MARKED }, { $set: { name: 'Stale before retire' } });
     for (const name of [MARKED, LISTING, NATIVE]) {
       // eslint-disable-next-line no-await-in-loop
       await patchEntry(name, { retired: true }).expect(200);
@@ -193,6 +196,17 @@ describe('refreshBridgeRow and the sweep refresh', () => {
     expect(after.status).toBe('active');
     expect(await shadowDrift(MARKED)).toBe(0);
     expect(await unmarked()).toEqual(others);
+  });
+
+  test('a restore refreshes stale display fields and keeps the row status', async () => {
+    const before = await raw(MARKED);
+    await patchEntry(MARKED, { retired: true }).expect(200);
+    await Installable.collection.updateOne({ installableId: MARKED }, { $set: { name: 'Stale before restore' } });
+    await patchEntry(MARKED, { retired: false }).expect(200);
+    const after = await raw(MARKED);
+    expect(after.name).toBe(before.name);
+    expect(after.status).toBe('active');
+    expect(await shadowDrift(MARKED)).toBe(0);
   });
 
   test('a registry re-publish refreshes version, description and taxonomy on the marked row only', async () => {
