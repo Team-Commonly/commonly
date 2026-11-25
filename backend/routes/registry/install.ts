@@ -38,7 +38,6 @@ const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityF
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { referencesOthersPodUpload } = require('../../services/attachmentAccess');
 const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
-const { readRegistryDisplayOne } = require('../../services/installable/registryReader');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   hasForeignOwner, inheritablePodConfig, resolveAdditionSource, withRoutedRuntime,
@@ -436,13 +435,6 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         runtime: requestedRuntimeType,
       });
     }
-
-    // Display fields only (ADR-001 Phase 3 read path). `agent` stays the
-    // registry document: status, ownership, the name claim, scopes, the
-    // manifest and every write keep reading it.
-    const display: any = await readRegistryDisplayOne(
-      agent, 'install', ['displayName', 'description', 'iconUrl', 'latestVersion'],
-    );
 
     const existingInPod = await AgentInstallation.findOne({
       ...installationIdentityFilter(agentName.toLowerCase(), normalizedInstanceId),
@@ -864,7 +856,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       }
     }
     if (!effectiveDisplayName) {
-      effectiveDisplayName = display.displayName;
+      effectiveDisplayName = agent.displayName;
     }
 
     const memoryCopy = await copyMemory();
@@ -889,7 +881,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       const explicitDisplayName = typeof displayName === 'string' && displayName.trim()
         ? displayName.trim()
         : undefined;
-      let avatarSeed = normalizeAvatarUrl(display.iconUrl);
+      let avatarSeed = normalizeAvatarUrl(agent.iconUrl);
       if (explicitDisplayName) {
         // Query by the sanitized package key, then compare the user-provided
         // display label in memory. Besides avoiding a tainted Mongo filter,
@@ -982,7 +974,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       ? await AgentInstallation.rowInPod(agentName, podId, normalizedInstanceId)
       : null;
     const installation = await AgentInstallation.install(agentName, podId, {
-      version: version || display.latestVersion,
+      version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
       githubIssueWrite,
@@ -1018,7 +1010,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           agentName: safeAgentName,
           instanceId: normalizedInstanceId,
           name: effectiveDisplayName,
-          purpose: display.description,
+          purpose: agent.description,
           instructions: agent.manifest.configSchema?.defaultInstructions || '',
           persona: {
             tone: 'friendly',
@@ -1108,7 +1100,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           verified: false,
         },
         action: 'agent_action',
-        content: `Installed agent "${display.displayName}" to this pod`,
+        content: `Installed agent "${agent.displayName}" to this pod`,
         podId,
         agentMetadata: {
           agentName: agent.agentName,
@@ -1152,8 +1144,8 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         // the second lookup could only disagree with the row we just wrote.
         // Reading it here keeps the intro post and the member list on one
         // source of truth, and drops a per-install User query.
-        const displayName: string = installation.displayName || display.displayName;
-        const blurb = (display.description || '').trim().replace(/\s+/g, ' ');
+        const displayName: string = installation.displayName || agent.displayName;
+        const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
         // Skip the blurb when it just repeats the name (the publish step in
         // older CLI versions seeded description from displayName, producing
         // intros like "Hi all — I'm bot. bot Ping me ..."). Compare

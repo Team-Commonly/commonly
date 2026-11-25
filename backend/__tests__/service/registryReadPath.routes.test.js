@@ -2,7 +2,7 @@
  * ADR-001 Phase 3 PR B: the switched agent-catalog routes under
  * INSTALLABLE_READ_PATH. After a real sweep, `on` answers exactly what `off`
  * answers; `off` never queries Installable; the catalog gates stay on
- * AgentRegistry in every mode; install keeps a person's own labels.
+ * AgentRegistry in every mode; install never reads Installable.
  */
 const express = require('express');
 const request = require('supertest');
@@ -196,6 +196,19 @@ describe('agent-catalog routes under INSTALLABLE_READ_PATH', () => {
       expect(detail.body.manifest.configSchema).toEqual({ defaultInstructions: 'Private prompt for alpha.' });
     });
 
+    test('a retired registry row stays retired in catalog detail under on', async () => {
+      await AgentRegistry.updateOne({ agentName: 'alpha' }, { $set: { status: 'unpublished' } });
+      try {
+        setMode('on');
+        const detail = await get('/api/registry/agents/alpha');
+        expect(detail.body.status).toBe('unpublished');
+        expect(detail.body.verified).toBe(true);
+        expect(detail.body.displayName).toBe('Alpha Renamed');
+      } finally {
+        await AgentRegistry.updateOne({ agentName: 'alpha' }, { $set: { status: 'active' } });
+      }
+    });
+
     test("on keeps the seat's own displayName in pod-agents and takes only the icon", async () => {
       setMode('on');
       const roster = await get(`/api/registry/pods/${pod._id}/agents`);
@@ -227,21 +240,25 @@ describe('agent-catalog routes under INSTALLABLE_READ_PATH', () => {
       scopes: ['context:read', 'messages:write'], ...body,
     });
 
-    test('explicit displayName wins, the default comes from the view, instructions from AgentRegistry', async () => {
+    // Install writes AgentProfile and AgentInstallation, so it reads only
+    // AgentRegistry in every mode: a stale Installable must never persist.
+    test('install reads only AgentRegistry under on, even with a drifted Installable', async () => {
       setMode('on');
+      const find = jest.spyOn(Installable, 'find');
       const res = await install({ instanceId: 'mine', displayName: 'My Codex' });
       expect(res.status).toBe(200);
       const row = await AgentInstallation.findOne({ agentName: 'codex', instanceId: 'mine' }).lean();
       expect(row.displayName).toBe('My Codex');
       const profile = await AgentProfile.findOne({ agentName: 'codex', instanceId: 'mine' }).lean();
       expect(profile.name).toBe('My Codex');
-      expect(profile.purpose).toBe('Drifted description.');
+      expect(profile.purpose).toBe('codex helps.');
       expect(profile.instructions).toBe('Private prompt for codex.');
 
       const plain = await install({ instanceId: 'plain' });
       expect(plain.status).toBe(200);
       const plainRow = await AgentInstallation.findOne({ agentName: 'codex', instanceId: 'plain' }).lean();
-      expect(plainRow.displayName).toBe('Codex Drifted');
+      expect(plainRow.displayName).toBe('Codex');
+      expect(find).not.toHaveBeenCalled();
     });
 
     test("a curated identity's name survives a reinstall into a new pod", async () => {

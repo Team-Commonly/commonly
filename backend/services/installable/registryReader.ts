@@ -20,13 +20,16 @@ type Obj = Record<string, any>;
 
 export type ReadPathMode = 'off' | 'shadow' | 'on';
 
+// `verified` and `status` are gates, never overlaid: an owner retire
+// (owned-entry) changes only AgentRegistry, and the sweep never updates an
+// existing Installable, so its copy would say "active" for a retired agent.
 export type DisplayField =
   | 'displayName' | 'description' | 'iconUrl' | 'latestVersion'
-  | 'verified' | 'status' | 'categories' | 'tags' | 'contextRequired';
+  | 'categories' | 'tags' | 'contextRequired';
 
 export const DISPLAY_FIELDS: readonly DisplayField[] = [
   'displayName', 'description', 'iconUrl', 'latestVersion',
-  'verified', 'status', 'categories', 'tags', 'contextRequired',
+  'categories', 'tags', 'contextRequired',
 ];
 
 export function readPathMode(): ReadPathMode {
@@ -41,8 +44,6 @@ const get = (row: Obj, field: DisplayField): unknown => (
 // Empty, null and missing are one value, so a '' iconUrl never reads as drift
 // against an absent avatar.
 const norm = (field: DisplayField, value: unknown): string => {
-  if (field === 'verified') return String(value === true);
-  if (field === 'status') return String(value || 'active');
   if (field === 'categories' || field === 'tags' || field === 'contextRequired') {
     return JSON.stringify(Array.isArray(value) ? value : []);
   }
@@ -65,6 +66,7 @@ interface Counters {
   rows: number;
   nameless: number;
   missing: number;
+  ineligible: number;
   fallbacks: number;
   errors: number;
   mismatchedRows: number;
@@ -73,7 +75,8 @@ interface Counters {
 }
 
 const freshCounters = (): Counters => ({
-  reads: 0, rows: 0, nameless: 0, missing: 0, fallbacks: 0, errors: 0, mismatchedRows: 0, served: 0, fields: {},
+  reads: 0, rows: 0, nameless: 0, missing: 0, ineligible: 0,
+  fallbacks: 0, errors: 0, mismatchedRows: 0, served: 0, fields: {},
 });
 
 let counters = freshCounters();
@@ -93,7 +96,7 @@ export function formatReadPathCounters(): string {
   if (c.mode === 'off' && c.reads === 0) return '';
   const fields = Object.entries(c.fields).map(([k, v]) => `${k}:${v}`).join(',');
   return ` readPath=${c.mode} reads=${c.reads} rows=${c.rows} mismatchedRows=${c.mismatchedRows} `
-    + `missing=${c.missing} fallbacks=${c.fallbacks} served=${c.served} errors=${c.errors} `
+    + `missing=${c.missing} ineligible=${c.ineligible} fallbacks=${c.fallbacks} served=${c.served} errors=${c.errors} `
     + `nameless=${c.nameless}${fields ? ` fields=${fields}` : ''}`;
 }
 
@@ -141,10 +144,25 @@ const driftedFields = (row: Obj, doc: Obj, fields: readonly DisplayField[]): { v
   // Marketplace publish never writes AgentRegistry.iconUrl and never vets the
   // avatar, so only a row the bridge itself wrote may supply the icon.
   const iconTrusted = doc.origin === REGISTRY_BACKFILL_ORIGIN;
-  const drifted = fields.filter((f) => (f !== 'iconUrl' || iconTrusted)
-    && norm(f, get(view, f)) !== norm(f, get(expected, f)));
+  const drifted = fields.filter((f) => {
+    if (f === 'iconUrl' && !iconTrusted) return false;
+    // A listing published with no description holds '' where the bridge
+    // would write the display-name fallback: a mapping artefact, not drift.
+    if (f === 'description' && !view.description && expected.description === expected.displayName) return false;
+    return norm(f, get(view, f)) !== norm(f, get(expected, f));
+  });
   return { view, drifted };
 };
+
+/**
+ * Only rows the bridge shaped carry the fields the view reads: a backfilled
+ * row, or a marketplace listing (whose publish writes AgentRegistry too). A
+ * native-seeded builtin has no marketplace block, requires or registryRow, so
+ * its view would read as unverified with no scopes; it is skipped.
+ */
+const isBridgeShaped = (doc: Obj): boolean => (
+  doc.origin === REGISTRY_BACKFILL_ORIGIN || doc.source === 'marketplace'
+);
 
 const isAgentDoc = (doc: Obj | undefined): doc is Obj => Boolean(doc)
   && Array.isArray(doc!.components) && doc!.components.some((c: Obj) => c?.type === 'agent');
@@ -175,6 +193,10 @@ export async function readRegistryDisplay<T>(
       if (!isAgentDoc(doc)) {
         counters.missing += 1;
         if (mode === 'on') counters.fallbacks += 1;
+        return row;
+      }
+      if (!isBridgeShaped(doc)) {
+        counters.ineligible += 1;
         return row;
       }
       try {

@@ -8,6 +8,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 const Installable = require('../../models/Installable');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const { sweepRegistryDrift } = require('../../services/installable/registryReconciler');
+const bridge = require('../../services/installable/agentRegistryBridge');
 const {
   readRegistryDisplay, readRegistryDisplayOne, readPathMode, readPathCounters,
   resetReadPathCounters, formatReadPathCounters,
@@ -98,7 +99,7 @@ describe('registryReader', () => {
     expect(readPathCounters()).toMatchObject({ reads: 1, rows: 2, mismatchedRows: 0, missing: 0, served: 0 });
   });
 
-  test('on: drifted display fields come from Installable; the hybrid fields stay on AgentRegistry', async () => {
+  test('on: drifted display fields come from Installable; gates and hybrid fields stay on AgentRegistry', async () => {
     await Installable.updateOne({ installableId: 'alpha' }, {
       $set: {
         name: 'Alpha Renamed',
@@ -121,13 +122,16 @@ describe('registryReader', () => {
       displayName: 'Alpha Renamed',
       description: 'New description.',
       latestVersion: '2.0.0',
-      status: 'deprecated',
-      verified: false,
       tags: ['fresh'],
       iconUrl: 'bottts:new',
       categories: ['research'],
     });
     expect(out.manifest.context.required).toEqual(['context:read', 'messages:write']);
+    // Gates are never overlaid: an owner retire reaches only AgentRegistry.
+    expect(out.status).toBe(ar.status);
+    expect(out.verified).toBe(true);
+    expect(readPathCounters().fields.status).toBeUndefined();
+    expect(readPathCounters().fields.verified).toBeUndefined();
     // Never from Installable: these do not round-trip, or belong to the owner.
     expect(out.manifest.context.optional).toEqual(['memory:read']);
     expect(out.manifest.configSchema).toEqual({ defaultInstructions: 'Private prompt.' });
@@ -175,6 +179,71 @@ describe('registryReader', () => {
     const rows = [await lean('gamma')];
     expect((await readRegistryDisplay(rows, 't'))[0]).toBe(rows[0]);
     expect(readPathCounters().fallbacks).toBe(1);
+  });
+
+  test('a gate-only difference is not drift: a retired registry row stays retired under on', async () => {
+    await AgentRegistry.updateOne({ agentName: 'alpha' }, { $set: { status: 'unpublished', verified: false } });
+    setMode('on');
+    const rows = [await lean('alpha')];
+    const [out] = await readRegistryDisplay(rows, 't');
+    expect(out).toBe(rows[0]);
+    expect(out).toMatchObject({ status: 'unpublished', verified: false });
+    expect(readPathCounters().mismatchedRows).toBe(0);
+  });
+
+  // seed-native-agents upserts its own builtin rows: no origin, no
+  // marketplace block, no requires, no registryRow.
+  test('a native-seeded builtin Installable is ineligible: no overlay, no drift, registry values served', async () => {
+    await Installable.deleteOne({ installableId: 'gamma' });
+    await Installable.collection.insertOne({
+      installableId: 'gamma',
+      name: 'Gamma Native',
+      description: 'Seeded natively.',
+      version: '9.9.9',
+      kind: 'app',
+      source: 'builtin',
+      scope: 'instance',
+      status: 'active',
+      components: [{ name: 'gamma', type: 'agent', runtime: 'native', persona: { displayName: 'Gamma Native' } }],
+    });
+    for (const mode of ['shadow', 'on']) {
+      setMode(mode);
+      const rows = [await lean('gamma')];
+      const [out] = await readRegistryDisplay(rows, 't');
+      expect(out).toBe(rows[0]);
+      expect(out).toMatchObject({ displayName: 'gamma display', verified: true, latestVersion: '1.2.0' });
+      expect(out.manifest.context.required).toEqual(['context:read']);
+    }
+    expect(readPathCounters()).toMatchObject({ ineligible: 2, mismatchedRows: 0, missing: 0, served: 0 });
+  });
+
+  test('a marketplace listing with an empty description is not drift', async () => {
+    await AgentRegistry.collection.updateOne({ agentName: 'beta' }, { $set: { description: '' } });
+    await Installable.updateOne({ installableId: 'beta' }, {
+      $set: { source: 'marketplace', description: '' },
+      $unset: { origin: 1 },
+    });
+    setMode('on');
+    const rows = [await lean('beta')];
+    const [out] = await readRegistryDisplay(rows, 't');
+    expect(out).toBe(rows[0]);
+    expect(readPathCounters().mismatchedRows).toBe(0);
+  });
+
+  test("one row's view failing serves that row from the registry; the others still overlay", async () => {
+    await Installable.updateMany({ installableId: { $in: ['alpha', 'beta'] } }, { $set: { name: 'Renamed' } });
+    const real = bridge.installableToRegistryView;
+    jest.spyOn(bridge, 'installableToRegistryView').mockImplementation((doc) => {
+      if (doc.installableId === 'alpha') throw new Error('bad row');
+      return real(doc);
+    });
+    setMode('on');
+    const rows = [await lean('alpha'), await lean('beta')];
+    const out = await readRegistryDisplay(rows, 't');
+    expect(out[0]).toBe(rows[0]);
+    expect(out[0].displayName).toBe('alpha display');
+    expect(out[1].displayName).toBe('Renamed');
+    expect(readPathCounters()).toMatchObject({ errors: 1, fallbacks: 1, served: 1 });
   });
 
   test('shadow counts a planted mismatch, logs it once, and returns the registry rows untouched', async () => {
@@ -241,7 +310,7 @@ describe('registryReader', () => {
     const rows = await AgentRegistry.find({}).lean();
     await readRegistryDisplay(rows, 't');
     expect(find).toHaveBeenCalledTimes(1);
-    expect(find.mock.calls[0][0]).toEqual({ installableId: { $in: ['alpha', 'beta', 'gamma'] } });
+    expect(find.mock.calls[0][0].installableId.$in.slice().sort()).toEqual(['alpha', 'beta', 'gamma']);
   });
 
   test('`fields` narrows the comparison to what the site projected', async () => {

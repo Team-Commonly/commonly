@@ -127,21 +127,34 @@ stay there. The reader takes the rows those queries returned, and
 | `on` | display fields from Installable, everything else from AgentRegistry | one `$in` per read |
 
 **Display fields:** `displayName`, `description`, `iconUrl`, `latestVersion`,
-`verified`, `status`, `categories`, `tags` and `manifest.context.required`. A
-site that projects fewer fields passes only those; pod-agents passes `iconUrl`.
+`categories`, `tags` and `manifest.context.required`. A site that projects
+fewer fields passes only those; pod-agents passes `iconUrl`.
+
+**`verified` and `status` are gates and are never compared or overlaid.** An
+owner retire (`owned-entry`) changes only AgentRegistry, and the sweep never
+updates an existing Installable. Overlaying them would make a retired agent
+read as active.
+
+**Only rows the bridge shaped are eligible**: `origin: 'registry-backfill'`,
+or `source: 'marketplace'` (publish writes AgentRegistry too). Any other
+Installable under a registry id is skipped and counted as `ineligible`, never
+as drift. That covers the builtins `seed-native-agents` upserts itself
+(no marketplace block, `requires` or registryRow) and connectors. Those rows
+are served from AgentRegistry.
 
 **Drift** is judged against what the bridge would write for the AgentRegistry
 row today (`installableToRegistryView(registryToInstallable(row))`), not
 against the raw row. Mapping losses therefore don't count as drift: an empty
 description that falls back to the display name, a tag that repeats a
-category, or a missing `latestVersion`. In `on`, a field that hasn't drifted
+category, a missing `latestVersion`, or a marketplace listing published with
+an empty description. In `on`, a field that hasn't drifted
 keeps the AgentRegistry value, so `on` and `off` return the same bytes until
 something actually drifts.
 
 **Always from AgentRegistry, in every mode:** `defaultInstructions` (and all
 of `configSchema`), `integrations`, `models`, `context.optional`,
 `runtimeType`, `capabilities`, `publisher`, `registry`, `ephemeral`, `_id`,
-`__v` and `versions`. The backfill never copied `defaultInstructions`, and
+`__v`, `versions`, `verified` and `status`. The backfill never copied `defaultInstructions`, and
 the others don't round-trip reliably. In `on` the row is the AgentRegistry row
 with the drifted display fields laid over it, never a row rebuilt from the view.
 
@@ -162,10 +175,14 @@ because of the reader.
 | `GET /api/registry/agents` (catalog list) | the projected display fields of returned rows. `search()` and the verified and moltbot filters are unchanged |
 | `GET /api/registry/agents/:name` (catalog detail) | display fields, including `manifest.context.required` |
 | `GET /api/registry/pods/:podId/agents` and `/agents/:name` | `iconUrl` only. The seat's displayName is the installation's own |
-| `POST /api/registry/install` | registry-default displayName, `iconUrl` (avatar seed), `latestVersion` (version fallback), `description` (profile purpose, intro blurb) |
 
-These stay on AgentRegistry: install's status, ephemeral-owner and name-claim
-reads and its required-scopes gate; `/categories` (a filter vocabulary, not
+All four are pure reads: no reader output reaches a write.
+
+These stay on AgentRegistry: **`POST /api/registry/install`, entirely.** Its
+registry values reach persistent writes (`AgentProfile.purpose` on every
+reinstall, `AgentInstallation.version`, the installation and profile `name`, the
+bot avatar seed). A stale Installable there would rewrite a profile, and a
+rollback wouldn't undo it. Also on AgentRegistry: `/categories` (a filter vocabulary, not
 rows); `templates.ts` (an existence check only); `personaHireService` (reads
 only `verified`, which is the hire gate); and agentPodAddition,
 runtimeIdentityOwnership, cloudRuntimeOwnership, owned-entry,
@@ -175,7 +192,7 @@ agentNameReservation and approvalActionService.
 
 The counters are kept in-process, per replica, since the last restart: `reads`, `rows`, `mismatchedRows`,
 per-field counts, `missing`, `fallbacks`, `served` (rows `on` overlaid),
-`errors` and `nameless`. They're appended to the hourly `[registry-reconciler]` line
+`errors`, `nameless` and `ineligible`. They're appended to the hourly `[registry-reconciler]` line
 (`readPath=shadow reads=… mismatchedRows=… fields=displayName:3,…`); while the
 flag is off and nothing has run, nothing is appended. Each mismatch also logs one
 `[installable-read-path] mismatch site=… agent=… fields=…` line, at most 10
@@ -185,10 +202,13 @@ a minute per replica. The line has field names only, never values.
 
 1. Ship with the flag unset (`off`).
 2. Set `shadow` on prod. Read the hourly lines for a few days.
-3. Investigate every drifted field. The sweep and mirrors insert and never
-   update, so an AgentRegistry edit after backfill (a re-publish, a description
-   change) shows up here as drift. Decide whether Installable or the edit path
-   is wrong before going further.
-4. Set `on` only when `mismatchedRows` stays at the level you accept and
-   `missing` is near zero.
+3. Investigate every drifted field. **`on` serves Installable values that go
+   stale.** The sweep and mirrors insert and never update, so after an
+   AgentRegistry rename or description edit (owned-entry rename, a registry
+   publish edit), `on` keeps serving the old name or description until the
+   bridge row changes. Shadow counts each of these as drift.
+4. `on` waits until either shadow drift stays near zero, or the write paths
+   (owned-entry rename and retire, registry publish edits) update the bridge
+   row. Today neither is true for edited rows, so `on` would show stale names
+   for them. `missing` should also be near zero.
 5. Rollback is unsetting the flag. No data moves in any mode.
