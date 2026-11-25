@@ -1,9 +1,11 @@
+const { randomUUID } = require('crypto');
 const express = require('express');
 const auth = require('../middleware/auth');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const InstallableModel = require('../models/Installable');
 const { REGISTRY_BACKFILL_ORIGIN } = require('../services/installable/registryBackfillOrigin');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
+const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 const { validateMcpComponent } = require('../utils/pluginManifestParser');
 
 const router = express.Router();
@@ -44,6 +46,124 @@ const takeOverBackfill = async (installableId: string, publishDoc: any, userId: 
   if (!doc) return null;
   doc.overwrite({ ...publishDoc, owner: userId, createdAt: doc.createdAt });
   return doc.save();
+};
+
+// Publish and fork write AgentRegistry, then Installable. Without an exclusive
+// claim, two requests for one id both pass admission, the last AgentRegistry
+// write wins, and Installable keeps the other request's doc. The claim reuses
+// the scheduler lease model rather than a new one: same compare-and-set on a
+// fixed _id, same TTL cleanup, no new collection or index. The prefix keeps
+// these ids apart from the scheduler's fixed ones.
+const INSTALLABLE_CLAIM_MS = 30_000;
+const installableClaimId = (installableId: string) => `installable-claim:${installableId}`;
+
+// Returns the owner token, or null while another live request holds the id.
+// An expired claim (its holder crashed or ran past 30s) is taken over.
+const acquireInstallableClaim = async (installableId: string): Promise<string | null> => {
+  const ownerId = randomUUID();
+  const now = new Date();
+  try {
+    await SchedulerHeartbeatLease.findOneAndUpdate(
+      { _id: installableClaimId(installableId), expiresAt: { $lte: now } },
+      { $set: { ownerId, expiresAt: new Date(now.getTime() + INSTALLABLE_CLAIM_MS) } },
+      { upsert: true, new: true },
+    );
+    return ownerId;
+  } catch (error) {
+    if ((error as any)?.code === 11000) return null;
+    throw error;
+  }
+};
+
+// Re-checks, right before a write, that this request still holds the id, and
+// extends the claim. A holder that stalled past expiry gets false and must not
+// write: another request may have taken the id over and committed since. A
+// stall inside a single write is not fenced; that needs conditional writes in
+// both collections.
+const confirmInstallableClaim = async (installableId: string, ownerId: string): Promise<boolean> => {
+  const now = new Date();
+  const claim = await SchedulerHeartbeatLease.findOneAndUpdate(
+    { _id: installableClaimId(installableId), ownerId, expiresAt: { $gt: now } },
+    { $set: { expiresAt: new Date(now.getTime() + INSTALLABLE_CLAIM_MS) } },
+    { new: true },
+  );
+  return Boolean(claim);
+};
+
+const CLAIM_RELEASE_ATTEMPTS = 3;
+const CLAIM_RELEASE_WAIT_WARNING = 'The installableId claim could not be released; '
+  + 'wait about 30 seconds before retrying, when it expires.';
+
+// Deletes only this request's claim document, retrying a few times. Returns
+// whether the delete went through (deletedCount 0 counts: the claim is gone).
+// On false the TTL expiry still frees the id.
+const releaseInstallableClaim = async (installableId: string, ownerId: string): Promise<boolean> => {
+  for (let attempt = 1; attempt <= CLAIM_RELEASE_ATTEMPTS; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await SchedulerHeartbeatLease.deleteOne({ _id: installableClaimId(installableId), ownerId });
+      return true;
+    } catch (error) {
+      console.warn(
+        `[marketplace] installableId claim release failed (attempt ${attempt}):`,
+        (error as any).message,
+      );
+      if (attempt < CLAIM_RELEASE_ATTEMPTS) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => { setTimeout(r, 10 * attempt); });
+      }
+    }
+  }
+  return false;
+};
+
+const claimExpired = (res: any) => res.status(409).json({
+  error: 'installableId claim expired before the write, retry',
+  code: 'installable_id_busy',
+});
+
+// Runs `work` (admission check included) while holding the id, or answers 409.
+// `work` gets `confirm`, which it calls immediately before each write.
+const withInstallableClaim = async (
+  res: any,
+  installableId: string,
+  work: (confirm: () => Promise<boolean>) => Promise<any>,
+) => {
+  const ownerId = await acquireInstallableClaim(installableId);
+  if (!ownerId) {
+    return res.status(409).json({
+      error: 'installableId is being published by another request, retry shortly',
+      code: 'installable_id_busy',
+    });
+  }
+  // Release before the answer goes out: a client that retries as soon as it
+  // reads it (the drift warning asks it to) must find the id free, not busy.
+  let releasing: Promise<boolean> | null = null;
+  const release = () => {
+    releasing ??= releaseInstallableClaim(installableId, ownerId);
+    return releasing;
+  };
+  const originalJson = res.json;
+  res.json = (body: any) => {
+    release()
+      .then((released) => {
+        // A client told to retry would hit the leftover claim; say how long.
+        const out = !released && Array.isArray(body?.warnings)
+          ? { ...body, warnings: [...body.warnings, CLAIM_RELEASE_WAIT_WARNING] }
+          : body;
+        originalJson.call(res, out);
+      })
+      // Nothing awaits this chain; a throwing send must not become an
+      // unhandled rejection that takes the process down.
+      .catch((error) => console.error('[marketplace] response send failed: %s', (error as Error)?.message));
+    return res;
+  };
+  try {
+    return await work(() => confirmInstallableClaim(installableId, ownerId));
+  } finally {
+    await release();
+    res.json = originalJson;
+  }
 };
 
 const validateNamespace = (installableId: string, username: string) => {
@@ -306,177 +426,186 @@ router.post('/publish', auth, async (req: any, res: any) => {
       return res.status(400).json({ error: 'scope "instance" is reserved for admin/builtin manifests' });
     }
 
-    // A backfilled row is invisible here and is taken over on the create path.
-    const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
+    // The claim covers the admission check, so a request that acquires after
+    // the winner finished sees the winner's row.
+    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm) => {
+      // A backfilled row is invisible here and is taken over on the create path.
+      const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
 
-    if (existing) {
-      if (existing.publisher?.userId?.toString() !== userId.toString()) {
-        return res.status(403).json({ error: 'Not authorized to update this manifest' });
-      }
+      if (existing) {
+        if (existing.publisher?.userId?.toString() !== userId.toString()) {
+          return res.status(403).json({ error: 'Not authorized to update this manifest' });
+        }
 
-      const existingVersion = (existing.versions || []).find(
-        (v: any) => v.version === version,
-      );
-      if (existingVersion) {
-        return res.status(200).json({
-          success: true,
-          manifest: {
-            installableId: existing.installableId,
-            version,
-            status: existing.status,
-            isNew: false,
-          },
-        });
-      }
-
-      existing.versions = [
-        ...(existing.versions || []),
-        { version, publishedAt: new Date() },
-      ];
-      existing.version = version;
-      existing.name = name;
-      existing.description = description || existing.description;
-      if (components) existing.components = normalizedComponents;
-      if (requires) existing.requires = requires;
-      if (readme !== undefined) existing.readme = readme;
-      if (categories || tags) {
-        existing.marketplace = {
-          ...existing.marketplace?.toObject?.() || existing.marketplace || {},
-          published: true,
-          category: categories?.[0] || existing.marketplace?.category || '',
-          tags: tags || existing.marketplace?.tags || [],
-        };
-      }
-
-      // Write AR first (load-bearing table), then Installable — same
-      // ordering rationale as new-manifest path (§6c.1).
-      try {
-        await syncToAgentRegistry(existing, 'publish');
-      } catch (arError) {
-        console.warn('[marketplace] AgentRegistry sync failed on update:', (arError as any).message);
-        return res.status(201).json({
-          success: true,
-          warnings: ['AgentRegistry sync failed; retrying publish will fix.'],
-          manifest: {
-            installableId: existing.installableId,
-            version,
-            status: existing.status,
-            isNew: false,
-          },
-        });
-      }
-
-      try {
-        await existing.save();
-      } catch (saveError) {
-        // AR succeeded but Installable save failed. Mirror the new-manifest
-        // drift-warning path so the caller knows to retry rather than
-        // assuming publish fully succeeded.
-        console.warn(
-          '[marketplace] Installable save failed on update (AR succeeded):',
-          (saveError as any).message,
+        const existingVersion = (existing.versions || []).find(
+          (v: any) => v.version === version,
         );
+        if (existingVersion) {
+          return res.status(200).json({
+            success: true,
+            manifest: {
+              installableId: existing.installableId,
+              version,
+              status: existing.status,
+              isNew: false,
+            },
+          });
+        }
+
+        existing.versions = [
+          ...(existing.versions || []),
+          { version, publishedAt: new Date() },
+        ];
+        existing.version = version;
+        existing.name = name;
+        existing.description = description || existing.description;
+        if (components) existing.components = normalizedComponents;
+        if (requires) existing.requires = requires;
+        if (readme !== undefined) existing.readme = readme;
+        if (categories || tags) {
+          existing.marketplace = {
+            ...existing.marketplace?.toObject?.() || existing.marketplace || {},
+            published: true,
+            category: categories?.[0] || existing.marketplace?.category || '',
+            tags: tags || existing.marketplace?.tags || [],
+          };
+        }
+
+        // Write AR first (load-bearing table), then Installable — same
+        // ordering rationale as new-manifest path (§6c.1).
+        if (!(await confirm())) return claimExpired(res);
+        try {
+          await syncToAgentRegistry(existing, 'publish');
+        } catch (arError) {
+          console.warn('[marketplace] AgentRegistry sync failed on update:', (arError as any).message);
+          return res.status(201).json({
+            success: true,
+            warnings: ['AgentRegistry sync failed; retrying publish will fix.'],
+            manifest: {
+              installableId: existing.installableId,
+              version,
+              status: existing.status,
+              isNew: false,
+            },
+          });
+        }
+
+        if (!(await confirm())) return claimExpired(res);
+        try {
+          await existing.save();
+        } catch (saveError) {
+          // AR succeeded but Installable save failed. Mirror the new-manifest
+          // drift-warning path so the caller knows to retry rather than
+          // assuming publish fully succeeded.
+          console.warn(
+            '[marketplace] Installable save failed on update (AR succeeded):',
+            (saveError as any).message,
+          );
+          return res.status(201).json({
+            success: true,
+            warnings: [
+              'Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.',
+            ],
+            manifest: {
+              installableId: existing.installableId,
+              version,
+              status: existing.status,
+              isNew: false,
+            },
+          });
+        }
+
+        return res.json({
+          success: true,
+          manifest: {
+            installableId: existing.installableId,
+            version,
+            status: existing.status,
+            isNew: false,
+          },
+        });
+      }
+
+      // New manifest: write to AgentRegistry first (load-bearing table), then Installable
+      const installableDoc = {
+        installableId: installableId.toLowerCase(),
+        name,
+        description: description || '',
+        version,
+        kind,
+        source: 'marketplace' as const,
+        scope: scope || 'pod',
+        requires: requires || [],
+        components: normalizedComponents || [],
+        readme,
+        marketplace: {
+          published: true,
+          category: categories?.[0] || '',
+          tags: tags || [],
+          verified: false,
+          rating: 0,
+          ratingCount: 0,
+          installCount: 0,
+        },
+        publisher: { userId, name: username },
+        status: 'active' as const,
+        versions: [{ version, publishedAt: new Date() }],
+        stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+      };
+
+      // Write AR first
+      if (!(await confirm())) return claimExpired(res);
+      try {
+        await syncToAgentRegistry(installableDoc, 'publish');
+      } catch (arError) {
+        console.error('[marketplace] AgentRegistry write failed:', (arError as any).message);
+        return res.status(500).json({ error: 'Failed to publish manifest' });
+      }
+
+      // Then Installable
+      if (!(await confirm())) return claimExpired(res);
+      let created;
+      try {
+        created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
+        if (!created) created = await listings.create(installableDoc);
+      } catch (installableError) {
+        console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
+        // The hourly backfill can insert between the read above and create.
+        if ((installableError as any)?.code === 11000) {
+          if (!(await confirm())) return claimExpired(res);
+          try {
+            created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
+          } catch (takeoverError) {
+            console.warn('[marketplace] backfill takeover failed:', (takeoverError as any).message);
+          }
+        }
+      }
+      if (!created) {
         return res.status(201).json({
           success: true,
           warnings: [
             'Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.',
           ],
           manifest: {
-            installableId: existing.installableId,
+            installableId: installableDoc.installableId,
             version,
-            status: existing.status,
-            isNew: false,
+            status: 'active',
+            isNew: true,
           },
         });
       }
 
-      return res.json({
-        success: true,
-        manifest: {
-          installableId: existing.installableId,
-          version,
-          status: existing.status,
-          isNew: false,
-        },
-      });
-    }
+      console.log(`[marketplace] action=publish user=${userId} manifest=${created.installableId} version=${version}`);
 
-    // New manifest: write to AgentRegistry first (load-bearing table), then Installable
-    const installableDoc = {
-      installableId: installableId.toLowerCase(),
-      name,
-      description: description || '',
-      version,
-      kind,
-      source: 'marketplace' as const,
-      scope: scope || 'pod',
-      requires: requires || [],
-      components: normalizedComponents || [],
-      readme,
-      marketplace: {
-        published: true,
-        category: categories?.[0] || '',
-        tags: tags || [],
-        verified: false,
-        rating: 0,
-        ratingCount: 0,
-        installCount: 0,
-      },
-      publisher: { userId, name: username },
-      status: 'active' as const,
-      versions: [{ version, publishedAt: new Date() }],
-      stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
-    };
-
-    // Write AR first
-    try {
-      await syncToAgentRegistry(installableDoc, 'publish');
-    } catch (arError) {
-      console.error('[marketplace] AgentRegistry write failed:', (arError as any).message);
-      return res.status(500).json({ error: 'Failed to publish manifest' });
-    }
-
-    // Then Installable
-    let created;
-    try {
-      created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
-      if (!created) created = await listings.create(installableDoc);
-    } catch (installableError) {
-      console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
-      // The hourly backfill can insert between the read above and create.
-      if ((installableError as any)?.code === 11000) {
-        try {
-          created = await takeOverBackfill(installableDoc.installableId, installableDoc, userId);
-        } catch (takeoverError) {
-          console.warn('[marketplace] backfill takeover failed:', (takeoverError as any).message);
-        }
-      }
-    }
-    if (!created) {
       return res.status(201).json({
         success: true,
-        warnings: [
-          'Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.',
-        ],
         manifest: {
-          installableId: installableDoc.installableId,
-          version,
-          status: 'active',
+          installableId: created.installableId,
+          version: created.version,
+          status: created.status,
           isNew: true,
         },
       });
-    }
-
-    console.log(`[marketplace] action=publish user=${userId} manifest=${created.installableId} version=${version}`);
-
-    res.status(201).json({
-      success: true,
-      manifest: {
-        installableId: created.installableId,
-        version: created.version,
-        status: created.status,
-        isNew: true,
-      },
     });
   } catch (error) {
     console.error('[marketplace] publish error:', error);
@@ -603,106 +732,112 @@ router.post('/fork', auth, async (req: any, res: any) => {
       });
     }
 
-    // A backfilled row in the caller's own namespace (checked above) is not a
-    // claim on the id: an interrupted fork's retry finds the row the sweep
-    // inserted from its AgentRegistry write, and takes it over like publish.
+    // The id check runs under the claim, like publish's admission check.
     const forkId = newInstallableId.toLowerCase();
-    if (await installableIdTaken(forkId) && !(await findBackfillForTakeover(forkId))) {
-      return res.status(409).json({ error: 'installableId already taken' });
-    }
+    return await withInstallableClaim(res, forkId, async (confirm) => {
+      // A backfilled row in the caller's own namespace (checked above) is not a
+      // claim on the id: an interrupted fork's retry finds the row the sweep
+      // inserted from its AgentRegistry write, and takes it over like publish.
+      if (await installableIdTaken(forkId) && !(await findBackfillForTakeover(forkId))) {
+        return res.status(409).json({ error: 'installableId already taken' });
+      }
 
-    const latestVersion = source.version || '1.0.0';
+      const latestVersion = source.version || '1.0.0';
 
-    const forkDoc = {
-      installableId: newInstallableId.toLowerCase(),
-      name: newName || source.name,
-      description: source.description || '',
-      version: '1.0.0',
-      kind: source.kind,
-      source: 'marketplace' as const,
-      scope: source.scope,
-      requires: source.requires || [],
-      components: sourceComponentsValidation.components || [],
-      readme: source.readme,
-      marketplace: {
-        published: true,
-        category: source.marketplace?.category || '',
-        tags: source.marketplace?.tags || [],
-        verified: false,
-        rating: 0,
-        ratingCount: 0,
-        installCount: 0,
-      },
-      publisher: { userId, name: username },
-      status: 'active' as const,
-      versions: [{ version: '1.0.0', publishedAt: new Date() }],
-      forkedFrom: {
-        installableId: source.installableId,
-        version: latestVersion,
-        forkedAt: new Date(),
-      },
-      stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
-    };
+      const forkDoc = {
+        installableId: newInstallableId.toLowerCase(),
+        name: newName || source.name,
+        description: source.description || '',
+        version: '1.0.0',
+        kind: source.kind,
+        source: 'marketplace' as const,
+        scope: source.scope,
+        requires: source.requires || [],
+        components: sourceComponentsValidation.components || [],
+        readme: source.readme,
+        marketplace: {
+          published: true,
+          category: source.marketplace?.category || '',
+          tags: source.marketplace?.tags || [],
+          verified: false,
+          rating: 0,
+          ratingCount: 0,
+          installCount: 0,
+        },
+        publisher: { userId, name: username },
+        status: 'active' as const,
+        versions: [{ version: '1.0.0', publishedAt: new Date() }],
+        forkedFrom: {
+          installableId: source.installableId,
+          version: latestVersion,
+          forkedAt: new Date(),
+        },
+        stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+      };
 
-    // Write AR first, then Installable
-    try {
-      await syncToAgentRegistry(forkDoc, 'publish');
-    } catch (arError) {
-      console.error('[marketplace] AR write failed on fork:', (arError as any).message);
-      return res.status(500).json({ error: 'Failed to fork manifest' });
-    }
+      // Write AR first, then Installable
+      if (!(await confirm())) return claimExpired(res);
+      try {
+        await syncToAgentRegistry(forkDoc, 'publish');
+      } catch (arError) {
+        console.error('[marketplace] AR write failed on fork:', (arError as any).message);
+        return res.status(500).json({ error: 'Failed to fork manifest' });
+      }
 
-    let created;
-    try {
-      created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
-      if (!created) created = await listings.create(forkDoc);
-    } catch (installableError) {
-      console.warn(
-        '[marketplace] Installable create failed on fork (AR succeeded):',
-        (installableError as any).message,
-      );
-      // The hourly backfill can insert between the check above and create.
-      if ((installableError as any)?.code === 11000) {
-        try {
-          created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
-        } catch (takeoverError) {
-          console.warn('[marketplace] backfill takeover failed on fork:', (takeoverError as any).message);
+      if (!(await confirm())) return claimExpired(res);
+      let created;
+      try {
+        created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
+        if (!created) created = await listings.create(forkDoc);
+      } catch (installableError) {
+        console.warn(
+          '[marketplace] Installable create failed on fork (AR succeeded):',
+          (installableError as any).message,
+        );
+        // The hourly backfill can insert between the check above and create.
+        if ((installableError as any)?.code === 11000) {
+          if (!(await confirm())) return claimExpired(res);
+          try {
+            created = await takeOverBackfill(forkDoc.installableId, forkDoc, userId);
+          } catch (takeoverError) {
+            console.warn('[marketplace] backfill takeover failed on fork:', (takeoverError as any).message);
+          }
         }
       }
-    }
-    if (!created) {
-      // AR succeeded but the Installable row didn't land. Mirror the publish
-      // path: return 201 with a drift warning so the caller knows to retry.
-      // Skip the source forkCount increment — we'll bump it on the retry
-      // that actually creates the Installable row.
+      if (!created) {
+        // AR succeeded but the Installable row didn't land. Mirror the publish
+        // path: return 201 with a drift warning so the caller knows to retry.
+        // Skip the source forkCount increment — we'll bump it on the retry
+        // that actually creates the Installable row.
+        return res.status(201).json({
+          success: true,
+          warnings: [
+            'Installable catalog write failed; fork is registered but not yet browsable. Retry fork to sync.',
+          ],
+          manifest: {
+            installableId: forkDoc.installableId,
+            version: '1.0.0',
+            forkedFrom: forkDoc.forkedFrom,
+          },
+        });
+      }
+
+      // Increment fork count on source (atomic)
+      await listings.updateOne(
+        { installableId: source.installableId },
+        { $inc: { 'stats.forkCount': 1 } },
+      );
+
+      console.log(`[marketplace] action=fork user=${userId} source=${sourceInstallableId} target=${newInstallableId}`);
+
       return res.status(201).json({
         success: true,
-        warnings: [
-          'Installable catalog write failed; fork is registered but not yet browsable. Retry fork to sync.',
-        ],
         manifest: {
-          installableId: forkDoc.installableId,
+          installableId: created.installableId,
           version: '1.0.0',
-          forkedFrom: forkDoc.forkedFrom,
+          forkedFrom: created.forkedFrom,
         },
       });
-    }
-
-    // Increment fork count on source (atomic)
-    await listings.updateOne(
-      { installableId: source.installableId },
-      { $inc: { 'stats.forkCount': 1 } },
-    );
-
-    console.log(`[marketplace] action=fork user=${userId} source=${sourceInstallableId} target=${newInstallableId}`);
-
-    res.status(201).json({
-      success: true,
-      manifest: {
-        installableId: created.installableId,
-        version: '1.0.0',
-        forkedFrom: created.forkedFrom,
-      },
     });
   } catch (error) {
     console.error('[marketplace] fork error:', error);

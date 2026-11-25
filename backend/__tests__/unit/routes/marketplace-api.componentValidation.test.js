@@ -20,6 +20,12 @@ jest.mock('../../../models/Installable', () => ({
   find: jest.fn(),
 }));
 
+// The installableId claim is always free here; see marketplace.idClaim.test.js.
+jest.mock('../../../models/SchedulerHeartbeatLease', () => ({
+  findOneAndUpdate: jest.fn().mockResolvedValue({}),
+  deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+}));
+
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     findOneAndUpdate: jest.fn(),

@@ -56,6 +56,33 @@ or no for a fork's new id. `findBackfillForTakeover` lets
   the mark is dropped, and the response is a normal create. That also covers a
   backfill that lands between publish's read and its create (E11000).
 
+Publish and fork also hold an exclusive claim on the id from their admission
+check through both writes (AgentRegistry, then Installable). Without it, two
+concurrent requests for one id both passed admission, the last AgentRegistry
+write won, and Installable kept the other request's doc, with nothing to
+reconcile them. The claim is a `SchedulerHeartbeatLease` document with
+`_id: 'installable-claim:<installableId>'`, acquired by a conditional upsert
+that only matches an expired claim, so a second live request gets E11000 and
+answers 409 `installable_id_busy` without writing. A crashed holder's claim
+expires after 30 seconds and the next request takes the same document over; the
+TTL index removes it eventually.
+
+What is guaranteed: the claim is re-confirmed (and extended) immediately before
+each write, the AgentRegistry write and each Installable write, by a
+conditional update on `{ _id, ownerId, expiresAt > now }`. A holder whose claim
+expired, for example after a stall, gets 409 and writes nothing more, so it
+can't overwrite rows another request committed after taking the id over. The
+one window left runs from a confirm until its write commits: a stall there (a
+slow Mongo round trip, a long GC pause) lets a write confirmed under a live
+claim land after the claim expired. Closing that needs
+conditional writes in both collections, which the routes don't do.
+
+The holder deletes only its own claim document (`{ _id, ownerId }`), up to three
+attempts, and does so before the response goes out, so a client that retries
+at once finds the id free. If the delete can't be confirmed and the response
+carries `warnings`, one more warning tells the client to wait about 30 seconds,
+until the claim expires. Tests: `__tests__/service/marketplace.idClaim.test.js`.
+
 The avatar mirror changes marked rows only, so an installer's pick never
 restyles a listing another publisher owns.
 

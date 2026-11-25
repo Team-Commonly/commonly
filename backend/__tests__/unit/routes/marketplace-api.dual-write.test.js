@@ -16,6 +16,13 @@ jest.mock('../../../models/Installable', () => ({
   find: jest.fn(),
 }));
 
+// The installableId claim (one lease per id) is always free here; the
+// contended cases run against real Mongo in marketplace.idClaim.test.js.
+jest.mock('../../../models/SchedulerHeartbeatLease', () => ({
+  findOneAndUpdate: jest.fn().mockResolvedValue({}),
+  deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+}));
+
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     findOneAndUpdate: jest.fn(),
