@@ -104,6 +104,55 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(cleared.agentStates).toEqual([]);
   });
 
+  it('two overlapping heartbeats from one machine both succeed; the last write wins (F623)', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Busy Mac' });
+    // The route's shape: each request loads its own copy before either writes.
+    const first = await Machine.findById(machine.id);
+    const second = await Machine.findById(machine.id);
+
+    const a = await machineService.recordMachineHeartbeat(first, [
+      { agentName: 'kai', state: 'running', restarts: 1 },
+    ]);
+    const b = await machineService.recordMachineHeartbeat(second, [
+      { agentName: 'wren', state: 'crashed', restarts: 2 },
+    ]);
+
+    expect(a.status).toBe('online');
+    expect(b.agentStates).toEqual([{ agentName: 'wren', instanceId: 'default', state: 'crashed', restarts: 2 }]);
+    const stored = await Machine.findById(machine.id).lean();
+    expect(stored.agentStates.map((s) => s.agentName)).toEqual(['wren']);
+  });
+
+  it('a machine deleted after the route read answers null instead of throwing (F623)', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Gone Mac' });
+    const loaded = await Machine.findById(machine.id);
+    await Machine.deleteOne({ _id: machine.id });
+
+    await expect(machineService.recordMachineHeartbeat(loaded, [])).resolves.toBeNull();
+    expect(await Machine.countDocuments({})).toBe(0);
+  });
+
+  it('keeps a standing inventory when a heartbeat carries none, and replaces it when one does (F623)', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Inventory Mac' });
+    const row = { harness: 'claude', installed: true, version: '2.1', models: null, efforts: ['high'] };
+
+    await machineService.recordMachineHeartbeat(await Machine.findById(machine.id));
+    expect((await Machine.findById(machine.id).lean()).inventoryAt || null).toBeNull();
+
+    await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), undefined, [row]);
+    const withInv = await Machine.findById(machine.id).lean();
+    expect(withInv.inventoryAt).toBeInstanceOf(Date);
+    expect(withInv.runtimeInventory).toHaveLength(1);
+
+    await machineService.recordMachineHeartbeat(await Machine.findById(machine.id));
+    const kept = await Machine.findById(machine.id).lean();
+    expect(kept.inventoryAt).toEqual(withInv.inventoryAt);
+    expect(kept.runtimeInventory).toHaveLength(1);
+  });
+
   it('records the host sandbox report, and a heartbeat that carries none leaves it standing', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
