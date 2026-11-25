@@ -22,7 +22,9 @@ whose claim uses `insertIfAbsent` then `updateWhere`. The sixth is `AgentCompute
 `agent_computer_takeovers`, migration `0021`, `STORE_MODE_AGENT_COMPUTER_TAKEOVER`), a person's takeover
 of an agent's computer and its bound browser target, whose owner-keyed writes use `updateWhere`, then
 `insertIfAbsent`, then `updateWhere` again after a lost first-write race, and whose reads use
-`findOneWhere` and `findWhere`.
+`findOneWhere` and `findWhere`. The seventh is `BillingEvent` (table `billing_events`, migration `0022`,
+`STORE_MODE_BILLING_EVENT`), the Stripe webhook idempotency marker, whose claim uses the helper's `create`
+(a duplicate key means the event was already claimed) and whose outcome record uses `updateWhere`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -30,7 +32,7 @@ compare-and-set or a backfill of the old document can land on it. The prerequisi
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
-`NeedsYouEmailQuota` and `AgentComputerTakeover` has a delete path.
+`NeedsYouEmailQuota`, `AgentComputerTakeover` and `BillingEvent` has a delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -170,3 +172,29 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   read would show the takeover as inactive and let the agent act during the person's takeover. Checking
   `repair` before the flip doesn't cover a copy that fails after it. In `pg` the guard reads Postgres,
   which is then the only store.
+- **`BillingEvent` cannot run in `pg` yet.** `claimBillingEvent` refuses in `pg` before any write, and
+  `recordBillingOutcome` goes through the helper's `updateWhere`, which throws `not supported in pg mode
+  until step 4`. In `mongo`, `dual` and `pg-read` the lock is Mongo's unique index on `eventId`. In `pg` it
+  must be Postgres's unique `event_id`: before this model runs in `pg`, the claim needs `INSERT … ON
+  CONFLICT (event_id) DO NOTHING RETURNING id` (claimed when a row comes back, a duplicate otherwise), and
+  the record an `UPDATE … WHERE event_id = $1` that bumps `pg_version` and leaves an absent `customer_id` as
+  it is. Both need tests on real Postgres with racing deliveries of one event. The helper's pg-only
+  `create` is not enough: it conflicts on `id`, so a second delivery would hit the `event_id` index with
+  23505, not 11000, and fail instead of reading as a duplicate. Until then, don't set it to `pg`. Every
+  webhook would answer 500, and an event Stripe stops retrying after three days would never be applied.
+
+  **The switch to `pg` for this model is stop-the-world, never rolling.** Mongo's unique `eventId` and
+  Postgres's unique `event_id` don't coordinate. If a replica still in `dual` makes a Mongo claim and a
+  replica already in `pg` claims the same event before that claim's copy lands, both process it. A single
+  `repair` check beforehand doesn't close that window, because a claim can land after the check. So:
+  1. Stop every replica that still claims in Mongo: every backend replica, including the one that runs
+     the scheduler (so its five-minute `repair` job stops too). While none is up, webhooks get no 2xx
+     and Stripe retries them.
+  2. From a one-off container that serves no traffic, with `STORE_MODE_BILLING_EVENT=dual`, run
+     `node dist/scripts/dual-store-backfill.js --model BillingEvent --apply`, then `--verify`. `--apply`
+     copies every live document at its current version, including any still marked pending, and the
+     copy is version-guarded. `--verify` must report missing 0, differs 0 and equal checksums; if not,
+     run `--apply` again. Don't rely on the scheduler's `repair` here: it was stopped in step 1, and it
+     does nothing in `pg`. Now no Mongo-only claim is left uncopied.
+  3. Only then start replicas in `pg`. Never run a `dual` or `pg-read` replica alongside a `pg` one for
+     this model.

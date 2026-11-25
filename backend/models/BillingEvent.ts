@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 /**
  * Every Stripe webhook event we have already processed.
@@ -49,6 +50,8 @@ const BillingEventSchema = new Schema<IBillingEvent>(
 );
 
 BillingEventSchema.index({ eventId: 1 }, { unique: true });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(BillingEventSchema);
 
 const BillingEvent: Model<IBillingEvent> =
   (mongoose.models.BillingEvent as Model<IBillingEvent>)

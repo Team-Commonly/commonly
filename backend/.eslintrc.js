@@ -90,6 +90,9 @@ module.exports = {
           }, {
             group: ['**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*'],
             message: 'Use repositories/agentComputerTakeoverRepository.',
+          }, {
+            group: ['**/models/BillingEvent', '**/models/BillingEvent.*'],
+            message: 'Use repositories/billingEventRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -100,6 +103,7 @@ module.exports = {
             '**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*',
             '**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*',
             '**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*',
+            '**/models/BillingEvent', '**/models/BillingEvent.*',
           ],
         }],
       },
