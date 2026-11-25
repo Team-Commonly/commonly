@@ -124,6 +124,31 @@ while anything is flagged). Their Postgres filter accepts only equality and
 else throws before a query, in `dual` too. `pg` mode refuses the writes until
 step 4.
 
+## Fourth model: AgentTaskWakeState
+
+`AgentTaskWakeState` (the per-seat throttle on assigned-task wakes, keyed by
+the seat) follows the same template. Its table is `agent_task_wake_states`
+(`0019`): the Mongo `_id` (the seat key) as `id`, a nullable `last_wake_at`
+(releasing a slot unsets it and keeps the row), and nullable `created_at` and
+`updated_at`. `STORE_MODE_AGENT_TASK_WAKE_STATE` selects the store. Its only
+caller, `services/assignedTaskWakeService.ts`, imports
+`repositories/agentTaskWakeStateRepository`; ESLint fences the model.
+
+- `reserveWake(key, now, intervalMs)` resolves true only for the call that took
+  the seat's slot (absent, released, or last woken `intervalMs` ago or
+  earlier), and false when another worker holds it.
+- `releaseWake(key, now)` returns the slot only if it is still the one taken
+  at `now`.
+
+In `mongo` both make the pre-step-2 Mongoose calls; the reservation's
+duplicate-key loser is answered as false. In `dual` and `pg-read` the reserve
+is the helper's `updateWhere` on a stale or released slot, then
+`insertIfAbsent` on an absent one: each is one atomic Mongo write from free to
+held, so exactly one racing worker wins, and a held slot matches neither. The
+release is `updateWhere` with `$unset`. `pg` mode refuses both until step 4.
+In dual and pg-read the helper's `insertIfAbsent` sets the timestamps on the
+insert only, so a reserve that finds a held slot writes nothing.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

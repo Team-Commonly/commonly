@@ -81,6 +81,9 @@ module.exports = {
           }, {
             group: ['**/models/AgentDigestState', '**/models/AgentDigestState.*'],
             message: 'Use repositories/agentDigestStateRepository.',
+          }, {
+            group: ['**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*'],
+            message: 'Use repositories/agentTaskWakeStateRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -88,6 +91,7 @@ module.exports = {
             '**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*',
             '**/models/AgentFirstContact', '**/models/AgentFirstContact.*',
             '**/models/AgentDigestState', '**/models/AgentDigestState.*',
+            '**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*',
           ],
         }],
       },

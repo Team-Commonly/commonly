@@ -1,6 +1,5 @@
 import { escapeRegExp } from '../utils/escape';
 import { Types } from 'mongoose';
-import AgentTaskWakeState from '../models/AgentTaskWakeState';
 import AgentTaskRowWakeState from '../models/AgentTaskRowWakeState';
 import AgentEvent from '../models/AgentEvent';
 import AgentRun from '../models/AgentRun';
@@ -10,6 +9,7 @@ import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { carriesAgentMarkers, isReservedAgentEmail } from './agentIdentityService';
 import { formatBoardPodLine } from './boardPodCue';
+import { releaseWake, reserveWake } from '../repositories/agentTaskWakeStateRepository';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -416,14 +416,14 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     let reserved = false;
     let enqueueStarted = false;
     try {
-      // Upsert's duplicate _id loser is the capped/racing worker. The cap is
+      // Not reserved means a capped or racing worker holds the slot. The cap is
       // per seat, not per pod, and survives process restarts and event GC.
       // eslint-disable-next-line no-await-in-loop
-      const state = await AgentTaskWakeState.findOneAndUpdate({
-        _id: key,
-        $or: [{ lastWakeAt: { $lte: new Date(now.getTime() - INTERVAL_MS) } }, { lastWakeAt: null }],
-      }, { $set: { lastWakeAt: now } }, { upsert: true, new: true });
-      reserved = Boolean(state);
+      reserved = await reserveWake(key, now, INTERVAL_MS);
+      if (!reserved) {
+        logSkip(install, owned, 'seat-interval', now);
+        continue;
+      }
       // An assignment, pause or queued wake can change during reservation.
       // Recheck the actual rows and installation before crossing enqueue.
       // eslint-disable-next-line no-await-in-loop
@@ -437,7 +437,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       const current = await actionableRows((currentRows as Row[]).filter((row) => owns(row, install, principalId)));
       if (!active || busy || !current.length || String(newest?._id) !== String(last._id)) {
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        await releaseWake(key, now);
         logSkip(install, owned, 'recheck', now);
         continue;
       }
@@ -488,6 +488,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         console.error('[assigned-task-wake] wake not linked to rows:', key, (stateError as Error).message);
       }
     } catch (error) {
+      // reserveWake answers a lost race with false; a duplicate key that still
+      // escapes it (dual's insert retried once and lost again) is the same loss.
       if ((error as { code?: number }).code === 11000 && !reserved) {
         logSkip(install, owned, 'seat-interval', now);
         continue;
@@ -495,7 +497,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       if (reserved && !enqueueStarted) {
         // No queue write was attempted, so returning this slot is safe.
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        await releaseWake(key, now);
         console.error('[assigned-task-wake] preflight failed:', key, (error as Error).message);
         continue;
       }

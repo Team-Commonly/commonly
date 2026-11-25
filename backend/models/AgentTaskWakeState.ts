@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 interface IAgentTaskWakeState extends Document {
   _id: string;
@@ -11,6 +12,8 @@ const schema = new Schema<IAgentTaskWakeState>({
   _id: { type: String, required: true },
   lastWakeAt: { type: Date, required: true },
 }, { timestamps: true });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(schema);
 
 const AgentTaskWakeState = mongoose.model<IAgentTaskWakeState>('AgentTaskWakeState', schema);
 export default AgentTaskWakeState;

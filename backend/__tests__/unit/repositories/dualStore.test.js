@@ -935,6 +935,45 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect((await Pair.findById(raw._id).lean()).owner).toBe('$owner');
     });
 
+    it.each(['dual', 'pg-read'])('%s: a timestamped model stamps the insert only; a found call changes nothing',
+      async (mode) => {
+      // Mongoose would $set updatedAt on a found document too, with no version
+      // and no copy, so the row's updated_at would fall behind the document's.
+      const stampedSchema = new mongoose.Schema({ _id: String, owner: String, note: String }, { timestamps: true });
+      dualStorePlugin(stampedSchema);
+      const Stamped = mongoose.models.DualStoreTestStamped || mongoose.model('DualStoreTestStamped', stampedSchema);
+      await Stamped.deleteMany({});
+      const stampedRow = (doc) => ({
+        id: String(doc._id), owner: doc.owner ?? null, note: doc.note ?? null,
+        created_at: doc.createdAt ?? null, updated_at: doc.updatedAt ?? null,
+      });
+      process.env.STORE_MODE_DUAL_STORE_TEST_STAMPED = mode;
+      try {
+        const pg = fakePg();
+        const s = createDualStore({
+          name: 'DualStoreTestStamped', model: Stamped, pg, toRow: stampedRow, fromRow: (row) => row,
+        });
+        expect(await s.insertIfAbsent({ _id: 'k1' }, { owner: 'u1' })).toEqual({ inserted: true });
+        const inserted = await Stamped.findById('k1').lean();
+        expect(inserted.createdAt).toBeInstanceOf(Date);
+        expect(inserted.updatedAt).toEqual(inserted.createdAt);
+        await new Promise((resolve) => { setTimeout(resolve, 5); });
+        expect(await s.insertIfAbsent({ _id: 'k1' }, { owner: 'u2', note: 'later' })).toEqual({ inserted: false });
+        expect(await Stamped.findById('k1').lean()).toEqual(inserted);
+        expect(pg.rows.get('k1')).toEqual({ row: stampedRow(inserted), version: 1 });
+        // The stamp wins over a caller's own createdAt, as Mongoose's upsert does in mongo mode.
+        expect(await s.insertIfAbsent({ _id: 'k2' }, { createdAt: at(1) })).toEqual({ inserted: true });
+        expect((await Stamped.findById('k2').lean()).createdAt).not.toEqual(at(1));
+        delete process.env.STORE_MODE_DUAL_STORE_TEST_STAMPED;
+        const mongoSide = await Stamped.findOneAndUpdate(
+          { _id: 'k3' }, { $setOnInsert: { createdAt: at(1) } }, { upsert: true, new: true },
+        ).lean();
+        expect(mongoSide.createdAt).not.toEqual(at(1));
+      } finally {
+        delete process.env.STORE_MODE_DUAL_STORE_TEST_STAMPED;
+      }
+    });
+
     it('dual: a failed copy leaves the claim standing and the marker for repair', async () => {
       process.env[PAIR_ENV] = 'dual';
       const pg = fakePg();

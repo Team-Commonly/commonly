@@ -100,6 +100,11 @@ describe('first-contact repository (ADR-034 step 2)', () => {
       const doc = await raw();
       expect(doc).toMatchObject({ pgVersion: 1, agentName: 'scout', instanceId: 'default' });
       expect(doc.pgPending).toBeUndefined();
+      // The model stamps createdAt only (updatedAt: false), and the stamp wins over
+      // the caller's createdAt, as Mongoose's upsert does in mongo mode.
+      expect(doc.updatedAt).toBeUndefined();
+      expect(doc.createdAt).toBeInstanceOf(Date);
+      expect(doc.createdAt).not.toEqual(at(1));
       expect(await rowOf()).toEqual({
         row: {
           id: String(doc._id),

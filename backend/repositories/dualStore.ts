@@ -350,7 +350,9 @@ export interface DualStore {
    * two inserts racing past the unique index is retried once and reads as
    * found, as Mongo's own retry does in mongo mode; a duplicate-key error
    * (code 11000) that survives the retry propagates. A document marked
-   * deleted is not replaced; the insert fails that way.
+   * deleted is not replaced; the insert fails that way. In dual and pg-read
+   * the model's timestamps are set on the insert only, so a found document
+   * keeps its updatedAt, as its row does.
    * Refused in pg mode until step 4.
    */
   insertIfAbsent(filter: Doc, fields: Doc): Promise<{ inserted: boolean }>;
@@ -728,13 +730,25 @@ export function createDualStore(
         return { inserted: !(result?.lastErrorObject?.updatedExisting === true || result?.value != null) };
       }
       // The version and the marker ride in $setOnInsert, so a call that finds
-      // the document writes nothing and bumps nothing. Not lean: a lean query
-      // drops the result metadata that says whether this call inserted.
-      const claim = () => Model.findOneAndUpdate(
-        { ...filter, pgDeleted: { $ne: true } },
-        { $setOnInsert: { ...fields, pgVersion: 1, pgPending: 1 } },
-        { ...options, new: true },
-      ) as unknown as Promise<RawResult>;
+      // the document writes nothing and bumps nothing. So do the timestamps:
+      // Mongoose would put updatedAt in a $set, which a found document takes
+      // without a version or a copy, leaving its row's updated_at behind.
+      // Not lean: a lean query drops the result metadata that says whether
+      // this call inserted.
+      const stamps = (Model.schema as { $timestamps?: { createdAt?: string | null; updatedAt?: string | null } })
+        .$timestamps;
+      const claim = () => {
+        const at = (Model.base as { now?: () => Date }).now?.() ?? new Date();
+        const stamped = Object.fromEntries([stamps?.createdAt, stamps?.updatedAt]
+          .filter((path): path is string => Boolean(path)).map((path) => [path, at]));
+        return Model.findOneAndUpdate(
+          { ...filter, pgDeleted: { $ne: true } },
+          // The stamp wins over a caller's own createdAt, as Mongoose's upsert
+          // timestamps do in mongo mode (applyTimestampsToUpdate).
+          { $setOnInsert: { ...fields, ...stamped, pgVersion: 1, pgPending: 1 } },
+          { ...options, new: true, timestamps: false },
+        ) as unknown as Promise<RawResult>;
+      };
       // The server retries a duplicate-key upsert only when the filter is pure
       // equality on the unique key, which the pgDeleted clause rules out. One
       // retry here restores that: the winner has committed, so it matches and
