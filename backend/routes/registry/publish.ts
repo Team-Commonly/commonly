@@ -9,7 +9,7 @@ const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
+const { mirrorRegistryRow, refreshBridgeRow } = require('../../services/installable/registryReconciler');
 const { getUserId, resolveUsername } = require('./helpers');
 const {
   ManifestValidationError,
@@ -103,8 +103,10 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
         tags,
       });
     }
-    // Insert-only: an update here leaves an existing Installable as it is.
+    // The mirror inserts a missing row; the refresh brings a backfilled one
+    // up to this version. Neither touches a marketplace listing.
     await mirrorRegistryRow(agent, 'registry.publish');
+    await refreshBridgeRow(agent, 'registry.publish');
 
     res.json({
       success: true,
@@ -205,6 +207,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         if (existing) {
           await AgentRegistry.updateOne({ agentName: agentData.agentName }, agentData);
           await mirrorRegistryRow(agentData, 'registry.seed');
+          await refreshBridgeRow(agentData, 'registry.seed');
           return 'updated';
         }
         const created = await AgentRegistry.create(agentData);

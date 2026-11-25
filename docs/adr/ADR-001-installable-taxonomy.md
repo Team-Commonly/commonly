@@ -150,7 +150,7 @@ Eight steps across six phases. Implementation details live in the track-owner br
 ### Phase 3 — Cutover (read path)
 
 5. **Switch read path to Installable.** Marketplace, agent hub, admin UI all read from `Installable` + projections. Old tables still written for safety.
-   - *Status 2026-11-24: started.* The AgentRegistry → Installable bridge, an insert-only hourly backfill and write-path mirrors are in place, with no reads switched yet: [installable-registry-bridge.md](../architecture/installable-registry-bridge.md).
+   - *Status 2026-11-24: started.* The AgentRegistry → Installable bridge, an hourly backfill (it inserts, and refreshes display fields on rows it created) and write-path mirrors are in place. Four catalog and pod-agents read routes go through a reader behind `INSTALLABLE_READ_PATH` (default off; shadow first, `on` only after shadow shows no drift), and install, ownership and name-claim reads stay on AgentRegistry: [installable-registry-bridge.md](../architecture/installable-registry-bridge.md).
 6. **Remove old write path.** Once read path is stable for one release cycle, stop writing to `App` and `AgentRegistry`. Keep the tables as read-only archives.
 
 ### Phase 4 — Cleanup

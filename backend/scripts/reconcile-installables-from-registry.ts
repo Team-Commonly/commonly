@@ -2,8 +2,9 @@
  * reconcile-installables-from-registry — backfill an Installable row for every
  * AgentRegistry row that has none (ADR-001 Phase 3, step 5).
  *
- * Dry run unless `--apply`. Insert-only: never changes an existing
- * Installable, never deletes, never touches User, AgentInstallation,
+ * Dry run unless `--apply`. Inserts missing rows and refreshes display fields
+ * on rows it created (origin 'registry-backfill'), never on any other
+ * Installable. Never deletes, never touches User, AgentInstallation,
  * AgentProfile, memory or Pod. Status and install-count drift on existing rows
  * is reported, not fixed. The scheduler runs the same sweep hourly.
  *
@@ -25,7 +26,7 @@ async function main() {
   try {
     const r = await sweepRegistryDrift({ dryRun: !apply });
     console.log(JSON.stringify(r, null, 2));
-    if (!apply) console.log('Dry run: nothing written. Re-run with --apply to insert.');
+    if (!apply) console.log('Dry run: nothing written. Re-run with --apply to insert and refresh.');
   } finally {
     await mongoose.disconnect();
   }

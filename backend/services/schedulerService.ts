@@ -533,6 +533,7 @@ class SchedulerService {
           const r = await sweepRegistryDrift({ dryRun: false });
           console.log(
             `[registry-reconciler] pass scanned=${r.scanned} inserted=${r.inserted} existing=${r.existing} `
+            + `refreshed=${r.refreshed} `
             + `skipped=${r.skipped} errors=${r.errors} `
             + `statusDrift=${r.mismatches.status} statsDrift=${r.mismatches.stats}${readPath}`,
           );
@@ -771,7 +772,7 @@ class SchedulerService {
     console.log('- Skills catalog refreshes every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
     console.log(
-      '- AgentRegistry -> Installable backfill runs hourly at :39 (insert-only; no lease required)'
+      '- AgentRegistry -> Installable backfill runs hourly at :39 (inserts, refreshes marked rows; idempotent, no lease required)'
       + `${process.env.INSTALLABLE_REGISTRY_SWEEP === '1' ? '' : ' (OFF: INSTALLABLE_REGISTRY_SWEEP unset)'}`,
     );
 

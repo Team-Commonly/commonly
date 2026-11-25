@@ -96,15 +96,23 @@ skips marked rows anyway; the flag is for the read switch, which reads
 
 ## Sweep guarantees (`sweepRegistryDrift`)
 
-- **Insert-only.** Each row is `updateOne({ installableId }, { $setOnInsert }, { upsert: true, timestamps: false })`.
+- **Inserts missing rows; refreshes display fields on rows it created
+  (marked), never on anything else.** An insert is
+  `updateOne({ installableId }, { $setOnInsert }, { upsert: true, timestamps: false })`.
   `timestamps: false` matters: without it, mongoose adds `$set: { updatedAt }`
   and touches the existing row.
-- An existing Installable is never changed. Nothing is deleted or `$unset`.
+- **The refresh** (see [Display refresh](#display-refresh-on-marked-rows)) runs on
+  an existing row only when it carries `origin: 'registry-backfill'` and one
+  of its display fields differs from what the bridge would write for the
+  registry row today. Each one is counted in `refreshed` (and still in
+  `existing`). A row with nothing to change is not written, so a second pass is
+  silent. A marketplace listing or a native-seeded builtin is never written.
+  Nothing is deleted or `$unset`.
 - It never reads or writes User, AgentInstallation, AgentProfile, memory or Pod.
 - A duplicate-key race (E11000) counts as existing. A row that fails schema
   validation is counted in `errors` and skipped.
 - Status and install-count drift on existing rows is counted in `mismatches`,
-  not fixed.
+  not fixed, marked rows included.
 - A registry row with no usable `agentName` (null, missing or blank) is
   counted in `skipped` and never written. `registryKeyOf` is the one place a
   row's key is computed. `String(null)` once keyed a January seed row as the
@@ -115,14 +123,14 @@ skips marked rows anyway; the flag is for the read switch, which reads
   the flag is off.
 - **Off by default.** The hourly job (:39, no lease, because every write is
   idempotent) sweeps only when `INSTALLABLE_REGISTRY_SWEEP=1`; unset, each tick
-  logs that it skipped. Turn it on only after a fresh backup. Run it by hand with
+  logs that it skipped. The pass line carries `refreshed=`. Turn it on only after a fresh backup. Run it by hand with
   `node dist/scripts/reconcile-installables-from-registry.js`, which is a dry
   run unless you pass `--apply`.
 
 ## Write-path mirrors
 
 These paths write only AgentRegistry, so each one calls
-`mirrorRegistryRow(row, site)`, the same insert-only upsert. A mirror never
+`mirrorRegistryRow(row, site)`, the same insert-if-missing upsert. A mirror never
 throws: a failure logs `[installable-mirror]`, and the sweep (once enabled) backfills
 the row later.
 
@@ -136,6 +144,54 @@ the row later.
 The avatar edit is different. `mirrorRegistryAvatar` changes only
 `components.$.persona.avatar` on a marked Installable that already exists, and
 on reset only while the avatar still holds the pick being undone.
+
+## Display refresh on marked rows
+
+`refreshBridgeRow(registryRow, site)` keeps a backfilled Installable in step
+when its AgentRegistry row is edited. Without it the reader's `on` mode would
+serve the name or description the row had on the day it was backfilled.
+
+- It writes only the row keyed `registryKeyOf(row)` that has
+  `origin: 'registry-backfill'`. The mark is in the update filter itself, so a
+  row a marketplace publish took over between the read and the write is not
+  written.
+- It `$set`s only the display paths, the same list the reader compares:
+  `DISPLAY_FIELDS` and `DISPLAY_FIELD_PATHS` in `agentRegistryBridge.ts`, which
+  `registryReader.ts` imports. They are `name`, `description`, `version`,
+  `requires`, `marketplace.category`, `marketplace.tags`, and on the agent
+  component `persona.avatar` and `metadata.registryRow.categories` (the view
+  reads categories from there first). The values come from
+  `registryToInstallable(row)`. A cleared `description` is written as the
+  display name and a cleared `displayName` as the agent name, so neither is
+  stored as `''`. A cleared `latestVersion` falls back to `manifest.version`,
+  then to `'1.0.0'`. Other cleared values become `''` or `[]`. Refresh never
+  writes `$unset`.
+- It never changes `origin`, `source`, `owner`, `status` or
+  `marketplace.published`, and never touches an identity table. **Status is
+  not mirrored**: the reader takes it from AgentRegistry as a gate, and
+  `published` is derived from status, so changing one without the other
+  would leave a row that contradicts itself.
+- It skips the write when nothing differs, and otherwise lets mongoose move
+  `updatedAt`. It never throws: a failure logs `[installable-mirror] refresh`
+  and the hourly sweep catches up.
+
+Callers, each right after the AgentRegistry write that edits an existing row:
+
+| Site | Edit |
+|---|---|
+| `PATCH /api/registry/agents/:name/owned-entry` | rename, retire or restore |
+| `POST /api/registry/publish` | re-publish: version, description, display name, categories, tags, manifest |
+| `POST /api/registry/seed` | the `updateOne` on an existing seed row |
+| `agentBootstrapService.bootstrap` | the boot upsert, which `$set`s display fields on existing rows |
+| `seed-native-agents` | the boot upsert. Its own Installable `$set` replaces `components`, so on a marked row the refresh restores the avatar, `requires` and taxonomy |
+
+Not callers, by decision: marketplace publish's `syncToAgentRegistry` (it
+writes AgentRegistry *from* the listing, which is unmarked), marketplace
+unpublish (status only), the avatar routes (`mirrorRegistryAvatar` already),
+the install claim's `$inc __v`, `unlist-internal-registry-agents` (sets
+`ephemeral`, not a display field) and `migrate-guide-to-scout` (a one-off that
+changes the key itself; the sweep inserts the new key). The hourly sweep is the
+backstop for any path not listed, including direct DB edits.
 
 ## Read path (PR B)
 
@@ -158,9 +214,9 @@ stay there. The reader takes the rows those queries returned, and
 fewer fields passes only those; pod-agents passes `iconUrl`.
 
 **`verified` and `status` are gates and are never compared or overlaid.** An
-owner retire (`owned-entry`) changes only AgentRegistry, and the sweep never
-updates an existing Installable. Overlaying them would make a retired agent
-read as active.
+owner retire (`owned-entry`) changes AgentRegistry's status, and the display
+refresh deliberately leaves the Installable's status alone. Overlaying them
+would make a retired agent read as active.
 
 **Only rows the bridge shaped are eligible**: `origin: 'registry-backfill'`,
 or `source: 'marketplace'` (publish writes AgentRegistry too). Any other
@@ -229,13 +285,12 @@ a minute per replica. The line has field names only, never values.
 
 1. Ship with the flag unset (`off`).
 2. Set `shadow` on prod. Read the hourly lines for a few days.
-3. Investigate every drifted field. **`on` serves Installable values that go
-   stale.** The sweep and mirrors insert and never update, so after an
-   AgentRegistry rename or description edit (owned-entry rename, a registry
-   publish edit), `on` keeps serving the old name or description until the
-   bridge row changes. Shadow counts each of these as drift.
-4. `on` waits until either shadow drift stays near zero, or the write paths
-   (owned-entry rename and retire, registry publish edits) update the bridge
-   row. Today neither is true for edited rows, so `on` would show stale names
-   for them. `missing` should also be near zero.
+3. Ship the display refresh and turn the sweep on, so the backlog of rows
+   edited since the backfill is refreshed once (the first pass's `refreshed`
+   count says how many). From then on the write paths refresh their rows as
+   they edit them.
+4. Investigate every remaining drifted field. Once shadow `mismatchedRows`
+   stays near zero, `on` is safe for display fields. `missing` should also be
+   near zero. A drift that persists names a write path the refresh doesn't
+   cover yet.
 5. Rollback is unsetting the flag. No data moves in any mode.

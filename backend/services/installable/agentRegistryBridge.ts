@@ -56,6 +56,76 @@ export function registryKeyOf(row: Obj | null | undefined): string | null {
   return name.toLowerCase();
 }
 
+/**
+ * The catalog display fields: what the read path may serve from Installable
+ * (registryReader) and what refreshBridgeRow keeps current on a backfilled
+ * row. One list so the two can't drift apart. `verified` and `status` are
+ * gates, never display fields.
+ */
+export type DisplayField =
+  | 'displayName' | 'description' | 'iconUrl' | 'latestVersion'
+  | 'categories' | 'tags' | 'contextRequired';
+
+export const DISPLAY_FIELDS: readonly DisplayField[] = [
+  'displayName', 'description', 'iconUrl', 'latestVersion',
+  'categories', 'tags', 'contextRequired',
+];
+
+/**
+ * The Installable paths `installableToRegistryView` reads for each display
+ * field: `top` on the document, `agent` on its agent component. Categories
+ * need both, because the view prefers registryRow.categories over the
+ * marketplace category and also uses it to split tags.
+ */
+export const DISPLAY_FIELD_PATHS: Readonly<Record<DisplayField, { top?: string[]; agent?: string[] }>> = {
+  displayName: { top: ['name'] },
+  description: { top: ['description'] },
+  iconUrl: { agent: ['persona.avatar'] },
+  latestVersion: { top: ['version'] },
+  categories: { top: ['marketplace.category'], agent: ['metadata.registryRow.categories'] },
+  tags: { top: ['marketplace.tags'] },
+  contextRequired: { top: ['requires'] },
+};
+
+const getPath = (o: Obj | undefined, path: string): unknown => path
+  .split('.')
+  .reduce<unknown>((acc, key) => (acc && typeof acc === 'object' ? (acc as Obj)[key] : undefined), o);
+
+// Empty, null and missing are one value: a '' avatar is not a change from none.
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return JSON.stringify(Array.isArray(a) ? a : []) === JSON.stringify(Array.isArray(b) ? b : []);
+  }
+  const norm = (v: unknown) => (v === null || v === undefined ? '' : v);
+  return norm(a) === norm(b);
+};
+
+/**
+ * The display-path `$set` that would bring `doc` in line with `mapped` (a
+ * registryToInstallable result), split into document paths and agent
+ * component paths. Empty objects mean nothing differs. A missing value is
+ * written as '' or [], never unset.
+ */
+export function bridgeDisplayDiff(mapped: Obj, doc: Obj): { top: Obj; agent: Obj } {
+  const want = plain(mapped);
+  const have = plain(doc);
+  const wantAgent = (want.components || []).find((c: Obj) => c?.type === 'agent');
+  const haveAgent = (have.components || []).find((c: Obj) => c?.type === 'agent');
+  const top: Obj = {};
+  const agent: Obj = {};
+  const fill = (path: string, next: unknown, current: unknown, out: Obj) => {
+    if (sameValue(next, current)) return;
+    out[path] = next === undefined || next === null ? (Array.isArray(current) ? [] : '') : next;
+  };
+  DISPLAY_FIELDS.forEach((field) => {
+    const { top: topPaths = [], agent: agentPaths = [] } = DISPLAY_FIELD_PATHS[field];
+    topPaths.forEach((p) => fill(p, getPath(want, p), getPath(have, p), top));
+    // A row with no agent component has nowhere to put these.
+    if (haveAgent) agentPaths.forEach((p) => fill(p, getPath(wantAgent, p), getPath(haveAgent, p), agent));
+  });
+  return { top, agent };
+}
+
 export function registryToInstallable(input: Obj): Obj {
   const row = plain(input);
   const manifest = row.manifest || {};
