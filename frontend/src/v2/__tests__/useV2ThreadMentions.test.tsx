@@ -72,3 +72,57 @@ describe('@ picker', () => {
     expect(open('lar', 'larissa')).toContain('laruiss');
   });
 });
+
+// F607: a pod can hold a default install and a sibling of the same agent. The
+// bare name then routes to whichever install the backend's loose display-slug
+// key gave it last, so picking the default inserts its explicit
+// `<agentName>-default` key, which always reaches it. A lone default keeps the
+// bare handle, and a sibling keeps its own handle.
+describe('@ picker beside a sibling install (F607)', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default' };
+  const ops = { agentName: 'codex', instanceId: 'ops' };
+
+  const pick = (podAgents, query = 'codex') => {
+    const draft = `@${query}`;
+    const setDraft = jest.fn();
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: [], agents: podAgents, agentStateByHandle: new Map(), draft, setDraft, inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return {
+      values: result.current.filteredMentions.map((item) => item.value),
+      insert: (value) => {
+        const item = result.current.filteredMentions.find((row) => row.value === value);
+        act(() => { result.current.selectMention(item); });
+        return setDraft.mock.calls[0][0];
+      },
+    };
+  };
+
+  test('picking the default beside a sibling inserts @codex-default', () => {
+    const { values, insert } = pick([dflt, ops]);
+    expect(values).toEqual(expect.arrayContaining(['codex-default', 'ops']));
+    expect(values).not.toContain('codex');
+    expect(insert('codex-default')).toBe('@codex-default ');
+  });
+
+  test('the sibling listed first still gives the default its explicit handle', () => {
+    expect(pick([ops, dflt]).values).toEqual(expect.arrayContaining(['codex-default', 'ops']));
+  });
+
+  test('a lone default keeps the bare @codex', () => {
+    const { values, insert } = pick([dflt]);
+    expect(values).toEqual(['codex']);
+    expect(insert('codex')).toBe('@codex ');
+  });
+
+  test('the sibling inserts its own handle, as before', () => {
+    expect(pick([dflt, ops]).insert('ops')).toBe('@ops ');
+  });
+
+  test('a different agent beside the default is not a sibling', () => {
+    expect(pick([dflt, { agentName: 'claude', instanceId: 'ops' }]).values).toContain('codex');
+  });
+});

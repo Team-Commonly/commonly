@@ -165,6 +165,22 @@ describe('V2Thread Get started bar', () => {
     expect(box.value).not.toContain('u3f9c2a1b7d');
   });
 
+  // F607: beside a sibling install of the same agent the bare name can wake
+  // the sibling, so step 2 names the default install explicitly.
+  test('step 2 names a default install beside a sibling by its explicit handle', async () => {
+    mockTasks = starterTasks(true, false);
+    renderThread({
+      agents: [
+        { agentName: 'scout', instanceId: 'default', status: 'active' },
+        { agentName: 'codex', instanceId: 'default', status: 'active' },
+        { agentName: 'codex', instanceId: 'ops', status: 'active' },
+      ],
+    });
+    fireEvent.click(await screen.findByTestId('get-started-first-task'));
+    const box = screen.getByRole('textbox');
+    await waitFor(() => expect(box.value).toBe('@codex-default '));
+  });
+
   test('while the bar replaces the board chip, the bar itself opens the board', async () => {
     mockTasks = starterTasks(false, false);
     renderThread();
