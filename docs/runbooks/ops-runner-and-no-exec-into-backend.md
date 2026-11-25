@@ -78,3 +78,6 @@ exec on its node can do it again. `ops-runner` is the fix.
 - Keep them short and sequential; even on `ops-runner`, don't fan out a burst.
 - The seats' CLI runtime still talks to the API normally — this rule is only
   about operator shell scripts that `exec … node -` into a cluster pod.
+- To see what the backend's own CPU is spent on, don't attach a profiler from
+  inside it: [cpu-profile-on-signal.md](cpu-profile-on-signal.md) has it write a
+  profile on a signal sent from the host.
