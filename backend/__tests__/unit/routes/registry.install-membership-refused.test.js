@@ -198,4 +198,30 @@ describe('registry install refuses when the agent is not added to the pod', () =
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'dm_membership_refused' }));
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
+
+  test('a pod that became a private conversation during the add answers 403, not 404 (F605)', async () => {
+    // The route read a chat pod; by the time ensureAgentInPod wrote, it was a
+    // DM, so the atomic add refused. The answer reads the pod as it is now.
+    let flipped = false;
+    Pod.findById.mockImplementation(() => buildLeanChain({
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1'], type: flipped ? 'agent-dm' : 'chat',
+    }));
+    AgentIdentityService.ensureAgentInPod.mockImplementation(async () => { flipped = true; return null; });
+    const res = await install();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'dm_membership_refused' }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  test('a pod deleted during the add answers 404 even if it read as private before (F605)', async () => {
+    let gone = false;
+    Pod.findById.mockImplementation(() => buildLeanChain(gone ? null : {
+      _id: 'a0000000000000000000000a', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-admin',
+    }));
+    User.findOne.mockImplementation(() => buildSelectLeanChain({ _id: 'bot-1' }));
+    AgentIdentityService.ensureAgentInPod.mockImplementation(async () => { gone = true; return null; });
+    const res = await install();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
 });

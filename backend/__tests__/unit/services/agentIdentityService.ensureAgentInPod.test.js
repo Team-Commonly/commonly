@@ -5,7 +5,10 @@
 
 // agentIdentityService.ts uses try/require for PG models so unit tests that
 // don't stub them still work — only Pod + User need explicit mocks here.
-jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({
+  findById: jest.fn(),
+  updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+}));
 jest.mock('../../../models/User', () => ({ findOne: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
@@ -19,6 +22,7 @@ const AgentIdentityService = require('../../../services/agentIdentityService');
 describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Pod.updateOne.mockResolvedValue({ modifiedCount: 1 });
     podHasOutsiderWritableGrant.mockResolvedValue(false);
   });
 
@@ -89,6 +93,7 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
 
     expect(result).toBeNull();
     expect(pod.save).not.toHaveBeenCalled();
+    expect(Pod.updateOne).not.toHaveBeenCalled();
     expect(pod.members).toEqual(['agent-host-id', 'human-id']);
   });
 
@@ -105,7 +110,11 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
     const result = await AgentIdentityService.ensureAgentInPod(newAgent, 'p-chat');
 
     expect(result).toBe(pod);
-    expect(pod.save).toHaveBeenCalled();
+    expect(Pod.updateOne).toHaveBeenCalledWith(
+      { _id: 'p-chat', members: { $ne: 'agent-1' }, type: { $nin: ['agent-room', 'agent-dm'] } },
+      { $addToSet: { members: 'agent-1' }, $inc: { __v: 1 } },
+    );
+    expect(pod.save).not.toHaveBeenCalled();
     expect(pod.members).toContain('agent-1');
   });
 
@@ -126,6 +135,7 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
 
     expect(result).toBeNull();
     expect(pod.save).not.toHaveBeenCalled();
+    expect(Pod.updateOne).not.toHaveBeenCalled();
     expect(pod.members).toEqual(['agent-pixel-id', 'agent-codex-id']);
   });
 
@@ -145,7 +155,7 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
     const result = await AgentIdentityService.ensureAgentInPod(secondAdmin, 'p-admin');
 
     expect(result).toBe(pod);
-    expect(pod.save).toHaveBeenCalled();
+    expect(Pod.updateOne).toHaveBeenCalledTimes(1);
     expect(pod.members).toContain('admin-b');
   });
 
@@ -173,5 +183,6 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
 
     expect(result).toBe(pod);
     expect(pod.save).not.toHaveBeenCalled();
+    expect(Pod.updateOne).not.toHaveBeenCalled();
   });
 });

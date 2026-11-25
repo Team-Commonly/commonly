@@ -927,7 +927,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         agentUser, podId, effectiveRuntimeType, newHostedEngine,
       );
       if (!joined) {
-        return isPersonalPodType(pod.type)
+        // Answer from the pod as it is now: it may have become a DM, or gone,
+        // between the read above and ensureAgentInPod's atomic add (F605).
+        const current = await Pod.findById(podId).lean();
+        return current && isPersonalPodType(current.type)
           ? res.status(403).json({
             code: 'dm_membership_refused',
             error: 'This is a private conversation; another agent can\'t be added to it.',
