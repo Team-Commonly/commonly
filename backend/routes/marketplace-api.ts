@@ -248,11 +248,19 @@ const updateListingFenced = async (existing: any, fence: number) => {
 // another request holds the claim document. Every acquire after ours rewrites
 // that document with its own owner, so a different owner is a later holder,
 // one that will overwrite our rows once it writes; it may not have yet.
+//
+// The claim is read first and the rows after it, not all three at once. A
+// holder releases its claim only after its writes have settled
+// (withInstallableClaim releases in the response wrapper and in `finally`,
+// both after `work`'s awaited writes). So a claim gone at our read means any
+// successor has already written, and the row reads that follow see its newer
+// tokens. Read in parallel, a successor could write and release between the
+// row reads and the claim read, and both would look clean.
 const supersededAfterWrites = async (installableId: string, ownerId: string, fence: number) => {
-  const [ar, row, claim] = await Promise.all([
+  const claim = await SchedulerHeartbeatLease.findOne({ _id: installableClaimId(installableId) });
+  const [ar, row] = await Promise.all([
     AgentRegistry.findOne({ agentName: installableId }, 'claimFence'),
     listings.findOne({ installableId }),
-    SchedulerHeartbeatLease.findOne({ _id: installableClaimId(installableId) }),
   ]);
   const newer = (doc: any) => typeof doc?.claimFence === 'number' && doc.claimFence > fence;
   return newer(ar) || newer(row) || Boolean(claim && claim.ownerId !== ownerId);

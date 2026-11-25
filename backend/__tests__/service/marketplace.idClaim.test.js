@@ -574,6 +574,39 @@ describe('marketplace installableId claim', () => {
       });
     });
 
+    test('a successor that writes and releases during the supersession check still makes A answer 409', async () => {
+      // A finishes both writes, then reads its claim in the check and stops
+      // there. B takes the lapsed id over, publishes and releases. A's row
+      // reads come after its claim read, so they see B's tokens.
+      const hold = holdFirst(
+        SchedulerHeartbeatLease,
+        'findOne',
+        (filter) => filter?._id === CLAIM_ID('@alice/new'),
+        { after: true },
+      );
+      const started = [];
+      try {
+        const a = send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' }));
+        started.push(a);
+        await reachBarrier(hold.entered, a, 'publish A');
+        const afterA = await rawRows('@alice/new');
+        await expireClaim('@alice/new');
+        const b = await send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' }));
+        expect(b.status).toBe(200);
+        await expectNoClaim('@alice/new');
+        const afterB = await rawRows('@alice/new');
+        expect(afterB.ar.claimFence).toBeGreaterThan(afterA.ar.claimFence);
+        hold.release();
+        await expectWinnerKept('@alice/new', await a, afterB);
+        expect(afterB.ar).toMatchObject({ latestVersion: '2.0.0', description: 'Second.' });
+        expect(afterB.installable).toMatchObject({ version: '2.0.0', description: 'Second.' });
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+      }
+    });
+
     test('an uncontested registry failure on a version publish still answers 201 with the warning', async () => {
       await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0')).expect(201);
       const before = await rawRows('@alice/x');

@@ -99,6 +99,12 @@ same write. The guarantees:
   now carries a newer token, or another request holds the claim document
   (every later acquire rewrites it with its own owner, so that request will
   overwrite these rows even if it hasn't written yet). Superseded answers 409.
+  The check reads the claim document first and the two rows after it. A
+  holder releases its claim only after its writes settle, so a claim already
+  gone means any successor has written, and the row reads see its newer
+  tokens. Reading all three at once would let a successor write and release
+  between them, and the check would pass. The same check runs before every
+  drift-warning 201.
   A lapsed claim alone doesn't: a slow holder with no competitor has won, and
   answers 201 (a 409 there would leave a fork uncounted and its retry told the
   id is taken).
