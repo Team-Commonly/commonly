@@ -116,7 +116,7 @@ const claimExpired = (res: any) => res.status(409).json({
 // Fencing token. The claim is a lease, so a holder can pass its confirm, stall
 // inside the write that follows (a slow round trip, a GC pause) past expiry,
 // and have that write land after another request took the id over and
-// committed both rows. So every request takes a token before it acquires the
+// committed both rows. So every request draws a token once it holds the
 // claim, and every AgentRegistry and Installable write it makes carries
 // "stored token <= mine" in its own filter and stamps its token on the row in
 // that same write. A later holder's token is higher, so once it has written a
@@ -127,8 +127,13 @@ const claimExpired = (res: any) => res.status(409).json({
 // the claim document: that one is deleted on release and by the TTL monitor
 // after expiry, so a count kept on it would restart. One counter shared by
 // every id is still monotonic per id, needs no new model (ADR-034 D4) and no
-// clock. It is drawn before the claim is acquired: drawn after, a holder
-// stalled between the two could draw a token above its successor's. A row
+// clock. It is drawn after the claim is acquired and before the first
+// confirm, so tokens follow claim order: A's draw precedes A's confirm, which
+// precedes A's expiry, B's acquire and B's draw. A holder that stalls between
+// acquire and draw may draw above its successor, but then fails the confirm
+// that precedes every write and writes nothing. (Drawn before the acquire, a
+// request that stalled there would acquire later holding a lower token than
+// the holder it followed, whose in-flight write would then overwrite it.) A row
 // with no token (every row written before the fence) counts as lowest, hence
 // `$not: { $gt }` rather than `$lte`, which a missing field fails.
 const CLAIM_FENCE_KEY = 'marketplace.installableClaimFence';
@@ -234,16 +239,32 @@ const updateListingFenced = async (existing: any, fence: number) => {
   }
 };
 
+// After both writes landed: did a newer holder take the id over? Not merely
+// "did my claim lapse": a slow holder with no competitor has won, and a 409
+// would leave a fork uncounted and its retry told the id is taken. Superseded
+// means a row now carries a newer token (the newer holder already wrote), or
+// another request holds the claim document. Every acquire after ours rewrites
+// that document with its own owner, so a different owner is a later holder,
+// one that will overwrite our rows once it writes; it may not have yet.
+const supersededAfterWrites = async (installableId: string, ownerId: string, fence: number) => {
+  const [ar, row, claim] = await Promise.all([
+    AgentRegistry.findOne({ agentName: installableId }, 'claimFence'),
+    listings.findOne({ installableId }),
+    SchedulerHeartbeatLease.findOne({ _id: installableClaimId(installableId) }),
+  ]);
+  const newer = (doc: any) => typeof doc?.claimFence === 'number' && doc.claimFence > fence;
+  return newer(ar) || newer(row) || Boolean(claim && claim.ownerId !== ownerId);
+};
+
 // Runs `work` (admission check included) while holding the id, or answers 409.
-// `work` gets `confirm`, which it calls immediately before each write and once
-// more before answering success, and `fence`, which each write carries. A write
-// the fence refused answers 409 too.
+// `work` gets `confirm`, which it calls immediately before each write; `fence`,
+// which each write carries; and `superseded`, which it checks after both writes
+// before answering success. A write the fence refused answers 409 too.
 const withInstallableClaim = async (
   res: any,
   installableId: string,
-  work: (confirm: () => Promise<boolean>, fence: number) => Promise<any>,
+  work: (confirm: () => Promise<boolean>, fence: number, superseded: () => Promise<boolean>) => Promise<any>,
 ) => {
-  const fence = await nextClaimFence();
   const ownerId = await acquireInstallableClaim(installableId);
   if (!ownerId) {
     return res.status(409).json({
@@ -274,7 +295,13 @@ const withInstallableClaim = async (
     return res;
   };
   try {
-    return await work(() => confirmInstallableClaim(installableId, ownerId), fence);
+    // After the acquire, before the first confirm: see the fencing-token note.
+    const fence = await nextClaimFence();
+    return await work(
+      () => confirmInstallableClaim(installableId, ownerId),
+      fence,
+      () => supersededAfterWrites(installableId, ownerId, fence),
+    );
   } catch (error) {
     if (error instanceof InstallableClaimFenced) return claimExpired(res);
     throw error;
@@ -572,7 +599,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
 
     // The claim covers the admission check, so a request that acquires after
     // the winner finished sees the winner's row.
-    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm, fence) => {
+    return await withInstallableClaim(res, installableId.toLowerCase(), async (confirm, fence, superseded) => {
       // A backfilled row is invisible here and is taken over on the create path.
       const existing = await listings.findOne({ installableId: installableId.toLowerCase() });
 
@@ -661,9 +688,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
           });
         }
 
-        // Both writes landed, but a claim lost meanwhile means a newer holder
-        // may overwrite them, so this request did not win.
-        if (!(await confirm())) return claimExpired(res);
+        if (await superseded()) return claimExpired(res);
         return res.json({
           success: true,
           manifest: {
@@ -750,7 +775,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
         });
       }
 
-      if (!(await confirm())) return claimExpired(res);
+      if (await superseded()) return claimExpired(res);
       console.log(`[marketplace] action=publish user=${userId} manifest=${created.installableId} version=${version}`);
 
       return res.status(201).json({
@@ -890,7 +915,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
 
     // The id check runs under the claim, like publish's admission check.
     const forkId = newInstallableId.toLowerCase();
-    return await withInstallableClaim(res, forkId, async (confirm, fence) => {
+    return await withInstallableClaim(res, forkId, async (confirm, fence, superseded) => {
       // A backfilled row in the caller's own namespace (checked above) is not a
       // claim on the id: an interrupted fork's retry finds the row the sweep
       // inserted from its AgentRegistry write, and takes it over like publish.
@@ -982,9 +1007,9 @@ router.post('/fork', auth, async (req: any, res: any) => {
         });
       }
 
-      // Both writes landed, but a claim lost meanwhile means a newer holder
-      // may overwrite them, so the fork did not win and is not counted.
-      if (!(await confirm())) return claimExpired(res);
+      // A newer holder took the id over after both writes: the fork lost
+      // and is not counted.
+      if (await superseded()) return claimExpired(res);
 
       // Increment fork count on source (atomic)
       await listings.updateOne(
@@ -1087,7 +1112,7 @@ router.get('/browse', marketplaceReadLimit, async (req: any, res: any) => {
 
     const [items, total] = await Promise.all([
       listings.find(filter)
-        .select('-readme -components -versions')
+        .select('-readme -components -versions -claimFence')
         .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
@@ -1120,7 +1145,7 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
 
     const [items, total] = await Promise.all([
       listings.find(filter)
-        .select('-readme -components -versions')
+        .select('-readme -components -versions -claimFence')
         .sort({ 'stats.totalInstalls': -1 })
         .skip(skip)
         .limit(limit)
@@ -1141,7 +1166,7 @@ router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (re
 router.get('/manifests/:installableId(*)', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const { installableId } = req.params;
-    const doc = await listings.findOne({ installableId: installableId.toLowerCase() }).lean();
+    const doc = await listings.findOne({ installableId: installableId.toLowerCase() }).select('-claimFence').lean();
     if (!doc) return res.status(404).json({ error: 'Manifest not found' });
     res.json(doc);
   } catch (error) {
@@ -1159,6 +1184,7 @@ router.get('/mine', auth, async (req: any, res: any) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const items = await listings.find({ 'publisher.userId': userId })
+      .select('-claimFence')
       .sort({ updatedAt: -1 })
       .lean();
 

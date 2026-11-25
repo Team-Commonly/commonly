@@ -74,8 +74,8 @@ expired, for example after a stall, gets 409 and writes nothing more, so it
 can't overwrite rows another request committed after taking the id over.
 
 A confirm can't cover a stall inside the write that follows it (a slow Mongo
-round trip, a long GC pause), so each write is also fenced. Before acquiring
-the claim, a request draws a fencing token: `$inc` on one counter, the
+round trip, a long GC pause), so each write is also fenced. Once it holds the
+claim, and before its first confirm, a request draws a fencing token: `$inc` on one counter, the
 `system_settings` row `marketplace.installableClaimFence`. Each AgentRegistry
 and Installable write the request makes carries `claimFence: { $not: { $gt:
 token } }` in its own filter and stamps `claimFence: token` on the row in that
@@ -95,8 +95,13 @@ same write. The guarantees:
   insert makes the newer insert hit E11000, and the newer holder takes that row
   over the same way it takes over a backfilled one. The update path writes
   every manifest field rather than only what changed, so the two rows agree.
-  The stale holder confirms its claim once more before answering success, finds
-  it gone, and answers 409.
+  Before answering success, a holder checks whether it was superseded: a row
+  now carries a newer token, or another request holds the claim document
+  (every later acquire rewrites it with its own owner, so that request will
+  overwrite these rows even if it hasn't written yet). Superseded answers 409.
+  A lapsed claim alone doesn't: a slow holder with no competitor has won, and
+  answers 201 (a 409 there would leave a fork uncounted and its retry told the
+  id is taken).
 - **Rows written before the fence have no token, which counts as lowest**, so
   they need no migration (`$not: { $gt }` matches a missing field; `$lte`
   wouldn't). The first fenced write stamps one.
@@ -105,8 +110,13 @@ Why a single counter: the claim document is deleted on release and by the TTL
 monitor once expired, so a count kept on it would restart below a stalled
 holder's token. Taken from one persistent row, the tokens rise across release,
 re-acquire and TTL removal, need no clock, and need no new model (ADR-034 D4).
-The token is drawn before the claim, because a holder that stalled between
-acquiring and drawing could otherwise draw above its successor. If the counter
+The token is drawn after the acquire and before the first confirm, so tokens
+follow claim order: A's draw precedes A's confirm, which precedes A's expiry,
+B's acquire and B's draw. A holder that stalls between acquire and draw may
+draw above its successor, but it then fails the confirm before every write and
+writes nothing. Drawing before the acquire inverts this: a request that stalls
+there acquires later with a lower token than the holder it follows, and that
+holder's in-flight write overwrites it. If the counter
 row were ever lost, stored tokens would sit above every new one; a fenced write
 raises the counter to the token that refused it (`$max`), so the client's retry
 succeeds. Rejected alternatives: a token kept on the claim document (it
@@ -117,8 +127,11 @@ transactions (they need a replica set, which self-host doesn't promise).
 
 What isn't covered: a writer that doesn't stamp, such as a pod still running
 the pre-fence code during a rolling deploy, or a `deprecate` or `unpublish`
-call, which doesn't take the claim. The fenced AgentRegistry write also relies
-on the unique `agentName` index existing.
+call, which doesn't take the claim. Because the update path rewrites every
+manifest field, a `deprecate` that lands during a version publish can have its
+deprecation flag overwritten by the publish's copy of `versions`. The fenced
+AgentRegistry write also relies on the unique `agentName` index existing. The
+token is internal: marketplace responses leave `claimFence` out.
 
 The holder deletes only its own claim document (`{ _id, ownerId }`), up to three
 attempts, and does so before the response goes out, so a client that retries

@@ -21,6 +21,7 @@ jest.mock('../../../models/Installable', () => ({
 jest.mock('../../../models/SchedulerHeartbeatLease', () => ({
   findOneAndUpdate: jest.fn().mockResolvedValue({}),
   deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+  findOne: jest.fn().mockResolvedValue(null),
 }));
 
 // The claim's fencing-token counter.
@@ -32,6 +33,7 @@ jest.mock('../../../models/SystemSetting', () => ({
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     findOneAndUpdate: jest.fn(),
+    findOne: jest.fn().mockResolvedValue(null),
     deleteOne: jest.fn(),
     updateOne: jest.fn(),
   },

@@ -465,6 +465,88 @@ describe('marketplace installableId claim', () => {
       }
     });
 
+    test('tokens follow claim order: B stalled at its acquire still outranks A, whose claim it follows', async () => {
+      // B stops at its acquire; A then acquires, confirms and stalls inside its
+      // registry write. A's claim lapses, B acquires and commits; A's write must
+      // not land on B's rows. A token drawn before the acquire would give B the
+      // lower one, and A's write would overwrite B's registry row.
+      const holdB = holdFirst(
+        SchedulerHeartbeatLease,
+        'findOneAndUpdate',
+        (filter) => filter?._id === CLAIM_ID('@alice/new') && filter.expiresAt?.$lte,
+      );
+      let holdA = null;
+      const started = [];
+      try {
+        const b = send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' }));
+        started.push(b);
+        await reachBarrier(holdB.entered, b, 'publish B');
+        holdA = holdFirstRegistryWrite('@alice/new');
+        const a = send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' }));
+        started.push(a);
+        await reachBarrier(holdA.entered, a, 'publish A');
+        await expireClaim('@alice/new');
+        holdB.release();
+        const bDone = await b;
+        expect(bDone.status).toBe(201);
+        expect(bDone.body.warnings).toBeUndefined();
+        const afterB = await rawRows('@alice/new');
+        holdA.release();
+        await expectWinnerKept('@alice/new', await a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+        expect(afterB.installable).toMatchObject({ description: 'Second.', version: '2.0.0' });
+      } finally {
+        holdB.release();
+        holdA?.release();
+        await Promise.allSettled(started);
+        holdB.spy.mockRestore();
+        holdA?.spy.mockRestore();
+      }
+    });
+
+    test('a slow holder with no competitor, whose claim lapsed after both writes, gets 201', async () => {
+      const hold = holdFirst(Installable, 'create', (doc) => doc?.installableId === '@alice/slow', { after: true });
+      const started = [];
+      try {
+        const a = send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/slow'));
+        started.push(a);
+        await reachBarrier(hold.entered, a, 'fork A');
+        await expireClaim('@alice/slow');
+        hold.release();
+        const done = await a;
+        expect(done.status).toBe(201);
+        expect(done.body.warnings).toBeUndefined();
+        const rows = await rawRows('@alice/slow');
+        expect(rows.installable.forkedFrom.installableId).toBe('@bob/helper');
+        expect(rows.installable.claimFence).toBe(rows.ar.claimFence);
+        expect((await Installable.findOne({ installableId: '@bob/helper' }).lean()).stats.forkCount).toBe(1);
+      } finally {
+        hold.release();
+        await Promise.allSettled(started);
+        hold.spy.mockRestore();
+      }
+    });
+
+    test('no marketplace response carries the token', async () => {
+      const text = (r) => JSON.stringify(r.body);
+      const detail = await request(app).get('/api/marketplace/manifests/@bob/helper');
+      expect(detail.status).toBe(200);
+      expect(detail.body.installableId).toBe('@bob/helper');
+      expect(detail.body).not.toHaveProperty('claimFence');
+      const fork = await post('/fork', aliceAuth, forkBody('@bob/helper', '@alice/f'));
+      const publish = await post('/publish', aliceAuth, publishBody('@alice/p'));
+      const responses = [
+        detail, fork, publish,
+        await request(app).get('/api/marketplace/mine').set('Authorization', bobAuth),
+        await request(app).get('/api/marketplace/browse?limit=100'),
+        await request(app).get('/api/marketplace/manifests/@bob/helper/forks'),
+      ];
+      expect(responses.map((r) => r.status)).toEqual([200, 201, 201, 200, 200, 200]);
+      expect(responses[3].body.items.length).toBeGreaterThan(0);
+      expect(responses[5].body.items.length).toBeGreaterThan(0);
+      responses.forEach((r) => expect(text(r)).not.toMatch(/claimFence/));
+    });
+
     test('rows written before the fence (no token) take an uncontested publish, which stamps one', async () => {
       await post('/publish', aliceAuth, publishBody('@alice/old', '1.0.0')).expect(201);
       await AgentRegistry.collection.updateOne({ agentName: '@alice/old' }, { $unset: { claimFence: '' } });
