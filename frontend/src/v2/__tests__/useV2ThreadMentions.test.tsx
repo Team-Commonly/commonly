@@ -164,6 +164,12 @@ describe('@ picker for an opaque-token sibling with no display name (F622)', () 
     expect(valuesFor([dflt, { ...opaque, displayName: 'Scout' }])).toContain('scout');
   });
 
+  test('a display name held only in profile keeps its slug handle', () => {
+    const values = valuesFor([dflt, { ...opaque, profile: { displayName: 'Scout' } }]);
+    expect(values).toContain('scout');
+    expect(values).not.toContain('codex-u3f9c2a1b7d');
+  });
+
   test('a readable instanceId keeps it', () => {
     expect(valuesFor([dflt, { agentName: 'codex', instanceId: 'ops' }])).toContain('ops');
   });
