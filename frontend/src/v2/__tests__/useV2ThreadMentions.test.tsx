@@ -126,3 +126,49 @@ describe('@ picker beside a sibling install (F607)', () => {
     expect(pick([dflt, { agentName: 'claude', instanceId: 'ops' }]).values).toContain('codex');
   });
 });
+
+// F622: an install whose instanceId is an opaque per-user token and that has
+// no display name would insert the bare `@<agentName>` beside a sibling, a
+// loose key either install can win. It inserts its canonical username, which
+// the backend claims at the top rank for exactly that install.
+describe('@ picker for an opaque-token sibling with no display name (F622)', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default' };
+  const opaque = { agentName: 'codex', instanceId: 'u3f9c2a1b7d' };
+
+  const valuesFor = (podAgents) => {
+    const draft = '@codex';
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: [], agents: podAgents, agentStateByHandle: new Map(), draft, setDraft: jest.fn(), inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return result.current.filteredMentions.map((item) => item.value);
+  };
+
+  test('beside the default it inserts its canonical username', () => {
+    const values = valuesFor([dflt, opaque]);
+    expect(values).toContain('codex-u3f9c2a1b7d');
+    expect(values).toContain('codex-default');
+    expect(values).not.toContain('codex');
+  });
+
+  test('beside another opaque install each gets its own canonical username', () => {
+    const other = { agentName: 'codex', instanceId: 'u0a1b2c3d4e' };
+    expect(valuesFor([opaque, other])).toEqual(
+      expect.arrayContaining(['codex-u3f9c2a1b7d', 'codex-u0a1b2c3d4e']),
+    );
+  });
+
+  test('a display name keeps its slug handle', () => {
+    expect(valuesFor([dflt, { ...opaque, displayName: 'Scout' }])).toContain('scout');
+  });
+
+  test('a readable instanceId keeps it', () => {
+    expect(valuesFor([dflt, { agentName: 'codex', instanceId: 'ops' }])).toContain('ops');
+  });
+
+  test('a lone opaque install keeps the bare name', () => {
+    expect(valuesFor([opaque])).toEqual(['codex']);
+  });
+});
