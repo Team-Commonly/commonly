@@ -374,7 +374,7 @@ describe('invariant 3: the claude adapter in a microVM', () => {
         _prepareMicrovmHost: async () => ({ msb: MSB }),
         _microvmHome: home,
         _startProviderProxy: proxy.start,
-        _publicClaudeState: home,
+        _publicClaudeState: path.join(home, 'state'),
       })).rejects.toThrow(/remove sandbox.allow/);
     });
     expect(calls).toHaveLength(0);

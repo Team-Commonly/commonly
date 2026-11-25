@@ -41,12 +41,22 @@ const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   return proc;
 };
 
+// The workspace pin lives beside the state folder (workspacePinDir), so a state
+// made straight in tmpdir shares one tmpdir/workspace-pins with every other
+// test and worker (F466, F620: an ENOENT on a staged pin in CI). A state folder
+// goes inside its own parent; clean up with path.dirname(state).
+const privateState = (prefix) => {
+  const state = path.join(fs.mkdtempSync(path.join(os.tmpdir(), prefix)), 'state');
+  fs.mkdirSync(state);
+  return state;
+};
+
 // F96: a public Linux seat runs in the workspace tier's jail, which needs
 // Claude Code installed and a way to the model. This gives a test a fake
 // install on PATH, a state folder, and an API key behind a stub proxy.
 const publicLinuxClaude = () => {
   const install = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-install-'));
-  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+  const state = privateState('cli-claude-public-state-');
   fs.writeFileSync(path.join(install, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
   spawnSync.mockImplementation((cmd) => (cmd === 'which'
     ? { status: 0, stdout: `${path.join(install, 'claude')}\n` } : undefined));
@@ -59,7 +69,7 @@ const publicLinuxClaude = () => {
     },
     cleanup: () => {
       spawnSync.mockReset();
-      for (const dir of [install, state]) fs.rmSync(dir, { recursive: true, force: true });
+      for (const dir of [install, path.dirname(state)]) fs.rmSync(dir, { recursive: true, force: true });
     },
   };
 };
@@ -384,7 +394,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('public workspace mode wraps Claude in deny-default Seatbelt with isolated state and env', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const hooksPath = path.join(cwd, '.git', 'commonly-agent-hooks-test');
     const originalHooksPath = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-existing-hooks-'));
     const originalPreCommit = path.join(originalHooksPath, 'pre-commit');
@@ -484,7 +494,7 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
       fs.rmSync(originalHooksPath, { recursive: true, force: true });
     }
   });
@@ -496,7 +506,7 @@ describe('claude adapter — ctx.environment', () => {
     // measured 2026-09-18 on c4-smoke: every confined spawn died at argv
     // construction with `The "path" argument must be of type string`.
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const { impl, calls } = makeSpawnImpl();
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -542,7 +552,7 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
     }
   });
 
@@ -551,7 +561,7 @@ describe('claude adapter — ctx.environment', () => {
   // before Claude runs, so there is nothing to post.
   test('a public cold MCP refuses the turn before Claude runs', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
     fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     const prior = process.env.COMMONLY_MCP_HOME;
@@ -577,7 +587,7 @@ describe('claude adapter — ctx.environment', () => {
       else process.env.COMMONLY_MCP_HOME = prior;
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
       fs.rmSync(home, { recursive: true, force: true });
     }
   });
@@ -628,7 +638,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('a resumed public seat whose cold MCP name matches the session-recovery text still refuses', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const { impl, calls } = makeSpawnImpl();
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -652,13 +662,13 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
     }
   });
 
   test('a public warm MCP grants only its selected version directory to Claude', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
     const versionDir = path.join(home, '0.3.13');
     const pkgDir = path.join(versionDir, 'node_modules', '@commonlyai', 'mcp');
@@ -697,7 +707,7 @@ describe('claude adapter — ctx.environment', () => {
       else process.env.COMMONLY_MCP_HOME = prior;
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
       fs.rmSync(home, { recursive: true, force: true });
     }
   });
@@ -719,7 +729,7 @@ describe('claude adapter — ctx.environment', () => {
   // so the adapter has to resolve the mode here.
   test('public trust with NO mode resolves to Seatbelt workspace on darwin', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const publicState = privateState('cli-claude-public-state-');
     const { impl, calls } = makeSpawnImpl();
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -747,7 +757,7 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
     }
   });
 
@@ -773,7 +783,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('a public seat with no MCP has no per-turn folder, so the check does not reach it', async () => {
     const { impl, calls } = makeSpawnImpl();
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-f219-state-'));
+    const publicState = privateState('claude-f219-state-');
     const originalPlatform = process.platform;
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -793,7 +803,7 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
     }
   });
 
@@ -937,7 +947,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('a legacy trust=internal record is resolved as public and confined, never run unconfined', async () => {
     const originalPlatform = process.platform;
-    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-internal-state-'));
+    const publicState = privateState('cli-claude-internal-state-');
     const { impl, calls } = makeSpawnImpl();
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -965,7 +975,7 @@ describe('claude adapter — ctx.environment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
-      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(path.dirname(publicState), { recursive: true, force: true });
     }
   });
 
@@ -1193,7 +1203,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
 
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-prompt-'));
-    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    publicState = privateState('cli-claude-public-state-');
     skillSrc = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-src-')), 'house-rules');
     fs.mkdirSync(skillSrc);
     fs.writeFileSync(
@@ -1209,7 +1219,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
-    for (const dir of [cwd, publicState, path.dirname(skillSrc)]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, path.dirname(publicState), path.dirname(skillSrc)]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   const publicSpawn = (impl, extra = {}) => claude.spawn('hi', {
@@ -1390,7 +1400,7 @@ describe('claude adapter — a workspace seat', () => {
 
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-'));
-    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    publicState = privateState('cli-claude-public-state-');
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-scratch-'));
     skillSrc = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-src-')), 'house-rules');
     fs.mkdirSync(skillSrc);
@@ -1407,7 +1417,7 @@ describe('claude adapter — a workspace seat', () => {
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
-    for (const dir of [cwd, publicState, scratch, path.dirname(skillSrc)]) {
+    for (const dir of [cwd, path.dirname(publicState), scratch, path.dirname(skillSrc)]) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -2335,7 +2345,7 @@ describe('claude adapter — a workspace seat\'s git tool', () => {
 
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-workspace-'));
-    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-state-'));
+    publicState = privateState('cli-claude-git-state-');
     // `git --exec-path` names a dir whose `git` links to the binary git runs,
     // which is what the jail must admit — never the link, never a shim.
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-bin-'));
@@ -2357,7 +2367,7 @@ describe('claude adapter — a workspace seat\'s git tool', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
     jest.restoreAllMocks();
-    for (const dir of [cwd, publicState, ...fakeGitDirs]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, path.dirname(publicState), ...fakeGitDirs]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   const gitOnMachine = (execDir) => spawnSync.mockImplementation((cmd, args) => {
@@ -2466,7 +2476,7 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
   const originalPlatform = process.platform;
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-witness-'));
-    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    publicState = privateState('cli-claude-public-state-');
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
     const pkgDir = path.join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
     fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
@@ -2494,7 +2504,7 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     else process.env.COMMONLY_MCP_HOME = prior;
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
-    for (const dir of [cwd, publicState, home]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, path.dirname(publicState), home]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   const turn = (stdout, { trust = 'public', mcp = COMMONLY_MCP, impl = makeSpawnImpl({ stdout }).impl, sessionId } = {}) => (

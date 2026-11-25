@@ -109,7 +109,8 @@ const warmBuild = ({ readyFile }) => {
 
 beforeEach(() => {
   cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f460-ws-'));
-  publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f460-state-'));
+  publicState = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f460-state-')), 'state');
+  fs.mkdirSync(publicState);
   mcpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f460-mcp-'));
   prior = process.env.COMMONLY_MCP_HOME;
   process.env.COMMONLY_MCP_HOME = mcpHome;
@@ -122,7 +123,7 @@ afterEach(() => {
   else process.env.COMMONLY_MCP_HOME = prior;
   Object.defineProperty(process, 'platform', { value: originalPlatform });
   spawnSync.mockReset();
-  for (const dir of [cwd, publicState, mcpHome]) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of [cwd, path.dirname(publicState), mcpHome]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 const turn = (fake, {
