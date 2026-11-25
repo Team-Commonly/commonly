@@ -54,7 +54,7 @@ describe('scheduler: PG mirror repair opt-in (F183)', () => {
       expect(runPgMirrorRepair).toHaveBeenCalledWith();
       runPgMirrorRepair.mockRejectedValueOnce(new Error('pg down'));
       await expect(jobs()[0].task()).resolves.toBeUndefined();
-      expect(err).toHaveBeenCalledWith(expect.stringContaining('[pg-mirror-repair]'), expect.anything());
+      expect(err).toHaveBeenCalledWith('%s', expect.stringContaining('[pg-mirror-repair]'), expect.anything());
     } finally {
       err.mockRestore();
     }
