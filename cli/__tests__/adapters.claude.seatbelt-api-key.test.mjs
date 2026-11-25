@@ -66,7 +66,8 @@ describe('a Seatbelt-confined Claude seat with ANTHROPIC_API_KEY (F151)', () => 
   beforeEach(() => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f151-cwd-'));
-    state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f151-state-'));
+    state = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f151-state-')), 'state');
+    fs.mkdirSync(state);
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f151-scratch-'));
     fs.writeFileSync(path.join(scratch, 'server.mjs'), '');
     spawnSync.mockImplementation((cmd) => (cmd === 'which'
@@ -76,7 +77,7 @@ describe('a Seatbelt-confined Claude seat with ANTHROPIC_API_KEY (F151)', () => 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
-    for (const dir of [cwd, state, scratch]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, path.dirname(state), scratch]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   const proxyStub = () => {
