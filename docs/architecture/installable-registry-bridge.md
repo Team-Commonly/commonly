@@ -72,8 +72,9 @@ each write, the AgentRegistry write and each Installable write, by a
 conditional update on `{ _id, ownerId, expiresAt > now }`. A holder whose claim
 expired, for example after a stall, gets 409 and writes nothing more, so it
 can't overwrite rows another request committed after taking the id over. The
-one window left is a stall *inside* a single write: a write that started under
-a live claim can still land after the claim expired. Closing that needs
+one window left runs from a confirm until its write commits: a stall there (a
+slow Mongo round trip, a long GC pause) lets a write confirmed under a live
+claim land after the claim expired. Closing that needs
 conditional writes in both collections, which the routes don't do.
 
 The holder deletes only its own claim document (`{ _id, ownerId }`), up to three
