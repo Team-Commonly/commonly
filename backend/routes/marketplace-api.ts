@@ -239,6 +239,8 @@ const updateListingFenced = async (existing: any, fence: number) => {
   }
 };
 
+// Also run before a drift-warning 201, where the Installable write failed: a
+// missing row is not a newer token, so it alone never reads as superseded.
 // After both writes landed: did a newer holder take the id over? Not merely
 // "did my claim lapse": a slow holder with no competitor has won, and a 409
 // would leave a fork uncounted and its retry told the id is taken. Superseded
@@ -674,6 +676,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
             '[marketplace] Installable save failed on update (AR succeeded):',
             (saveError as any).message,
           );
+          // A superseded holder lost; only a holder still in the race retries.
+          if (await superseded()) return claimExpired(res);
           return res.status(201).json({
             success: true,
             warnings: [
@@ -761,6 +765,8 @@ router.post('/publish', auth, async (req: any, res: any) => {
         }
       }
       if (!created) {
+        // A superseded holder lost; only a holder still in the race retries.
+        if (await superseded()) return claimExpired(res);
         return res.status(201).json({
           success: true,
           warnings: [
@@ -994,6 +1000,8 @@ router.post('/fork', auth, async (req: any, res: any) => {
         // path: return 201 with a drift warning so the caller knows to retry.
         // Skip the source forkCount increment — we'll bump it on the retry
         // that actually creates the Installable row.
+        // A superseded holder lost; only a holder still in the race retries.
+        if (await superseded()) return claimExpired(res);
         return res.status(201).json({
           success: true,
           warnings: [

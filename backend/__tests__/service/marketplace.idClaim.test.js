@@ -504,6 +504,62 @@ describe('marketplace installableId claim', () => {
       }
     });
 
+    // Holds the first matching call of `obj[method]`; once released it rejects
+    // with a generic (non-E11000) error instead of running.
+    const holdThenFail = (obj, method, match) => {
+      const entered = deferred();
+      const gate = deferred();
+      const original = obj[method].bind(obj);
+      let held = false;
+      const spy = jest.spyOn(obj, method).mockImplementation((...args) => {
+        if (held || !match(...args)) return original(...args);
+        held = true;
+        entered.resolve();
+        return gate.promise.then(() => { throw new Error('catalog down'); });
+      });
+      return { entered: entered.promise, release: gate.resolve, spy };
+    };
+
+    describe('a superseded holder whose catalog write then fails answers 409, not a drift warning', () => {
+      test('fork', async () => {
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(Installable, 'create', (doc) => doc?.installableId === '@alice/x'),
+          () => send('/fork', aliceAuth, forkBody('@bob/helper', '@alice/x')),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Published.' })),
+        );
+        expect(b.status).toBe(201);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Published.', latestVersion: '3.0.0' });
+        expect(afterB.installable.forkedFrom).toBeUndefined();
+      });
+
+      test('publish, create path', async () => {
+        const { a, b, afterB } = await staleRace(
+          '@alice/new',
+          holdThenFail(Installable, 'create', (doc) => doc?.installableId === '@alice/new'),
+          () => send('/publish', aliceAuth, publishBody('@alice/new', '1.0.0', { description: 'First.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/new', '2.0.0', { description: 'Second.' })),
+        );
+        expect(b.status).toBe(201);
+        await expectWinnerKept('@alice/new', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Second.', latestVersion: '2.0.0' });
+      });
+
+      test('publish, update path', async () => {
+        await post('/publish', aliceAuth, publishBody('@alice/x', '1.0.0', { description: 'Original.' })).expect(201);
+        const { a, b, afterB } = await staleRace(
+          '@alice/x',
+          holdThenFail(Installable, 'updateOne', (f, u) => f?.installableId === '@alice/x' && u?.$set),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '2.0.0', { description: 'Two.' })),
+          () => send('/publish', aliceAuth, publishBody('@alice/x', '3.0.0', { description: 'Three.' })),
+        );
+        expect(b.status).toBe(200);
+        await expectWinnerKept('@alice/x', a, afterB);
+        expect(afterB.ar).toMatchObject({ description: 'Three.', latestVersion: '3.0.0' });
+      });
+    });
+
     test('a slow holder with no competitor, whose claim lapsed after both writes, gets 201', async () => {
       const hold = holdFirst(Installable, 'create', (doc) => doc?.installableId === '@alice/slow', { after: true });
       const started = [];
