@@ -1792,9 +1792,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('no v2 source draws a MUI icon; marks come from icons/glyphs', () => {
     const v2Root = path.join(__dirname, '..');
+    const drawsMuiIcon = (src: string) => /from '@mui\/icons-material/.test(src);
     const sources = (fs.readdirSync(v2Root, { recursive: true }) as string[])
       .filter((f) => /\.tsx?$/.test(f) && !f.includes('__tests__'));
-    const offenders = sources.filter((f) => fs.readFileSync(path.join(v2Root, f), 'utf8').includes('@mui/icons-material'));
+    // Positive controls: the predicate catches the import, and the scan
+    // reaches nested production folders while skipping tests.
+    expect(drawsMuiIcon("import CloseIcon from '@mui/icons-material/Close';")).toBe(true);
+    expect(sources).toEqual(expect.arrayContaining([
+      path.join('components', 'V2PodBoard.tsx'),
+      path.join('icons', 'glyphs.tsx'),
+    ]));
+    expect(sources.some((f) => f.includes('__tests__'))).toBe(false);
+    const offenders = sources.filter((f) => drawsMuiIcon(fs.readFileSync(path.join(v2Root, f), 'utf8')));
     expect(offenders).toEqual([]);
   });
 
@@ -1802,9 +1811,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // This is structural: accessible labels cannot prove a literal glyph has
     // left the JSX. The v2 glyph nodes are the implementation contract for the
     // two ruled board buttons.
+    // Scoped to each button's own markup: the pending column's add button
+    // also draws a plus.
+    const buttonOf = (cls: string) => {
+      const start = podBoard.indexOf(`className="${cls} `);
+      expect(start).toBeGreaterThan(-1);
+      return podBoard.slice(start, podBoard.indexOf('</button>', start));
+    };
     expect(podBoard).toContain("import { ShellGlyph } from '../icons/glyphs'");
-    expect(podBoard).toContain('<ShellGlyph name="back" />');
-    expect(podBoard).toContain('<ShellGlyph name="plus" />');
+    expect(buttonOf('v2-board__back')).toContain('<ShellGlyph name="back" />');
+    expect(buttonOf('v2-board__new')).toContain('<ShellGlyph name="plus" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
