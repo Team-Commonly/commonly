@@ -797,4 +797,139 @@ describe('dual-store helper (ADR-034 D3)', () => {
     expect(logged()).toContain('[dual-store] flag check failed model=DualStoreTestWidget');
     expect(logged()).not.toContain(String(doc._id));
   });
+  describe('17. claims: insertIfAbsent and setWhere', () => {
+    // A model keyed by a unique pair, like a first-contact marker, with a map of claim dates.
+    const pairSchema = new mongoose.Schema({
+      owner: String, name: String, seen: { type: Map, of: Date, default: {} },
+    });
+    pairSchema.index({ owner: 1, name: 1 }, { unique: true });
+    dualStorePlugin(pairSchema);
+    const Pair = mongoose.models.DualStoreTestPair || mongoose.model('DualStoreTestPair', pairSchema);
+    const PAIR_ENV = 'STORE_MODE_DUAL_STORE_TEST_PAIR';
+    const pairRow = (doc) => ({
+      id: String(doc._id), owner: doc.owner, name: doc.name, seen: { ...(doc.seen || {}) },
+    });
+    const pairs = (pg) => createDualStore({
+      name: 'DualStoreTestPair', model: Pair, pg, toRow: pairRow, fromRow: (row) => row,
+    });
+    const key = { owner: 'u1', name: 'scout' };
+    const at = (day) => new Date(Date.UTC(2026, 10, day));
+    // Claim `seen.p1` unless it is newer than `before`.
+    const unclaimed = (before) => ({
+      ...key, $or: [{ 'seen.p1': { $exists: false } }, { 'seen.p1': { $lt: before } }],
+    });
+
+    beforeAll(async () => { await Pair.init(); });
+    beforeEach(async () => { await Pair.deleteMany({}); });
+    afterEach(() => { delete process.env[PAIR_ENV]; });
+
+    it('mongo: inserts once, changes nothing on a match, and makes no Postgres call', async () => {
+      const pg = fakePg();
+      const s = pairs(pg);
+      expect(await s.insertIfAbsent(key, { ...key, seen: { p0: at(1) } })).toEqual({ inserted: true });
+      expect(await s.insertIfAbsent(key, { ...key, seen: { p9: at(2) } })).toEqual({ inserted: false });
+      const raw = await Pair.findOne(key).lean();
+      expect(raw.seen).toEqual({ p0: at(1) });
+      expect(raw.pgVersion).toBeUndefined();
+      expect(await s.setWhere(unclaimed(at(1)), { 'seen.p1': at(3) })).toBe(true);
+      expect(await s.setWhere(unclaimed(at(1)), { 'seen.p1': at(4) })).toBe(false);
+      expect((await Pair.findOne(key).lean()).seen).toEqual({ p0: at(1), p1: at(3) });
+      expect(pg.calls).toEqual([]);
+    });
+
+    it.each(['dual', 'pg-read'])('%s: the insert takes version 1 in the same write, and is copied', async (mode) => {
+      process.env[PAIR_ENV] = mode;
+      const pg = fakePg();
+      const s = pairs(pg);
+      const update = jest.spyOn(Pair, 'findOneAndUpdate');
+      const hold = pg.hold('upsert');
+      const inserting = s.insertIfAbsent(key, { ...key, seen: { p0: at(1) } });
+      await hold.arrived;
+      // One Mongo write, carrying the document, its version and its marker.
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update.mock.calls[0][1].$setOnInsert).toMatchObject({ pgVersion: 1, pgPending: 1 });
+      hold.release();
+      expect(await inserting).toEqual({ inserted: true });
+      const raw = await Pair.findOne(key).lean();
+      expect(raw.pgVersion).toBe(1);
+      expect(raw.pgPending).toBeUndefined();
+      expect(pg.rows.get(String(raw._id))).toEqual({ row: pairRow(raw), version: 1 });
+    });
+
+    it('dual: racing inserts produce one winner, and a loser bumps no version and copies nothing', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      const outcomes = await Promise.all(Array.from({ length: 8 }, () => s.insertIfAbsent(key, { ...key })
+        .catch((error) => (error.code === 11000 ? 'duplicate' : Promise.reject(error)))));
+      expect(outcomes.filter((o) => o.inserted === true)).toHaveLength(1);
+      expect(outcomes.every((o) => o === 'duplicate' || typeof o.inserted === 'boolean')).toBe(true);
+      expect(await s.insertIfAbsent(key, { ...key })).toEqual({ inserted: false });
+      const raw = await Pair.findOne(key).lean();
+      expect(raw.pgVersion).toBe(1);
+      expect(pg.calls.filter((c) => c === 'upsert')).toHaveLength(1);
+      expect(pg.rows.get(String(raw._id)).version).toBe(1);
+    });
+
+    it('dual: setWhere bumps and copies only when its filter matches', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      await s.insertIfAbsent(key, { ...key });
+      const [first, second] = await Promise.all([
+        s.setWhere(unclaimed(at(1)), { 'seen.p1': at(5) }),
+        s.setWhere(unclaimed(at(1)), { 'seen.p1': at(5) }),
+      ]);
+      expect([first, second].filter(Boolean)).toHaveLength(1);
+      let raw = await Pair.findOne(key).lean();
+      expect(raw).toMatchObject({ pgVersion: 2, seen: { p1: at(5) } });
+      expect(raw.pgPending).toBeUndefined();
+      expect(pg.rows.get(String(raw._id))).toEqual({ row: pairRow(raw), version: 2 });
+      // Too soon: no match, no bump, no copy.
+      const copies = pg.calls.length;
+      expect(await s.setWhere(unclaimed(at(2)), { 'seen.p1': at(6) })).toBe(false);
+      expect(pg.calls).toHaveLength(copies);
+      expect((await Pair.findOne(key).lean()).pgVersion).toBe(2);
+      // Past the window, the claim renews.
+      expect(await s.setWhere(unclaimed(at(10)), { 'seen.p1': at(20) })).toBe(true);
+      raw = await Pair.findOne(key).lean();
+      expect(raw).toMatchObject({ pgVersion: 3, seen: { p1: at(20) } });
+      expect(pg.rows.get(String(raw._id)).version).toBe(3);
+    });
+
+    it('dual: setWhere on a document with no map yet creates it, and a $ value stays a value', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      await Pair.collection.insertOne({ ...key });
+      expect(await s.setWhere(key, { 'seen.p1': at(3) })).toBe(true);
+      const raw = await Pair.findOne(key).lean();
+      expect(raw).toMatchObject({ seen: { p1: at(3) }, pgVersion: 1 });
+      await s.setWhere(key, { owner: '$owner' });
+      expect((await Pair.findById(raw._id).lean()).owner).toBe('$owner');
+    });
+
+    it('dual: a failed copy leaves the claim standing and the marker for repair', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      pg.failNext('upsert');
+      expect(await s.insertIfAbsent(key, { ...key })).toEqual({ inserted: true });
+      expect((await Pair.findOne(key).lean()).pgPending).toBe(1);
+      expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+      expect(pg.rows.size).toBe(1);
+    });
+
+    it('refuses a path segment starting with $, and both claims in pg mode, before any write', async () => {
+      process.env[PAIR_ENV] = 'dual';
+      const pg = fakePg();
+      const s = pairs(pg);
+      await expect(s.setWhere(key, { 'seen.$x': at(1) })).rejects.toThrow(/\$/);
+      process.env[PAIR_ENV] = 'pg';
+      await expect(s.insertIfAbsent(key, { ...key })).rejects.toThrow(/not supported in pg mode until step 4/);
+      await expect(s.setWhere(key, { 'seen.p1': at(1) })).rejects.toThrow(/not supported in pg mode until step 4/);
+      expect(await Pair.countDocuments({})).toBe(0);
+      expect(pg.calls).toEqual([]);
+    });
+  });
 });

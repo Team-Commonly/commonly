@@ -60,7 +60,8 @@ real('message contract columns on real PostgreSQL', () => {
     expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql', '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql',
       '0008_pg_mirror_repair_runs.sql', '0009_message_top_level_answer.sql', '0010_record_openings.sql',
       '0011_thread_read_point.sql', '0012_mention_email.sql', '0013_email_sends.sql', '0014_pod_read_point.sql',
-      '0015_agent_connect_codes.sql', '0016_agent_pod_read_cursors.sql']);
+      '0015_agent_connect_codes.sql', '0016_agent_pod_read_cursors.sql',
+      '0017_agent_first_contacts.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,

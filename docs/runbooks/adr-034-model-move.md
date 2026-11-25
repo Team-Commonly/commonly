@@ -9,14 +9,16 @@ covered here.
 repository built on `createDualStore` (`backend/repositories/dualStore.ts`); `dualStorePlugin` on its
 schema; its table in a numbered migration that has run; and an entry in
 `backend/repositories/dualStoreRegistry.ts`. The first model done this way is `AgentPodReadCursor`
-(table `agent_pod_read_cursors`, migration `0016`).
+(table `agent_pod_read_cursors`, migration `0016`). The second is `AgentFirstContact` (table
+`agent_first_contacts`, migration `0017`, `STORE_MODE_AGENT_FIRST_CONTACT`), whose two atomic claims use
+the helper's `insertIfAbsent` and `setWhere`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
 compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
-`AgentPodReadCursor` has no delete path.
+Neither `AgentPodReadCursor` nor `AgentFirstContact` has a delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -104,3 +106,11 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   racing on one id can exhaust the retries and fail the write (the unit suite shows 20 do). Before this model
   runs in `pg`, its write becomes one `INSERT … ON CONFLICT (id) DO UPDATE SET read_at = GREATEST(…),
   read_revision = GREATEST(…)`, tested on real Postgres with the same race.
+- **`AgentFirstContact` cannot run in `pg` yet.** Its two claims go through the helper's `insertIfAbsent`
+  (a `$setOnInsert` upsert on the unique `(userId, agentName, instanceId)`) and `setWhere` (a conditional
+  `$set` of `greetedAtByPod.<podId>`), and both throw `not supported in pg mode until step 4` in `pg`.
+  Before this model runs in `pg`, each needs a single-statement Postgres form with the same won/lost answer:
+  `INSERT … ON CONFLICT (user_id, agent_name, instance_id) DO NOTHING RETURNING id` for the first, and
+  `UPDATE … SET greeted_at_by_pod = jsonb_set(…) WHERE … AND (greeted_at_by_pod->>$pod IS NULL OR
+  (greeted_at_by_pod->>$pod)::timestamptz < $expiredBefore) RETURNING id` for the second, both bumping
+  `pg_version`, and both tested on real Postgres with concurrent claims.

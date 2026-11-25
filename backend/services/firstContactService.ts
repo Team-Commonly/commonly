@@ -1,9 +1,9 @@
 import mongoose, { Types } from 'mongoose';
-import AgentFirstContact from '../models/AgentFirstContact';
 import Message from '../models/pg/Message';
 import User from '../models/User';
 import AgentEventService from './agentEventService';
 import { HUMAN_FILTER } from './userClassification';
+import { claimFirstContact, claimPodGreeting } from '../repositories/agentFirstContactRepository';
 
 interface FirstContactOptions {
   agentName: string;
@@ -21,13 +21,6 @@ interface FirstContactOptions {
   mentionHandle?: string;
   /** Only hosted native seats can greet again in a pod with no visible history. */
   hostedAgentUserId?: string;
-}
-
-interface RawUpsertResult {
-  value?: unknown;
-  lastErrorObject?: {
-    updatedExisting?: boolean;
-  };
 }
 
 const FIRST_CONTACT_CUE =
@@ -162,32 +155,17 @@ export async function maybeFireFirstContact({
   const safeUserId = new mongoose.Types.ObjectId(String(installedByUserId));
   const safePodId = new mongoose.Types.ObjectId(String(podId));
   const safeInstanceId = String(instanceId || 'default').trim().toLowerCase() || 'default';
-  const greetingClaimPath = `greetedAtByPod.${String(safePodId)}`;
   const now = new Date();
 
-  let result: RawUpsertResult;
+  const identity = { userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId };
+
+  let inserted: boolean;
   try {
-    result = await AgentFirstContact.findOneAndUpdate(
-      { userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId },
-      {
-        $setOnInsert: {
-          userId: safeUserId,
-          agentName: safeAgentName,
-          instanceId: safeInstanceId,
-          firstPodId: safePodId,
-          ...(hostedAgentUserId ? { greetedAtByPod: { [String(safePodId)]: now } } : {}),
-          createdAt: now,
-        },
-      },
-      {
-        upsert: true,
-        new: false,
-        // Mongoose 7 replacement for deprecated rawResult: true. We need the
-        // driver's updatedExisting flag to distinguish the winning insert.
-        includeResultMetadata: true,
-        setDefaultsOnInsert: true,
-      },
-    ) as unknown as RawUpsertResult;
+    ({ inserted } = await claimFirstContact(identity, {
+      firstPodId: safePodId,
+      ...(hostedAgentUserId ? { greetedAtByPod: { [String(safePodId)]: now } } : {}),
+      createdAt: now,
+    }));
   } catch (error) {
     // Two concurrent upserts can both miss before the unique index picks a
     // winner. The loser is an expected no-op, not an install error.
@@ -195,7 +173,7 @@ export async function maybeFireFirstContact({
     throw error;
   }
 
-  const alreadyMet = result?.lastErrorObject?.updatedExisting === true || result?.value != null;
+  const alreadyMet = !inserted;
   if (alreadyMet) {
     if (!hostedAgentUserId) return false;
 
@@ -204,18 +182,7 @@ export async function maybeFireFirstContact({
     const hasVisibleGreeting = await Message.hasMessageByUserInPod(safePodId, hostedAgentUserId);
     if (hasVisibleGreeting) return false;
     const expiredBefore = new Date(now.getTime() - HOSTED_GREETING_WINDOW_MS);
-    const podClaim = await AgentFirstContact.findOneAndUpdate(
-      {
-        userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId,
-        $or: [
-          { [greetingClaimPath]: { $exists: false } },
-          { [greetingClaimPath]: { $lt: expiredBefore } },
-        ],
-      },
-      { $set: { [greetingClaimPath]: now } },
-      { new: false, includeResultMetadata: true },
-    ) as unknown as RawUpsertResult;
-    if (!podClaim?.value) return false;
+    if (!await claimPodGreeting(identity, safePodId, now, expiredBefore)) return false;
   }
 
   const handle = String(mentionHandle || '').trim().toLowerCase();

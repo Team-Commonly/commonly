@@ -5,6 +5,8 @@ const eslint = new ESLint({ cwd: path.resolve(__dirname, '../../..') });
 it.each([
   ["import Cursor from '../models/AgentPodReadCursor';", 'no-restricted-imports'],
   ["const Cursor = require('../models/AgentPodReadCursor');", 'no-restricted-modules'],
+  ["import AgentFirstContact from '../models/AgentFirstContact';", 'no-restricted-imports'],
+  ["const AgentFirstContact = require('../models/AgentFirstContact');", 'no-restricted-modules'],
 ])('blocks production model access: %s', async (source, rule) => {
   const [service] = await eslint.lintText(source, { filePath: 'services/boundaryProbe.ts' });
   expect(service.messages.map((message) => message.ruleId)).toContain(rule);

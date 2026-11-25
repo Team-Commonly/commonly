@@ -231,6 +231,9 @@ const checkBatchSize = (batchSize: number): void => {
   }
 };
 
+/** findOneAndUpdate with includeResultMetadata: the driver's raw result. */
+type RawResult = { value?: unknown; lastErrorObject?: { updatedExisting?: boolean } } | null;
+
 const isDuplicateKey = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 interface DualStoreOptions {
@@ -266,6 +269,26 @@ export interface DualStore {
    * inside `pipeline` are not cast by the schema, so the caller casts them.
    */
   upsert(id: Id, change: { pipeline: Doc[]; merge: (current: Doc | null) => Doc }): Promise<Doc>;
+  /**
+   * Atomic insert-if-absent: Mongo's `$setOnInsert` upsert. `filter` is a key
+   * a unique index enforces; `fields` is the new document. Only an insert
+   * writes, so only an insert takes a version (1) and is copied, and a call
+   * that finds the document changes nothing. Two inserts racing past the
+   * unique index can make the loser throw a duplicate-key error (code 11000):
+   * it propagates, because losing that race is the caller's to read. A
+   * document marked deleted is not replaced; the insert fails the same way.
+   * Refused in pg mode until step 4.
+   */
+  insertIfAbsent(filter: Doc, fields: Doc): Promise<{ inserted: boolean }>;
+  /**
+   * Atomic conditional change of the one document `filter` matches, never an
+   * insert: `$set` semantics for `fields`, dotted paths allowed. True when a
+   * document matched and changed; only a match takes a version. In dual and
+   * pg-read the change is an update pipeline, whose values the schema does not
+   * cast, so the caller passes cast values (as for `upsert`). Refused in pg
+   * mode until step 4.
+   */
+  setWhere(filter: Doc, fields: Doc): Promise<boolean>;
   repair(options?: { limit?: number }): Promise<{ scanned: number; copied: number; deleted: number; failed: number }>;
   /** Step 2's history copy. Dual or pg-read only. */
   backfill(options?: { dryRun?: boolean; batchSize?: number }): Promise<BackfillCounts>;
@@ -367,6 +390,10 @@ export function createDualStore(
     }
     return plain(doc);
   };
+
+  // Step 4 gives these a single-statement Postgres form; until then pg mode refuses them.
+  const notYetInPg = (method: string) => new Error(`dual-store: ${name} ${method} is not supported in pg mode`
+    + ' until step 4 (docs/runbooks/adr-034-model-move.md)');
 
   const pgOnly = {
     async create(doc: Doc): Promise<Doc> {
@@ -508,6 +535,56 @@ export function createDualStore(
       if (!doc) throw new Error(`dual-store: ${name} upsert lost ${UPSERT_ATTEMPTS} races in a row`);
       if (mode !== 'mongo') await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
       return plain(doc) as Doc;
+    },
+
+    async insertIfAbsent(filter, fields) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('insertIfAbsent');
+      const options = {
+        upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true,
+      };
+      if (mode === 'mongo') {
+        const result = await Model.findOneAndUpdate(
+          filter, { $setOnInsert: fields }, { ...options, new: false },
+        ) as unknown as RawResult;
+        return { inserted: !(result?.lastErrorObject?.updatedExisting === true || result?.value != null) };
+      }
+      // The version and the marker ride in $setOnInsert, so a call that finds
+      // the document writes nothing and bumps nothing. Not lean: a lean query
+      // drops the result metadata that says whether this call inserted.
+      const result = await Model.findOneAndUpdate(
+        { ...filter, pgDeleted: { $ne: true } },
+        { $setOnInsert: { ...fields, pgVersion: 1, pgPending: 1 } },
+        { ...options, new: true },
+      ) as unknown as RawResult;
+      if (result?.lastErrorObject?.updatedExisting !== false || !result.value) return { inserted: false };
+      // The plain shape a lean read returns (a Map as an object), which toRow expects.
+      const doc = (result.value as { toObject: (o: object) => Doc }).toObject({ flattenMaps: true });
+      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      return { inserted: true };
+    },
+
+    async setWhere(filter, fields) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('setWhere');
+      const paths = Object.keys(fields);
+      if (paths.some((path) => path.split('.').some((part) => !part || part.startsWith('$')))) {
+        throw new Error(`dual-store: ${name} setWhere path must not be empty or start with $`);
+      }
+      if (mode === 'mongo') {
+        const result = await Model.findOneAndUpdate(
+          filter, { $set: fields }, { new: false, includeResultMetadata: true },
+        ) as unknown as RawResult;
+        return result?.value != null;
+      }
+      // One atomic pipeline update: the fields, the version and the marker.
+      const literal = Object.fromEntries(paths.map((path) => [path, { $literal: fields[path] }]));
+      const doc = await Model.findOneAndUpdate(
+        { ...filter, pgDeleted: { $ne: true } }, [{ $set: { ...literal, ...bump } }, markPending], { new: true },
+      ).lean() as Doc | null;
+      if (!doc) return false;
+      await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+      return true;
     },
 
     async findById(id) {
