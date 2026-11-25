@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 type DiscordSummaryType = 'hourly' | 'daily' | 'manual';
 
@@ -37,6 +38,8 @@ const DiscordSummaryHistorySchema = new Schema<IDiscordSummaryHistory>(
 DiscordSummaryHistorySchema.index({ integrationId: 1, createdAt: -1 });
 DiscordSummaryHistorySchema.index({ summaryType: 1 });
 DiscordSummaryHistorySchema.index({ timeRange: 1 });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(DiscordSummaryHistorySchema);
 
 export default mongoose.model<IDiscordSummaryHistory>('DiscordSummaryHistory', DiscordSummaryHistorySchema);
 // CJS compat: let require() return the default export directly

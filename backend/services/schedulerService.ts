@@ -1106,8 +1106,8 @@ class SchedulerService {
 
           if (integration.type === 'discord') {
             // eslint-disable-next-line global-require
-            const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
-            const history = new DiscordSummaryHistory({
+            const { recordDiscordSummary } = require('../repositories/discordSummaryHistoryRepository');
+            await recordDiscordSummary({
               integrationId: integration._id,
               summaryType: 'hourly',
               content: (summary as Record<string, unknown>).content,
@@ -1116,7 +1116,6 @@ class SchedulerService {
               postedToCommonly: false,
               postedToDiscord: false,
             });
-            await history.save();
           }
 
           await Integration.findByIdAndUpdate(integration._id, {
