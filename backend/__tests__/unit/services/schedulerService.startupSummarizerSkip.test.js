@@ -28,10 +28,21 @@ const scheduler = require('../../../services/schedulerService');
 const SchedulerService = scheduler.constructor;
 const MIN = 60 * 1000;
 
+const SHARED_POD = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 const INSTALLS = [
   { podId: 'p1', instanceId: 'default' },
   { podId: 'p2' }, // no instanceId: counts as 'default'
   { podId: 'p3', instanceId: 'alt' },
+  // Two instances in one pod: the key must tell them apart.
+  { podId: SHARED_POD, instanceId: 'one' },
+  { podId: SHARED_POD, instanceId: 'two' },
+];
+const ALL_COVERED = [
+  { podId: 'p1', instanceId: 'default' },
+  { podId: 'p2', instanceId: 'default' },
+  { podId: 'p3', instanceId: 'alt' },
+  { podId: SHARED_POD, instanceId: 'one' },
+  { podId: SHARED_POD, instanceId: 'two' },
 ];
 
 const setInstalls = (rows) => {
@@ -80,11 +91,7 @@ describe('scheduler: startup summarizer tops up per install', () => {
   };
 
   it('sends nothing and logs when every install was requested recently', async () => {
-    setRecentRows([
-      { podId: 'p1', instanceId: 'default' },
-      { podId: 'p2', instanceId: 'default' },
-      { podId: 'p3', instanceId: 'alt' },
-    ]);
+    setRecentRows(ALL_COVERED);
     await bootAndWait();
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(console.log.mock.calls.map((c) => c.join(' ')).some((l) => /skipping startup summarizer/i.test(l))).toBe(true);
@@ -93,7 +100,7 @@ describe('scheduler: startup summarizer tops up per install', () => {
   it('sends only to installs not requested recently, and logs how many it skipped', async () => {
     setRecentRows([{ podId: 'p1', instanceId: 'default' }]);
     await bootAndWait();
-    expect(requestedPods()).toEqual(['p2', 'p3']);
+    expect(requestedPods()).toEqual(['p2', 'p3', SHARED_POD, SHARED_POD].sort());
     const line = console.log.mock.calls.map((c) => c.join(' ')).find((l) => /skipped.*recently requested/i.test(l));
     expect(line).toMatch(/1/);
   });
@@ -101,32 +108,36 @@ describe('scheduler: startup summarizer tops up per install', () => {
   it('counts a row with no instanceId as default', async () => {
     setRecentRows([{ podId: 'p2' }]);
     await bootAndWait();
-    expect(requestedPods()).toEqual(['p1', 'p3']);
+    expect(requestedPods()).toEqual(['p1', 'p3', SHARED_POD, SHARED_POD].sort());
+  });
+
+  it('tells two instances in one pod apart: covering one still requests the other', async () => {
+    setRecentRows([{ podId: SHARED_POD, instanceId: 'one' }]);
+    await bootAndWait();
+    const forPod = AgentEventService.enqueue.mock.calls.map((c) => c[0]).filter((e) => e.podId === SHARED_POD);
+    expect(forPod).toHaveLength(1);
+    expect(forPod[0]).toMatchObject({ podId: SHARED_POD, instanceId: 'two' });
   });
 
   it('sends to every install when none was requested recently', async () => {
     setRecentRows([]);
     await bootAndWait();
-    expect(requestedPods()).toEqual(['p1', 'p2', 'p3']);
+    expect(requestedPods()).toEqual(['p1', 'p2', 'p3', SHARED_POD, SHARED_POD].sort());
   });
 
   it('sends to every install and logs when the read throws', async () => {
     AgentEvent.find.mockImplementation(() => { throw new Error('db down'); });
     await bootAndWait();
-    expect(requestedPods()).toEqual(['p1', 'p2', 'p3']);
+    expect(requestedPods()).toEqual(['p1', 'p2', 'p3', SHARED_POD, SHARED_POD].sort());
     expect(logOutboundFailure).toHaveBeenCalled();
   });
 
   it('the hourly cron sends to every install right after a sweep', async () => {
-    setRecentRows([
-      { podId: 'p1', instanceId: 'default' },
-      { podId: 'p2', instanceId: 'default' },
-      { podId: 'p3', instanceId: 'alt' },
-    ]);
+    setRecentRows(ALL_COVERED);
     scheduler.start();
     const hourly = cron.schedule.mock.results.map((r) => r.value).find((j) => j.expression === '0 * * * *');
     await hourly.fn();
-    expect(requestedPods()).toEqual(['p1', 'p2', 'p3']);
+    expect(requestedPods()).toEqual(['p1', 'p2', 'p3', SHARED_POD, SHARED_POD].sort());
     expect(AgentEvent.find).not.toHaveBeenCalled();
   });
 
