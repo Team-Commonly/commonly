@@ -15,8 +15,10 @@ real('pgTableAdapter on real PostgreSQL', () => {
   let adapter;
   beforeEach(async () => {
     database = await createRealPgSchema();
+    // The id column sorts by ICU's root collation ('a' < 'B' < 'b'), not byte
+    // order, so the scan's keyset paging holds only through its COLLATE "C".
     await database.pool.query(`CREATE TABLE widgets (
-      id TEXT PRIMARY KEY, title TEXT, payload JSONB, pg_version INTEGER NOT NULL)`);
+      id TEXT COLLATE "und-x-icu" PRIMARY KEY, title TEXT, payload JSONB, pg_version INTEGER NOT NULL)`);
     adapter = pgTableAdapter({
       pool: database.pool, table: 'widgets', idColumn: 'id', columns: ['title', 'payload'],
     });
@@ -75,6 +77,27 @@ real('pgTableAdapter on real PostgreSQL', () => {
     // A replace never inserts: a row deleted under it stays deleted.
     expect(await adapter.replace({ id: ID, title: 'ghost', payload: null }, 2)).toBe(false);
     expect(await adapter.get(ID)).toBeNull();
+  });
+
+  it('scans in id byte order, a page at a time, whatever the collation', async () => {
+    const ids = ['b', 'B', 'a:1', 'a', '6a692a1be833c668acdb84cf', 'Z'];
+    for (const [i, id] of ids.entries()) await adapter.upsert({ id, title: `t${i}`, payload: null }, i);
+    // The fixture must disagree with byte order, or this test proves nothing.
+    const natural = (await database.pool.query('SELECT id FROM widgets ORDER BY id')).rows.map((r) => r.id);
+    expect(natural).not.toEqual([...ids].sort());
+    const seen = [];
+    let after = null;
+    for (;;) {
+      const page = await adapter.scan(after, 2);
+      if (!page.length) break;
+      expect(page.length).toBeLessThanOrEqual(2);
+      seen.push(...page.map((entry) => entry.id));
+      after = page[page.length - 1].id;
+    }
+    expect(seen).toEqual([...ids].sort());
+    expect((await adapter.scan(null, 1))[0]).toEqual({
+      id: '6a692a1be833c668acdb84cf', row: { id: '6a692a1be833c668acdb84cf', title: 't4', payload: null }, version: 4,
+    });
   });
 
   it('rejects an identifier it would have to interpolate unsafely', () => {

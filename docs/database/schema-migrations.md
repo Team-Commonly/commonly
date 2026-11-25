@@ -51,16 +51,20 @@ ship destructive changes only after old application versions are drained.
 Production callers import `repositories/agentPodReadCursorRepository`, never
 `models/AgentPodReadCursor`. ESLint checks both imports and require calls for
 this extracted model. Model tests may still seed and inspect real Mongo rows.
-The model/schema is unchanged in this extraction; **Mongo is the only cursor
-store** and remains authoritative. No dual writes, shadow reads or PG cursor
-table are introduced here.
+Since step 2 the repository is built on the dual-store helper
+(`repositories/dualStore.ts`) and the cursor has a Postgres table,
+`agent_pod_read_cursors` (`0016`). `STORE_MODE_AGENT_POD_READ_CURSOR` selects
+the store; unset means `mongo`, which makes no Postgres call. **Mongo remains
+authoritative** until step 4. Moving it, with rollback for each step:
+[`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md).
 
 - `getReadWatermark(agentUserId, podId)` returns a plain
   `{readAt: Date, readRevision?: number}` or null.
 - `advanceReadWatermark(agentUserId, podId, watermark)` resolves after writing.
   It keeps the deterministic `agent:pod` key, independent `$max` timestamp and
   revision updates, omitted-revision behavior, and duplicate-upsert loser retry.
-  Other database errors propagate to the freshness gate.
+  Other Mongo errors propagate to the freshness gate. A Postgres error in
+  `dual` or `pg-read` does not: the write stands in Mongo, flagged for repair.
 
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
