@@ -245,11 +245,11 @@ describe('registry install refuses when the agent is not added to the pod', () =
     Pod.findById.mockImplementation((id) => {
       if (refused) seen.push(id);
       return buildLeanChain({
-        _id: 'server-pod-id', createdBy: 'user-1', members: ['user-1'], type: 'chat',
+        _id: 'b0000000000000000000000b', createdBy: 'user-1', members: ['user-1'], type: 'chat',
       });
     });
     AgentIdentityService.ensureAgentInPod.mockImplementation(async () => { refused = true; return null; });
     await install();
-    expect(seen).toEqual(['server-pod-id']);
+    expect(seen).toEqual(['b0000000000000000000000b']);
   });
 });
