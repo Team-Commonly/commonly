@@ -225,3 +225,27 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(option.textContent).toContain("not connected");
   });
 });
+
+// F607: beside a sibling install the composer inserts the default's explicit
+// `<agentName>-default` handle, so that handle has to carry the warning too.
+describe('the default install\'s explicit handle carries its state (F607)', () => {
+  test('@<agentName>-default of a disconnected default shows the warning', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',
+    }]);
+    renderChat(makeDetail({
+      agents: [
+        { agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent' },
+        { agentName: 'sam-agent', instanceId: 'ops', displayName: 'Ops' },
+      ],
+    }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'hey @sam-agent-default can you look' },
+    });
+
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toContain("isn't connected");
+  });
+});

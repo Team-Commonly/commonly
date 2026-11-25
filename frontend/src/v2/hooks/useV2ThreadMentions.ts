@@ -11,6 +11,7 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 import { agentConnectLink } from '../utils/agentConnectLink';
+import { mentionHandleFor } from '../utils/agentMentionHandle';
 
 type MentionReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
@@ -83,11 +84,15 @@ export const useV2ThreadMentions = ({
       const username = buildAgentUsername(name, agent.instanceId);
       const label = agent.displayName || agent.profile?.displayName || name;
       const instance = (agent.instanceId || 'default').toLowerCase();
-      const value = instance && instance !== 'default' && instance !== name.toLowerCase()
+      const usualValue = instance && instance !== 'default' && instance !== name.toLowerCase()
         && !isOpaqueInstanceToken(instance)
         ? instance
         : (slugifyAgentHandle(label) || name.toLowerCase());
-      const row = agentStateByHandle.get(value) || agentStateByHandle.get(name.toLowerCase());
+      // F607: beside a sibling install the default's usual handle can wake the
+      // sibling, so it gets its explicit `<agentName>-default` key.
+      const value = mentionHandleFor(agent, agents) || usualValue;
+      const row = agentStateByHandle.get(value) || agentStateByHandle.get(usualValue)
+        || agentStateByHandle.get(name.toLowerCase());
       const reach = row?.state;
       const webhookFailed = Boolean(row?.deliveryError);
       const subtitle = reach === 'never-connected'

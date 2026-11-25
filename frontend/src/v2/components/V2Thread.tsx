@@ -55,6 +55,7 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 import { agentConnectLink, agentKeyOf } from '../utils/agentConnectLink';
+import { addressDraftToPod, mentionHandleFor } from '../utils/agentMentionHandle';
 import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
@@ -731,6 +732,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       map.set(agentName.toLowerCase(), s);
       if (typeof s.instanceId === 'string' && s.instanceId && s.instanceId !== 'default') {
         map.set(s.instanceId.toLowerCase(), s);
+      } else {
+        // F607: the default install's explicit handle, the backend's
+        // `<agentName>-default` key, which the composer inserts beside a sibling.
+        map.set(`${agentName}-default`.toLowerCase(), s);
       }
     });
     return map;
@@ -1743,12 +1748,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // per navigation, then dropped from history so a reload does not refill it.
   // Declared above the `!pod` early return: every hook must run on every render.
   const composeDraftKeyRef = useRef<string | null>(null);
+  // The draft as it was handed over, while the person hasn't typed into it.
+  const handedDraftRef = useRef<string | null>(null);
+  // Declared before the effect that sets it, so a pod change clears the last
+  // pod's draft first and never the one this pod was just handed.
+  useEffect(() => { handedDraftRef.current = null; }, [pod?._id]);
   useEffect(() => {
     const composeDraft = (location.state as { composeDraft?: unknown } | null)?.composeDraft;
     if (!pod?._id || typeof composeDraft !== 'string' || !composeDraft.trim()) return;
     if (composeDraftKeyRef.current === location.key) return;
     composeDraftKeyRef.current = location.key;
-    const text = composeDraft.slice(0, 200);
+    // F607: the handed draft names a default install by its bare name, which
+    // beside a sibling install can wake the sibling. Address it to the default.
+    const text = addressDraftToPod(composeDraft.slice(0, 200), agents || []);
+    handedDraftRef.current = text;
     setDraft(text);
     requestAnimationFrame(() => {
       const input = composerInputRef.current;
@@ -1760,6 +1773,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // The effect keys on the navigation and the pod arriving, nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key, pod?._id]);
+  // The pod's agents can arrive after the draft. Re-address it then, unless
+  // the person has already typed into it.
+  useEffect(() => {
+    const handed = handedDraftRef.current;
+    if (!handed) return;
+    const addressed = addressDraftToPod(handed, agents || []);
+    if (addressed === handed) return;
+    handedDraftRef.current = addressed;
+    setDraft((current) => (current === handed ? addressed : current));
+  }, [agents, setDraft]);
 
   if (!pod) {
     return (
@@ -2031,7 +2054,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           ? exampleAgent.instanceId
           : (slugifyAgentHandle(exampleAgent?.displayName || exampleAgent?.profile?.displayName)
             || exampleAgent?.agentName);
-        const mentionHandle = normalizeAgentSegment(rawMentionHandle);
+        // F607: beside a sibling install the default's bare name can wake the
+        // sibling, so the hint suggests its explicit handle.
+        const mentionHandle = (exampleAgent && mentionHandleFor(exampleAgent, agents))
+          || normalizeAgentSegment(rawMentionHandle);
         if (
           delivery
           && delivery.enqueued === 0
@@ -2296,7 +2322,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         && !isOpaqueInstanceToken(ownAgent.instanceId)
         ? ownAgent.instanceId
         : (slugifyAgentHandle(ownAgent.displayName || ownAgent.profile?.displayName) || ownAgent.agentName);
-      handleStarterPrompt(`@${normalizeAgentSegment(handle)} `);
+      // F607: beside a sibling install, the default gets its explicit handle.
+      handleStarterPrompt(`@${mentionHandleFor(ownAgent, agents || []) || normalizeAgentSegment(handle)} `);
     } else {
       composerInputRef.current?.focus();
     }

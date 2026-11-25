@@ -507,3 +507,27 @@ describe('V2Thread agent delivery hint', () => {
     expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
   });
 });
+
+// F607: beside a sibling install of the same agent the bare name can wake the
+// sibling, so the hint suggests the default install's explicit handle.
+describe('the hint names a default install beside a sibling by its routed handle (F607)', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default', status: 'active' };
+  const ops = { agentName: 'codex', instanceId: 'ops', status: 'active' };
+  const zeroEnqueued = () => makeMessage('hello room', { enqueued: 0, implicit: [], agentsInPod: 2 });
+
+  test('beside a sibling, the hint suggests @codex-default', async () => {
+    renderHarness(zeroEnqueued(), jest.fn(), { agents: [dflt, ops] });
+    sendDraft('hello room');
+    const hint = await screen.findByRole('status');
+    expect(hint).toHaveTextContent('No agent was notified');
+    expect(hint).toHaveTextContent('@codex-default');
+  });
+
+  test('a lone default keeps the bare @codex', async () => {
+    renderHarness(zeroEnqueued(), jest.fn(), { agents: [dflt] });
+    sendDraft('hello room');
+    const hint = await screen.findByRole('status');
+    expect(hint).toHaveTextContent('@codex');
+    expect(hint).not.toHaveTextContent('@codex-default');
+  });
+});
