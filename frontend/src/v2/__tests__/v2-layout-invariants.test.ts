@@ -1792,12 +1792,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('no v2 source draws a MUI icon; marks come from icons/glyphs', () => {
     const v2Root = path.join(__dirname, '..');
-    const drawsMuiIcon = (src: string) => /from '@mui\/icons-material/.test(src);
+    const drawsMuiIcon = (src: string) => /from\s*['"]@mui\/icons-material/.test(src);
     const sources = (fs.readdirSync(v2Root, { recursive: true }) as string[])
       .filter((f) => /\.tsx?$/.test(f) && !f.includes('__tests__'));
     // Positive controls: the predicate catches the import, and the scan
     // reaches nested production folders while skipping tests.
     expect(drawsMuiIcon("import CloseIcon from '@mui/icons-material/Close';")).toBe(true);
+    expect(drawsMuiIcon('import CloseIcon from "@mui/icons-material/Close";')).toBe(true);
+    expect(drawsMuiIcon("import { Close } from\n  '@mui/icons-material';")).toBe(true);
     expect(sources).toEqual(expect.arrayContaining([
       path.join('components', 'V2PodBoard.tsx'),
       path.join('icons', 'glyphs.tsx'),
