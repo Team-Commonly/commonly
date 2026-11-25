@@ -10,7 +10,9 @@ import {
 import { randomUUID } from 'crypto';
 import dns from 'node:dns';
 import net from 'node:net';
-import { AgentComputerTakeover } from '../models/AgentComputerTakeover';
+import {
+  bindTarget, isTakeoverActive, listBindings, setTakeover,
+} from '../repositories/agentComputerTakeoverRepository';
 import { classifyAddress } from './outboundUrlGuard';
 
 type SteelSession = { id: string; status: string };
@@ -126,33 +128,13 @@ const resolveAddresses: Resolve = async (host) => (
   await dns.promises.lookup(host, { all: true, verbatim: true })
 ).map(({ address }) => address);
 
+// Ownership is enforced in the repository: every read and write is keyed by
+// (installation, owner), and another owner's installation id is never matched.
 const takeoverStore: TakeoverStore = {
-  get: async (userId, installationId) => Boolean(await AgentComputerTakeover.exists({
-    _id: installationId, ownerId: userId, active: true,
-  })),
-  set: async (userId, installationId, active) => {
-    await AgentComputerTakeover.updateOne(
-      { _id: installationId, ownerId: userId },
-      { $set: { active } },
-      { upsert: true },
-    );
-  },
-  bindings: async (userId) => {
-    const rows = await AgentComputerTakeover.find({ ownerId: userId, targetId: { $exists: true } })
-      .select('_id targetId').lean();
-    return rows.flatMap((row) => {
-      const targetId = (row as { targetId?: unknown }).targetId;
-      return typeof targetId === 'string' && targetId
-        ? [{ installationId: String(row._id), targetId }] : [];
-    });
-  },
-  bind: async (userId, installationId, targetId) => {
-    await AgentComputerTakeover.updateOne(
-      { _id: installationId, ownerId: userId },
-      { $set: { targetId }, $setOnInsert: { active: false } },
-      { upsert: true },
-    );
-  },
+  get: isTakeoverActive,
+  set: setTakeover,
+  bindings: listBindings,
+  bind: bindTarget,
 };
 
 export const isCommitControl = (control: {
