@@ -82,21 +82,25 @@ in seconds. Check two things first:
 - **Only raise it.** Read the current `minPortsPerVm` above. Lowering a static
   minimum breaks established NAT connections at once. If the current value is
   already at or above what you need, enable dynamic port allocation instead,
-  with a `--max-ports-per-vm` at or above both 1024 and the current minimum: a
-  lower maximum drops existing connections.
-- **Raise the maximum with the minimum.** With dynamic allocation already on,
-  the maximum must stay above the minimum. If `maxPortsPerVm` is at or below
-  the new minimum, set `--max-ports-per-vm` to a higher power of 2 (2048 for a
-  1024 minimum) in the same update. With static allocation, leave the maximum
-  unset.
+  with a `--max-ports-per-vm` that is a power of 2, at least 1024 and greater
+  than the current minimum: a lower maximum drops existing connections. Cloud
+  NAT refuses dynamic allocation while endpoint-independent mapping is on, so
+  check `enableEndpointIndependentMapping` first.
+- **Raise the maximum with the minimum, never lower it.** With dynamic
+  allocation already on, the maximum must stay above the minimum. If
+  `maxPortsPerVm` is at or below the new minimum, raise it to a higher power of
+  2 (2048 for a 1024 minimum) in the same update. Never set it below its current
+  value: lowering a dynamic maximum breaks active connections. With static
+  allocation, leave the maximum unset.
 - **NAT addresses.** More ports per VM can need more NAT IP addresses. With
   automatic allocation (`AUTO_ONLY`), Cloud NAT picks any new addresses itself,
   so you cannot know them in advance. If the database restricts clients by IP,
   connections from a new address are refused, and look like the same timeouts,
   until it is on the access list. Right after the change, list the addresses the
   NAT is using (`gcloud compute routers get-nat-ip-info <router> --region=<region>`)
-  and add any new one to the access list. If the address set must be known
-  before the change, the NAT has to use manual allocation; with manual
+  and add any new one to the access list. Cloud NAT can add another address
+  later as demand grows, so repeat that check after load changes. If the
+  database needs a fixed address list, the NAT has to use manual allocation; with manual
   allocation, assign enough addresses before raising the minimum. The
   Cloud NAT "ports and addresses" documentation gives the count a minimum
   needs. One VM at 1024 ports fits in a single address.
