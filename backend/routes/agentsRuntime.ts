@@ -3968,13 +3968,14 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
             return refusePodNameCollision(`became type=${current.type} (1:1 DM) before the join (ADR-001 §3.10)`);
           }
           // Someone else added the agent meanwhile and mirrored their own add.
-        } else {
+        }
+        // The response reads the pod as joined, so it includes the agent.
+        existingPod.members.push(agentUser._id);
+        if (added.modifiedCount) {
           // F183: best-effort PG mirror write; never fails the join.
           // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
           await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
         }
-        // The response reads the pod as joined, so it includes the agent.
-        existingPod.members.push(agentUser._id);
         await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
