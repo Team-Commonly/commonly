@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 /**
  * Durable record that a human and an agent have already met. Hosted greeting
@@ -35,6 +36,8 @@ AgentFirstContactSchema.index(
   { userId: 1, agentName: 1, instanceId: 1 },
   { unique: true },
 );
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(AgentFirstContactSchema);
 
 const AgentFirstContact: Model<IAgentFirstContact> =
   (mongoose.models.AgentFirstContact as Model<IAgentFirstContact>)

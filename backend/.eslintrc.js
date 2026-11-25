@@ -75,11 +75,15 @@ module.exports = {
           patterns: [{
             group: ['**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*'],
             message: 'Use repositories/agentPodReadCursorRepository.',
+          }, {
+            group: ['**/models/AgentFirstContact', '**/models/AgentFirstContact.*'],
+            message: 'Use repositories/agentFirstContactRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
           patterns: [
             '**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*',
+            '**/models/AgentFirstContact', '**/models/AgentFirstContact.*',
           ],
         }],
       },

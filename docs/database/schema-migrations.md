@@ -66,6 +66,29 @@ authoritative** until step 4. Moving it, with rollback for each step:
   Other Mongo errors propagate to the freshness gate. A Postgres error in
   `dual` or `pg-read` does not: the write stands in Mongo, flagged for repair.
 
+## Second model: AgentFirstContact
+
+`AgentFirstContact` (the durable record that a person and an agent have met)
+follows the same template. Its table is `agent_first_contacts` (`0017`): the
+Mongo `_id` as `id`, the natural key `(user_id, agent_name, instance_id)` under
+a unique index, `greeted_at_by_pod` as JSONB, and a nullable `created_at`.
+`STORE_MODE_AGENT_FIRST_CONTACT` selects the store. Production callers import
+`repositories/agentFirstContactRepository`; ESLint fences the model as it does
+the cursor.
+
+- `claimFirstContact(identity, fields)` resolves `{ inserted }`, true only for
+  the call that created the marker (a `$setOnInsert` upsert). A duplicate-key
+  error from two first claims racing still propagates to the caller.
+- `claimPodGreeting(identity, podId, now, expiredBefore)` resolves true only
+  for the call that stamped `greetedAtByPod.<podId>` (absent, or older than
+  `expiredBefore`).
+
+Both claims run in Mongo in `mongo`, `dual` and `pg-read`. In `mongo` they call
+`AgentFirstContact.findOneAndUpdate` directly, as before, without the helper. In `dual`
+and `pg-read` they go through the helper's `insertIfAbsent` and `setWhere`, and only a won
+claim takes a version and is copied.
+`pg` mode refuses both until step 4.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

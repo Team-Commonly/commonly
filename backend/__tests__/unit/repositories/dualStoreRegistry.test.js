@@ -39,10 +39,12 @@ describe('dual-store registry and repair pass', () => {
     jest.restoreAllMocks();
   });
 
-  it('lists the read cursor, whose store has every operation the script and the job use', () => {
-    expect(Object.keys(DUAL_STORED_MODELS)).toEqual(['AgentPodReadCursor']);
-    const store = DUAL_STORED_MODELS.AgentPodReadCursor();
-    ['repair', 'backfill', 'verify', 'upsert', 'findById'].forEach((op) => expect(typeof store[op]).toBe('function'));
+  it('lists the read cursor and the first-contact marker, whose stores have every operation the script and the job use', () => {
+    expect(Object.keys(DUAL_STORED_MODELS)).toEqual(['AgentPodReadCursor', 'AgentFirstContact']);
+    Object.values(DUAL_STORED_MODELS).forEach((open) => {
+      const store = open();
+      ['repair', 'backfill', 'verify', 'upsert', 'findById'].forEach((op) => expect(typeof store[op]).toBe('function'));
+    });
   });
 
   it.each([undefined, 'mongo', 'pg'])('skips a model whose mode is %p, with no Postgres call', async (mode) => {

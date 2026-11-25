@@ -18,7 +18,7 @@ was first paused, when D7 was dropped. Later that same day the founder reopened 
 only ("how about fullspeed migrate to postgres"), so the waves in D6 are work in progress again.
 Models move through D3's steps 1 to 3. **Step 4 for any model, and dropping Mongo, are held until
 after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
-(migration `0016`); the per-model procedure is
+(migration `0016`), the second `AgentFirstContact` (`0017`); the per-model procedure is
 [`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md).
 
 **Deciders:** founder (direction), eng lead (plan).
@@ -54,7 +54,8 @@ after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
   `CREATE TABLE IF NOT EXISTS`, outside the runner: `message_claims` (`services/messageClaimService.ts`),
   and `tool_calls` and `tool_call_budgets` (`models/ToolCall.ts`). `message_claims` exists only that way.
 - **Repositories.** `messageRepository`, `agentPodReadCursorRepository` and `recordChainRepository`
-  exist. Only `AgentPodReadCursor` is fenced by lint (`backend/.eslintrc.js`, `no-restricted-imports`).
+  exist, and `agentFirstContactRepository` since step 2 of `AgentFirstContact`. Only `AgentPodReadCursor`
+  and `AgentFirstContact` are fenced by lint (`backend/.eslintrc.js`, `no-restricted-imports`).
 - **Self-host.** `docker-compose.local.yml` runs Postgres beside Mongo (#2806), so `./install.sh` no
   longer runs chat on a fallback. It does need both databases.
 
