@@ -22,10 +22,10 @@ let store: DualStore | undefined;
  * STORE_MODE_BILLING_EVENT. Table: config/migrations/0022_billing_events.sql.
  * Built on first use outside mongo, so mongo mode loads nothing new.
  *
- * `toRow` runs after the claim's Mongo insert has committed, so it must not
- * throw: a throw there would fail a claim that already holds the lock, and
- * every Stripe retry would then read as a duplicate. It only reads fields and
- * maps a missing one to null.
+ * `toRow` runs after the claim's Mongo insert has committed. The helper maps
+ * inside the copy's try, so a throw is a failed copy for repair, never a
+ * failed claim; this toRow only reads fields and maps a missing one to null,
+ * so it doesn't throw either.
  */
 export function billingEventStore(): DualStore {
   store ??= createDualStore({

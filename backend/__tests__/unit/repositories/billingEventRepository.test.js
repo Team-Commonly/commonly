@@ -2,12 +2,20 @@
 // ADR-034 step 2 for the Stripe webhook idempotency marker. The repository's
 // Postgres table is the in-memory adapter here; Mongo is real, so racing
 // claims meet the production unique index on eventId.
-const mockPg = { current: null, options: null };
+const mockPg = { current: null, options: null, toRowThrows: false };
 jest.mock('../../../repositories/dualStore', () => {
   const actual = jest.requireActual('../../../repositories/dualStore');
   const forward = (method) => (...args) => mockPg.current[method](...args);
   return {
     ...actual,
+    // A switch to make the repository's toRow throw, read at call time.
+    createDualStore: (options) => actual.createDualStore({
+      ...options,
+      toRow: (doc) => {
+        if (mockPg.toRowThrows) throw new Error('unmappable');
+        return options.toRow(doc);
+      },
+    }),
     pgTableAdapter: (options) => {
       mockPg.options = options;
       return Object.fromEntries(['upsert', 'remove', 'replace', 'removeAt', 'get', 'scan', 'findWhere']
@@ -245,6 +253,20 @@ describe('billing event repository (ADR-034 step 2)', () => {
       expect((await raw(eventId)).pgPending).toBeUndefined();
       expect(await rowOf(eventId)).toMatchObject({ row: { event_id: eventId, detail: 'claimed' }, version: 1 });
       expect(await billingEventStore().verify()).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+    });
+
+    it('a toRow that throws after the claim commits still claims; a retry is a duplicate', async () => {
+      const eventId = fakeEventId();
+      mockPg.toRowThrows = true;
+      try {
+        expect(await claimBillingEvent(eventId, TYPE)).toBe(true);
+        expect(await raw(eventId)).toMatchObject({ pgVersion: 1, pgPending: 1 });
+        expect(await claimBillingEvent(eventId, TYPE)).toBe(false);
+      } finally {
+        mockPg.toRowThrows = false;
+      }
+      expect(await billingEventStore().repair()).toMatchObject({ copied: 1, failed: 0 });
+      expect(await rowOf(eventId)).toMatchObject({ row: { event_id: eventId, detail: 'claimed' }, version: 1 });
     });
 
     it('a Postgres that throws on every call never loses or doubles a claim', async () => {
