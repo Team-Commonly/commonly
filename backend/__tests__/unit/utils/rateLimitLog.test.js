@@ -146,6 +146,48 @@ describe('createRateLimitRejectionLog', () => {
     expect(logger.size()).toBe(2);
   });
 
+  it('a log sink that throws does not mark the key as logged', () => {
+    const { logger, log } = setup();
+    log.mockImplementationOnce(() => { throw new Error('sink down'); });
+    logger(makeReq());
+    logger(makeReq());
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(fieldsOf(log.mock.calls[1]).suppressed).toBe(0);
+  });
+
+  it('a throw on an expired entry keeps its suppressed count for the next line', () => {
+    const { logger, log, advance } = setup();
+    logger(makeReq());
+    for (let i = 0; i < 3; i += 1) logger(makeReq());
+    advance(60_001);
+    log.mockImplementationOnce(() => { throw new Error('sink down'); });
+    logger(makeReq());
+    logger(makeReq());
+    expect(log).toHaveBeenCalledTimes(3);
+    expect(fieldsOf(log.mock.calls[2]).suppressed).toBe(3);
+  });
+
+  it('a throw while building the fields leaves the entry untouched', () => {
+    const { logger, log } = setup();
+    logger(makeReq({ get: () => { throw new Error('bad getter'); } }));
+    expect(log).not.toHaveBeenCalled();
+    logger(makeReq());
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels a missing key none and shares one bucket for keyless rejections', () => {
+    const { logger, log, advance } = setup();
+    logger(makeReq({ rateLimit: undefined }));
+    logger(makeReq({ rateLimit: { key: 42 } }));
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(fieldsOf(log.mock.calls[0]).keyKind).toBe('none');
+    expect(fieldsOf(log.mock.calls[0])).not.toHaveProperty('keyPrefix');
+    advance(60_001);
+    logger(makeReq({ rateLimit: {} }));
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(fieldsOf(log.mock.calls[1])).toMatchObject({ keyKind: 'none', suppressed: 1 });
+  });
+
   it('never throws, even on a hostile request object', () => {
     const { logger } = setup();
     const hostile = {};

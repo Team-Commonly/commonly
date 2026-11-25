@@ -84,8 +84,12 @@ export const routeLabel = (req: RateLimitedRequest): string => {
   return `${method} ${stripped}`.slice(0, ROUTE_MAX);
 };
 
-const describeKey = (key: unknown): { keyKind: 'tok' | 'ip'; keyPrefix?: string } => {
-  const match = typeof key === 'string' ? TOK_KEY.exec(key) : null;
+// A missing key cannot happen with express-rate-limit 8.7.1, which always sets
+// it; as a fallback, keyless rejections share one bucket labelled `none`, so a
+// stressed host gets one line a minute per limiter rather than a flood.
+const describeKey = (key: string | undefined): { keyKind: 'tok' | 'ip' | 'none'; keyPrefix?: string } => {
+  if (key === undefined) return { keyKind: 'none' };
+  const match = TOK_KEY.exec(key);
   return match ? { keyKind: 'tok', keyPrefix: match[1] } : { keyKind: 'ip' };
 };
 
@@ -115,7 +119,9 @@ export const createRateLimitRejectionLog = (
   const record = ((req: RateLimitedRequest) => {
     try {
       const rawKey = req.rateLimit?.key;
-      const key = typeof rawKey === 'string' ? rawKey : '';
+      const limiterKey = typeof rawKey === 'string' ? rawKey : undefined;
+      // Keyless rejections share one bucket; no real key starts with a NUL.
+      const key = limiterKey ?? '\u0000none';
       const at = now();
       const entry = seen.get(key);
       if (entry && at - entry.loggedAt < windowMs) {
@@ -123,21 +129,23 @@ export const createRateLimitRejectionLog = (
         return;
       }
       const suppressed = entry ? entry.suppressed : 0;
-      // Re-insert so the map stays in last-logged order for pruning.
-      seen.delete(key);
-      makeRoom(at);
-      seen.set(key, { loggedAt: at, suppressed: 0 });
 
       const fields: Record<string, unknown> = {
         limiter,
         route: routeLabel(req),
-        ...describeKey(key),
+        ...describeKey(limiterKey),
       };
       const id = req.params?.id;
       if (typeof id === 'string' && OBJECT_ID.test(id)) fields.machineDbId = id;
       fields.ua = userAgentFamily(req.get?.('user-agent'));
       fields.suppressed = suppressed;
       log(LOG_FORMAT, fields);
+      // Only a line that was written marks the key as logged: a throw above
+      // leaves the previous entry, and its suppressed count, as it was.
+      // Re-insert so the map stays in last-logged order for pruning.
+      seen.delete(key);
+      makeRoom(at);
+      seen.set(key, { loggedAt: at, suppressed: 0 });
     } catch {
       // A log line must never turn a 429 into a 500.
     }
