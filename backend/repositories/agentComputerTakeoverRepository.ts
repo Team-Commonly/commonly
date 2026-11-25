@@ -84,10 +84,19 @@ async function upsertOwned(
   }
 }
 
-/** True when `userId` owns the installation's takeover and it is active. */
+/**
+ * True when `userId` owns the installation's takeover and it is active.
+ *
+ * The guard reads Mongo in every mode but pg, pg-read included. pg-read's
+ * flag check is a per-instance cache: another instance can commit an
+ * activation to Mongo and fail its copy while this one still caches "nothing
+ * flagged", and a Postgres read would then answer inactive and let the agent
+ * act during the takeover. A guard that fails open must not read a copy that
+ * can lag; listBindings can, and does.
+ */
 export async function isTakeoverActive(userId: string, installationId: string): Promise<boolean> {
   const filter = { _id: installationId, ownerId: userId, active: true };
-  if (storeMode(NAME) === 'mongo') return Boolean(await AgentComputerTakeover.exists(filter));
+  if (storeMode(NAME) !== 'pg') return Boolean(await AgentComputerTakeover.exists(filter));
   return Boolean(await computerTakeoverStore().findOneWhere(filter, { fields: ['_id'] }));
 }
 

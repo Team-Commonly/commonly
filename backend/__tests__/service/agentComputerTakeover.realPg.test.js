@@ -117,7 +117,8 @@ real('AgentComputerTakeover on real PostgreSQL (ADR-034 step 2)', () => {
       { _id: new Types.ObjectId(install) }, { $set: { active: false, targetId: 'mongo-only' } },
     );
     process.env[ENV] = 'pg-read';
-    expect(await isTakeoverActive(owner, install)).toBe(true);
+    // The takeover guard stays on Mongo in pg-read; listBindings reads the table.
+    expect(await isTakeoverActive(owner, install)).toBe(false);
     expect(await isTakeoverActive(other, install)).toBe(false);
     expect(await listBindings(owner)).toEqual([{ installationId: install, targetId: 'target-1' }]);
     expect(await listBindings(other)).toEqual([]);

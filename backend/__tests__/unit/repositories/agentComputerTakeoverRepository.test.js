@@ -313,18 +313,32 @@ describe('agent computer takeover repository (ADR-034 step 2)', () => {
   describe('pg-read reads', () => {
     beforeEach(() => { process.env[ENV] = 'pg-read'; });
 
-    it('come from Postgres, in the Mongo shape', async () => {
+    it('listBindings comes from Postgres, in the Mongo shape', async () => {
       await setTakeover(owner, install, false);
       await bindTarget(owner, install, 'target-1');
       // Mark the row so a read from it is visible.
-      rowOf().row.active = true;
       rowOf().row.target_id = 'target-pg';
+      mockPg.current.calls.length = 0;
+      expect(await listBindings(owner)).toEqual([{ installationId: install, targetId: 'target-pg' }]);
+      expect(await listBindings(other)).toEqual([]);
+      expect(mockPg.current.calls).toEqual(['findWhere', 'findWhere']);
+    });
+
+    it('the takeover guard stays on Mongo, even when this instance sees nothing flagged', async () => {
+      // Another instance committed an activation to Mongo and failed its copy:
+      // Mongo holds active with its marker, the row is stale, and this
+      // instance's flag cache still says nothing is flagged.
+      await setTakeover(owner, install, false);
+      await isTakeoverActive(owner, install);
+      await listBindings(owner);
+      await AgentComputerTakeover.collection.updateOne(
+        { _id: new Types.ObjectId(install) }, { $set: { active: true, pgVersion: 2, pgPending: 2 } },
+      );
+      expect(rowOf().row.active).toBe(false);
       mockPg.current.calls.length = 0;
       expect(await isTakeoverActive(owner, install)).toBe(true);
       expect(await isTakeoverActive(other, install)).toBe(false);
-      expect(await listBindings(owner)).toEqual([{ installationId: install, targetId: 'target-pg' }]);
-      expect(await listBindings(other)).toEqual([]);
-      expect(mockPg.current.calls).toEqual(['findWhere', 'findWhere', 'findWhere', 'findWhere']);
+      expect(mockPg.current.calls).toEqual([]);
     });
 
     it('fall back to Mongo while a document is flagged', async () => {
@@ -338,9 +352,10 @@ describe('agent computer takeover repository (ADR-034 step 2)', () => {
       expect(mockPg.current.calls).not.toContain('findWhere');
 
       await computerTakeoverStore().repair();
+      expect(rowOf().row.active).toBe(true);
       mockPg.current.calls.length = 0;
       expect(await isTakeoverActive(owner, install)).toBe(true);
-      expect(mockPg.current.calls).toEqual(['findWhere']);
+      expect(mockPg.current.calls).toEqual([]);
     });
   });
 

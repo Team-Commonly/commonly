@@ -156,8 +156,8 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   don't set it to `pg`. The refusal comes after `sendNeedsYouEmail` has saved its claim, so each email
   would be marked failed and silently dropped.
 - **`AgentComputerTakeover` cannot run in `pg` yet.** `setTakeover` and `bindTarget` go through the
-  helper's `updateWhere` and `insertIfAbsent`, which throw `not supported in pg mode until step 4`; its reads
-  (`isTakeoverActive`, `listBindings`) already run on Postgres in `pg-read` and `pg`. Before this model runs
+  helper's `updateWhere` and `insertIfAbsent`, which throw `not supported in pg mode until step 4`; `listBindings`
+  already reads Postgres in `pg-read` and `pg`; the guard `isTakeoverActive` reads Mongo until `pg`. Before this model runs
   in `pg`, each write needs a single-statement Postgres form keyed by the owner, bumping `pg_version` and
   tested on real Postgres with racing first writes and with another owner's installation id: `INSERT …
   ON CONFLICT (id) DO UPDATE SET active = $active WHERE agent_computer_takeovers.owner_id = $owner
@@ -165,8 +165,8 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   holds the id, and it must fail as Mongo's duplicate key does, never write. Until then, don't set it to
   `pg`: every takeover request and target bind would fail.
 
-  **Before `pg-read` for this model,** check that `repair` reports nothing pending for it. A takeover read
-  is consulted only when a person's browser state is rebuilt or a new tab opens. A copy of
-  `setTakeover(true)` that failed, read from Postgres by another process within the 5-second flag cache
-  (or with Mongo down), would show the takeover as inactive and let the agent act during the person's
-  takeover. A stale "active" fails safe: it only holds the agent back.
+  **The takeover guard stays on Mongo in `pg-read`.** pg-read's flag check is a per-process cache, so
+  another process's failed copy of `setTakeover(true)` can go unseen for up to 5 seconds, and a Postgres
+  read would show the takeover as inactive and let the agent act during the person's takeover. Checking
+  `repair` before the flip doesn't cover a copy that fails after it. In `pg` the guard reads Postgres,
+  which is then the only store.
