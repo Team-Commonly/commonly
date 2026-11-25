@@ -158,29 +158,26 @@ export async function canReadAttachment(
   // the file themselves: the uploader, or a current member of File.podId. A
   // member forwarding the file elsewhere keeps working; a reference written by
   // someone outside the pod, or by a member who has since left, grants nothing.
+  // That author rule is part of each query, so the bounded window holds only
+  // references that can grant: references from authors who don't qualify
+  // cannot fill the window and crowd out the one that does (F610).
   const scopedFile = fileDoc?.podId ? fileDoc : null;
-  let posts: Array<{ podId?: unknown; userId?: unknown }> = await Post.find({
+  const eligibleAuthors = scopedFile ? await fileReaderIds(scopedFile) : null;
+  if (eligibleAuthors && eligibleAuthors.length === 0) return false;
+
+  const postQuery: Record<string, unknown> = {
     $or: [
       { image: urlFragment },
       { image: fileName },
       { content: { $regex: urlRegex } },
     ],
-  })
-    .select(scopedFile ? '_id podId userId' : '_id podId')
+  };
+  if (eligibleAuthors) postQuery.userId = { $in: eligibleAuthors };
+  const posts: Array<{ podId?: unknown }> = await Post.find(postQuery)
+    .select('_id podId')
     .limit(POST_SCAN_LIMIT)
     .lean();
-  let messageRefs = scopedFile
-    ? await findMessageRefsReferencingFile(urlFragment)
-    : (await findMessagePodsReferencingFile(urlFragment)).map((podId) => ({ podId, userId: null }));
-
-  if (scopedFile && (posts.length > 0 || messageRefs.length > 0)) {
-    const canAuthorRead = await fileReadersAmong(
-      scopedFile,
-      [...posts.map((p) => p.userId), ...messageRefs.map((m) => m.userId)],
-    );
-    posts = posts.filter((p) => canAuthorRead(p.userId));
-    messageRefs = messageRefs.filter((m) => canAuthorRead(m.userId));
-  }
+  const messagePodIdList = await findMessagePodsReferencingFile(urlFragment, eligibleAuthors);
 
   if (posts.length > 0) {
     if (posts.some((p: { podId?: unknown }) => !p.podId)) return true;
@@ -195,7 +192,7 @@ export async function canReadAttachment(
     }
   }
 
-  const messagePodIds = [...new Set(messageRefs.map((m) => String(m.podId)))];
+  const messagePodIds = [...new Set(messagePodIdList.map(String))];
   if (messagePodIds.length > 0) {
     const member = await Pod.findOne({ _id: { $in: messagePodIds }, members: userId })
       .select('_id')
@@ -234,29 +231,15 @@ export async function referencesOthersPodUpload(
 }
 
 /**
- * Which of `authorIds` can read a pod-scoped file themselves: its uploader, or
- * a current member of its pod. One membership query for the whole batch.
- * Returns a predicate over author ids.
+ * Who can read a pod-scoped file themselves: its uploader, or a current member
+ * of its pod. These are the only authors whose references grant the file to
+ * others. One query; ids are 24-hex strings, the shape both stores hold.
  */
-async function fileReadersAmong(
-  fileDoc: { podId: unknown; uploadedBy?: unknown },
-  authorIds: unknown[],
-): Promise<(authorId: unknown) => boolean> {
-  const uploader = fileDoc.uploadedBy ? String(fileDoc.uploadedBy) : '';
-  const candidates = [...new Set(authorIds.filter(Boolean).map(String))]
-    .filter((id) => id !== uploader && OBJECT_ID_RE.test(id));
-  let members = new Set<string>();
-  if (candidates.length > 0) {
-    const pod = await Pod.findOne({ _id: fileDoc.podId, members: { $in: candidates } })
-      .select('members')
-      .lean();
-    members = new Set((pod?.members || []).map(String));
-  }
-  return (authorId: unknown) => {
-    if (!authorId) return false;
-    const id = String(authorId);
-    return (uploader !== '' && id === uploader) || members.has(id);
-  };
+async function fileReaderIds(fileDoc: { podId: unknown; uploadedBy?: unknown }): Promise<string[]> {
+  const pod = await Pod.findOne({ _id: fileDoc.podId }).select('members').lean();
+  const ids = new Set<string>((pod?.members || []).map(String));
+  if (fileDoc.uploadedBy) ids.add(String(fileDoc.uploadedBy));
+  return [...ids].filter((id) => OBJECT_ID_RE.test(id));
 }
 
 const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
@@ -278,10 +261,14 @@ function isPlausibleFileName(fileName: string): boolean {
  * reference the file, so the caller can check pod membership against the
  * whole set in one query — picking a single pod with `LIMIT 1` could return
  * a pod the viewer isn't in, even when a different referencing pod would
- * grant access. Returns `[]` when no match exists or the PG pool is
- * unavailable.
+ * grant access. With `authorIds`, only messages written by one of them count,
+ * and the bound applies after that filter. Returns `[]` when no match exists
+ * or the PG pool is unavailable.
  */
-async function findMessagePodsReferencingFile(urlFragment: string): Promise<string[]> {
+async function findMessagePodsReferencingFile(
+  urlFragment: string,
+  authorIds: string[] | null,
+): Promise<string[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { pool } = require('../config/db-pg') as {
@@ -289,40 +276,16 @@ async function findMessagePodsReferencingFile(urlFragment: string): Promise<stri
     };
     if (!pool?.query) return [];
     const needle = `%${urlFragment}%`;
-    const { rows } = await pool.query(
-      'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 LIMIT $2',
-      [needle, MESSAGE_SCAN_LIMIT],
-    );
+    const { rows } = authorIds
+      ? await pool.query(
+        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 AND user_id = ANY($2::text[]) LIMIT $3',
+        [needle, authorIds, MESSAGE_SCAN_LIMIT],
+      )
+      : await pool.query(
+        'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 LIMIT $2',
+        [needle, MESSAGE_SCAN_LIMIT],
+      );
     return rows.map((r) => r.pod_id).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Like findMessagePodsReferencingFile, but keeps each reference's author so a
- * pod-scoped file can drop references whose author cannot read it. Distinct
- * `(pod_id, user_id)` pairs, bounded.
- */
-async function findMessageRefsReferencingFile(
-  urlFragment: string,
-): Promise<Array<{ podId: string; userId: string | null }>> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { pool } = require('../config/db-pg') as {
-      pool?: {
-        query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ pod_id: string; user_id?: string }> }>;
-      };
-    };
-    if (!pool?.query) return [];
-    const needle = `%${urlFragment}%`;
-    const { rows } = await pool.query(
-      'SELECT DISTINCT pod_id, user_id FROM messages WHERE content ILIKE $1 LIMIT $2',
-      [needle, MESSAGE_SCAN_LIMIT],
-    );
-    return rows
-      .filter((r) => r.pod_id)
-      .map((r) => ({ podId: r.pod_id, userId: r.user_id || null }));
   } catch {
     return [];
   }
