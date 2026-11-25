@@ -57,6 +57,12 @@ trust a blank.
 If one member sits at or near the NAT's per-VM port count while the others hold
 a handful, this is the cause.
 
+A low count does not rule it out. Cloud NAT keeps a closed connection's port
+reserved until its `TIME_WAIT` timeout ends, so a client that opens and closes
+connections quickly can fill the allocation while few are established. Read
+the NAT gateway's port-usage and dropped-sent-packets metrics for the same
+period before you clear the NAT.
+
 Then confirm the NAT's settings:
 
 ```bash
@@ -75,7 +81,14 @@ in seconds. Check two things first:
 
 - **Only raise it.** Read the current `minPortsPerVm` above. Lowering a static
   minimum breaks established NAT connections at once. If the current value is
-  already at or above what you need, enable dynamic port allocation instead.
+  already at or above what you need, enable dynamic port allocation instead,
+  with a `--max-ports-per-vm` at or above both 1024 and the current minimum: a
+  lower maximum drops existing connections.
+- **Raise the maximum with the minimum.** With dynamic allocation already on,
+  the maximum must stay above the minimum. If `maxPortsPerVm` is at or below
+  the new minimum, set `--max-ports-per-vm` to a higher power of 2 (2048 for a
+  1024 minimum) in the same update. With static allocation, leave the maximum
+  unset.
 - **NAT addresses.** More ports per VM can need more NAT IP addresses. With
   automatic allocation (`AUTO_ONLY`), Cloud NAT picks any new addresses itself,
   so you cannot know them in advance. If the database restricts clients by IP,
