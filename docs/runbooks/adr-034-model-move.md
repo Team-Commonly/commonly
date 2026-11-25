@@ -13,14 +13,18 @@ schema; its table in a numbered migration that has run; and an entry in
 `agent_first_contacts`, migration `0017`, `STORE_MODE_AGENT_FIRST_CONTACT`), whose two atomic claims use
 the helper's `insertIfAbsent` and `setWhere`. The third is `AgentDigestState` (table
 `agent_digest_states`, migration `0018`, `STORE_MODE_AGENT_DIGEST_STATE`), whose fold and settle use the
-helper's `updateWhere` and whose reads by filter use `findOneWhere` and `findWhere`.
+helper's `updateWhere` and whose reads by filter use `findOneWhere` and `findWhere`. The fourth is
+`AgentTaskWakeState` (table `agent_task_wake_states`, migration `0019`, `STORE_MODE_AGENT_TASK_WAKE_STATE`),
+the per-seat assigned-task wake throttle, whose reservation uses `updateWhere` then `insertIfAbsent` and
+whose release uses `updateWhere`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
 compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
-None of `AgentPodReadCursor`, `AgentFirstContact` and `AgentDigestState` has a delete path.
+None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState` and `AgentTaskWakeState` has a
+delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -129,3 +133,11 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
     `last_event_ids`, `conversations`, `other_count` and `unread_since`, and incrementing `revision`.
 
   Its reads by filter already run on Postgres in `pg-read`.
+- **`AgentTaskWakeState` cannot run in `pg` yet.** `reserveWake` and `releaseWake` go through the helper's
+  `updateWhere` (and `insertIfAbsent` for a seat's first wake), which throw `not supported in pg mode until
+  step 4`. Before this model runs in `pg`, each needs a single-statement Postgres form with the same answer,
+  bumping `pg_version` and tested on real Postgres with racing workers on an absent, a stale and a fresh key:
+  - the reserve: `INSERT … ON CONFLICT (id) DO UPDATE SET last_wake_at = $now WHERE
+    agent_task_wake_states.last_wake_at IS NULL OR agent_task_wake_states.last_wake_at <= $now - interval
+    RETURNING id` (reserved when a row comes back);
+  - the release: `UPDATE … SET last_wake_at = NULL WHERE id = $key AND last_wake_at = $now RETURNING id`.
