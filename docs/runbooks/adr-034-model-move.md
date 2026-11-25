@@ -25,6 +25,9 @@ of an agent's computer and its bound browser target, whose owner-keyed writes us
 `findOneWhere` and `findWhere`. The seventh is `BillingEvent` (table `billing_events`, migration `0022`,
 `STORE_MODE_BILLING_EVENT`), the Stripe webhook idempotency marker, whose claim uses the helper's `create`
 (a duplicate key means the event was already claimed) and whose outcome record uses `updateWhere`.
+The eighth is `DiscordSummaryHistory` (table
+`discord_summary_histories`, migration `0023`, `STORE_MODE_DISCORD_SUMMARY_HISTORY`), the record of each
+Discord summary queued for Commonly Bot, which is insert-only and uses the helper's `create`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -32,7 +35,7 @@ compare-and-set or a backfill of the old document can land on it. The prerequisi
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
-`NeedsYouEmailQuota`, `AgentComputerTakeover` and `BillingEvent` has a delete path.
+`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent` and `DiscordSummaryHistory` has a delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -198,3 +201,12 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
      does nothing in `pg`. Now no Mongo-only claim is left uncopied.
   3. Only then start replicas in `pg`. Never run a `dual` or `pg-read` replica alongside a `pg` one for
      this model.
+- **`DiscordSummaryHistory` cannot run in `pg` yet.** `recordDiscordSummary` refuses in `pg` before any
+  write. The helper's pg-only `create` would insert the row (the model is insert-only, keyed by a fresh
+  ObjectId, with no unique index besides `_id`), but it builds the row from `new Model(doc)` without
+  `save()`, so it runs no schema validation and sets no `updatedAt`. Before this model runs in `pg`, its
+  insert needs to validate the document first (`validate()` on the new document) and set `updatedAt` (the
+  schema default already sets `createdAt`),
+  tested on real Postgres. Until then, don't set it to `pg`: both writers would fail after they have
+  queued the summary for Commonly Bot, the Discord sync would report a failure, and the scheduler would
+  leave the buffer uncleared, so the same messages would be summarized again on the next run.

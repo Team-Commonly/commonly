@@ -769,8 +769,8 @@ class DiscordService {
 
       {
         // eslint-disable-next-line global-require
-        const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
-        const summaryRecord = new DiscordSummaryHistory({
+        const { recordDiscordSummary } = require('../repositories/discordSummaryHistoryRepository');
+        await recordDiscordSummary({
           integrationId: (this.integration as IntegrationDoc)._id,
           summaryType,
           content: (discordSummary as Record<string, unknown>).content,
@@ -779,7 +779,6 @@ class DiscordService {
           postedToCommonly: false,
           postedToDiscord: false,
         });
-        await summaryRecord.save();
 
         await Integration.findByIdAndUpdate(this.integrationId, {
           'config.messageBuffer': [],

@@ -228,6 +228,30 @@ The record is `updateWhere({ eventId })` with the defined fields as
 `$literal`s and `userId` cast to an ObjectId. `pg` mode refuses both until
 step 4, before any write.
 
+## Eighth model: DiscordSummaryHistory
+
+`DiscordSummaryHistory` (one row per Discord summary queued for Commonly Bot)
+follows the same template; the seventh, `BillingEvent`, takes `0022`. Its
+table is `discord_summary_histories` (`0023`): the Mongo `_id` (hex) as `id`,
+`integration_id` (hex), `summary_type`, `content`, `message_count`, the
+embedded `timeRange` as a JSONB `time_range` of ISO strings, the nullable
+`posted_to_discord` and `posted_to_commonly`, and the nullable `created_at` and
+`updated_at`. Indexes mirror Mongo's `{ integrationId, createdAt }` and
+`summaryType`; Mongo's index on the whole `timeRange` subdocument has no
+counterpart, and nothing reads the model at all.
+`STORE_MODE_DISCORD_SUMMARY_HISTORY` selects the store. Its two writers,
+`services/discordService.ts` (`syncRecentMessages`) and
+`services/schedulerService.ts` (`summarizeIntegrationBuffers`), call
+`recordDiscordSummary(fields)` from `repositories/discordSummaryHistoryRepository`;
+ESLint fences the model.
+
+The model is insert-only. In `mongo` the write is the pre-step-2
+`new DiscordSummaryHistory(fields).save()`, with no Postgres call. In `dual`
+and `pg-read` it is the helper's `create`, which is `Model.create` (so the same
+validation, defaults and timestamps) with the version and the marker; a copy
+that fails after the insert still resolves, with the marker left for `repair`.
+`pg` refuses before any write until step 4.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,
