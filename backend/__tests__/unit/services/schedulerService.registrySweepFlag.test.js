@@ -6,7 +6,7 @@ jest.mock('node-cron', () => ({
 }));
 jest.mock('../../../services/installable/registryReconciler', () => ({
   sweepRegistryDrift: jest.fn().mockResolvedValue({
-    scanned: 0, inserted: 0, existing: 0, errors: 0, mismatches: { status: 0, stats: 0 },
+    scanned: 0, inserted: 0, existing: 0, refreshed: 3, skipped: 0, errors: 0, mismatches: { status: 0, stats: 0 },
   }),
 }));
 
@@ -77,5 +77,8 @@ describe('registry drift sweep flag', () => {
     process.env.INSTALLABLE_REGISTRY_SWEEP = '1';
     await runRegistryJob();
     expect(sweepRegistryDrift).toHaveBeenCalledWith({ dryRun: false });
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler] pass'));
+    // Display-field refreshes on backfilled rows are their own count, apart from existing.
+    expect(line).toContain('existing=0 refreshed=3 ');
   });
 });

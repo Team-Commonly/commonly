@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { AgentRegistry } from '../models/AgentRegistry';
-import { mirrorRegistryRow } from './installable/registryReconciler';
+import { mirrorRegistryRow, refreshBridgeRow } from './installable/registryReconciler';
 
 const AGENT_SERVICES_DIR = path.join(
   __dirname,
@@ -89,6 +89,8 @@ class AgentBootstrapService {
           { upsert: true, new: true },
         );
         await mirrorRegistryRow(row, 'agent-bootstrap');
+        // The upsert also edits an existing row's display fields on every boot.
+        await refreshBridgeRow(row, 'agent-bootstrap');
         console.log(`[agent-bootstrap] ${agent.agentName} registered`);
       } catch (error) {
         console.error(`[agent-bootstrap] Failed to register ${agent.agentName}:`, (error as Error).message);

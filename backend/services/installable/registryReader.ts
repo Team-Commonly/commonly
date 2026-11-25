@@ -12,25 +12,21 @@
  */
 
 import {
-  installableToRegistryView, registryKeyOf, registryToInstallable,
+  DISPLAY_FIELDS, installableToRegistryView, registryKeyOf, registryToInstallable,
 } from './agentRegistryBridge';
+import type { DisplayField } from './agentRegistryBridge';
 import { REGISTRY_BACKFILL_ORIGIN } from './registryBackfillOrigin';
 
 type Obj = Record<string, any>;
 
 export type ReadPathMode = 'off' | 'shadow' | 'on';
 
-// `verified` and `status` are gates, never overlaid: an owner retire
-// (owned-entry) changes only AgentRegistry, and the sweep never updates an
-// existing Installable, so its copy would say "active" for a retired agent.
-export type DisplayField =
-  | 'displayName' | 'description' | 'iconUrl' | 'latestVersion'
-  | 'categories' | 'tags' | 'contextRequired';
-
-export const DISPLAY_FIELDS: readonly DisplayField[] = [
-  'displayName', 'description', 'iconUrl', 'latestVersion',
-  'categories', 'tags', 'contextRequired',
-];
+// The field list lives in the bridge, shared with refreshBridgeRow, so what
+// this compares and what the refresh writes stay in lockstep. `verified` and
+// `status` are gates, never overlaid: the refresh leaves an Installable's
+// status alone, so its copy would say "active" for a retired agent.
+export { DISPLAY_FIELDS };
+export type { DisplayField };
 
 export function readPathMode(): ReadPathMode {
   const raw = String(process.env.INSTALLABLE_READ_PATH || '').trim().toLowerCase();

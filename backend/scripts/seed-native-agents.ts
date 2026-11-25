@@ -22,6 +22,7 @@ import type { NativeAgentDefinition } from '../config/native-agents/apps';
 import { normalizeAvatarUrl } from '../services/avatarService';
 import { configRunsInProcess } from '../services/hostedEngine';
 import { identityHoldsRuntimeToken, takeBackInstallation } from '../services/runtimeIdentityOwnership';
+import { refreshBridgeRow } from '../services/installable/registryReconciler';
 
 // Lazy requires keep this file import-safe even if dependent services move
 // and avoid pulling the full Mongoose model graph into typecheck.
@@ -271,8 +272,9 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
 
   // 1. Upsert the AgentRegistry row. Display metadata is refreshed every
   //    run so package edits propagate; stats/versions are insert-only.
+  let registryRow: unknown;
   try {
-    await AgentRegistry.findOneAndUpdate(
+    registryRow = await AgentRegistry.findOneAndUpdate(
       { agentName: app.agentName },
       {
         $set: {
@@ -358,6 +360,10 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
     );
     // Non-fatal — registry row is in place; marketplace projection is best-effort.
   }
+  // An Installable the bridge backfilled before this seed ran keeps its mark,
+  // and the $set above replaces its components; bring the rest of its display
+  // fields (avatar, requires, taxonomy) in line. Unmarked rows are skipped.
+  await refreshBridgeRow(registryRow as Record<string, unknown>, 'native-seed');
 
   // Per-user apps (the Guide) stop here: registry row + Installable
   // projection only. Their installation is per workspace, at signup
