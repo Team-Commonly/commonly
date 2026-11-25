@@ -3,8 +3,8 @@
 // currentColor, never a unicode character. The rail's icons set the style.
 import React from 'react';
 
-const G: React.FC<{ children: React.ReactNode; size?: number }> = ({ children, size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+const G: React.FC<{ children: React.ReactNode; size?: number; className?: string }> = ({ children, size = 16, className }) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
     {children}
   </svg>
 );
@@ -49,64 +49,90 @@ export const ActGlyph: React.FC<{ name: ActName; size?: number }> = ({ name, siz
 
 export type MarkName = 'attention' | 'mirror' | 'off';
 
-export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close' | 'chat' | 'plug' | 'play' | 'more' | 'out';
+export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close' | 'chat' | 'plug' | 'play' | 'more' | 'out' | 'person' | 'logout' | 'panel' | 'bolt' | 'replay' | 'book' | 'bug' | 'bulb' | 'ask' | 'forum' | 'feedback' | 'block' | 'back';
 
 /** Design sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
-export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ name, size }) => {
+export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number; className?: string }> = ({ name, size, className }) => {
   switch (name) {
     case 'pencil':
-      return <G size={size}><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></G>;
+      return <G size={size} className={className}><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></G>;
     case 'people':
-      return <G size={size}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" /></G>;
+      return <G size={size} className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" /></G>;
     case 'gear':
       return <ActGlyph name="manage" size={size} />;
     case 'board':
-      return <G size={size}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 7v7M12 7v4M16 7v9" /></G>;
+      return <G size={size} className={className}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 7v7M12 7v4M16 7v9" /></G>;
     case 'pin':
-      return <G size={size}><path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" /></G>;
+      return <G size={size} className={className}><path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" /></G>;
     case 'inbox':
-      return <G size={size}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" /></G>;
+      return <G size={size} className={className}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" /></G>;
     case 'agents':
-      return <G size={size}><path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5M6 6l3.5 3.5M14.5 14.5 18 18M18 6l-3.5 3.5M9.5 14.5 6 18" /></G>;
+      return <G size={size} className={className}><path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5M6 6l3.5 3.5M14.5 14.5 18 18M18 6l-3.5 3.5M9.5 14.5 6 18" /></G>;
     case 'file':
-      return <G size={size}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8" /></G>;
+      return <G size={size} className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8" /></G>;
     case 'lock':
-      return <G size={size}><rect x="4" y="11" width="16" height="10" rx="2.5" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></G>;
+      return <G size={size} className={className}><rect x="4" y="11" width="16" height="10" rx="2.5" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></G>;
     case 'search':
-      return <G size={size}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></G>;
+      return <G size={size} className={className}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></G>;
     case 'plus':
-      return <G size={size}><path d="M12 5v14M5 12h14" /></G>;
+      return <G size={size} className={className}><path d="M12 5v14M5 12h14" /></G>;
     case 'send':
-      return <G size={size}><path d="M12 19V5M5 12l7-7 7 7" /></G>;
+      return <G size={size} className={className}><path d="M12 19V5M5 12l7-7 7 7" /></G>;
     case 'reply':
-      return <G size={size}><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></G>;
+      return <G size={size} className={className}><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></G>;
     case 'copy':
-      return <G size={size}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></G>;
+      return <G size={size} className={className}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></G>;
     case 'check':
-      return <G size={size}><path d="M20 6 9 17l-5-5" /></G>;
+      return <G size={size} className={className}><path d="M20 6 9 17l-5-5" /></G>;
     case 'info':
-      return <G size={size}><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></G>;
+      return <G size={size} className={className}><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></G>;
     case 'chevron-left':
-      return <G size={size}><path d="m15 18-6-6 6-6" /></G>;
+      return <G size={size} className={className}><path d="m15 18-6-6 6-6" /></G>;
     case 'chevron-right':
-      return <G size={size}><path d="m9 18 6-6-6-6" /></G>;
+      return <G size={size} className={className}><path d="m9 18 6-6-6-6" /></G>;
     case 'close':
-      return <G size={size}><path d="M18 6 6 18M6 6l12 12" /></G>;
+      return <G size={size} className={className}><path d="M18 6 6 18M6 6l12 12" /></G>;
     case 'chat':
-      return <G size={size}><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" /></G>;
+      return <G size={size} className={className}><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" /></G>;
     case 'plug':
-      return <G size={size}><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" /></G>;
+      return <G size={size} className={className}><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" /></G>;
     case 'play':
-      return <G size={size}><path d="M7 5v14l11-7z" /></G>;
+      return <G size={size} className={className}><path d="M7 5v14l11-7z" /></G>;
     case 'out':
       // The d215 frame's i-out: a box with an arrow leaving it.
-      return <G size={size}><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></G>;
+      return <G size={size} className={className}><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></G>;
     case 'more':
-      return <G size={size}><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></G>;
+      return <G size={size} className={className}><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></G>;
+    case 'block':
+      return <G size={size} className={className}><circle cx="12" cy="12" r="9" /><path d="m5.6 5.6 12.8 12.8" /></G>;
+    case 'back':
+      return <G size={size} className={className}><path d="M19 12H5M12 19l-7-7 7-7" /></G>;
+    case 'person':
+      return <G size={size} className={className}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></G>;
+    case 'logout':
+      return <G size={size} className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></G>;
+    case 'panel':
+      return <G size={size} className={className}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M15 3v18" /></G>;
+    case 'bolt':
+      return <G size={size} className={className}><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></G>;
+    case 'replay':
+      return <G size={size} className={className}><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5" /></G>;
+    case 'book':
+      return <G size={size} className={className}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></G>;
+    case 'bug':
+      return <G size={size} className={className}><rect x="8" y="6" width="8" height="14" rx="4" /><path d="M12 20v-9M8 10H4M20 10h-4M8 15H4M20 15h-4M9.5 6 8 3.5M14.5 6 16 3.5" /></G>;
+    case 'bulb':
+      return <G size={size} className={className}><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" /></G>;
+    case 'ask':
+      return <G size={size} className={className}><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" /><path d="M10 9.5a2.2 2.2 0 1 1 3 2c-.6.3-1 .8-1 1.5M12 16h.01" /></G>;
+    case 'forum':
+      return <G size={size} className={className}><path d="M15 9a6 6 0 0 0-11.2-3A6 6 0 0 0 4 12l-1 3 3-1a6 6 0 0 0 9-5z" /><path d="M10 17.5a6 6 0 0 0 8 1.5l3 1-1-3a6 6 0 0 0-3.5-8.6" /></G>;
+    case 'feedback':
+      return <G size={size} className={className}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M12 7v4M12 14h.01" /></G>;
     case 'alert':
-      return <G size={size}><path d="M12 3 2 20h20z" /><path d="M12 10v4M12 17h.01" /></G>;
+      return <G size={size} className={className}><path d="M12 3 2 20h20z" /><path d="M12 10v4M12 17h.01" /></G>;
     default:
-      return <G size={size}><path d="m6 9 6 6 6-6" /></G>;
+      return <G size={size} className={className}><path d="m6 9 6 6 6-6" /></G>;
   }
 };
 

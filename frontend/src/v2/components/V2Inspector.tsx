@@ -1,6 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import CloseIcon from '@mui/icons-material/Close';
-import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
@@ -374,7 +372,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               aria-label={t('inspector.workspace.hidePanel')}
               title={t('inspector.workspace.hidePanel')}
             >
-              <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
+              <ShellGlyph name="panel" size={17} />
             </button>
           )}
           {onClose && (
@@ -385,7 +383,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               aria-label={t('inspector.workspace.close')}
               title={t('inspector.workspace.close')}
             >
-              <CloseIcon fontSize="small" />
+              <ShellGlyph name="close" />
             </button>
           )}
         </div>

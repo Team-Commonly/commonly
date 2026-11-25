@@ -1790,14 +1790,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectCta).toContain('color: var(--v2-on-fill)');
   });
 
+  test('no v2 source draws a MUI icon; marks come from icons/glyphs', () => {
+    const v2Root = path.join(__dirname, '..');
+    const sources = (fs.readdirSync(v2Root, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f) && !f.includes('__tests__'));
+    const offenders = sources.filter((f) => fs.readFileSync(path.join(v2Root, f), 'utf8').includes('@mui/icons-material'));
+    expect(offenders).toEqual([]);
+  });
+
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
     // This is structural: accessible labels cannot prove a literal glyph has
-    // left the JSX. The MUI imports and icon nodes are the implementation
-    // contract for the two ruled board buttons.
-    expect(podBoard).toContain("import AddIcon from '@mui/icons-material/Add'");
-    expect(podBoard).toContain("import ArrowBackIcon from '@mui/icons-material/ArrowBack'");
-    expect(podBoard).toContain('<ArrowBackIcon fontSize="small" aria-hidden="true" />');
-    expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
+    // left the JSX. The v2 glyph nodes are the implementation contract for the
+    // two ruled board buttons.
+    expect(podBoard).toContain("import { ShellGlyph } from '../icons/glyphs'");
+    expect(podBoard).toContain('<ShellGlyph name="back" />');
+    expect(podBoard).toContain('<ShellGlyph name="plus" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
