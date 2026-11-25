@@ -17,6 +17,7 @@ jest.mock('mongoose', () => ({
   connection: { readyState: 1, db: { admin: () => ({ ping: jest.fn().mockResolvedValue({ ok: 1 }) }) } },
 }));
 
+const { pool: mockPgPool } = require('../../../config/db-pg');
 const healthRoutes = require('../../../routes/health');
 
 const buildApp = () => {
@@ -105,7 +106,6 @@ describe('GET /api/health redis check', () => {
     expect(res.body.status).toBe('degraded');
   });
 
-
   describe('bounded probes, on fake timers', () => {
     beforeEach(() => {
       jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'performance'] });
@@ -137,17 +137,21 @@ describe('GET /api/health redis check', () => {
       expect(mockClient.disconnect).toHaveBeenCalled();
     });
 
-    it('holds the race deadline past the socket connectTimeout, so the socket times out first', async () => {
+    it('closes a client whose connect lands after the deadline, without pinging or an unhandled rejection', async () => {
       process.env.REDIS_HOST = 'cache.internal';
-      mockClient = makeClient({ connect: jest.fn(() => new Promise(() => {})) });
+      let connectLate;
+      mockClient = makeClient({ connect: jest.fn(() => new Promise((resolve) => { connectLate = resolve; })) });
       const pending = request(buildApp()).get('/api/health').then((r) => r);
       await until(() => mockClient.connect.mock.calls.length > 0);
-      await jest.advanceTimersByTimeAsync(1100);
-      // 1.1 s: past the socket's 1 s timeout, short of the 1.5 s deadline.
-      expect(mockClient.disconnect).not.toHaveBeenCalled();
-      expect(mockCreateClient.mock.calls[0][0].socket.connectTimeout).toBe(1000);
-      await jest.advanceTimersByTimeAsync(500);
-      await pending;
+      await jest.advanceTimersByTimeAsync(1600);
+      const res = await pending;
+      expect(res.body.checks.redis.status).toBe('unhealthy');
+      // The deadline's own cleanup found no socket yet to close.
+      expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
+      connectLate();
+      await until(() => mockClient.disconnect.mock.calls.length > 1);
+      expect(mockClient.disconnect).toHaveBeenCalledTimes(2);
+      expect(mockClient.ping).not.toHaveBeenCalled();
     });
   });
 
@@ -167,8 +171,12 @@ describe('GET /api/health redis check', () => {
       const app = buildApp();
       const first = request(app).get('/api/health').then((r) => r);
       const second = request(app).get('/api/health').then((r) => r);
-      await until(() => mockClient.ping.mock.calls.length > 0);
-      await until(() => false, 200); // let the second request reach the probe too
+      // Each request runs its PG check right before it asks for the probe, in
+      // the same microtask chain: once PG has been queried twice and a turn of
+      // the loop has passed, both requests have called the probe.
+      await until(() => mockPgPool.query.mock.calls.length >= 2);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockClient.ping).toHaveBeenCalledTimes(1);
       release();
       const [a, b] = await Promise.all([first, second]);
       expect(a.body.checks.redis.status).toBe('healthy');

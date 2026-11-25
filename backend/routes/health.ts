@@ -18,9 +18,10 @@ interface Res {
 const { sharedRedisRequired } = require('../config/sharedRedisRequired');
 
 const REDIS_PROBE_CONNECT_TIMEOUT_MS = 1000;
-// Longer than the socket's own connectTimeout, so that timeout always fires
-// first: a deadline that won while TCP was still connecting could run
-// disconnect() before node-redis stored the socket, leaving it open.
+// The overall deadline for connect plus PING. It sits past the socket's own
+// connectTimeout, but that does not make the socket time out first (Node
+// refreshes the connect timeout after DNS resolves), so a connect that lands
+// after the deadline is closed explicitly in runRedisProbe.
 const REDIS_PROBE_DEADLINE_MS = 1500;
 // /api/health is unauthenticated and unlimited, so a burst must not become a
 // burst of Redis connections: one probe in flight per process (callers await
@@ -33,9 +34,14 @@ let redisProbeInFlight: Promise<RedisProbe> | null = null;
 let redisProbeCached: { at: number; result: RedisProbe } | null = null;
 
 const runRedisProbe = async (): Promise<RedisProbe> => {
-  let redisClient: { disconnect: () => Promise<unknown> } | undefined;
+  type ProbeClient = { disconnect: () => Promise<unknown> };
+  let redisClient: ProbeClient | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let finished = false;
   const redisStart = Date.now();
+  const close = (client: ProbeClient): Promise<unknown> => (
+    Promise.resolve().then(() => client.disconnect()).catch(() => undefined)
+  );
   try {
     // eslint-disable-next-line global-require
     const { createClient } = require('redis');
@@ -52,8 +58,21 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
     redisClient = client;
     // An unheard 'error' event would end the process.
     client.on('error', () => undefined);
+    const attempt = (async () => {
+      await client.connect();
+      // The deadline already won and its cleanup found nothing to close: the
+      // client keeps its socket only once connected, so disconnect() cannot
+      // cancel a pending connect. Close the late socket here.
+      if (finished) {
+        await close(client);
+        return undefined;
+      }
+      return client.ping();
+    })();
+    // The race may be lost; a later rejection is then nobody else's to handle.
+    attempt.catch(() => undefined);
     const pong = await Promise.race([
-      (async () => { await client.connect(); return client.ping(); })(),
+      attempt,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
           () => reject(new Error(`Redis did not answer within ${REDIS_PROBE_DEADLINE_MS}ms`)),
@@ -68,9 +87,9 @@ const runRedisProbe = async (): Promise<RedisProbe> => {
   } catch (error) {
     return { ok: false, check: { status: 'unhealthy', error: (error as { message?: string }).message } };
   } finally {
+    finished = true;
     clearTimeout(timer);
-    // disconnect() also stops a connect that is still pending.
-    if (redisClient) await Promise.resolve(redisClient.disconnect()).catch(() => undefined);
+    if (redisClient) await close(redisClient);
   }
 };
 
