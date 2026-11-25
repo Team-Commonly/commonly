@@ -2274,7 +2274,8 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
     if (botUser?._id) {
       await Pod.updateOne(
         { _id: pod._id, members: { $ne: botUser._id } },
-        { $push: { members: botUser._id } },
+        // F621: bump the version so a stale whole-array save can't undo this add.
+        { $push: { members: botUser._id }, $inc: { __v: 1 } },
       );
       // F183: best-effort PG mirror write; never fails the approval.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require

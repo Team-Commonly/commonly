@@ -31,7 +31,7 @@ describe('communityPodService', () => {
 
     expect(Pod.updateOne).toHaveBeenCalledWith(
       { _id: 'community-pod' },
-      { $addToSet: { members: 'user-1' } },
+      { $addToSet: { members: 'user-1' }, $inc: { __v: 1 } },
     );
   });
 

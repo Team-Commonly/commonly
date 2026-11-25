@@ -548,7 +548,8 @@ const autoJoinAgentToPod = async (
 
   // Add to pod.members if not already.
   try {
-    await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id } });
+    // F621: bump the version so a stale whole-array save can't undo this add.
+    await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id }, $inc: { __v: 1 } });
     // F183: best-effort PG mirror write; it swallows its own failure.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(targetUser._id));
@@ -3229,4 +3230,7 @@ export {
   // which is exactly the kind of detail a second copy gets subtly wrong.
   wakeOnMessageEnabled,
   boardWakeEnabled,
+  // Exported for the stale-save version test (F621); the mention path is its
+  // only production caller.
+  autoJoinAgentToPod,
 };

@@ -224,7 +224,7 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(mockInstallUpsert.mock.calls[0][1].$set.config.runtime).toEqual({ runtimeType: 'native' });
     expect(mockPodUpdateOne).toHaveBeenCalledWith(
       { _id: 'newpod-1', members: { $ne: 'guide-bot-1' } },
-      { $push: { members: 'guide-bot-1' } },
+      { $push: { members: 'guide-bot-1' }, $inc: { __v: 1 } },
     );
     expect(resolved.executedAt).toBeInstanceOf(Date);
     expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-1', agentJoined: true }));

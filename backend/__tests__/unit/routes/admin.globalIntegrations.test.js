@@ -354,7 +354,7 @@ describe('admin global integrations route', () => {
     // second admin's feed would pause on its first sync without this write.
     expect(Pod.updateOne).toHaveBeenCalledWith(
       { _id: 'pod-global' },
-      { $addToSet: { members: 'admin-2' } },
+      { $addToSet: { members: 'admin-2' }, $inc: { __v: 1 } },
     );
     // The pod handed on is the refetched one, so its members match the write.
     expect(Pod.findById).toHaveBeenCalledWith('pod-global');

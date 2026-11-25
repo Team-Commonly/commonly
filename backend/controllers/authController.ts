@@ -300,7 +300,8 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string =
       if (scoutUser?._id) {
         await Pod.updateOne(
           { _id: pod._id, members: { $ne: scoutUser._id } },
-          { $push: { members: scoutUser._id } },
+          // F621: bump the version so a stale whole-array save can't undo this add.
+          { $push: { members: scoutUser._id }, $inc: { __v: 1 } },
         );
         await mirrorMemberAdded(String(pod._id), String(scoutUser._id));
         // Scripted opener — deterministic and free, so the room is never

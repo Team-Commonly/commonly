@@ -27,7 +27,8 @@ export const ensureUserInCommunityPod = async (userId: unknown): Promise<void> =
   try {
     const result = await Pod.updateOne(
       { _id: podId },
-      { $addToSet: { members: userId } },
+      // F621: bump the version so a stale whole-array save can't undo this add.
+      { $addToSet: { members: userId }, $inc: { __v: 1 } },
     );
     if (result.matchedCount === 0) {
       console.warn('[community-pod] configured Pod was not found; automatic membership skipped.');
