@@ -10,7 +10,6 @@ interface SocketContextValue {
   pgAvailable: boolean;
   joinPod: (podId: string) => void;
   leavePod: (podId: string) => void;
-  sendMessage: (podId: string, content: string, messageType?: string, replyToMessageId?: string | null) => void;
 }
 
 const SocketContext = createContext<SocketContextValue | undefined>(undefined);
@@ -166,25 +165,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     podConsumerCountsRef.current.set(podId, owners - 1);
   }, [socket, connected]);
 
-  const sendMessage = (
-    podId: string,
-    content: string,
-    messageType = 'text',
-    replyToMessageId: string | null = null,
-  ): void => {
-    if (socket && connected && currentUser?._id && podId) {
-      socket.emit('sendMessage', {
-        podId,
-        content,
-        messageType,
-        userId: currentUser._id,
-        ...(replyToMessageId && { replyToMessageId }),
-      });
-    }
-  };
-
   return (
-    <SocketContext.Provider value={{ socket, connected, pgAvailable, joinPod, leavePod, sendMessage }}>
+    <SocketContext.Provider value={{ socket, connected, pgAvailable, joinPod, leavePod }}>
       {children}
     </SocketContext.Provider>
   );

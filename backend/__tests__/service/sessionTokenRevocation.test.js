@@ -54,7 +54,7 @@ describe('human session revocation and absolute lifetime', () => {
     await socketAuthMiddleware({ handshake: { auth: { token: legacy } } }, socketNext);
     expect(socketNext).toHaveBeenCalledWith(expect.any(Error));
     const packetNext = jest.fn();
-    await new Promise((resolve) => connectedSocket.use.mock.calls[0][0](['sendMessage'], (error) => {
+    await new Promise((resolve) => connectedSocket.use.mock.calls[0][0](['joinPod'], (error) => {
       packetNext(error);
       resolve();
     }));

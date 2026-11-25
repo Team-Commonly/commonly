@@ -44,7 +44,7 @@ afterEach(() => {
   container = null;
 });
 
-test('joinPod and sendMessage emit events', () => {
+test('joinPod emits its event, and messages are not sent over the socket', () => {
   let value;
   const Test = () => { value = useSocket(); return null; };
   act(() => {
@@ -54,10 +54,8 @@ test('joinPod and sendMessage emit events', () => {
   act(() => { value.joinPod('42'); });
   expect(io.mock.results[io.mock.results.length - 1].value.emit).toHaveBeenCalledWith('joinPod', '42');
 
-  act(() => { value.sendMessage('42', 'hi'); });
-  expect(io.mock.results[io.mock.results.length - 1].value.emit).toHaveBeenCalledWith('sendMessage', {
-    podId: '42', content: 'hi', messageType: 'text', userId: 'u1'
-  });
+  // Messages post over HTTP (useV2PodDetail); the socket write path is gone.
+  expect(value).not.toHaveProperty('sendMessage');
 });
 
 test('keeps a shared pod room until its last mounted consumer leaves', () => {

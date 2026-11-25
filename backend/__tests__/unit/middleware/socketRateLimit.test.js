@@ -61,16 +61,16 @@ describe('socket event budget', () => {
     io.close();
   });
 
-  it('admits 60 sendMessage packets a minute, then answers rateLimited instead of error', async () => {
+  it('admits 120 room packets a minute, then answers rateLimited instead of error', async () => {
     const userId = newUserId();
     const client = await connect(userId);
 
-    for (let i = 0; i < 61; i += 1) client.emit('sendMessage', { podId, content: `m${i}` });
+    for (let i = 0; i < 121; i += 1) client.emit('joinPod', podId);
     await fence(client);
 
-    expect(count(userId, 'sendMessage')).toBe(60);
+    expect(count(userId, 'joinPod')).toBe(120);
     expect(client.limited).toHaveLength(1);
-    expect(client.limited[0].event).toBe('sendMessage');
+    expect(client.limited[0].event).toBe('joinPod');
     expect(client.limited[0].retryAfterMs).toBeGreaterThan(0);
     expect(client.limited[0].retryAfterMs).toBeLessThanOrEqual(60000);
     expect(client.errors).toEqual([]);
@@ -79,16 +79,16 @@ describe('socket event budget', () => {
   it('refills the budget when the minute is up', async () => {
     const userId = newUserId();
     const client = await connect(userId);
-    for (let i = 0; i < 61; i += 1) client.emit('sendMessage', { podId, content: 'a' });
+    for (let i = 0; i < 121; i += 1) client.emit('joinPod', podId);
     await fence(client);
     const now = Date.now();
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 60001);
     try {
-      client.emit('sendMessage', { podId, content: 'later' });
+      client.emit('joinPod', podId);
       await fence(client);
     } finally { clock.mockRestore(); }
 
-    expect(count(userId, 'sendMessage')).toBe(61);
+    expect(count(userId, 'joinPod')).toBe(121);
     expect(client.limited).toHaveLength(1);
   });
 
@@ -98,16 +98,29 @@ describe('socket event budget', () => {
     const [tab1, tab2] = [await connect(userId), await connect(userId)];
     const other = await connect(otherId);
 
-    for (let i = 0; i < 30; i += 1) tab1.emit('sendMessage', { podId, content: 'a' });
+    for (let i = 0; i < 60; i += 1) tab1.emit('joinPod', podId);
     await fence(tab1);
-    for (let i = 0; i < 31; i += 1) tab2.emit('sendMessage', { podId, content: 'b' });
+    for (let i = 0; i < 61; i += 1) tab2.emit('joinPod', podId);
     await fence(tab2);
-    other.emit('sendMessage', { podId, content: 'c' });
+    other.emit('joinPod', podId);
     await fence(other);
 
-    expect(count(userId, 'sendMessage')).toBe(60);
+    expect(count(userId, 'joinPod')).toBe(120);
     expect(tab2.limited).toHaveLength(1);
-    expect(count(otherId, 'sendMessage')).toBe(1);
+    expect(count(otherId, 'joinPod')).toBe(1);
+  });
+
+  // The socket write path is gone; its event is now an unbudgeted, unhandled
+  // packet that only counts against the ceiling.
+  it('has no sendMessage budget', async () => {
+    const userId = newUserId();
+    const client = await connect(userId);
+
+    for (let i = 0; i < 61; i += 1) client.emit('sendMessage', { podId, content: 'x' });
+    await fence(client);
+
+    expect(count(userId, 'sendMessage')).toBe(61);
+    expect(client.limited).toEqual([]);
   });
 
   it('counts joinPod and leavePod against one 120-a-minute room budget', async () => {
@@ -129,8 +142,7 @@ describe('socket event budget', () => {
     client.emit('joinPod', { $gt: '' });
     client.emit('joinPod', 'not-an-id');
     client.emit('leavePod', 42);
-    client.emit('sendMessage', { podId: { $ne: null }, content: 'x' });
-    client.emit('sendMessage', { podId: [podId], content: 'x' });
+    client.emit('leavePod', [podId]);
     await fence(client);
 
     expect(handled.filter((h) => h.userId === userId)).toEqual([]);
