@@ -743,7 +743,9 @@ export function createDualStore(
           .filter((path): path is string => Boolean(path)).map((path) => [path, at]));
         return Model.findOneAndUpdate(
           { ...filter, pgDeleted: { $ne: true } },
-          { $setOnInsert: { ...stamped, ...fields, pgVersion: 1, pgPending: 1 } },
+          // The stamp wins over a caller's own createdAt, as Mongoose's upsert
+          // timestamps do in mongo mode (applyTimestampsToUpdate).
+          { $setOnInsert: { ...fields, ...stamped, pgVersion: 1, pgPending: 1 } },
           { ...options, new: true, timestamps: false },
         ) as unknown as Promise<RawResult>;
       };

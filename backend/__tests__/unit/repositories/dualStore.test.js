@@ -961,9 +961,14 @@ describe('dual-store helper (ADR-034 D3)', () => {
         expect(await s.insertIfAbsent({ _id: 'k1' }, { owner: 'u2', note: 'later' })).toEqual({ inserted: false });
         expect(await Stamped.findById('k1').lean()).toEqual(inserted);
         expect(pg.rows.get('k1')).toEqual({ row: stampedRow(inserted), version: 1 });
-        // A caller's own timestamp still wins over the stamp.
+        // The stamp wins over a caller's own createdAt, as Mongoose's upsert does in mongo mode.
         expect(await s.insertIfAbsent({ _id: 'k2' }, { createdAt: at(1) })).toEqual({ inserted: true });
-        expect((await Stamped.findById('k2').lean()).createdAt).toEqual(at(1));
+        expect((await Stamped.findById('k2').lean()).createdAt).not.toEqual(at(1));
+        delete process.env.STORE_MODE_DUAL_STORE_TEST_STAMPED;
+        const mongoSide = await Stamped.findOneAndUpdate(
+          { _id: 'k3' }, { $setOnInsert: { createdAt: at(1) } }, { upsert: true, new: true },
+        ).lean();
+        expect(mongoSide.createdAt).not.toEqual(at(1));
       } finally {
         delete process.env.STORE_MODE_DUAL_STORE_TEST_STAMPED;
       }
