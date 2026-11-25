@@ -11,8 +11,9 @@ import { describeError } from '../utils/safeErrorLog';
  * The prod backend stalls its event loop for 2–6s at :04/:14/:24 and holds a
  * core for 10–15s; `[loop-lag]` sees the stall but no log says what burns the
  * CPU, and nothing ad hoc is ever run inside the serving container. So an
- * operator sends `docker kill -s USR2 <backend-container>` from the host and
- * fetches the file with `docker cp`. Runbook:
+ * operator sends SIGUSR2 to the container's host PID with `kill` (never
+ * `docker kill`, which marks the container manually stopped for any signal)
+ * and fetches the file with `docker cp`. Runbook:
  * docs/runbooks/cpu-profile-on-signal.md.
  *
  * Off by default, and when off nothing is registered: nodemon restarts the

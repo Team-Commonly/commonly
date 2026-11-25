@@ -57,16 +57,33 @@ Run these from the compose directory on the host.
    minute :x4 (:04, :14, :24), signal at about :x3:50, so a 45 s capture spans
    it:
 
+   Signal node's host PID directly. Read the PID just before signalling, since
+   any recreate gives the container a new one:
+
    ```bash
-   docker compose kill -s USR2 backend
+   PID=$(docker inspect -f '{{.State.Pid}}' "$(docker compose ps -q backend)")
+   [ "$PID" -gt 0 ] && sudo kill -USR2 "$PID"
    docker compose logs --since 2m backend | grep cpu-profile
    ```
 
-   This relies on node being PID 1 with no init: `start.sh` ends with
-   `exec node dist/server.js`, and compose sets no `init:`. A PID 1 process
-   ignores signals it has no handler for, so with the flag off this signal does
-   nothing. If an init such as tini is ever added, a SIGUSR2 sent with the flag
-   off would be forwarded to node and end the process.
+   The check matters: an empty PID fails, and `kill -USR2 0` would signal
+   your own shell's process group instead of the backend.
+
+   **Why not `docker kill -s USR2`.** The Docker kill API marks the container
+   as manually stopped for any signal, even one the process catches and keeps
+   running through. Under `restart: unless-stopped`, a crash before the
+   container's next start would then not be restarted, and the backend would
+   stay down. A host `kill` doesn't go through that API, so the restart policy
+   is untouched.
+
+   **Why the flag-off signal is harmless.** This relies on node being PID 1 in
+   its namespace with no init: `start.sh` ends with `exec node dist/server.js`,
+   and compose sets no `init:`. Sent from the host, a signal other than
+   SIGKILL or SIGSTOP reaches a namespace's init only if init has a handler
+   for it. With the flag off there is no handler, so nothing happens; with it
+   on, the handler gets the signal. If an init such as tini is ever added,
+   node is no longer PID 1, and a SIGUSR2 sent with the flag off would be
+   forwarded to it and end the process.
 
 3. **Fetch the files** after the `wrote` line appears:
 
@@ -89,3 +106,4 @@ Run these from the compose directory on the host.
 5. **Turn the flag off.** Remove both lines from `backend.env` and recreate
    every backend that runs: `docker compose up -d backend`, and under
    `two-workers` also `docker compose --profile two-workers up -d backend-2`.
+   The recreate also starts a fresh container, with a fresh restart state.
