@@ -90,7 +90,11 @@ repair job copies it on its next pass. While any document of the model is flagge
 including after a restart. **The exception is a Mongo outage:** that flag check is a Mongo query, and when
 it fails, `pg-read` reads the Postgres row rather than fail the read, logging
 `[dual-store] flag check failed`. That row can predate a pending write, so reads may be stale until Mongo is
-back. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
+back. **The flag check is also cached per replica for 5 seconds,** with two consequences. A replica
+that cached "nothing flagged" can serve a stale Postgres row for up to 5 seconds after another replica
+leaves a write pending, even while Mongo is up. A replica that cached "flagged" keeps reading Mongo for
+up to 5 seconds, so during an outage those reads fail until the cache expires and the failed check
+falls back to Postgres. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
 only a rollback from `pg` can produce. That case is out of scope until step 4 is lifted.
 
 ## Before step 4 (held until after 2026-11-30)
