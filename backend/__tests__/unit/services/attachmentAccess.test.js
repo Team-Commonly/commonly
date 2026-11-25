@@ -23,7 +23,11 @@ function load({ File, User, Post, Pod, pool } = {}) {
   jest.doMock('../../../models/File', () => File || { findByFileName: jest.fn().mockResolvedValue(null) });
   jest.doMock('../../../models/User', () => User || { findOne: jest.fn().mockReturnValue(stubFindOne(null)) });
   jest.doMock('../../../models/Post', () => Post || { find: jest.fn().mockReturnValue(stubFindMany([])) });
-  jest.doMock('../../../models/Pod', () => Pod || { findOne: jest.fn().mockReturnValue(stubFindOne(null)) });
+  // `distinct` loads the viewer's pods (F618); by default the viewer is in none.
+  jest.doMock('../../../models/Pod', () => ({
+    distinct: jest.fn().mockResolvedValue([]),
+    ...(Pod || { findOne: jest.fn().mockReturnValue(stubFindOne(null)) }),
+  }));
   jest.doMock('../../../config/db-pg', () => ({
     pool: pool || { query: jest.fn().mockResolvedValue({ rows: [] }) },
   }));
@@ -133,11 +137,12 @@ describe('canReadAttachment', () => {
       .mockReturnValueOnce(stubFindOne({ members: [m1] })) // the file pod's readers
       .mockReturnValueOnce(stubFindOne(null)); // viewer is not in the message pod
     const find = jest.fn().mockReturnValue(stubFindMany([]));
+    const viewerPod = '9'.repeat(24);
     const query = jest.fn().mockResolvedValue({ rows: [{ pod_id: 'pod-9' }] });
     const svc = load({
       File: { findByFileName: jest.fn().mockResolvedValue({ uploadedBy: uploader, podId: 'pod-1' }) },
       Post: { find },
-      Pod: { findOne: podFindOne },
+      Pod: { findOne: podFindOne, distinct: jest.fn().mockResolvedValue([viewerPod]) },
       pool: { query },
     });
     await expect(svc.canReadAttachment('brief.png', 'viewer')).resolves.toBe(false);
@@ -146,8 +151,9 @@ describe('canReadAttachment', () => {
       userId: { $in: expect.arrayContaining([m1, uploader]) },
     }));
     const [sql, params] = query.mock.calls[0];
-    expect(sql).toMatch(/user_id = ANY\(\$2::text\[\]\) LIMIT \$3/);
+    expect(sql).toMatch(/user_id = ANY\(\$2::text\[\]\) AND pod_id = ANY\(\$3::text\[\]\) LIMIT \$4/);
     expect(params[1]).toEqual(expect.arrayContaining([m1, uploader]));
+    expect(params[2]).toEqual([viewerPod]);
     expect(podFindOne).toHaveBeenNthCalledWith(3, { _id: { $in: ['pod-9'] }, members: 'viewer' });
   });
 
@@ -214,13 +220,17 @@ describe('canReadAttachment', () => {
   it('allows read across multiple referencing pods when viewer is a member of any (PG fan-out)', async () => {
     // Regression for fix #3: LIMIT 1 on PG previously returned an arbitrary
     // pod; a viewer in pod-B but not pod-A would have been denied.
+    const podB = 'b'.repeat(24);
     const svc = load({
       pool: {
         query: jest.fn().mockResolvedValue({
-          rows: [{ pod_id: 'pod-A' }, { pod_id: 'pod-B' }],
+          rows: [{ pod_id: 'a'.repeat(24) }, { pod_id: podB }],
         }),
       },
-      Pod: { findOne: jest.fn().mockReturnValue(stubFindOne({ _id: 'pod-B' })) },
+      Pod: {
+        findOne: jest.fn().mockReturnValue(stubFindOne({ _id: podB })),
+        distinct: jest.fn().mockResolvedValue([podB]),
+      },
     });
     await expect(svc.canReadAttachment('inchat.png', 'viewer')).resolves.toBe(true);
   });

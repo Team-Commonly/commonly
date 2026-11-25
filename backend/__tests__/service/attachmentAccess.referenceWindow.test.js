@@ -139,12 +139,15 @@ describe('F610: the reference window holds only references that can grant a pod 
       const needle = String(params[0]).replace(/^%|%$/g, '').toLowerCase();
       const anyMatch = /user_id\s*=\s*ANY\(\$(\d+)/i.exec(sql);
       const allowed = anyMatch ? new Set(params[Number(anyMatch[1]) - 1].map(String)) : null;
+      const podMatch = /pod_id\s*=\s*ANY\(\$(\d+)/i.exec(sql);
+      const pods = podMatch ? new Set(params[Number(podMatch[1]) - 1].map(String)) : null;
       const limit = params[params.length - 1];
       const seen = new Set();
       const out = [];
       for (const r of rows) {
         if (!r.content.toLowerCase().includes(needle)) continue;
         if (allowed && !allowed.has(r.user_id)) continue;
+        if (pods && !pods.has(r.pod_id)) continue;
         const key = `${r.pod_id}:${r.user_id}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -240,6 +243,8 @@ describe('F610: the reference window holds only references that can grant a pod 
   it('reads one bounded window from each store, whatever the number of references', async () => {
     const fileName = 'f610-7-pod.png';
     const { viewer, outsiders, pod } = await seed(fileName);
+    // A pod of the viewer's own, so the message store is queried at all (F618).
+    await Pod.create({ name: 'viewer-own', type: 'chat', createdBy: viewer._id, members: [viewer._id] });
     await floodPosts(outsiders, fileName, 30);
     await floodMessages(outsiders, pod._id, fileName, 30);
     const findSpy = jest.spyOn(Post, 'find');
@@ -257,5 +262,118 @@ describe('F610: the reference window holds only references that can grant a pod 
     expect(refCalls[0][0]).toMatch(/LIMIT \$\d/);
     const params = refCalls[0][1];
     expect(params[params.length - 1]).toBeLessThanOrEqual(20);
+  });
+
+  // F618: an eligible author (a current member of the file's pod) can write
+  // any number of references in pods the viewer can't read. Those must not
+  // fill the window either: it holds only references THIS viewer can see.
+  describe("F618: the window holds only references the viewer can see", () => {
+    async function memberPods(member, n) {
+      const pods = [];
+      for (let i = 0; i < n; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        pods.push(await Pod.create({
+          name: `hidden-${i}`, type: 'chat', createdBy: member._id, members: [member._id],
+        }));
+      }
+      return pods;
+    }
+
+    it("grants through a post in the viewer's pod behind a window of the member's posts in hidden pods", async () => {
+      const fileName = 'f618-1-pod.png';
+      const { member, viewer } = await seed(fileName);
+      const hidden = await memberPods(member, FLOOD);
+      for (const p of hidden) {
+        // eslint-disable-next-line no-await-in-loop
+        await Post.create({ userId: member._id, podId: p._id, content: `hidden /api/uploads/${fileName}` });
+      }
+      const shared = await Pod.create({
+        name: 'shared', type: 'chat', createdBy: member._id, members: [member._id, viewer._id],
+      });
+      await Post.create({ userId: member._id, podId: shared._id, content: `real /api/uploads/${fileName}` });
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(true);
+    });
+
+    it("grants through a message in the viewer's pod behind a window of hidden-pod messages", async () => {
+      const fileName = 'f618-2-pod.png';
+      const { member, viewer } = await seed(fileName);
+      const hidden = await memberPods(member, FLOOD);
+      const shared = await Pod.create({
+        name: 'shared', type: 'chat', createdBy: member._id, members: [member._id, viewer._id],
+      });
+      const rows = hidden.map((p) => ({
+        pod_id: String(p._id), user_id: String(member._id), content: `hidden /api/uploads/${fileName}`,
+      }));
+      rows.push({ pod_id: String(shared._id), user_id: String(member._id), content: `real /api/uploads/${fileName}` });
+      pool.query.mockImplementation(orderedMessagesDouble(rows));
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(true);
+    });
+
+    it("grants through the viewer's pod message on the real SQL engine", async () => {
+      const fileName = 'f618-3-pod.png';
+      const { member, viewer } = await seed(fileName);
+      const hidden = await memberPods(member, FLOOD);
+      for (const p of hidden) {
+        // eslint-disable-next-line no-await-in-loop
+        await insertMessage(p._id, member._id, `hidden /api/uploads/${fileName}`);
+      }
+      const shared = await Pod.create({
+        name: 'shared', type: 'chat', createdBy: member._id, members: [member._id, viewer._id],
+      });
+      await insertMessage(shared._id, member._id, `real /api/uploads/${fileName}`);
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(true);
+    });
+
+    it("still grants a non-member through a member's public post behind hidden-pod posts", async () => {
+      const fileName = 'f618-4-pod.png';
+      const { member, viewer } = await seed(fileName);
+      const hidden = await memberPods(member, FLOOD);
+      for (const p of hidden) {
+        // eslint-disable-next-line no-await-in-loop
+        await Post.create({ userId: member._id, podId: p._id, content: `hidden /api/uploads/${fileName}` });
+      }
+      await Post.create({ userId: member._id, content: `public /api/uploads/${fileName}` });
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(true);
+    });
+
+    it('refuses a viewer in no pods with no public reference, without a PG query', async () => {
+      const fileName = 'f618-5-pod.png';
+      const { member, viewer, pod } = await seed(fileName);
+      const hidden = await memberPods(member, 3);
+      for (const p of hidden) {
+        // eslint-disable-next-line no-await-in-loop
+        await Post.create({ userId: member._id, podId: p._id, content: `hidden /api/uploads/${fileName}` });
+        // eslint-disable-next-line no-await-in-loop
+        await insertMessage(p._id, member._id, `hidden /api/uploads/${fileName}`);
+      }
+      await insertMessage(pod._id, member._id, `in file pod /api/uploads/${fileName}`);
+      pool.query.mockClear();
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(false);
+      expect(pool.query.mock.calls.filter(([sql]) => /FROM messages/i.test(sql))).toHaveLength(0);
+    });
+
+    it("puts the viewer's pods into both reference queries", async () => {
+      const fileName = 'f618-6-pod.png';
+      const { member, viewer } = await seed(fileName);
+      const shared = await Pod.create({
+        name: 'shared', type: 'chat', createdBy: member._id, members: [member._id, viewer._id],
+      });
+      const findSpy = jest.spyOn(Post, 'find');
+      pool.query.mockClear();
+
+      await expect(canReadAttachment(fileName, String(viewer._id))).resolves.toBe(false);
+
+      const filter = JSON.stringify(findSpy.mock.calls[0][0]);
+      expect(filter).toContain(String(shared._id));
+      const [sql, params] = pool.query.mock.calls.find(([q]) => /FROM messages/i.test(q));
+      const m = /pod_id = ANY\(\$(\d+)::text\[\]\)/.exec(sql);
+      expect(m).not.toBeNull();
+      expect(params[Number(m[1]) - 1]).toEqual([String(shared._id)]);
+    });
   });
 });
