@@ -125,26 +125,44 @@ describe('canReadAttachment', () => {
     }));
   });
 
-  it('checks every reference author of a pod-scoped file in one membership query', async () => {
-    const a1 = 'a'.repeat(24);
-    const a2 = 'b'.repeat(24);
+  it('puts the pod-scoped author rule into both reference queries, before their limit (F610)', async () => {
+    const uploader = 'c'.repeat(24);
+    const m1 = 'a'.repeat(24);
     const podFindOne = jest.fn()
       .mockReturnValueOnce(stubFindOne(null)) // viewer is not in the file's pod
-      .mockReturnValueOnce(stubFindOne({ members: [a2] })) // authors batch
-      .mockReturnValueOnce(stubFindOne(null)); // viewer is not in a2's message pod
+      .mockReturnValueOnce(stubFindOne({ members: [m1] })) // the file pod's readers
+      .mockReturnValueOnce(stubFindOne(null)); // viewer is not in the message pod
+    const find = jest.fn().mockReturnValue(stubFindMany([]));
+    const query = jest.fn().mockResolvedValue({ rows: [{ pod_id: 'pod-9' }] });
     const svc = load({
-      File: { findByFileName: jest.fn().mockResolvedValue({ uploadedBy: 'uploader', podId: 'pod-1' }) },
-      Post: { find: jest.fn().mockReturnValue(stubFindMany([{ podId: null, userId: a1 }])) },
+      File: { findByFileName: jest.fn().mockResolvedValue({ uploadedBy: uploader, podId: 'pod-1' }) },
+      Post: { find },
       Pod: { findOne: podFindOne },
-      pool: { query: jest.fn().mockResolvedValue({ rows: [{ pod_id: 'pod-9', user_id: a2 }] }) },
+      pool: { query },
     });
     await expect(svc.canReadAttachment('brief.png', 'viewer')).resolves.toBe(false);
-    expect(podFindOne).toHaveBeenNthCalledWith(2, {
-      _id: 'pod-1',
-      members: { $in: expect.arrayContaining([a1, a2]) },
-    });
-    // a1's public post was dropped; a2's message pod is then checked for the viewer.
+    expect(podFindOne).toHaveBeenNthCalledWith(2, { _id: 'pod-1' });
+    expect(find).toHaveBeenCalledWith(expect.objectContaining({
+      userId: { $in: expect.arrayContaining([m1, uploader]) },
+    }));
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/user_id = ANY\(\$2::text\[\]\) LIMIT \$3/);
+    expect(params[1]).toEqual(expect.arrayContaining([m1, uploader]));
     expect(podFindOne).toHaveBeenNthCalledWith(3, { _id: { $in: ['pod-9'] }, members: 'viewer' });
+  });
+
+  it('refuses a pod-scoped file without scanning references when nobody can read it', async () => {
+    const find = jest.fn().mockReturnValue(stubFindMany([{ podId: null }]));
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const svc = load({
+      File: { findByFileName: jest.fn().mockResolvedValue({ podId: 'pod-gone' }) },
+      Post: { find },
+      Pod: { findOne: jest.fn().mockReturnValue(stubFindOne(null)) },
+      pool: { query },
+    });
+    await expect(svc.canReadAttachment('brief.png', 'viewer')).resolves.toBe(false);
+    expect(find).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('allows read when a public (no podId) post references the file', async () => {
