@@ -18,15 +18,19 @@ helper's `updateWhere` and whose reads by filter use `findOneWhere` and `findWhe
 the per-seat assigned-task wake throttle, whose reservation uses `updateWhere` then `insertIfAbsent` and
 whose release uses `updateWhere`. The fifth is `NeedsYouEmailQuota` (table `needs_you_email_quotas`,
 migration `0020`, `STORE_MODE_NEEDS_YOU_EMAIL_QUOTA`), the per-recipient daily cap on needs-you emails,
-whose claim uses `insertIfAbsent` then `updateWhere`.
+whose claim uses `insertIfAbsent` then `updateWhere`. The sixth is `AgentComputerTakeover` (table
+`agent_computer_takeovers`, migration `0021`, `STORE_MODE_AGENT_COMPUTER_TAKEOVER`), a person's takeover
+of an agent's computer and its bound browser target, whose owner-keyed writes use `updateWhere`, then
+`insertIfAbsent`, then `updateWhere` again after a lost first-write race, and whose reads use
+`findOneWhere` and `findWhere`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
 compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
-None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState` and
-`NeedsYouEmailQuota` has a delete path.
+None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
+`NeedsYouEmailQuota` and `AgentComputerTakeover` has a delete path.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -151,3 +155,12 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   needs_you_email_quotas.count < $limit RETURNING id` (a slot taken when a row comes back). Until then,
   don't set it to `pg`. The refusal comes after `sendNeedsYouEmail` has saved its claim, so each email
   would be marked failed and silently dropped.
+- **`AgentComputerTakeover` cannot run in `pg` yet.** `setTakeover` and `bindTarget` go through the
+  helper's `updateWhere` and `insertIfAbsent`, which throw `not supported in pg mode until step 4`; its reads
+  (`isTakeoverActive`, `listBindings`) already run on Postgres in `pg-read` and `pg`. Before this model runs
+  in `pg`, each write needs a single-statement Postgres form keyed by the owner, bumping `pg_version` and
+  tested on real Postgres with racing first writes and with another owner's installation id: `INSERT …
+  ON CONFLICT (id) DO UPDATE SET active = $active WHERE agent_computer_takeovers.owner_id = $owner
+  RETURNING id` (and the same for `target_id`, inserting `active = false`). No row back means another owner
+  holds the id, and it must fail as Mongo's duplicate key does, never write. Until then, don't set it to
+  `pg`: every takeover request and target bind would fail.

@@ -87,6 +87,9 @@ module.exports = {
           }, {
             group: ['**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*'],
             message: 'Use repositories/needsYouEmailQuotaRepository.',
+          }, {
+            group: ['**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*'],
+            message: 'Use repositories/agentComputerTakeoverRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -96,6 +99,7 @@ module.exports = {
             '**/models/AgentDigestState', '**/models/AgentDigestState.*',
             '**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*',
             '**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*',
+            '**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*',
           ],
         }],
       },

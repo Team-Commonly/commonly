@@ -171,6 +171,38 @@ pipeline `$add`; each slot is one atomic Mongo write, so racing claims take
 exactly `limit`, and a full day writes and copies nothing. `pg` mode refuses
 until step 4, before any write.
 
+## Sixth model: AgentComputerTakeover
+
+`AgentComputerTakeover` (a person's takeover of an agent's computer, keyed by
+the AgentInstallation id and owned by one user) follows the same template. Its
+table is `agent_computer_takeovers` (`0021`): the Mongo `_id` (the installation
+id, hex) as `id`, `owner_id` (hex, indexed), `active`, a nullable `target_id`
+(the bound browser target), and nullable `created_at` and `updated_at`.
+`STORE_MODE_AGENT_COMPUTER_TAKEOVER` selects the store. Its only caller,
+`services/agentComputerBroker.ts` (`takeoverStore`), imports
+`repositories/agentComputerTakeoverRepository`; ESLint fences the model.
+
+- `isTakeoverActive(userId, installationId)` is true only for the owner's
+  active takeover.
+- `setTakeover(userId, installationId, active)` and
+  `bindTarget(userId, installationId, targetId)` upsert the owner's document; a
+  first bind starts inactive.
+- `listBindings(userId)` returns the owner's installations with a non-empty
+  string `targetId`.
+
+Every call is keyed by `(installation, owner)`. An installation id another
+user owns is never read as theirs, and a write to it fails with Mongo's
+duplicate key (11000) and changes neither store, in every mode.
+
+In `mongo` the four make the pre-step-2 Mongoose calls. In `dual` and
+`pg-read` a write is the helper's `updateWhere` on `{ _id, ownerId }`; on a
+miss, `insertIfAbsent` with the same filter; and when that finds a document a
+racing first call inserted, `updateWhere` once more, so the last writer's value
+stands. The reads are `findOneWhere` and `findWhere` on `_id`, `ownerId` and
+`active`; `listBindings` filters a missing `targetId` in code, since the
+Postgres filter has no `$exists`. `pg` mode refuses the writes until step 4,
+before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,
