@@ -93,6 +93,14 @@ async function canManagePod(podId: string, userId: string): Promise<boolean> {
   return pod.createdBy?.toString() === userId;
 }
 
+// Log a failed call to Discord as its message and response status, never the
+// error object: an AxiosError carries its request config, and with it the
+// `Authorization: Bot <token>` header and the request URL.
+function logFailure(label: string, error: unknown): void {
+  const failure = error as { message?: string; response?: { status?: number } };
+  console.error(label, failure?.message, failure?.response?.status ?? '');
+}
+
 async function canManageIntegration(integration: { createdBy?: { toString: () => string }; podId?: unknown } | null, userId: string): Promise<boolean> {
   const user = await User.findById(userId) as { role?: string } | null;
   if (!user || !integration) return false;
@@ -243,7 +251,7 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
       response.interactionId = interactionId;
       return res.json(response);
     } catch (error) {
-      console.error('Error handling slash command:', error);
+      logFailure('Error handling slash command:', error);
       return res.json({ type: 4, data: { content: '❌ An error occurred while processing the command.', flags: 64 } });
     }
   }
@@ -346,7 +354,7 @@ router.post('/register-commands/:integrationId', auth, async (req: AuthReq, res:
     // commands were kept (F161). Its text names no credential.
     else res.status(500).json({ error: discordService.lastRegistrationError || 'Failed to register slash commands' });
   } catch (error) {
-    console.error('Error registering slash commands:', error);
+    logFailure('Error registering slash commands:', error);
     res.status(500).json({ error: 'Failed to register slash commands' });
   }
 });
@@ -365,8 +373,8 @@ router.get('/health', async (_req: AuthReq, res: Res) => {
     }
     throw new Error(`Discord API returned status ${response.status}`);
   } catch (error) {
-    console.error('Error in Discord health check:', error);
-    res.status(500).json({ timestamp: new Date().toISOString(), status: 'error', error: (error as Error).message });
+    logFailure('Error in Discord health check:', error);
+    res.status(500).json({ timestamp: new Date().toISOString(), status: 'error', error: 'Failed to check Discord command registration' });
   }
 });
 
@@ -377,8 +385,8 @@ router.post('/register-all', auth, adminAuth, async (_req: AuthReq, res: Res) =>
     const result = await DiscordServiceClass.registerCommandsForAllIntegrations() as { success: boolean };
     res.json({ success: result.success, message: result.success ? 'All commands registered successfully' : 'Some commands failed to register', details: result });
   } catch (error) {
-    console.error('Error in bulk command registration:', error);
-    res.status(500).json({ success: false, error: (error as Error).message });
+    logFailure('Error in bulk command registration:', error);
+    res.status(500).json({ success: false, error: 'Failed to register commands' });
   }
 });
 
