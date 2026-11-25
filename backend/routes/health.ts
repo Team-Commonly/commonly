@@ -74,11 +74,11 @@ const publicHealthReason = (error: unknown): HealthReason => {
 // from the last one it logged, and forgets that state on its next success so a
 // recurrence logs again. Credentials are scrubbed before the text is written:
 // everything between scheme:// and the last @ of that token (a password may
-// hold / or @), then a bare user:pass@host. A plain a@b, with no colon before
+// hold / or @), then a bare user:pass@host, whose password runs to the last @ of the token. A plain a@b, with no colon before
 // the @, is left alone.
 const scrubCredentials = (text: string): string => text
   .replace(/([a-z][a-z0-9+.-]*:\/\/)\S*@/gi, '$1***@')
-  .replace(/(^|[\s(['"=])[^\s:@/'"]+:(?!\/\/)[^\s@]*@(?=[^\s@])/g, '$1***@');
+  .replace(/(^|[\s(['"=])[^\s:@/'"]+:(?!\/\/)\S*@(?=[^\s@])/g, '$1***@');
 const lastLoggedReason = new Map<string, HealthReason>();
 const logHealthFailure = (check: string, error: unknown): HealthReason => {
   const reason = publicHealthReason(error);

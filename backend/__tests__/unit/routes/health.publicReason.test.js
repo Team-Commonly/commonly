@@ -27,7 +27,9 @@ const buildApp = () => {
   return app;
 };
 
-const LEAKS = ['10.0.0.5', '6379', '27017', '5432', 'db.internal.example', 'svc_health_user', 'prod_db'];
+// Canaries that cannot occur by chance in the body: bare port digits can (an
+// uptime of 1.637912345 holds 6379), so ports count only with their colon.
+const LEAKS = ['10.0.0.5', ':6379', ':27017', ':5432', 'db.internal.example', 'svc_health_user', 'prod_db'];
 const expectNoLeak = (body) => {
   const text = JSON.stringify(body);
   LEAKS.forEach((needle) => expect(text).not.toContain(needle));
@@ -199,6 +201,9 @@ describe('health public reasons (F624)', () => {
       ['bad uri mongodb://admin:s3cr3t@10.0.0.5:27017/prod_db', 's3cr3t'],
       ['postgres://u:p4ss/x@h:5432/db refused', 'p4ss'],
       ['connect failed u:p4ss@h:5432', 'p4ss'],
+      ['connect failed u:@p4ss@h:5432', 'p4ss'],
+      ['user:pass@word@host refused', 'pass'],
+      ['user:pass@word@host refused', 'word'],
       ['redis://:p4ss@h:6379 refused', 'p4ss'],
       ['(u:p4ss/x@h:5432)', 'p4ss'],
     ])('never logs credentials: %s', async (message, secret) => {
