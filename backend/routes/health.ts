@@ -14,7 +14,82 @@ interface Res {
   json: (d: unknown) => void;
 }
 
-const router: ReturnType<typeof express.Router> = express.Router();
+// eslint-disable-next-line global-require
+const { sharedRedisRequired } = require('../config/sharedRedisRequired');
+
+const REDIS_PROBE_CONNECT_TIMEOUT_MS = 1000;
+// Longer than the socket's own connectTimeout, so that timeout always fires
+// first: a deadline that won while TCP was still connecting could run
+// disconnect() before node-redis stored the socket, leaving it open.
+const REDIS_PROBE_DEADLINE_MS = 1500;
+// /api/health is unauthenticated and unlimited, so a burst must not become a
+// burst of Redis connections: one probe in flight per process (callers await
+// it, as /ready does for PG), and its result, a failure too, reused for a few
+// seconds so an outage is not re-probed on every request.
+const REDIS_PROBE_TTL_MS = 5000;
+
+type RedisProbe = { ok: boolean; check: Record<string, unknown> };
+let redisProbeInFlight: Promise<RedisProbe> | null = null;
+let redisProbeCached: { at: number; result: RedisProbe } | null = null;
+
+const runRedisProbe = async (): Promise<RedisProbe> => {
+  let redisClient: { disconnect: () => Promise<unknown> } | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const redisStart = Date.now();
+  try {
+    // eslint-disable-next-line global-require
+    const { createClient } = require('redis');
+    // eslint-disable-next-line global-require
+    const { redisPassword } = require('../config/redisPassword');
+    const redisHost = process.env.REDIS_HOST || 'redis';
+    const redisPort = process.env.REDIS_PORT || 6379;
+    const client = createClient({
+      url: `redis://${redisHost}:${redisPort}`,
+      password: redisPassword(),
+      // One bounded attempt: no reconnect loop outlives the probe.
+      socket: { connectTimeout: REDIS_PROBE_CONNECT_TIMEOUT_MS, reconnectStrategy: false },
+    });
+    redisClient = client;
+    // An unheard 'error' event would end the process.
+    client.on('error', () => undefined);
+    const pong = await Promise.race([
+      (async () => { await client.connect(); return client.ping(); })(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Redis did not answer within ${REDIS_PROBE_DEADLINE_MS}ms`)),
+          REDIS_PROBE_DEADLINE_MS,
+        );
+      }),
+    ]);
+    if (pong === 'PONG') {
+      return { ok: true, check: { status: 'healthy', latency: `${Date.now() - redisStart}ms` } };
+    }
+    return { ok: false, check: { status: 'unhealthy', error: 'Ping failed' } };
+  } catch (error) {
+    return { ok: false, check: { status: 'unhealthy', error: (error as { message?: string }).message } };
+  } finally {
+    clearTimeout(timer);
+    // disconnect() also stops a connect that is still pending.
+    if (redisClient) await Promise.resolve(redisClient.disconnect()).catch(() => undefined);
+  }
+};
+
+const probeRedis = (): Promise<RedisProbe> => {
+  if (redisProbeCached && Date.now() - redisProbeCached.at < REDIS_PROBE_TTL_MS) {
+    return Promise.resolve(redisProbeCached.result);
+  }
+  if (!redisProbeInFlight) {
+    redisProbeInFlight = runRedisProbe()
+      .then((result) => {
+        redisProbeCached = { at: Date.now(), result };
+        return result;
+      })
+      .finally(() => { redisProbeInFlight = null; });
+  }
+  return redisProbeInFlight;
+};
+
+const router: ReturnType<typeof express.Router> & { resetRedisProbeForTests?: () => void } = express.Router();
 
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
@@ -62,32 +137,20 @@ router.get('/', async (_req: unknown, res: Res) => {
     health.status = 'degraded';
   }
 
-  if (process.env.AGENT_PROVISIONER_K8S === '1') {
-    try {
-      // eslint-disable-next-line global-require
-      const { createClient } = require('redis');
-      // eslint-disable-next-line global-require
-      const { redisPassword } = require('../config/redisPassword');
-      const redisHost = process.env.REDIS_HOST || 'redis';
-      const redisPort = process.env.REDIS_PORT || 6379;
-      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}`, password: redisPassword() });
-      const redisStart = Date.now();
-      await redisClient.connect();
-      const pong = await redisClient.ping();
-      await redisClient.disconnect();
-      if (pong === 'PONG') {
-        (health.checks as Record<string, unknown>).redis = { status: 'healthy', latency: `${Date.now() - redisStart}ms` };
-      } else {
-        (health.checks as Record<string, unknown>).redis = { status: 'unhealthy', error: 'Ping failed' };
-        health.status = 'degraded';
-      }
-    } catch (error) {
-      const e = error as { message?: string };
-      (health.checks as Record<string, unknown>).redis = { status: 'unhealthy', error: e.message };
-      health.status = 'degraded';
-    }
+  // The condition the socket.io adapter connects on (config/socket.ts), so this
+  // check and the process cannot disagree about whether Redis is in use.
+  if (process.env.AGENT_PROVISIONER_K8S === '1' || process.env.REDIS_HOST) {
+    // A failure degrades the overall status only where Redis is required: a
+    // process that stops without shared Redis (REQUIRE_SHARED_REDIS=1,
+    // config/sharedRedisRequired), or Kubernetes, as before. Any other process
+    // falls back to in-process stores, and a Redis blip must not make its
+    // /api/health answer 503 (the VM compose healthcheck reads that).
+    const redisRequired = sharedRedisRequired() || process.env.AGENT_PROVISIONER_K8S === '1';
+    const probe = await probeRedis();
+    (health.checks as Record<string, unknown>).redis = probe.check;
+    if (!probe.ok && redisRequired) health.status = 'degraded';
   } else {
-    (health.checks as Record<string, unknown>).redis = { status: 'not_configured', message: 'Redis not configured (Docker Compose mode)' };
+    (health.checks as Record<string, unknown>).redis = { status: 'not_configured', message: 'Redis not configured (REDIS_HOST not set)' };
   }
 
   (health.checks as Record<string, unknown>).services = {
@@ -286,6 +349,12 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     return res.status(503).json({ status: 'not_ready', error: e.message });
   }
 });
+
+// Tests only: forget the cached Redis probe.
+router.resetRedisProbeForTests = (): void => {
+  redisProbeInFlight = null;
+  redisProbeCached = null;
+};
 
 module.exports = router;
 

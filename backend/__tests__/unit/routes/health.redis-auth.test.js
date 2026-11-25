@@ -32,6 +32,7 @@ describe('GET /api/health — Redis AUTH wiring', () => {
   const saved = {};
   beforeEach(() => {
     jest.clearAllMocks();
+    healthRoutes.resetRedisProbeForTests(); // a cached probe would skip createClient
     ENV.forEach((k) => { saved[k] = process.env[k]; delete process.env[k]; });
     process.env.AGENT_PROVISIONER_K8S = '1'; // make the route exercise the Redis check
   });
