@@ -1790,14 +1790,39 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectCta).toContain('color: var(--v2-on-fill)');
   });
 
+  test('no v2 source draws a MUI icon; marks come from icons/glyphs', () => {
+    const v2Root = path.join(__dirname, '..');
+    const drawsMuiIcon = (src: string) => /from\s*['"]@mui\/icons-material/.test(src);
+    const sources = (fs.readdirSync(v2Root, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f) && !f.includes('__tests__'));
+    // Positive controls: the predicate catches the import, and the scan
+    // reaches nested production folders while skipping tests.
+    expect(drawsMuiIcon("import CloseIcon from '@mui/icons-material/Close';")).toBe(true);
+    expect(drawsMuiIcon('import CloseIcon from "@mui/icons-material/Close";')).toBe(true);
+    expect(drawsMuiIcon("import { Close } from\n  '@mui/icons-material';")).toBe(true);
+    expect(sources).toEqual(expect.arrayContaining([
+      path.join('components', 'V2PodBoard.tsx'),
+      path.join('icons', 'glyphs.tsx'),
+    ]));
+    expect(sources.some((f) => f.includes('__tests__'))).toBe(false);
+    const offenders = sources.filter((f) => drawsMuiIcon(fs.readFileSync(path.join(v2Root, f), 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
     // This is structural: accessible labels cannot prove a literal glyph has
-    // left the JSX. The MUI imports and icon nodes are the implementation
-    // contract for the two ruled board buttons.
-    expect(podBoard).toContain("import AddIcon from '@mui/icons-material/Add'");
-    expect(podBoard).toContain("import ArrowBackIcon from '@mui/icons-material/ArrowBack'");
-    expect(podBoard).toContain('<ArrowBackIcon fontSize="small" aria-hidden="true" />');
-    expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
+    // left the JSX. The v2 glyph nodes are the implementation contract for the
+    // two ruled board buttons.
+    // Scoped to each button's own markup: the pending column's add button
+    // also draws a plus.
+    const buttonOf = (cls: string) => {
+      const start = podBoard.indexOf(`className="${cls} `);
+      expect(start).toBeGreaterThan(-1);
+      return podBoard.slice(start, podBoard.indexOf('</button>', start));
+    };
+    expect(podBoard).toContain("import { ShellGlyph } from '../icons/glyphs'");
+    expect(buttonOf('v2-board__back')).toContain('<ShellGlyph name="back" />');
+    expect(buttonOf('v2-board__new')).toContain('<ShellGlyph name="plus" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });

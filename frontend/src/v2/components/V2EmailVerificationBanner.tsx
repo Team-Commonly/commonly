@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import CloseIcon from '@mui/icons-material/Close';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import axios from '../../utils/axiosConfig';
+import { ShellGlyph } from '../icons/glyphs';
 
 const V2EmailVerificationBanner: React.FC = () => {
   const { currentUser } = useAuth();
@@ -62,7 +62,7 @@ const V2EmailVerificationBanner: React.FC = () => {
         onClick={dismiss}
         aria-label={t('auth.verificationBanner.dismiss')}
       >
-        <CloseIcon fontSize="small" aria-hidden="true" />
+        <ShellGlyph name="close" size={17} />
       </button>
     </div>
   );

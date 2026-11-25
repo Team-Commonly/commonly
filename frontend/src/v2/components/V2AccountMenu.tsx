@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { Popover } from '@mui/material';
-import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
-import CableOutlinedIcon from '@mui/icons-material/CableOutlined';
-import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
+import { ShellGlyph } from '../icons/glyphs';
 
 const V2AccountMenu: React.FC = () => {
   const { t } = useTranslation();
@@ -52,15 +50,15 @@ const V2AccountMenu: React.FC = () => {
       >
         <nav id="v2-account-options" className="v2-account-menu__list" aria-label={t('common.account.label')}>
           <button type="button" className="v2-account-menu__item" onClick={() => go('/v2/settings')}>
-            <AccountCircleOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="person" />
             <span>{t('common.nav.settings')}</span>
           </button>
           <button type="button" className="v2-account-menu__item" onClick={() => go('/v2/connect')}>
-            <CableOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="plug" />
             <span>{t('common.pageTitle.connect')}</span>
           </button>
           <button type="button" className="v2-account-menu__item" onClick={() => { logout(); close(); }}>
-            <LogoutOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="logout" />
             <span>{t('common.account.signOut')}</span>
           </button>
         </nav>

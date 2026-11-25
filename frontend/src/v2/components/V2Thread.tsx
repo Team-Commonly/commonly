@@ -1,9 +1,7 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { ShellGlyph } from '../icons/glyphs';
 import V2GetStarted from './V2GetStarted';
 import V2Avatar from './V2Avatar';
@@ -1738,7 +1736,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       title={t('podChat.header.backToPods')}
       aria-label={t('podChat.header.backToPods')}
     >
-      <ArrowBackIcon fontSize="small" aria-hidden="true" />
+      <ShellGlyph name="back" size={17} />
     </button>
   ) : null;
 
@@ -2461,7 +2459,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 aria-label={t('podChat.team.view')}
                 aria-pressed={false}
               >
-                <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
+                <ShellGlyph name="panel" size={17} />
               </button>
             )}
           </div>

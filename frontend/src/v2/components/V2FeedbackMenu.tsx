@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import { Popover } from '@mui/material';
-import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
-import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
-import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { requestFirstRunGuide } from '../firstRunGuide';
+import { ShellGlyph } from '../icons/glyphs';
 import {
   buildBugReportUrl,
   buildFeatureRequestUrl,
@@ -43,7 +38,7 @@ const V2FeedbackMenu: React.FC = () => {
         onClick={handleOpen}
         title={t('feedbackMenu.button')}
       >
-        <FeedbackOutlinedIcon aria-hidden="true" />
+        <ShellGlyph name="feedback" />
       </button>
       <Popover
         open={open}
@@ -64,7 +59,7 @@ const V2FeedbackMenu: React.FC = () => {
               if (!handled && location.pathname !== '/v2' && location.pathname !== '/v2/') navigate('/v2');
             }}
           >
-            <MenuBookOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="book" />
             <span>{t('firstRun.reopen')}</span>
           </button>
           <a
@@ -74,7 +69,7 @@ const V2FeedbackMenu: React.FC = () => {
             rel="noopener noreferrer"
             onClick={handleClose}
           >
-            <BugReportOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="bug" />
             <span>{t('feedbackMenu.actions.reportBug')}</span>
           </a>
           <a
@@ -84,7 +79,7 @@ const V2FeedbackMenu: React.FC = () => {
             rel="noopener noreferrer"
             onClick={handleClose}
           >
-            <LightbulbOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="bulb" />
             <span>{t('feedbackMenu.actions.requestFeature')}</span>
           </a>
           <a
@@ -94,7 +89,7 @@ const V2FeedbackMenu: React.FC = () => {
             rel="noopener noreferrer"
             onClick={handleClose}
           >
-            <QuestionAnswerOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="ask" />
             <span>{t('feedbackMenu.actions.askQuestion')}</span>
           </a>
           <a
@@ -104,7 +99,7 @@ const V2FeedbackMenu: React.FC = () => {
             rel="noopener noreferrer"
             onClick={handleClose}
           >
-            <ForumOutlinedIcon aria-hidden="true" />
+            <ShellGlyph name="forum" />
             <span>{t('feedbackMenu.actions.joinDiscord')}</span>
           </a>
         </nav>
