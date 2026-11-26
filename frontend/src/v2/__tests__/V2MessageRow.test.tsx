@@ -336,6 +336,22 @@ describe('V2MessageRow', () => {
     expect(line?.querySelector('button')).toBeNull();
   });
 
+  test('an MCP-only not-connected line says it won\'t hear the mention and how it can', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '46', pod_id: 'pod-1', user_id: 'agent-1',
+          content: 'stored server text', message_type: 'system',
+          created_at: '2026-10-23T20:00:00.000Z',
+          payload: { kind: 'system-action', action: 'agent-not-connected', actorName: 'Forge', mcpOnly: true },
+          user: { username: 'forge-agent', isBot: true },
+        }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Forge won't hear this mention. It only reads the pod when someone opens it in its app, "
+      + 'or once its owner connects it with the computer setup command.')).toBeInTheDocument();
+  });
+
   // F449: the decline line rendered as an ordinary message from the owner,
   // because the row had no notice key for its action.
   test('renders run-request-declined as a quiet line naming the owner, who asked and the agent', () => {

@@ -42,7 +42,11 @@ export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
 export type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
-interface TokenRow { lastUsedAt?: Date | string | null; lastListenedAt?: Date | string | null }
+interface TokenRow {
+  lastUsedAt?: Date | string | null;
+  lastListenedAt?: Date | string | null;
+  lastMcpSeenAt?: Date | string | null;
+}
 
 interface WebhookDeliveryRow {
   urlHash?: string;
@@ -101,7 +105,23 @@ export interface AgentStateRow {
   noSavedKey?: boolean;
   /** A push webhook whose last delivery failed: what failed and when. No URL, no error text. */
   deliveryError?: WebhookDeliveryError;
+  /**
+   * A never-connected seat whose key has been used over MCP (Claude desktop,
+   * ChatGPT, an editor). It reads and posts when someone opens it in its app,
+   * but nothing listens for mentions, so one waits until it is opened there or
+   * set up on a computer. Set only with `state: 'never-connected'`.
+   */
+  mcpOnly?: true;
 }
+
+/**
+ * Whether a never-connected seat has been used over MCP: some token was seen
+ * on the MCP surface and none ever listened for events.
+ */
+export const usedOnlyOverMcp = (tokenLists: TokenRow[][]): boolean => {
+  const rows = tokenLists.flat().filter(Boolean);
+  return rows.some((row) => Boolean(row.lastMcpSeenAt)) && !rows.some((row) => Boolean(row.lastListenedAt));
+};
 
 const latestListen = (tokenLists: TokenRow[][]): Date | null => {
   let latest: Date | null = null;
@@ -301,6 +321,8 @@ export function deriveAgentState(
     ...(isOwner && needsFix && runInstructionFor(installation)
       ? { fixCommand: runInstructionFor(installation) as string } : {}),
     ...(deliveryError ? { deliveryError } : {}),
+    ...(state === 'never-connected' && usedOnlyOverMcp([installation.runtimeTokens || [], userTokens || []])
+      ? { mcpOnly: true as const } : {}),
   };
 }
 

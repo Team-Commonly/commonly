@@ -733,7 +733,8 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
               {' '}
               <Link className="v2-system-action-line__link" to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
             </>
-          ) : t(`podChat.systemActions.${noticeKey}`, {
+          ) : t(noticeKey === 'agentNotConnected' && message.payload?.mcpOnly
+            ? 'podChat.systemActions.agentMcpOnly' : `podChat.systemActions.${noticeKey}`, {
             name: actorLabel,
             // F449: the decline line names who asked and the agent too.
             requester: message.payload?.requesterName || '',

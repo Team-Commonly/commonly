@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress, RESPONSE_TOO_LARGE } from './outboundUrlGuard';
-import { webhookUrlHash } from './agentStateService';
+import { usedOnlyOverMcp, webhookUrlHash } from './agentStateService';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES, rowsPostedSince } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
@@ -1058,6 +1058,16 @@ class AgentEventService {
       // pending delete below excludes digest. Other event retention can run.
       console.warn('[agent-event] digest fold failed:', (err as Error).message);
     }
+    // A person's message that expires undelivered is told so first (the bulk
+    // expiry below would retire it in silence), and an MCP-only agent's
+    // first_contact, which nothing will ever claim, is retired with it.
+    let expiredWithLine = 0;
+    try {
+      expiredWithLine = await this.expireUnansweredPending(deliveredThreshold);
+      expiredWithLine += await this.expireMcpOnlyFirstContacts(deliveredThreshold);
+    } catch (err) {
+      console.warn('[agent-event] unanswered expiry pass failed:', (err as Error).message);
+    }
     const [pendingResult, ackedResult, deliveredResult, failedResult] = await Promise.all([
       // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
       // it AHEAD of the retry lifecycle rather than after it. The requeue pass
@@ -1104,7 +1114,7 @@ class AgentEventService {
       }),
     ]) as Array<{ deletedCount?: number; modifiedCount?: number }>;
 
-    const expiredPending = pendingResult?.modifiedCount || 0;
+    const expiredPending = (pendingResult?.modifiedCount || 0) + expiredWithLine;
     const deletedPending = 0;
     const deletedDelivered = (ackedResult?.deletedCount || 0) + (deliveredResult?.deletedCount || 0);
     const deletedFailed = failedResult?.deletedCount || 0;
@@ -1162,6 +1172,89 @@ class AgentEventService {
       }
     }
     return retiredCount;
+  }
+
+  /**
+   * A person's message that waited out the retention window without being
+   * claimed (an agent that never listens: a key never used, or one used only
+   * over MCP). The bulk expiry would retire it with nothing said, so it expires
+   * here first with the TASK-656 line. Compare-and-set on status and updatedAt,
+   * so a claim or another replica's pass wins and this one posts nothing. A row
+   * whose person was already told (unansweredNoticeAt) is left to the bulk pass.
+   */
+  static async expireUnansweredPending(threshold: Date): Promise<number> {
+    const waiting = await AgentEvent.find({
+      status: 'pending',
+      deliveryMode: { $ne: 'digest' },
+      createdAt: { $lt: threshold },
+      type: { $in: PERSON_WAITING_EVENT_TYPES },
+      unansweredNoticeAt: null,
+    }).sort({ createdAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let expiredCount = 0;
+    for (const event of waiting) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const expired = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'pending', updatedAt: event.updatedAt },
+        { $set: { status: 'expired', expiredAt: new Date() } },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (!expired) continue;
+      expiredCount += 1;
+      // eslint-disable-next-line no-await-in-loop
+      const posted = await noteUnansweredMention(expired).catch((lineErr: Error) => {
+        console.warn('[agent-event] unanswered-mention line not posted on expiry:', lineErr.message);
+        return false;
+      });
+      if (posted) {
+        // eslint-disable-next-line no-await-in-loop
+        await AgentEvent.updateOne({ _id: expired._id }, { $set: { unansweredNoticeAt: new Date() } })
+          .catch(() => undefined);
+      }
+    }
+    return expiredCount;
+  }
+
+  /**
+   * first_contact is exempt from expiry so a newly met person is greeted when
+   * the agent first listens. An agent used only over MCP (Claude desktop,
+   * ChatGPT) never listens, so its first_contact would sit pending forever.
+   * Past the window, one whose agent's key was seen over MCP and never
+   * listened is expired. A key never used at all keeps it: that agent may
+   * still be set up on a computer.
+   */
+  static async expireMcpOnlyFirstContacts(threshold: Date): Promise<number> {
+    const stale = await AgentEvent.find({
+      status: 'pending',
+      type: 'first_contact',
+      createdAt: { $lt: threshold },
+    }).select('_id agentName instanceId podId').sort({ createdAt: 1 }).limit(UNANSWERED_MENTION_BATCH)
+      .lean() as Array<{ _id: unknown; agentName?: string; instanceId?: string; podId?: unknown }>;
+    const mcpOnly = new Map<string, boolean>();
+    const expire: unknown[] = [];
+    for (const event of stale) {
+      const agentName = AgentIdentityService.resolveAgentType(String(event.agentName || ''));
+      const instanceId = String(event.instanceId || 'default');
+      const key = `${agentName}:${instanceId}:${String(event.podId)}`;
+      if (!mcpOnly.has(key)) {
+        // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+        const [agent, install] = await Promise.all([
+          User.findOne({ isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId })
+            .select('agentRuntimeTokens.lastListenedAt agentRuntimeTokens.lastMcpSeenAt').lean(),
+          AgentInstallation.findOne({ agentName: event.agentName, instanceId, podId: event.podId })
+            .select('runtimeTokens.lastListenedAt runtimeTokens.lastMcpSeenAt').lean(),
+        ]) as Array<{ agentRuntimeTokens?: unknown[]; runtimeTokens?: unknown[] } | null>;
+        mcpOnly.set(key, usedOnlyOverMcp([
+          (agent?.agentRuntimeTokens || []) as never[], (install?.runtimeTokens || []) as never[],
+        ]));
+      }
+      if (mcpOnly.get(key)) expire.push(event._id);
+    }
+    if (expire.length === 0) return 0;
+    const result = await AgentEvent.updateMany(
+      { _id: { $in: expire }, status: 'pending' },
+      { $set: { status: 'expired', expiredAt: new Date() } },
+    ) as { modifiedCount?: number };
+    return result?.modifiedCount || 0;
   }
 
   /**

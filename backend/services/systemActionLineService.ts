@@ -152,16 +152,22 @@ interface NotConnectedLine extends SystemLineActor {
   agentKey: string;
   messageId: string | number | null;
   threadRootId?: string | number | null;
+  /** Used only over MCP (Claude desktop, ChatGPT): it reads when opened in its app, never on a mention. */
+  mcpOnly?: boolean;
 }
 
 export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void> {
-  const content = `${line.agentLabel} isn't connected yet, so it won't see this until it runs. `
-    + 'Its owner can connect it.';
+  const content = line.mcpOnly
+    ? `${line.agentLabel} won't hear this mention. It only reads the pod when someone opens it in its app, `
+      + 'or once its owner connects it with the computer setup command.'
+    : `${line.agentLabel} isn't connected yet, so it won't see this until it runs. `
+      + 'Its owner can connect it.';
   await insertSystemLine(line, content, {
     kind: 'system-action',
     action: 'agent-not-connected',
     actorName: line.agentLabel,
     agentKey: line.agentKey,
+    ...(line.mcpOnly ? { mcpOnly: true } : {}),
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 

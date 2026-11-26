@@ -13,7 +13,7 @@ const AgentIdentityService = require('./agentIdentityService');
 type NeverConnectedAgent = {
   _id: unknown; username?: string; profilePicture?: string | null;
   botMetadata?: { displayName?: string; instanceId?: string };
-  agentRuntimeTokens?: Array<{ lastListenedAt?: Date | string | null }>;
+  agentRuntimeTokens?: Array<{ lastListenedAt?: Date | string | null; lastMcpSeenAt?: Date | string | null }>;
 };
 
 /**
@@ -32,7 +32,7 @@ export async function agentReach({
   podId, agentName, instanceId, now = new Date(),
 }: {
   podId: string; agentName: string; instanceId: string; now?: Date;
-}): Promise<{ agent: NeverConnectedAgent; state: AgentReachState } | null> {
+}): Promise<{ agent: NeverConnectedAgent; state: AgentReachState; mcpOnly?: true } | null> {
   const install = await AgentInstallation.findOne({
     podId, agentName, instanceId, status: 'active',
   }).lean() as Record<string, unknown> | null;
@@ -46,14 +46,16 @@ export async function agentReach({
   if (!agent) return null;
 
   const row = install as Parameters<typeof deriveAgentState>[0];
-  const { state } = deriveAgentState(row, agent.agentRuntimeTokens || [], '', now.getTime());
+  const { state, mcpOnly } = deriveAgentState(row, agent.agentRuntimeTokens || [], '', now.getTime());
   if (classifyRuntime(row).isPushWebhook && state === 'gone-dark') return { agent, state: 'unknown' };
-  return { agent, state };
+  return { agent, state, ...(mcpOnly ? { mcpOnly } : {}) };
 }
 
-const neverConnectedAgent = async (args: Parameters<typeof agentReach>[0]): Promise<NeverConnectedAgent | null> => {
+const neverConnectedAgent = async (
+  args: Parameters<typeof agentReach>[0],
+): Promise<{ agent: NeverConnectedAgent; mcpOnly: boolean } | null> => {
   const reach = await agentReach(args);
-  return reach?.state === 'never-connected' ? reach.agent : null;
+  return reach?.state === 'never-connected' ? { agent: reach.agent, mcpOnly: Boolean(reach.mcpOnly) } : null;
 };
 
 /** Has this agent's install in this pod never connected? */
@@ -100,8 +102,9 @@ export async function noteNeverConnectedMention({
   const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
   if (!sender || sender.isBot) return false;
 
-  const agent = await neverConnectedAgent({ podId, agentName, instanceId, now });
-  if (!agent) return false;
+  const found = await neverConnectedAgent({ podId, agentName, instanceId, now });
+  if (!found) return false;
+  const { agent, mcpOnly } = found;
 
   const agentKey = `${agentName}:${instanceId}`;
   // The day check is read-then-insert, so two mentions racing in one process
@@ -111,7 +114,7 @@ export async function noteNeverConnectedMention({
   if (inFlight.has(flightKey)) return false;
   inFlight.add(flightKey);
   try {
-    return await postOnce(podId, agentKey, agent, agentName, messageId, threadRootId, now);
+    return await postOnce(podId, agentKey, agent, agentName, messageId, threadRootId, now, mcpOnly);
   } finally {
     inFlight.delete(flightKey);
   }
@@ -127,6 +130,7 @@ async function postOnce(
   messageId: string | number | null,
   threadRootId: string | number | null | undefined,
   now: Date,
+  mcpOnly: boolean,
 ): Promise<boolean> {
   if (await hasNotConnectedLineToday(podId, agentKey, now)) return false;
 
@@ -140,6 +144,7 @@ async function postOnce(
     agentKey,
     messageId,
     threadRootId: threadRootId ?? null,
+    ...(mcpOnly ? { mcpOnly: true } : {}),
   });
   return true;
 }

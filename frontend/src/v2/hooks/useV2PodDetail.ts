@@ -102,6 +102,8 @@ export interface V2Message {
     actorName?: string;
     /** `agentName:instanceId` on a system line about one agent (agent-not-connected, -stopped, …). */
     agentKey?: string;
+    /** On agent-not-connected: the agent was used only over MCP, so it reads when opened in its app. */
+    mcpOnly?: boolean;
     /** On an install intro the agent's first listen rewrote: 'listening' (F576). */
     introState?: string;
     /** On a run-request-declined line: who asked, and the agent's label (F449). */

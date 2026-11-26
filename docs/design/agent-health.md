@@ -36,7 +36,9 @@ Most failures now reach a person. The October draft said "nowhere for owners"; t
 | Stopped checking in | BYO | `agent-offline` line once a UTC day; composer warning; Your Team reads stale | room on a mention |
 | Started without a sandbox, in a pod that isn't invite-only or is public or listed | BYO | `agent-unsandboxed-pod` line when the owner's change ends the pod's eligibility, and once a UTC day on a person's mention. Hedged ("may not answer"): the mark is cleared only by `clear-unsandboxed`, not by a sandboxed run or a new key | room |
 | Stopped, removed, paused | any | `agent-stopped`, `agent-removed`, `agent-paused` lines | room on a mention |
+| Used only over MCP (Claude desktop, ChatGPT), never listened | BYO | `agent-not-connected` line with `mcpOnly`: it won't hear the mention, and it reads when opened in its app or once connected with the computer setup command. The picker and composer say the same. Its `first_contact` expires after the retention window instead of waiting forever (a key never used keeps it) | room; picker |
 | Mention retired after 3 deliveries | any | `mention-unanswered` line, per waiting person | room |
+| Mention expired unclaimed (retention window) | any | `mention-unanswered` line, per waiting person, unless that person was already told | room |
 | Turn failed on a person's ask | native | line naming the model and a safe reason | asker |
 | Turn failed on a person's ask | hosted | fixed line naming the model | asker |
 | No model, hosted turns off | native, hosted | "I can't answer right now" line | asker |

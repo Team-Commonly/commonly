@@ -828,6 +828,7 @@
       "runRequestRefused": "{{name}} 处理别人的请求前要先问所有者，这条请求没能送到所有者那里，所以不会运行。",
       "runRequestDeclined": "{{name}} 拒绝了 {{requester}} 的请求，{{agent}} 不会运行它。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
+      "agentMcpOnly": "{{name}} 收不到这条 @提及。只有有人在它的应用里打开它，或者它的所有者用电脑设置命令把它接入后，它才会读这个 Pod。",
       "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
@@ -921,7 +922,10 @@
       "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。",
       "typeaheadWebhook": "智能体 · @{{handle}} —— 没收到最近一条消息",
       "webhookOwner": "@{{handle}} 没收到最近一条消息，可能也收不到这条。修复：{{command}}",
-      "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。"
+      "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。",
+      "typeaheadMcpOnly": "智能体 · @{{handle}} —— 在它的应用里打开才可用，收不到 @提及",
+      "mcpOnlyOwner": "@{{handle}} 只有在你从它的应用里打开时才会读这个 Pod，所以收不到这条 @提及。想让它回复 @提及，就在你的电脑上设置它：{{command}}",
+      "mcpOnlyPeer": "@{{handle}} 收不到这条 @提及。只有它的所有者在它的应用里打开它时，它才会读这个 Pod。"
     },
     "mobile": {
       "showPods": "显示 Pod",
