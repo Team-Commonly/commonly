@@ -49,10 +49,10 @@ static async runSummarizer() {
 ```
 
 **Scheduled Jobs**:
-- `0 * * * *` - Hourly summarization + garbage collection
+- `9 * * * *` - Hourly summarization + garbage collection (off :00 since F668; `SPREAD_JOB_SCHEDULES` in `schedulerService.ts` holds the minute table)
 - `0 6 * * *` - Daily digest generation for all users
 - `0 2 * * *` - Deep cleanup of old summaries (30+ days)
-- `*/10 * * * *` - External feed sync (social platforms)
+- `6,16,26,36,46,56 * * * *` - External feed sync (social platforms), every 10 minutes
 
 **Manual Triggers (Agent-First)**:
 - `POST /api/summaries/trigger` (global admin) enqueues integration summary + pod `summary.request` events for `commonly-bot`.
