@@ -5860,6 +5860,19 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
 
+test('OpenUI table cells break only between words; a long token scrolls the table inside its card (F650)', () => {
+  const css = read('../cards/uiCard.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  // `overflow-wrap:anywhere` on a cell drops its min-content to one character, so
+  // the auto table layout squeezed "#4355" / "Merged" / "Status" mid-word at 1280.
+  expect(css).not.toMatch(/\.ui-tb[^{]*\b(td|th)\b[^{]*\{[^}]*overflow-wrap:\s*anywhere/);
+  expect(css).not.toMatch(/\.ui-tb[^{]*\b(td|th)\b[^{]*\{[^}]*word-break:\s*break-all/);
+  expect(css).toContain('.v2-ui-card .ui-table .ui-tb :is(th, td) { white-space:normal; overflow-wrap:normal; }');
+  // The overflow goes somewhere: the wrapper scrolls, and the grid item may shrink
+  // below its min-content so the card stays inside the message column.
+  expect(css).toContain('.v2-ui-card .ui-table .ui-tw { overflow-x:auto; }');
+  expect(css).toContain('.v2-ui-card .ui-table { min-width:0; }');
+});
+
 test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
   const css = read('../cards/uiCard.css');
   const rules = css.split('\n').filter(line => /\.ui-src/.test(line));
