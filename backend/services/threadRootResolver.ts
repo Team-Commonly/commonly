@@ -72,6 +72,22 @@ export async function assertReplyTargetInPod({
 }
 
 /**
+ * The shape check on an explicit thread root: a positive message id, or a
+ * legacy Mongo id that maps to one. Returns null when no root was named.
+ * Throws thread_root_invalid otherwise. Callers that validate a root without
+ * resolving it (requestDecision, F644) refuse with the same rule.
+ */
+export async function parseThreadRootId(threadRootId?: number | string | null): Promise<number | null> {
+  if (threadRootId == null || threadRootId === '') return null;
+  const rootId = await resolvePgMessageId(threadRootId);
+  const explicit = rootId == null ? NaN : Number(rootId);
+  if (!Number.isInteger(explicit) || explicit <= 0) {
+    throw new ThreadRootError('thread_root_invalid', 'threadRootId must be a positive integer');
+  }
+  return explicit;
+}
+
+/**
  * Returns the thread root to store, or null for a message that starts no
  * thread. Throws ThreadRootError for caller-fixable problems.
  *
@@ -87,11 +103,7 @@ export async function resolveThreadRoot({
   replyToMessageId?: number | string | null;
   threadRootId?: number | string | null;
 }): Promise<number | null> {
-  const rootId = threadRootId == null || threadRootId === '' ? null : await resolvePgMessageId(threadRootId);
-  const explicit = threadRootId == null || threadRootId === '' ? null : rootId == null ? NaN : Number(rootId);
-  if (explicit !== null && (!Number.isInteger(explicit) || explicit <= 0)) {
-    throw new ThreadRootError('thread_root_invalid', 'threadRootId must be a positive integer');
-  }
+  const explicit = await parseThreadRootId(threadRootId);
 
   await assertReplyTargetInPod({ podId, replyToMessageId });
   const parentId = replyToMessageId == null || replyToMessageId === ''
@@ -147,5 +159,7 @@ export async function resolveThreadRoot({
   return explicit;
 }
 
-module.exports = { resolveThreadRoot, assertReplyTargetInPod, ThreadRootError };
+module.exports = {
+  resolveThreadRoot, parseThreadRootId, assertReplyTargetInPod, ThreadRootError,
+};
 Object.assign(module.exports, exports);

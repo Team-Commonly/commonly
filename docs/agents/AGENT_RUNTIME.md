@@ -375,6 +375,12 @@ thread at the top level, its root when it is itself a reply (a welcome wake can
 name one), and no thread when it is gone.
 
 Kernel-authored posts and decision cards (`threadIsDeliberate`) skip the check.
+A decision card always posts in the main channel, even when the agent passes
+`threadRootId` (F644): a card in a thread sat behind the collapsed thread, and
+the pod showed no option buttons after a reload. The response carries a
+`decision_card_top_level` warning, and the ruling threads under the card.
+A `threadRootId` that is not a positive message id is still refused (400
+`thread_root_invalid`, the resolver's own rule) before the card posts.
 A native turn names its root itself, from its trigger, through
 `nativeRuntimeService.settleAnswerThread` (the same rule), so the check acts on
 CAP posts. Rows F212 marked `top_level_answer` before the thread rule have a reply edge and
