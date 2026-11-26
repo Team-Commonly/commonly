@@ -29,8 +29,26 @@ port. Prod's containers, volumes and network are never named.
 - **Hard caps on every service** (`mem_limit`, `cpus`): about 3.3 GB and 1.2 CPU
   at most in total (caps of 1.0 starved LiteLLM's boot on 2026-11-26; caps totalling 1.9 CPUs still let a staging deploy
   push prod's event-loop lag past 1.5 s on 2026-11-26), on an 8 GB, 2-CPU VM where prod uses about 2.3 GB.
-- **`cpu_shares: 256`**, a quarter of prod's default weight, so prod wins any CPU
-  contention 4:1.
+- **`cpu_shares: 256`** on every staging service. On cgroup v2 Docker converts
+  this to `cpu.weight` 10, while prod's services stay at the default 100. Under
+  contention each prod container outweighs each staging container 10:1, and all
+  nine staging containers together (about 90) still weigh less than prod's
+  backend, LiteLLM and Postgres combined (300). It is not "a quarter, 4:1": the
+  shares-to-weight conversion isn't linear.
+
+  **The weight trap.** Setting `CPUWeight` on `docker.service` or
+  `containerd.service` does not reach any container. With the systemd cgroup
+  driver each container is its own `docker-<id>.scope` directly under
+  `system.slice`, so it sits beside the daemons as a sibling, not under them as a
+  child. The daemon setting only slows the daemons' own work: image pulls, layer
+  extraction and container setup. Only per-container settings bound a container's
+  CPU: `cpu_shares` (weight under contention) and `cpus` (a hard ceiling), or a
+  `cgroup_parent` slice that you weight yourself. To check what actually applies,
+  read `/sys/fs/cgroup/<the container's cgroup>/cpu.weight` and `cpu.max`; the
+  container's cgroup path is in `/proc/<its pid>/cgroup`. On 2026-11-26 a
+  daemon-level `CPUWeight=20` was credited with ending prod's lag during staging
+  deploys. It never applied to the containers, and a staging deploy still pushed
+  prod's event-loop lag to 4.1 s the same evening.
 - **`oom_score_adj: 500`**, so under memory pressure the kernel kills staging first.
 - **Stopped by default.** `down` removes the containers, and every service has
   `restart: "no"`, so nothing comes back after a VM or Docker restart.
