@@ -20,8 +20,12 @@ describe('Seatbelt profile with a linked seat keychain (F647)', () => {
   let workspace;
   let state;
 
+  // The person's home is reached through a link, so the keychain's resolved
+  // path always differs from the one the base rule names. Without it the test
+  // would lean on the temp folder itself sitting behind a link, which holds on
+  // macOS (/var -> /private/var) but not on Linux.
   const makePersonHome = (name) => {
-    const home = join(root, name);
+    const home = join(root, 'homes', name);
     const keychains = join(home, 'Library', 'Keychains');
     mkdirSync(keychains, { recursive: true });
     writeFileSync(join(keychains, 'login.keychain-db'), 'not a real keychain');
@@ -47,6 +51,8 @@ describe('Seatbelt profile with a linked seat keychain (F647)', () => {
     state = join(root, 'state');
     mkdirSync(workspace);
     mkdirSync(state);
+    mkdirSync(join(root, 'real-homes'));
+    symlinkSync(join(root, 'real-homes'), join(root, 'homes'));
   });
 
   afterEach(() => {
@@ -57,6 +63,7 @@ describe('Seatbelt profile with a linked seat keychain (F647)', () => {
     const personHome = makePersonHome('person');
     linkSeatKeychains(join(personHome, 'Library', 'Keychains'));
     const resolved = realpathSync(join(personHome, 'Library', 'Keychains', 'login.keychain-db'));
+    expect(resolved).not.toBe(join(personHome, 'Library', 'Keychains', 'login.keychain-db'));
 
     const profile = profileFor(personHome);
 
@@ -90,10 +97,11 @@ describe('Seatbelt profile with a linked seat keychain (F647)', () => {
     linkSeatKeychains(join(personHome, 'Library', 'Keychains'));
     const resolved = realpathSync(join(personHome, 'Library', 'Keychains', 'login.keychain-db'));
     expect(resolved).toContain('"');
+    expect(resolved).not.toBe(join(personHome, 'Library', 'Keychains', 'login.keychain-db'));
 
     const profile = profileFor(personHome);
 
-    expect(profile).toContain(`(literal "${escape(resolved)}")`);
+    expect(profile).toContain(`(allow file-read* file-test-existence (literal "${escape(resolved)}"))`);
     expect(escape(resolved)).toContain('person \\"quoted\\" home');
     // The raw, unescaped quote never reaches the profile.
     expect(profile).not.toContain(`"${resolved}"`);
