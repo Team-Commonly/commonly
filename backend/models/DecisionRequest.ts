@@ -45,6 +45,8 @@ export interface DecisionSubjectRef {
   type: string;
   id: string;
   stage: string;
+  /** Which submission of that stage the card is for, when a stage can be resubmitted (ISO time). */
+  attempt?: string;
 }
 
 /** A person the asker named to rule; their name as it was when the card was asked. */
@@ -148,6 +150,7 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
         type: { type: String, required: true, trim: true, maxlength: 40 },
         id: { type: String, required: true, trim: true, maxlength: 128 },
         stage: { type: String, required: true, trim: true, maxlength: 40 },
+        attempt: { type: String, trim: true, maxlength: 40 },
       }, { _id: false }),
       default: undefined,
     },

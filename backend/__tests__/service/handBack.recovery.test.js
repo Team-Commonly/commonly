@@ -409,8 +409,8 @@ describe('hand-back recovery, read gate and withdraw lock (ADR-037 §3)', () => 
       expect(await AttentionItem.countDocuments({ 'source.id': String(decisionId), status: 'open' })).toBe(0);
     });
 
-    test('two overlapping sweeps queue handback.received once; a failed enqueue leaves it for the next', async () => {
-      const team = await teamPod();
+    // A degraded path fails toward a second delivery, never toward none.
+    const acceptedWithNext = async (team) => {
       seq += 1;
       await User.create({
         username: `bot${seq}codex`, email: `bot${seq}codex@agents.example.com`, password: 'unused', isBot: true,
@@ -427,21 +427,199 @@ describe('hand-back recovery, read gate and withdraw lock (ADR-037 §3)', () => 
       expect((await choose(team, decisionId)).status).toBe(200);
       const back = await handBackRequest(team, id);
       expect(back.status).toBe(200);
+      return { id, resultCard: back.body.handBack.decisionId };
+    };
+    const received = (id) => AgentEvent.countDocuments({ type: 'handback.received', 'payload.handBackId': id });
+    const failReceivedOnce = () => {
       const AgentEventService = require('../../services/agentEventService');
       const enqueue = AgentEventService.enqueue;
-      const failing = jest.spyOn(AgentEventService, 'enqueue').mockImplementation((event, ...rest) => (
-        event?.type === 'handback.received' ? Promise.reject(new Error('queue down')) : enqueue.call(AgentEventService, event, ...rest)
-      ));
-      expect((await choose(team, back.body.handBack.decisionId)).status).toBe(200);
-      failing.mockRestore();
-      // The failed enqueue gave its claim back, so a later sweep can deliver.
+      let failed = false;
+      return jest.spyOn(AgentEventService, 'enqueue').mockImplementation((event, ...rest) => {
+        if (event?.type === 'handback.received' && !failed) {
+          failed = true;
+          return Promise.reject(new Error('queue down'));
+        }
+        return enqueue.call(AgentEventService, event, ...rest);
+      });
+    };
+
+    test('a failed enqueue leaves the record unstamped, and the next sweep delivers', async () => {
+      const team = await teamPod();
+      const { id, resultCard } = await acceptedWithNext(team);
+      failReceivedOnce();
+      expect((await choose(team, resultCard)).status).toBe(200);
       expect(await repo.findById(id)).toMatchObject({ status: 'accepted', receivedEnqueuedAt: null });
-      const received = () => AgentEvent.countDocuments({ type: 'handback.received', 'payload.handBackId': id });
-      expect(await received()).toBe(0);
-      const results = await Promise.all([handBacks.sweepHandBacks(later()), handBacks.sweepHandBacks(later())]);
-      expect(results.map((result) => result.delivered).sort()).toEqual([0, 1]);
-      expect(await received()).toBe(1);
+      expect(await received(id)).toBe(0);
+      expect((await handBacks.sweepHandBacks(later())).delivered).toBe(1);
+      expect(await received(id)).toBe(1);
       expect((await repo.findById(id)).receivedEnqueuedAt).toBeInstanceOf(Date);
+    });
+
+    test('a failed lookup for an event already queued stamps nothing, and the next sweep delivers', async () => {
+      const team = await teamPod();
+      const { id, resultCard } = await acceptedWithNext(team);
+      failReceivedOnce();
+      expect((await choose(team, resultCard)).status).toBe(200);
+      jest.spyOn(AgentEvent, 'exists').mockRejectedValueOnce(new Error('mongo blip'));
+      await handBacks.sweepHandBacks(later());
+      expect(await repo.findById(id)).toMatchObject({ receivedEnqueuedAt: null });
+      expect(await received(id)).toBe(0);
+      expect((await handBacks.sweepHandBacks(later())).delivered).toBe(1);
+      expect(await received(id)).toBe(1);
+    });
+
+    test('a crash after the enqueue and before the stamp is caught up by the next sweep, never lost', async () => {
+      const team = await teamPod();
+      const { id, resultCard } = await acceptedWithNext(team);
+      jest.spyOn(repo, 'markReceivedEnqueued').mockRejectedValueOnce(new Error('pg blip'));
+      expect((await choose(team, resultCard)).status).toBe(200);
+      expect(await received(id)).toBe(1);
+      expect((await repo.findById(id)).receivedEnqueuedAt).toBeNull();
+      await handBacks.sweepHandBacks(later());
+      // At least once: the sweep found the queued event and stamped it.
+      expect(await received(id)).toBeGreaterThanOrEqual(1);
+      expect((await repo.findById(id)).receivedEnqueuedAt).toBeInstanceOf(Date);
+    });
+
+    test('two overlapping sweeps deliver at least once; a second copy is the accepted cost', async () => {
+      const team = await teamPod();
+      const { id, resultCard } = await acceptedWithNext(team);
+      failReceivedOnce();
+      expect((await choose(team, resultCard)).status).toBe(200);
+      await Promise.all([handBacks.sweepHandBacks(later()), handBacks.sweepHandBacks(later())]);
+      expect(await received(id)).toBeGreaterThanOrEqual(1);
+      expect((await repo.findById(id)).receivedEnqueuedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('result attempts, orphan cards and the withdraw card link', () => {
+    const resultFields = (at) => ({
+      changed: [{ kind: 'url', ref: 'https://example.com/b' }], checked: [], unverified: [], handed_back_at: at,
+    });
+
+    test("attempt A's late card does not attach to attempt B, and is closed", async () => {
+      const team = await teamPod();
+      const id = await acceptedPlan(team);
+      let attemptB;
+      const original = decisions.requestDecision;
+      jest.spyOn(decisions, 'requestDecision').mockImplementation(async (input) => {
+        const posted = await original(input);
+        // Recovery gave up on attempt A and put the record back...
+        await repo.transition({
+          id, from: 'handed_back', to: 'plan_accepted',
+          set: { changed: null, checked: null, unverified: null, handed_back_at: null }, now: new Date(),
+        });
+        // ...and the agent submitted attempt B, whose card is still posting.
+        attemptB = new Date(Date.now() + 1000);
+        await repo.transition({ id, from: 'plan_accepted', to: 'handed_back', set: resultFields(attemptB), now: new Date() });
+        return posted;
+      });
+      const res = await handBackRequest(team, id);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('stale_state');
+      const cardA = await DecisionRequest.findOne({ 'subject.stage': 'result' }).lean();
+      expect(cardA.status).toBe('closed');
+      const after = await repo.findById(id);
+      expect(after).toMatchObject({
+        status: 'handed_back', handbackDecisionId: null, changed: [{ kind: 'url', ref: 'https://example.com/b' }],
+      });
+      expect(after.handedBackAt.getTime()).toBe(attemptB.getTime());
+    });
+
+    test("a second reconcile of attempt A cannot clear attempt B's fields", async () => {
+      const team = await teamPod();
+      const id = await acceptedPlan(team);
+      postMessage.mockResolvedValueOnce({ success: false });
+      const original = repo.transition;
+      jest.spyOn(repo, 'transition').mockImplementation(async (input) => {
+        if (input.from === 'handed_back' && input.to === 'plan_accepted') throw new Error('pg blip');
+        return original(input);
+      });
+      expect((await handBackRequest(team, id)).status).toBe(503);
+      repo.transition.mockRestore();
+      const staleA = await repo.findById(id);
+      expect(staleA).toMatchObject({ status: 'handed_back', handbackDecisionId: null });
+
+      await handBacks.reconcile(staleA, undefined, later());
+      expect((await repo.findById(id)).status).toBe('plan_accepted');
+      // Attempt B goes in, its card still posting.
+      await repo.transition({
+        id, from: 'plan_accepted', to: 'handed_back', set: resultFields(new Date(Date.now() + 1000)), now: new Date(),
+      });
+      // A reconcile still holding A's snapshot runs its reset again.
+      await handBacks.reconcile(staleA, undefined, later());
+      expect(await repo.findById(id)).toMatchObject({
+        status: 'handed_back', changed: [{ kind: 'url', ref: 'https://example.com/b' }],
+      });
+    });
+
+    test('a late card whose close failed is closed by the next sweep', async () => {
+      const team = await teamPod();
+      const original = decisions.requestDecision;
+      jest.spyOn(decisions, 'requestDecision').mockImplementation(async (input) => {
+        const posted = await original(input);
+        await pool.query('DELETE FROM hand_backs WHERE id = $1', [input.internal.subject.id]);
+        return posted;
+      });
+      jest.spyOn(decisions, 'closeDecision').mockRejectedValueOnce(new Error('mongo blip'));
+      expect((await sendPlanRequest(team)).status).toBe(409);
+      decisions.requestDecision.mockRestore();
+      const orphan = await DecisionRequest.findOne({}).lean();
+      expect(orphan.status).toBe('pending');
+      // Inside the grace window the sweep leaves it.
+      await handBacks.sweepHandBacks(new Date());
+      expect((await DecisionRequest.findById(orphan._id).lean()).status).toBe('pending');
+      const result = await handBacks.sweepHandBacks(later());
+      expect(result.orphansClosed).toBe(1);
+      expect((await DecisionRequest.findById(orphan._id).lean()).status).toBe('closed');
+    });
+
+    test('the orphan sweep leaves cards their records still wait on', async () => {
+      const team = await teamPod();
+      const { id, decisionId } = await sendPlan(team);
+      const resultId = await acceptedPlan(team);
+      const back = await handBackRequest(team, resultId);
+      expect(back.status).toBe(200);
+      const result = await handBacks.sweepHandBacks(later());
+      expect(result.orphansClosed).toBe(0);
+      expect((await DecisionRequest.findById(decisionId).lean()).status).toBe('pending');
+      expect((await DecisionRequest.findById(back.body.handBack.decisionId).lean()).status).toBe('pending');
+      expect((await repo.findById(id)).status).toBe('plan_sent');
+    });
+
+    test('a card that attaches between the read and the update sends the withdraw back through the lock', async () => {
+      const team = await teamPod();
+      const id = '00000000-0000-4000-8000-00000000c001';
+      await repo.insertPlan({
+        id, podId: String(team.pod._id), threadRootId: null, taskId: null,
+        authorAgentUserId: String(team.claude.bot._id), agentName: 'claude', instanceId: 'default',
+        ownerInstalledBy: String(team.alice._id), ownerUserId: null,
+        asked: { text: 'Fix it', requesterUserId: String(team.alice._id), provenance: 'owner' },
+        reviewerUserId: String(team.bob._id), plan: { text: 'Plan' }, next: null, supersedes: null, now: new Date(),
+      });
+      const original = repo.transition;
+      let withdrawCalls = 0;
+      let cardId;
+      jest.spyOn(repo, 'transition').mockImplementation(async (input) => {
+        if (input.to === 'withdrawn') {
+          withdrawCalls += 1;
+          if (withdrawCalls === 1) {
+            const card = await decisions.requestDecision({
+              podId: String(team.pod._id), agentUserId: String(team.claude.bot._id), agentName: 'claude',
+              decisionClass: 'implementation', title: 'Plan for review', question: 'Plan',
+              options: [{ label: 'Accept' }, { label: 'Refuse' }], deciderUserIds: [String(team.bob._id)],
+              internal: { subject: { type: 'hand_back', id, stage: 'plan' } },
+            });
+            cardId = card.decisionId;
+            await repo.attachPlanDecision(id, cardId, new Date());
+          }
+        }
+        return original(input);
+      });
+      await expect(handBacks.withdraw({ id, caller: asAgent(team) })).resolves.toEqual({ handBack: { id, status: 'withdrawn' } });
+      expect(withdrawCalls).toBe(2);
+      expect((await repo.findById(id)).status).toBe('withdrawn');
+      expect((await DecisionRequest.findById(cardId).lean()).status).toBe('closed');
     });
   });
 });

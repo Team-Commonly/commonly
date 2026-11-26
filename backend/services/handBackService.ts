@@ -422,12 +422,12 @@ const closeOrphanCard = async (decisionId: string, why: string): Promise<void> =
  * stale_state.
  */
 const attachPostedCard = async (
-  id: string, stage: 'plan' | 'result', card: Record<string, unknown>,
+  id: string, stage: 'plan' | 'result', card: Record<string, unknown>, attempt?: Date,
 ): Promise<HandBackRecord> => {
   const decisionId = String(card.decisionId);
   const attached = stage === 'plan'
     ? await repo.attachPlanDecision(id, decisionId, new Date())
-    : await repo.attachHandbackDecision(id, decisionId, new Date());
+    : await repo.attachHandbackDecision(id, decisionId, new Date(), attempt as Date);
   if (attached) return attached;
   const current: HandBackRecord | null = await repo.findById(id);
   const held = stage === 'plan' ? current?.planDecisionId : current?.handbackDecisionId;
@@ -553,29 +553,25 @@ const enqueueReceived = async (record: HandBackRecord): Promise<void> => {
 };
 
 /**
- * Claim the record (stamp WHERE received_enqueued_at IS NULL), then tell the
- * next agent. Only the claim's winner enqueues, so two overlapping sweeps, or
- * a sweep and the ruling's writer, never queue it twice. A failed enqueue
- * gives the claim back for the sweep to retry. The sweep also looks for an
- * event already queued (by a writer that stamped after enqueueing). Known
- * residual: a crash between the claim and the enqueue loses the event.
+ * Tell the next agent, then stamp the record (WHERE received_enqueued_at IS
+ * NULL). At least once: a failure or crash anywhere before the stamp leaves
+ * the record unstamped, and the next sweep delivers again. The sweep first
+ * looks for an event already queued, a best-effort check; a failed lookup
+ * stamps nothing and is retried. Two overlapping sweeps can both queue it,
+ * the accepted direction: a degraded path errs toward a second delivery,
+ * never toward an event nobody sees.
  */
 const deliverReceived = async (record: HandBackRecord, opts: { checkQueued?: boolean } = {}): Promise<boolean> => {
   if (!record.next || record.receivedEnqueuedAt) return false;
-  const claimedAt = new Date();
-  if (!(await repo.markReceivedEnqueued(record.id, claimedAt))) return false;
   if (opts.checkQueued) {
     const queued = await AgentEvent.exists({ type: 'handback.received', 'payload.handBackId': record.id });
-    if (queued) return false;
+    if (queued) {
+      await repo.markReceivedEnqueued(record.id, new Date());
+      return false;
+    }
   }
-  try {
-    await enqueueReceived(record);
-  } catch (error) {
-    await repo.clearReceivedEnqueued(record.id, claimedAt).catch((clearError: Error) => {
-      console.warn('[hand-back] giving back the handback.received claim failed:', clearError.message);
-    });
-    throw error;
-  }
+  await enqueueReceived(record);
+  await repo.markReceivedEnqueued(record.id, new Date());
   return true;
 };
 
@@ -634,10 +630,31 @@ export const registerHandBackSubject = (): void => {
   registered = true;
 };
 
-/** The newest live card a record posted for a stage, found by its subject. */
-const cardBySubject = async (id: string, stage: 'plan' | 'result'): Promise<any> => DecisionRequest.findOne({
-  'subject.type': SUBJECT_TYPE, 'subject.id': id, 'subject.stage': stage, status: { $in: ['pending', 'ruled'] },
-}).sort({ createdAt: -1 }).lean();
+/**
+ * The attempt key of a result submission: its `handed_back_at`, which every
+ * hand-back sets fresh, as an ISO string. A result card carries it on its
+ * subject, and every write that attaches a result card or undoes a
+ * submission names it, so nothing meant for one attempt lands on the next.
+ * A plan needs no key: every plan-send is a new record id.
+ */
+const attemptKey = (record: Pick<HandBackRecord, 'handedBackAt'>): string | null => (
+  record.handedBackAt ? new Date(record.handedBackAt).toISOString() : null
+);
+
+/** The newest live card a record posted for a stage (and result attempt), found by its subject. */
+const cardBySubject = async (id: string, stage: 'plan' | 'result', attempt?: string | null): Promise<any> => (
+  DecisionRequest.findOne({
+    'subject.type': SUBJECT_TYPE, 'subject.id': id, 'subject.stage': stage, status: { $in: ['pending', 'ruled'] },
+    ...(stage === 'result' ? { 'subject.attempt': attempt } : {}),
+  }).sort({ createdAt: -1 }).lean()
+);
+
+/** Undo a result submission whose card was never posted: only that attempt, and only while it has no card. */
+const undoSubmission = (id: string, attempt: Date) => repo.transition({
+  id, from: 'handed_back', to: 'plan_accepted',
+  set: { changed: null, checked: null, unverified: null, handed_back_at: null },
+  where: { handback_decision_id: null, handed_back_at: attempt }, now: new Date(),
+});
 
 /**
  * A record waiting on a card whose id it never stored: the card post or the
@@ -651,23 +668,22 @@ const cardBySubject = async (id: string, stage: 'plan' | 'result'): Promise<any>
  */
 const recoverUnattached = async (record: HandBackRecord, now: Date): Promise<HandBackRecord | null> => {
   const stage = record.status === 'plan_sent' ? 'plan' : 'result';
-  const card = await cardBySubject(record.id, stage);
+  const attempt = stage === 'result' ? attemptKey(record) : null;
+  if (stage === 'result' && !attempt) return record;
+  const card = await cardBySubject(record.id, stage, attempt);
   if (card) {
     const attached = stage === 'plan'
       ? await repo.attachPlanDecision(record.id, String(card._id), new Date())
-      : await repo.attachHandbackDecision(record.id, String(card._id), new Date());
+      : await repo.attachHandbackDecision(record.id, String(card._id), new Date(), new Date(attempt as string));
     return attached || repo.findById(record.id);
   }
-  const waitingSince = stage === 'plan' ? record.createdAt : (record.handedBackAt || record.updatedAt);
+  const waitingSince = stage === 'plan' ? record.createdAt : new Date(attempt as string);
   if (now.getTime() - new Date(waitingSince).getTime() < CARD_POST_GRACE_MS) return record;
   if (stage === 'plan') {
     await repo.deleteUnposted(record.id);
   } else {
-    await repo.transition({
-      id: record.id, from: 'handed_back', to: 'plan_accepted',
-      set: { changed: null, checked: null, unverified: null, handed_back_at: null },
-      where: { handback_decision_id: null }, now: new Date(),
-    });
+    // Only the attempt observed here: a newer submission keeps its fields.
+    await undoSubmission(record.id, new Date(attempt as string));
   }
   return repo.findById(record.id);
 };
@@ -744,6 +760,7 @@ export const handBack = async (input: {
   });
   if (!moved) fail('Someone else changed this record first', 409, 'stale_state');
   const rec = moved as HandBackRecord;
+  const attempt = attemptKey(rec) as string;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { requestDecision } = require('./decisionRequestService');
   let card: Record<string, unknown>;
@@ -767,24 +784,22 @@ export const handBack = async (input: {
       internal: {
         allowedValues: CARD_VALUES,
         deciderFallback: 'none',
-        subject: { type: SUBJECT_TYPE, id: rec.id, stage: 'result' },
+        subject: {
+          type: SUBJECT_TYPE, id: rec.id, stage: 'result', attempt,
+        },
         metadata: { kind: 'hand-back', handBackId: rec.id, stage: 'result' },
       },
     });
   } catch (error) {
     // No card was posted: put the record back so the agent can retry. If this
     // undo fails too, recovery does it once the grace window has passed.
-    await repo.transition({
-      id: rec.id, from: 'handed_back', to: 'plan_accepted',
-      set: { changed: null, checked: null, unverified: null, handed_back_at: null },
-      where: { handback_decision_id: null }, now: new Date(),
-    }).catch((undoError: Error) => {
+    await undoSubmission(rec.id, new Date(attempt)).catch((undoError: Error) => {
       console.warn('[hand-back] undoing a hand-back whose card failed did not apply; recovery retries:', undoError.message);
       return null;
     });
     throw error;
   }
-  return postedCardResult(await attachPostedCard(rec.id, 'result', card), 'handed_back', card);
+  return postedCardResult(await attachPostedCard(rec.id, 'result', card, new Date(attempt)), 'handed_back', card);
 };
 
 /**
@@ -862,74 +877,143 @@ export const withdraw = async (input: {
   }
   const record = await reconcile(found as HandBackRecord);
   if (!record) return fail('Hand-back not found', 404, 'hand_back_not_found');
-  const from = record.status;
   const stale = (status: HandBackStatus): never => fail(
     `This record is ${status} and can't be withdrawn`, 409, 'stale_state', { status },
   );
-  if (!(repo.OPEN_STATUSES as string[]).includes(from)) stale(from);
-
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const decisions = require('./decisionRequestService');
-  let openCard: string | null = null;
-  if (from === 'plan_sent') openCard = record.planDecisionId;
-  else if (from === 'handed_back') openCard = record.handbackDecisionId;
-  let lockToken: string | null = null;
-  if (openCard) {
-    const claim = await decisions.claimRulingLock(openCard);
-    if (claim.token) {
-      lockToken = claim.token;
-    } else if (claim.state === 'ruled') {
-      // Ruled since the reconcile above: copy it in and report where it stands.
-      const after = await reconcile(record);
-      stale(after?.status || from);
-    } else if (claim.state === 'locked') {
-      fail('A reviewer is answering this right now; try again in a moment', 409, 'ruling_in_progress');
-    }
-    // closed or missing: there is no card left to close.
-  }
-  const release = async () => {
-    if (!openCard || !lockToken) return;
-    await decisions.releaseRulingLock(openCard, lockToken).catch((error: Error) => {
-      console.warn('[hand-back] releasing the ruling lock after a failed withdraw failed; it expires:', error.message);
-    });
-  };
-
   const now = new Date();
   const withdrawnBy = caller.kind === 'agent'
     ? { kind: 'agent', userId: caller.agentUserId, ...(reason ? { reason } : {}) }
     : { kind: 'owner', userId: caller.userId, ...(reason ? { reason } : {}) };
-  let moved: HandBackRecord | null;
-  try {
-    moved = await repo.transition({
-      id: record.id, from, to: 'withdrawn', set: { withdrawn_by: withdrawnBy, withdrawn_at: now }, now,
-    });
-  } catch (error) {
-    await release();
-    throw error;
-  }
-  if (!moved) {
-    await release();
-    fail('Someone else changed this record first', 409, 'stale_state');
-  }
-  if (openCard && lockToken) {
-    try {
-      await decisions.closeDecision(openCard, { lockToken });
-    } catch (error) {
-      console.warn('[hand-back] closing the withdrawn card failed; the sweep retries:', (error as Error).message);
+
+  /**
+   * One try: lock the open card the record shows (if any), then move the
+   * record only if it still shows that same card, NULL included. A card
+   * attached after the read makes the update miss, so a withdraw never
+   * commits without the lock of a card a reviewer could be ruling. Null when
+   * the update missed.
+   */
+  const tryWithdraw = async (current: HandBackRecord): Promise<HandBackRecord | null> => {
+    const from = current.status;
+    if (!(repo.OPEN_STATUSES as string[]).includes(from)) stale(from);
+    let openCard: string | null = null;
+    let cardLink: Record<string, string | null> = {};
+    if (from === 'plan_sent') {
+      openCard = current.planDecisionId;
+      cardLink = { plan_decision_id: openCard };
+    } else if (from === 'handed_back') {
+      openCard = current.handbackDecisionId;
+      cardLink = { handback_decision_id: openCard };
     }
+    let lockToken: string | null = null;
+    if (openCard) {
+      const claim = await decisions.claimRulingLock(openCard);
+      if (claim.token) {
+        lockToken = claim.token;
+      } else if (claim.state === 'ruled') {
+        // Ruled since the reconcile above: copy it in and report where it stands.
+        const after = await reconcile(current);
+        stale(after?.status || from);
+      } else if (claim.state === 'locked') {
+        fail('A reviewer is answering this right now; try again in a moment', 409, 'ruling_in_progress');
+      }
+      // closed or missing: there is no card left to close.
+    }
+    const release = async () => {
+      if (!openCard || !lockToken) return;
+      await decisions.releaseRulingLock(openCard, lockToken).catch((error: Error) => {
+        console.warn('[hand-back] releasing the ruling lock after a failed withdraw failed; it expires:', error.message);
+      });
+    };
+    let moved: HandBackRecord | null;
+    try {
+      moved = await repo.transition({
+        id: current.id, from, to: 'withdrawn', set: { withdrawn_by: withdrawnBy, withdrawn_at: now }, where: cardLink, now,
+      });
+    } catch (error) {
+      await release();
+      throw error;
+    }
+    if (!moved) {
+      await release();
+      return null;
+    }
+    if (openCard && lockToken) {
+      try {
+        await decisions.closeDecision(openCard, { lockToken });
+      } catch (error) {
+        console.warn('[hand-back] closing the withdrawn card failed; the sweep retries:', (error as Error).message);
+      }
+    }
+    return moved;
+  };
+
+  if (!(await tryWithdraw(record))) {
+    // The record changed between the read and the update (most often a card
+    // attached): read it once more and go back through the lock.
+    const fresh = await repo.findById(record.id);
+    const again = fresh ? await reconcile(fresh) : null;
+    if (!again) return fail('Hand-back not found', 404, 'hand_back_not_found');
+    if (!(await tryWithdraw(again))) fail('Someone else changed this record first', 409, 'stale_state');
   }
   return { handBack: { id: record.id, status: 'withdrawn' } };
 };
 
 /**
  * The scheduler sweep (ADR-037 §3): catch up records whose card is ruled,
- * recover records that never stored their card's id, and close a
- * still-pending card whose record was withdrawn.
+ * recover records that never stored their card's id, close a still-pending
+ * card whose record was withdrawn, and close cards no record waits on.
  */
+// Pending hand-back cards the orphan pass reads per sweep, and where the next
+// pass resumes, so cards still waiting on a reviewer never crowd out the rest.
+const ORPHAN_BATCH = 50;
+let orphanCursor: string | null = null;
+
+/** Whether a record is still waiting on this exact card (its stage, and its result attempt). */
+const waitsFor = (record: HandBackRecord | null, card: any): boolean => {
+  if (!record) return false;
+  const cardId = String(card._id);
+  if (card.subject?.stage === 'plan') {
+    return record.status === 'plan_sent' && (record.planDecisionId === cardId || !record.planDecisionId);
+  }
+  if (card.subject?.stage === 'result') {
+    return record.status === 'handed_back' && (record.handbackDecisionId === cardId
+      || (!record.handbackDecisionId && attemptKey(record) === card.subject?.attempt));
+  }
+  return true;
+};
+
+/**
+ * Close pending hand-back cards nothing waits on: a card that landed after
+ * its record was removed or moved on, whose poster's close failed. The
+ * record-driven passes can't reach it, since no record points at it. Only
+ * cards older than the card-post grace window, a batch per sweep.
+ */
+const closeOrphanCards = async (now: Date, closeDecision: (id: string) => Promise<boolean>): Promise<number> => {
+  const cards = await DecisionRequest.find({
+    'subject.type': SUBJECT_TYPE,
+    status: 'pending',
+    createdAt: { $lt: new Date(now.getTime() - CARD_POST_GRACE_MS) },
+    ...(orphanCursor ? { _id: { $gt: orphanCursor } } : {}),
+  }).sort({ _id: 1 }).limit(ORPHAN_BATCH).lean();
+  orphanCursor = cards.length === ORPHAN_BATCH ? String(cards[cards.length - 1]._id) : null;
+  let closedCount = 0;
+  for (const card of cards) {
+    try {
+      const record: HandBackRecord | null = await repo.findById(String(card.subject?.id));
+      if (!waitsFor(record, card) && await closeDecision(String(card._id))) closedCount += 1;
+    } catch (error) {
+      console.warn('[hand-back] closing an orphaned card failed; the next sweep retries:', (error as Error).message);
+    }
+  }
+  return closedCount;
+};
+
 export const sweepHandBacks = async (now: Date = new Date()): Promise<{
-  applied: number; closed: number; delivered: number;
+  applied: number; closed: number; delivered: number; orphansClosed: number;
 }> => {
-  if (!repo.isAvailable()) return { applied: 0, closed: 0, delivered: 0 };
+  if (!repo.isAvailable()) return { applied: 0, closed: 0, delivered: 0, orphansClosed: 0 };
   const records: HandBackRecord[] = await repo.listForReconcile(new Date(now.getTime() - WITHDRAWN_RECHECK_MS));
   const cards = await decisionsById(records.flatMap((record) => [record.planDecisionId, record.handbackDecisionId]));
   let applied = 0;
@@ -958,6 +1042,12 @@ export const sweepHandBacks = async (now: Date = new Date()): Promise<{
       console.warn('[hand-back] sweep step failed:', (error as Error).message);
     }
   }
+  let orphansClosed = 0;
+  try {
+    orphansClosed = await closeOrphanCards(now, closeDecision);
+  } catch (error) {
+    console.warn('[hand-back] orphan pass failed:', (error as Error).message);
+  }
   let delivered = 0;
   const unannounced: HandBackRecord[] = await repo.listReceivedPending(new Date(now.getTime() - RECEIVED_GRACE_MS));
   for (const record of unannounced) {
@@ -967,7 +1057,9 @@ export const sweepHandBacks = async (now: Date = new Date()): Promise<{
       console.warn('[hand-back] handback.received retry failed:', (error as Error).message);
     }
   }
-  return { applied, closed, delivered };
+  return {
+    applied, closed, delivered, orphansClosed,
+  };
 };
 
 export default {

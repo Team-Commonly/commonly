@@ -209,22 +209,12 @@ export const listReceivedPending = async (ruledBefore: Date, limit = 100): Promi
   return rows.map(toRecord);
 };
 
-/** Claim handback.received for one sender (the stamp), once. False when already claimed. */
+/** Stamp handback.received as queued, once. False when it was already stamped. */
 export const markReceivedEnqueued = async (id: string, now: Date): Promise<boolean> => {
   const { rows } = await requirePool().query(
     `UPDATE hand_backs SET received_enqueued_at = $2
       WHERE id = $1 AND received_enqueued_at IS NULL RETURNING id`,
     [id, now],
-  );
-  return rows.length > 0;
-};
-
-/** Give back a handback.received claim whose enqueue failed: only the stamp that claim wrote. */
-export const clearReceivedEnqueued = async (id: string, stampedAt: Date): Promise<boolean> => {
-  const { rows } = await requirePool().query(
-    `UPDATE hand_backs SET received_enqueued_at = NULL
-      WHERE id = $1 AND received_enqueued_at = $2 RETURNING id`,
-    [id, stampedAt],
   );
   return rows.length > 0;
 };
@@ -255,7 +245,7 @@ export const transition = async (input: {
   from: HandBackStatus | HandBackStatus[];
   to: HandBackStatus;
   set?: Record<string, unknown>;
-  where?: Record<string, string | null>;
+  where?: Record<string, string | Date | null>;
   now: Date;
 }): Promise<HandBackRecord | null> => {
   const values: unknown[] = [input.id, input.to, input.now];
@@ -270,7 +260,7 @@ export const transition = async (input: {
   const fromParams = from.map((status) => { values.push(status); return `$${values.length}`; });
   const conditions = ['id = $1', `status IN (${fromParams.join(', ')})`];
   Object.entries(input.where || {}).forEach(([column, value]) => {
-    if (!['plan_decision_id', 'handback_decision_id'].includes(column)) {
+    if (!['plan_decision_id', 'handback_decision_id', 'handed_back_at'].includes(column)) {
       throw new Error(`hand_backs.${column} is not a transition condition`);
     }
     if (value === null) {
@@ -304,25 +294,27 @@ export const attachPlanDecision = async (id: string, decisionId: string, now: Da
 
 /**
  * Attach the result card to a just-handed-back record; a withdrawn one too (as
- * above). Not to a record recovery already put back to plan_accepted: that
- * card arrived too late and its poster closes it.
+ * above). Only to the submission the card was posted for: `handed_back_at` is
+ * set fresh by every hand-back, so it names the attempt. A card for an attempt
+ * recovery already undid never lands on the next attempt; its poster closes it.
  */
 export const attachHandbackDecision = async (
-  id: string, decisionId: string, now: Date,
+  id: string, decisionId: string, now: Date, attempt: Date,
 ): Promise<HandBackRecord | null> => {
   const { rows } = await requirePool().query(
     `UPDATE hand_backs SET handback_decision_id = $2, updated_at = $3
-      WHERE id = $1 AND handback_decision_id IS NULL AND status IN ('handed_back', 'withdrawn') RETURNING *`,
-    [id, decisionId, now],
+      WHERE id = $1 AND handback_decision_id IS NULL AND status IN ('handed_back', 'withdrawn')
+        AND handed_back_at = $4 RETURNING *`,
+    [id, decisionId, now, attempt],
   );
   return rows[0] ? toRecord(rows[0]) : null;
 };
 
 export default {
   isAvailable, insertPlan, deleteUnposted, findById, findByIds, listForPod, listForReconcile, listReceivedPending,
-  markReceivedEnqueued, clearReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
+  markReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
 };
 module.exports = {
   isAvailable, insertPlan, deleteUnposted, findById, findByIds, listForPod, listForReconcile, listReceivedPending,
-  markReceivedEnqueued, clearReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
+  markReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
 };

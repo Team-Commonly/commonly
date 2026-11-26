@@ -70,7 +70,7 @@ interface RequestDecisionOptions {
   internal?: {
     allowedValues?: Array<{ value: string; reasonRequired: boolean }>;
     deciderFallback?: 'members' | 'none';
-    subject?: { type: string; id: string; stage: string };
+    subject?: { type: string; id: string; stage: string; attempt?: string };
     /** Merged into the source message's metadata beside `source`. */
     metadata?: Record<string, unknown>;
   };
