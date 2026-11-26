@@ -30,6 +30,7 @@ import {
   ensureGuestAgent,
   ensureMsb,
   ensureNoSeatVm,
+  withSeatLock,
   microvmFlagOn,
   microvmSeatHome,
   microvmSeatLabel,
@@ -518,6 +519,86 @@ describe('writeMicrovmTurn', () => {
     expect(entry).toContain(`${GUEST_TURN_DIR}/turn.json`);
     expect(JSON.parse(readFileSync(join(dir, 'mcp.json'), 'utf8'))).toEqual({ mcpServers: {} });
     expect(existsSync(join(dir, 'mcp-shim.js'))).toBe(true);
+  });
+});
+
+describe('withSeatLock', () => {
+  let seats;
+  let home;
+  let lock;
+  beforeEach(() => {
+    seats = mkdtempSync(join(tmpdir(), 'cli-seat-lock-'));
+    home = join(seats, 'abc123-public');
+    mkdirSync(home);
+    lock = join(seats, '.abc123-public.lock');
+  });
+  afterEach(() => { rmSync(seats, { recursive: true, force: true }); });
+
+  test('the lock sits beside the HOME, never inside it, and goes when the turn ends', async () => {
+    let during = null;
+    const result = await withSeatLock(home, async () => {
+      during = readFileSync(lock, 'utf8');
+      return 'ran';
+    });
+    expect(result).toBe('ran');
+    expect(during).toMatch(new RegExp(`^${process.pid} [0-9a-f]{16}\\n$`));
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(join(home, '.abc123-public.lock'))).toBe(false);
+  });
+
+  test('a second turn waits for the first, and runs only once it is released', async () => {
+    const order = [];
+    let release;
+    const first = withSeatLock(home, async () => {
+      order.push('first in');
+      await new Promise((resolve) => { release = resolve; });
+      order.push('first out');
+    });
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    const second = withSeatLock(home, async () => { order.push('second in'); }, { pollMs: 10, waitMs: 5000 });
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
+    expect(order).toEqual(['first in']);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first in', 'first out', 'second in']);
+  });
+
+  test('a second turn past its wait refuses with microvm_seat_busy and never runs', async () => {
+    let release;
+    const first = withSeatLock(home, () => new Promise((resolve) => { release = resolve; }));
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    release();
+    await first;
+  });
+
+  test('a lock whose holder is gone is reclaimed', async () => {
+    writeFileSync(lock, '999999 deadbeefdeadbeef\n');
+    const ran = jest.fn(async () => readFileSync(lock, 'utf8'));
+    const held = await withSeatLock(home, ran, { pidAlive: () => false, pollMs: 10, waitMs: 1000 });
+    expect(held).toMatch(new RegExp(`^${process.pid} `));
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  test('a live holder\'s lock is not reclaimed, and is left exactly as it was', async () => {
+    writeFileSync(lock, '4242 cafecafecafecafe\n');
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pidAlive: () => true, pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    expect(readFileSync(lock, 'utf8')).toBe('4242 cafecafecafecafe\n');
+  });
+
+  test('a live pid\'s lock older than maxMs counts as leaked (a reused pid)', async () => {
+    writeFileSync(lock, '4242 cafecafecafecafe\n');
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    utimesSync(lock, old, old);
+    const ran = jest.fn();
+    await withSeatLock(home, ran, { pidAlive: () => true, maxMs: 60 * 1000, pollMs: 10, waitMs: 1000 });
+    expect(ran).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -322,7 +322,8 @@ describe('the codex adapter in a microVM', () => {
 
     // The bridge runs our server on the host with the token on its file,
     // the seat's withheld tools, and no provider key in its environment.
-    expect(fs.realpathSync(seen.cwd)).toBe(fs.realpathSync(cwd));
+    // .native expands Windows 8.3 short names (RUNNER~1); the JS realpath does not.
+    expect(fs.realpathSync.native(seen.cwd)).toBe(fs.realpathSync.native(cwd));
     const server = seen.hostMcpConfig.mcpServers.commonly;
     expect(server.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
     expect(server.env.COMMONLY_TOKEN_FILE).toEqual(expect.any(String));
@@ -647,6 +648,92 @@ describe('the codex adapter in a microVM', () => {
       await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
       expect(calls).toHaveLength(1);
       expect(stopped).toEqual([]);
+    });
+
+    // Two `agent run` processes of one seat (the daemon's and a foreground
+    // one): the second's whole HOME stretch waits behind the first's lock.
+    describe('two turns of one seat at once', () => {
+      const lockPath = () => path.join(path.dirname(home), `.${path.basename(home)}.lock`);
+      afterEach(() => {
+        fs.rmSync(lockPath(), { force: true });
+        fs.rmSync(`${lockPath()}.guard`, { force: true });
+      });
+
+      // Turn A's VM runs until `release()`; its reply is written then.
+      const held = () => {
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        const { calls, impl } = recorder({
+          write: (hostReply) => { gate.then(() => fs.writeFileSync(hostReply, 'from turn A')); },
+        });
+        const gated = (cmd, args, opts) => {
+          const proc = new EventEmitter();
+          proc.stdout = new EventEmitter();
+          proc.stderr = new EventEmitter();
+          proc.kill = jest.fn();
+          const inner = impl(cmd, args, opts);
+          inner.stdout.on('data', (chunk) => { gate.then(() => proc.stdout.emit('data', chunk)); });
+          inner.on('close', (code) => { gate.then(() => setTimeout(() => proc.emit('close', code), 0)); });
+          return proc;
+        };
+        return { calls, impl: gated, release: () => release() };
+      };
+
+      const until = async (check) => {
+        for (let i = 0; i < 200 && !check(); i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => { setTimeout(resolve, 5); });
+        }
+        expect(check()).toBe(true);
+      };
+
+      test('the second waits, touches nothing while the first holds the seat, then runs', async () => {
+        const a = held();
+        const aChecks = jest.fn(() => ({ stopped: [] }));
+        const bChecks = jest.fn(() => ({ stopped: [] }));
+        const b = recorder({ reply: 'from turn B' });
+        await withFlag('1', async () => {
+          const turnA = run(a.impl, { extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: aChecks } });
+          await until(() => a.calls.length === 1);
+          const configDuringA = fs.readFileSync(path.join(home, 'codex-home', 'config.toml'), 'utf8');
+          const turnB = run(b.impl, {
+            extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: bChecks, _seatLockWaitMs: 10000 },
+          });
+          await new Promise((resolve) => { setTimeout(resolve, 600); });
+          // B is held at the lock: no check, no HOME step, no VM.
+          expect(bChecks).not.toHaveBeenCalled();
+          expect(b.calls).toHaveLength(0);
+          expect(fs.readFileSync(path.join(home, 'codex-home', 'config.toml'), 'utf8')).toBe(configDuringA);
+          a.release();
+          const [resultA, resultB] = await Promise.all([turnA, turnB]);
+          expect(resultA.text).toBe('from turn A');
+          expect(resultB.text).toBe('from turn B');
+        });
+        expect(aChecks).toHaveBeenCalledTimes(2);
+        expect(bChecks).toHaveBeenCalledTimes(2);
+        expect(b.calls).toHaveLength(1);
+      });
+
+      test('the second refuses with microvm_seat_busy once its wait runs out, never unlocked', async () => {
+        const a = held();
+        const bChecks = jest.fn(() => ({ stopped: [] }));
+        const proxyB = proxyStub();
+        const b = recorder();
+        await withFlag('1', async () => {
+          const turnA = run(a.impl, {
+            extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: () => ({ stopped: [] }) },
+          });
+          await until(() => a.calls.length === 1);
+          await expect(run(b.impl, {
+            extra: { _startProviderProxy: proxyB.start, _ensureNoSeatVm: bChecks, _seatLockWaitMs: 100 },
+          })).rejects.toMatchObject({ code: 'microvm_seat_busy' });
+          expect(bChecks).not.toHaveBeenCalled();
+          expect(b.calls).toHaveLength(0);
+          expect(proxyB.started).toHaveLength(0);
+          a.release();
+          await expect(turnA).resolves.toMatchObject({ text: 'from turn A' });
+        });
+      });
     });
 
     test('the turn\'s bridge secret is redacted from a failure msb or Codex prints', async () => {

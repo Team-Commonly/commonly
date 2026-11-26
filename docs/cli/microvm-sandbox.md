@@ -151,8 +151,19 @@ Codex turn's VM carries a `commonly-seat=<seat folder>` label (`msb run
 - After `msb.exe` was killed, nothing touches the HOME: no reply read and no
   cleanup. The next turn's check stops the VM before its own steps, and its
   prepare clears what the killed turn left.
-Another seat's VMs carry another label and are never listed or stopped. One seat
-runs one turn at a time, so a VM of the seat still running is always a
+Another seat's VMs carry another label and are never listed or stopped.
+
+One `agent run` process runs its turns one at a time, but two processes of one
+seat can coexist (the daemon's and a foreground one). So the whole stretch, from
+the first check through the cleanup, holds the seat's lock:
+`.<seat folder>.lock`, beside the HOME in the host-owned `seats` folder that the
+guest never mounts. It works like the install lock. The file names its holder
+(pid and a per-take token), and only an exclusive create takes it. A waiter
+reclaims it only when the holder's process is gone, or when the lock is older
+than the turn's timeout plus 15 minutes (a reused pid). The reclaim re-reads the
+file under a guard and deletes only the exact lock it judged. A second turn of
+the seat waits up to two minutes, then refuses with `microvm_seat_busy`. It
+never runs unlocked. So a VM of the seat still running at the check is always a
 leftover. A Windows job object would tie the VM to the CLI's process, but Node
 has no way to make one without a native addon, so the check above is the
 mechanism.
@@ -179,7 +190,13 @@ mechanism.
 - Stopping a turn kills `msb.exe`, and the VM can outlive it, still holding
   the seat HOME mounted until something stops it. For a Codex seat, the next
   turn stops it before touching the HOME, or refuses (see above). Until that
-  turn, it runs inside the fence and uses memory and CPU. A Claude turn's VM
+  turn, it runs inside the fence and uses memory and CPU.
+- The seat lock follows the `agent run` process, not `msb.exe`. If that process
+  dies mid-turn, its `msb.exe` can live on, and the lock is reclaimed. If that
+  orphaned msb boots its VM only after the next turn's check, the VM runs while
+  the next turn touches the HOME. That window is short: the process is gone
+  within seconds of spawning msb, and the restarted turn's check comes later.
+  Nothing covers it. A Claude turn's VM
   carries no label and nothing stops it. The host never writes into a Claude
   seat's HOME (it only makes the folder; the reply comes over stdout), so that
   leftover can reach nothing outside its fence and its mounts, but it runs
@@ -220,7 +237,10 @@ mechanism.
   guest's argv, env and turn files; and the guest MCP entry's env table. Also
   the seat's VMs: a killed or cancelled turn leaves the HOME alone; a live VM
   of the seat is stopped before the HOME is touched, or the turn refuses; and
-  another seat's VM neither blocks nor is stopped.
+  another seat's VM neither blocks nor is stopped. Two concurrent turns of one
+  seat: the second waits at the lock without touching the HOME, or refuses.
+  `sandbox.microsandbox.test.mjs` covers the lock itself: a dead holder's lock
+  is reclaimed, a live holder's is left as it was.
 - `.github/workflows/cli-microsandbox-windows.yml` runs these on Windows. It then
   boots a real fenced VM with `cli/scripts/windows-microvm-smoke.mjs` and probes
   from inside: the proxy answers; another loopback service, the internet and a
@@ -234,7 +254,13 @@ mechanism.
   and that neither msb's arguments nor the guest's turn files carry it. It then
   checks that the host reaches the public URLs (or stops as inconclusive), and
   boots the same fence again with a probe, which finds those URLs and a
-  loopback-only host port unreachable and the fenced port reachable. Last, a
-  turn whose guest stalls is killed at a 60-second timeout. The next turn of
-  that seat must still answer, and msb must then list no running VM with the
-  seat's label. The log shows whether the VM outlived `msb.exe`.
+  loopback-only host port unreachable and the fenced port reachable. A public
+  URL counts as blocked in exactly two cases: no connection at all, or msb's
+  gateway answering a plain-HTTP request with 403 and a JSON body whose `code`
+  is `network_policy_denied`. Any other answer counts as reachable. Last, a
+  turn whose guest stalls is killed at a 60-second timeout. While it runs, msb
+  must list it under the seat's label, and must not list a control VM carrying
+  another label there, so the check can't pass vacuously. The next turn of that
+  seat must still answer. msb must then list no running VM with the seat's
+  label, and the control VM must be untouched. The log shows whether the VM
+  outlived `msb.exe`.

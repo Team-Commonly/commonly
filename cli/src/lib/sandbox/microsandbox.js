@@ -34,7 +34,7 @@ import {
   chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { basename, join } from 'path';
+import { basename, dirname, join } from 'path';
 
 import {
   MCP_BRIDGE_ENV, MCP_BRIDGE_SECRET_ENV, MCP_SHIM_SOURCE, hostMcpServers, startMcpBridge,
@@ -569,11 +569,13 @@ const defaultPidAlive = (pid) => {
  * a lock a live process leaked, or one naming a reused pid, can't wedge every
  * later install. A lock that names no process falls back to the shorter age.
  */
-const lockAbandoned = (content, mtimeMs, { now, pidAlive }) => {
+const lockAbandoned = (content, mtimeMs, {
+  now, pidAlive, maxMs = INSTALL_LOCK_MAX_MS, staleMs = INSTALL_LOCK_STALE_MS,
+}) => {
   const age = now() - mtimeMs;
   const pid = Number.parseInt(String(content).split(/\s+/)[0], 10);
-  if (Number.isInteger(pid) && pid > 0) return age > INSTALL_LOCK_MAX_MS || !pidAlive(pid);
-  return age > INSTALL_LOCK_STALE_MS;
+  if (Number.isInteger(pid) && pid > 0) return age > maxMs || !pidAlive(pid);
+  return age > staleMs;
 };
 
 // The guard is held only for a read and an unlink, so one older than this was
@@ -625,12 +627,25 @@ const withLockGuard = async (guard, fn, { now }) => {
  * holder's lock is displaced. The holder also removes a lock it can't read at
  * all, so an unreadable lock is never left behind.
  */
-export const withInstallLock = async (root, fn, {
+export const withInstallLock = (root, fn, {
   waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
-} = {}) => {
+} = {}) => withFileLock(root, '.install.lock', fn, {
+  waitMs,
+  pollMs,
+  now,
+  pidAlive,
+  busy: (lock) => new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`),
+});
+
+// The lock withInstallLock describes, at `<root>/<name>`; `busy(lock)` is the
+// error once `waitMs` has passed with a live holder. `maxMs`/`staleMs`: see
+// lockAbandoned.
+const withFileLock = async (root, name, fn, {
+  waitMs, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive, busy, maxMs, staleMs,
+}) => {
   await mkdir(root, { recursive: true });
-  const lock = join(root, '.install.lock');
-  const guard = join(root, '.install.lock.guard');
+  const lock = join(root, name);
+  const guard = join(root, `${name}.guard`);
   const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
   const deadline = now() + waitMs;
   for (;;) {
@@ -644,14 +659,16 @@ export const withInstallLock = async (root, fn, {
       const held = await stat(lock).catch(() => null);
       // eslint-disable-next-line no-await-in-loop
       const judged = held ? await readFile(lock, 'utf8').catch(() => null) : null;
-      if (held && judged !== null && lockAbandoned(judged, held.mtimeMs, { now, pidAlive })) {
+      if (held && judged !== null && lockAbandoned(judged, held.mtimeMs, {
+        now, pidAlive, maxMs, staleMs,
+      })) {
         // eslint-disable-next-line no-await-in-loop
         await withLockGuard(guard, async () => {
           const current = await readFile(lock, 'utf8').catch(() => null);
           if (current === judged) await rm(lock, { force: true });
         }, { now });
       } else if (now() > deadline) {
-        throw new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`);
+        throw busy(lock);
       } else {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => { setTimeout(resolve, pollMs); });
@@ -669,6 +686,33 @@ export const withInstallLock = async (root, fn, {
     }, { now }).catch(() => {});
   }
 };
+
+// How long a second turn of a seat waits for the first before refusing.
+export const SEAT_LOCK_WAIT_MS = 2 * 60 * 1000;
+
+/**
+ * Runs `fn` holding the seat's turn lock, so two `agent run` processes of one
+ * seat (the daemon's and a foreground one) never interleave their HOME steps
+ * with each other's VM. The lock sits beside the HOME, in the host-owned seats
+ * folder the guest never mounts, as `.<seat folder>.lock`. It works as
+ * withInstallLock's: it names its holder, only an exclusive create takes it,
+ * and a waiter reclaims it only once the holder's process is gone (or past
+ * `maxMs`, which the caller sets past its turn's own timeout), by an atomic
+ * re-read-and-delete under the guard. A waiter past `waitMs` refuses with
+ * `microvm_seat_busy`; it never runs unlocked.
+ */
+export const withSeatLock = (home, fn, {
+  waitMs = SEAT_LOCK_WAIT_MS, maxMs = INSTALL_LOCK_MAX_MS, pollMs = 250, now = Date.now, pidAlive = defaultPidAlive,
+} = {}) => withFileLock(dirname(home), `.${basename(home)}.lock`, fn, {
+  waitMs,
+  pollMs,
+  now,
+  pidAlive,
+  maxMs,
+  staleMs: maxMs,
+  busy: (lock) => Object.assign(new Error(`the microVM sandbox will not touch this seat's HOME: another turn `
+    + `of this seat still holds ${lock}; try again when it ends`), { code: 'microvm_seat_busy' }),
+});
 
 /** msb and the guest's agent (Claude unless named), ready to run a turn. */
 export const prepareMicrovmHost = async ({

@@ -22,9 +22,11 @@
  *      loopback-only host service are unreachable, the fenced port is
  *      reachable, and the workspace and agents volume refuse writes. The host
  *      first reaches the same public URLs, or the step is inconclusive.
- *   6. A turn whose guest stalls is killed at a short timeout; the next turn of
- *      that seat still runs (its prepare stops any VM msb left), and msb then
- *      lists no running VM with the seat's label.
+ *   6. A turn whose guest stalls is killed at a short timeout. While it runs,
+ *      msb must list it under the seat's label, and must not list a control VM
+ *      carrying another label there. The next turn of that seat still runs (its
+ *      prepare stops any VM msb left), msb then lists no running VM with the
+ *      seat's label, and the control VM is untouched.
  */
 import { spawn } from 'child_process';
 import {
@@ -35,7 +37,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
-  GUEST_CODEX, GUEST_CODEX_VERSION, GUEST_HOST, GUEST_TURN_DIR, MICROVM_FLAG_ENV, ensureGuestCodex, ensureMsb,
+  GUEST_CODEX, GUEST_CODEX_VERSION, GUEST_HOST, GUEST_IMAGE, GUEST_TURN_DIR, MICROVM_FLAG_ENV, ensureGuestCodex, ensureMsb,
   microvmSeatLabel, msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
 } from '../src/lib/sandbox/microsandbox.js';
 
@@ -118,7 +120,7 @@ const https = require('https');
 const { spawnSync } = require('child_process');
 const { writeFileSync } = require('fs');
 const get = (mod, url) => new Promise((resolve) => {
-  const req = mod.get(url, { timeout: 5000 }, (res) => { let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve('status ' + res.statusCode + ' ' + b.slice(0, 40))); });
+  const req = mod.get(url, { timeout: 5000 }, (res) => { let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve('status ' + res.statusCode + ' ' + b.slice(0, 2000))); });
   req.on('timeout', () => { req.destroy(); resolve('blocked (timeout)'); });
   req.on('error', (e) => resolve('blocked (' + e.code + ')'));
 });
@@ -136,6 +138,22 @@ const tryWrite = (path) => { try { writeFileSync(path, 'x'); return 'written'; }
   console.log('PROBE ' + JSON.stringify(report));
 })();
 `;
+
+// How a public request from the guest was blocked, or null if it was not.
+// Exactly two answers count as blocked: no connection at all, or msb's own
+// gateway accepting a plain-HTTP connection and answering 403 with a JSON body
+// whose code is network_policy_denied (docs/plans/microsandbox-windows-spike.md,
+// "Network fence"). Any other status or body is the site answering: reachable.
+const publicBlockKind = (outcome) => {
+  if (String(outcome).startsWith('blocked')) return `no connection (${outcome})`;
+  const denied = /^status 403 (.*)$/s.exec(String(outcome));
+  if (!denied) return null;
+  try {
+    return JSON.parse(denied[1])?.code === 'network_policy_denied' ? 'the msb gateway (403 network_policy_denied)' : null;
+  } catch {
+    return null;
+  }
+};
 
 const runMsb = (msb, args) => new Promise((resolve, reject) => {
   const child = spawn(msb, args, { env: msbHostEnv(process.env), windowsHide: true });
@@ -300,8 +318,11 @@ const main = async () => {
       console.log(JSON.stringify(report, null, 2));
       if (!report.fencedPort.startsWith('status 200 fenced-port-ok')) fail(`the fenced port was not reachable: ${report.fencedPort}`);
       if (!report.otherHostPort.startsWith('blocked')) fail(`a non-allowed host port was reachable: ${report.otherHostPort}`);
-      if (!report.publicHttps.startsWith('blocked')) fail(`the public internet (https) was reachable: ${report.publicHttps}`);
-      if (!report.publicHttp.startsWith('blocked')) fail(`the public internet (http) was reachable: ${report.publicHttp}`);
+      for (const [name, outcome] of [['https', report.publicHttps], ['http', report.publicHttp]]) {
+        const kind = publicBlockKind(outcome);
+        console.log(`public ${name}: ${kind ? `blocked by ${kind}` : 'REACHABLE'}`);
+        if (!kind) fail(`the public internet (${name}) was reachable: ${outcome}`);
+      }
       if (!report.workspaceWrite.startsWith('refused')) fail(`the read-only workspace took a write: ${report.workspaceWrite}`);
       if (!report.agentsVolumeWrite.startsWith('refused')) fail(`a turn could write the agents volume: ${report.agentsVolumeWrite}`);
       if (!report.codex.includes(GUEST_CODEX_VERSION)) fail(`Codex ${GUEST_CODEX_VERSION} is not on the volume: ${report.codex}`);
@@ -315,11 +336,36 @@ const main = async () => {
       const stallHome = join(scratch, 'stall-home');
       mkdirSync(stallHome);
       const label = microvmSeatLabel(stallHome);
-      const seatVms = async () => {
-        const out = await runMsb(msb, ['list', '--label', label, '--format', 'json']);
+      const vmsLabelled = async (selector, { raw = false } = {}) => {
+        const out = await runMsb(msb, ['list', '--label', selector, '--format', 'json']);
+        if (raw) console.log(`raw: msb list --label ${selector} --format json (exit ${out.code}):\n${out.stdout}`);
         if (out.code !== 0) throw new Error(`msb list exited ${out.code}`);
         return JSON.parse(out.stdout.trim() || '[]').filter((vm) => !['Stopped', 'Crashed'].includes(vm.status));
       };
+      const seatVms = () => vmsLabelled(label);
+      // A control VM under another seat's label: the selector must not match it,
+      // and its own label must, or the listing proves nothing either way.
+      const controlLabel = 'commonly-seat=smoke-control-public';
+      const control = await runMsb(msb, ['run', '--detach', '--no-net', '--label', controlLabel, GUEST_IMAGE, '--', 'sleep', '600']);
+      const controlName = control.stdout.trim().split(/\r?\n/).pop();
+      console.log(`control VM: ${controlName} (exit ${control.code})`);
+      if (control.code !== 0 || !controlName) throw new Error('inconclusive: the control VM under another label did not start');
+      // Positive control, taken while the stalled guest runs (after it marks
+      // the HOME, before the kill): msb must list it under the seat's label.
+      let duringStall = null;
+      const watchStall = async () => {
+        const marker = join(stallHome, 'stall-started');
+        for (let i = 0; i < 50 && !existsSync(marker); i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => { setTimeout(resolve, 1000); });
+        }
+        if (!existsSync(marker)) return;
+        duringStall = {
+          seat: await vmsLabelled(label, { raw: true }),
+          control: await vmsLabelled(controlLabel, { raw: true }),
+        };
+      };
+      let watching = null;
       const turnCtx = (extra) => ({
         agentName: 'ci-codex-stall',
         sessionId: null,
@@ -346,10 +392,20 @@ const main = async () => {
           const turn = JSON.parse(readFileSync(join(turnDir, 'turn.json'), 'utf8'));
           turn.argv = ['node', '-e', "require('fs').writeFileSync('/home/seat/stall-started', '1'); setInterval(() => {}, 1000);"];
           writeFileSync(join(turnDir, 'turn.json'), JSON.stringify(turn));
+          watching = watchStall();
           return spawn(cmd, args, opts);
         },
       })).then(() => null, (error) => error);
+      await watching;
       console.log(`killed turn: ${killedTurn?.message}`);
+      console.log(`while the stalled guest ran: ${JSON.stringify(duringStall)}`);
+      if (!duringStall) {
+        fail('no listing was taken while the stalled guest ran');
+      } else {
+        if (!duringStall.seat.length) fail('msb listed no VM under the seat label while its guest ran: the label or the selector does not work, so step 6 would pass vacuously');
+        if (duringStall.seat.some((vm) => vm.name === controlName)) fail('the seat label selector matched the control VM of another label');
+        if (!duringStall.control.some((vm) => vm.name === controlName)) fail('the control VM was not listed under its own label');
+      }
       if (!killedTurn || !/timed out/.test(killedTurn.message)) fail(`the stalled turn was not killed at its timeout: ${killedTurn?.message || 'it finished'}`);
       if (!existsSync(join(stallHome, 'stall-started'))) {
         throw new Error('inconclusive: the stalled guest never started before the kill; the timeout is too short for this runner');
@@ -364,6 +420,12 @@ const main = async () => {
       const left = await seatVms();
       console.log(`VMs of the seat after the next turn: ${JSON.stringify(left)}`);
       if (left.length) fail(`a VM of the seat is still running: ${JSON.stringify(left)}`);
+      // The next turn's check must have left the other label's VM alone.
+      if (!(await vmsLabelled(controlLabel)).some((vm) => vm.name === controlName)) {
+        fail('the control VM of another label was stopped by this seat\'s turn');
+      }
+      await runMsb(msb, ['stop', '--force', '--quiet', '--', controlName]);
+      await runMsb(msb, ['rm', '--', controlName]);
     }
   } finally {
     upstream.close();
