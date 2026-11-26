@@ -598,6 +598,8 @@ identity or required text attribution on a message-bearing action refuses the se
 
 ### RoomGrant remains the authorization boundary
 
+*Scope note: limits on a grant's tool arguments are [ADR-036](ADR-036-grant-argument-limits.md).*
+
 `RoomGrant` already has a `seat` target as well as a `pod` target
 ([model](../../backend/models/RoomGrant.ts)). Keep those targets, audience checks, tools, write
 mode, expiry, revocation, and broker confinement unchanged. The pair describes an action already
